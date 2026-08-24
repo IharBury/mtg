@@ -9,7 +9,15 @@ namespace Mtg.Engine.Render
 open Mtg.Engine
 open Mtg.Engine.Game
 
-def objectLine (o : GameObject) : String :=
+/-- Owner and controller of an object (CR 108.3, 110.2). Permanents always
+have both; the demo prints them so a shared battlefield is unambiguous. -/
+def controlClause (g : Game) (o : GameObject) : String :=
+  let owned := s!"owned by {g.player o.owner |>.name}"
+  match o.controller with
+  | some p => s!" ({owned}, controlled by {g.player p |>.name})"
+  | none => s!" ({owned}, no controller)"
+
+def objectLine (g : Game) (o : GameObject) : String :=
   let tap := if o.status.tapped then " (tapped)" else ""
   let atk := if o.status.attacking then " *attacking*" else ""
   let blk :=
@@ -20,7 +28,7 @@ def objectLine (o : GameObject) : String :=
     if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{controlClause g o}{tap}{atk}{blk}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -29,7 +37,7 @@ def handLine (g : Game) (id : ObjectId) : String :=
 
 def playerBlock (g : Game) (pl : Player) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
-  let bf := (g.permanentsOf pl.id).toList.map objectLine
+  let bf := (g.permanentsOf pl.id).toList.map (objectLine g)
   let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
   let hand := pl.hand.toList.map (handLine g)
   let handText := if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
@@ -105,7 +113,7 @@ def allZones (g : Game) : Array Zone :=
 
 /-- Visible battlefield lines, including tap/combat/damage status (CR 110.5). -/
 def battlefieldView (g : Game) : Array String :=
-  g.battlefield.map objectLine
+  g.battlefield.map (objectLine g)
 
 /-- Zones whose occupants, order, or (for the battlefield) visible status
 differ between two game states. Tapping a land does not move it, but it does
@@ -122,7 +130,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
   | some o =>
     match z with
     | .hand _ => handLine g id
-    | .battlefield => objectLine o
+    | .battlefield => objectLine g o
     | .stack =>
       let ctrl :=
         match o.controller with
