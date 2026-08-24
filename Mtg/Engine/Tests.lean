@@ -129,10 +129,11 @@ def tappedMountain : Game :=
       | .ok g => g
       | .error e => panic! e
 
-/-- Occupants are unchanged, but the land is now tapped, so the battlefield
-must reprint (the demo shows `(tapped)`). -/
-#guard zoneObjectIds withMountain .battlefield == zoneObjectIds tappedMountain .battlefield
+-- Occupants are unchanged, but the land is now tapped, so the battlefield
+-- must reprint (the demo shows the land as tapped).
+#guard (zoneObjectIds withMountain .battlefield) == (zoneObjectIds tappedMountain .battlefield)
 #guard battlefieldView withMountain != battlefieldView tappedMountain
+#guard (zoneBlock withMountain .battlefield) != (zoneBlock tappedMountain .battlefield)
 #guard (changedZones withMountain tappedMountain).contains .battlefield
 #guard (changedZones withMountain withMountain).isEmpty
 #guard tappedMountain.battlefield.any (·.status.tapped)
