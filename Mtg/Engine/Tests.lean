@@ -565,6 +565,52 @@ def bothAttack : Game :=
 #guard (namedPermanent bothAttack "Grizzly Bears").status.attacking
 #guard (namedPermanent bothAttack "Gray Ogre").status.attacking
 
+/-- Chandra's Gray Ogre attacks; Nissa has Grizzly Bears to block. -/
+def ogreVsBears : Game :=
+  addPermanent (addPermanent started grayOgre ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def ogreDeclaredAttacker : Game :=
+  let g := passBoth (skipTo ogreVsBears .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+
+def readyToDeclareBlockers : Game :=
+  passBoth ogreDeclaredAttacker
+
+#guard readyToDeclareBlockers.step == .declareBlockers
+#guard readyToDeclareBlockers.pending == .declareBlockers
+#guard readyToDeclareBlockers.actor == some ⟨1⟩
+#guard (namedPermanent readyToDeclareBlockers "Gray Ogre").status.attacking
+#guard (namedPermanent readyToDeclareBlockers "Grizzly Bears").status.blocking.isNone
+
+def bearsBlockOgre : Game :=
+  let g := readyToDeclareBlockers
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Gray Ogre").id)])
+
+#guard (namedPermanent bearsBlockOgre "Grizzly Bears").status.blocking ==
+  some (namedPermanent bearsBlockOgre "Gray Ogre").id
+#guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
+#guard bearsBlockOgre.pending == .none
+
+/-- Blocking sends combat damage to the creature, not the defending player. -/
+def afterBlockedDamage : Game := passBoth bearsBlockOgre
+
+#guard (afterBlockedDamage.player ⟨1⟩).life == 20
+#guard afterBlockedDamage.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Grizzly Bears")
+#guard afterBlockedDamage.log.any (fun s =>
+  mentions s "Grizzly Bears deals 2 combat damage to Gray Ogre")
+#guard !afterBlockedDamage.log.any (fun s =>
+  mentions s "deals 2 combat damage to Nissa")
+
+def afterUnblockedDamage : Game :=
+  passBoth (mustApply readyToDeclareBlockers ⟨1⟩ (.declareBlockers #[]))
+
+#guard (afterUnblockedDamage.player ⟨1⟩).life == 18
+#guard afterUnblockedDamage.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Nissa")
+
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty
 #guard manaLine (started.player ⟨0⟩) == "Chandra — mana {}"

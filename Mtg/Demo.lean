@@ -118,6 +118,8 @@ def helpInteractive : String :=
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
+  block                Block each attacker with a legal unused blocker
+  block <b> <a> [...]  Assign listed blocker/attacker pairs
   noblock              Declare no blockers
   concede              Concede
   quit                 Exit
@@ -198,6 +200,113 @@ def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "usage: attack [id ...]"
   | .ok _ => false
 
+/-- Pair each unused legal blocker with the first still-unblocked attacker
+it can block. A bare `block` covers as many attacks as possible. -/
+def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
+  Id.run do
+    let attackers := g.battlefield.filter (·.status.attacking)
+    let defender := g.opponent g.activePlayer
+    let candidates := g.battlefield.filter (fun b =>
+      b.printed.isCreature && b.controlledBy defender && !b.status.tapped)
+    let mut blocked : Array ObjectId := #[]
+    let mut asgn : Array (ObjectId × ObjectId) := #[]
+    for b in candidates do
+      match attackers.find? (fun a => !blocked.contains a.id && g.canBlock b a) with
+      | some a =>
+        blocked := blocked.push a.id
+        asgn := asgn.push (b.id, a.id)
+      | none => pure ()
+    return asgn
+
+def blockUsage : String := "usage: block [blocker attacker ...]"
+
+/-- Parse blocker/attacker id pairs. An odd token count is a usage error. -/
+def parseBlockAssignments (tokens : List String) : Except String (Array (ObjectId × ObjectId)) := do
+  let ids ← parseObjectIds tokens blockUsage
+  if ids.size % 2 != 0 then
+    throw blockUsage
+  let mut asgn : Array (ObjectId × ObjectId) := #[]
+  for i in [0:ids.size / 2] do
+    asgn := asgn.push (ids[2 * i]!, ids[2 * i + 1]!)
+  return asgn
+
+/-- Blockers for an interactive `block` command. Omitted ids mean a greedy
+covering of unblocked attackers. -/
+def blockAssignmentsForCommand (g : Game) (tokens : List String) :
+    Except String (Array (ObjectId × ObjectId)) :=
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  if tokens.isEmpty then
+    .ok (greedyBlockAssignments g)
+  else
+    parseBlockAssignments tokens
+
+def applyBlock (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let asgn ← blockAssignmentsForCommand g tokens
+  for (blocker, attacker) in asgn do
+    if (g.findObject? blocker).isNone || (g.findObject? attacker).isNone then
+      throw "no such object"
+  g.apply p (.declareBlockers asgn)
+
+#guard
+  match parseBlockAssignments ["3", "#7"] with
+  | .ok asgn => asgn == #[(⟨3⟩, ⟨7⟩)]
+  | .error _ => false
+
+#guard
+  match parseBlockAssignments ["1", "2", "#3", "4"] with
+  | .ok asgn => asgn == #[(⟨1⟩, ⟨2⟩), (⟨3⟩, ⟨4⟩)]
+  | .error _ => false
+
+#guard
+  match parseBlockAssignments ["12"] with
+  | .error msg => msg == blockUsage
+  | .ok _ => false
+
+#guard
+  match parseBlockAssignments ["x", "1"] with
+  | .error msg => msg == blockUsage
+  | .ok _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.readyToDeclareBlockers [] with
+  | .ok asgn =>
+    let g := Tests.readyToDeclareBlockers
+    asgn == #[(
+      (Tests.namedPermanent g "Grizzly Bears").id,
+      (Tests.namedPermanent g "Gray Ogre").id)]
+  | .error _ => false
+
+#guard
+  let g := Tests.readyToDeclareBlockers
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  let ogre := Tests.namedPermanent g "Gray Ogre"
+  match applyBlock g ⟨1⟩ [toString bears.id, toString ogre.id] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking == some ogre.id
+  | .error _ => false
+
+#guard
+  match applyBlock Tests.readyToDeclareBlockers ⟨1⟩ [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
+      some (Tests.namedPermanent g' "Gray Ogre").id
+  | .error _ => false
+
+#guard
+  match applyBlock Tests.readyToDeclareBlockers ⟨1⟩ ["99999", "1"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyBlock Tests.readyToDeclareBlockers ⟨1⟩ ["nope"] with
+  | .error msg => msg == blockUsage
+  | .ok _ => false
+
+#guard
+  match applyBlock Tests.readyToDeclareAttackers ⟨0⟩ [] with
+  | .error msg => msg == "Not time to declare blockers"
+  | .ok _ => false
+
 partial def interactiveLoop (g : Game) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
@@ -219,6 +328,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         g := g'
     if g.over then break
     IO.print "mtg> "
+    (← IO.getStdout).flush
     let stdin ← IO.getStdin
     let line := (← stdin.getLine).trimAscii.copy
     if line.isEmpty then
@@ -236,6 +346,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "concede" => g.apply chandra .concede
       | "attack" => applyAttack g chandra (parts.drop 1)
       | "noattack" => g.apply chandra (.declareAttackers #[])
+      | "block" => applyBlock g chandra (parts.drop 1)
       | "noblock" => g.apply chandra (.declareBlockers #[])
       | "play" =>
         match parseObjectId? arg with
