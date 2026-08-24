@@ -1,0 +1,4 @@
+{
+  "name": "mtg (Lean 4)",
+  "install": "./.cursor/install.sh"
+}
