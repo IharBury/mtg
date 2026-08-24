@@ -56,6 +56,11 @@ def printChangedZones (before after : Game) : IO Unit := do
     for line in (zoneBlock after z).splitOn "\n" do
       IO.println s!"  {line}"
 
+/-- Print each player's life total when it changed. -/
+def printChangedLife (before after : Game) : IO Unit := do
+  for pl in changedLifeTotals before after do
+    IO.println s!"  {lifeLine pl}"
+
 def printState (g : Game) : IO Unit := do
   IO.println ""
   IO.println (snapshot g)
@@ -87,6 +92,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
     | .ok g' =>
       seen ← printLog g' seen
       printChangedZones g g'
+      printChangedLife g g'
       g := g'
   printState g
   match g.result with
@@ -99,9 +105,10 @@ def helpInteractive : String :=
   help                 Show this help
   state                Print the board
   pass                 Pass priority
+  pay                  Pay a proposed spell's cost (CR 601.2h)
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
-  cast <id>            Cast a spell (burn targets the opponent)
+  cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -201,6 +208,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | .ok g' =>
         seen ← printLog g' seen
         printChangedZones g g'
+        printChangedLife g g'
         g := g'
     if g.over then break
     IO.print "mtg> "
@@ -217,6 +225,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "state" => .ok g
       | "quit" | "exit" => .ok g
       | "pass" => g.apply chandra .pass
+      | "pay" => g.apply chandra .pay
       | "concede" => g.apply chandra .concede
       | "attack" => applyAttack g chandra (parts.drop 1)
       | "noattack" => g.apply chandra (.declareAttackers #[])
@@ -263,6 +272,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | .ok g' =>
         seen ← printLog g' seen
         printChangedZones g g'
+        printChangedLife g g'
         g := g'
         if g.over then
           printState g

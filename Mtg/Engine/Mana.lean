@@ -96,6 +96,10 @@ def manaValue (cost : ManaCost) : Nat :=
       | .x => acc)
     0
 
+/-- Whether paying this cost requires spending mana (CR 601.2g). `{X}` is 0 until chosen. -/
+def includesManaPayment (cost : ManaCost) : Bool :=
+  cost.manaValue > 0
+
 /-- Color of an object from the colored mana symbols in its mana cost (CR 202.2). -/
 def colors (cost : ManaCost) : ColorSet :=
   cost.symbols.foldl (fun acc s => acc.union s.colorContribution) ColorSet.empty
@@ -111,6 +115,8 @@ instance : BEq ManaCost where
   beq a b := a.symbols.toList == b.symbols.toList
 
 #guard (ofGenericAndColor 1 .green).manaValue == 2
+#guard (ofGenericAndColor 1 .green).includesManaPayment
+#guard !ManaCost.empty.includesManaPayment
 #guard (ofGenericAndColor 1 .green).colors.isMonocolored
 #guard (ofGeneric 4).colors.isColorless
 #guard (ofColors [.blue, .black]).colors.isColorPair
