@@ -89,8 +89,8 @@ def play (g : Game) (fuel : Nat := 400) : Game :=
   | 0 => g.logMsg "Stopped: action limit reached"
   | n + 1 =>
     if g.over then g
-    else if g.step.playersReceivePriority == false && g.pending == .none then
-      -- Should not happen after beginTurn skips untap; recover by advancing.
+    else if !g.playersReceivePriority && g.pending == .none then
+      -- Untap, or a cleanup with no CR 514.3a exception: recover by advancing.
       play (g.advanceStep) n
     else
       match step g with
