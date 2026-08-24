@@ -556,7 +556,7 @@ def combatDamage (g : Game) : Game :=
         if dmg > 0 then
           let pl := g.player defn
           g := g.setPlayer { pl with life := pl.life - dmg }
-          g := g.logMsg s!"{a.name} deals {dmg} combat damage to {pl.name}"
+          g := g.logMsg s!"{a.name} deals {dmg} combat damage to {pl.name} ({(g.player defn).life} life)"
       else
         -- All combat damage from the attacker is assigned to the first blocker;
         -- leftover trample damage goes to the defending player.
@@ -571,7 +571,7 @@ def combatDamage (g : Game) : Game :=
           let defn := g.opponent g.activePlayer
           let pl := g.player defn
           g := g.setPlayer { pl with life := pl.life - toPlayer }
-          g := g.logMsg s!"{a.name} tramples for {toPlayer} to {pl.name}"
+          g := g.logMsg s!"{a.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
         let back := max b.power 0
         if back > 0 then
           let aNow := g.object! a.id

@@ -320,4 +320,40 @@ def afterExceptionCleanup : Game := passBoth cleanupWithSBA
 #guard afterExceptionCleanup.activePlayer == ⟨1⟩
 #guard !afterExceptionCleanup.cleanupGivesPriority
 
+#guard (changedLifeTotals started started).isEmpty
+#guard (changedLifeTotals started afterDraw).isEmpty
+#guard lifeLine (started.player ⟨0⟩) == "Chandra — life 20"
+#guard lifeLine (started.player ⟨1⟩) == "Nissa — life 20"
+
+/-- Lightning Bolt to a player (CR 120.3a) changes that player's life total. -/
+def afterBolt : Game :=
+  started.applyEffect ⟨0⟩ (.dealDamage 3) #[Target.player ⟨1⟩]
+
+#guard (started.player ⟨1⟩).life == 20
+#guard (afterBolt.player ⟨1⟩).life == 17
+#guard (afterBolt.player ⟨0⟩).life == 20
+#guard (changedLifeTotals started afterBolt).size == 1
+#guard (changedLifeTotals started afterBolt).any (fun pl => pl.id == ⟨1⟩ && pl.life == 17)
+#guard lifeLine (afterBolt.player ⟨1⟩) == "Nissa — life 17"
+#guard mentions (playerBlock afterBolt (afterBolt.player ⟨1⟩)) "life 17"
+#guard afterBolt.log.any (fun s => mentions s "17 life")
+
+/-- Unblocked combat damage (CR 510.1a / 120.3a) also changes life. -/
+def attackingGoblin : Game :=
+  let g := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
+  let o := lastPermanent g
+  g.setObject { o with status := { o.status with attacking := true } }
+
+def afterCombatDamage : Game := attackingGoblin.combatDamage
+
+#guard ragingGoblin.power == some 1
+#guard (attackingGoblin.player ⟨1⟩).life == 20
+#guard (afterCombatDamage.player ⟨1⟩).life == 19
+#guard (changedLifeTotals attackingGoblin afterCombatDamage).size == 1
+#guard (changedLifeTotals attackingGoblin afterCombatDamage).any (fun pl =>
+  pl.id == ⟨1⟩ && pl.life == 19)
+#guard lifeLine (afterCombatDamage.player ⟨1⟩) == "Nissa — life 19"
+#guard afterCombatDamage.log.any (fun s => mentions s "19 life")
+#guard (changedZones attackingGoblin afterCombatDamage).isEmpty
+
 end Mtg.Engine.Tests
