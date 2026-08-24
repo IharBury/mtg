@@ -571,8 +571,8 @@ def bothAttack : Game :=
 #guard manaLine (started.player ⟨1⟩) == "Nissa — mana {}"
 #guard mentions (playerBlock tappedMountain (tappedMountain.player ⟨0⟩)) "mana {R}×1"
 
-/-- Paying a mana cost (CR 601.2h) spends the pool; the demo reprints the new
-contents. -/
+-- Paying a mana cost (CR 601.2h) spends the pool; the demo reprints the new
+-- contents.
 #guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
 #guard (changedManaPools proposedBolt tappedForBolt).size == 1
 #guard manaLine (tappedForBolt.player ⟨0⟩) == "Chandra — mana {R}×1"
