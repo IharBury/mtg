@@ -167,6 +167,19 @@ def mountainLine (g : Game) : String :=
 #guard mentions (mountainLine tappedMountain)
   "(owned by Chandra, controlled by Chandra)"
 
+/-- Untap is a turn-based action (CR 502.2): occupants stay put, but the land
+is no longer tapped, so the demo reprints the battlefield. -/
+def afterUntapStep : Game := tappedMountain.beginStep .untap
+
+#guard (zoneObjectIds tappedMountain .battlefield) == (zoneObjectIds afterUntapStep .battlefield)
+#guard battlefieldView tappedMountain != battlefieldView afterUntapStep
+#guard (zoneBlock tappedMountain .battlefield) != (zoneBlock afterUntapStep .battlefield)
+#guard (changedZones tappedMountain afterUntapStep).contains .battlefield
+#guard afterUntapStep.step == .untap
+#guard !(afterUntapStep.battlefield.any (·.status.tapped))
+#guard !mentions (mountainLine afterUntapStep) "(tapped)"
+#guard afterUntapStep.log.any (fun s => mentions s "untaps Mountain")
+
 /-- A permanent Chandra owns and Nissa controls is listed on Nissa's side. -/
 def stolenMountain : Game := addPermanent started mountain ⟨0⟩ ⟨1⟩
 
@@ -257,6 +270,33 @@ def afterSilentCleanup : Game := passBoth atEndStep
 #guard afterSilentCleanup.activePlayer == ⟨1⟩
 #guard !afterSilentCleanup.cleanupGivesPriority
 #guard !afterSilentCleanup.log.any (· == "Players receive priority during cleanup (CR 514.3a)")
+
+/-- Opponent's untap (CR 502.2) does not untap Chandra's land. -/
+def nissaTurn2 : Game := passBoth (skipTo tappedMountain .end 80)
+
+#guard nissaTurn2.turnNumber == 2
+#guard nissaTurn2.activePlayer == ⟨1⟩
+#guard nissaTurn2.step == .upkeep
+#guard nissaTurn2.battlefield.any (·.status.tapped)
+
+/-- The pass that ends Nissa's turn also runs Chandra's untap. Occupants are
+unchanged, but the land is now untapped, so the demo reprints the battlefield. -/
+def nissaEnd : Game := skipTo nissaTurn2 .end 80
+def chandraTurn3 : Game := passBoth nissaEnd
+
+#guard nissaEnd.turnNumber == 2
+#guard nissaEnd.step == .end
+#guard nissaEnd.battlefield.any (·.status.tapped)
+#guard chandraTurn3.turnNumber == 3
+#guard chandraTurn3.activePlayer == ⟨0⟩
+#guard chandraTurn3.step == .upkeep
+#guard !(chandraTurn3.battlefield.any (·.status.tapped))
+#guard (zoneObjectIds nissaEnd .battlefield) == (zoneObjectIds chandraTurn3 .battlefield)
+#guard battlefieldView nissaEnd != battlefieldView chandraTurn3
+#guard (changedZones nissaEnd chandraTurn3).contains .battlefield
+#guard mentions (zoneBlock nissaEnd .battlefield) "(tapped)"
+#guard !mentions (zoneBlock chandraTurn3 .battlefield) "(tapped)"
+#guard chandraTurn3.log.any (fun s => mentions s "untaps Mountain")
 
 /-- CR 514.3a: ending a pump that was keeping a 0/0 alive causes a state-based
 action, so the active player receives priority still in cleanup. -/

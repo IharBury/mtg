@@ -637,8 +637,14 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     Id.run do
       let mut g := g
       let ap := g.activePlayer
+      let apName := (g.player ap).name
       g := g.modifyPlayer ap (fun pl => { pl with landsPlayedThisTurn := 0 })
       for o in g.permanentsOf ap do
+        -- CR 502.2: the active player untaps their permanents. Logging each
+        -- previously tapped permanent makes the battlefield status change
+        -- visible in the demo before the zone reprint.
+        if o.status.tapped then
+          g := g.logMsg s!"{apName} untaps {o.name}"
         g := g.setObject { o with status := { o.status with tapped := false, summoningSick := false } }
       -- No priority (CR 502.4). Immediately continue.
       return g

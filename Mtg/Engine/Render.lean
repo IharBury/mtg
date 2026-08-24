@@ -116,8 +116,9 @@ def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
 /-- Zones whose occupants, order, or (for the battlefield) visible status
-differ between two game states. Tapping a land does not move it, but it does
-change the battlefield, so the demo reprints that zone. -/
+differ between two game states. Tapping or untapping a land does not move it,
+but it does change the battlefield (CR 110.5 / 502.2), so the demo reprints
+that zone. -/
 def changedZones (before after : Game) : Array Zone :=
   (allZones after).filter (fun z =>
     match z with
