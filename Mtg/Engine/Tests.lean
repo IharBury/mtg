@@ -101,6 +101,44 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 #guard !(changedZones started drawnOnce).contains .battlefield
 #guard !(changedZones started drawnOnce).contains .stack
 
+/-- Drop a basic land onto the battlefield without using the play-land action. -/
+def addUntappedLand (g : Game) (card : CardDef) : Game :=
+  let (g, id) := g.allocId
+  let (g, ts) := g.bumpTime
+  let obj : GameObject := {
+    id := id
+    printed := card
+    owner := g.activePlayer
+    controller := some g.activePlayer
+    zone := .battlefield
+    status := { summoningSick := false }
+    timestamp := ts
+  }
+  { g with objects := g.objects.push obj }
+
+def withMountain : Game := addUntappedLand started mountain
+
+def tappedMountain : Game :=
+  match (withMountain.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => panic! "expected a land on the battlefield"
+  | some o =>
+    match o.printed.manaAbilities[0]? with
+    | none => panic! s!"{o.name} has no mana ability"
+    | some m =>
+      match withMountain.tapForMana ⟨0⟩ o.id m with
+      | .ok g => g
+      | .error e => panic! e
+
+/-- Occupants are unchanged, but the land is now tapped, so the battlefield
+must reprint (the demo shows `(tapped)`). -/
+#guard zoneObjectIds withMountain .battlefield == zoneObjectIds tappedMountain .battlefield
+#guard battlefieldView withMountain != battlefieldView tappedMountain
+#guard (changedZones withMountain tappedMountain).contains .battlefield
+#guard (changedZones withMountain withMountain).isEmpty
+#guard tappedMountain.battlefield.any (·.status.tapped)
+#guard !(withMountain.battlefield.any (·.status.tapped))
+#guard (tappedMountain.player ⟨0⟩).manaPool != (withMountain.player ⟨0⟩).manaPool
+
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
   match g.pending, g.actor with

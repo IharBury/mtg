@@ -103,9 +103,18 @@ def allZones (g : Game) : Array Zone :=
       zs := zs.push (.graveyard pl.id)
     return zs.push .battlefield |>.push .stack |>.push .exile |>.push .command |>.push .ante
 
-/-- Zones whose occupants (or order) differ between two game states. -/
+/-- Visible battlefield lines, including tap/combat/damage status (CR 110.5). -/
+def battlefieldView (g : Game) : Array String :=
+  g.battlefield.map objectLine
+
+/-- Zones whose occupants, order, or (for the battlefield) visible status
+differ between two game states. Tapping a land does not move it, but it does
+change the battlefield, so the demo reprints that zone. -/
 def changedZones (before after : Game) : Array Zone :=
-  (allZones after).filter (fun z => zoneObjectIds before z != zoneObjectIds after z)
+  (allZones after).filter (fun z =>
+    match z with
+    | .battlefield => battlefieldView before != battlefieldView after
+    | _ => zoneObjectIds before z != zoneObjectIds after z)
 
 def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
   match g.findObject? id with
