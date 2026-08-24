@@ -11,7 +11,8 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), ending a game (CR 104), priority (CR 117),
 playing lands (CR 116.2a / 305), casting the spells we model (CR 601),
-combat (CR 506–510), and the state-based actions we implement (CR 704.5).
+combat (CR 506–510), cleanup (CR 514.3), and the state-based actions we
+implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -137,6 +138,8 @@ structure Game where
   log : Array String := #[]
   format : Format := .constructed
   consecutivePasses : Nat := 0
+  /-- Set when CR 514.3a grants priority during the current cleanup step. -/
+  cleanupGivesPriority : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -284,8 +287,10 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   (!attacker.printed.keywords.flying ||
     blocker.printed.keywords.flying || blocker.printed.keywords.reach)
 
-partial def checkSBA (g : Game) : Game :=
-  if g.over then g
+/-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
+any state-based action was performed (used by CR 514.3a). -/
+partial def checkSBACounted (g : Game) : Game × Bool :=
+  if g.over then (g, false)
   else
     Id.run do
       let mut g := g
@@ -327,15 +332,29 @@ partial def checkSBA (g : Game) : Game :=
       if living.size == 0 then
         g := { g with result := some .draw }
         g := g.logMsg "The game is a draw"
-        return g
+        return (g, true)
       else if living.size == 1 then
         let w := living[0]!
         g := { g with result := some (.won w.id) }
         g := g.logMsg s!"{w.name} wins the game"
-        return g
+        return (g, true)
       if changed then
-        return checkSBA g
-      return g
+        let (g', _) := checkSBACounted g
+        return (g', true)
+      return (g, false)
+
+def checkSBA (g : Game) : Game :=
+  (g.checkSBACounted).1
+
+/-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
+None are modeled yet. -/
+def hasWaitingTriggers (_g : Game) : Bool :=
+  false
+
+/-- Whether a player currently receives priority (CR 117.3a, 502.4, 514.3). -/
+def playersReceivePriority (g : Game) : Bool :=
+  if g.step == .cleanup then g.cleanupGivesPriority
+  else g.step.playersReceivePriority
 
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
@@ -347,7 +366,7 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
   g.step.isMainPhase && g.activePlayer == p && g.priority == p
 
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
-  !g.over && g.pending == .none && g.priority == p && g.step.playersReceivePriority
+  !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
 /-- Lands remaining this turn (CR 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
@@ -577,8 +596,41 @@ def clearEOT (g : Game) : Game :=
           status := { o.status with damage := 0, pumpPower := 0, pumpToughness := 0 } }
     return g
 
-def beginStep (g : Game) (st : Step) : Game :=
-  let g := { g with step := st, pending := .none, consecutivePasses := 0 }
+/-- Discard down to maximum hand size (CR 514.1). This turn-based action does
+not use the stack; the engine discards from the back of the hand array. -/
+def discardToMaxHandSize (g : Game) : Game :=
+  let pl := g.player g.activePlayer
+  let extra := pl.hand.size - pl.maxHandSize
+  if extra == 0 then g
+  else
+    Id.run do
+      let mut g := g
+      for _ in [0:extra] do
+        let pl := g.player g.activePlayer
+        if let some last := pl.hand.back? then
+          let card := g.object! last
+          let (g', _) := g.move last (.graveyard pl.id) none
+          g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
+      return g
+
+/-- Advance to the next living player's turn after a cleanup step ends. -/
+def startNextTurn (g : Game) : Game :=
+  let nxt := g.nextLiving g.activePlayer
+  let g := { g with
+    activePlayer := nxt
+    turnNumber := g.turnNumber + 1
+    isFirstTurn := false
+    cleanupGivesPriority := false }
+  g.logMsg s!"It is now {g.player nxt |>.name}'s turn {g.turnNumber}"
+
+/-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
+turn, which re-enters `beginStep`. -/
+partial def beginStep (g : Game) (st : Step) : Game :=
+  let g := { g with
+    step := st
+    pending := .none
+    consecutivePasses := 0
+    cleanupGivesPriority := false }
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
@@ -609,23 +661,23 @@ def beginStep (g : Game) (st : Step) : Game :=
     else
       g.combatDamage |>.receivePriority g.activePlayer
   | .cleanup =>
-    let g := g.clearCombat |>.clearEOT
-    -- Discard down to maximum hand size (CR 514.1).
-    let pl := g.player g.activePlayer
-    let extra := pl.hand.size - pl.maxHandSize
-    let g :=
-      if extra > 0 then
-        Id.run do
-          let mut g := g
-          for _ in [0:extra] do
-            let pl := g.player g.activePlayer
-            if let some last := pl.hand.back? then
-              let card := g.object! last
-              let (g', _) := g.move last (.graveyard pl.id) none
-              g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
-          return g
-      else g
-    g.receivePriority g.activePlayer
+    -- Combatants leave combat; then CR 514.1–514.3.
+    let g := g.clearCombat
+    let g := g.discardToMaxHandSize
+    let g := g.clearEOT
+    -- CR 514.3 / 514.3a / 704.3: normally no priority. If state-based actions
+    -- would be performed or triggered abilities are waiting, perform them,
+    -- put the triggers on the stack, and the active player receives priority.
+    let (g, sba) := g.checkSBACounted
+    if g.over then g
+    else if sba || g.hasWaitingTriggers then
+      let g := { g with cleanupGivesPriority := true }
+      let g := g.logMsg "Players receive priority during cleanup (CR 514.3a)"
+      g.receivePriority g.activePlayer
+    else
+      -- The cleanup step ends (CR 500.3) and the turn ends.
+      let g := g.emptyManaPools
+      (g.startNextTurn).beginStep .untap |>.beginStep .upkeep
   | _ =>
     g.receivePriority g.activePlayer
 
@@ -647,20 +699,20 @@ def advanceStep (g : Game) : Game :=
     else
       g.beginStep st
   | none =>
-    -- Next player's turn.
-    let nxt := g.nextLiving g.activePlayer
-    let g := { g with
-      activePlayer := nxt
-      turnNumber := g.turnNumber + 1
-      isFirstTurn := false }
-    let g := g.logMsg s!"It is now {g.player nxt |>.name}'s turn {g.turnNumber}"
-    g.beginTurn
+    -- Leaving cleanup. If CR 514.3a granted priority this step, another
+    -- cleanup step begins; otherwise the turn ends (CR 514.3 / 500.3).
+    if g.cleanupGivesPriority then
+      g.beginStep .cleanup
+    else
+      g.startNextTurn |>.beginTurn
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.over then
     throw "The game is over"
   if g.pending != .none then
     throw "A required choice is still pending"
+  if !g.playersReceivePriority then
+    throw "No player receives priority right now (CR 117.3a / 514.3)"
   if g.priority != p then
     throw "You don't have priority"
   let g := g.logMsg s!"{g.player p |>.name} passes priority"
@@ -700,7 +752,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .none =>
-      if g.step.playersReceivePriority then some g.priority else none
+      if g.playersReceivePriority then some g.priority else none
 
 end Game
 

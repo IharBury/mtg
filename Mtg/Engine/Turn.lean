@@ -70,9 +70,11 @@ def isEndingPhase : Step → Bool
   | .end | .cleanup => true
   | _ => false
 
-/-- Players do not receive priority during the untap step (CR 502.4). -/
+/-- Players do not normally receive priority during the untap step (CR 502.4)
+or the cleanup step (CR 514.3). Cleanup may still grant priority under the
+CR 514.3a exception; that is decided from the game state, not the step alone. -/
 def playersReceivePriority : Step → Bool
-  | .untap => false
+  | .untap | .cleanup => false
   | _ => true
 
 /-- The next step in a normal turn, wrapping from cleanup to the next player’s untap. -/
@@ -93,6 +95,8 @@ def next? : Step → Option Step
 #guard Step.all.length == 12
 #guard Step.precombatMain.isMainPhase
 #guard !Step.untap.playersReceivePriority
+#guard !Step.cleanup.playersReceivePriority
+#guard Step.end.playersReceivePriority
 #guard (Step.cleanup.next?).isNone
 #guard Step.untap.next? == some .upkeep
 

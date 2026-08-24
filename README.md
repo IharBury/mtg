@@ -59,4 +59,5 @@ The first slice of the engine models the two-player game:
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, tapping for mana, casting creatures and simple instants
 - combat declaration and combat damage
+- cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent
