@@ -103,11 +103,87 @@ def helpInteractive : String :=
   tap <id>             Tap a permanent for its first mana ability
   cast <id>            Cast a spell (burn targets the opponent)
   attack               Attack with every creature that can
+  attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
   noblock              Declare no blockers
   concede              Concede
   quit                 Exit
 "
+
+/-- Object ids print as `#12`; accept that form or a bare decimal. -/
+def parseObjectId? (token : String) : Option ObjectId :=
+  let digits :=
+    match token.toList with
+    | '#' :: rest => String.ofList rest
+    | cs => String.ofList cs
+  digits.toNat?.map (fun n => ⟨n⟩)
+
+/-- Parse one or more object identifiers from command tokens. -/
+def parseObjectIds (tokens : List String) (usage : String) : Except String (Array ObjectId) :=
+  go (tokens.filter (fun t => !t.isEmpty)) #[]
+where
+  go : List String → Array ObjectId → Except String (Array ObjectId)
+    | [], acc => if acc.isEmpty then .error usage else .ok acc
+    | t :: rest, acc =>
+      match parseObjectId? t with
+      | none => .error usage
+      | some id => go rest (acc.push id)
+
+/-- Attackers for an interactive `attack` command. Omitted ids mean every
+creature that currently can attack. -/
+def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Array ObjectId) :=
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  if tokens.isEmpty then
+    .ok (g.battlefield.filter (g.canAttack) |>.map (·.id))
+  else
+    parseObjectIds tokens "usage: attack [id ...]"
+
+def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← attackerIdsForCommand g tokens
+  for id in ids do
+    if (g.findObject? id).isNone then
+      throw "no such object"
+  g.apply p (.declareAttackers ids)
+
+#guard parseObjectId? "12" == some ⟨12⟩
+#guard parseObjectId? "#12" == some ⟨12⟩
+#guard (parseObjectId? "x").isNone
+#guard
+  match parseObjectIds ["3", "#7"] "usage: attack [id ...]" with
+  | .ok ids => ids == #[⟨3⟩, ⟨7⟩]
+  | .error _ => false
+#guard
+  match parseObjectIds ["x"] "usage: attack [id ...]" with
+  | .error msg => msg == "usage: attack [id ...]"
+  | .ok _ => false
+#guard
+  match parseObjectIds [] "usage: attack [id ...]" with
+  | .error _ => true
+  | .ok _ => false
+
+#guard
+  match attackerIdsForCommand Tests.readyToDeclareAttackers [] with
+  | .ok ids => ids.size == 2
+  | .error _ => false
+
+#guard
+  let g := Tests.readyToDeclareAttackers
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applyAttack g ⟨0⟩ [toString bears.id] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.attacking &&
+    !(Tests.namedPermanent g' "Gray Ogre").status.attacking
+  | .error _ => false
+
+#guard
+  match applyAttack Tests.readyToDeclareAttackers ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyAttack Tests.readyToDeclareAttackers ⟨0⟩ ["nope"] with
+  | .error msg => msg == "usage: attack [id ...]"
+  | .ok _ => false
 
 partial def interactiveLoop (g : Game) : IO Unit := do
   let mut g := g
@@ -142,30 +218,28 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "quit" | "exit" => .ok g
       | "pass" => g.apply chandra .pass
       | "concede" => g.apply chandra .concede
-      | "attack" =>
-        let ids := g.battlefield.filter (g.canAttack) |>.map (·.id)
-        g.apply chandra (.declareAttackers ids)
+      | "attack" => applyAttack g chandra (parts.drop 1)
       | "noattack" => g.apply chandra (.declareAttackers #[])
       | "noblock" => g.apply chandra (.declareBlockers #[])
       | "play" =>
-        match arg.toNat? with
+        match parseObjectId? arg with
         | none => .error "usage: play <id>"
-        | some n => g.apply chandra (.playLand ⟨n⟩)
+        | some id => g.apply chandra (.playLand id)
       | "tap" =>
-        match arg.toNat? with
+        match parseObjectId? arg with
         | none => .error "usage: tap <id>"
-        | some n =>
-          match g.findObject? ⟨n⟩ with
+        | some id =>
+          match g.findObject? id with
           | none => .error "no such object"
           | some o =>
             match o.printed.manaAbilities[0]? with
             | none => .error s!"{o.name} has no mana ability"
-            | some m => g.apply chandra (.tapForMana ⟨n⟩ m)
+            | some m => g.apply chandra (.tapForMana id m)
       | "cast" =>
-        match arg.toNat? with
+        match parseObjectId? arg with
         | none => .error "usage: cast <id>"
-        | some n =>
-          match g.findObject? ⟨n⟩ with
+        | some id =>
+          match g.findObject? id with
           | none => .error "no such object"
           | some o =>
             let tgt :=
@@ -175,7 +249,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
                 (g.permanentsOf chandra).filter (·.printed.isCreature) |>.back?
                   |>.map (fun c => Target.permanent c.id)
               | none => none
-            g.apply chandra (.cast ⟨n⟩ tgt)
+            g.apply chandra (.cast id tgt)
       | _ => .error s!"Unknown command: {cmd}"
     match cmd with
     | "quit" | "exit" =>

@@ -320,4 +320,44 @@ def afterExceptionCleanup : Game := passBoth cleanupWithSBA
 #guard afterExceptionCleanup.activePlayer == ⟨1⟩
 #guard !afterExceptionCleanup.cleanupGivesPriority
 
+/-- Two ready creatures: declaring a subset of attackers leaves the rest
+untapped and not attacking. -/
+def twoReadyAttackers : Game :=
+  addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩
+
+def readyToDeclareAttackers : Game :=
+  passBoth (skipTo twoReadyAttackers .beginningOfCombat 80)
+
+def namedPermanent (g : Game) (name : String) : GameObject :=
+  match g.battlefield.find? (fun o => o.name == name) with
+  | some o => o
+  | none => panic! s!"expected {name} on the battlefield"
+
+#guard readyToDeclareAttackers.step == .declareAttackers
+#guard readyToDeclareAttackers.pending == .declareAttackers
+#guard (readyToDeclareAttackers.battlefield.filter (readyToDeclareAttackers.canAttack)).size == 2
+
+def onlyBearsAttack : Game :=
+  match readyToDeclareAttackers.apply ⟨0⟩
+      (.declareAttackers #[(namedPermanent readyToDeclareAttackers "Grizzly Bears").id]) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attacking
+#guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.tapped
+#guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.attacking
+#guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.tapped
+#guard onlyBearsAttack.log.any (fun s => mentions s "attacks with Grizzly Bears")
+#guard !onlyBearsAttack.log.any (fun s => mentions s "attacks with Gray Ogre")
+
+/-- Declaring both creatures still works; the demo's bare `attack` uses this. -/
+def bothAttack : Game :=
+  let ids := readyToDeclareAttackers.battlefield.filter (readyToDeclareAttackers.canAttack) |>.map (·.id)
+  match readyToDeclareAttackers.apply ⟨0⟩ (.declareAttackers ids) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard (namedPermanent bothAttack "Grizzly Bears").status.attacking
+#guard (namedPermanent bothAttack "Gray Ogre").status.attacking
+
 end Mtg.Engine.Tests
