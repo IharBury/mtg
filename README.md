@@ -28,8 +28,10 @@ lake build
 
 ## Demo
 
-`Mtg.Demo` is a console application that starts a two-player constructed game
-and either runs a heuristic demonstration or lets you play interactively:
+`Mtg.Demo` is a console application that starts a two-player game using the
+[Hobbit Welcome Decks](https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks)
+(40-card limited) and either runs a heuristic demonstration or lets you play
+interactively:
 
 ```sh
 lake exe mtg-demo
@@ -44,11 +46,12 @@ lake exe mtg-demo -- --seed 42 --fuel 200
 | `lakefile.toml` | Lake package (`Mtg.Engine` library, `mtg-demo` executable). |
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
-| `Mtg/Demo.lean` | Console demonstration (`Mtg.Demo`). |
+| `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
+| `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration and Welcome Deck lists. |
 
 ## Current coverage
 
-The first slice of the engine models the two-player constructed game:
+The first slice of the engine models the two-player game:
 
 - colors and mana (CR 105–107, 202)
 - cards, types, zones, and turn structure (CR 108–110, 205, 300, 400, 500)

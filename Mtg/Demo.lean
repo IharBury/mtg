@@ -1,17 +1,18 @@
 import Mtg.Engine
+import Mtg.Demo.WelcomeDecks
 
 /-!
 # Mtg.Demo
 
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted two-player
-game with a heuristic agent. Pass `--interactive` to play Chandra against the
-agent-controlled Nissa.
+game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
+to play Chandra against the agent-controlled Nissa.
 -/
 
 open Mtg.Engine
-open Mtg.Engine.Catalog
 open Mtg.Engine.Game
 open Mtg.Engine.Render
+open Mtg.Demo
 
 def usage : String :=
   "Mtg.Demo — demonstration of the Mtg.Engine rules engine
@@ -26,16 +27,20 @@ Options:
   --fuel N        Maximum heuristic actions (default 800)
   --help          Show this help
 
+Chandra uses the red Hobbit Welcome Deck and Nissa uses the green one
+(40 cards, limited construction). Decklists:
+https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
+
 The engine follows the Magic: The Gathering Comprehensive Rules
 effective 7 August 2026.
 "
 
 def demoConfig (seed : UInt64) : StartConfig := {
   seats := #[
-    { name := "Chandra", deck := redDeck },
-    { name := "Nissa", deck := greenDeck }
+    { name := "Chandra", deck := hobbitRed },
+    { name := "Nissa", deck := hobbitGreen }
   ]
-  format := .constructed
+  format := .limited
   seed := seed
   startingPlayer := some 0
 }

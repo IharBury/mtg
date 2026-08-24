@@ -1,6 +1,7 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Card
 import Mtg.Engine.Catalog
+import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Color
 import Mtg.Engine.Deck
 import Mtg.Engine.Game
