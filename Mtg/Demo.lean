@@ -50,7 +50,7 @@ def printLog (g : Game) (startIdx : Nat) : IO Nat := do
     IO.println s!"  {line}"
   return g.log.size
 
-/-- Print each zone whose occupants changed between `before` and `after`. -/
+/-- Print each zone whose occupants or battlefield status changed. -/
 def printChangedZones (before after : Game) : IO Unit := do
   for z in changedZones before after do
     for line in (zoneBlock after z).splitOn "\n" do
