@@ -71,4 +71,71 @@ def snapshot (g : Game) : String :=
 def newLog (g : Game) (startIdx : Nat) : Array String :=
   g.log.extract startIdx g.log.size
 
+/-- Player-facing name of a zone, using seat names rather than `Player N`. -/
+def zoneLabel (g : Game) : Zone → String
+  | .library p => s!"{g.player p |>.name}'s library"
+  | .hand p => s!"{g.player p |>.name}'s hand"
+  | .graveyard p => s!"{g.player p |>.name}'s graveyard"
+  | .battlefield => "battlefield"
+  | .stack => "stack"
+  | .exile => "exile"
+  | .command => "command"
+  | .ante => "ante"
+
+/-- Object identities currently occupying `z`, in zone order. -/
+def zoneObjectIds (g : Game) : Zone → Array ObjectId
+  | .library p => (g.player p).library
+  | .hand p => (g.player p).hand
+  | .graveyard p => (g.player p).graveyard
+  | .stack => g.stack.map (fun e => e.objectId)
+  | .battlefield => g.battlefield.map (·.id)
+  | .exile => g.objects.filter (fun o => o.zone == .exile) |>.map (·.id)
+  | .command => g.objects.filter (fun o => o.zone == .command) |>.map (·.id)
+  | .ante => g.objects.filter (fun o => o.zone == .ante) |>.map (·.id)
+
+/-- Every zone the demo tracks, in a stable print order. -/
+def allZones (g : Game) : Array Zone :=
+  Id.run do
+    let mut zs : Array Zone := #[]
+    for pl in g.players do
+      zs := zs.push (.library pl.id)
+      zs := zs.push (.hand pl.id)
+      zs := zs.push (.graveyard pl.id)
+    return zs.push .battlefield |>.push .stack |>.push .exile |>.push .command |>.push .ante
+
+/-- Zones whose occupants (or order) differ between two game states. -/
+def changedZones (before after : Game) : Array Zone :=
+  (allZones after).filter (fun z => zoneObjectIds before z != zoneObjectIds after z)
+
+def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
+  match g.findObject? id with
+  | none => s!"{id} (missing)"
+  | some o =>
+    match z with
+    | .hand _ => handLine g id
+    | .battlefield => objectLine o
+    | .stack =>
+      let ctrl :=
+        match o.controller with
+        | some p => s!" (controlled by {g.player p |>.name})"
+        | none => ""
+      s!"{o.id} {o.name}{ctrl}"
+    | _ => s!"{o.id} {o.name}"
+
+/-- Current contents of `z`. Libraries are hidden, so only their size is shown. -/
+def zoneBlock (g : Game) (z : Zone) : String :=
+  let ids := zoneObjectIds g z
+  let shown :=
+    match z with
+    | .stack => ids.reverse
+    | _ => ids
+  let title := s!"zone {zoneLabel g z} ({shown.size})"
+  match z with
+  | .library _ => title
+  | _ =>
+    if shown.isEmpty then s!"{title}: (empty)"
+    else
+      let lines := shown.toList.map (zoneLine g z)
+      title ++ ":\n  " ++ String.intercalate "\n  " lines
+
 end Mtg.Engine.Render

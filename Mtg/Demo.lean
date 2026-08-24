@@ -50,6 +50,12 @@ def printLog (g : Game) (startIdx : Nat) : IO Nat := do
     IO.println s!"  {line}"
   return g.log.size
 
+/-- Print each zone whose occupants changed between `before` and `after`. -/
+def printChangedZones (before after : Game) : IO Unit := do
+  for z in changedZones before after do
+    for line in (zoneBlock after z).splitOn "\n" do
+      IO.println s!"  {line}"
+
 def printState (g : Game) : IO Unit := do
   IO.println ""
   IO.println (snapshot g)
@@ -80,6 +86,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
       break
     | .ok g' =>
       seen ← printLog g' seen
+      printChangedZones g g'
       g := g'
   printState g
   match g.result with
@@ -117,6 +124,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         break
       | .ok g' =>
         seen ← printLog g' seen
+        printChangedZones g g'
         g := g'
     if g.over then break
     IO.print "mtg> "
@@ -180,6 +188,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | .error e => IO.println s!"! {e}"
       | .ok g' =>
         seen ← printLog g' seen
+        printChangedZones g g'
         g := g'
         if g.over then
           printState g
