@@ -1,0 +1,10 @@
+name = "mtg"
+version = "0.1.0"
+defaultTargets = ["mtg"]
+
+[[lean_lib]]
+name = "Mtg"
+
+[[lean_exe]]
+name = "mtg"
+root = "Main"
