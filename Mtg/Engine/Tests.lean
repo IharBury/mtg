@@ -147,6 +147,10 @@ def tappedMountain : Game :=
 #guard tappedMountain.battlefield.any (·.status.tapped)
 #guard !(withMountain.battlefield.any (·.status.tapped))
 #guard (tappedMountain.player ⟨0⟩).manaPool != (withMountain.player ⟨0⟩).manaPool
+#guard (changedManaPools withMountain tappedMountain).size == 1
+#guard (changedManaPools withMountain tappedMountain).any (fun pl =>
+  pl.id == ⟨0⟩ && !pl.manaPool.isEmpty)
+#guard manaLine (tappedMountain.player ⟨0⟩) == "Chandra — mana {R}×1"
 
 /-- Battlefield rendering names owner and controller (CR 108.3, 110.2). -/
 def lastPermanent (g : Game) : GameObject :=
@@ -560,5 +564,31 @@ def bothAttack : Game :=
 
 #guard (namedPermanent bothAttack "Grizzly Bears").status.attacking
 #guard (namedPermanent bothAttack "Gray Ogre").status.attacking
+
+#guard (changedManaPools started started).isEmpty
+#guard (changedManaPools started afterDraw).isEmpty
+#guard manaLine (started.player ⟨0⟩) == "Chandra — mana {}"
+#guard manaLine (started.player ⟨1⟩) == "Nissa — mana {}"
+#guard mentions (playerBlock tappedMountain (tappedMountain.player ⟨0⟩)) "mana {R}×1"
+
+/-- Paying a mana cost (CR 601.2h) spends the pool; the demo reprints the new
+contents. -/
+#guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
+#guard (changedManaPools proposedBolt tappedForBolt).size == 1
+#guard manaLine (tappedForBolt.player ⟨0⟩) == "Chandra — mana {R}×1"
+#guard (changedManaPools tappedForBolt paidBolt).size == 1
+#guard (changedManaPools tappedForBolt paidBolt).any (fun pl =>
+  pl.id == ⟨0⟩ && pl.manaPool.isEmpty)
+#guard manaLine (paidBolt.player ⟨0⟩) == "Chandra — mana {}"
+
+/-- Unused mana is emptied as a turn-based action (CR 500.4). -/
+def emptiedPool : Game := tappedMountain.emptyManaPools
+
+#guard (emptiedPool.player ⟨0⟩).manaPool.isEmpty
+#guard (changedManaPools tappedMountain emptiedPool).size == 1
+#guard (changedManaPools tappedMountain emptiedPool).any (fun pl =>
+  pl.id == ⟨0⟩ && pl.manaPool.isEmpty)
+#guard manaLine (emptiedPool.player ⟨0⟩) == "Chandra — mana {}"
+#guard emptiedPool.log.any (fun s => mentions s "empties mana pool")
 
 end Mtg.Engine.Tests

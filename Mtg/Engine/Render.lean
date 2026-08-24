@@ -88,6 +88,14 @@ def lifeLine (pl : Player) : String :=
 def changedLifeTotals (before after : Game) : Array Player :=
   after.players.filter (fun pl => (before.player pl.id).life != pl.life)
 
+/-- Current mana pool, matching the snapshot's `mana {pool}` fragment. -/
+def manaLine (pl : Player) : String :=
+  s!"{pl.name} — mana {pl.manaPool}"
+
+/-- Players whose mana pools differ between two game states. -/
+def changedManaPools (before after : Game) : Array Player :=
+  after.players.filter (fun pl => (before.player pl.id).manaPool != pl.manaPool)
+
 /-- Player-facing name of a zone, using seat names rather than `Player N`. -/
 def zoneLabel (g : Game) : Zone → String
   | .library p => s!"{g.player p |>.name}'s library"

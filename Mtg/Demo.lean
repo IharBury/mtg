@@ -61,6 +61,11 @@ def printChangedLife (before after : Game) : IO Unit := do
   for pl in changedLifeTotals before after do
     IO.println s!"  {lifeLine pl}"
 
+/-- Print each player's mana pool when it changed. -/
+def printChangedMana (before after : Game) : IO Unit := do
+  for pl in changedManaPools before after do
+    IO.println s!"  {manaLine pl}"
+
 def printState (g : Game) : IO Unit := do
   IO.println ""
   IO.println (snapshot g)
@@ -93,6 +98,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
       seen ← printLog g' seen
       printChangedZones g g'
       printChangedLife g g'
+      printChangedMana g g'
       g := g'
   printState g
   match g.result with
@@ -209,6 +215,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         seen ← printLog g' seen
         printChangedZones g g'
         printChangedLife g g'
+        printChangedMana g g'
         g := g'
     if g.over then break
     IO.print "mtg> "
@@ -273,6 +280,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         seen ← printLog g' seen
         printChangedZones g g'
         printChangedLife g g'
+        printChangedMana g g'
         g := g'
         if g.over then
           printState g
