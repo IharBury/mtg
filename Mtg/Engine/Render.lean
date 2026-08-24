@@ -79,6 +79,14 @@ def snapshot (g : Game) : String :=
 def newLog (g : Game) (startIdx : Nat) : Array String :=
   g.log.extract startIdx g.log.size
 
+/-- Current life total, matching the snapshot's `life N` fragment. -/
+def lifeLine (pl : Player) : String :=
+  s!"{pl.name} — life {pl.life}"
+
+/-- Players whose life totals differ between two game states. -/
+def changedLifeTotals (before after : Game) : Array Player :=
+  after.players.filter (fun pl => (before.player pl.id).life != pl.life)
+
 /-- Player-facing name of a zone, using seat names rather than `Player N`. -/
 def zoneLabel (g : Game) : Zone → String
   | .library p => s!"{g.player p |>.name}'s library"

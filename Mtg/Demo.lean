@@ -56,6 +56,11 @@ def printChangedZones (before after : Game) : IO Unit := do
     for line in (zoneBlock after z).splitOn "\n" do
       IO.println s!"  {line}"
 
+/-- Print each player's life total when it changed. -/
+def printChangedLife (before after : Game) : IO Unit := do
+  for pl in changedLifeTotals before after do
+    IO.println s!"  {lifeLine pl}"
+
 def printState (g : Game) : IO Unit := do
   IO.println ""
   IO.println (snapshot g)
@@ -87,6 +92,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
     | .ok g' =>
       seen ← printLog g' seen
       printChangedZones g g'
+      printChangedLife g g'
       g := g'
   printState g
   match g.result with
@@ -125,6 +131,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | .ok g' =>
         seen ← printLog g' seen
         printChangedZones g g'
+        printChangedLife g g'
         g := g'
     if g.over then break
     IO.print "mtg> "
@@ -189,6 +196,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | .ok g' =>
         seen ← printLog g' seen
         printChangedZones g g'
+        printChangedLife g g'
         g := g'
         if g.over then
           printState g
