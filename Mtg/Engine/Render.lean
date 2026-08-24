@@ -64,6 +64,7 @@ def header (g : Game) : String :=
     | .none => ""
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
+    | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
   let result :=
     match g.result with
     | none => ""

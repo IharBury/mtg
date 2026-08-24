@@ -356,4 +356,161 @@ def afterCombatDamage : Game := attackingGoblin.combatDamage
 #guard afterCombatDamage.log.any (fun s => mentions s "19 life")
 #guard (changedZones attackingGoblin afterCombatDamage).isEmpty
 
+/-- Put `card` into `p`'s hand without drawing. -/
+def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
+  let (g, id) := g.allocId
+  let (g, ts) := g.bumpTime
+  let obj : GameObject := {
+    id := id
+    printed := card
+    owner := p
+    zone := .hand p
+    timestamp := ts
+  }
+  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
+    { pl with hand := pl.hand.push id })
+
+def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
+  match g.apply p a with
+  | .ok g' => g'
+  | .error e => panic! e
+
+def handCardNamed (g : Game) (p : PlayerId) (name : String) : GameObject :=
+  match (g.handObjects p).find? (fun o => o.name == name) with
+  | some o => o
+  | none => panic! s!"expected {name} in hand"
+
+/-- CR 601.2g: a player may begin casting without mana in their pool, then
+activate mana abilities, then pay. -/
+def boltSetup : Game :=
+  addToHand (addUntappedLand started mountain) lightningBolt ⟨0⟩
+
+def boltInHand : GameObject :=
+  handCardNamed boltSetup ⟨0⟩ "Lightning Bolt"
+
+def boltMountain : GameObject :=
+  lastPermanent boltSetup
+
+#guard (boltSetup.player ⟨0⟩).manaPool.isEmpty
+#guard !(boltSetup.player ⟨0⟩).manaPool.canPay lightningBolt.manaCost
+#guard (boltSetup.availableMana ⟨0⟩).canPay lightningBolt.manaCost
+#guard boltSetup.canCast ⟨0⟩ boltInHand
+#guard boltSetup.hasPriority ⟨0⟩
+
+/-- The agent proposes a spell instead of tapping first. -/
+def agentBeginsCast : Bool :=
+  match Agent.choose boltSetup ⟨0⟩ with
+  | some (.cast _ _) => true
+  | _ => false
+
+#guard agentBeginsCast
+
+def proposedBolt : Game :=
+  mustApply boltSetup ⟨0⟩ (.cast boltInHand.id (some (Target.player ⟨1⟩)))
+
+#guard proposedBolt.pending == .activateManaAbilities ⟨0⟩
+#guard proposedBolt.proposedSpell.isSome
+#guard !proposedBolt.stack.isEmpty
+#guard !(proposedBolt.player ⟨0⟩).hand.contains boltInHand.id
+#guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
+#guard !proposedBolt.hasPriority ⟨0⟩
+#guard proposedBolt.canActivateManaAbility ⟨0⟩
+#guard !proposedBolt.canActivateManaAbility ⟨1⟩
+#guard proposedBolt.actor == some ⟨0⟩
+#guard proposedBolt.log.any (fun s => mentions s "begins casting Lightning Bolt")
+#guard proposedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard mentions (header proposedBolt) "activate mana abilities (CR 601.2g)"
+#guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
+#guard (changedZones boltSetup proposedBolt).contains .stack
+
+/-- Opponent cannot activate mana abilities during the caster's 601.2g window. -/
+def nissaTapDenied : Bool :=
+  match proposedBolt.tapForMana ⟨1⟩ boltMountain.id (.colored .red) with
+  | .error _ => true
+  | .ok _ => false
+
+#guard nissaTapDenied
+
+def agentTapsInWindow : Bool :=
+  match Agent.choose proposedBolt ⟨0⟩ with
+  | some (.tapForMana id _) => id == boltMountain.id
+  | _ => false
+
+#guard agentTapsInWindow
+
+def tappedForBolt : Game :=
+  mustApply proposedBolt ⟨0⟩ (.tapForMana boltMountain.id (.colored .red))
+
+#guard (tappedForBolt.player ⟨0⟩).manaPool.canPay lightningBolt.manaCost
+#guard tappedForBolt.pending == .activateManaAbilities ⟨0⟩
+#guard tappedForBolt.battlefield.any (·.status.tapped)
+
+def agentPaysInWindow : Bool :=
+  match Agent.choose tappedForBolt ⟨0⟩ with
+  | some .pass => true
+  | _ => false
+
+#guard agentPaysInWindow
+
+def paidBolt : Game :=
+  mustApply tappedForBolt ⟨0⟩ .pass
+
+#guard paidBolt.pending == .none
+#guard paidBolt.proposedSpell.isNone
+#guard paidBolt.hasPriority ⟨0⟩
+#guard (paidBolt.player ⟨0⟩).manaPool.isEmpty
+#guard !paidBolt.stack.isEmpty
+#guard paidBolt.log.any (fun s => mentions s "casts Lightning Bolt")
+#guard !mentions (header paidBolt) "activate mana abilities"
+
+/-- Passing without enough mana reverses the cast (CR 601.2 / 733.1). -/
+def reversedBolt : Game :=
+  mustApply proposedBolt ⟨0⟩ .pass
+
+#guard reversedBolt.pending == .none
+#guard reversedBolt.proposedSpell.isNone
+#guard reversedBolt.stack.isEmpty
+#guard reversedBolt.hasPriority ⟨0⟩
+#guard (reversedBolt.handObjects ⟨0⟩).any (fun o => o.name == "Lightning Bolt")
+#guard !(reversedBolt.battlefield.any (·.status.tapped))
+#guard (reversedBolt.player ⟨0⟩).manaPool.isEmpty
+#guard reversedBolt.log.any (fun s => mentions s "the casting is reversed")
+
+/-- Mana abilities activated at 601.2g are reversed with the illegal cast. -/
+def ogreSetup : Game :=
+  addToHand (addUntappedLand (skipTo started .precombatMain 80) mountain) grayOgre ⟨0⟩
+
+def proposedOgre : Game :=
+  mustApply ogreSetup ⟨0⟩ (.cast (handCardNamed ogreSetup ⟨0⟩ "Gray Ogre").id none)
+
+def tappedForOgre : Game :=
+  mustApply proposedOgre ⟨0⟩ (.tapForMana (lastPermanent ogreSetup).id (.colored .red))
+
+#guard tappedForOgre.pending == .activateManaAbilities ⟨0⟩
+#guard (tappedForOgre.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red)
+#guard !(tappedForOgre.player ⟨0⟩).manaPool.canPay grayOgre.manaCost
+#guard tappedForOgre.battlefield.any (·.status.tapped)
+
+def reversedOgre : Game :=
+  mustApply tappedForOgre ⟨0⟩ .pass
+
+#guard reversedOgre.stack.isEmpty
+#guard reversedOgre.hasPriority ⟨0⟩
+#guard !(reversedOgre.battlefield.any (·.status.tapped))
+#guard (reversedOgre.player ⟨0⟩).manaPool.isEmpty
+#guard (reversedOgre.handObjects ⟨0⟩).any (fun o => o.name == "Gray Ogre")
+#guard reversedOgre.log.any (fun s => mentions s "the casting is reversed")
+
+/-- A resolved Lightning Bolt still changes life after the 601.2g window. -/
+def resolvedBolt : Game :=
+  mustApply (mustApply paidBolt ⟨0⟩ .pass) ⟨1⟩ .pass
+
+#guard resolvedBolt.stack.isEmpty
+#guard (resolvedBolt.player ⟨1⟩).life == 17
+#guard resolvedBolt.log.any (fun s => mentions s "casts Lightning Bolt")
+
+-- The heuristic still plays, and it activates mana abilities during 601.2g.
+#guard played.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard played.log.any (fun s => mentions s "begins casting")
+
 end Mtg.Engine.Tests

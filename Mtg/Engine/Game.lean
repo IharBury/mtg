@@ -69,11 +69,26 @@ structure StackEntry where
   targets : Array Target
 deriving Repr, Inhabited
 
+/-- Snapshot of a spell whose total cost is being paid (CR 601.2f–h).
+Used to reverse an illegal cast (CR 601.2 / 733.1). -/
+structure ProposedSpell where
+  caster : PlayerId
+  cost : ManaCost
+  spellId : ObjectId
+  original : GameObject
+  handBefore : Array ObjectId
+  stackBefore : Array StackEntry
+  manaBefore : ManaPool
+  tapped : Array ObjectId := #[]
+deriving Repr, Inhabited
+
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   | none
   | declareAttackers
   | declareBlockers
+  /-- The player may activate mana abilities before paying (CR 601.2g). -/
+  | activateManaAbilities (caster : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -140,6 +155,8 @@ structure Game where
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
+  /-- Spell proposed and waiting for mana abilities / payment (CR 601.2f–h). -/
+  proposedSpell : Option ProposedSpell := none
 deriving Repr, Inhabited
 
 namespace Game
@@ -396,9 +413,19 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
     else if o.printed.isCreature && o.status.summoningSick && !o.printed.keywords.haste then none
     else some (o, types))
 
+/-- A player may activate mana abilities with priority, or while paying a
+spell they are casting (CR 605.3a / 601.2g). -/
+def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
+  if g.over then false
+  else if g.hasPriority p then true
+  else
+    match g.pending with
+    | .activateManaAbilities caster => caster == p
+    | _ => false
+
 def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Except String Game := do
-  if !g.hasPriority p then
-    throw "You don't have priority"
+  if !g.canActivateManaAbility p then
+    throw "You can't activate a mana ability now (CR 605.3a)"
   let o := g.object! id
   if !o.controlledBy p || !o.isOnBattlefield then
     throw "You don't control that permanent"
@@ -411,8 +438,21 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let g := g.setObject { o with status := { o.status with tapped := true } }
   let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana })
   let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {mana}"
-  -- Mana abilities don't use the stack; the same player keeps priority (CR 605).
+  let g :=
+    match g.proposedSpell with
+    | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
+    | none => g
+  -- Mana abilities don't use the stack (CR 605.3b).
   return { g with consecutivePasses := 0 }
+
+/-- Mana in `p`'s pool plus one mana from each of their untapped sources. -/
+def availableMana (g : Game) (p : PlayerId) : ManaPool :=
+  (g.manaSources p).foldl
+    (fun pool (_, types) =>
+      match types[0]? with
+      | some t => pool.add t
+      | none => pool)
+    (g.player p).manaPool
 
 def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array Target :=
   match effect with
@@ -423,14 +463,14 @@ def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array 
   | .pump _ _ =>
     g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
 
+/-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
+pool is not required; mana abilities are activated at CR 601.2g. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let pl := g.player p
+  !o.printed.isLand &&
   pl.hand.contains o.id &&
   g.hasPriority p &&
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
-  (pl.manaPool.canPay o.printed.manaCost ||
-    -- Allow the caller to tap mana first; `canCast` is used after tapping in the AI.
-    pl.manaPool.canPay o.printed.manaCost) &&
   match o.printed.spellEffect with
   | some e => !(g.legalTargets p e |>.isEmpty)
   | none => o.printed.isPermanentCard
@@ -441,6 +481,42 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := 
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }
+
+/-- Undo a proposed spell that could not be paid (CR 601.2 / 733.1). -/
+def reverseProposedSpell (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    Id.run do
+      let mut g := g
+      let name := (g.player prop.caster).name
+      g := { g with
+        objects := g.objects.filter (fun o => o.id != prop.spellId) |>.push prop.original
+        stack := prop.stackBefore
+        pending := .none
+        proposedSpell := none }
+      g := g.modifyPlayer prop.caster (fun pl =>
+        { pl with hand := prop.handBefore, manaPool := prop.manaBefore })
+      for id in prop.tapped do
+        if let some o := g.findObject? id then
+          g := g.setObject { o with status := { o.status with tapped := false } }
+      g := g.logMsg
+        s!"{name} cannot pay {prop.cost}; the casting is reversed (CR 601.2 / 733.1)"
+      -- The player who had priority retains it (CR 733.2).
+      return { g with priority := prop.caster, consecutivePasses := 0 }
+
+def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
+  g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
+
+/-- Pay the locked-in cost (CR 601.2h) and finish casting (CR 601.2i). -/
+def finishProposedSpell (g : Game) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell is waiting to be paid for"
+  if !(g.player prop.caster).manaPool.canPay prop.cost then
+    return g.reverseProposedSpell
+  let spellName := (g.object! prop.spellId).name
+  let g ← g.payCost prop.caster prop.cost
+  let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+  return g.becomeCast prop.caster spellName
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
     Except String Game := do
@@ -460,12 +536,30 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     if let some t := target then
       if !(g.legalTargets p e).contains t then
         throw "Illegal target"
-  let g ← g.payCost p card.printed.manaCost
+  -- CR 601.2a: propose the spell by moving it onto the stack. Mana is not
+  -- required yet; CR 601.2g is the window to activate mana abilities.
+  let cost := card.printed.manaCost
+  let original := card
+  let handBefore := pl.hand
+  let stackBefore := g.stack
+  let manaBefore := pl.manaPool
   let (g, newId) := g.move id .stack (some p)
   let entry : StackEntry := { objectId := newId, controller := p, targets := target.toArray }
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
-  let g := g.logMsg s!"{pl.name} casts {card.name}"
-  return g.receivePriority p
+  if !cost.includesManaPayment then
+    return g.becomeCast p original.name
+  let prop : ProposedSpell := {
+    caster := p
+    cost := cost
+    spellId := newId
+    original := original
+    handBefore := handBefore
+    stackBefore := stackBefore
+    manaBefore := manaBefore
+  }
+  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
+  let g := g.logMsg s!"{pl.name} begins casting {original.name}"
+  return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
 def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
@@ -630,7 +724,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     step := st
     pending := .none
     consecutivePasses := 0
-    cleanupGivesPriority := false }
+    cleanupGivesPriority := false
+    proposedSpell := none }
   let g := g.logMsg s!"— Turn {g.turnNumber}, {g.player g.activePlayer |>.name}: {st} —"
   match st with
   | .untap =>
@@ -715,8 +810,14 @@ def advanceStep (g : Game) : Game :=
 def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.over then
     throw "The game is over"
-  if g.pending != .none then
-    throw "A required choice is still pending"
+  match g.pending with
+  | .activateManaAbilities caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may act (CR 601.2g)"
+    -- Done activating mana abilities; pay the locked-in cost (CR 601.2h).
+    return (← g.finishProposedSpell)
+  | .none => pure ()
+  | _ => throw "A required choice is still pending"
   if !g.playersReceivePriority then
     throw "No player receives priority right now (CR 117.3a / 514.3)"
   if g.priority != p then
@@ -757,6 +858,7 @@ def actor (g : Game) : Option PlayerId :=
     match g.pending with
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
+    | .activateManaAbilities caster => some caster
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

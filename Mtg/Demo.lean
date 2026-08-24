@@ -104,10 +104,10 @@ def helpInteractive : String :=
   "Commands:
   help                 Show this help
   state                Print the board
-  pass                 Pass priority
+  pass                 Pass priority, or pay a proposed spell (CR 601.2h)
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
-  cast <id>            Cast a spell (burn targets the opponent)
+  cast <id>            Begin casting a spell (then tap for mana and pass to pay)
   attack               Attack with every creature that can
   noattack             Declare no attackers
   noblock              Declare no blockers

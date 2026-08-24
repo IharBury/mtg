@@ -24,6 +24,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .declareBlockers =>
       -- Naive: don't block. The demo still exercises the declare-blockers step.
       some (.declareBlockers #[])
+    | .activateManaAbilities _ =>
+      chooseManaPayment g p
     | .none =>
       -- Play a land if possible.
       let lands := (g.handObjects p).filter (·.printed.isLand)
@@ -35,24 +37,31 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       else
         chooseCast g p
 where
+  /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
+  chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
+    match g.proposedSpell with
+    | none => some .pass
+    | some prop =>
+      if (g.player p).manaPool.canPay prop.cost then
+        some .pass
+      else
+        match (g.manaSources p)[0]?, (g.manaSources p)[0]?.bind (fun s => s.snd[0]?) with
+        | some (src, _), some t => some (.tapForMana src.id t)
+        | _, _ => some .pass
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
-    let sources := g.manaSources p
-    let pool := (g.player p).manaPool
-    let hand := g.handObjects p
-    let playable := hand.filter (fun o =>
-      !o.printed.isLand &&
-      (if o.printed.hasSorcerySpeed then g.asSorcery? p else g.hasPriority p))
-    let castable := playable.filter (fun o => pool.canPay o.printed.manaCost)
+    let available := g.availableMana p
+    let playable := (g.handObjects p).filter (fun o =>
+      g.canCast p o && available.canPay o.printed.manaCost)
     let opp := Target.player (g.opponent p)
     let ownCreature := (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
-    let burn := castable.find? (fun o =>
+    let burn := playable.find? (fun o =>
       match o.printed.spellEffect with
       | some (.dealDamage _) => true
       | _ => false)
-    let creature := castable.find? (fun o => o.printed.isCreature)
+    let creature := playable.find? (fun o => o.printed.isCreature)
     let pump :=
       if ownCreature.isSome then
-        castable.find? (fun o =>
+        playable.find? (fun o =>
           match o.printed.spellEffect with
           | some (.pump _ _) => true
           | _ => false)
@@ -66,13 +75,7 @@ where
       | some t => some (.cast o.id (some (.permanent t.id)))
       | none => some .pass
     else
-      -- Only tap for mana if a currently-castable spell still needs it.
-      let unpaid := playable.filter (fun o => !pool.canPay o.printed.manaCost)
-      if unpaid.isEmpty then some .pass
-      else
-        match sources[0]?, sources[0]?.bind (fun s => s.snd[0]?) with
-        | some (src, _), some t => some (.tapForMana src.id t)
-        | _, _ => some .pass
+      some .pass
 
 /-- Apply the heuristic once. Returns `none` if no actor or the action failed. -/
 def step (g : Game) : Except String Game := do
