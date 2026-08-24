@@ -101,20 +101,28 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 #guard !(changedZones started drawnOnce).contains .battlefield
 #guard !(changedZones started drawnOnce).contains .stack
 
-/-- Drop a basic land onto the battlefield without using the play-land action. -/
-def addUntappedLand (g : Game) (card : CardDef) : Game :=
+/-- `true` iff `needle` occurs in `haystack`. -/
+def mentions (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+/-- Put `card` onto the battlefield with explicit owner and controller. -/
+def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
   let (g, id) := g.allocId
   let (g, ts) := g.bumpTime
   let obj : GameObject := {
     id := id
     printed := card
-    owner := g.activePlayer
-    controller := some g.activePlayer
+    owner := owner
+    controller := some controller
     zone := .battlefield
     status := { summoningSick := false }
     timestamp := ts
   }
   { g with objects := g.objects.push obj }
+
+/-- Drop a basic land onto the battlefield without using the play-land action. -/
+def addUntappedLand (g : Game) (card : CardDef) : Game :=
+  addPermanent g card g.activePlayer g.activePlayer
 
 def withMountain : Game := addUntappedLand started mountain
 
@@ -139,6 +147,51 @@ def tappedMountain : Game :=
 #guard tappedMountain.battlefield.any (·.status.tapped)
 #guard !(withMountain.battlefield.any (·.status.tapped))
 #guard (tappedMountain.player ⟨0⟩).manaPool != (withMountain.player ⟨0⟩).manaPool
+
+/-- Battlefield rendering names owner and controller (CR 108.3, 110.2). -/
+def lastPermanent (g : Game) : GameObject :=
+  match g.battlefield.back? with
+  | some o => o
+  | none => panic! "expected a permanent on the battlefield"
+
+def mountainLine (g : Game) : String :=
+  objectLine g (lastPermanent g)
+
+#guard mountainLine withMountain ==
+  s!"{(lastPermanent withMountain).id} Mountain (owned by Chandra, controlled by Chandra)"
+#guard mentions (zoneBlock withMountain .battlefield)
+  "(owned by Chandra, controlled by Chandra)"
+#guard mentions (snapshot withMountain)
+  "(owned by Chandra, controlled by Chandra)"
+#guard mentions (mountainLine tappedMountain) "(tapped)"
+#guard mentions (mountainLine tappedMountain)
+  "(owned by Chandra, controlled by Chandra)"
+
+/-- A permanent Chandra owns and Nissa controls is listed on Nissa's side. -/
+def stolenMountain : Game := addPermanent started mountain ⟨0⟩ ⟨1⟩
+
+#guard mountainLine stolenMountain ==
+  s!"{(lastPermanent stolenMountain).id} Mountain (owned by Chandra, controlled by Nissa)"
+#guard (stolenMountain.permanentsOf ⟨1⟩).any (·.id == (lastPermanent stolenMountain).id)
+#guard !(stolenMountain.permanentsOf ⟨0⟩).any (·.id == (lastPermanent stolenMountain).id)
+#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
+  "(owned by Chandra, controlled by Nissa)"
+#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "  (none)"
+#guard mentions (zoneBlock stolenMountain .battlefield)
+  "(owned by Chandra, controlled by Nissa)"
+#guard mentions (snapshot stolenMountain)
+  "(owned by Chandra, controlled by Nissa)"
+
+/-- Changing control without moving the permanent still reprints the battlefield. -/
+def afterControlChange : Game :=
+  let o := lastPermanent withMountain
+  withMountain.setObject { o with controller := some ⟨1⟩ }
+
+#guard (zoneObjectIds withMountain .battlefield) == (zoneObjectIds afterControlChange .battlefield)
+#guard battlefieldView withMountain != battlefieldView afterControlChange
+#guard (changedZones withMountain afterControlChange).contains .battlefield
+#guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
+  "(owned by Chandra, controlled by Nissa)"
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
