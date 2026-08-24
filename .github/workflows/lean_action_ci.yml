@@ -12,3 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: leanprover/lean-action@v1
+        with:
+          # Fail if Lean or Lake logs any warning (e.g. deprecations).
+          build-args: "--wfail"

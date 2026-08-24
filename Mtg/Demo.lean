@@ -121,7 +121,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
     if g.over then break
     IO.print "mtg> "
     let stdin ← IO.getStdin
-    let line := (← stdin.getLine).trim
+    let line := (← stdin.getLine).trimAscii.copy
     if line.isEmpty then
       continue
     let parts := line.splitOn " "
