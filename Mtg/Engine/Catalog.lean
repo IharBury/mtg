@@ -1,0 +1,209 @@
+import Mtg.Engine.Card
+
+/-!
+# Sample cards
+
+A small Oracle-faithful catalog used by tests and `Mtg.Demo`. The engine
+itself is card-agnostic; these definitions just exercise the rules we model.
+-/
+
+namespace Mtg.Engine.Catalog
+
+open Mtg.Engine
+
+def plains : CardDef := {
+  name := "Plains"
+  types := #[.land]
+  subtypes := #["Plains"]
+  supertypes := #[.basic]
+  oracleText := "{T}: Add {W}."
+}
+
+def island : CardDef := {
+  name := "Island"
+  types := #[.land]
+  subtypes := #["Island"]
+  supertypes := #[.basic]
+  oracleText := "{T}: Add {U}."
+}
+
+def swamp : CardDef := {
+  name := "Swamp"
+  types := #[.land]
+  subtypes := #["Swamp"]
+  supertypes := #[.basic]
+  oracleText := "{T}: Add {B}."
+}
+
+def mountain : CardDef := {
+  name := "Mountain"
+  types := #[.land]
+  subtypes := #["Mountain"]
+  supertypes := #[.basic]
+  oracleText := "{T}: Add {R}."
+}
+
+def forest : CardDef := {
+  name := "Forest"
+  types := #[.land]
+  subtypes := #["Forest"]
+  supertypes := #[.basic]
+  oracleText := "{T}: Add {G}."
+}
+
+def grizzlyBears : CardDef := {
+  name := "Grizzly Bears"
+  manaCost := ManaCost.ofGenericAndColor 1 .green
+  types := #[.creature]
+  subtypes := #["Bear"]
+  oracleText := ""
+  power := some 2
+  toughness := some 2
+}
+
+def grayOgre : CardDef := {
+  name := "Gray Ogre"
+  manaCost := ManaCost.ofGenericAndColor 2 .red
+  types := #[.creature]
+  subtypes := #["Ogre"]
+  power := some 2
+  toughness := some 2
+}
+
+def hillGiant : CardDef := {
+  name := "Hill Giant"
+  manaCost := ManaCost.ofGenericAndColor 3 .red
+  types := #[.creature]
+  subtypes := #["Giant"]
+  power := some 3
+  toughness := some 3
+}
+
+def canyonMinotaur : CardDef := {
+  name := "Canyon Minotaur"
+  manaCost := ManaCost.ofGenericAndColor 3 .red
+  types := #[.creature]
+  subtypes := #["Minotaur"]
+  power := some 3
+  toughness := some 3
+}
+
+def ragingGoblin : CardDef := {
+  name := "Raging Goblin"
+  manaCost := ManaCost.ofColor .red
+  types := #[.creature]
+  subtypes := #["Goblin"]
+  oracleText := "Haste"
+  power := some 1
+  toughness := some 1
+  keywords := { Keywords.none with haste := true }
+}
+
+def llanowarElves : CardDef := {
+  name := "Llanowar Elves"
+  manaCost := ManaCost.ofColor .green
+  types := #[.creature]
+  subtypes := #["Elf", "Druid"]
+  oracleText := "{T}: Add {G}."
+  power := some 1
+  toughness := some 1
+  tapAddMana := #[.colored .green]
+}
+
+def crawWurm : CardDef := {
+  name := "Craw Wurm"
+  manaCost := ManaCost.ofGenericAndColor 4 .green
+  types := #[.creature]
+  subtypes := #["Wurm"]
+  power := some 6
+  toughness := some 4
+}
+
+def centaurCourser : CardDef := {
+  name := "Centaur Courser"
+  manaCost := ManaCost.ofGenericAndColor 2 .green
+  types := #[.creature]
+  subtypes := #["Centaur"]
+  power := some 3
+  toughness := some 3
+}
+
+def rumblingBaloth : CardDef := {
+  name := "Rumbling Baloth"
+  manaCost := ManaCost.ofGenericAndColors 2 [.green, .green]
+  types := #[.creature]
+  subtypes := #["Beast"]
+  power := some 4
+  toughness := some 4
+}
+
+def giantSpider : CardDef := {
+  name := "Giant Spider"
+  manaCost := ManaCost.ofGenericAndColor 3 .green
+  types := #[.creature]
+  subtypes := #["Spider"]
+  oracleText := "Reach"
+  power := some 2
+  toughness := some 4
+  keywords := { Keywords.none with reach := true }
+}
+
+def lightningBolt : CardDef := {
+  name := "Lightning Bolt"
+  manaCost := ManaCost.ofColor .red
+  types := #[.instant]
+  oracleText := "Lightning Bolt deals 3 damage to any target."
+  spellEffect := some (.dealDamage 3)
+}
+
+def shock : CardDef := {
+  name := "Shock"
+  manaCost := ManaCost.ofColor .red
+  types := #[.instant]
+  oracleText := "Shock deals 2 damage to any target."
+  spellEffect := some (.dealDamage 2)
+}
+
+def giantGrowth : CardDef := {
+  name := "Giant Growth"
+  manaCost := ManaCost.ofColor .green
+  types := #[.instant]
+  oracleText := "Target creature gets +3/+3 until end of turn."
+  spellEffect := some (.pump 3 3)
+}
+
+/-- Repeat a card `n` times. -/
+def copies (n : Nat) (c : CardDef) : Array CardDef :=
+  Array.replicate n c
+
+/-- A 60-card constructed red deck used by the demo. -/
+def redDeck : Array CardDef :=
+  copies 32 mountain ++
+  copies 4 lightningBolt ++
+  copies 4 shock ++
+  copies 4 ragingGoblin ++
+  copies 4 grayOgre ++
+  copies 4 hillGiant ++
+  copies 4 canyonMinotaur ++
+  copies 4 mountain
+
+/-- A 60-card constructed green deck used by the demo. -/
+def greenDeck : Array CardDef :=
+  copies 32 forest ++
+  copies 4 llanowarElves ++
+  copies 4 giantGrowth ++
+  copies 4 grizzlyBears ++
+  copies 4 giantSpider ++
+  copies 4 crawWurm ++
+  copies 4 centaurCourser ++
+  copies 4 rumblingBaloth
+
+#guard redDeck.size == 60
+#guard greenDeck.size == 60
+#guard mountain.colors.isColorless
+#guard grizzlyBears.colors.isMonocolored
+#guard grizzlyBears.hasSorcerySpeed
+#guard !lightningBolt.hasSorcerySpeed
+#guard !mountain.hasSorcerySpeed
+
+end Mtg.Engine.Catalog

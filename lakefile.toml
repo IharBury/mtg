@@ -1,10 +1,14 @@
 name = "mtg"
 version = "0.1.0"
-defaultTargets = ["mtg"]
+defaultTargets = ["Mtg.Engine", "mtg-demo"]
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
 
 [[lean_lib]]
-name = "Mtg"
+name = "Mtg.Engine"
 
 [[lean_exe]]
-name = "mtg"
-root = "Main"
+name = "mtg-demo"
+root = "Mtg.Demo"
