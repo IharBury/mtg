@@ -130,6 +130,8 @@ inductive Action where
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
   | cast (id : ObjectId) (target : Option Target)
+  /-- Pay the locked-in cost of a proposed spell (CR 601.2h). -/
+  | pay
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   | concede
@@ -807,17 +809,21 @@ def advanceStep (g : Game) : Game :=
     else
       g.startNextTurn |>.beginTurn
 
-def pass (g : Game) (p : PlayerId) : Except String Game := do
-  if g.over then
-    throw "The game is over"
+/-- Pay the proposed spell (CR 601.2h). If the cost cannot be paid, the
+casting is reversed (CR 601.2 / 733.1). -/
+def pay (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .activateManaAbilities caster =>
     if caster != p then
-      throw s!"Only {(g.player caster).name} may act (CR 601.2g)"
-    -- Done activating mana abilities; pay the locked-in cost (CR 601.2h).
-    return (← g.finishProposedSpell)
-  | .none => pure ()
-  | _ => throw "A required choice is still pending"
+      throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
+    g.finishProposedSpell
+  | _ => throw "No spell is waiting to be paid for (CR 601.2h)"
+
+def pass (g : Game) (p : PlayerId) : Except String Game := do
+  if g.over then
+    throw "The game is over"
+  if g.pending != .none then
+    throw "A required choice is still pending"
   if !g.playersReceivePriority then
     throw "No player receives priority right now (CR 117.3a / 514.3)"
   if g.priority != p then
@@ -844,6 +850,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .cast id t => g.castSpell p id t
+  | .pay => g.pay p
   | .declareAttackers ids => g.declareAttackers p ids
   | .declareBlockers as => g.declareBlockers p as
   | .concede => return g.concede p

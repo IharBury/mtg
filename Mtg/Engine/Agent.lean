@@ -40,14 +40,14 @@ where
   /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
   chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell with
-    | none => some .pass
+    | none => some .pay
     | some prop =>
       if (g.player p).manaPool.canPay prop.cost then
-        some .pass
+        some .pay
       else
         match (g.manaSources p)[0]?, (g.manaSources p)[0]?.bind (fun s => s.snd[0]?) with
         | some (src, _), some t => some (.tapForMana src.id t)
-        | _, _ => some .pass
+        | _, _ => some .pay
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let playable := (g.handObjects p).filter (fun o =>

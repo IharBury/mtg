@@ -104,10 +104,11 @@ def helpInteractive : String :=
   "Commands:
   help                 Show this help
   state                Print the board
-  pass                 Pass priority, or pay a proposed spell (CR 601.2h)
+  pass                 Pass priority
+  pay                  Pay a proposed spell's cost (CR 601.2h)
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
-  cast <id>            Begin casting a spell (then tap for mana and pass to pay)
+  cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   noattack             Declare no attackers
   noblock              Declare no blockers
@@ -148,6 +149,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "state" => .ok g
       | "quit" | "exit" => .ok g
       | "pass" => g.apply chandra .pass
+      | "pay" => g.apply chandra .pay
       | "concede" => g.apply chandra .concede
       | "attack" =>
         let ids := g.battlefield.filter (g.canAttack) |>.map (·.id)

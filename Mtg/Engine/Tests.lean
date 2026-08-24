@@ -447,13 +447,21 @@ def tappedForBolt : Game :=
 
 def agentPaysInWindow : Bool :=
   match Agent.choose tappedForBolt ⟨0⟩ with
-  | some .pass => true
+  | some .pay => true
   | _ => false
 
 #guard agentPaysInWindow
 
+/-- Passing priority is not how the 601.2h payment is made. -/
+def passDuringWindowDenied : Bool :=
+  match proposedBolt.apply ⟨0⟩ .pass with
+  | .error _ => true
+  | .ok _ => false
+
+#guard passDuringWindowDenied
+
 def paidBolt : Game :=
-  mustApply tappedForBolt ⟨0⟩ .pass
+  mustApply tappedForBolt ⟨0⟩ .pay
 
 #guard paidBolt.pending == .none
 #guard paidBolt.proposedSpell.isNone
@@ -463,9 +471,9 @@ def paidBolt : Game :=
 #guard paidBolt.log.any (fun s => mentions s "casts Lightning Bolt")
 #guard !mentions (header paidBolt) "activate mana abilities"
 
-/-- Passing without enough mana reverses the cast (CR 601.2 / 733.1). -/
+/-- Paying without enough mana reverses the cast (CR 601.2 / 733.1). -/
 def reversedBolt : Game :=
-  mustApply proposedBolt ⟨0⟩ .pass
+  mustApply proposedBolt ⟨0⟩ .pay
 
 #guard reversedBolt.pending == .none
 #guard reversedBolt.proposedSpell.isNone
@@ -492,7 +500,7 @@ def tappedForOgre : Game :=
 #guard tappedForOgre.battlefield.any (·.status.tapped)
 
 def reversedOgre : Game :=
-  mustApply tappedForOgre ⟨0⟩ .pass
+  mustApply tappedForOgre ⟨0⟩ .pay
 
 #guard reversedOgre.stack.isEmpty
 #guard reversedOgre.hasPriority ⟨0⟩
