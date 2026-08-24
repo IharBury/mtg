@@ -9,6 +9,11 @@ relaxedAutoImplicit = false
 [[lean_lib]]
 name = "Mtg.Engine"
 
+[[lean_lib]]
+name = "MtgDemo"
+roots = ["Mtg.Demo.WelcomeDecks"]
+globs = ["Mtg.Demo.WelcomeDecks"]
+
 [[lean_exe]]
 name = "mtg-demo"
 root = "Mtg.Demo"

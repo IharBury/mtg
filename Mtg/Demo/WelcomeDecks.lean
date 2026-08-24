@@ -1,3 +1,4 @@
+import Mtg.Engine.Deck
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 
