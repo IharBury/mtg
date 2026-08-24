@@ -11,10 +11,32 @@ namespace Mtg.Engine.Tests
 open Mtg.Engine
 open Mtg.Engine.Catalog
 
-def demoConfig (seed : UInt64 := 20260807) : StartConfig := {
+/-- 60-card constructed red fixture used only by engine tests. -/
+def testRedDeck : Array CardDef :=
+  copies 32 mountain ++
+  copies 4 lightningBolt ++
+  copies 4 shock ++
+  copies 4 ragingGoblin ++
+  copies 4 grayOgre ++
+  copies 4 hillGiant ++
+  copies 4 canyonMinotaur ++
+  copies 4 mountain
+
+/-- 60-card constructed green fixture used only by engine tests. -/
+def testGreenDeck : Array CardDef :=
+  copies 32 forest ++
+  copies 4 llanowarElves ++
+  copies 4 giantGrowth ++
+  copies 4 grizzlyBears ++
+  copies 4 giantSpider ++
+  copies 4 crawWurm ++
+  copies 4 centaurCourser ++
+  copies 4 rumblingBaloth
+
+def testConfig (seed : UInt64 := 20260807) : StartConfig := {
   seats := #[
-    { name := "Chandra", deck := redDeck },
-    { name := "Nissa", deck := greenDeck }
+    { name := "Chandra", deck := testRedDeck },
+    { name := "Nissa", deck := testGreenDeck }
   ]
   format := .constructed
   seed := seed
@@ -22,12 +44,14 @@ def demoConfig (seed : UInt64 := 20260807) : StartConfig := {
 }
 
 def started : Game :=
-  match Start.start (demoConfig 1) with
+  match Start.start (testConfig 1) with
   | .ok g => g
   | .error e => panic! e
 
-#guard isLegalDeck .constructed redDeck
-#guard isLegalDeck .constructed greenDeck
+#guard testRedDeck.size == 60
+#guard testGreenDeck.size == 60
+#guard isLegalDeck .constructed testRedDeck
+#guard isLegalDeck .constructed testGreenDeck
 #guard !isLegalDeck .constructed (copies 5 lightningBolt)
 
 #guard started.players.size == 2

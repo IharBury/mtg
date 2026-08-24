@@ -3,8 +3,11 @@ import Mtg.Engine.Card
 /-!
 # Sample cards
 
-A small Oracle-faithful catalog used by tests and `Mtg.Demo`. The engine
-itself is card-agnostic; these definitions just exercise the rules we model.
+A small Oracle-faithful catalog used by engine tests. The engine itself is
+card-agnostic; these definitions just exercise the rules we model.
+
+Cards from Magic: The Gathering | The Hobbit Welcome Decks live in
+`Mtg.Engine.Catalog.Hobbit`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -176,30 +179,6 @@ def giantGrowth : CardDef := {
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- A 60-card constructed red deck used by the demo. -/
-def redDeck : Array CardDef :=
-  copies 32 mountain ++
-  copies 4 lightningBolt ++
-  copies 4 shock ++
-  copies 4 ragingGoblin ++
-  copies 4 grayOgre ++
-  copies 4 hillGiant ++
-  copies 4 canyonMinotaur ++
-  copies 4 mountain
-
-/-- A 60-card constructed green deck used by the demo. -/
-def greenDeck : Array CardDef :=
-  copies 32 forest ++
-  copies 4 llanowarElves ++
-  copies 4 giantGrowth ++
-  copies 4 grizzlyBears ++
-  copies 4 giantSpider ++
-  copies 4 crawWurm ++
-  copies 4 centaurCourser ++
-  copies 4 rumblingBaloth
-
-#guard redDeck.size == 60
-#guard greenDeck.size == 60
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
 #guard grizzlyBears.hasSorcerySpeed
