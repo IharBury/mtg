@@ -328,6 +328,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         g := g'
     if g.over then break
     IO.print "mtg> "
+    (← IO.getStdout).flush
     let stdin ← IO.getStdin
     let line := (← stdin.getLine).trimAscii.copy
     if line.isEmpty then
