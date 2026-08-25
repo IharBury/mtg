@@ -260,4 +260,17 @@ def mountainLine (g : Game) : String :=
 #guard mentions (snapshot resolvedHunter) "may be played by Chandra"
 #guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
 
+-- Granted trample shows on other Orcs and Goblins you control, not on others.
+#guard mentions
+  (objectLine siegeAndGoblin (namedPermanent siegeAndGoblin "Raging Goblin")) "trample"
+#guard !mentions (objectLine withGoblin (lastPermanent withGoblin)) "trample"
+#guard !mentions
+  (objectLine siegeAndOgre (namedPermanent siegeAndOgre "Gray Ogre")) "trample"
+#guard !mentions
+  (objectLine siegeAndOppGoblin (namedPermanent siegeAndOppGoblin "Raging Goblin"))
+  "trample"
+#guard mentions (stackBlock siegeAttackDeclared) "Orcish Siegemaster's ability"
+#guard mentions (objectLine siegePumpResolved
+  (namedPermanent siegePumpResolved "Orcish Siegemaster")) "3/5"
+
 end Mtg.Demo.RenderTests

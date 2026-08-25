@@ -6,8 +6,8 @@ import Mtg.Engine.TypeLine
 # Card characteristics (CR 108, 109.3, section 2)
 
 A card’s Oracle characteristics: name, mana cost, color, type line, rules
-text, and (when applicable) power, toughness, and keywords we currently
-model.
+text, and (when applicable) power, toughness, keywords, and the static,
+triggered, activated, and spell abilities we currently model.
 -/
 
 namespace Mtg.Engine
@@ -139,6 +139,47 @@ instance : ToString ActivatedAbility where
 
 end ActivatedAbility
 
+/-- A static ability the engine currently understands (CR 604). -/
+inductive StaticAbility where
+  /-- Other creatures you control that have any of these subtypes have trample
+  (e.g. Orcish Siegemaster). -/
+  | otherCreaturesHaveTrample (subtypes : Array String)
+deriving Repr, Inhabited, BEq
+
+namespace StaticAbility
+
+/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`). -/
+def pluralSubtype (s : String) : String :=
+  if s.endsWith "s" then s else s ++ "s"
+
+def toNotation : StaticAbility → String
+  | .otherCreaturesHaveTrample subtypes =>
+    let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
+    s!"Other {who} you control have trample."
+
+instance : ToString StaticAbility where
+  toString := toNotation
+
+end StaticAbility
+
+/-- A triggered ability the engine currently understands (CR 603). -/
+inductive TriggeredAbility where
+  /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
+  is the greatest power among creatures you control. -/
+  | onAttackPumpByGreatestPower
+deriving Repr, Inhabited, BEq
+
+namespace TriggeredAbility
+
+def toNotation : TriggeredAbility → String
+  | .onAttackPumpByGreatestPower =>
+    "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+
+instance : ToString TriggeredAbility where
+  toString := toNotation
+
+end TriggeredAbility
+
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
   name : String
@@ -159,6 +200,10 @@ structure CardDef where
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
+  /-- Static abilities other than printed keywords (CR 604). -/
+  staticAbilities : Array StaticAbility := #[]
+  /-- Triggered abilities (CR 603). -/
+  triggeredAbilities : Array TriggeredAbility := #[]
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -211,10 +256,12 @@ def leftoverOracleLines (c : CardDef) : List String :=
   c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filter (fun line =>
     !line.isEmpty && !isKeywordRestatement c.keywords line)
 
-/-- `{T}: Add` mana abilities, activated abilities, and spell abilities. -/
+/-- `{T}: Add` mana abilities, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
   c.manaAbilities.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
   c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
+  c.staticAbilities.toList.map StaticAbility.toNotation ++
+  c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   match c.spellEffect with
   | some e => [SpellEffect.toNotation e]
   | none => []
@@ -229,10 +276,14 @@ def abilitiesText (c : CardDef) : String :=
   else
     String.intercalate "; " (structuredAbilityLines c)
 
+/-- Keywords `k` plus leftover Oracle / structured abilities. -/
+def keywordsAndAbilitiesOf (c : CardDef) (k : Keywords) : String :=
+  String.intercalate " "
+    ([toString k, c.abilitiesText].filter (fun s => !s.isEmpty))
+
 /-- Keywords and abilities shown next to a card in the demo. -/
 def keywordsAndAbilities (c : CardDef) : String :=
-  String.intercalate " "
-    ([toString c.keywords, c.abilitiesText].filter (fun s => !s.isEmpty))
+  c.keywordsAndAbilitiesOf c.keywords
 
 def typeLine (c : CardDef) : String :=
   let super := String.intercalate " " (c.supertypes.toList.map toString)
@@ -272,6 +323,10 @@ instance : ToString CardDef where
     effect := .searchBasicLandTapped
   }
   (toString ab).startsWith "{2}, {T}, Sacrifice:"
+#guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
+  "Other Orcs and Goblins you control have trample."
+#guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
+  "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 
 end CardDef
 

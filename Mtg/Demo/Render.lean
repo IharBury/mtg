@@ -41,6 +41,11 @@ def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
   if s.isEmpty then "" else s!" {s}"
 
+/-- Like `faceExtras`, but includes keywords granted by other permanents. -/
+def objectFaceExtras (g : Game) (o : GameObject) : String :=
+  let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
+  if s.isEmpty then "" else s!" {s}"
+
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
@@ -58,7 +63,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{faceExtras o.printed}{controlClause g o group}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with

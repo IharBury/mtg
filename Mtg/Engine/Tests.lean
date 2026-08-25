@@ -233,6 +233,11 @@ def uncontrolledPermanent : Game :=
 #guard mentions soldierOfTheGreyHost.summary "flying"
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
+#guard mentions orcishSiegemaster.summary "trample"
+#guard mentions orcishSiegemaster.summary "Other Orcs and Goblins"
+#guard mentions orcishSiegemaster.summary "greatest power"
+#guard orcishSiegemaster.staticAbilities.size == 1
+#guard orcishSiegemaster.triggeredAbilities.size == 1
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -245,6 +250,20 @@ def uncontrolledPermanent : Game :=
   }
   mentions c.abilitiesText "{T}: Add {G}" &&
     mentions c.summary "{T}: Add {G}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Siege"
+    types := #[.creature]
+    power := some 0
+    toughness := some 5
+    keywords := { Keywords.none with trample := true }
+    staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+    triggeredAbilities := #[.onAttackPumpByGreatestPower]
+  }
+  mentions c.abilitiesText "Other Orcs and Goblins" &&
+    mentions c.abilitiesText "greatest power" &&
+    mentions c.summary "trample"
 
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
@@ -1200,5 +1219,197 @@ def resolvedHunterEmpty : Game :=
 #guard resolvedHunterEmpty.stack.isEmpty
 #guard resolvedHunterEmpty.log.any (fun s => mentions s "no cards in their library to exile")
 #guard !(resolvedHunterEmpty.objects.any (fun o => o.zone == .exile))
+
+/-- Orcish Siegemaster grants trample to other Orcs and Goblins you control. -/
+def siegeAndGoblin : Game :=
+  addPermanent (addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩) ragingGoblin ⟨0⟩ ⟨0⟩
+
+def siegeAndOgre : Game :=
+  addPermanent (addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩
+
+def siegeAndOppGoblin : Game :=
+  addPermanent (addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩) ragingGoblin ⟨1⟩ ⟨1⟩
+
+#guard siegeAndGoblin.hasTrample (namedPermanent siegeAndGoblin "Orcish Siegemaster")
+#guard siegeAndGoblin.hasTrample (namedPermanent siegeAndGoblin "Raging Goblin")
+#guard (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin")).trample
+#guard (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin")).haste
+#guard !withGoblin.hasTrample (lastPermanent withGoblin)
+#guard !siegeAndOgre.hasTrample (namedPermanent siegeAndOgre "Gray Ogre")
+#guard !siegeAndOppGoblin.hasTrample (namedPermanent siegeAndOppGoblin "Raging Goblin")
+
+/-- Snowslope Hunter (a Goblin) trampling over Llanowar Elves. -/
+def siegeHunterVsElves : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def hunterGrantedTrampleAttack : Game :=
+  let g := passBoth (skipTo siegeHunterVsElves .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Snowslope Hunter").id])
+
+def hunterGrantedTrampleBlocked : Game :=
+  let g := passBoth hunterGrantedTrampleAttack
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Snowslope Hunter").id)])
+
+def afterGrantedTrample : Game := passBoth hunterGrantedTrampleBlocked
+
+#guard afterGrantedTrample.log.any (fun s =>
+  mentions s "Snowslope Hunter deals 1 combat damage to Llanowar Elves")
+#guard afterGrantedTrample.log.any (fun s =>
+  mentions s "Snowslope Hunter tramples for 1 to Nissa")
+#guard (afterGrantedTrample.player ⟨1⟩).life == 19
+
+/-- Without the Siegemaster, the same Goblin assigns all damage to the blocker. -/
+def hunterOnlyVsElves : Game :=
+  addPermanent (addPermanent started snowslopeHunter ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterHunterNoTrample : Game :=
+  let g := passBoth (skipTo hunterOnlyVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Snowslope Hunter").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Snowslope Hunter").id)])
+  passBoth g
+
+#guard afterHunterNoTrample.log.any (fun s =>
+  mentions s "Snowslope Hunter deals 2 combat damage to Llanowar Elves")
+#guard !afterHunterNoTrample.log.any (fun s => mentions s "tramples")
+#guard (afterHunterNoTrample.player ⟨1⟩).life == 20
+
+/-- A non-Orc, non-Goblin does not receive the grant. -/
+def siegeOgreVsElves : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterOgreNoTrample : Game :=
+  let g := passBoth (skipTo siegeOgreVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Gray Ogre").id)])
+  passBoth g
+
+#guard afterOgreNoTrample.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Llanowar Elves")
+#guard !afterOgreNoTrample.log.any (fun s => mentions s "tramples")
+
+/-- Attack trigger: +X/+0 where X is the greatest power among creatures you control. -/
+def siegeGiantVsBears : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+
+def siegeAttackDeclared : Game :=
+  let g := passBoth (skipTo siegeGiantVsBears .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
+
+#guard siegeAttackDeclared.stack.size == 1
+#guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).name ==
+  "Orcish Siegemaster's ability"
+#guard siegeAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard (namedPermanent siegeAttackDeclared "Orcish Siegemaster").power == 0
+#guard siegeAttackDeclared.step == .declareAttackers
+#guard siegeAttackDeclared.hasPriority ⟨0⟩
+
+def siegePumpResolved : Game := passBoth siegeAttackDeclared
+
+#guard siegePumpResolved.stack.isEmpty
+#guard (namedPermanent siegePumpResolved "Orcish Siegemaster").power == 3
+#guard siegePumpResolved.log.any (fun s => mentions s "gets +3/+0 until end of turn")
+#guard siegePumpResolved.step == .declareAttackers
+
+def siegeReadyToBlock : Game := passBoth siegePumpResolved
+
+#guard siegeReadyToBlock.pending == .declareBlockers
+
+def siegeBlocked : Game :=
+  let g := siegeReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Orcish Siegemaster").id)])
+
+def afterSiegeCombat : Game := passBoth siegeBlocked
+
+#guard afterSiegeCombat.log.any (fun s =>
+  mentions s "Orcish Siegemaster deals 2 combat damage to Grizzly Bears")
+#guard afterSiegeCombat.log.any (fun s =>
+  mentions s "Orcish Siegemaster tramples for 1 to Nissa")
+#guard (afterSiegeCombat.player ⟨1⟩).life == 19
+
+/-- Alone, X is the Siegemaster's own power (0). -/
+def siegeAloneResolved : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
+  passBoth g
+
+#guard (namedPermanent siegeAloneResolved "Orcish Siegemaster").power == 0
+#guard siegeAloneResolved.log.any (fun s => mentions s "gets +0/+0 until end of turn")
+
+/-- Opponent creatures do not count toward X. -/
+def siegeVsWurmResolved : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g crawWurm ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
+  passBoth g
+
+#guard (namedPermanent siegeVsWurmResolved "Orcish Siegemaster").power == 0
+
+/-- X uses current power, including until-end-of-turn pumps. -/
+def siegePumpedGiantResolved : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let g := g.applyEffect ⟨0⟩ (.pump 2 0)
+    #[Target.permanent (namedPermanent g "Hill Giant").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
+  passBoth g
+
+#guard (namedPermanent siegePumpedGiantResolved "Hill Giant").power == 5
+#guard (namedPermanent siegePumpedGiantResolved "Orcish Siegemaster").power == 5
+#guard siegePumpedGiantResolved.log.any (fun s => mentions s "gets +5/+0 until end of turn")
+
+/-- If the source leaves before the trigger resolves, the pump does not happen. -/
+def siegeSourceGone : Game :=
+  let g := siegeAttackDeclared
+  let id := (namedPermanent g "Orcish Siegemaster").id
+  let (g, _) := g.move id (.graveyard (g.object! id).owner) none
+  passBoth g
+
+#guard siegeSourceGone.stack.isEmpty
+#guard !(siegeSourceGone.battlefield.any (fun o => o.name == "Orcish Siegemaster"))
+#guard siegeSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard (namedPermanent siegeSourceGone "Hill Giant").status.pumpPower == 0
+
+/-- The +X/+0 wears off in cleanup. -/
+def afterSiegeCleanup : Game := passBoth (skipTo siegePumpResolved .end 80)
+
+#guard (namedPermanent afterSiegeCleanup "Orcish Siegemaster").power == 0
+#guard (namedPermanent afterSiegeCleanup "Orcish Siegemaster").status.pumpPower == 0
+
+/-- Printed trample still assigns leftover damage (Beorn 5/5 vs Grizzly Bears 2/2). -/
+def afterBeornTrample : Game :=
+  let g := addPermanent (addPermanent started beornReluctantHost ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Beorn, Reluctant Host").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Beorn, Reluctant Host").id)])
+  passBoth g
+
+#guard afterBeornTrample.log.any (fun s =>
+  mentions s "Beorn, Reluctant Host deals 2 combat damage to Grizzly Bears")
+#guard afterBeornTrample.log.any (fun s =>
+  mentions s "Beorn, Reluctant Host tramples for 3 to Nissa")
+#guard (afterBeornTrample.player ⟨1⟩).life == 17
 
 end Mtg.Engine.Tests
