@@ -436,9 +436,16 @@ None are modeled yet. -/
 def hasWaitingTriggers (_g : Game) : Bool :=
   false
 
-/-- Whether a player currently receives priority (CR 117.3a, 502.4, 514.3). -/
+/-- CR 103.8a: in a two-player game the starting player skips the draw step
+of their first turn. -/
+def skipsFirstDraw (g : Game) : Bool :=
+  g.isFirstTurn && g.players.size == 2 && g.activePlayer == g.startingPlayer
+
+/-- Whether a player currently receives priority (CR 117.3a, 502.4, 514.3,
+103.8a / 500.11). A skipped draw step grants none. -/
 def playersReceivePriority (g : Game) : Bool :=
   if g.step == .cleanup then g.cleanupGivesPriority
+  else if g.step == .draw && g.skipsFirstDraw then false
   else g.step.playersReceivePriority
 
 def receivePriority (g : Game) (p : PlayerId) : Game :=
@@ -1073,7 +1080,8 @@ def startNextTurn (g : Game) : Game :=
   g.logMsg s!"It is now {g.player nxt |>.name}'s turn {g.turnNumber}"
 
 /-- `partial` because a silent cleanup (CR 514.3) immediately begins the next
-turn, which re-enters `beginStep`. -/
+turn, and a skipped draw step (CR 103.8a / 500.11) immediately begins
+precombat main; both re-enter `beginStep`. -/
 partial def beginStep (g : Game) (st : Step) : Game :=
   let g := { g with
     step := st
@@ -1099,9 +1107,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>
-    if g.isFirstTurn && g.players.size == 2 && g.activePlayer == g.startingPlayer then
+    if g.skipsFirstDraw then
+      -- CR 103.8a / 500.11 / 614.10: to skip a step is to proceed past it as
+      -- though it didn't exist. Nothing happens during it — no turn-based
+      -- draw, and no player receives priority.
       g.logMsg s!"{g.player g.activePlayer |>.name} skips their first draw step (CR 103.8a)"
-        |>.receivePriority g.activePlayer
+        |>.beginStep .precombatMain
     else
       g.draw g.activePlayer |>.receivePriority g.activePlayer
   | .declareAttackers =>
