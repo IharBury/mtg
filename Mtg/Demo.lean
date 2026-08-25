@@ -11,6 +11,7 @@ game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
 to play Chandra against the agent-controlled Nissa, or `--multiplayer` to issue
 every player's actions from the console. In either interactive mode, `visible`
 prints only information that player can see; `--visible` starts in that view.
+`--input FILE` runs commands from the file first, then reads from the console.
 -/
 
 open Mtg.Engine
@@ -22,7 +23,8 @@ def usage : String :=
   "Mtg.Demo — demonstration of the Mtg.Engine rules engine
 
 Usage:
-  lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible] [--seed N] [--fuel N]
+  lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
+                    [--input FILE] [--seed N] [--fuel N]
 
 Options:
   --auto          Run a heuristic two-player game (default)
@@ -30,6 +32,8 @@ Options:
   --multiplayer   Control both players from the console
   --visible       With --interactive or --multiplayer, hide information the
                   acting player cannot see
+  --input FILE    With --interactive or --multiplayer, run these commands
+                  first, then read from the console
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --help          Show this help
@@ -145,6 +149,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "Chandra can see").length > 1
 #guard ((helpInteractive true).splitOn "the acting player can see").length > 1
 #guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
+#guard (usage.splitOn "--input FILE").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -815,12 +820,44 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error msg => msg == "Unknown command: xyzzy"
   | .ok _ => false
 
+/-- Non-empty trimmed commands from an input file (one command per line). -/
+def commandsFromLines (lines : Array String) : List String :=
+  lines.toList.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
+
+#guard commandsFromLines #["keep", "pass"] == ["keep", "pass"]
+#guard commandsFromLines #["  keep  ", "", "pass"] == ["keep", "pass"]
+#guard commandsFromLines #["", "  \t  "] == []
+#guard commandsFromLines #["keep\r", "bottom 3 4"] == ["keep", "bottom 3 4"]
+
+/-- Load `--input` commands, or `[]` when no file was given. -/
+def pendingCommands (inputFile : Option String) : IO (Except String (List String)) := do
+  match inputFile with
+  | none => return .ok []
+  | some path =>
+    try
+      let lines ← IO.FS.lines path
+      return .ok (commandsFromLines lines)
+    catch e =>
+      return .error s!"Failed to read input file {path}: {e}"
+
+/-- Next console command: remaining file lines first, then stdin. File lines
+are echoed after the prompt so a replay looks like a typed session. -/
+def nextCommandLine (pending : List String) : IO (String × List String) := do
+  match pending with
+  | line :: rest =>
+    IO.println line
+    return (line, rest)
+  | [] =>
+    let stdin ← IO.getStdin
+    return ((← stdin.getLine).trimAscii.copy, [])
+
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
-    (controlAll : Bool := false) : IO Unit := do
+    (controlAll : Bool := false) (pending : List String := []) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
   let mut playerView := startVisible
   let mut lastActor : Option PlayerId := g.actor
+  let mut pending := pending
   let chandra : PlayerId := ⟨0⟩
   let nissa : PlayerId := ⟨1⟩
   IO.println (helpInteractive controlAll)
@@ -856,8 +893,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         "mtg> "
     IO.print prompt
     (← IO.getStdout).flush
-    let stdin ← IO.getStdin
-    let line := (← stdin.getLine).trimAscii.copy
+    let (line, rest) ← nextCommandLine pending
+    pending := rest
     if line.isEmpty then
       continue
     let parts := line.splitOn " "
@@ -908,6 +945,7 @@ structure DemoOptions where
   playerView : Bool
   seed : UInt64
   fuel : Nat
+  inputFile : Option String
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   Id.run do
@@ -916,6 +954,7 @@ def parseArgs (args : List String) : Except String DemoOptions :=
     let mut playerView := false
     let mut seed : UInt64 := 20260807
     let mut fuel : Nat := 800
+    let mut inputFile : Option String := none
     let mut rest := args
     while !rest.isEmpty do
       match rest with
@@ -937,6 +976,13 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       | "--visible" :: xs =>
         playerView := true
         rest := xs
+      | "--input" :: path :: xs =>
+        if path.startsWith "--" then
+          return .error "Missing input file path"
+        else
+          inputFile := some path
+          rest := xs
+      | "--input" :: [] => return .error "Missing input file path"
       | "--seed" :: n :: xs =>
         match n.toNat? with
         | none => return .error s!"Bad seed: {n}"
@@ -953,12 +999,15 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       | [] => break
     if playerView && !interactive then
       return .error "--visible requires --interactive or --multiplayer"
+    if inputFile.isSome && !interactive then
+      return .error "--input requires --interactive or --multiplayer"
     return .ok {
       interactive := interactive
       multiplayer := multiplayer
       playerView := playerView
       seed := seed
       fuel := fuel
+      inputFile := inputFile
     }
 
 #guard
@@ -996,6 +1045,41 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | .error msg => msg == "--visible requires --interactive or --multiplayer"
   | .ok _ => false
 
+#guard
+  match parseArgs ["--interactive"] with
+  | .ok opt => opt.inputFile.isNone
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--input", "opening.txt"] with
+  | .ok opt => opt.interactive && !opt.multiplayer && opt.inputFile == some "opening.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--input", "opening.txt"] with
+  | .ok opt => opt.interactive && opt.multiplayer && opt.inputFile == some "opening.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--input", "opening.txt"] with
+  | .error msg => msg == "--input requires --interactive or --multiplayer"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--auto", "--input", "opening.txt"] with
+  | .error msg => msg == "--input requires --interactive or --multiplayer"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--interactive", "--input"] with
+  | .error msg => msg == "Missing input file path"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--interactive", "--input", "--visible"] with
+  | .error msg => msg == "Missing input file path"
+  | .ok _ => false
+
 def main (args : List String) : IO UInt32 := do
   match parseArgs args with
   | .error "help" =>
@@ -1006,9 +1090,14 @@ def main (args : List String) : IO UInt32 := do
     IO.println usage
     return 1
   | .ok opt =>
-    let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
-    if opt.interactive then
-      interactiveLoop g opt.playerView opt.multiplayer
-    else
-      runAuto g opt.fuel
-    return 0
+    match (← pendingCommands opt.inputFile) with
+    | .error e =>
+      IO.eprintln e
+      return 1
+    | .ok pending =>
+      let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
+      if opt.interactive then
+        interactiveLoop g opt.playerView opt.multiplayer pending
+      else
+        runAuto g opt.fuel
+      return 0

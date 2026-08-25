@@ -37,13 +37,17 @@ interactively:
 lake exe mtg-demo
 lake exe mtg-demo -- --interactive
 lake exe mtg-demo -- --interactive --visible
+lake exe mtg-demo -- --interactive --input opening.txt
 lake exe mtg-demo -- --multiplayer
 lake exe mtg-demo -- --multiplayer --visible
+lake exe mtg-demo -- --multiplayer --input opening.txt
 lake exe mtg-demo -- --seed 42 --fuel 200
 ```
 
 `--interactive` is Chandra against a heuristic Nissa. `--multiplayer` lets you
 issue every player's actions from the console; the prompt names who must act.
+`--input FILE` (one command per line) runs those commands first in either
+interactive mode, then further commands come from the console.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
