@@ -6,7 +6,6 @@ import Mtg.Engine.Color
 import Mtg.Engine.Deck
 import Mtg.Engine.Game
 import Mtg.Engine.Mana
-import Mtg.Engine.Render
 import Mtg.Engine.Rules
 import Mtg.Engine.Tests
 import Mtg.Engine.Turn

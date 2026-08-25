@@ -1,6 +1,6 @@
 name = "mtg"
 version = "0.1.0"
-defaultTargets = ["Mtg.Engine", "mtg-demo"]
+defaultTargets = ["Mtg.Engine", "MtgDemo", "mtg-demo"]
 
 [leanOptions]
 autoImplicit = false
@@ -11,8 +11,8 @@ name = "Mtg.Engine"
 
 [[lean_lib]]
 name = "MtgDemo"
-roots = ["Mtg.Demo.WelcomeDecks"]
-globs = ["Mtg.Demo.WelcomeDecks"]
+roots = ["Mtg.Demo.WelcomeDecks", "Mtg.Demo.Render", "Mtg.Demo.RenderTests"]
+globs = ["Mtg.Demo.*"]
 
 [[lean_exe]]
 name = "mtg-demo"

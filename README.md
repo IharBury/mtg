@@ -48,11 +48,11 @@ players' hand sizes but not the cards themselves). `visible on` (or the
 
 | Path | Purpose |
 | --- | --- |
-| `lakefile.toml` | Lake package (`Mtg.Engine` library, `MtgDemo` deck module, `mtg-demo` executable). |
+| `lakefile.toml` | Lake package (`Mtg.Engine` library, `MtgDemo` demo library, `mtg-demo` executable). |
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
 | `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
-| `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration and Welcome Deck lists. |
+| `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, and Welcome Deck lists. |
 
 ## Current coverage
 

@@ -4,7 +4,7 @@ import Mtg.Engine.Game
 # Text rendering of a game for the console demo.
 -/
 
-namespace Mtg.Engine.Render
+namespace Mtg.Demo.Render
 
 open Mtg.Engine
 open Mtg.Engine.Game
@@ -297,4 +297,4 @@ def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String 
       | _ => shown.toList.map (zoneLine g z)
     title ++ ":\n  " ++ String.intercalate "\n  " lines
 
-end Mtg.Engine.Render
+end Mtg.Demo.Render

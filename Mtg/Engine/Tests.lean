@@ -2,7 +2,6 @@ import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Game
-import Mtg.Engine.Render
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -12,7 +11,6 @@ namespace Mtg.Engine.Tests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
-open Mtg.Engine.Render
 
 /-- 60-card constructed red fixture used only by engine tests. -/
 def testRedDeck : Array CardDef :=
@@ -118,13 +116,7 @@ def played : Game :=
 
 #guard played.log.size > 10
 #guard played.turnNumber ≥ 1
-
-#guard (changedZones started started).isEmpty
-#guard (zoneObjectIds started (.hand ⟨0⟩)).size == 7
-#guard (zoneObjectIds started (.library ⟨0⟩)).size == 53
-#guard (zoneObjectIds started .stack).isEmpty
-#guard zoneBlock started .stack == "zone stack (0): (empty)"
-#guard zoneBlock started (.library ⟨0⟩) == "zone Chandra's library (53)"
+#guard started.stack.isEmpty
 
 /-- `true` iff `needle` occurs in `haystack`. -/
 def mentions (haystack needle : String) : Bool :=
@@ -136,56 +128,11 @@ def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
   | some o => o
   | none => panic! "expected a card in hand"
 
-#guard canSeeZoneFaces none (.hand ⟨1⟩)
-#guard canSeeZoneFaces (some ⟨0⟩) (.hand ⟨0⟩)
-#guard !canSeeZoneFaces (some ⟨0⟩) (.hand ⟨1⟩)
-#guard !canSeeZoneFaces none (.library ⟨0⟩)
-#guard !canSeeZoneFaces (some ⟨0⟩) (.library ⟨0⟩)
-#guard canSeeZoneFaces (some ⟨0⟩) .battlefield
-#guard canSeeZoneFaces (some ⟨0⟩) (.graveyard ⟨1⟩)
-
-#guard zoneBlock started (.library ⟨0⟩) (some ⟨0⟩) == "zone Chandra's library (53)"
-#guard zoneBlock started (.hand ⟨1⟩) (some ⟨0⟩) == "zone Nissa's hand (7)"
-#guard mentions (zoneBlock started (.hand ⟨0⟩) (some ⟨0⟩)) (firstHandCard started ⟨0⟩).name
-#guard !mentions (zoneBlock started (.hand ⟨1⟩) (some ⟨0⟩)) (firstHandCard started ⟨1⟩).name
-#guard mentions (zoneBlock started (.hand ⟨1⟩)) (firstHandCard started ⟨1⟩).name
-
-#guard mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩)) "Hand (7):"
-#guard mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩)) "(hidden)"
-#guard !mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩))
-  (firstHandCard started ⟨1⟩).name
-#guard mentions (playerBlock started (started.player ⟨0⟩) (some ⟨0⟩))
-  (firstHandCard started ⟨0⟩).name
-
-#guard mentions (snapshot started (some ⟨0⟩)) "Chandra's view"
-#guard !mentions (snapshot started) "view"
-#guard mentions (snapshot started (some ⟨0⟩)) (firstHandCard started ⟨0⟩).name
-#guard !mentions (snapshot started (some ⟨0⟩)) (firstHandCard started ⟨1⟩).name
-#guard mentions (snapshot started) (firstHandCard started ⟨1⟩).name
-
-#guard redactLogLine started ⟨0⟩ "Nissa draws Forest" == "Nissa draws a card"
-#guard redactLogLine started ⟨0⟩ "Chandra draws Mountain" == "Chandra draws Mountain"
-#guard redactLogLine started ⟨0⟩ "Nissa puts Forest on the bottom of their library" ==
-  "Nissa puts a card on the bottom of their library"
-#guard redactLogLine started ⟨0⟩ "Nissa puts Forest onto the battlefield tapped" ==
-  "Nissa puts Forest onto the battlefield tapped"
-#guard (newLog started 0 (some ⟨0⟩)).any (· == "Nissa draws a card")
-#guard !(newLog started 0 (some ⟨0⟩)).any (fun s =>
-  s.startsWith "Nissa draws " && s != "Nissa draws a card")
-#guard (newLog started 0).any (fun s =>
-  s.startsWith "Nissa draws " && s != "Nissa draws a card")
-
 def drawnOnce : Game := Game.draw started ⟨0⟩
 
-#guard (zoneObjectIds drawnOnce (.hand ⟨0⟩)).size == 8
-#guard (zoneObjectIds drawnOnce (.library ⟨0⟩)).size == 52
-#guard (changedZones started drawnOnce).contains (.hand ⟨0⟩)
-#guard (changedZones started drawnOnce).contains (.library ⟨0⟩)
-#guard !(changedZones started drawnOnce).contains .battlefield
-#guard !(changedZones started drawnOnce).contains .stack
-#guard zoneBlock drawnOnce (.hand ⟨1⟩) (some ⟨0⟩) == "zone Nissa's hand (7)"
-#guard mentions (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)) (firstHandCard drawnOnce ⟨0⟩).name
-#guard (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)).startsWith "zone Chandra's hand (8):"
+#guard (drawnOnce.player ⟨0⟩).hand.size == 8
+#guard (drawnOnce.player ⟨0⟩).library.size == 52
+#guard (drawnOnce.player ⟨1⟩).hand.size == 7
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
@@ -219,134 +166,56 @@ def tappedMountain : Game :=
       | .ok g => g
       | .error e => panic! e
 
--- Occupants are unchanged, but the land is now tapped, so the battlefield
--- must reprint (the demo shows the land as tapped).
-#guard (zoneObjectIds withMountain .battlefield) == (zoneObjectIds tappedMountain .battlefield)
-#guard battlefieldView withMountain != battlefieldView tappedMountain
-#guard (zoneBlock withMountain .battlefield) != (zoneBlock tappedMountain .battlefield)
-#guard (changedZones withMountain tappedMountain).contains .battlefield
-#guard (changedZones withMountain withMountain).isEmpty
+-- Occupants are unchanged, but the land is now tapped (CR 110.5 / 605.3a).
+#guard withMountain.battlefield.map (·.id) == tappedMountain.battlefield.map (·.id)
 #guard tappedMountain.battlefield.any (·.status.tapped)
 #guard !(withMountain.battlefield.any (·.status.tapped))
 #guard (tappedMountain.player ⟨0⟩).manaPool != (withMountain.player ⟨0⟩).manaPool
-#guard (changedManaPools withMountain tappedMountain).size == 1
-#guard (changedManaPools withMountain tappedMountain).any (fun pl =>
-  pl.id == ⟨0⟩ && !pl.manaPool.isEmpty)
-#guard manaLine (tappedMountain.player ⟨0⟩) == "Chandra — mana {R}×1"
 
-/-- Battlefield rendering names owner and controller (CR 108.3, 110.2). -/
+/-- Last permanent on the battlefield; tests assume one is present. -/
 def lastPermanent (g : Game) : GameObject :=
   match g.battlefield.back? with
   | some o => o
   | none => panic! "expected a permanent on the battlefield"
 
-def mountainLine (g : Game) : String :=
-  objectLine g (lastPermanent g)
-
-#guard mountainLine withMountain ==
-  s!"{(lastPermanent withMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
-#guard mentions (mountainLine withMountain) "{T}: Add {R}"
--- Ungrouped lines still name owner and controller. Grouped battlefield
--- listings omit them when they match the controller heading.
-#guard !mentions (zoneBlock withMountain .battlefield) "owned by"
-#guard !mentions (zoneBlock withMountain .battlefield) "controlled by"
-#guard !mentions (snapshot withMountain) "owned by"
-#guard !mentions (snapshot withMountain) "controlled by"
-#guard mentions (mountainLine tappedMountain) "(tapped)"
-#guard mentions (mountainLine tappedMountain)
-  "(owned by Chandra, controlled by Chandra)"
-
 /-- Untap is a turn-based action (CR 502.2): occupants stay put, but the land
-is no longer tapped, so the demo reprints the battlefield. -/
+is no longer tapped. -/
 def afterUntapStep : Game := tappedMountain.beginStep .untap
 
-#guard (zoneObjectIds tappedMountain .battlefield) == (zoneObjectIds afterUntapStep .battlefield)
-#guard battlefieldView tappedMountain != battlefieldView afterUntapStep
-#guard (zoneBlock tappedMountain .battlefield) != (zoneBlock afterUntapStep .battlefield)
-#guard (changedZones tappedMountain afterUntapStep).contains .battlefield
+#guard tappedMountain.battlefield.map (·.id) == afterUntapStep.battlefield.map (·.id)
 #guard afterUntapStep.step == .untap
 #guard !(afterUntapStep.battlefield.any (·.status.tapped))
-#guard !mentions (mountainLine afterUntapStep) "(tapped)"
 #guard afterUntapStep.log.any (fun s => mentions s "untaps Mountain")
 
-/-- A permanent Chandra owns and Nissa controls is listed on Nissa's side. -/
+/-- A permanent Chandra owns and Nissa controls is among Nissa's permanents. -/
 def stolenMountain : Game := addPermanent started mountain ⟨0⟩ ⟨1⟩
 
-#guard mountainLine stolenMountain ==
-  s!"{(lastPermanent stolenMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 #guard (stolenMountain.permanentsOf ⟨1⟩).any (·.id == (lastPermanent stolenMountain).id)
 #guard !(stolenMountain.permanentsOf ⟨0⟩).any (·.id == (lastPermanent stolenMountain).id)
--- Grouped under Nissa: owner differs, so it is printed; controller matches.
-#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
-  "(owned by Chandra)"
-#guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
-  "controlled by"
-#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "  (none)"
-#guard mentions (zoneBlock stolenMountain .battlefield)
-  "(owned by Chandra)"
-#guard !mentions (zoneBlock stolenMountain .battlefield) "controlled by"
-#guard mentions (snapshot stolenMountain)
-  "(owned by Chandra)"
-#guard !mentions (snapshot stolenMountain) "controlled by"
+#guard (lastPermanent stolenMountain).owner == ⟨0⟩
+#guard (lastPermanent stolenMountain).controller == some ⟨1⟩
 
-/-- Changing control without moving the permanent still reprints the battlefield. -/
+/-- Changing control does not move the permanent off the battlefield. -/
 def afterControlChange : Game :=
   let o := lastPermanent withMountain
   withMountain.setObject { o with controller := some ⟨1⟩ }
 
-#guard (zoneObjectIds withMountain .battlefield) == (zoneObjectIds afterControlChange .battlefield)
-#guard battlefieldView withMountain != battlefieldView afterControlChange
-#guard (changedZones withMountain afterControlChange).contains .battlefield
-#guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
-  "(owned by Chandra, controlled by Nissa)"
-#guard mentions (objectLine afterControlChange (lastPermanent afterControlChange)
-  (some (some ⟨1⟩))) "(owned by Chandra)"
-#guard !mentions (objectLine afterControlChange (lastPermanent afterControlChange)
-  (some (some ⟨1⟩))) "controlled by"
+#guard withMountain.battlefield.map (·.id) == afterControlChange.battlefield.map (·.id)
+#guard (lastPermanent afterControlChange).controller == some ⟨1⟩
+#guard (lastPermanent afterControlChange).owner == ⟨0⟩
 
-/- The shared battlefield listing is grouped by controller (CR 110.2). -/
-#guard zoneBlock started .battlefield == "zone battlefield (0): (empty)"
-
-#guard
-  let m := lastPermanent withMountain
-  zoneBlock withMountain .battlefield ==
-    s!"zone battlefield (1):\n  Chandra:\n    {objectLine withMountain m (some (some ⟨0⟩))}"
-
-#guard
-  let m := lastPermanent stolenMountain
-  zoneBlock stolenMountain .battlefield ==
-    s!"zone battlefield (1):\n  Nissa:\n    {objectLine stolenMountain m (some (some ⟨1⟩))}"
-
-/-- Nissa's permanent entered first; the listing still groups Chandra before Nissa. -/
+/-- Nissa's permanent entered first; Chandra still has a later Forest. -/
 def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
 
-#guard
-  let forestP := (mixedControllers.permanentsOf ⟨0⟩)[0]!
-  let mountainP := (mixedControllers.permanentsOf ⟨1⟩)[0]!
-  forestP.name == "Forest" && mountainP.name == "Mountain" &&
-    zoneBlock mixedControllers .battlefield ==
-      s!"zone battlefield (2):\n  Chandra:\n    {objectLine mixedControllers forestP (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine mixedControllers mountainP (some (some ⟨1⟩))}"
+#guard (mixedControllers.permanentsOf ⟨0⟩)[0]!.name == "Forest"
+#guard (mixedControllers.permanentsOf ⟨1⟩)[0]!.name == "Mountain"
 
 def uncontrolledPermanent : Game :=
   let o := lastPermanent withMountain
   withMountain.setObject { o with controller := none }
 
-#guard
-  let m := lastPermanent uncontrolledPermanent
-  zoneBlock uncontrolledPermanent .battlefield ==
-    s!"zone battlefield (1):\n  (no controller):\n    {objectLine uncontrolledPermanent m (some none)}"
-
--- Owner still prints under the no-controller heading; "no controller" does not
--- repeat on the permanent line.
-#guard mentions (zoneBlock uncontrolledPermanent .battlefield) "(owned by Chandra)"
-#guard !mentions (objectLine uncontrolledPermanent (lastPermanent uncontrolledPermanent)
-  (some none)) "no controller"
-#guard !mentions (objectLine withMountain (lastPermanent withMountain) (some (some ⟨0⟩)))
-  "owned by"
-#guard !mentions (objectLine mixedControllers
-  ((mixedControllers.permanentsOf ⟨0⟩)[0]!) (some (some ⟨0⟩))) "owned by"
-#guard mentions (objectLine mixedControllers
-  ((mixedControllers.permanentsOf ⟨1⟩)[0]!) (some (some ⟨1⟩))) "(owned by Chandra)"
+#guard (lastPermanent uncontrolledPermanent).controller.isNone
+#guard (lastPermanent uncontrolledPermanent).owner == ⟨0⟩
 
 /- Hands, battlefield, and other zones print keywords and abilities. -/
 #guard mentions ragingGoblin.summary "haste"
@@ -381,15 +250,6 @@ def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
-
-#guard mentions (objectLine withGoblin (lastPermanent withGoblin)) "haste"
-#guard mentions (playerBlock withGoblin (withGoblin.player ⟨0⟩)) "haste"
-#guard mentions (objectLine withElves (lastPermanent withElves)) "{T}: Add {G}"
-#guard mentions (objectLine withSpider (lastPermanent withSpider)) "reach"
-#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "deathtouch"
-#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "Landfall"
-#guard mentions (zoneLine withAttercop .battlefield (lastPermanent withAttercop).id)
-  "Landfall"
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
@@ -487,7 +347,7 @@ def nissaDraw : Game := passBoth nissaTurn2
 #guard nissaDraw.log.any (fun s => mentions s "Nissa draws")
 
 /-- The pass that ends Nissa's turn also runs Chandra's untap. Occupants are
-unchanged, but the land is now untapped, so the demo reprints the battlefield. -/
+unchanged, but the land is now untapped (CR 502.2). -/
 def nissaEnd : Game := skipTo nissaTurn2 .end 80
 def chandraTurn3 : Game := passBoth nissaEnd
 
@@ -498,11 +358,7 @@ def chandraTurn3 : Game := passBoth nissaEnd
 #guard chandraTurn3.activePlayer == ⟨0⟩
 #guard chandraTurn3.step == .upkeep
 #guard !(chandraTurn3.battlefield.any (·.status.tapped))
-#guard (zoneObjectIds nissaEnd .battlefield) == (zoneObjectIds chandraTurn3 .battlefield)
-#guard battlefieldView nissaEnd != battlefieldView chandraTurn3
-#guard (changedZones nissaEnd chandraTurn3).contains .battlefield
-#guard mentions (zoneBlock nissaEnd .battlefield) "(tapped)"
-#guard !mentions (zoneBlock chandraTurn3 .battlefield) "(tapped)"
+#guard nissaEnd.battlefield.map (·.id) == chandraTurn3.battlefield.map (·.id)
 #guard chandraTurn3.log.any (fun s => mentions s "untaps Mountain")
 
 /-- CR 514.3a: ending a pump that was keeping a 0/0 alive causes a state-based
@@ -527,11 +383,6 @@ def afterExceptionCleanup : Game := passBoth cleanupWithSBA
 #guard afterExceptionCleanup.activePlayer == ⟨1⟩
 #guard !afterExceptionCleanup.cleanupGivesPriority
 
-#guard (changedLifeTotals started started).isEmpty
-#guard (changedLifeTotals started afterDraw).isEmpty
-#guard lifeLine (started.player ⟨0⟩) == "Chandra — life 20"
-#guard lifeLine (started.player ⟨1⟩) == "Nissa — life 20"
-
 /-- Lightning Bolt to a player (CR 120.3a) changes that player's life total. -/
 def afterBolt : Game :=
   started.applyEffect ⟨0⟩ (.dealDamage 3) #[Target.player ⟨1⟩]
@@ -539,10 +390,6 @@ def afterBolt : Game :=
 #guard (started.player ⟨1⟩).life == 20
 #guard (afterBolt.player ⟨1⟩).life == 17
 #guard (afterBolt.player ⟨0⟩).life == 20
-#guard (changedLifeTotals started afterBolt).size == 1
-#guard (changedLifeTotals started afterBolt).any (fun pl => pl.id == ⟨1⟩ && pl.life == 17)
-#guard lifeLine (afterBolt.player ⟨1⟩) == "Nissa — life 17"
-#guard mentions (playerBlock afterBolt (afterBolt.player ⟨1⟩)) "life 17"
 #guard afterBolt.log.any (fun s => mentions s "17 life")
 
 /-- Unblocked combat damage (CR 510.1a / 120.3a) also changes life. -/
@@ -556,12 +403,7 @@ def afterCombatDamage : Game := attackingGoblin.combatDamage
 #guard ragingGoblin.power == some 1
 #guard (attackingGoblin.player ⟨1⟩).life == 20
 #guard (afterCombatDamage.player ⟨1⟩).life == 19
-#guard (changedLifeTotals attackingGoblin afterCombatDamage).size == 1
-#guard (changedLifeTotals attackingGoblin afterCombatDamage).any (fun pl =>
-  pl.id == ⟨1⟩ && pl.life == 19)
-#guard lifeLine (afterCombatDamage.player ⟨1⟩) == "Nissa — life 19"
 #guard afterCombatDamage.log.any (fun s => mentions s "19 life")
-#guard (changedZones attackingGoblin afterCombatDamage).isEmpty
 
 /-- Put `card` into `p`'s hand without drawing. -/
 def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
@@ -640,9 +482,6 @@ def proposedBolt : Game :=
 #guard proposedBolt.actor == some ⟨0⟩
 #guard proposedBolt.log.any (fun s => mentions s "begins casting Lightning Bolt")
 #guard proposedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
-#guard mentions (header proposedBolt) "activate mana abilities (CR 601.2g)"
-#guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
-#guard (changedZones boltSetup proposedBolt).contains .stack
 
 /-- Opponent cannot activate mana abilities during the caster's 601.2g window. -/
 def nissaTapDenied : Bool :=
@@ -690,7 +529,6 @@ def paidBolt : Game :=
 #guard (paidBolt.player ⟨0⟩).manaPool.isEmpty
 #guard !paidBolt.stack.isEmpty
 #guard paidBolt.log.any (fun s => mentions s "casts Lightning Bolt")
-#guard !mentions (header paidBolt) "activate mana abilities"
 
 /-- Paying without enough mana reverses the cast (CR 601.2 / 733.1). -/
 def reversedBolt : Game :=
@@ -810,20 +648,6 @@ def bearsBlockOgre : Game :=
 #guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
 #guard bearsBlockOgre.pending == .none
 
--- The demo names the attacker a blocker is assigned to (CR 509.1a).
-#guard
-  let g := bearsBlockOgre
-  let bears := namedPermanent g "Grizzly Bears"
-  let ogre := namedPermanent g "Gray Ogre"
-  objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
-  mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
-  mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
-  mentions (objectLine g ogre) "*attacking*"
-#guard !mentions
-  (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
-  "*blocking"
-
 /-- Blocking sends combat damage to the creature, not the defending player. -/
 def afterBlockedDamage : Game := passBoth bearsBlockOgre
 
@@ -842,30 +666,10 @@ def afterUnblockedDamage : Game :=
 #guard afterUnblockedDamage.log.any (fun s =>
   mentions s "Gray Ogre deals 2 combat damage to Nissa")
 
-#guard (changedManaPools started started).isEmpty
-#guard (changedManaPools started afterDraw).isEmpty
-#guard manaLine (started.player ⟨0⟩) == "Chandra — mana {}"
-#guard manaLine (started.player ⟨1⟩) == "Nissa — mana {}"
-#guard mentions (playerBlock tappedMountain (tappedMountain.player ⟨0⟩)) "mana {R}×1"
-
--- Paying a mana cost (CR 601.2h) spends the pool; the demo reprints the new
--- contents.
-#guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
-#guard (changedManaPools proposedBolt tappedForBolt).size == 1
-#guard manaLine (tappedForBolt.player ⟨0⟩) == "Chandra — mana {R}×1"
-#guard (changedManaPools tappedForBolt paidBolt).size == 1
-#guard (changedManaPools tappedForBolt paidBolt).any (fun pl =>
-  pl.id == ⟨0⟩ && pl.manaPool.isEmpty)
-#guard manaLine (paidBolt.player ⟨0⟩) == "Chandra — mana {}"
-
 /-- Unused mana is emptied as a turn-based action (CR 500.4). -/
 def emptiedPool : Game := tappedMountain.emptyManaPools
 
 #guard (emptiedPool.player ⟨0⟩).manaPool.isEmpty
-#guard (changedManaPools tappedMountain emptiedPool).size == 1
-#guard (changedManaPools tappedMountain emptiedPool).any (fun pl =>
-  pl.id == ⟨0⟩ && pl.manaPool.isEmpty)
-#guard manaLine (emptiedPool.player ⟨0⟩) == "Chandra — mana {}"
 #guard emptiedPool.log.any (fun s => mentions s "empties mana pool")
 
 /-- CR 103.5: the starting player declares first; the mulligan is taken only
@@ -894,7 +698,6 @@ def afterChandraMulligan : Game :=
 #guard (afterChandraMulligan.player ⟨1⟩).hand == (drawnHands.player ⟨1⟩).hand
 #guard afterChandraMulligan.log.any (fun s => mentions s "takes a mulligan")
 #guard afterChandraMulligan.log.any (fun s => mentions s "at the same time")
-#guard mentions (header afterChandraMulligan) "on the bottom"
 
 def chandraBottomCard : GameObject :=
   match (afterChandraMulligan.handObjects ⟨0⟩)[0]? with
@@ -912,8 +715,6 @@ def afterChandraBottoms : Game :=
 #guard (afterChandraBottoms.object! (afterChandraBottoms.player ⟨0⟩).library[0]!).name ==
   chandraBottomCard.name
 #guard afterChandraBottoms.log.any (fun s => mentions s "on the bottom of their library")
-#guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.hand ⟨0⟩)
-#guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.library ⟨0⟩)
 
 def afterChandraKeepsSix : Game :=
   mustApply afterChandraBottoms ⟨0⟩ .keep
@@ -952,7 +753,6 @@ def afterChandraBottomsBothMulligan : Game :=
 #guard started.pending == .none
 #guard (started.player ⟨0⟩).keptOpeningHand
 #guard (started.player ⟨1⟩).keptOpeningHand
-#guard mentions (header drawnHands) "CR 103.5"
 
 -- Lands cannot be played before opening hands are kept.
 #guard
@@ -1055,9 +855,6 @@ def proposedBauble : Game :=
 #guard (namedPermanent proposedBauble "Wayfarer's Bauble").isOnBattlefield
 #guard proposedBauble.log.any (fun s => mentions s "begins activating Wayfarer's Bauble")
 #guard proposedBauble.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
-#guard (changedZones baubleReady proposedBauble).contains .stack
-#guard mentions (stackBlock proposedBauble) "Search your library"
-#guard mentions (zoneBlock proposedBauble .stack) "Search your library"
 
 -- Opponent cannot activate Chandra's bauble.
 #guard
@@ -1112,10 +909,6 @@ def paidBauble : Game :=
 #guard !(paidBauble.battlefield.any (fun o => o.name == "Wayfarer's Bauble"))
 #guard paidBauble.log.any (fun s => mentions s "sacrifices Wayfarer's Bauble")
 #guard paidBauble.log.any (fun s => mentions s "activates Wayfarer's Bauble")
-#guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
-#guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
-#guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
-  mentions (zoneLine paidBauble (.graveyard ⟨0⟩) id) "Search your library")
 
 -- The agent pays once the pool covers {2}.
 #guard
@@ -1132,8 +925,6 @@ def resolvedBauble : Game := passBoth paidBauble
 #guard resolvedBauble.log.any (fun s =>
   mentions s "puts Mountain onto the battlefield tapped")
 #guard resolvedBauble.log.any (fun s => mentions s "shuffles their library")
-#guard (changedZones paidBauble resolvedBauble).contains .battlefield
-#guard (changedZones paidBauble resolvedBauble).contains (.library ⟨0⟩)
 
 -- Lands put onto the battlefield this way are not a land drop (CR 305.3).
 #guard (resolvedBauble.player ⟨0⟩).landsPlayedThisTurn == 1
@@ -1208,7 +999,6 @@ def paidHunter : Game :=
 #guard (namedPermanent paidHunter "Raging Goblin").isOnBattlefield
 #guard paidHunter.log.any (fun s =>
   mentions s "must sacrifice another creature or artifact")
-#guard mentions (header paidHunter) "sacrifice a creature or artifact"
 
 -- Cannot sacrifice the hunter itself, a land, or skip the choice.
 #guard
@@ -1243,9 +1033,6 @@ def activatedHunter : Game :=
 #guard (namedPermanent activatedHunter "Snowslope Hunter").status.activationsThisTurn == 1
 #guard activatedHunter.log.any (fun s => mentions s "sacrifices Raging Goblin")
 #guard activatedHunter.log.any (fun s => mentions s "activates Snowslope Hunter")
-#guard (changedZones hunterReady activatedHunter).contains .stack
-#guard (changedZones hunterReady activatedHunter).contains .battlefield
-#guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
 
 /-- Finish activating Snowslope Hunter by paying, then sacrificing `sacName`. -/
 def completeHunterActivation (g : Game) (sacName : String) : Game :=
@@ -1269,10 +1056,6 @@ def resolvedHunter : Game := passBoth activatedHunter
 #guard resolvedHunter.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt")
 #guard resolvedHunter.log.any (fun s =>
   mentions s "exiles Lightning Bolt and may play it until the end of their next turn")
-#guard (changedZones activatedHunter resolvedHunter).contains .exile
-#guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
-#guard mentions (snapshot resolvedHunter) "may be played by Chandra"
-#guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
 
 def exiledBolt (g : Game) : GameObject :=
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
