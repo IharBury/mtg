@@ -326,6 +326,10 @@ def applyIdle (g : Game) : Game :=
     match g.apply p (.scry (g.scryLookedIds p n) #[]) with
     | .ok g' => g'
     | .error e => panic! e
+  | .assignCombatDamage _ _, some p =>
+    match g.apply p (.assignCombatDamage #[]) with
+    | .ok g' => g'
+    | .error e => panic! e
   | .chooseTargets _, some p =>
     match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | none => panic! "expected a proposed spell while choosing targets"
@@ -750,7 +754,7 @@ def readyToDeclareBlockers : Game :=
 #guard readyToDeclareBlockers.pending == .declareBlockers
 #guard readyToDeclareBlockers.actor == some ⟨1⟩
 #guard (namedPermanent readyToDeclareBlockers "Gray Ogre").status.attacking
-#guard (namedPermanent readyToDeclareBlockers "Grizzly Bears").status.blocking.isNone
+#guard (namedPermanent readyToDeclareBlockers "Grizzly Bears").status.blocking.isEmpty
 
 def bearsBlockOgre : Game :=
   let g := readyToDeclareBlockers
@@ -759,7 +763,7 @@ def bearsBlockOgre : Game :=
     (namedPermanent g "Gray Ogre").id)])
 
 #guard (namedPermanent bearsBlockOgre "Grizzly Bears").status.blocking ==
-  some (namedPermanent bearsBlockOgre "Gray Ogre").id
+  #[(namedPermanent bearsBlockOgre "Gray Ogre").id]
 #guard (namedPermanent bearsBlockOgre "Gray Ogre").status.blocked
 #guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
 #guard bearsBlockOgre.pending == .none
@@ -1622,7 +1626,7 @@ def goblinBlockedByTwoElves : Game :=
 
 #guard goblinBlockedByTwoElves.stack.size == 1
 #guard (goblinBlockedByTwoElves.battlefield.filter (fun o =>
-  o.status.blocking.isSome)).size == 2
+  !o.status.blocking.isEmpty)).size == 2
 
 def goblinTwoElvesAfterTrigger : Game := passBoth goblinBlockedByTwoElves
 
@@ -2199,5 +2203,176 @@ def cratermakerAtEndStep : Game := skipTo cratermakerReady .end 80
 #guard cratermakerAtEndStep.step == .end
 #guard cratermakerAtEndStep.canActivate ⟨0⟩ (cratermakerSource cratermakerAtEndStep)
   cratermakerAbility
+
+/-- Hill Giant (3/3) blocked by two Llanowar Elves (1/1): CR 510.1c lets the
+attacker assign all 3 damage to one blocker. -/
+def giantVsTwoElves : Game :=
+  let g := addPermanent started hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def giantBlockedByTwoElves : Game :=
+  let g := passBoth (skipTo giantVsTwoElves .beginningOfCombat 80)
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[giant.id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(elves[0]!.id, giant.id), (elves[1]!.id, giant.id)])
+
+def giantReadyToAssign : Game := passBoth giantBlockedByTwoElves
+
+#guard giantReadyToAssign.step == .combatDamage
+#guard giantReadyToAssign.pending == .assignCombatDamage ⟨0⟩ true
+#guard giantReadyToAssign.actor == some ⟨0⟩
+#guard giantReadyToAssign.needsCombatDamageChoice true
+#guard !giantReadyToAssign.needsCombatDamageChoice false
+
+def giantAllDamageOnFirst : Game :=
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  mustApply g ⟨0⟩ (.assignCombatDamage #[{
+    source := giant.id
+    toCreatures := #[(elves[0]!.id, 3), (elves[1]!.id, 0)]
+  }])
+
+#guard giantAllDamageOnFirst.log.any (fun s =>
+  mentions s "Hill Giant deals 3 combat damage to Llanowar Elves")
+#guard (giantAllDamageOnFirst.log.filter (fun s =>
+  mentions s "Hill Giant deals" && mentions s "combat damage to Llanowar Elves")).size == 1
+#guard (giantAllDamageOnFirst.player ⟨1⟩).life == 20
+#guard (giantAllDamageOnFirst.battlefield.filter (fun o =>
+  o.name == "Llanowar Elves")).size == 1
+#guard giantAllDamageOnFirst.battlefield.any (fun o => o.name == "Hill Giant")
+#guard (namedPermanent giantAllDamageOnFirst "Hill Giant").status.damage == 2
+
+/-- The same total can be split 1 and 2; both Elves then take lethal damage. -/
+def giantSplitDamage : Game :=
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  mustApply g ⟨0⟩ (.assignCombatDamage #[{
+    source := giant.id
+    toCreatures := #[(elves[0]!.id, 1), (elves[1]!.id, 2)]
+  }])
+
+#guard giantSplitDamage.log.any (fun s =>
+  mentions s "Hill Giant deals 1 combat damage to Llanowar Elves")
+#guard giantSplitDamage.log.any (fun s =>
+  mentions s "Hill Giant deals 2 combat damage to Llanowar Elves")
+#guard (giantSplitDamage.battlefield.filter (fun o =>
+  o.name == "Llanowar Elves")).isEmpty
+#guard giantSplitDamage.battlefield.any (fun o => o.name == "Hill Giant")
+
+/-- Assigning less than power, or to a creature that is not blocking, is illegal. -/
+def giantTooLittleDamage : Bool :=
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  match g.apply ⟨0⟩ (.assignCombatDamage #[{
+    source := giant.id
+    toCreatures := #[(elves[0]!.id, 2)]
+  }]) with
+  | .error msg => mentions msg "equal to its power"
+  | .ok _ => false
+
+#guard giantTooLittleDamage
+
+def giantAssignsToItself : Bool :=
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  match g.apply ⟨0⟩ (.assignCombatDamage #[{
+    source := giant.id
+    toCreatures := #[(giant.id, 3)]
+  }]) with
+  | .error msg => mentions msg "creatures blocking it"
+  | .ok _ => false
+
+#guard giantAssignsToItself
+
+/-- An empty assignment uses the default (all damage to the first blocker). -/
+def giantDefaultAssign : Game :=
+  mustApply giantReadyToAssign ⟨0⟩ (.assignCombatDamage #[])
+
+#guard giantDefaultAssign.log.any (fun s =>
+  mentions s "Hill Giant deals 3 combat damage to Llanowar Elves")
+#guard (giantDefaultAssign.battlefield.filter (fun o =>
+  o.name == "Llanowar Elves")).size == 1
+
+/-- CR 510.1d: a blocker whose attacker has left combat assigns no damage. -/
+def twoOgresOneBears : Game :=
+  let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+
+def blockerWhoseAttackerLeft : Game :=
+  let g := passBoth (skipTo twoOgresOneBears .beginningOfCombat 80)
+  let ogres := g.battlefield.filter (fun o => o.name == "Gray Ogre")
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := mustApply g ⟨0⟩ (.declareAttackers (ogres.map (·.id)))
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(bears.id, ogres[0]!.id)])
+  let (g, _) := g.move ogres[0]!.id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard blockerWhoseAttackerLeft.log.any (fun s =>
+  mentions s "not blocking any creatures and assigns no combat damage")
+#guard blockerWhoseAttackerLeft.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Nissa")
+#guard (namedPermanent blockerWhoseAttackerLeft "Grizzly Bears").status.damage == 0
+#guard (blockerWhoseAttackerLeft.player ⟨1⟩).life == 18
+
+/-- CR 510.1d: a creature blocking two attackers divides its damage as chosen. -/
+def bearsBlockingTwoOgresReady : Game :=
+  let g := passBoth (skipTo twoOgresOneBears .beginningOfCombat 80)
+  let ogres := g.battlefield.filter (fun o => o.name == "Gray Ogre")
+  let g := mustApply g ⟨0⟩ (.declareAttackers (ogres.map (·.id)))
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with
+    status := { bears.status with blocking := ogres.map (·.id) } }
+  let g := Id.run do
+    let mut g := g
+    for o in ogres do
+      let a := g.object! o.id
+      g := g.setObject { a with status := { a.status with blocked := true } }
+    return g
+  passBoth g
+
+#guard bearsBlockingTwoOgresReady.step == .combatDamage
+#guard bearsBlockingTwoOgresReady.pending == .assignCombatDamage ⟨1⟩ false
+#guard bearsBlockingTwoOgresReady.actor == some ⟨1⟩
+#guard bearsBlockingTwoOgresReady.needsCombatDamageChoice false
+#guard bearsBlockingTwoOgresReady.needsCombatDamageChoice true == false
+
+def bearsAssignAllToFirstOgre : Game :=
+  let g := bearsBlockingTwoOgresReady
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogres := g.battlefield.filter (fun o => o.name == "Gray Ogre")
+  mustApply g ⟨1⟩ (.assignCombatDamage #[{
+    source := bears.id
+    toCreatures := #[(ogres[0]!.id, 2), (ogres[1]!.id, 0)]
+  }])
+
+#guard bearsAssignAllToFirstOgre.log.any (fun s =>
+  mentions s "Grizzly Bears deals 2 combat damage to Gray Ogre")
+#guard (bearsAssignAllToFirstOgre.log.filter (fun s =>
+  mentions s "Grizzly Bears deals" && mentions s "combat damage to Gray Ogre")).size == 1
+#guard (bearsAssignAllToFirstOgre.battlefield.filter (fun o =>
+  o.name == "Gray Ogre")).size == 1
+#guard !(bearsAssignAllToFirstOgre.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+def bearsAssignsToItself : Bool :=
+  let g := bearsBlockingTwoOgresReady
+  let bears := namedPermanent g "Grizzly Bears"
+  match g.apply ⟨1⟩ (.assignCombatDamage #[{
+    source := bears.id
+    toCreatures := #[(bears.id, 2)]
+  }]) with
+  | .error msg => mentions msg "creatures it's blocking"
+  | .ok _ => false
+
+#guard bearsAssignsToItself
 
 end Mtg.Engine.Tests
