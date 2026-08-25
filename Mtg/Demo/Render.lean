@@ -201,14 +201,9 @@ def battlefieldPermanentLines (g : Game) (os : Array GameObject)
     let mut lines : Array String := #[]
     for o in os do
       if !attachedToBattlefield g o then
-        let mut pending : Array (GameObject × String) := #[(o, "")]
-        let mut i := 0
-        while i < pending.size do
-          let (cur, pad) := pending[i]!
-          lines := lines.push s!"{pad}{objectLine g cur group}"
-          for att in attachmentsOf g cur.id do
-            pending := pending.push (att, pad ++ "  ")
-          i := i + 1
+        lines := lines.push (objectLine g o group)
+        for att in attachmentsOf g o.id do
+          lines := lines.push s!"  {objectLine g att group}"
     return lines.toList
 
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
@@ -391,7 +386,7 @@ def battlefieldGroupLines (g : Game) : List String :=
     let mut lines : Array String := #[]
     for (label, group, os) in battlefieldGroups g do
       lines := lines.push s!"{label}:"
-      for line in battlefieldPermanentLines g os group do
+      for line in battlefieldPermanentLines g os (some group) do
         lines := lines.push s!"  {line}"
     return lines.toList
 
