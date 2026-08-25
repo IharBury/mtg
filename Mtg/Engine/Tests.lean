@@ -244,7 +244,8 @@ def mountainLine (g : Game) : String :=
   objectLine g (lastPermanent g)
 
 #guard mountainLine withMountain ==
-  s!"{(lastPermanent withMountain).id} Mountain (owned by Chandra, controlled by Chandra)"
+  s!"{(lastPermanent withMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
+#guard mentions (mountainLine withMountain) "{T}: Add {R}"
 #guard mentions (zoneBlock withMountain .battlefield)
   "(owned by Chandra, controlled by Chandra)"
 #guard mentions (snapshot withMountain)
@@ -270,7 +271,7 @@ def afterUntapStep : Game := tappedMountain.beginStep .untap
 def stolenMountain : Game := addPermanent started mountain ⟨0⟩ ⟨1⟩
 
 #guard mountainLine stolenMountain ==
-  s!"{(lastPermanent stolenMountain).id} Mountain (owned by Chandra, controlled by Nissa)"
+  s!"{(lastPermanent stolenMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 #guard (stolenMountain.permanentsOf ⟨1⟩).any (·.id == (lastPermanent stolenMountain).id)
 #guard !(stolenMountain.permanentsOf ⟨0⟩).any (·.id == (lastPermanent stolenMountain).id)
 #guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
@@ -291,6 +292,49 @@ def afterControlChange : Game :=
 #guard (changedZones withMountain afterControlChange).contains .battlefield
 #guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
   "(owned by Chandra, controlled by Nissa)"
+
+/- Hands, battlefield, and other zones print keywords and abilities. -/
+#guard mentions ragingGoblin.summary "haste"
+#guard mentions giantSpider.summary "reach"
+#guard mentions llanowarElves.summary "{T}: Add {G}"
+#guard mentions lightningBolt.summary "deals 3 damage"
+#guard mentions mountain.summary "{T}: Add {R}"
+#guard mentions wayfarersBauble.summary "Search your library"
+#guard mentions attercop.summary "reach"
+#guard mentions attercop.summary "deathtouch"
+#guard mentions attercop.summary "Landfall"
+#guard mentions landrovalHorizonWitness.summary "flying"
+#guard mentions landrovalHorizonWitness.summary "Whenever two or more creatures"
+#guard mentions soldierOfTheGreyHost.summary "Flash"
+#guard mentions soldierOfTheGreyHost.summary "flying"
+#guard mentions roguesPassage.summary "{T}: Add {C}"
+#guard mentions roguesPassage.summary "can't be blocked"
+
+/- Structured abilities still print when Oracle text is absent. -/
+#guard
+  let c : CardDef := {
+    name := "Silent Elves"
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+    tapAddMana := #[.colored .green]
+  }
+  mentions c.abilitiesText "{T}: Add {G}" &&
+    mentions c.summary "{T}: Add {G}"
+
+def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
+def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
+def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
+def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
+
+#guard mentions (objectLine withGoblin (lastPermanent withGoblin)) "haste"
+#guard mentions (playerBlock withGoblin (withGoblin.player ⟨0⟩)) "haste"
+#guard mentions (objectLine withElves (lastPermanent withElves)) "{T}: Add {G}"
+#guard mentions (objectLine withSpider (lastPermanent withSpider)) "reach"
+#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "deathtouch"
+#guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "Landfall"
+#guard mentions (zoneLine withAttercop .battlefield (lastPermanent withAttercop).id)
+  "Landfall"
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
@@ -929,6 +973,8 @@ def proposedBauble : Game :=
 #guard proposedBauble.log.any (fun s => mentions s "begins activating Wayfarer's Bauble")
 #guard proposedBauble.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
 #guard (changedZones baubleReady proposedBauble).contains .stack
+#guard mentions (stackBlock proposedBauble) "Search your library"
+#guard mentions (zoneBlock proposedBauble .stack) "Search your library"
 
 -- Opponent cannot activate Chandra's bauble.
 #guard
@@ -985,6 +1031,8 @@ def paidBauble : Game :=
 #guard paidBauble.log.any (fun s => mentions s "activates Wayfarer's Bauble")
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
 #guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
+#guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
+  mentions (zoneLine paidBauble (.graveyard ⟨0⟩) id) "Search your library")
 
 -- The agent pays once the pool covers {2}.
 #guard

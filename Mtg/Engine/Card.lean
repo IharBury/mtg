@@ -49,6 +49,20 @@ inductive SpellEffect where
   | pump (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
+namespace SpellEffect
+
+def signedStat (n : Int) : String :=
+  if n < 0 then toString n else s!"+{n}"
+
+def toNotation : SpellEffect → String
+  | .dealDamage n => s!"deals {n} damage to any target"
+  | .pump p t => s!"target creature gets {signedStat p}/{signedStat t} until end of turn"
+
+instance : ToString SpellEffect where
+  toString := toNotation
+
+end SpellEffect
+
 /-- One-shot effect of an activated ability on resolution (CR 602, 608). -/
 inductive AbilityEffect where
   /-- Search your library for a basic land card, put it onto the battlefield
@@ -56,12 +70,37 @@ inductive AbilityEffect where
   | searchBasicLandTapped
 deriving Repr, Inhabited, BEq
 
+namespace AbilityEffect
+
+def toNotation : AbilityEffect → String
+  | .searchBasicLandTapped =>
+    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+
+instance : ToString AbilityEffect where
+  toString := toNotation
+
+end AbilityEffect
+
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
   sacrificeSource : Bool := false
 deriving Repr, Inhabited, BEq
+
+namespace ActivationCost
+
+def toNotation (c : ActivationCost) : String :=
+  let parts : List String :=
+    (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
+    (if c.tap then ["{T}"] else []) ++
+    (if c.sacrificeSource then ["Sacrifice"] else [])
+  String.intercalate ", " parts
+
+instance : ToString ActivationCost where
+  toString := toNotation
+
+end ActivationCost
 
 /-- An activated ability printed on a card (CR 602.1). Mana abilities that
 are `{T}: Add` are stored separately on `CardDef.tapAddMana` / basic land types. -/
@@ -71,6 +110,17 @@ structure ActivatedAbility where
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
 deriving Repr, Inhabited, BEq
+
+namespace ActivatedAbility
+
+def toNotation (ab : ActivatedAbility) : String :=
+  let timing := if ab.onlyAsSorcery then " (activate only as a sorcery)" else ""
+  s!"{ab.cost.toNotation}: {ab.effect.toNotation}{timing}"
+
+instance : ToString ActivatedAbility where
+  toString := toNotation
+
+end ActivatedAbility
 
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
@@ -125,6 +175,47 @@ def basicLandMana (c : CardDef) : Array Color :=
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.basicLandMana.map ManaType.colored ++ c.tapAddMana
 
+/-- Lowercase ASCII for comparing Oracle keyword lines to `Keywords.toList`. -/
+def lowerAscii (s : String) : String :=
+  s.map Char.toLower
+
+/-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`. -/
+def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
+  let kw := k.toList
+  let cleaned := (line.replace "." "").trimAscii.copy
+  if cleaned.isEmpty then true
+  else
+    let parts := cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
+    !parts.isEmpty && parts.all (fun p => kw.any (fun w => w == lowerAscii p))
+
+/-- Oracle ability lines that are not just restating modeled keywords. -/
+def leftoverOracleLines (c : CardDef) : List String :=
+  c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filter (fun line =>
+    !line.isEmpty && !isKeywordRestatement c.keywords line)
+
+/-- `{T}: Add` mana abilities, activated abilities, and spell abilities. -/
+def structuredAbilityLines (c : CardDef) : List String :=
+  c.manaAbilities.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
+  match c.spellEffect with
+  | some e => [SpellEffect.toNotation e]
+  | none => []
+
+/-- Abilities to print in the demo. Prefer leftover Oracle text so unmodeled
+abilities (triggers, extra activations) are visible; fall back to structured
+abilities when Oracle is empty or only restates keywords. -/
+def abilitiesText (c : CardDef) : String :=
+  let fromOracle := leftoverOracleLines c
+  if !fromOracle.isEmpty then
+    String.intercalate " / " fromOracle
+  else
+    String.intercalate "; " (structuredAbilityLines c)
+
+/-- Keywords and abilities shown next to a card in the demo. -/
+def keywordsAndAbilities (c : CardDef) : String :=
+  String.intercalate " "
+    ([toString c.keywords, c.abilitiesText].filter (fun s => !s.isEmpty))
+
 def typeLine (c : CardDef) : String :=
   let super := String.intercalate " " (c.supertypes.toList.map toString)
   let types := String.intercalate " " (c.types.toList.map toString)
@@ -141,14 +232,28 @@ def ptString (c : CardDef) : String :=
 def summary (c : CardDef) : String :=
   let cost := toString c.manaCost
   let pt := c.ptString
-  let kw := toString c.keywords
   let extras :=
-    [pt, kw].filter (fun s => !s.isEmpty) |> fun xs =>
+    [pt, c.keywordsAndAbilities].filter (fun s => !s.isEmpty) |> fun xs =>
       if xs.isEmpty then "" else " " ++ String.intercalate " " xs
   s!"{c.name} {cost} {c.typeLine}{extras}"
 
 instance : ToString CardDef where
   toString := summary
+
+#guard toString ({ Keywords.none with haste := true } : Keywords) == "haste"
+#guard CardDef.isKeywordRestatement { Keywords.none with haste := true } "Haste"
+#guard CardDef.isKeywordRestatement
+  { Keywords.none with reach := true, deathtouch := true } "Reach, deathtouch"
+#guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
+#guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
+#guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
+#guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
+#guard
+  let ab : ActivatedAbility := {
+    cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
+    effect := .searchBasicLandTapped
+  }
+  (toString ab).startsWith "{2}, {T}, Sacrifice:"
 
 end CardDef
 
