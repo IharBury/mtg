@@ -182,9 +182,33 @@ def scryLookSection (g : Game) (pl : Player) (viewer : Option PlayerId) : Option
       some s!"  Looking at (scry {n}): (hidden)"
   | _ => none
 
+/-- Permanents currently attached to `hostId`. -/
+def attachmentsOf (g : Game) (hostId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun o => o.attachedTo == some hostId)
+
+/-- True when `o` is attached to a permanent on the battlefield. -/
+def attachedToBattlefield (g : Game) (o : GameObject) : Bool :=
+  match o.attachedTo.bind g.findObject? with
+  | some host => host.isOnBattlefield
+  | none => false
+
+/-- Lines for unattached permanents in `os`. Each is followed by what is
+attached to it (from the whole battlefield), indented two extra spaces so
+attached permanents sit next to their host. -/
+def battlefieldPermanentLines (g : Game) (os : Array GameObject)
+    (group : Option (Option PlayerId)) : List String :=
+  Id.run do
+    let mut lines : Array String := #[]
+    for o in os do
+      if !attachedToBattlefield g o then
+        lines := lines.push (objectLine g o group)
+        for att in attachmentsOf g o.id do
+          lines := lines.push s!"  {objectLine g att group}"
+    return lines.toList
+
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
-  let bf := (g.permanentsOf pl.id).toList.map (fun o => objectLine g o (some (some pl.id)))
+  let bf := battlefieldPermanentLines g (g.permanentsOf pl.id) (some (some pl.id))
   let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
   let handText :=
     if canSeeZoneFaces viewer (.hand pl.id) then
@@ -337,30 +361,33 @@ def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
 /-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
-are omitted. Permanents with no controller are listed last. The `Option
-PlayerId` is the group heading (`none` = no controller). -/
+are omitted. Permanents attached to another battlefield permanent are listed
+with that host rather than in their own controller's group. Permanents with
+no controller are listed last. The `Option PlayerId` is the group heading
+(`none` = no controller). -/
 def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=
   Id.run do
     let mut groups : Array (String × Option PlayerId × Array GameObject) := #[]
     for pl in g.players do
-      let ps := g.permanentsOf pl.id
+      let ps := (g.permanentsOf pl.id).filter (fun o => !attachedToBattlefield g o)
       if !ps.isEmpty then
         groups := groups.push (pl.name, some pl.id, ps)
-    let uncontrolled := g.battlefield.filter (fun o => o.controller.isNone)
+    let uncontrolled := g.battlefield.filter (fun o =>
+      o.controller.isNone && !attachedToBattlefield g o)
     if !uncontrolled.isEmpty then
       groups := groups.push ("(no controller)", none, uncontrolled)
     return groups
 
 /-- Shared-zone battlefield lines grouped under each controller's name.
 Owner and controller are omitted on each permanent unless they differ from
-the group heading. -/
+the group heading. Attached permanents are indented under their host. -/
 def battlefieldGroupLines (g : Game) : List String :=
   Id.run do
     let mut lines : Array String := #[]
     for (label, group, os) in battlefieldGroups g do
       lines := lines.push s!"{label}:"
-      for o in os do
-        lines := lines.push s!"  {objectLine g o (some group)}"
+      for line in battlefieldPermanentLines g os (some group) do
+        lines := lines.push s!"  {line}"
     return lines.toList
 
 /-- Zones whose occupants, order, visible status, or scry look differ between
