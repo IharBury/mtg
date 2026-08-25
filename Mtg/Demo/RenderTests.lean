@@ -50,6 +50,10 @@ open Mtg.Demo.Render
 #guard redactLogLine started ⟨0⟩ "Chandra draws Mountain" == "Chandra draws Mountain"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest on the bottom of their library" ==
   "Nissa puts a card on the bottom of their library"
+#guard redactLogLine started ⟨0⟩ "Nissa puts Forest on top of their library" ==
+  "Nissa puts a card on top of their library"
+#guard redactLogLine started ⟨0⟩ "Chandra puts Forest on top of their library" ==
+  "Chandra puts Forest on top of their library"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest onto the battlefield tapped" ==
   "Nissa puts Forest onto the battlefield tapped"
 #guard (newLog started 0 (some ⟨0⟩)).any (· == "Nissa draws a card")
@@ -194,7 +198,8 @@ def mountainLine (g : Game) : String :=
 #guard lifeLine (afterCombatDamage.player ⟨1⟩) == "Nissa — life 19"
 #guard (changedZones attackingGoblin afterCombatDamage).isEmpty
 
-#guard mentions (header proposedBolt) "activate mana abilities (CR 601.2g)"
+#guard mentions (header proposedBolt) "choose targets (CR 601.2c"
+#guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard !mentions (header paidBolt) "activate mana abilities"
@@ -279,5 +284,15 @@ def mountainLine (g : Game) : String :=
 #guard mentions (stackBlock siegeAttackDeclared) "Orcish Siegemaster's ability"
 #guard mentions (objectLine siegePumpResolved
   (namedPermanent siegePumpResolved "Orcish Siegemaster")) "3/5"
+
+#guard
+  let g := giftEntered
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  objectLine g bears ==
+    s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
+  mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
+  mentions (header giftScrying) "scry 2" &&
+  mentions (snapshot giftScrying) "Scry (top last):"
 
 end Mtg.Demo.RenderTests

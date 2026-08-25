@@ -63,10 +63,19 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
         | none => toString attackerId
       s!" *blocking {whom}*"
   let pt :=
-    if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
+    if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
+  let ench :=
+    match o.attachedTo with
+    | none => ""
+    | some hostId =>
+      let whom :=
+        match g.findObject? hostId with
+        | some host => s!"{host.id} {host.name}"
+        | none => toString hostId
+      s!" *enchanting {whom}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -122,6 +131,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .chooseTargets p =>
+      s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .declareMulligan p =>
@@ -129,6 +140,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .putOnBottom p n =>
       let cards := if n == 1 then "1 card" else s!"{n} cards"
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
+    | .scry p n =>
+      s!" [scry {n} ({g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""
@@ -152,10 +165,26 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
           | none => ""
         s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
-  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock)
+  let scryInfo :=
+    match g.pending with
+    | .scry p n =>
+      let canSee :=
+        match viewer with
+        | none => true
+        | some v => v == p
+      if canSee then
+        let cards := (g.scryLookedIds p n).toList.map (fun id =>
+          match g.findObject? id with
+          | some o => s!"{o.id} {o.name}"
+          | none => toString id)
+        [s!"Scry (top last): {String.intercalate ", " cards}"]
+      else
+        [s!"{(g.player p).name} is scrying {n}"]
+    | _ => []
+  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock ++ scryInfo)
 
-/-- Hide draws and library-bottoming that `viewer` is not allowed to see
-(CR 401.2, 402.2, 103.5). Other log lines are public. -/
+/-- Hide draws and library rearrangements that `viewer` is not allowed to see
+(CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
 def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
   Id.run do
     for pl in g.players do
@@ -163,10 +192,11 @@ def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
         let drawPrefix := s!"{pl.name} draws "
         if line.startsWith drawPrefix then
           return s!"{pl.name} draws a card"
-        let bottomPrefix := s!"{pl.name} puts "
-        let bottomSuffix := " on the bottom of their library"
-        if line.startsWith bottomPrefix && line.endsWith bottomSuffix then
+        let putsPrefix := s!"{pl.name} puts "
+        if line.startsWith putsPrefix && line.endsWith " on the bottom of their library" then
           return s!"{pl.name} puts a card on the bottom of their library"
+        if line.startsWith putsPrefix && line.endsWith " on top of their library" then
+          return s!"{pl.name} puts a card on top of their library"
     return line
 
 /-- New log lines starting at `startIdx`, optionally redacted for `viewer`. -/
