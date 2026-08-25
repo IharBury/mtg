@@ -122,7 +122,7 @@ def helpInteractive : String :=
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating
   play <id>            Play a land
-  tap <id>             Tap a permanent for its first mana ability
+  tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
@@ -137,6 +137,7 @@ def helpInteractive : String :=
 
 #guard (helpInteractive.splitOn "visible").length > 1
 #guard (helpInteractive.splitOn "Chandra can see").length > 1
+#guard (helpInteractive.splitOn "tap <id> [id...]").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -399,6 +400,83 @@ def chandraView (playerView : Bool) : Option PlayerId :=
 #guard (chandraView false).isNone
 #guard chandraView true == some ⟨0⟩
 
+def tapUsage : String := "usage: tap <id> [id ...]"
+
+/-- Tap each listed permanent for its first mana ability. -/
+def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds tokens tapUsage
+  let mut jobs : Array (ObjectId × ManaType) := #[]
+  for id in ids do
+    match g.findObject? id with
+    | none => throw "no such object"
+    | some o =>
+      match o.printed.manaAbilities[0]? with
+      | none => throw s!"{o.name} has no mana ability"
+      | some m => jobs := jobs.push (id, m)
+  let mut g := g
+  for (id, m) in jobs do
+    g := (← g.apply p (.tapForMana id m))
+  return g
+
+#guard
+  match applyTap Tests.baubleReady ⟨0⟩ [] with
+  | .error msg => msg == tapUsage
+  | .ok _ => false
+
+#guard
+  match applyTap Tests.baubleReady ⟨0⟩ ["nope"] with
+  | .error msg => msg == tapUsage
+  | .ok _ => false
+
+#guard
+  match applyTap Tests.baubleReady ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match applyTap g ⟨0⟩ [toString bauble.id] with
+  | .error msg => Tests.mentions msg "has no mana ability"
+  | .ok _ => false
+
+#guard
+  let g := Tests.withMountain
+  let mtn := Tests.lastPermanent g
+  match applyTap g ⟨0⟩ [toString mtn.id] with
+  | .ok g' =>
+    (Tests.lastPermanent g').status.tapped &&
+    (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red)
+  | .error _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let lands := (g.permanentsOf ⟨0⟩).filter (·.printed.isLand)
+  lands.size == 2 &&
+  match applyTap g ⟨0⟩ [toString lands[0]!.id, s!"{lands[1]!.id.raw}"] with
+  | .ok g' =>
+    (g'.battlefield.filter (fun o => o.printed.isLand && o.status.tapped)).size == 2 &&
+    (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 2)
+  | .error _ => false
+
+#guard
+  let g := Tests.proposedBauble
+  let lands := (g.permanentsOf ⟨0⟩).filter (·.printed.isLand)
+  lands.size == 2 &&
+  match applyTap g ⟨0⟩ [toString lands[0]!.id, toString lands[1]!.id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 2) &&
+    (g'.battlefield.filter (fun o => o.printed.isLand && o.status.tapped)).size == 2
+  | .error _ => false
+
+#guard
+  let g := Tests.withMountain
+  let mtn := Tests.lastPermanent g
+  match applyTap g ⟨0⟩ [toString mtn.id, toString mtn.id] with
+  | .error msg => Tests.mentions msg "already tapped"
+  | .ok _ => false
+
 def activateUsage : String := "usage: activate <id>"
 
 /-- Activate the first non-mana activated ability of the named permanent. -/
@@ -580,16 +658,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit 
         | none => .error "usage: play <id>"
         | some id => g.apply chandra (.playLand id)
       | "activate" => applyActivate g chandra (parts.drop 1)
-      | "tap" =>
-        match parseObjectId? arg with
-        | none => .error "usage: tap <id>"
-        | some id =>
-          match g.findObject? id with
-          | none => .error "no such object"
-          | some o =>
-            match o.printed.manaAbilities[0]? with
-            | none => .error s!"{o.name} has no mana ability"
-            | some m => g.apply chandra (.tapForMana id m)
+      | "tap" => applyTap g chandra (parts.drop 1)
       | "cast" =>
         match parseObjectId? arg with
         | none => .error "usage: cast <id>"
