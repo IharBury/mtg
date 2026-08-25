@@ -118,6 +118,7 @@ def helpInteractive : String :=
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
+  activate <id> <id>   Activate, sacrificing the second permanent as the cost
   cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
@@ -348,23 +349,34 @@ def applyBottom (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "Not time to put cards on the bottom (CR 103.5)"
   | .ok _ => false
 
-def activateUsage : String := "usage: activate <id>"
+def activateUsage : String := "usage: activate <id> [cost-id]"
 
-/-- Activate the first non-mana activated ability of the named permanent. -/
+/-- Activate the first non-mana activated ability of the named permanent.
+A second id is the creature or artifact sacrificed when the cost requires it. -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw activateUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some o =>
-        match o.printed.activatedAbilities[0]? with
-        | none => throw s!"{o.name} has no activated ability"
-        | some _ => g.apply p (.activate id 0)
-  | _ => throw activateUsage
+  let ids ←
+    match tokens with
+    | [arg] =>
+      match parseObjectId? arg with
+      | none => throw activateUsage
+      | some id => pure (id, none)
+    | [arg, sacArg] =>
+      match parseObjectId? arg, parseObjectId? sacArg with
+      | some id, some sac => pure (id, some sac)
+      | _, _ => throw activateUsage
+    | _ => throw activateUsage
+  let (id, sacrifice) := ids
+  match g.findObject? id with
+  | none => throw "no such object"
+  | some o =>
+    match o.printed.activatedAbilities[0]? with
+    | none => throw s!"{o.name} has no activated ability"
+    | some _ =>
+      if let some sacId := sacrifice then
+        if (g.findObject? sacId).isNone then
+          throw "no such object"
+      g.apply p (.activate id 0 sacrifice)
 
 #guard
   match applyActivate Tests.baubleReady ⟨0⟩ [] with
@@ -377,9 +389,19 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok _ => false
 
 #guard
-  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2"] with
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2", "3"] with
   | .error msg => msg == activateUsage
   | .ok _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match (g.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match applyActivate g ⟨0⟩ [toString bauble.id, toString land.id] with
+    | .error msg => Tests.mentions msg "doesn't require sacrificing another permanent"
+    | .ok _ => false
 
 #guard
   match applyActivate Tests.baubleReady ⟨0⟩ ["99999"] with
@@ -409,6 +431,23 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   let bauble := Tests.baubleSource g
   match applyActivate g ⟨0⟩ [s!"{bauble.id.raw}"] with
   | .ok g' => g'.stack.size == 1
+  | .error _ => false
+
+#guard
+  match applyActivate Tests.hunterReady ⟨0⟩
+      [toString (Tests.hunterSource Tests.hunterReady).id] with
+  | .error msg => Tests.mentions msg "requires sacrificing another creature or artifact"
+  | .ok _ => false
+
+#guard
+  let g := Tests.hunterReady
+  let hunter := Tests.hunterSource g
+  let fodder := Tests.hunterFodder g
+  match applyActivate g ⟨0⟩ [toString hunter.id, toString fodder.id] with
+  | .ok g' =>
+    g'.stack.size == 1 &&
+    g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
+    g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
 partial def interactiveLoop (g : Game) : IO Unit := do

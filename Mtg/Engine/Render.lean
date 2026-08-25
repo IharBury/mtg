@@ -82,7 +82,18 @@ def header (g : Game) : String :=
 
 def snapshot (g : Game) : String :=
   let players := g.players.toList.map (playerBlock g)
-  String.intercalate "\n\n" (header g :: stackBlock g :: players)
+  let exiled := g.objects.filter (fun o => o.zone == .exile)
+  let exileBlock :=
+    if exiled.isEmpty then []
+    else
+      let lines := exiled.toList.map (fun o =>
+        let extra :=
+          match o.playPermission with
+          | some perm => s!" (may be played by {g.player perm.player |>.name})"
+          | none => ""
+        s!"  {o.id} {o.name}{extra}")
+      ["Exile:\n" ++ String.intercalate "\n" lines]
+  String.intercalate "\n\n" (header g :: stackBlock g :: players ++ exileBlock)
 
 /-- New log lines starting at `startIdx`. -/
 def newLog (g : Game) (startIdx : Nat) : Array String :=
@@ -163,6 +174,12 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
       s!"{o.id} {o.name}{ctrl}"
+    | .exile =>
+      let extra :=
+        match o.playPermission with
+        | some perm => s!" (may be played by {g.player perm.player |>.name})"
+        | none => ""
+      s!"{o.id} {o.name}{extra}"
     | _ => s!"{o.id} {o.name}"
 
 /-- Current contents of `z`. Libraries are hidden, so only their size is shown. -/

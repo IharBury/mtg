@@ -54,6 +54,9 @@ inductive AbilityEffect where
   /-- Search your library for a basic land card, put it onto the battlefield
   tapped, then shuffle (e.g. Wayfarer's Bauble). -/
   | searchBasicLandTapped
+  /-- Exile the top card of your library. You may play it until the end of
+  your next turn (e.g. Snowslope Hunter). -/
+  | exileTopPlayUntilEndOfNextTurn
 deriving Repr, Inhabited, BEq
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
@@ -61,6 +64,8 @@ structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
   sacrificeSource : Bool := false
+  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
+  sacrificeAnotherCreatureOrArtifact : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- An activated ability printed on a card (CR 602.1). Mana abilities that
@@ -70,6 +75,10 @@ structure ActivatedAbility where
   effect : AbilityEffect
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
+  /-- Timing restriction “Activate only during your turn”. -/
+  onlyDuringYourTurn : Bool := false
+  /-- Frequency restriction “Activate only once each turn”. -/
+  onceEachTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card. -/
@@ -104,6 +113,7 @@ def colors (c : CardDef) : ColorSet :=
 
 def isLand (c : CardDef) : Bool := c.types.any (· == .land)
 def isCreature (c : CardDef) : Bool := c.types.any (· == .creature)
+def isArtifact (c : CardDef) : Bool := c.types.any (· == .artifact)
 def isInstant (c : CardDef) : Bool := c.types.any (· == .instant)
 def isSorcery (c : CardDef) : Bool := c.types.any (· == .sorcery)
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
