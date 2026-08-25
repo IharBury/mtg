@@ -12,6 +12,7 @@ to play Chandra against the agent-controlled Nissa, or `--multiplayer` to issue
 every player's actions from the console. In either interactive mode, `visible`
 prints only information that player can see; `--visible` starts in that view.
 `--input FILE` runs commands from the file first, then reads from the console.
+`--output FILE` writes every command (from the file or the console) to that file.
 -/
 
 open Mtg.Engine
@@ -24,7 +25,7 @@ def usage : String :=
 
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
-                    [--input FILE] [--seed N] [--fuel N]
+                    [--input FILE] [--output FILE] [--seed N] [--fuel N]
 
 Options:
   --auto          Run a heuristic two-player game (default)
@@ -34,6 +35,8 @@ Options:
                   acting player cannot see
   --input FILE    With --interactive or --multiplayer, run these commands
                   first, then read from the console
+  --output FILE   With --interactive or --multiplayer, write every command
+                  (from --input and from the console) to this file
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --help          Show this help
@@ -150,6 +153,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive true).splitOn "the acting player can see").length > 1
 #guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
+#guard (usage.splitOn "--output FILE").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -851,8 +855,28 @@ def nextCommandLine (pending : List String) : IO (String × List String) := do
     let stdin ← IO.getStdin
     return ((← stdin.getLine).trimAscii.copy, [])
 
+/-- Open `--output` for writing, or `none` when no file was given. -/
+def openOutputFile (outputFile : Option String) : IO (Except String (Option IO.FS.Handle)) := do
+  match outputFile with
+  | none => return .ok none
+  | some path =>
+    try
+      let h ← IO.FS.Handle.mk path .write
+      return .ok (some h)
+    catch e =>
+      return .error s!"Failed to write output file {path}: {e}"
+
+/-- Append a command to the `--output` file, if any. -/
+def recordCommand (output : Option IO.FS.Handle) (line : String) : IO Unit := do
+  match output with
+  | none => pure ()
+  | some h =>
+    h.putStrLn line
+    h.flush
+
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
-    (controlAll : Bool := false) (pending : List String := []) : IO Unit := do
+    (controlAll : Bool := false) (pending : List String := [])
+    (output : Option IO.FS.Handle := none) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
   let mut playerView := startVisible
@@ -897,6 +921,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     pending := rest
     if line.isEmpty then
       continue
+    recordCommand output line
     let parts := line.splitOn " "
     let cmd := parts.headD ""
     match cmd with
@@ -946,6 +971,7 @@ structure DemoOptions where
   seed : UInt64
   fuel : Nat
   inputFile : Option String
+  outputFile : Option String
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   Id.run do
@@ -955,6 +981,7 @@ def parseArgs (args : List String) : Except String DemoOptions :=
     let mut seed : UInt64 := 20260807
     let mut fuel : Nat := 800
     let mut inputFile : Option String := none
+    let mut outputFile : Option String := none
     let mut rest := args
     while !rest.isEmpty do
       match rest with
@@ -983,6 +1010,13 @@ def parseArgs (args : List String) : Except String DemoOptions :=
           inputFile := some path
           rest := xs
       | "--input" :: [] => return .error "Missing input file path"
+      | "--output" :: path :: xs =>
+        if path.startsWith "--" then
+          return .error "Missing output file path"
+        else
+          outputFile := some path
+          rest := xs
+      | "--output" :: [] => return .error "Missing output file path"
       | "--seed" :: n :: xs =>
         match n.toNat? with
         | none => return .error s!"Bad seed: {n}"
@@ -1001,6 +1035,8 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       return .error "--visible requires --interactive or --multiplayer"
     if inputFile.isSome && !interactive then
       return .error "--input requires --interactive or --multiplayer"
+    if outputFile.isSome && !interactive then
+      return .error "--output requires --interactive or --multiplayer"
     return .ok {
       interactive := interactive
       multiplayer := multiplayer
@@ -1008,6 +1044,7 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       seed := seed
       fuel := fuel
       inputFile := inputFile
+      outputFile := outputFile
     }
 
 #guard
@@ -1080,6 +1117,46 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | .error msg => msg == "Missing input file path"
   | .ok _ => false
 
+#guard
+  match parseArgs ["--interactive"] with
+  | .ok opt => opt.outputFile.isNone
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--output", "session.txt"] with
+  | .ok opt => opt.interactive && !opt.multiplayer && opt.outputFile == some "session.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--output", "session.txt"] with
+  | .ok opt => opt.interactive && opt.multiplayer && opt.outputFile == some "session.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--input", "opening.txt", "--output", "session.txt"] with
+  | .ok opt => opt.inputFile == some "opening.txt" && opt.outputFile == some "session.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--output", "session.txt"] with
+  | .error msg => msg == "--output requires --interactive or --multiplayer"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--auto", "--output", "session.txt"] with
+  | .error msg => msg == "--output requires --interactive or --multiplayer"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--interactive", "--output"] with
+  | .error msg => msg == "Missing output file path"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--interactive", "--output", "--visible"] with
+  | .error msg => msg == "Missing output file path"
+  | .ok _ => false
+
 def main (args : List String) : IO UInt32 := do
   match parseArgs args with
   | .error "help" =>
@@ -1095,9 +1172,14 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln e
       return 1
     | .ok pending =>
-      let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
-      if opt.interactive then
-        interactiveLoop g opt.playerView opt.multiplayer pending
-      else
-        runAuto g opt.fuel
-      return 0
+      match (← openOutputFile opt.outputFile) with
+      | .error e =>
+        IO.eprintln e
+        return 1
+      | .ok output =>
+        let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
+        if opt.interactive then
+          interactiveLoop g opt.playerView opt.multiplayer pending output
+        else
+          runAuto g opt.fuel
+        return 0
