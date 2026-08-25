@@ -293,7 +293,7 @@ def afterControlChange : Game :=
 #guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
   "(owned by Chandra, controlled by Nissa)"
 
-/-- The shared battlefield listing is grouped by controller (CR 110.2). -/
+/- The shared battlefield listing is grouped by controller (CR 110.2). -/
 #guard zoneBlock started .battlefield == "zone battlefield (0): (empty)"
 
 #guard
