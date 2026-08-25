@@ -8,6 +8,7 @@ import Mtg.Demo.Render
 namespace Mtg.Demo.RenderTests
 
 open Mtg.Engine
+open Mtg.Engine.Catalog
 open Mtg.Engine.Game
 open Mtg.Engine.Tests
 open Mtg.Demo.Render
@@ -202,6 +203,7 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
+#guard mentions (stackBlock proposedBolt) "deals 3 damage"
 #guard !mentions (header paidBolt) "activate mana abilities"
 
 -- The demo names the attacker a blocker is assigned to (CR 509.1a).
@@ -217,6 +219,9 @@ def mountainLine (g : Game) : String :=
 #guard !mentions
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
+
+#guard mentions (header giantReadyToAssign) "assign combat damage (CR 510.1c"
+#guard mentions (header bearsBlockingTwoOgresReady) "assign combat damage (CR 510.1d"
 
 #guard
   let g := goblinBlockedByBears
@@ -254,6 +259,30 @@ def mountainLine (g : Game) : String :=
 #guard mentions (stackBlock proposedBauble) "Search your library"
 #guard mentions (zoneBlock proposedBauble .stack) "Search your library"
 
+/- Stacked abilities from a multi-ability card omit sibling Oracle lines. -/
+#guard
+  let c : CardDef := {
+    name := "Silent Siege"
+    types := #[.creature]
+    oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+    keywords := { Keywords.none with trample := true }
+    staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+    triggeredAbilities := #[.onAttackPumpByGreatestPower]
+  }
+  let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower
+  textForStackedAbility c t == t &&
+    !mentions (textForStackedAbility c t) "Other Orcs and Goblins"
+
+/- A card with a single leftover Oracle ability keeps that printed wording. -/
+#guard
+  let c : CardDef := {
+    name := "Silent Bauble"
+    types := #[.artifact]
+    oracleText := "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+  }
+  textForStackedAbility c (AbilityEffect.toNotation .searchBasicLandTapped) ==
+    c.oracleText
+
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
 #guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
 #guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
@@ -282,6 +311,12 @@ def mountainLine (g : Game) : String :=
   (objectLine siegeAndOppGoblin (namedPermanent siegeAndOppGoblin "Raging Goblin"))
   "trample"
 #guard mentions (stackBlock siegeAttackDeclared) "Orcish Siegemaster's ability"
+#guard mentions (stackBlock siegeAttackDeclared) "Whenever this creature attacks"
+#guard mentions (zoneBlock siegeAttackDeclared .stack) "Whenever this creature attacks"
+#guard !mentions (stackBlock siegeAttackDeclared) "Other Orcs and Goblins"
+#guard !mentions (zoneBlock siegeAttackDeclared .stack) "Other Orcs and Goblins"
+#guard !mentions (stackBlock siegeAttackDeclared) "trample"
+#guard !mentions (stackBlock siegeAttackDeclared) "Trample"
 #guard
   let g := siegeAttackDeclared
   let siege := namedPermanent g "Orcish Siegemaster"
@@ -334,7 +369,150 @@ def mountainLine (g : Game) : String :=
     s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
   mentions (header giftScrying) "scry 2" &&
-  mentions (snapshot giftScrying) "Scry (top last):"
+  mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
+
+-- Attached permanents print next to their host, with two extra spaces.
+#guard
+  let g := giftEntered
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  let auraLine := objectLine g aura (some (some ⟨0⟩))
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (2):\n  Chandra:\n    {hostLine}\n      {auraLine}" &&
+  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}"
+
+-- A later unattached permanent does not sit between a host and its Aura.
+#guard
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Mountain"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  let landLine := objectLine g land (some (some ⟨0⟩))
+  let auraLine := objectLine g aura (some (some ⟨0⟩))
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n      {auraLine}\n    {landLine}" &&
+  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}\n  {landLine}"
+
+-- An Aura you control on an opponent's creature lists with that host.
+#guard
+  let g := giftOnNissa
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨1⟩))
+  let auraLine := objectLine g aura (some (some ⟨1⟩))
+  bears.controller == some ⟨1⟩ && aura.controller == some ⟨0⟩ &&
+    mentions auraLine "(owned by Chandra, controlled by Chandra)" &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (2):\n  Nissa:\n    {hostLine}\n      {auraLine}" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "  (none)" &&
+    mentions (playerBlock g (g.player ⟨1⟩)) s!"  {hostLine}\n    {auraLine}"
+
+-- Other permanents stay in their controller's group when an Aura is elsewhere.
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (3):\n  Chandra:\n    {objectLine g land (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine g bears (some (some ⟨1⟩))}\n      {objectLine g aura (some (some ⟨1⟩))}"
+
+-- Several permanents attached to the same host all indent under it.
+#guard
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let auras := g.battlefield.filter (fun o => o.name == "Gift of Strands")
+  auras.size == 2 &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (3):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n      {objectLine g auras[0]! (some (some ⟨0⟩))}\n      {objectLine g auras[1]! (some (some ⟨0⟩))}"
+
+-- Starting a scry does not move library cards, but the demo reprints that
+-- library so the scrying player sees the looked-at faces (CR 701.20).
+#guard (zoneObjectIds giftKnownLib (.library ⟨0⟩)) ==
+  (zoneObjectIds giftKnownScrying (.library ⟨0⟩))
+#guard (changedZones giftKnownLib giftKnownScrying).contains (.library ⟨0⟩)
+#guard !(changedZones giftKnownScrying giftKnownScrying).contains (.library ⟨0⟩)
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    let forest := (g.object! forestId).name
+    let elves := (g.object! elvesId).name
+    forest == "Forest" && elves == "Llanowar Elves" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) forest &&
+      mentions (zoneBlock g (.library ⟨0⟩)) elves &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId) &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId) &&
+      mentions (playerBlock g (g.player ⟨0⟩)) s!"Looking at (scry 2, top last)" &&
+      mentions (playerBlock g (g.player ⟨0⟩)) forest &&
+      mentions (playerBlock g (g.player ⟨0⟩)) elves &&
+      mentions (snapshot g) forest &&
+      mentions (snapshot g) elves &&
+      match scryLookBlock g with
+      | some s => mentions s forest && mentions s elves
+      | none => false
+  | _, _ => false
+
+-- Other players do not see the scried faces.
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    let forest := (g.object! forestId).name
+    let elves := (g.object! elvesId).name
+    !mentions (zoneBlock g (.library ⟨0⟩) (some ⟨1⟩)) forest &&
+      !mentions (zoneBlock g (.library ⟨0⟩) (some ⟨1⟩)) elves &&
+      zoneBlock g (.library ⟨0⟩) (some ⟨1⟩) ==
+        s!"zone Chandra's library ({(g.player ⟨0⟩).library.size})" &&
+      mentions (playerBlock g (g.player ⟨0⟩) (some ⟨1⟩)) "Looking at (scry 2): (hidden)" &&
+      !mentions (playerBlock g (g.player ⟨0⟩) (some ⟨1⟩)) forest &&
+      mentions (snapshot g (some ⟨1⟩)) "(hidden)" &&
+      match scryLookBlock g (some ⟨1⟩) with
+      | some s => s == "Chandra is scrying 2"
+      | none => false
+  | _, _ => false
+
+-- The scrying player in hidden-information view still sees their own look.
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]? with
+  | some forestId =>
+    mentions (zoneBlock g (.library ⟨0⟩) (some ⟨0⟩)) (g.object! forestId).name &&
+      mentions (snapshot g (some ⟨0⟩)) (g.object! forestId).name &&
+      mentions (playerBlock g (g.player ⟨0⟩) (some ⟨0⟩)) (g.object! forestId).name
+  | none => false
+
+-- Finishing a scry that leaves library order unchanged still reprints the
+-- library so the look is no longer shown.
+#guard
+  let before := giftScrying
+  let after := giftScried
+  scryLook before ⟨0⟩ != scryLook after ⟨0⟩ &&
+    (changedZones before after).contains (.library ⟨0⟩) &&
+    !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
+
+#guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
+#guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
+#guard (changedZones cratermakerTargeted paidCratermaker).contains .battlefield
+#guard (changedZones cratermakerTargeted paidCratermaker).contains (.graveyard ⟨0⟩)
+#guard (changedZones paidCratermaker resolvedCratermaker).contains (.graveyard ⟨1⟩)
+#guard
+  let g := paidCratermaker
+  let srcId := (g.object! g.stack.back!.objectId).sourceId
+  match srcId with
+  | some id => mentions (stackBlock g) s!"*source {id}*"
+  | none => false
 
 #guard mentions (header proposedWarg) "choose a mode (CR 601.2b"
 #guard mentions (header wargModeDestroy) "choose targets (CR 601.2c"

@@ -53,6 +53,42 @@ def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
   if s.isEmpty then "" else s!" {s}"
 
+/-- How well leftover Oracle `line` matches a stacked ability's structured text. -/
+def abilityLineScore (line abilityText : String) : Nat :=
+  let words :=
+    abilityText.splitOn " " |>.map (fun s => s.trimAscii.copy) |>.filter (fun w => w.length >= 4)
+  (words.filter (fun w => (line.splitOn w).length > 1)).length
+
+/-- Printed text of one stacked ability. Sibling abilities of the source card
+are omitted. Prefers leftover Oracle wording when a unique line exists or a
+leftover line matches `abilityText`. -/
+def textForStackedAbility (c : CardDef) (abilityText : String) : String :=
+  match c.leftoverOracleLines with
+  | [] => abilityText
+  | [line] => line
+  | lines =>
+    match lines.find? (fun line => line == abilityText) with
+    | some line => line
+    | none =>
+      let (bestScore, bestLine) :=
+        lines.foldl
+          (fun (acc : Nat × String) line =>
+            let s := abilityLineScore line abilityText
+            if s > acc.1 then (s, line) else acc)
+          (0, abilityText)
+      if bestScore > 0 then bestLine else abilityText
+
+/-- Extras after a stack object's name. An ability on the stack shows only
+that ability, not other abilities printed on the source card. Spells still
+show their full printed extras. -/
+def stackFaceExtras (o : GameObject) : String :=
+  let s :=
+    match o.triggeredAbility, o.abilityEffect with
+    | some t, _ => textForStackedAbility o.printed (TriggeredAbility.toNotation t)
+    | none, some e => textForStackedAbility o.printed (AbilityEffect.toNotation e)
+    | none, none => o.printed.keywordsAndAbilities
+  if s.isEmpty then "" else s!" {s}"
+
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
   let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
@@ -66,9 +102,10 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
       if o.status.blocked then " *attacking, blocked*" else " *attacking*"
     else ""
   let blk :=
-    match o.status.blocking with
-    | none => ""
-    | some attackerId => s!" *blocking {objectRef g attackerId}*"
+    if o.status.blocking.isEmpty then ""
+    else
+      let refs := o.status.blocking.toList.map (objectRef g)
+      s!" *blocking {String.intercalate ", " refs}*"
   let pt :=
     if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=
@@ -88,7 +125,7 @@ def handLine (g : Game) (id : ObjectId) : String :=
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
-face-down even to their owner. -/
+face-down even to their owner except for cards they are scrying (CR 701.20). -/
 def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
   | .library _ => false
   | .hand p =>
@@ -97,9 +134,84 @@ def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
     | some v => v == p
   | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
 
+/-- Whether `viewer` may look at the cards `scrying` is looking at (CR 701.20).
+`none` is omniscient. -/
+def canSeeScry (viewer : Option PlayerId) (scrying : PlayerId) : Bool :=
+  match viewer with
+  | none => true
+  | some v => v == scrying
+
+/-- Cards `p` is looking at while scrying (last = current top). Empty if `p`
+is not scrying. -/
+def scryLook (g : Game) (p : PlayerId) : Array ObjectId :=
+  match g.pending with
+  | .scry q n => if q == p then g.scryLookedIds p n else #[]
+  | _ => #[]
+
+/-- A looked-at library card: object id plus the face, as when looking at a
+card in hand. -/
+def scryCardLine (g : Game) (id : ObjectId) : String :=
+  handLine g id
+
+/-- Lines for the cards `p` is looking at while scrying `n` (last = current top). -/
+def scryLookedLines (g : Game) (p : PlayerId) (n : Nat) : List String :=
+  (g.scryLookedIds p n).toList.map (scryCardLine g)
+
+/-- Board-state section for a pending scry. Other players see that a scry is
+happening, not the card faces. -/
+def scryLookBlock (g : Game) (viewer : Option PlayerId := none) : Option String :=
+  match g.pending with
+  | .scry p n =>
+    if canSeeScry viewer p then
+      let cards := scryLookedLines g p n
+      if cards.isEmpty then none
+      else some <| "Scry (top last):\n  " ++ String.intercalate "\n  " cards
+    else
+      some s!"{(g.player p).name} is scrying {n}"
+  | _ => none
+
+/-- Looking-at lines inside a player's `state` block while they scry. -/
+def scryLookSection (g : Game) (pl : Player) (viewer : Option PlayerId) : Option String :=
+  match g.pending with
+  | .scry p n =>
+    if p != pl.id then none
+    else if canSeeScry viewer p then
+      let cards := scryLookedLines g p n
+      if cards.isEmpty then none
+      else
+        some <| String.intercalate "\n"
+          (s!"  Looking at (scry {n}, top last):" :: cards.map (fun c => s!"    {c}"))
+    else
+      some s!"  Looking at (scry {n}): (hidden)"
+  | _ => none
+
+/-- Permanents currently attached to `hostId`. -/
+def attachmentsOf (g : Game) (hostId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun o => o.attachedTo == some hostId)
+
+/-- True when `o` is attached to a permanent on the battlefield. -/
+def attachedToBattlefield (g : Game) (o : GameObject) : Bool :=
+  match o.attachedTo.bind g.findObject? with
+  | some host => host.isOnBattlefield
+  | none => false
+
+/-- Lines for unattached permanents in `os`. Each is followed by what is
+attached to it (from the whole battlefield), indented two extra spaces so
+attached permanents sit next to their host. -/
+def battlefieldPermanentLines (g : Game) (os : Array GameObject)
+    (group : Option (Option PlayerId)) : List String :=
+  Id.run do
+    let mut lines : Array String := #[]
+    for o in os do
+      if !attachedToBattlefield g o then
+        lines := lines.push (objectLine g o group)
+        for att in attachmentsOf g o.id do
+          lines := lines.push s!"  {objectLine g att group}"
+    return lines.toList
+
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
-  let bf := (g.permanentsOf pl.id).toList.map (fun o => objectLine g o (some (some pl.id)))
+  let bf := battlefieldPermanentLines g (g.permanentsOf pl.id) (some (some pl.id))
   let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
   let handText :=
     if canSeeZoneFaces viewer (.hand pl.id) then
@@ -107,13 +219,17 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
       if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
     else
       "  (hidden)"
-  String.intercalate "\n" [
-    s!"{pl.name}{marker} — life {pl.life} — library {pl.library.size} — GY {pl.graveyard.size} — mana {pl.manaPool}",
-    s!"  Hand ({pl.hand.size}):",
-    "  " ++ handText,
-    "  Battlefield:",
-    "  " ++ bfText
-  ]
+  let scryLines : List String :=
+    match scryLookSection g pl viewer with
+    | some s => [s]
+    | none => []
+  String.intercalate "\n" (
+    [s!"{pl.name}{marker} — life {pl.life} — library {pl.library.size} — GY {pl.graveyard.size} — mana {pl.manaPool}"] ++
+    scryLines ++
+    [s!"  Hand ({pl.hand.size}):",
+     "  " ++ handText,
+     "  Battlefield:",
+     "  " ++ bfText])
 
 def stackBlock (g : Game) : String :=
   if g.stack.isEmpty then "Stack: (empty)"
@@ -121,7 +237,7 @@ def stackBlock (g : Game) : String :=
     let lines := g.stack.toList.reverse.map (fun e =>
       match g.findObject? e.objectId with
       | some o =>
-        s!"  {o.name}{faceExtras o.printed}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
+        s!"  {o.name}{stackFaceExtras o}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
@@ -149,6 +265,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
     | .scry p n =>
       s!" [scry {n} ({g.player p |>.name})]"
+    | .assignCombatDamage p true =>
+      s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
+    | .assignCombatDamage p false =>
+      s!" [assign combat damage (CR 510.1d, {g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""
@@ -172,23 +292,7 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
           | none => ""
         s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
-  let scryInfo :=
-    match g.pending with
-    | .scry p n =>
-      let canSee :=
-        match viewer with
-        | none => true
-        | some v => v == p
-      if canSee then
-        let cards := (g.scryLookedIds p n).toList.map (fun id =>
-          match g.findObject? id with
-          | some o => s!"{o.id} {o.name}"
-          | none => toString id)
-        [s!"Scry (top last): {String.intercalate ", " cards}"]
-      else
-        [s!"{(g.player p).name} is scrying {n}"]
-    | _ => []
-  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock ++ scryInfo)
+  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
 (CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
@@ -266,40 +370,48 @@ def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
 /-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
-are omitted. Permanents with no controller are listed last. The `Option
-PlayerId` is the group heading (`none` = no controller). -/
+are omitted. Permanents attached to another battlefield permanent are listed
+with that host rather than in their own controller's group. Permanents with
+no controller are listed last. The `Option PlayerId` is the group heading
+(`none` = no controller). -/
 def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=
   Id.run do
     let mut groups : Array (String × Option PlayerId × Array GameObject) := #[]
     for pl in g.players do
-      let ps := g.permanentsOf pl.id
+      let ps := (g.permanentsOf pl.id).filter (fun o => !attachedToBattlefield g o)
       if !ps.isEmpty then
         groups := groups.push (pl.name, some pl.id, ps)
-    let uncontrolled := g.battlefield.filter (fun o => o.controller.isNone)
+    let uncontrolled := g.battlefield.filter (fun o =>
+      o.controller.isNone && !attachedToBattlefield g o)
     if !uncontrolled.isEmpty then
       groups := groups.push ("(no controller)", none, uncontrolled)
     return groups
 
 /-- Shared-zone battlefield lines grouped under each controller's name.
 Owner and controller are omitted on each permanent unless they differ from
-the group heading. -/
+the group heading. Attached permanents are indented under their host. -/
 def battlefieldGroupLines (g : Game) : List String :=
   Id.run do
     let mut lines : Array String := #[]
     for (label, group, os) in battlefieldGroups g do
       lines := lines.push s!"{label}:"
-      for o in os do
-        lines := lines.push s!"  {objectLine g o (some group)}"
+      for line in battlefieldPermanentLines g os (some group) do
+        lines := lines.push s!"  {line}"
     return lines.toList
 
-/-- Zones whose occupants, order, or (for the battlefield) visible status
-differ between two game states. Tapping or untapping a land does not move it,
-but it does change the battlefield (CR 110.5 / 502.2), so the demo reprints
-that zone. -/
+/-- Zones whose occupants, order, visible status, or scry look differ between
+two game states. Tapping or untapping a land does not move it, but it does
+change the battlefield (CR 110.5 / 502.2), so the demo reprints that zone.
+Starting or finishing a scry does not move library cards, but the scrying
+player may look at the top cards (CR 701.20), so the demo reprints that
+library. -/
 def changedZones (before after : Game) : Array Zone :=
   (allZones after).filter (fun z =>
     match z with
     | .battlefield => battlefieldView before != battlefieldView after
+    | .library p =>
+      zoneObjectIds before z != zoneObjectIds after z ||
+        scryLook before p != scryLook after p
     | _ => zoneObjectIds before z != zoneObjectIds after z)
 
 def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
@@ -314,7 +426,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         match o.controller with
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
-      s!"{o.id} {o.name}{faceExtras o.printed}{sourceClause g o}{ctrl}"
+      s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}{ctrl}"
     | .exile =>
       let extra :=
         match o.playPermission with
@@ -323,7 +435,9 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
       s!"{o.id} {o.name}{faceExtras o.printed}{extra}"
     | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
-/-- Current contents of `z`. Hidden zones show only their size (CR 400.2). -/
+/-- Current contents of `z`. Hidden zones show only their size (CR 400.2),
+except that a scrying player (or omniscient view) sees the looked-at library
+cards (CR 701.20). -/
 def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String :=
   let ids := zoneObjectIds g z
   let shown :=
@@ -331,15 +445,24 @@ def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String 
     | .stack => ids.reverse
     | _ => ids
   let title := s!"zone {zoneLabel g z} ({shown.size})"
-  if !canSeeZoneFaces viewer z then
-    title
-  else if shown.isEmpty then
-    s!"{title}: (empty)"
-  else
-    let lines :=
-      match z with
-      | .battlefield => battlefieldGroupLines g
-      | _ => shown.toList.map (zoneLine g z)
-    title ++ ":\n  " ++ String.intercalate "\n  " lines
+  match z with
+  | .library owner =>
+    let looked := scryLook g owner
+    if looked.isEmpty || !canSeeScry viewer owner then
+      title
+    else
+      let lines := looked.toList.map (scryCardLine g)
+      title ++ ":\n  looking at (top last):\n  " ++ String.intercalate "\n  " lines
+  | _ =>
+    if !canSeeZoneFaces viewer z then
+      title
+    else if shown.isEmpty then
+      s!"{title}: (empty)"
+    else
+      let lines :=
+        match z with
+        | .battlefield => battlefieldGroupLines g
+        | _ => shown.toList.map (zoneLine g z)
+      title ++ ":\n  " ++ String.intercalate "\n  " lines
 
 end Mtg.Demo.Render

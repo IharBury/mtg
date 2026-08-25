@@ -27,7 +27,13 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .activateManaAbilities _ =>
       chooseManaPayment g p
     | .chooseMode _ =>
-      chooseSpellMode g p
+      match g.proposedSpell with
+      | some prop =>
+        if prop.kind == .activatedAbility then
+          chooseAbilityMode g p
+        else
+          chooseSpellMode g p
+      | none => some .pass
     | .chooseTargets _ =>
       chooseSpellTarget g p
     | .sacrificePermanent _ sourceId =>
@@ -40,6 +46,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
+    | .assignCombatDamage _ _ =>
+      some (.assignCombatDamage #[])
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
@@ -68,6 +76,14 @@ where
     | some spell =>
       match g.defaultTarget p spell with
       | some t => some (.target t)
+      | none => some .pass
+  /-- During CR 601.2b, announce a mode of a modal activated ability. -/
+  chooseAbilityMode (g : Game) (p : PlayerId) : Option Action :=
+    match g.proposedSpell with
+    | none => some .pass
+    | some prop =>
+      match g.defaultAbilityMode p prop.abilityModes with
+      | some idx => some (.chooseMode idx)
       | none => some .pass
   /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
   chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=

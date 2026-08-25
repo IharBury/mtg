@@ -5,12 +5,12 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana activated
-abilities such as Wayfarer's Bauble and Snowslope Hunter, static abilities that
-grant trample or pump an enchanted creature, attack triggers that pump,
-becomes-blocked triggers that damage blockers, enters triggers that scry, Aura
-attachment, modal spells, destroy, +1/+1 counters, until-end-of-turn keyword
-grants, and a few one-shot spell effects);
+(keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
+activated abilities such as Wayfarer's Bauble, Snowslope Hunter, and Goblin
+Cratermaker, static abilities that grant trample or pump an enchanted creature,
+attack triggers that pump, becomes-blocked triggers that damage blockers, enters
+triggers that scry, Aura attachment, modal spells, destroy, +1/+1 counters,
+until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -668,6 +668,11 @@ def goblinCratermaker : CardDef := {
   oracleText := "{1}, Sacrifice this creature: Choose one —\n• This creature deals 2 damage to target creature.\n• Destroy target colorless nonland permanent."
   power := some 2
   toughness := some 2
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
+    effect := .dealDamageToTargetCreature 2
+    otherModes := #[.destroyTargetColorlessNonland]
+  }]
 }
 
 def infernoTitan : CardDef := {
@@ -927,6 +932,15 @@ def attercop : CardDef := {
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
+#guard goblinCratermaker.activatedAbilities.size == 1
+#guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
+#guard goblinCratermaker.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
+#guard goblinCratermaker.activatedAbilities[0]!.isModal
+#guard goblinCratermaker.activatedAbilities[0]!.effect == .dealDamageToTargetCreature 2
+#guard goblinCratermaker.activatedAbilities[0]!.otherModes ==
+  #[.destroyTargetColorlessNonland]
+#guard (goblinCratermaker.summary.splitOn "Choose one").length > 1
+#guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget

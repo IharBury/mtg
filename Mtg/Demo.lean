@@ -137,8 +137,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
   play <id>            Play a land
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
+  mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
-  mode <n>             Choose a mode for a modal spell (CR 601.2b / 700.2)
   target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
@@ -150,6 +150,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
   block                Block each attacker with a legal unused blocker
   block <b> <a> [...]  Assign listed blocker/attacker pairs
   noblock              Declare no blockers
+  assign               Use the default combat damage assignment (CR 510.1)
+  assign <s> <t> <n> [...]  Divide combat damage: source, creature, amount (CR 510.1c–d)
   concede              Concede
   quit                 Exit
 "
@@ -162,6 +164,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
+#guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 
@@ -336,14 +339,14 @@ def applyBlock (g : Game) (p : PlayerId) (tokens : List String) : Except String 
   let ogre := Tests.namedPermanent g "Gray Ogre"
   match applyBlock g ⟨1⟩ [toString bears.id, toString ogre.id] with
   | .ok g' =>
-    (Tests.namedPermanent g' "Grizzly Bears").status.blocking == some ogre.id
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking == #[ogre.id]
   | .error _ => false
 
 #guard
   match applyBlock Tests.readyToDeclareBlockers ⟨1⟩ [] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
-      some (Tests.namedPermanent g' "Gray Ogre").id
+      #[(Tests.namedPermanent g' "Gray Ogre").id]
   | .error _ => false
 
 #guard
@@ -359,6 +362,89 @@ def applyBlock (g : Game) (p : PlayerId) (tokens : List String) : Except String 
 #guard
   match applyBlock Tests.readyToDeclareAttackers ⟨0⟩ [] with
   | .error msg => msg == "Not time to declare blockers"
+  | .ok _ => false
+
+def assignUsage : String := "usage: assign [source target amount ...]"
+
+/-- Add `amt` from `src` to creature `tgt` in an accumulating assignment list. -/
+def pushCombatAmount (acc : Array CreatureCombatAssignment) (src tgt : ObjectId) (amt : Int) :
+    Array CreatureCombatAssignment :=
+  match acc.findIdx? (fun a => a.source == src) with
+  | none => acc.push { source := src, toCreatures := #[(tgt, amt)] }
+  | some i =>
+    let a := acc[i]!
+    acc.set! i { a with toCreatures := a.toCreatures.push (tgt, amt) }
+
+/-- Parse source/target/amount triples. An empty list means the default legal
+assignment (CR 510.1c–d). -/
+def parseCombatAssignments (tokens : List String) :
+    Except String (Array CreatureCombatAssignment) :=
+  go (tokens.filter (fun t => !t.isEmpty)) #[]
+where
+  go : List String → Array CreatureCombatAssignment →
+      Except String (Array CreatureCombatAssignment)
+    | [], acc => .ok acc
+    | srcTok :: tgtTok :: amtTok :: rest, acc =>
+      match parseObjectId? srcTok, parseObjectId? tgtTok, amtTok.toInt? with
+      | some src, some tgt, some amt => go rest (pushCombatAmount acc src tgt amt)
+      | _, _, _ => .error assignUsage
+    | _, _ => .error assignUsage
+
+def applyAssign (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let asgns ← parseCombatAssignments tokens
+  for a in asgns do
+    if (g.findObject? a.source).isNone then
+      throw "no such object"
+    for (tid, _) in a.toCreatures do
+      if (g.findObject? tid).isNone then
+        throw "no such object"
+  g.apply p (.assignCombatDamage asgns)
+
+def parsedOneCombatTriple : Bool :=
+  match parseCombatAssignments ["3", "#7", "2"] with
+  | .ok asgns => asgns == #[{ source := ⟨3⟩, toCreatures := #[(⟨7⟩, 2)] }]
+  | .error _ => false
+
+#guard parsedOneCombatTriple
+
+def parsedTwoAmountsSameSource : Bool :=
+  match parseCombatAssignments ["1", "2", "3", "1", "4", "0"] with
+  | .ok asgns =>
+    asgns == #[{ source := ⟨1⟩, toCreatures := #[(⟨2⟩, 3), (⟨4⟩, 0)] }]
+  | .error _ => false
+
+#guard parsedTwoAmountsSameSource
+
+#guard
+  match parseCombatAssignments [] with
+  | .ok asgns => asgns.isEmpty
+  | .error _ => false
+
+#guard
+  match parseCombatAssignments ["1", "2"] with
+  | .error msg => msg == assignUsage
+  | .ok _ => false
+
+#guard
+  match applyAssign Tests.giantReadyToAssign ⟨0⟩ [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    (g'.battlefield.filter (fun o => o.name == "Llanowar Elves")).size == 1
+  | .error _ => false
+
+#guard
+  let g := Tests.giantReadyToAssign
+  let giant := Tests.namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  match applyAssign g ⟨0⟩
+      [toString giant.id, toString elves[0]!.id, "1",
+        toString giant.id, toString elves[1]!.id, "2"] with
+  | .ok g' => (g'.battlefield.filter (fun o => o.name == "Llanowar Elves")).isEmpty
+  | .error _ => false
+
+#guard
+  match applyAssign Tests.readyToDeclareBlockers ⟨0⟩ [] with
+  | .error msg => msg == "Not time to assign combat damage (CR 510.1)"
   | .ok _ => false
 
 def bottomUsage : String := "usage: bottom <id> [id ...]"
@@ -730,6 +816,64 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
+def modeUsage : String := "usage: mode <n>"
+
+/-- Choose a mode of a modal spell or ability (CR 601.2b). Modes are 1-indexed. -/
+def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match arg.toNat? with
+    | none => throw modeUsage
+    | some 0 => throw modeUsage
+    | some n => g.apply p (.chooseMode (n - 1))
+  | _ => throw modeUsage
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ [] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["nope"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["0"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "chooses a mode")
+  | .error _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["2"] with
+  | .error msg => Tests.mentions msg "requires a target"
+  | .ok _ => false
+
+#guard
+  let g := Tests.cratermakerDestroyReady
+  let src := Tests.cratermakerSource g
+  match applyActivate g ⟨0⟩ [toString src.id] with
+  | .error _ => false
+  | .ok g' =>
+    match applyMode g' ⟨0⟩ ["2"] with
+    | .ok g'' =>
+      g''.pending == .chooseTargets ⟨0⟩ &&
+      (g''.object! g''.stack.back!.objectId).abilityEffect ==
+        some .destroyTargetColorlessNonland
+    | .error _ => false
+
 def castUsage : String := "usage: cast <id>"
 
 /-- Begin casting the named spell (CR 601.2a). Targets are announced later
@@ -861,19 +1005,6 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g''.pending == .activateManaAbilities ⟨0⟩ &&
       g''.stack.back!.targets == #[Target.permanent tid]
     | .error _ => false
-
-def modeUsage : String := "usage: mode <n>"
-
-/-- Announce a 1-based mode for a modal spell (CR 601.2b / 700.2). -/
-def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match arg.toNat? with
-    | none => throw modeUsage
-    | some 0 => throw modeUsage
-    | some n => g.apply p (.chooseMode (n - 1))
-  | _ => throw modeUsage
 
 #guard
   match applyMode Tests.proposedWarg ⟨0⟩ [] with
@@ -1031,11 +1162,12 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "noattack" => g.apply p (.declareAttackers #[])
   | "block" => applyBlock g p args
   | "noblock" => g.apply p (.declareBlockers #[])
+  | "assign" => applyAssign g p args
   | "play" => applyPlay g p args
   | "activate" => applyActivate g p args
+  | "mode" => applyMode g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
-  | "mode" => applyMode g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | _ => .error s!"Unknown command: {cmd}"
@@ -1079,7 +1211,7 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   match applyInteractiveAsActor Tests.readyToDeclareBlockers "block" [] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
-      some (Tests.namedPermanent g' "Gray Ogre").id
+      #[(Tests.namedPermanent g' "Gray Ogre").id]
   | .error _ => false
 
 #guard
@@ -1097,6 +1229,13 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.stack.back!.chosenMode == some 0
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.giantReadyToAssign "assign" [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "Hill Giant deals 3 combat damage")
   | .error _ => false
 
 #guard
