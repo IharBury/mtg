@@ -246,10 +246,12 @@ def mountainLine (g : Game) : String :=
 #guard mountainLine withMountain ==
   s!"{(lastPermanent withMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
-#guard mentions (zoneBlock withMountain .battlefield)
-  "(owned by Chandra, controlled by Chandra)"
-#guard mentions (snapshot withMountain)
-  "(owned by Chandra, controlled by Chandra)"
+-- Ungrouped lines still name owner and controller. Grouped battlefield
+-- listings omit them when they match the controller heading.
+#guard !mentions (zoneBlock withMountain .battlefield) "owned by"
+#guard !mentions (zoneBlock withMountain .battlefield) "controlled by"
+#guard !mentions (snapshot withMountain) "owned by"
+#guard !mentions (snapshot withMountain) "controlled by"
 #guard mentions (mountainLine tappedMountain) "(tapped)"
 #guard mentions (mountainLine tappedMountain)
   "(owned by Chandra, controlled by Chandra)"
@@ -274,13 +276,18 @@ def stolenMountain : Game := addPermanent started mountain ⟨0⟩ ⟨1⟩
   s!"{(lastPermanent stolenMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 #guard (stolenMountain.permanentsOf ⟨1⟩).any (·.id == (lastPermanent stolenMountain).id)
 #guard !(stolenMountain.permanentsOf ⟨0⟩).any (·.id == (lastPermanent stolenMountain).id)
+-- Grouped under Nissa: owner differs, so it is printed; controller matches.
 #guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
-  "(owned by Chandra, controlled by Nissa)"
+  "(owned by Chandra)"
+#guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
+  "controlled by"
 #guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "  (none)"
 #guard mentions (zoneBlock stolenMountain .battlefield)
-  "(owned by Chandra, controlled by Nissa)"
+  "(owned by Chandra)"
+#guard !mentions (zoneBlock stolenMountain .battlefield) "controlled by"
 #guard mentions (snapshot stolenMountain)
-  "(owned by Chandra, controlled by Nissa)"
+  "(owned by Chandra)"
+#guard !mentions (snapshot stolenMountain) "controlled by"
 
 /-- Changing control without moving the permanent still reprints the battlefield. -/
 def afterControlChange : Game :=
@@ -292,6 +299,10 @@ def afterControlChange : Game :=
 #guard (changedZones withMountain afterControlChange).contains .battlefield
 #guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
   "(owned by Chandra, controlled by Nissa)"
+#guard mentions (objectLine afterControlChange (lastPermanent afterControlChange)
+  (some (some ⟨1⟩))) "(owned by Chandra)"
+#guard !mentions (objectLine afterControlChange (lastPermanent afterControlChange)
+  (some (some ⟨1⟩))) "controlled by"
 
 /- The shared battlefield listing is grouped by controller (CR 110.2). -/
 #guard zoneBlock started .battlefield == "zone battlefield (0): (empty)"
@@ -299,12 +310,12 @@ def afterControlChange : Game :=
 #guard
   let m := lastPermanent withMountain
   zoneBlock withMountain .battlefield ==
-    s!"zone battlefield (1):\n  Chandra:\n    {objectLine withMountain m}"
+    s!"zone battlefield (1):\n  Chandra:\n    {objectLine withMountain m (some (some ⟨0⟩))}"
 
 #guard
   let m := lastPermanent stolenMountain
   zoneBlock stolenMountain .battlefield ==
-    s!"zone battlefield (1):\n  Nissa:\n    {objectLine stolenMountain m}"
+    s!"zone battlefield (1):\n  Nissa:\n    {objectLine stolenMountain m (some (some ⟨1⟩))}"
 
 /-- Nissa's permanent entered first; the listing still groups Chandra before Nissa. -/
 def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
@@ -314,7 +325,7 @@ def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0�
   let mountainP := (mixedControllers.permanentsOf ⟨1⟩)[0]!
   forestP.name == "Forest" && mountainP.name == "Mountain" &&
     zoneBlock mixedControllers .battlefield ==
-      s!"zone battlefield (2):\n  Chandra:\n    {objectLine mixedControllers forestP}\n  Nissa:\n    {objectLine mixedControllers mountainP}"
+      s!"zone battlefield (2):\n  Chandra:\n    {objectLine mixedControllers forestP (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine mixedControllers mountainP (some (some ⟨1⟩))}"
 
 def uncontrolledPermanent : Game :=
   let o := lastPermanent withMountain
@@ -323,7 +334,19 @@ def uncontrolledPermanent : Game :=
 #guard
   let m := lastPermanent uncontrolledPermanent
   zoneBlock uncontrolledPermanent .battlefield ==
-    s!"zone battlefield (1):\n  (no controller):\n    {objectLine uncontrolledPermanent m}"
+    s!"zone battlefield (1):\n  (no controller):\n    {objectLine uncontrolledPermanent m (some none)}"
+
+-- Owner still prints under the no-controller heading; "no controller" does not
+-- repeat on the permanent line.
+#guard mentions (zoneBlock uncontrolledPermanent .battlefield) "(owned by Chandra)"
+#guard !mentions (objectLine uncontrolledPermanent (lastPermanent uncontrolledPermanent)
+  (some none)) "no controller"
+#guard !mentions (objectLine withMountain (lastPermanent withMountain) (some (some ⟨0⟩)))
+  "owned by"
+#guard !mentions (objectLine mixedControllers
+  ((mixedControllers.permanentsOf ⟨0⟩)[0]!) (some (some ⟨0⟩))) "owned by"
+#guard mentions (objectLine mixedControllers
+  ((mixedControllers.permanentsOf ⟨1⟩)[0]!) (some (some ⟨1⟩))) "(owned by Chandra)"
 
 /- Hands, battlefield, and other zones print keywords and abilities. -/
 #guard mentions ragingGoblin.summary "haste"
