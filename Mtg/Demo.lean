@@ -111,7 +111,7 @@ def helpInteractive : String :=
   help                 Show this help
   state                Print the board
   keep                 Keep this opening hand (CR 103.5)
-  mulligan             Take a London mulligan (CR 103.5)
+  mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell's cost (CR 601.2h)

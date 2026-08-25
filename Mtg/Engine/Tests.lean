@@ -667,17 +667,32 @@ def emptiedPool : Game := tappedMountain.emptyManaPools
 #guard manaLine (emptiedPool.player ⟨0⟩) == "Chandra — mana {}"
 #guard emptiedPool.log.any (fun s => mentions s "empties mana pool")
 
-/-- CR 103.5: the starting player declares a mulligan first; taking one draws
-a new seven and requires putting that many cards on the bottom. -/
-def afterChandraMulligan : Game :=
+/-- CR 103.5: the starting player declares first; the mulligan is taken only
+after every remaining player has declared. -/
+def afterChandraDeclaresMulligan : Game :=
   mustApply drawnHands ⟨0⟩ .takeMulligan
+
+#guard afterChandraDeclaresMulligan.pending == .declareMulligan ⟨1⟩
+#guard afterChandraDeclaresMulligan.actor == some ⟨1⟩
+#guard (afterChandraDeclaresMulligan.player ⟨0⟩).hand == (drawnHands.player ⟨0⟩).hand
+#guard (afterChandraDeclaresMulligan.player ⟨0⟩).mulligansTaken == 0
+#guard afterChandraDeclaresMulligan.willMulligan == #[⟨0⟩]
+#guard afterChandraDeclaresMulligan.log.any (fun s => mentions s "will take a mulligan")
+#guard !afterChandraDeclaresMulligan.log.any (fun s => mentions s "takes a mulligan (")
+
+/-- Nissa keeps; then Chandra's declared mulligan is taken (CR 103.5). -/
+def afterChandraMulligan : Game :=
+  mustApply afterChandraDeclaresMulligan ⟨1⟩ .keep
 
 #guard afterChandraMulligan.pending == .putOnBottom ⟨0⟩ 1
 #guard afterChandraMulligan.actor == some ⟨0⟩
 #guard (afterChandraMulligan.player ⟨0⟩).hand.size == 7
 #guard (afterChandraMulligan.player ⟨0⟩).mulligansTaken == 1
 #guard (afterChandraMulligan.player ⟨0⟩).library.size == 53
+#guard (afterChandraMulligan.player ⟨1⟩).keptOpeningHand
+#guard (afterChandraMulligan.player ⟨1⟩).hand == (drawnHands.player ⟨1⟩).hand
 #guard afterChandraMulligan.log.any (fun s => mentions s "takes a mulligan")
+#guard afterChandraMulligan.log.any (fun s => mentions s "at the same time")
 #guard mentions (header afterChandraMulligan) "on the bottom"
 
 def chandraBottomCard : GameObject :=
@@ -690,23 +705,17 @@ def afterChandraBottoms : Game :=
 
 #guard (afterChandraBottoms.player ⟨0⟩).hand.size == 6
 #guard (afterChandraBottoms.player ⟨0⟩).library.size == 54
-#guard afterChandraBottoms.pending == .declareMulligan ⟨1⟩
+#guard afterChandraBottoms.pending == .declareMulligan ⟨0⟩
+#guard (afterChandraBottoms.player ⟨1⟩).keptOpeningHand
+#guard !(afterChandraBottoms.player ⟨0⟩).keptOpeningHand
 #guard (afterChandraBottoms.object! (afterChandraBottoms.player ⟨0⟩).library[0]!).name ==
   chandraBottomCard.name
 #guard afterChandraBottoms.log.any (fun s => mentions s "on the bottom of their library")
 #guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.hand ⟨0⟩)
 #guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.library ⟨0⟩)
 
-def afterNissaKeeps : Game :=
-  mustApply afterChandraBottoms ⟨1⟩ .keep
-
-#guard (afterNissaKeeps.player ⟨1⟩).keptOpeningHand
-#guard !(afterNissaKeeps.player ⟨0⟩).keptOpeningHand
-#guard afterNissaKeeps.pending == .declareMulligan ⟨0⟩
-#guard (afterNissaKeeps.player ⟨1⟩).hand.size == 7
-
 def afterChandraKeepsSix : Game :=
-  mustApply afterNissaKeeps ⟨0⟩ .keep
+  mustApply afterChandraBottoms ⟨0⟩ .keep
 
 #guard afterChandraKeepsSix.pending == .none
 #guard afterChandraKeepsSix.step == .upkeep
@@ -715,6 +724,29 @@ def afterChandraKeepsSix : Game :=
 #guard (afterChandraKeepsSix.player ⟨1⟩).hand.size == 7
 #guard (afterChandraKeepsSix.player ⟨0⟩).keptOpeningHand
 #guard afterChandraKeepsSix.log.any (fun s => mentions s "takes the first turn")
+
+/-- Both players declare a mulligan before either hand is shuffled (CR 103.5). -/
+def afterBothDeclareMulligan : Game :=
+  mustApply afterChandraDeclaresMulligan ⟨1⟩ .takeMulligan
+
+#guard afterBothDeclareMulligan.pending == .putOnBottom ⟨0⟩ 1
+#guard afterBothDeclareMulligan.actor == some ⟨0⟩
+#guard (afterBothDeclareMulligan.player ⟨0⟩).mulligansTaken == 1
+#guard (afterBothDeclareMulligan.player ⟨1⟩).mulligansTaken == 1
+#guard (afterBothDeclareMulligan.player ⟨0⟩).hand.size == 7
+#guard (afterBothDeclareMulligan.player ⟨1⟩).hand.size == 7
+#guard (afterBothDeclareMulligan.player ⟨1⟩).hand != (drawnHands.player ⟨1⟩).hand
+#guard afterBothDeclareMulligan.mulliganToBottom == #[⟨0⟩, ⟨1⟩]
+#guard afterBothDeclareMulligan.log.any (fun s => mentions s "will take a mulligan")
+
+def afterChandraBottomsBothMulligan : Game :=
+  let id := (afterBothDeclareMulligan.player ⟨0⟩).hand[0]!
+  mustApply afterBothDeclareMulligan ⟨0⟩ (.putOnBottom #[id])
+
+#guard afterChandraBottomsBothMulligan.pending == .putOnBottom ⟨1⟩ 1
+#guard afterChandraBottomsBothMulligan.actor == some ⟨1⟩
+#guard (afterChandraBottomsBothMulligan.player ⟨0⟩).hand.size == 6
+#guard (afterChandraBottomsBothMulligan.player ⟨1⟩).hand.size == 7
 
 #guard started.pending == .none
 #guard (started.player ⟨0⟩).keptOpeningHand
@@ -751,7 +783,8 @@ def afterChandraKeepsSix : Game :=
 /-- The seventh mulligan leaves a zero-card hand; further mulligans are illegal. -/
 def seventhMulligan : Game :=
   let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 6 })
-  mustApply g ⟨0⟩ .takeMulligan
+  let g := mustApply g ⟨0⟩ .takeMulligan
+  mustApply g ⟨1⟩ .keep
 
 #guard seventhMulligan.pending == .putOnBottom ⟨0⟩ 7
 
@@ -760,7 +793,8 @@ def afterZeroHand : Game :=
 
 #guard (afterZeroHand.player ⟨0⟩).hand.size == 0
 #guard (afterZeroHand.player ⟨0⟩).keptOpeningHand
-#guard afterZeroHand.pending == .declareMulligan ⟨1⟩
+#guard afterZeroHand.pending == .none
+#guard afterZeroHand.step == .upkeep
 
 #guard
   let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 7 })
