@@ -22,8 +22,13 @@ def objectLine (g : Game) (o : GameObject) : String :=
   let atk := if o.status.attacking then " *attacking*" else ""
   let blk :=
     match o.status.blocking with
-    | some _ => " *blocking*"
     | none => ""
+    | some attackerId =>
+      let whom :=
+        match g.findObject? attackerId with
+        | some attacker => s!"{attacker.id} {attacker.name}"
+        | none => toString attackerId
+      s!" *blocking {whom}*"
   let pt :=
     if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
   let dmg :=
