@@ -9,10 +9,11 @@ import Mtg.Engine.Zone
 /-!
 # Game state and rules engine
 
-Encodes starting a game (CR 103), ending a game (CR 104), priority (CR 117),
-playing lands (CR 116.2a / 305), casting the spells we model (CR 601),
-activating non-mana abilities of permanents (CR 602), combat (CR 506–510),
-cleanup (CR 514.3), and the state-based actions we implement (CR 704.5).
+Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
+ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
+casting the spells we model (CR 601), activating non-mana abilities of
+permanents (CR 602), combat (CR 506–510), cleanup (CR 514.3), and the
+state-based actions we implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -107,6 +108,10 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- This player declares whether they will take a mulligan (CR 103.5). -/
+  | declareMulligan (player : PlayerId)
+  /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
+  | putOnBottom (player : PlayerId) (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -120,11 +125,17 @@ structure Player where
   life : Int := 20
   startingLife : Int := 20
   maxHandSize : Nat := 7
+  /-- Cards drawn as the game begins (CR 103.5); normally seven. -/
+  startingHandSize : Nat := 7
   manaPool : ManaPool := {}
   landsPlayedThisTurn : Nat := 0
   poison : Nat := 0
   lost : Bool := false
   drewFromEmpty : Bool := false
+  /-- Completed London mulligans this game (CR 103.5). -/
+  mulligansTaken : Nat := 0
+  /-- Set once this player declines further mulligans (CR 103.5). -/
+  keptOpeningHand : Bool := false
   library : Array ObjectId := #[]
   hand : Array ObjectId := #[]
   graveyard : Array ObjectId := #[]
@@ -154,6 +165,13 @@ inductive Action where
   | pay
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
+  /-- Keep this hand as the opening hand (CR 103.5). -/
+  | keep
+  /-- Declare a London mulligan; it is taken after every remaining player has
+  declared (CR 103.5). -/
+  | takeMulligan
+  /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
+  | putOnBottom (ids : Array ObjectId)
   | concede
 deriving Repr
 
@@ -180,6 +198,13 @@ structure Game where
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
+  /-- Players still to declare keep-or-mulligan in the current CR 103.5 round. -/
+  mulliganToDeclare : Array PlayerId := #[]
+  /-- Players who declared they will mulligan this round; taken together after
+  every remaining player has declared (CR 103.5). -/
+  willMulligan : Array PlayerId := #[]
+  /-- Players who still must put cards on the bottom after simultaneous mulligans. -/
+  mulliganToBottom : Array PlayerId := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -1017,6 +1042,207 @@ def concede (g : Game) (p : PlayerId) : Game :=
   let g := g.logMsg s!"{pl.name} concedes (CR 104.3a)"
   g.checkSBA
 
+/-- True while players are still keeping or taking mulligans (CR 103.5). -/
+def openingHandsPending (g : Game) : Bool :=
+  match g.pending with
+  | .declareMulligan _ | .putOnBottom _ _ => true
+  | _ => false
+
+/-- Players who have not yet kept an opening hand, in turn order from the
+starting player (CR 103.5). -/
+def playersStillDecidingMulligan (g : Game) : Array PlayerId :=
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.startingPlayer.idx + k) % n⟩
+      let pl := g.player q
+      if !pl.lost && !pl.keptOpeningHand then
+        acc := acc.push q
+    return acc
+
+def promptMulligan (g : Game) (p : PlayerId) : Game :=
+  { g with pending := .declareMulligan p }
+    |>.logMsg s!"{g.player p |>.name} may keep or take a mulligan (CR 103.5)"
+
+def promptBottom (g : Game) (p : PlayerId) : Game :=
+  let n := (g.player p).mulligansTaken
+  let cards := if n == 1 then "1 card" else s!"{n} cards"
+  { g with pending := .putOnBottom p n }
+    |>.logMsg s!"{g.player p |>.name} puts {cards} on the bottom of their library (CR 103.5)"
+
+/-- After every remaining player has kept, the starting player takes their
+first turn (CR 103.8). -/
+def finishOpeningHands (g : Game) : Game :=
+  let g := { g with
+    pending := .none
+    mulliganToDeclare := #[]
+    willMulligan := #[]
+    mulliganToBottom := #[] }
+  let g := g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
+  g.beginTurn
+
+/-- Start (or restart) a CR 103.5 round: eligible players declare in turn
+order. When nobody remains, the game begins. -/
+def beginMulliganRound (g : Game) : Game :=
+  if g.over then g
+  else
+    let remaining := g.playersStillDecidingMulligan
+    if remaining.isEmpty then
+      g.finishOpeningHands
+    else
+      promptMulligan
+        { g with
+          mulliganToDeclare := remaining
+          willMulligan := #[]
+          mulliganToBottom := #[] }
+        remaining[0]!
+
+/-- Shuffle the cards in `p`'s hand back into their library (CR 103.5). -/
+def returnHandToLibrary (g : Game) (p : PlayerId) : Game :=
+  Id.run do
+    let mut g := g
+    let ids := (g.player p).hand
+    for id in ids do
+      let (g', _) := g.move id (.library p)
+      g := g'
+    return g
+
+/-- A player may mulligan until that mulligan would leave a zero-card opening
+hand, after which they may not take further mulligans (CR 103.5). -/
+def canTakeMulligan (g : Game) (p : PlayerId) : Bool :=
+  let pl := g.player p
+  !g.over && !pl.keptOpeningHand && pl.mulligansTaken < pl.startingHandSize
+
+/-- Perform one already-declared mulligan: shuffle, then draw a new starting
+hand (CR 103.5). Bottoming is a later choice. -/
+def executeOneMulligan (g : Game) (p : PlayerId) : Game :=
+  let n := (g.player p).mulligansTaken + 1
+  let size := (g.player p).startingHandSize
+  let g := g.modifyPlayer p (fun pl => { pl with mulligansTaken := n })
+  let g := g.logMsg s!"{g.player p |>.name} takes a mulligan ({n})"
+  let g := g.returnHandToLibrary p
+  let g := g.shuffleLibrary p
+  g.draw p size
+
+/-- After every remaining player has declared, those who chose to mulligan
+do so at the same time (CR 103.5). -/
+def resolveDeclaredMulligans (g : Game) : Game :=
+  if g.willMulligan.isEmpty then
+    g.beginMulliganRound
+  else
+    let order := g.playersStillDecidingMulligan.filter (fun p => g.willMulligan.contains p)
+    let g := g.logMsg
+      "Players who chose to mulligan do so at the same time (CR 103.5)"
+    let g :=
+      Id.run do
+        let mut g := g
+        for p in order do
+          g := g.executeOneMulligan p
+        return g
+    if order.isEmpty then
+      g.beginMulliganRound
+    else
+      promptBottom { g with willMulligan := #[], mulliganToBottom := order } order[0]!
+
+/-- After `who` has declared keep or mulligan, the next declarer in this round
+acts. When the round's declarations are complete, pending mulligans are taken
+together. -/
+def afterDeclaration (g : Game) (who : PlayerId) : Game :=
+  if g.over then g
+  else
+    let rest := g.mulliganToDeclare.filter (fun q => q != who)
+    let g := { g with mulliganToDeclare := rest }
+    if rest.isEmpty then
+      g.resolveDeclaredMulligans
+    else
+      g.promptMulligan rest[0]!
+
+/-- After `who` has put cards on the bottom, the next such player acts, or a
+new declaration round begins. -/
+def afterBottom (g : Game) (who : PlayerId) : Game :=
+  if g.over then g
+  else
+    let rest := g.mulliganToBottom.filter (fun q => q != who)
+    let g := { g with mulliganToBottom := rest }
+    if rest.isEmpty then
+      g.beginMulliganRound
+    else
+      g.promptBottom rest[0]!
+
+def uniqueObjectIds (ids : Array ObjectId) : Bool :=
+  Id.run do
+    let mut seen : Array ObjectId := #[]
+    for id in ids do
+      if seen.contains id then
+        return false
+      seen := seen.push id
+    return true
+
+def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .declareMulligan q =>
+    if p != q then
+      throw "It's not your turn to declare a mulligan (CR 103.5)"
+    let g := g.modifyPlayer p (fun pl => { pl with keptOpeningHand := true })
+    let g := g.logMsg
+      s!"{g.player p |>.name} keeps their opening hand of {(g.player p).hand.size}"
+    return g.afterDeclaration p
+  | _ => throw "Not time to keep an opening hand (CR 103.5)"
+
+/-- Record that this player will mulligan. The mulligan itself is taken only
+after every remaining player has declared (CR 103.5). -/
+def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .declareMulligan q =>
+    if p != q then
+      throw "It's not your turn to declare a mulligan (CR 103.5)"
+    if (g.player p).keptOpeningHand then
+      throw "You already kept your opening hand (CR 103.5)"
+    if !g.canTakeMulligan p then
+      throw "A player may not take further mulligans after their opening hand would be zero cards (CR 103.5)"
+    let g := { g with willMulligan := g.willMulligan.push p }
+    let g := g.logMsg s!"{g.player p |>.name} will take a mulligan (CR 103.5)"
+    return g.afterDeclaration p
+  | _ => throw "Not time to take a mulligan (CR 103.5)"
+
+/-- Place the listed cards on the bottom of `p`'s library. The first listed
+card becomes the new bottom; later cards sit above it. -/
+def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
+  match g.pending with
+  | .putOnBottom q n =>
+    if p != q then
+      throw "Only the player who took a mulligan may put cards on the bottom (CR 103.5)"
+    if ids.size != n then
+      throw s!"Put exactly {n} card(s) on the bottom of your library (CR 103.5)"
+    if !uniqueObjectIds ids then
+      throw "Duplicate card"
+    let pl := g.player p
+    for id in ids do
+      if (g.findObject? id).isNone then
+        throw "no such object"
+      if !pl.hand.contains id then
+        throw "That card is not in your hand"
+    let mut g := g
+    let mut newBottom : Array ObjectId := #[]
+    for id in ids do
+      let card := g.object! id
+      let ownerName := (g.player p).name
+      let (g', newId) := g.move id (.library p)
+      g := g'
+      newBottom := newBottom.push newId
+      g := g.logMsg s!"{ownerName} puts {card.name} on the bottom of their library"
+    let plNow := g.player p
+    let without := newBottom.foldl (fun lib id => stripId lib id) plNow.library
+    g := g.setPlayer { plNow with library := newBottom ++ without }
+    -- After a mulligan to zero, the player may not take further mulligans.
+    if !g.canTakeMulligan p then
+      g := g.modifyPlayer p (fun pl => { pl with keptOpeningHand := true })
+      g := g.logMsg
+        s!"{g.player p |>.name} keeps their opening hand of {(g.player p).hand.size}"
+    return g.afterBottom p
+  | _ => throw "Not time to put cards on the bottom (CR 103.5)"
+
 def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
@@ -1026,6 +1252,9 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pay => g.pay p
   | .declareAttackers ids => g.declareAttackers p ids
   | .declareBlockers as => g.declareBlockers p as
+  | .keep => g.keepOpeningHand p
+  | .takeMulligan => g.takeMulligan p
+  | .putOnBottom ids => g.putCardsOnBottom p ids
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -1039,6 +1268,8 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .declareMulligan p => some p
+    | .putOnBottom p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 
@@ -1096,12 +1327,11 @@ def start (cfg : StartConfig) : Except String Game := do
   g := g.logMsg s!"Starting player: {g.player sp |>.name}"
   for pl in g.players do
     g := g.shuffleLibrary pl.id
-  -- Starting life (CR 103.4) already 20. Draw opening hands (CR 103.5).
+  -- Starting life (CR 103.4) already 20. Draw opening hands, then mulligan
+  -- (CR 103.5). The first turn begins after every player has kept.
   for pl in g.players do
-    g := g.draw pl.id 7
-    g := g.logMsg s!"{pl.name} keeps their opening hand of {(g.player pl.id).hand.size}"
-  g := g.logMsg s!"{g.player sp |>.name} takes the first turn"
-  return g.beginTurn
+    g := g.draw pl.id (g.player pl.id).startingHandSize
+  return g.beginMulliganRound
 
 end Start
 
