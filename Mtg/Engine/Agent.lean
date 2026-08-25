@@ -26,6 +26,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.declareBlockers #[])
     | .activateManaAbilities _ =>
       chooseManaPayment g p
+    | .declareMulligan _ =>
+      some .keep
+    | .putOnBottom _ n =>
+      some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .none =>
       -- Play a land if possible.
       let lands := (g.handObjects p).filter (·.printed.isLand)

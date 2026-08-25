@@ -45,16 +45,38 @@ def testConfig (seed : UInt64 := 20260807) : StartConfig := {
   startingPlayer := some 0
 }
 
-def started : Game :=
+def drawnHands : Game :=
   match Start.start (testConfig 1) with
   | .ok g => g
   | .error e => panic! e
+
+/-- Keep every remaining opening hand (CR 103.5) so tests can begin on turn 1. -/
+def keepOpeningHands : Game → Nat → Game
+  | _, 0 => panic! "keepOpeningHands fuel exhausted"
+  | g, n + 1 =>
+    match g.pending with
+    | .declareMulligan p =>
+      match g.apply p .keep with
+      | .ok g' => keepOpeningHands g' n
+      | .error e => panic! e
+    | .putOnBottom _ _ => panic! "keepOpeningHands: unexpected putOnBottom"
+    | _ => g
+
+def started : Game := keepOpeningHands drawnHands 8
 
 #guard testRedDeck.size == 60
 #guard testGreenDeck.size == 60
 #guard isLegalDeck .constructed testRedDeck
 #guard isLegalDeck .constructed testGreenDeck
 #guard !isLegalDeck .constructed (copies 5 lightningBolt)
+
+#guard drawnHands.pending == .declareMulligan ⟨0⟩
+#guard drawnHands.actor == some ⟨0⟩
+#guard drawnHands.openingHandsPending
+#guard !drawnHands.hasPriority ⟨0⟩
+#guard (drawnHands.player ⟨0⟩).hand.size == 7
+#guard (drawnHands.player ⟨1⟩).hand.size == 7
+#guard !(drawnHands.player ⟨0⟩).keptOpeningHand
 
 #guard started.players.size == 2
 #guard (started.player ⟨0⟩).life == 20
@@ -219,6 +241,14 @@ def applyIdle (g : Game) : Game :=
     | .error e => panic! e
   | .declareBlockers, some p =>
     match g.apply p (.declareBlockers #[]) with
+    | .ok g' => g'
+    | .error e => panic! e
+  | .declareMulligan _, some p =>
+    match g.apply p .keep with
+    | .ok g' => g'
+    | .error e => panic! e
+  | .putOnBottom _ n, some p =>
+    match g.apply p (.putOnBottom ((g.player p).hand.extract 0 n)) with
     | .ok g' => g'
     | .error e => panic! e
   | _, some p =>
@@ -636,5 +666,119 @@ def emptiedPool : Game := tappedMountain.emptyManaPools
   pl.id == ⟨0⟩ && pl.manaPool.isEmpty)
 #guard manaLine (emptiedPool.player ⟨0⟩) == "Chandra — mana {}"
 #guard emptiedPool.log.any (fun s => mentions s "empties mana pool")
+
+/-- CR 103.5: the starting player declares a mulligan first; taking one draws
+a new seven and requires putting that many cards on the bottom. -/
+def afterChandraMulligan : Game :=
+  mustApply drawnHands ⟨0⟩ .takeMulligan
+
+#guard afterChandraMulligan.pending == .putOnBottom ⟨0⟩ 1
+#guard afterChandraMulligan.actor == some ⟨0⟩
+#guard (afterChandraMulligan.player ⟨0⟩).hand.size == 7
+#guard (afterChandraMulligan.player ⟨0⟩).mulligansTaken == 1
+#guard (afterChandraMulligan.player ⟨0⟩).library.size == 53
+#guard afterChandraMulligan.log.any (fun s => mentions s "takes a mulligan")
+#guard mentions (header afterChandraMulligan) "on the bottom"
+
+def chandraBottomCard : GameObject :=
+  match (afterChandraMulligan.handObjects ⟨0⟩)[0]? with
+  | some o => o
+  | none => panic! "expected a card to put on the bottom"
+
+def afterChandraBottoms : Game :=
+  mustApply afterChandraMulligan ⟨0⟩ (.putOnBottom #[chandraBottomCard.id])
+
+#guard (afterChandraBottoms.player ⟨0⟩).hand.size == 6
+#guard (afterChandraBottoms.player ⟨0⟩).library.size == 54
+#guard afterChandraBottoms.pending == .declareMulligan ⟨1⟩
+#guard (afterChandraBottoms.object! (afterChandraBottoms.player ⟨0⟩).library[0]!).name ==
+  chandraBottomCard.name
+#guard afterChandraBottoms.log.any (fun s => mentions s "on the bottom of their library")
+#guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.hand ⟨0⟩)
+#guard (changedZones afterChandraMulligan afterChandraBottoms).contains (.library ⟨0⟩)
+
+def afterNissaKeeps : Game :=
+  mustApply afterChandraBottoms ⟨1⟩ .keep
+
+#guard (afterNissaKeeps.player ⟨1⟩).keptOpeningHand
+#guard !(afterNissaKeeps.player ⟨0⟩).keptOpeningHand
+#guard afterNissaKeeps.pending == .declareMulligan ⟨0⟩
+#guard (afterNissaKeeps.player ⟨1⟩).hand.size == 7
+
+def afterChandraKeepsSix : Game :=
+  mustApply afterNissaKeeps ⟨0⟩ .keep
+
+#guard afterChandraKeepsSix.pending == .none
+#guard afterChandraKeepsSix.step == .upkeep
+#guard afterChandraKeepsSix.isFirstTurn
+#guard (afterChandraKeepsSix.player ⟨0⟩).hand.size == 6
+#guard (afterChandraKeepsSix.player ⟨1⟩).hand.size == 7
+#guard (afterChandraKeepsSix.player ⟨0⟩).keptOpeningHand
+#guard afterChandraKeepsSix.log.any (fun s => mentions s "takes the first turn")
+
+#guard started.pending == .none
+#guard (started.player ⟨0⟩).keptOpeningHand
+#guard (started.player ⟨1⟩).keptOpeningHand
+#guard mentions (header drawnHands) "CR 103.5"
+
+-- Lands cannot be played before opening hands are kept.
+#guard
+  match drawnHands.apply ⟨0⟩ (.playLand (drawnHands.player ⟨0⟩).hand[0]!) with
+  | .error _ => true
+  | .ok _ => false
+
+-- Nissa cannot declare before Chandra in the first round.
+#guard
+  match drawnHands.apply ⟨1⟩ .takeMulligan with
+  | .error msg => mentions msg "not your turn"
+  | .ok _ => false
+
+#guard
+  match started.apply ⟨0⟩ .takeMulligan with
+  | .error msg => mentions msg "Not time to take a mulligan"
+  | .ok _ => false
+
+#guard
+  match afterChandraMulligan.apply ⟨0⟩ (.putOnBottom #[]) with
+  | .error msg => mentions msg "exactly 1"
+  | .ok _ => false
+
+#guard
+  match afterChandraMulligan.apply ⟨0⟩ (.putOnBottom #[⟨99999⟩]) with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+/-- The seventh mulligan leaves a zero-card hand; further mulligans are illegal. -/
+def seventhMulligan : Game :=
+  let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 6 })
+  mustApply g ⟨0⟩ .takeMulligan
+
+#guard seventhMulligan.pending == .putOnBottom ⟨0⟩ 7
+
+def afterZeroHand : Game :=
+  mustApply seventhMulligan ⟨0⟩ (.putOnBottom (seventhMulligan.player ⟨0⟩).hand)
+
+#guard (afterZeroHand.player ⟨0⟩).hand.size == 0
+#guard (afterZeroHand.player ⟨0⟩).keptOpeningHand
+#guard afterZeroHand.pending == .declareMulligan ⟨1⟩
+
+#guard
+  let g := drawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 7 })
+  match g.apply ⟨0⟩ .takeMulligan with
+  | .error msg => mentions msg "zero cards"
+  | .ok _ => false
+
+-- The heuristic keeps opening hands rather than mulliganing.
+#guard
+  match Agent.choose drawnHands ⟨0⟩ with
+  | some .keep => true
+  | _ => false
+
+def agentKeepsHands : Game := Agent.play drawnHands 10
+
+#guard (agentKeepsHands.player ⟨0⟩).keptOpeningHand
+#guard (agentKeepsHands.player ⟨1⟩).keptOpeningHand
+#guard !agentKeepsHands.openingHandsPending
+#guard agentKeepsHands.log.any (fun s => mentions s "takes the first turn")
 
 end Mtg.Engine.Tests

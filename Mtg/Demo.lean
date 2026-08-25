@@ -110,6 +110,9 @@ def helpInteractive : String :=
   "Commands:
   help                 Show this help
   state                Print the board
+  keep                 Keep this opening hand (CR 103.5)
+  mulligan             Take a London mulligan (CR 103.5)
+  bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell's cost (CR 601.2h)
   play <id>            Play a land
@@ -307,6 +310,43 @@ def applyBlock (g : Game) (p : PlayerId) (tokens : List String) : Except String 
   | .error msg => msg == "Not time to declare blockers"
   | .ok _ => false
 
+def bottomUsage : String := "usage: bottom <id> [id ...]"
+
+/-- Cards to put on the bottom for an interactive `bottom` command. -/
+def applyBottom (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds tokens bottomUsage
+  for id in ids do
+    if (g.findObject? id).isNone then
+      throw "no such object"
+  g.apply p (.putOnBottom ids)
+
+#guard
+  match applyBottom Tests.afterChandraMulligan ⟨0⟩
+      [toString Tests.chandraBottomCard.id] with
+  | .ok g' => (g'.player ⟨0⟩).hand.size == 6
+  | .error _ => false
+
+#guard
+  match applyBottom Tests.afterChandraMulligan ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyBottom Tests.afterChandraMulligan ⟨0⟩ ["nope"] with
+  | .error msg => msg == bottomUsage
+  | .ok _ => false
+
+#guard
+  match applyBottom Tests.afterChandraMulligan ⟨0⟩ [] with
+  | .error msg => msg == bottomUsage
+  | .ok _ => false
+
+#guard
+  match applyBottom Tests.drawnHands ⟨0⟩
+      [toString (Tests.drawnHands.player ⟨0⟩).hand[0]!] with
+  | .error msg => msg == "Not time to put cards on the bottom (CR 103.5)"
+  | .ok _ => false
+
 partial def interactiveLoop (g : Game) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
@@ -341,6 +381,9 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "help" => .ok g
       | "state" => .ok g
       | "quit" | "exit" => .ok g
+      | "keep" => g.apply chandra .keep
+      | "mulligan" => g.apply chandra .takeMulligan
+      | "bottom" => applyBottom g chandra (parts.drop 1)
       | "pass" => g.apply chandra .pass
       | "pay" => g.apply chandra .pay
       | "concede" => g.apply chandra .concede
