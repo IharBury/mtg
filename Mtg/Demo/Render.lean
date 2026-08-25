@@ -53,6 +53,42 @@ def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
   if s.isEmpty then "" else s!" {s}"
 
+/-- How well leftover Oracle `line` matches a stacked ability's structured text. -/
+def abilityLineScore (line abilityText : String) : Nat :=
+  let words :=
+    abilityText.splitOn " " |>.map (fun s => s.trimAscii.copy) |>.filter (fun w => w.length >= 4)
+  (words.filter (fun w => (line.splitOn w).length > 1)).length
+
+/-- Printed text of one stacked ability. Sibling abilities of the source card
+are omitted. Prefers leftover Oracle wording when a unique line exists or a
+leftover line matches `abilityText`. -/
+def textForStackedAbility (c : CardDef) (abilityText : String) : String :=
+  match c.leftoverOracleLines with
+  | [] => abilityText
+  | [line] => line
+  | lines =>
+    match lines.find? (fun line => line == abilityText) with
+    | some line => line
+    | none =>
+      let (bestScore, bestLine) :=
+        lines.foldl
+          (fun (acc : Nat × String) line =>
+            let s := abilityLineScore line abilityText
+            if s > acc.1 then (s, line) else acc)
+          (0, abilityText)
+      if bestScore > 0 then bestLine else abilityText
+
+/-- Extras after a stack object's name. An ability on the stack shows only
+that ability, not other abilities printed on the source card. Spells still
+show their full printed extras. -/
+def stackFaceExtras (o : GameObject) : String :=
+  let s :=
+    match o.triggeredAbility, o.abilityEffect with
+    | some t, _ => textForStackedAbility o.printed (TriggeredAbility.toNotation t)
+    | none, some e => textForStackedAbility o.printed (AbilityEffect.toNotation e)
+    | none, none => o.printed.keywordsAndAbilities
+  if s.isEmpty then "" else s!" {s}"
+
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
   let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
@@ -119,7 +155,7 @@ def stackBlock (g : Game) : String :=
     let lines := g.stack.toList.reverse.map (fun e =>
       match g.findObject? e.objectId with
       | some o =>
-        s!"  {o.name}{faceExtras o.printed}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
+        s!"  {o.name}{stackFaceExtras o}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
@@ -310,7 +346,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         match o.controller with
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
-      s!"{o.id} {o.name}{faceExtras o.printed}{sourceClause g o}{ctrl}"
+      s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}{ctrl}"
     | .exile =>
       let extra :=
         match o.playPermission with

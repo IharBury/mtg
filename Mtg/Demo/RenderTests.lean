@@ -202,6 +202,7 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
+#guard mentions (stackBlock proposedBolt) "deals 3 damage"
 #guard !mentions (header paidBolt) "activate mana abilities"
 
 -- The demo names the attacker a blocker is assigned to (CR 509.1a).
@@ -254,6 +255,30 @@ def mountainLine (g : Game) : String :=
 #guard mentions (stackBlock proposedBauble) "Search your library"
 #guard mentions (zoneBlock proposedBauble .stack) "Search your library"
 
+/- Stacked abilities from a multi-ability card omit sibling Oracle lines. -/
+#guard
+  let c : CardDef := {
+    name := "Silent Siege"
+    types := #[.creature]
+    oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+    keywords := { Keywords.none with trample := true }
+    staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+    triggeredAbilities := #[.onAttackPumpByGreatestPower]
+  }
+  let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower
+  textForStackedAbility c t == t &&
+    !mentions (textForStackedAbility c t) "Other Orcs and Goblins"
+
+/- A card with a single leftover Oracle ability keeps that printed wording. -/
+#guard
+  let c : CardDef := {
+    name := "Silent Bauble"
+    types := #[.artifact]
+    oracleText := "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+  }
+  textForStackedAbility c (AbilityEffect.toNotation .searchBasicLandTapped) ==
+    c.oracleText
+
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
 #guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
 #guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
@@ -282,6 +307,12 @@ def mountainLine (g : Game) : String :=
   (objectLine siegeAndOppGoblin (namedPermanent siegeAndOppGoblin "Raging Goblin"))
   "trample"
 #guard mentions (stackBlock siegeAttackDeclared) "Orcish Siegemaster's ability"
+#guard mentions (stackBlock siegeAttackDeclared) "Whenever this creature attacks"
+#guard mentions (zoneBlock siegeAttackDeclared .stack) "Whenever this creature attacks"
+#guard !mentions (stackBlock siegeAttackDeclared) "Other Orcs and Goblins"
+#guard !mentions (zoneBlock siegeAttackDeclared .stack) "Other Orcs and Goblins"
+#guard !mentions (stackBlock siegeAttackDeclared) "trample"
+#guard !mentions (stackBlock siegeAttackDeclared) "Trample"
 #guard
   let g := siegeAttackDeclared
   let siege := namedPermanent g "Orcish Siegemaster"
