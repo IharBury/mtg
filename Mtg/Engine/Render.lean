@@ -10,19 +10,39 @@ open Mtg.Engine
 open Mtg.Engine.Game
 
 /-- Owner and controller of an object (CR 108.3, 110.2). Permanents always
-have both; the demo prints them so a shared battlefield is unambiguous. -/
-def controlClause (g : Game) (o : GameObject) : String :=
+have both. `group = none` prints both so an ungrouped line is unambiguous.
+When the listing is grouped under a controller (`some gp`), omit owner and
+controller unless they differ from that heading (`gp = none` is the
+no-controller group). -/
+def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
+    String :=
+  let showOwner :=
+    match group with
+    | none => true
+    | some gp => gp != some o.owner
+  let showController :=
+    match group with
+    | none => true
+    | some gp => o.controller != gp
   let owned := s!"owned by {g.player o.owner |>.name}"
-  match o.controller with
-  | some p => s!" ({owned}, controlled by {g.player p |>.name})"
-  | none => s!" ({owned}, no controller)"
+  let controlled :=
+    match o.controller with
+    | some p => s!"controlled by {g.player p |>.name}"
+    | none => "no controller"
+  let parts : List String :=
+    (if showOwner then [owned] else []) ++
+    (if showController then [controlled] else [])
+  match parts with
+  | [] => ""
+  | ps => s!" ({String.intercalate ", " ps})"
 
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
   if s.isEmpty then "" else s!" {s}"
 
-def objectLine (g : Game) (o : GameObject) : String :=
+def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
+    String :=
   let tap := if o.status.tapped then " (tapped)" else ""
   let atk := if o.status.attacking then " *attacking*" else ""
   let blk :=
@@ -38,7 +58,7 @@ def objectLine (g : Game) (o : GameObject) : String :=
     if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{faceExtras o.printed}{controlClause g o}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{faceExtras o.printed}{controlClause g o group}{tap}{atk}{blk}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -58,7 +78,7 @@ def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
 
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
-  let bf := (g.permanentsOf pl.id).toList.map (objectLine g)
+  let bf := (g.permanentsOf pl.id).toList.map (fun o => objectLine g o (some (some pl.id)))
   let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
   let handText :=
     if canSeeZoneFaces viewer (.hand pl.id) then
@@ -201,27 +221,30 @@ def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
 /-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
-are omitted. Permanents with no controller are listed last. -/
-def battlefieldGroups (g : Game) : Array (String × Array GameObject) :=
+are omitted. Permanents with no controller are listed last. The `Option
+PlayerId` is the group heading (`none` = no controller). -/
+def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=
   Id.run do
-    let mut groups : Array (String × Array GameObject) := #[]
+    let mut groups : Array (String × Option PlayerId × Array GameObject) := #[]
     for pl in g.players do
       let ps := g.permanentsOf pl.id
       if !ps.isEmpty then
-        groups := groups.push (pl.name, ps)
+        groups := groups.push (pl.name, some pl.id, ps)
     let uncontrolled := g.battlefield.filter (fun o => o.controller.isNone)
     if !uncontrolled.isEmpty then
-      groups := groups.push ("(no controller)", uncontrolled)
+      groups := groups.push ("(no controller)", none, uncontrolled)
     return groups
 
-/-- Shared-zone battlefield lines grouped under each controller's name. -/
+/-- Shared-zone battlefield lines grouped under each controller's name.
+Owner and controller are omitted on each permanent unless they differ from
+the group heading. -/
 def battlefieldGroupLines (g : Game) : List String :=
   Id.run do
     let mut lines : Array String := #[]
-    for (label, os) in battlefieldGroups g do
+    for (label, group, os) in battlefieldGroups g do
       lines := lines.push s!"{label}:"
       for o in os do
-        lines := lines.push s!"  {objectLine g o}"
+        lines := lines.push s!"  {objectLine g o (some group)}"
     return lines.toList
 
 /-- Zones whose occupants, order, or (for the battlefield) visible status
