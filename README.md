@@ -37,12 +37,19 @@ interactively:
 lake exe mtg-demo
 lake exe mtg-demo -- --interactive
 lake exe mtg-demo -- --interactive --visible
+lake exe mtg-demo -- --multiplayer
+lake exe mtg-demo -- --multiplayer --visible
 lake exe mtg-demo -- --seed 42 --fuel 200
 ```
 
-In interactive mode, `visible` prints the board as Chandra sees it (other
-players' hand sizes but not the cards themselves). `visible on` (or the
-`--visible` flag) keeps `state` and later log/zone updates in that player view.
+`--interactive` is Chandra against a heuristic Nissa. `--multiplayer` lets you
+issue every player's actions from the console; the prompt names who must act.
+
+In either interactive mode, `visible` prints the board as the acting player
+sees it (other players' hand sizes but not the cards themselves). `visible on`
+(or the `--visible` flag) keeps `state` and later log/zone updates in that
+player view. With `--interactive`, that player is always Chandra; with
+`--multiplayer`, the view follows whoever currently must act.
 
 ## Project layout
 
@@ -68,4 +75,4 @@ The first slice of the engine models the two-player game:
 - combat declaration and combat damage
 - static abilities that grant trample, and attack triggers that pump power
 - cleanup without priority except the CR 514.3a state-based-action window
-- a console demo with a heuristic opponent
+- a console demo with a heuristic opponent or multiplayer interactive play

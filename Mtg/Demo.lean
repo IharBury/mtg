@@ -8,8 +8,9 @@ import Mtg.Demo.WelcomeDecks
 
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted two-player
 game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
-to play Chandra against the agent-controlled Nissa. In interactive mode, `visible`
-prints only information Chandra can see; `--visible` starts in that player view.
+to play Chandra against the agent-controlled Nissa, or `--multiplayer` to issue
+every player's actions from the console. In either interactive mode, `visible`
+prints only information that player can see; `--visible` starts in that view.
 -/
 
 open Mtg.Engine
@@ -21,12 +22,14 @@ def usage : String :=
   "Mtg.Demo — demonstration of the Mtg.Engine rules engine
 
 Usage:
-  lake exe mtg-demo [--auto | --interactive] [--visible] [--seed N] [--fuel N]
+  lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible] [--seed N] [--fuel N]
 
 Options:
   --auto          Run a heuristic two-player game (default)
   --interactive   Play as Chandra; Nissa is heuristic-controlled
-  --visible       With --interactive, hide information Chandra cannot see
+  --multiplayer   Control both players from the console
+  --visible       With --interactive or --multiplayer, hide information the
+                  acting player cannot see
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --help          Show this help
@@ -110,12 +113,13 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
   | some .draw => IO.println "The game is a draw."
   | none => IO.println s!"Stopped after {fuel} actions (turn {g.turnNumber})."
 
-def helpInteractive : String :=
-  "Commands:
+def helpInteractive (controlAll : Bool := false) : String :=
+  let viewWho := if controlAll then "the acting player" else "Chandra"
+  s!"Commands:
   help                 Show this help
   state                Print the board
-  visible              Print only information Chandra can see (CR 400.2)
-  visible on           Use Chandra's view for state and later updates
+  visible              Print only information {viewWho} can see (CR 400.2)
+  visible on           Use {viewWho}'s view for state and later updates
   visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
   mulligan             Declare a mulligan; taken after all declarations
@@ -137,9 +141,10 @@ def helpInteractive : String :=
   quit                 Exit
 "
 
-#guard (helpInteractive.splitOn "visible").length > 1
-#guard (helpInteractive.splitOn "Chandra can see").length > 1
-#guard (helpInteractive.splitOn "tap <id> [id...]").length > 1
+#guard ((helpInteractive false).splitOn "visible").length > 1
+#guard ((helpInteractive false).splitOn "Chandra can see").length > 1
+#guard ((helpInteractive true).splitOn "the acting player can see").length > 1
+#guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -402,6 +407,44 @@ def chandraView (playerView : Bool) : Option PlayerId :=
 #guard (chandraView false).isNone
 #guard chandraView true == some ⟨0⟩
 
+/-- Hidden-information view. Chandra-vs-agent always follows Chandra;
+multiplayer follows the player who must act. -/
+def currentView (g : Game) (playerView : Bool) (controlAll : Bool) : Option PlayerId :=
+  if !playerView then none
+  else if controlAll then g.actor
+  else some ⟨0⟩
+
+#guard (currentView Tests.nissaDraw true false) == some ⟨0⟩
+#guard (currentView Tests.nissaDraw true true) == some ⟨1⟩
+#guard (currentView Tests.nissaDraw false true).isNone
+#guard (currentView Tests.drawnHands true true) == some ⟨0⟩
+
+/-- Who the console should issue the next action as. -/
+def actingPlayer (g : Game) : Except String PlayerId :=
+  match g.actor with
+  | some p => .ok p
+  | none => .error "No player has an action"
+
+#guard
+  match actingPlayer Tests.drawnHands with
+  | .ok p => p == ⟨0⟩
+  | .error _ => false
+
+#guard
+  match actingPlayer Tests.nissaDraw with
+  | .ok p => p == ⟨1⟩
+  | .error _ => false
+
+#guard
+  match actingPlayer Tests.readyToDeclareBlockers with
+  | .ok p => p == ⟨1⟩
+  | .error _ => false
+
+#guard
+  match actingPlayer Tests.afterChandraDeclaresMulligan with
+  | .ok p => p == ⟨1⟩
+  | .error _ => false
+
 def tapUsage : String := "usage: tap <id> [id ...]"
 
 /-- Tap each listed permanent for its first mana ability. -/
@@ -478,6 +521,52 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
   match applyTap g ⟨0⟩ [toString mtn.id, toString mtn.id] with
   | .error msg => Tests.mentions msg "already tapped"
   | .ok _ => false
+
+def playUsage : String := "usage: play <id>"
+
+/-- Play the named land from a zone the player is allowed to play from. -/
+def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw playUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.playLand id)
+  | _ => throw playUsage
+
+#guard
+  match applyPlay Tests.afterDraw ⟨0⟩ [] with
+  | .error msg => msg == playUsage
+  | .ok _ => false
+
+#guard
+  match applyPlay Tests.afterDraw ⟨0⟩ ["nope"] with
+  | .error msg => msg == playUsage
+  | .ok _ => false
+
+#guard
+  match applyPlay Tests.afterDraw ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == playUsage
+  | .ok _ => false
+
+#guard
+  match applyPlay Tests.afterDraw ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  let g := Tests.afterDraw
+  match (g.handObjects ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match applyPlay g ⟨0⟩ [toString land.id] with
+    | .ok g' =>
+      (g'.player ⟨0⟩).landsPlayedThisTurn == 1 &&
+      g'.battlefield.any (fun o => o.name == land.name)
+    | .error _ => false
 
 def activateUsage : String := "usage: activate <id>"
 
@@ -608,28 +697,164 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
-partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit := do
+def castUsage : String := "usage: cast <id>"
+
+/-- Begin casting the named spell. Damage spells target the opponent; pump
+spells target one of the caster's creatures. -/
+def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw castUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some o =>
+        let tgt :=
+          match o.printed.spellEffect with
+          | some (.dealDamage _) => some (Target.player (g.opponent p))
+          | some (.pump _ _) =>
+            (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+              |>.map (fun c => Target.permanent c.id)
+          | none => none
+        g.apply p (.cast id tgt)
+  | _ => throw castUsage
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ [] with
+  | .error msg => msg == castUsage
+  | .ok _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ ["nope"] with
+  | .error msg => msg == castUsage
+  | .ok _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == castUsage
+  | .ok _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Lightning Bolt")
+  | .error _ => false
+
+/-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
+handled by the console loop. Actions are issued as `p`. -/
+def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
+    Except String Game :=
+  match cmd with
+  | "keep" => g.apply p .keep
+  | "mulligan" => g.apply p .takeMulligan
+  | "bottom" => applyBottom g p args
+  | "pass" => g.apply p .pass
+  | "pay" => g.apply p .pay
+  | "sacrifice" => applySacrifice g p args
+  | "concede" => g.apply p .concede
+  | "attack" => applyAttack g p args
+  | "noattack" => g.apply p (.declareAttackers #[])
+  | "block" => applyBlock g p args
+  | "noblock" => g.apply p (.declareBlockers #[])
+  | "play" => applyPlay g p args
+  | "activate" => applyActivate g p args
+  | "tap" => applyTap g p args
+  | "cast" => applyCast g p args
+  | _ => .error s!"Unknown command: {cmd}"
+
+/-- Issue a console command as the player who currently must act. -/
+def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Except String Game := do
+  let p ← actingPlayer g
+  applyInteractiveAction g p cmd args
+
+#guard
+  match applyInteractiveAsActor Tests.drawnHands "keep" [] with
+  | .ok g' => (g'.player ⟨0⟩).keptOpeningHand && g'.actor == some ⟨1⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.afterChandraDeclaresMulligan "keep" [] with
+  | .ok g' => (g'.player ⟨1⟩).keptOpeningHand
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.nissaDraw "pass" [] with
+  | .ok g' => g'.hasPriority ⟨0⟩ && g'.actor == some ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.nissaDraw "concede" [] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) => p == ⟨0⟩
+    | _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.readyToDeclareBlockers "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
+      some (Tests.namedPermanent g' "Gray Ogre").id
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.readyToDeclareAttackers "noattack" [] with
+  | .ok g' => !(g'.battlefield.any (·.status.attacking))
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.drawnHands "xyzzy" [] with
+  | .error msg => msg == "Unknown command: xyzzy"
+  | .ok _ => false
+
+partial def interactiveLoop (g : Game) (startVisible : Bool := false)
+    (controlAll : Bool := false) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
   let mut playerView := startVisible
+  let mut lastActor : Option PlayerId := g.actor
   let chandra : PlayerId := ⟨0⟩
   let nissa : PlayerId := ⟨1⟩
-  IO.println helpInteractive
+  IO.println (helpInteractive controlAll)
   while !g.over do
-    -- If Nissa must act, let the agent play until Chandra is the actor (or the game ends).
-    while !g.over && g.actor == some nissa do
-      match Agent.step g with
-      | .error e =>
-        IO.println s!"Nissa could not act: {e}"
-        break
-      | .ok g' =>
-        seen ← printLog g' seen (chandraView playerView)
-        printChangedZones g g' (chandraView playerView)
-        printChangedLife g g'
-        printChangedMana g g'
-        g := g'
+    -- Chandra-vs-agent: let the heuristic play Nissa until Chandra must act.
+    if !controlAll then
+      while !g.over && g.actor == some nissa do
+        match Agent.step g with
+        | .error e =>
+          IO.println s!"Nissa could not act: {e}"
+          break
+        | .ok g' =>
+          seen ← printLog g' seen (chandraView playerView)
+          printChangedZones g g' (chandraView playerView)
+          printChangedLife g g'
+          printChangedMana g g'
+          g := g'
     if g.over then break
-    IO.print "mtg> "
+    if controlAll && g.actor != lastActor then
+      match g.actor with
+      | some p =>
+        IO.println s!"{g.player p |>.name} to act."
+        if playerView then
+          printState g (some p)
+      | none => pure ()
+      lastActor := g.actor
+    let prompt :=
+      if controlAll then
+        match g.actor with
+        | some p => s!"mtg ({g.player p |>.name})> "
+        | none => "mtg> "
+      else
+        "mtg> "
+    IO.print prompt
     (← IO.getStdout).flush
     let stdin ← IO.getStdin
     let line := (← stdin.getLine).trimAscii.copy
@@ -637,82 +862,57 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit 
       continue
     let parts := line.splitOn " "
     let cmd := parts.headD ""
-    let arg := parts.drop 1 |>.headD ""
-    let act : Except String Game :=
-      match cmd with
-      | "help" => .ok g
-      | "state" => .ok g
-      | "visible" => .ok g
-      | "quit" | "exit" => .ok g
-      | "keep" => g.apply chandra .keep
-      | "mulligan" => g.apply chandra .takeMulligan
-      | "bottom" => applyBottom g chandra (parts.drop 1)
-      | "pass" => g.apply chandra .pass
-      | "pay" => g.apply chandra .pay
-      | "sacrifice" => applySacrifice g chandra (parts.drop 1)
-      | "concede" => g.apply chandra .concede
-      | "attack" => applyAttack g chandra (parts.drop 1)
-      | "noattack" => g.apply chandra (.declareAttackers #[])
-      | "block" => applyBlock g chandra (parts.drop 1)
-      | "noblock" => g.apply chandra (.declareBlockers #[])
-      | "play" =>
-        match parseObjectId? arg with
-        | none => .error "usage: play <id>"
-        | some id => g.apply chandra (.playLand id)
-      | "activate" => applyActivate g chandra (parts.drop 1)
-      | "tap" => applyTap g chandra (parts.drop 1)
-      | "cast" =>
-        match parseObjectId? arg with
-        | none => .error "usage: cast <id>"
-        | some id =>
-          match g.findObject? id with
-          | none => .error "no such object"
-          | some o =>
-            let tgt :=
-              match o.printed.spellEffect with
-              | some (.dealDamage _) => some (Target.player (g.opponent chandra))
-              | some (.pump _ _) =>
-                (g.permanentsOf chandra).filter (·.printed.isCreature) |>.back?
-                  |>.map (fun c => Target.permanent c.id)
-              | none => none
-            g.apply chandra (.cast id tgt)
-      | _ => .error s!"Unknown command: {cmd}"
     match cmd with
     | "quit" | "exit" =>
       IO.println "Goodbye."
       return
-    | "help" => IO.println helpInteractive
-    | "state" => printState g (chandraView playerView)
+    | "help" => IO.println (helpInteractive controlAll)
+    | "state" => printState g (currentView g playerView controlAll)
     | "visible" =>
       match applyVisible (parts.drop 1) with
       | .error e => IO.println s!"! {e}"
-      | .ok none => printState g (some chandra)
+      | .ok none =>
+        match currentView g true controlAll with
+        | some p => printState g (some p)
+        | none => printState g (some chandra)
       | .ok (some on) =>
         playerView := on
         if on then
-          IO.println "Showing only information Chandra can see."
-          printState g (some chandra)
+          let who :=
+            match currentView g true controlAll with
+            | some p => (g.player p).name
+            | none => "Chandra"
+          IO.println s!"Showing only information {who} can see."
+          printState g (currentView g true controlAll)
         else
           IO.println "Showing full game information."
     | _ =>
-      match act with
+      match applyInteractiveAsActor g cmd (parts.drop 1) with
       | .error e => IO.println s!"! {e}"
       | .ok g' =>
-        seen ← printLog g' seen (chandraView playerView)
-        printChangedZones g g' (chandraView playerView)
+        seen ← printLog g' seen (currentView g' playerView controlAll)
+        printChangedZones g g' (currentView g' playerView controlAll)
         printChangedLife g g'
         printChangedMana g g'
         g := g'
         if g.over then
-          printState g (chandraView playerView)
+          printState g (currentView g playerView controlAll)
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
   | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
-def parseArgs (args : List String) : Except String (Bool × Bool × UInt64 × Nat) :=
+structure DemoOptions where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  seed : UInt64
+  fuel : Nat
+
+def parseArgs (args : List String) : Except String DemoOptions :=
   Id.run do
     let mut interactive := false
+    let mut multiplayer := false
     let mut playerView := false
     let mut seed : UInt64 := 20260807
     let mut fuel : Nat := 800
@@ -724,9 +924,15 @@ def parseArgs (args : List String) : Except String (Bool × Bool × UInt64 × Na
       | "--help" :: _ => return .error "help"
       | "--auto" :: xs =>
         interactive := false
+        multiplayer := false
         rest := xs
       | "--interactive" :: xs =>
         interactive := true
+        multiplayer := false
+        rest := xs
+      | "--multiplayer" :: xs =>
+        interactive := true
+        multiplayer := true
         rest := xs
       | "--visible" :: xs =>
         playerView := true
@@ -746,22 +952,48 @@ def parseArgs (args : List String) : Except String (Bool × Bool × UInt64 × Na
       | x :: _ => return .error s!"Unknown argument: {x}"
       | [] => break
     if playerView && !interactive then
-      return .error "--visible requires --interactive"
-    return .ok (interactive, playerView, seed, fuel)
+      return .error "--visible requires --interactive or --multiplayer"
+    return .ok {
+      interactive := interactive
+      multiplayer := multiplayer
+      playerView := playerView
+      seed := seed
+      fuel := fuel
+    }
 
 #guard
   match parseArgs ["--interactive", "--visible"] with
-  | .ok (true, true, _, _) => true
+  | .ok opt => opt.interactive && !opt.multiplayer && opt.playerView
   | _ => false
 
 #guard
   match parseArgs ["--interactive"] with
-  | .ok (true, false, _, _) => true
+  | .ok opt => opt.interactive && !opt.multiplayer && !opt.playerView
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer"] with
+  | .ok opt => opt.interactive && opt.multiplayer && !opt.playerView
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--visible"] with
+  | .ok opt => opt.interactive && opt.multiplayer && opt.playerView
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--multiplayer"] with
+  | .ok opt => opt.interactive && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--interactive"] with
+  | .ok opt => opt.interactive && !opt.multiplayer
   | _ => false
 
 #guard
   match parseArgs ["--visible"] with
-  | .error msg => msg == "--visible requires --interactive"
+  | .error msg => msg == "--visible requires --interactive or --multiplayer"
   | .ok _ => false
 
 def main (args : List String) : IO UInt32 := do
@@ -773,10 +1005,10 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln e
     IO.println usage
     return 1
-  | .ok (interactive, playerView, seed, fuel) =>
-    let g ← startDemo seed (chandraView (interactive && playerView))
-    if interactive then
-      interactiveLoop g playerView
+  | .ok opt =>
+    let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
+    if opt.interactive then
+      interactiveLoop g opt.playerView opt.multiplayer
     else
-      runAuto g fuel
+      runAuto g opt.fuel
     return 0
