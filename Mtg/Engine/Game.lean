@@ -12,10 +12,11 @@ import Mtg.Engine.Zone
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), activating non-mana abilities of
-permanents (CR 602), static abilities that grant trample (CR 604), attack
-triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603), combat
-(CR 506–510, including CR 510.1c), cleanup (CR 514.3), and the state-based
-actions we implement (CR 704.5).
+permanents (CR 602), static abilities that grant trample or pump an enchanted
+creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry (CR 701.20),
+attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
+enters triggers (CR 603.6a), combat (CR 506–510, including CR 510.1c), cleanup
+(CR 514.3), and the state-based actions we implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -69,6 +70,8 @@ structure GameObject where
   sourceId : Option ObjectId := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
+  /-- Object this Aura is attached to (CR 303.4). -/
+  attachedTo : Option ObjectId := none
 deriving Repr, Inhabited
 
 namespace GameObject
@@ -142,6 +145,8 @@ inductive Pending where
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
   | putOnBottom (player : PlayerId) (count : Nat)
+  /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
+  | scry (player : PlayerId) (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -204,6 +209,9 @@ inductive Action where
   | takeMulligan
   /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
   | putOnBottom (ids : Array ObjectId)
+  /-- Finish scrying: `top` (last = new top) stay on top; `bottom` (first = new
+  bottom) go to the bottom of the library (CR 701.20). -/
+  | scry (top : Array ObjectId) (bottom : Array ObjectId)
   | concede
 deriving Repr
 
@@ -311,10 +319,23 @@ def removeFromZoneList (g : Game) (id : ObjectId) (z : Zone) : Game :=
   | .stack => { g with stack := g.stack.filter (fun e => e.objectId != id) }
   | _ => g
 
-/-- Move an object to a new zone, assigning a new object identity (CR 400.7). -/
+/-- Move an object to a new zone, assigning a new object identity (CR 400.7).
+Auras attached to a permanent that leaves the battlefield become unattached
+and remain on the battlefield (CR 400.7d). -/
+def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.attachedTo == some hostId then
+        g := g.setObject { o with attachedTo := none }
+        g := g.logMsg s!"{o.name} becomes unattached"
+    return g
+
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
   let old := g.object! id
+  let g :=
+    if old.zone == .battlefield then g.unattachFrom id else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime
@@ -395,7 +416,8 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
   src.printed.staticAbilities.any (fun ab =>
     match ab with
     | .otherCreaturesHaveTrample subtypes =>
-      subtypes.any target.hasSubtype)
+      subtypes.any target.hasSubtype
+    | .enchantedCreatureGets _ _ => false)
 
 /-- Whether `o` has trample, printed or granted (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
@@ -406,11 +428,40 @@ def hasTrample (g : Game) (o : GameObject) : Bool :=
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
   { o.printed.keywords with trample := g.hasTrample o }
 
+/-- Continuous +P/+T this Aura currently grants its host (CR 613.3c). -/
+def auraStatBonus (aura : GameObject) : Int × Int :=
+  aura.printed.staticAbilities.foldl
+    (fun acc ab =>
+      match ab with
+      | .enchantedCreatureGets p t => (acc.1 + p, acc.2 + t)
+      | .otherCreaturesHaveTrample _ => acc)
+    (0, 0)
+
+/-- Static power/toughness from Auras attached to `o`. -/
+def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc aura =>
+        if aura.attachedTo == some o.id then
+          let b := auraStatBonus aura
+          (acc.1 + b.1, acc.2 + b.2)
+        else acc)
+      (0, 0)
+
+/-- Current power, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+def power (g : Game) (o : GameObject) : Int :=
+  o.power + (g.attachedStatBonus o).1
+
+/-- Current toughness, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+def toughness (g : Game) (o : GameObject) : Int :=
+  o.toughness + (g.attachedStatBonus o).2
+
 /-- Greatest power among creatures `p` controls; `0` if they control none. -/
 def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
   let creatures := g.permanentsOf p |>.filter (·.printed.isCreature)
   if creatures.isEmpty then 0
-  else creatures.foldl (fun acc o => max acc o.power) (creatures[0]!.power)
+  else creatures.foldl (fun acc o => max acc (g.power o)) (g.power creatures[0]!)
 
 /-- Creatures currently blocking `attackerId`. -/
 def blockersOf (g : Game) (attackerId : ObjectId) : Array GameObject :=
@@ -442,7 +493,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       for o in g.battlefield do
         if o.printed.isCreature then
-          let t := o.toughness
+          let t := g.toughness o
           if t ≤ 0 then
             g := g.logMsg s!"{o.name} dies (toughness {t})"
             let (g', _) := g.move o.id (.graveyard o.owner) none
@@ -457,6 +508,18 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             -- Simplified: any damage from a deathtouch source is tracked as
             -- ordinary damage; full 704.5h tracking is future work.
             pure ()
+      -- Unattached or illegally attached Auras (CR 704.5n).
+      for o in g.battlefield do
+        if o.printed.isAura then
+          let legal :=
+            match o.attachedTo.bind g.findObject? with
+            | some host => host.isOnBattlefield && host.printed.isCreature
+            | none => false
+          if !legal then
+            g := g.logMsg s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+            let (g', _) := g.move o.id (.graveyard o.owner) none
+            g := g'
+            changed := true
       let living := g.livingPlayers
       if living.size == 0 then
         g := { g with result := some .draw }
@@ -476,8 +539,8 @@ def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-Attack and becomes-blocked triggers are put on the stack as their events
-happen (CR 508.2, 509.5c). -/
+Attack, becomes-blocked, and enters triggers are put on the stack as their
+events happen (CR 508.2, 509.5c, 603.6a). -/
 def hasWaitingTriggers (_g : Game) : Bool :=
   false
 
@@ -603,6 +666,16 @@ def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array 
   | .pump _ _ =>
     g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
 
+/-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
+def legalAuraTargets (g : Game) : Array Target :=
+  g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
+
+/-- Legal targets for beginning to cast `o` (CR 115.1, 303.4). -/
+def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
+  match o.printed.spellEffect with
+  | some e => g.legalTargets p e
+  | none => if o.printed.isAura then g.legalAuraTargets else #[]
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -610,9 +683,8 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.mayPlay p o &&
   g.hasPriority p &&
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
-  match o.printed.spellEffect with
-  | some e => !(g.legalTargets p e |>.isEmpty)
-  | none => o.printed.isPermanentCard
+  if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
+  else o.printed.isPermanentCard
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := do
   let pl := g.player p
@@ -755,12 +827,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     throw "Lands are played, not cast (CR 305)"
   if card.printed.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{card.name} has sorcery speed"
-  if card.printed.spellEffect.isSome && target.isNone then
+  if card.printed.requiresTarget && target.isNone then
     throw s!"{card.name} requires a target"
-  if let some e := card.printed.spellEffect then
-    if let some t := target then
-      if !(g.legalTargets p e).contains t then
-        throw "Illegal target"
+  if let some t := target then
+    if !(g.legalSpellTargets p card).contains t then
+      throw "Illegal target"
   -- CR 601.2a: propose the spell by moving it onto the stack. Mana is not
   -- required yet; CR 601.2g is the window to activate mana abilities.
   let cost := card.printed.manaCost
@@ -955,6 +1026,21 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
   | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
 
+/-- Top `count` cards of `p`'s library (last = current top). -/
+def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
+  let lib := (g.player p).library
+  let n := min count lib.size
+  lib.extract (lib.size - n) lib.size
+
+/-- Start scrying `n` as a keyword action during resolution (CR 701.20). -/
+def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  let count := min n pl.library.size
+  if count == 0 then
+    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  else
+    { g with pending := .scry p count }.logMsg s!"{pl.name} scries {n}"
+
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) : Game :=
@@ -989,6 +1075,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
+  | .onEnterScry n =>
+    g.beginScry controller n
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
@@ -1044,6 +1132,42 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
               g := g.putTriggeredAbilityOnStack p o ab "becomes-blocked trigger"
     return g
 
+/-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a). -/
+def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
+  match o.controller with
+  | none => g
+  | some p =>
+    Id.run do
+      let mut g := g
+      for ab in o.printed.triggeredAbilities do
+        if ab.triggersWhenEntering then
+          g := g.putTriggeredAbilityOnStack p o ab "enters trigger"
+      return g
+
+/-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
+def isLegalAuraHost (host : GameObject) : Bool :=
+  host.isOnBattlefield && host.printed.isCreature
+
+/-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
+def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
+  let toGraveyard (g : Game) : Game :=
+    let (g, _) := g.move obj.id (.graveyard obj.owner) none
+    g.logMsg s!"{obj.name} goes to the graveyard (illegal Aura target)"
+  match entry.targets[0]? with
+  | some (Target.permanent hostId) =>
+    match g.findObject? hostId with
+    | some host =>
+      if isLegalAuraHost host then
+        let (g, newId) := g.move obj.id .battlefield (some entry.controller)
+        let o := g.object! newId
+        let g := g.setObject { o with attachedTo := some host.id }
+        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        g.putEnterTriggersOnStack (g.object! newId)
+      else
+        toGraveyard g
+    | none => toGraveyard g
+  | _ => toGraveyard g
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -1064,12 +1188,15 @@ def resolveTop (g : Game) : Game :=
           if let some e := obj.printed.spellEffect then
             g.applyEffect entry.controller e entry.targets
           else g
-        if obj.printed.isPermanentCard && !obj.printed.isLand then
+        if obj.printed.isAura then
+          g.resolveAuraSpell entry obj
+        else if obj.printed.isPermanentCard && !obj.printed.isLand then
           let (g, newId) := g.move obj.id .battlefield (some entry.controller)
           let o := g.object! newId
           let sick := o.printed.isCreature && !o.printed.keywords.haste
           let g := g.setObject { o with status := { o.status with summoningSick := sick } }
-          g.logMsg s!"{o.name} enters the battlefield"
+          let g := g.logMsg s!"{o.name} enters the battlefield"
+          g.putEnterTriggersOnStack (g.object! newId)
         else
           let owner := obj.owner
           let (g, _) := g.move obj.id (.graveyard owner) none
@@ -1124,7 +1251,7 @@ def combatDamage (g : Game) : Game :=
             s!"{a.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
         else
           let defn := g.opponent g.activePlayer
-          let dmg := max a.power 0
+          let dmg := max (g.power a) 0
           if dmg > 0 then
             let pl := g.player defn
             g := g.setPlayer { pl with life := pl.life - dmg }
@@ -1140,8 +1267,8 @@ def combatDamage (g : Game) : Game :=
         -- All combat damage from the attacker is assigned to the first blocker;
         -- leftover trample damage goes to the defending player.
         let b := blockers[0]!
-        let dmg := max a.power 0
-        let lethal := max b.toughness 0
+        let dmg := max (g.power a) 0
+        let lethal := max (g.toughness b) 0
         let trampling := g.hasTrample a
         let toBlocker := if trampling then min dmg lethal else dmg
         let toPlayer := if trampling then dmg - toBlocker else 0
@@ -1152,7 +1279,7 @@ def combatDamage (g : Game) : Game :=
           let pl := g.player defn
           g := g.setPlayer { pl with life := pl.life - toPlayer }
           g := g.logMsg s!"{a.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
-        let back := max b.power 0
+        let back := max (g.power b) 0
         if back > 0 then
           let aNow := g.object! a.id
           g := g.setObject { aNow with status := { aNow.status with damage := aNow.status.damage + back } }
@@ -1352,6 +1479,8 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.consecutivePasses ≥ g.livingPlayers.size then
     if !g.stack.isEmpty then
       let g := g.resolveTop
+      if g.pending != .none then
+        return g
       return g.receivePriority g.activePlayer
     else
       return g.advanceStep
@@ -1501,6 +1630,33 @@ def uniqueObjectIds (ids : Array ObjectId) : Bool :=
       seen := seen.push id
     return true
 
+def isPermutation (a b : Array ObjectId) : Bool :=
+  a.size == b.size && uniqueObjectIds a && a.all (fun x => b.contains x)
+
+/-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
+on top (last = new top) of the library (CR 701.20). -/
+def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .scry q count =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may scry"
+    if !uniqueObjectIds (top ++ bottom) then
+      throw "Duplicate card"
+    let looked := g.scryLookedIds p count
+    if !isPermutation (top ++ bottom) looked then
+      throw "Scry must rearrange the cards you looked at (CR 701.20)"
+    let pl := g.player p
+    let lower := pl.library.extract 0 (pl.library.size - count)
+    let mut g := g
+    for id in bottom do
+      g := g.logMsg
+        s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
+    g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
+    g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to scry (CR 701.20)"
+
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .declareMulligan q =>
@@ -1578,6 +1734,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .keep => g.keepOpeningHand p
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
+  | .scry top bottom => g.finishScry p top bottom
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -1594,6 +1751,7 @@ def actor (g : Game) : Option PlayerId :=
     | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
+    | .scry p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

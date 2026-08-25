@@ -5,10 +5,11 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords, simple `{T}: Add` mana abilities, non-mana activated abilities
-such as Wayfarer's Bauble and Snowslope Hunter, static abilities that grant
-trample, attack triggers that pump, becomes-blocked triggers that damage
-blockers, and a few one-shot spell effects);
+(keywords including flash, simple `{T}: Add` mana abilities, non-mana activated
+abilities such as Wayfarer's Bauble and Snowslope Hunter, static abilities that
+grant trample or pump an enchanted creature, attack triggers that pump,
+becomes-blocked triggers that damage blockers, enters triggers that scry, Aura
+attachment, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -815,6 +816,9 @@ def giftOfStrands : CardDef := {
   types := #[.enchantment]
   subtypes := #["Aura"]
   oracleText := "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3."
+  keywords := { Keywords.none with flash := true }
+  staticAbilities := #[.enchantedCreatureGets 3 3]
+  triggeredAbilities := #[.onEnterScry 2]
 }
 
 def elvishArchdruid : CardDef := {
@@ -912,5 +916,14 @@ def attercop : CardDef := {
 #guard (orcishSiegemaster.summary.splitOn "Other Orcs and Goblins").length > 1
 #guard battleScarredGoblin.triggeredAbilities == #[.onBecomesBlockedDeal1ToBlockers]
 #guard (battleScarredGoblin.summary.splitOn "becomes blocked").length > 1
+#guard giftOfStrands.isAura
+#guard giftOfStrands.keywords.flash
+#guard !giftOfStrands.hasSorcerySpeed
+#guard giftOfStrands.hasInstantSpeed
+#guard giftOfStrands.requiresTarget
+#guard giftOfStrands.staticAbilities == #[.enchantedCreatureGets 3 3]
+#guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
+#guard (giftOfStrands.summary.splitOn "flash").length > 1
+#guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 
 end Mtg.Engine.Catalog

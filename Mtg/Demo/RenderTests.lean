@@ -280,4 +280,14 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine siegePumpResolved
   (namedPermanent siegePumpResolved "Orcish Siegemaster")) "3/5"
 
+#guard
+  let g := giftEntered
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  objectLine g bears ==
+    s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
+  mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
+  mentions (header giftScrying) "scry 2" &&
+  mentions (snapshot giftScrying) "Scry (top last):"
+
 end Mtg.Demo.RenderTests

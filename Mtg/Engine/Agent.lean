@@ -34,6 +34,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some .keep
     | .putOnBottom _ n =>
       some (.putOnBottom ((g.player p).hand.extract 0 n))
+    | .scry _ n =>
+      some (.scry (g.scryLookedIds p n) #[])
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
@@ -88,6 +90,10 @@ where
           | some (.pump _ _) => true
           | _ => false)
       else none
+    let aura :=
+      if ownCreature.isSome then
+        playable.find? (fun o => o.printed.isAura)
+      else none
     if let some o := burn then
       some (.cast o.id (some opp))
     else if let some o := creature then
@@ -95,6 +101,10 @@ where
     else if let some o := artifact then
       some (.cast o.id none)
     else if let some o := pump then
+      match ownCreature with
+      | some t => some (.cast o.id (some (.permanent t.id)))
+      | none => some .pass
+    else if let some o := aura then
       match ownCreature with
       | some t => some (.cast o.id (some (.permanent t.id)))
       | none => some .pass

@@ -138,6 +138,9 @@ def helpInteractive (controlAll : Bool := false) : String :=
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   cast <id>            Begin casting a spell (then tap for mana and pay)
+  cast <id> <target>   Cast targeting a permanent (Auras and pump spells)
+  scry                 Finish scrying; keep looked-at cards on top
+  scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -152,6 +155,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "Chandra can see").length > 1
 #guard ((helpInteractive true).splitOn "the acting player can see").length > 1
 #guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
+#guard ((helpInteractive false).splitOn "scry bottom").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 
@@ -706,10 +710,10 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
-def castUsage : String := "usage: cast <id>"
+def castUsage : String := "usage: cast <id> [target]"
 
 /-- Begin casting the named spell. Damage spells target the opponent; pump
-spells target one of the caster's creatures. -/
+spells and Auras target a creature (own creature if none is named). -/
 def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -726,8 +730,19 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
           | some (.pump _ _) =>
             (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
               |>.map (fun c => Target.permanent c.id)
-          | none => none
+          | none =>
+            if o.printed.isAura then
+              (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+                |>.map (fun c => Target.permanent c.id)
+            else none
         g.apply p (.cast id tgt)
+  | [arg, tgtArg] =>
+    match parseObjectId? arg, parseObjectId? tgtArg with
+    | none, _ | _, none => throw castUsage
+    | some id, some tid =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.cast id (some (Target.permanent tid)))
   | _ => throw castUsage
 
 #guard
@@ -741,7 +756,7 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .ok _ => false
 
 #guard
-  match applyCast Tests.boltSetup ⟨0⟩ ["1", "2"] with
+  match applyCast Tests.boltSetup ⟨0⟩ ["1", "2", "3"] with
   | .error msg => msg == castUsage
   | .ok _ => false
 
@@ -756,6 +771,56 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     g'.pending == .activateManaAbilities ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "begins casting Lightning Bolt")
   | .error _ => false
+
+#guard
+  match applyCast Tests.giftSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.giftSetup ⟨0⟩ "Gift of Strands").id] with
+  | .ok g' =>
+    g'.log.any (fun s => Tests.mentions s "begins casting Gift of Strands") &&
+      match g'.stack.back? with
+      | some e =>
+        e.targets == #[Target.permanent (Tests.namedPermanent Tests.giftSetup "Grizzly Bears").id]
+      | none => false
+  | .error _ => false
+
+def scryUsage : String := "usage: scry [bottom <id> ...]"
+
+/-- Finish a pending scry. Bare `scry` keeps the looked-at cards on top.
+`scry bottom <ids>` puts those cards on the bottom (first = new bottom) and
+the rest stay on top in their current relative order. -/
+def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match g.pending with
+  | .scry q n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may scry"
+    let looked := g.scryLookedIds p n
+    let tokens := tokens.filter (fun t => !t.isEmpty)
+    match tokens with
+    | [] => g.apply p (.scry looked #[])
+    | "bottom" :: rest =>
+      let ids ← parseObjectIds rest scryUsage
+      for id in ids do
+        if (g.findObject? id).isNone then
+          throw "no such object"
+      let top := looked.filter (fun id => !ids.contains id)
+      g.apply p (.scry top ids)
+    | _ => throw scryUsage
+  | _ => throw "Not time to scry (CR 701.20)"
+
+#guard
+  match applyScry Tests.giftScrying ⟨0⟩ [] with
+  | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyScry Tests.giftSetup ⟨0⟩ [] with
+  | .error msg => Tests.mentions msg "Not time to scry"
+  | .ok _ => false
+
+#guard
+  match applyScry Tests.giftScrying ⟨0⟩ ["keep"] with
+  | .error msg => msg == scryUsage
+  | .ok _ => false
 
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
 handled by the console loop. Actions are issued as `p`. -/
@@ -777,6 +842,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "activate" => applyActivate g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
+  | "scry" => applyScry g p args
   | _ => .error s!"Unknown command: {cmd}"
 
 /-- Issue a console command as the player who currently must act. -/
@@ -817,6 +883,11 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 #guard
   match applyInteractiveAsActor Tests.readyToDeclareAttackers "noattack" [] with
   | .ok g' => !(g'.battlefield.any (·.status.attacking))
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.giftScrying "scry" [] with
+  | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
   | .error _ => false
 
 #guard
