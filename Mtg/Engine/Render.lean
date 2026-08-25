@@ -35,12 +35,27 @@ def handLine (g : Game) (id : ObjectId) : String :=
   | none => s!"{id} (missing)"
   | some o => s!"{o.id} {o.printed.summary}"
 
-def playerBlock (g : Game) (pl : Player) : String :=
+/-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
+`none` is omniscient: public zones and hands are shown, but libraries stay
+face-down even to their owner. -/
+def canSeeZoneFaces (viewer : Option PlayerId) : Zone → Bool
+  | .library _ => false
+  | .hand p =>
+    match viewer with
+    | none => true
+    | some v => v == p
+  | .battlefield | .graveyard _ | .stack | .exile | .command | .ante => true
+
+def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
   let bf := (g.permanentsOf pl.id).toList.map (objectLine g)
   let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
-  let hand := pl.hand.toList.map (handLine g)
-  let handText := if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
+  let handText :=
+    if canSeeZoneFaces viewer (.hand pl.id) then
+      let hand := pl.hand.toList.map (handLine g)
+      if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
+    else
+      "  (hidden)"
   String.intercalate "\n" [
     s!"{pl.name}{marker} — life {pl.life} — library {pl.library.size} — GY {pl.graveyard.size} — mana {pl.manaPool}",
     s!"  Hand ({pl.hand.size}):",
@@ -58,7 +73,11 @@ def stackBlock (g : Game) : String :=
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
-def header (g : Game) : String :=
+def header (g : Game) (viewer : Option PlayerId := none) : String :=
+  let viewTag :=
+    match viewer with
+    | none => ""
+    | some p => s!" [{g.player p |>.name}'s view]"
   let pending :=
     match g.pending with
     | .none => ""
@@ -76,17 +95,35 @@ def header (g : Game) : String :=
     | some (.won p) => s!"  RESULT: {g.player p |>.name} wins"
     | some .draw => "  RESULT: draw"
   if g.openingHandsPending then
-    s!"Opening hands{pending}{result}"
+    s!"Opening hands{viewTag}{pending}{result}"
   else
-    s!"Turn {g.turnNumber} · {g.step} · priority: {g.player g.priority |>.name}{pending}{result}"
+    s!"Turn {g.turnNumber} · {g.step} · priority: {g.player g.priority |>.name}{viewTag}{pending}{result}"
 
-def snapshot (g : Game) : String :=
-  let players := g.players.toList.map (playerBlock g)
-  String.intercalate "\n\n" (header g :: stackBlock g :: players)
+def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
+  let players := g.players.toList.map (fun pl => playerBlock g pl viewer)
+  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players)
 
-/-- New log lines starting at `startIdx`. -/
-def newLog (g : Game) (startIdx : Nat) : Array String :=
-  g.log.extract startIdx g.log.size
+/-- Hide draws and library-bottoming that `viewer` is not allowed to see
+(CR 401.2, 402.2, 103.5). Other log lines are public. -/
+def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
+  Id.run do
+    for pl in g.players do
+      if pl.id != viewer then
+        let drawPrefix := s!"{pl.name} draws "
+        if line.startsWith drawPrefix then
+          return s!"{pl.name} draws a card"
+        let bottomPrefix := s!"{pl.name} puts "
+        let bottomSuffix := " on the bottom of their library"
+        if line.startsWith bottomPrefix && line.endsWith bottomSuffix then
+          return s!"{pl.name} puts a card on the bottom of their library"
+    return line
+
+/-- New log lines starting at `startIdx`, optionally redacted for `viewer`. -/
+def newLog (g : Game) (startIdx : Nat) (viewer : Option PlayerId := none) : Array String :=
+  let lines := g.log.extract startIdx g.log.size
+  match viewer with
+  | none => lines
+  | some p => lines.map (redactLogLine g p)
 
 /-- Current life total, matching the snapshot's `life N` fragment. -/
 def lifeLine (pl : Player) : String :=
@@ -165,20 +202,20 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
       s!"{o.id} {o.name}{ctrl}"
     | _ => s!"{o.id} {o.name}"
 
-/-- Current contents of `z`. Libraries are hidden, so only their size is shown. -/
-def zoneBlock (g : Game) (z : Zone) : String :=
+/-- Current contents of `z`. Hidden zones show only their size (CR 400.2). -/
+def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String :=
   let ids := zoneObjectIds g z
   let shown :=
     match z with
     | .stack => ids.reverse
     | _ => ids
   let title := s!"zone {zoneLabel g z} ({shown.size})"
-  match z with
-  | .library _ => title
-  | _ =>
-    if shown.isEmpty then s!"{title}: (empty)"
-    else
-      let lines := shown.toList.map (zoneLine g z)
-      title ++ ":\n  " ++ String.intercalate "\n  " lines
+  if !canSeeZoneFaces viewer z then
+    title
+  else if shown.isEmpty then
+    s!"{title}: (empty)"
+  else
+    let lines := shown.toList.map (zoneLine g z)
+    title ++ ":\n  " ++ String.intercalate "\n  " lines
 
 end Mtg.Engine.Render

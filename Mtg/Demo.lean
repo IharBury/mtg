@@ -6,7 +6,8 @@ import Mtg.Demo.WelcomeDecks
 
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted two-player
 game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
-to play Chandra against the agent-controlled Nissa.
+to play Chandra against the agent-controlled Nissa. In interactive mode, `visible`
+prints only information Chandra can see; `--visible` starts in that player view.
 -/
 
 open Mtg.Engine
@@ -18,11 +19,12 @@ def usage : String :=
   "Mtg.Demo — demonstration of the Mtg.Engine rules engine
 
 Usage:
-  lake exe mtg-demo [--auto | --interactive] [--seed N] [--fuel N]
+  lake exe mtg-demo [--auto | --interactive] [--visible] [--seed N] [--fuel N]
 
 Options:
   --auto          Run a heuristic two-player game (default)
   --interactive   Play as Chandra; Nissa is heuristic-controlled
+  --visible       With --interactive, hide information Chandra cannot see
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --help          Show this help
@@ -45,15 +47,15 @@ def demoConfig (seed : UInt64) : StartConfig := {
   startingPlayer := some 0
 }
 
-def printLog (g : Game) (startIdx : Nat) : IO Nat := do
-  for line in newLog g startIdx do
+def printLog (g : Game) (startIdx : Nat) (viewer : Option PlayerId := none) : IO Nat := do
+  for line in newLog g startIdx viewer do
     IO.println s!"  {line}"
   return g.log.size
 
 /-- Print each zone whose occupants or battlefield status changed. -/
-def printChangedZones (before after : Game) : IO Unit := do
+def printChangedZones (before after : Game) (viewer : Option PlayerId := none) : IO Unit := do
   for z in changedZones before after do
-    for line in (zoneBlock after z).splitOn "\n" do
+    for line in (zoneBlock after z viewer).splitOn "\n" do
       IO.println s!"  {line}"
 
 /-- Print each player's life total when it changed. -/
@@ -66,12 +68,12 @@ def printChangedMana (before after : Game) : IO Unit := do
   for pl in changedManaPools before after do
     IO.println s!"  {manaLine pl}"
 
-def printState (g : Game) : IO Unit := do
+def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
-  IO.println (snapshot g)
+  IO.println (snapshot g viewer)
   IO.println ""
 
-def startDemo (seed : UInt64) : IO Game := do
+def startDemo (seed : UInt64) (viewer : Option PlayerId := none) : IO Game := do
   match Start.start (demoConfig seed) with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
@@ -80,8 +82,8 @@ def startDemo (seed : UInt64) : IO Game := do
     IO.println Mtg.Engine.identification
     IO.println s!"Rules source: {Rules.sourceUrl}"
     IO.println ""
-    let _ ← printLog g 0
-    printState g
+    let _ ← printLog g 0 viewer
+    printState g viewer
     return g
 
 partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
@@ -110,6 +112,9 @@ def helpInteractive : String :=
   "Commands:
   help                 Show this help
   state                Print the board
+  visible              Print only information Chandra can see (CR 400.2)
+  visible on           Use Chandra's view for state and later updates
+  visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
@@ -128,6 +133,9 @@ def helpInteractive : String :=
   concede              Concede
   quit                 Exit
 "
+
+#guard (helpInteractive.splitOn "visible").length > 1
+#guard (helpInteractive.splitOn "Chandra can see").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -348,6 +356,48 @@ def applyBottom (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "Not time to put cards on the bottom (CR 103.5)"
   | .ok _ => false
 
+def visibleUsage : String := "usage: visible [on|off]"
+
+/-- `none` prints Chandra's view once; `some true/false` turns follow mode on or off. -/
+def applyVisible (tokens : List String) : Except String (Option Bool) :=
+  match tokens.filter (fun t => !t.isEmpty) with
+  | [] => .ok none
+  | ["on"] => .ok (some true)
+  | ["off"] => .ok (some false)
+  | _ => .error visibleUsage
+
+#guard
+  match applyVisible [] with
+  | .ok none => true
+  | _ => false
+
+#guard
+  match applyVisible ["on"] with
+  | .ok (some true) => true
+  | _ => false
+
+#guard
+  match applyVisible ["off"] with
+  | .ok (some false) => true
+  | _ => false
+
+#guard
+  match applyVisible ["nope"] with
+  | .error msg => msg == visibleUsage
+  | .ok _ => false
+
+#guard
+  match applyVisible ["on", "off"] with
+  | .error msg => msg == visibleUsage
+  | .ok _ => false
+
+/-- Chandra's viewpoint when follow mode is on; omniscient otherwise. -/
+def chandraView (playerView : Bool) : Option PlayerId :=
+  if playerView then some ⟨0⟩ else none
+
+#guard (chandraView false).isNone
+#guard chandraView true == some ⟨0⟩
+
 def activateUsage : String := "usage: activate <id>"
 
 /-- Activate the first non-mana activated ability of the named permanent. -/
@@ -411,9 +461,10 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok g' => g'.stack.size == 1
   | .error _ => false
 
-partial def interactiveLoop (g : Game) : IO Unit := do
+partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
+  let mut playerView := startVisible
   let chandra : PlayerId := ⟨0⟩
   let nissa : PlayerId := ⟨1⟩
   IO.println helpInteractive
@@ -425,8 +476,8 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         IO.println s!"Nissa could not act: {e}"
         break
       | .ok g' =>
-        seen ← printLog g' seen
-        printChangedZones g g'
+        seen ← printLog g' seen (chandraView playerView)
+        printChangedZones g g' (chandraView playerView)
         printChangedLife g g'
         printChangedMana g g'
         g := g'
@@ -444,6 +495,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       match cmd with
       | "help" => .ok g
       | "state" => .ok g
+      | "visible" => .ok g
       | "quit" | "exit" => .ok g
       | "keep" => g.apply chandra .keep
       | "mulligan" => g.apply chandra .takeMulligan
@@ -491,26 +543,38 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       IO.println "Goodbye."
       return
     | "help" => IO.println helpInteractive
-    | "state" => printState g
+    | "state" => printState g (chandraView playerView)
+    | "visible" =>
+      match applyVisible (parts.drop 1) with
+      | .error e => IO.println s!"! {e}"
+      | .ok none => printState g (some chandra)
+      | .ok (some on) =>
+        playerView := on
+        if on then
+          IO.println "Showing only information Chandra can see."
+          printState g (some chandra)
+        else
+          IO.println "Showing full game information."
     | _ =>
       match act with
       | .error e => IO.println s!"! {e}"
       | .ok g' =>
-        seen ← printLog g' seen
-        printChangedZones g g'
+        seen ← printLog g' seen (chandraView playerView)
+        printChangedZones g g' (chandraView playerView)
         printChangedLife g g'
         printChangedMana g g'
         g := g'
         if g.over then
-          printState g
+          printState g (chandraView playerView)
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
   | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
-def parseArgs (args : List String) : Except String (Bool × UInt64 × Nat) :=
+def parseArgs (args : List String) : Except String (Bool × Bool × UInt64 × Nat) :=
   Id.run do
     let mut interactive := false
+    let mut playerView := false
     let mut seed : UInt64 := 20260807
     let mut fuel : Nat := 800
     let mut rest := args
@@ -524,6 +588,9 @@ def parseArgs (args : List String) : Except String (Bool × UInt64 × Nat) :=
         rest := xs
       | "--interactive" :: xs =>
         interactive := true
+        rest := xs
+      | "--visible" :: xs =>
+        playerView := true
         rest := xs
       | "--seed" :: n :: xs =>
         match n.toNat? with
@@ -539,7 +606,24 @@ def parseArgs (args : List String) : Except String (Bool × UInt64 × Nat) :=
           rest := xs
       | x :: _ => return .error s!"Unknown argument: {x}"
       | [] => break
-    return .ok (interactive, seed, fuel)
+    if playerView && !interactive then
+      return .error "--visible requires --interactive"
+    return .ok (interactive, playerView, seed, fuel)
+
+#guard
+  match parseArgs ["--interactive", "--visible"] with
+  | .ok (true, true, _, _) => true
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive"] with
+  | .ok (true, false, _, _) => true
+  | _ => false
+
+#guard
+  match parseArgs ["--visible"] with
+  | .error msg => msg == "--visible requires --interactive"
+  | .ok _ => false
 
 def main (args : List String) : IO UInt32 := do
   match parseArgs args with
@@ -550,10 +634,10 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln e
     IO.println usage
     return 1
-  | .ok (interactive, seed, fuel) =>
-    let g ← startDemo seed
+  | .ok (interactive, playerView, seed, fuel) =>
+    let g ← startDemo seed (chandraView (interactive && playerView))
     if interactive then
-      interactiveLoop g
+      interactiveLoop g playerView
     else
       runAuto g fuel
     return 0

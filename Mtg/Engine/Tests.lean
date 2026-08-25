@@ -126,6 +126,55 @@ def played : Game :=
 #guard zoneBlock started .stack == "zone stack (0): (empty)"
 #guard zoneBlock started (.library ⟨0⟩) == "zone Chandra's library (53)"
 
+/-- `true` iff `needle` occurs in `haystack`. -/
+def mentions (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+/-- First card of `p`'s hand; tests assume opening hands are non-empty. -/
+def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
+  match (g.handObjects p)[0]? with
+  | some o => o
+  | none => panic! "expected a card in hand"
+
+#guard canSeeZoneFaces none (.hand ⟨1⟩)
+#guard canSeeZoneFaces (some ⟨0⟩) (.hand ⟨0⟩)
+#guard !canSeeZoneFaces (some ⟨0⟩) (.hand ⟨1⟩)
+#guard !canSeeZoneFaces none (.library ⟨0⟩)
+#guard !canSeeZoneFaces (some ⟨0⟩) (.library ⟨0⟩)
+#guard canSeeZoneFaces (some ⟨0⟩) .battlefield
+#guard canSeeZoneFaces (some ⟨0⟩) (.graveyard ⟨1⟩)
+
+#guard zoneBlock started (.library ⟨0⟩) (some ⟨0⟩) == "zone Chandra's library (53)"
+#guard zoneBlock started (.hand ⟨1⟩) (some ⟨0⟩) == "zone Nissa's hand (7)"
+#guard mentions (zoneBlock started (.hand ⟨0⟩) (some ⟨0⟩)) (firstHandCard started ⟨0⟩).name
+#guard !mentions (zoneBlock started (.hand ⟨1⟩) (some ⟨0⟩)) (firstHandCard started ⟨1⟩).name
+#guard mentions (zoneBlock started (.hand ⟨1⟩)) (firstHandCard started ⟨1⟩).name
+
+#guard mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩)) "Hand (7):"
+#guard mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩)) "(hidden)"
+#guard !mentions (playerBlock started (started.player ⟨1⟩) (some ⟨0⟩))
+  (firstHandCard started ⟨1⟩).name
+#guard mentions (playerBlock started (started.player ⟨0⟩) (some ⟨0⟩))
+  (firstHandCard started ⟨0⟩).name
+
+#guard mentions (snapshot started (some ⟨0⟩)) "Chandra's view"
+#guard !mentions (snapshot started) "view"
+#guard mentions (snapshot started (some ⟨0⟩)) (firstHandCard started ⟨0⟩).name
+#guard !mentions (snapshot started (some ⟨0⟩)) (firstHandCard started ⟨1⟩).name
+#guard mentions (snapshot started) (firstHandCard started ⟨1⟩).name
+
+#guard redactLogLine started ⟨0⟩ "Nissa draws Forest" == "Nissa draws a card"
+#guard redactLogLine started ⟨0⟩ "Chandra draws Mountain" == "Chandra draws Mountain"
+#guard redactLogLine started ⟨0⟩ "Nissa puts Forest on the bottom of their library" ==
+  "Nissa puts a card on the bottom of their library"
+#guard redactLogLine started ⟨0⟩ "Nissa puts Forest onto the battlefield tapped" ==
+  "Nissa puts Forest onto the battlefield tapped"
+#guard (newLog started 0 (some ⟨0⟩)).any (· == "Nissa draws a card")
+#guard !(newLog started 0 (some ⟨0⟩)).any (fun s =>
+  s.startsWith "Nissa draws " && s != "Nissa draws a card")
+#guard (newLog started 0).any (fun s =>
+  s.startsWith "Nissa draws " && s != "Nissa draws a card")
+
 def drawnOnce : Game := Game.draw started ⟨0⟩
 
 #guard (zoneObjectIds drawnOnce (.hand ⟨0⟩)).size == 8
@@ -134,10 +183,9 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 #guard (changedZones started drawnOnce).contains (.library ⟨0⟩)
 #guard !(changedZones started drawnOnce).contains .battlefield
 #guard !(changedZones started drawnOnce).contains .stack
-
-/-- `true` iff `needle` occurs in `haystack`. -/
-def mentions (haystack needle : String) : Bool :=
-  (haystack.splitOn needle).length > 1
+#guard zoneBlock drawnOnce (.hand ⟨1⟩) (some ⟨0⟩) == "zone Nissa's hand (7)"
+#guard mentions (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)) (firstHandCard drawnOnce ⟨0⟩).name
+#guard (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)).startsWith "zone Chandra's hand (8):"
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
