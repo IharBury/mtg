@@ -5,8 +5,9 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords, simple `{T}: Add` mana abilities, and a few one-shot spell
-effects); remaining abilities are stored as Oracle text only.
+(keywords, simple `{T}: Add` mana abilities, non-mana activated abilities
+such as Wayfarer's Bauble, and a few one-shot spell effects); remaining
+abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -555,6 +556,14 @@ def wayfarersBauble : CardDef := {
   manaCost := ManaCost.ofGeneric 1
   types := #[.artifact]
   oracleText := "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
+  activatedAbilities := #[{
+    cost := {
+      mana := ManaCost.ofGeneric 2
+      tap := true
+      sacrificeSource := true
+    }
+    effect := .searchBasicLandTapped
+  }]
 }
 
 def battleScarredGoblin : CardDef := {

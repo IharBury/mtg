@@ -11,8 +11,8 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), ending a game (CR 104), priority (CR 117),
 playing lands (CR 116.2a / 305), casting the spells we model (CR 601),
-combat (CR 506–510), cleanup (CR 514.3), and the state-based actions we
-implement (CR 704.5).
+activating non-mana abilities of permanents (CR 602), combat (CR 506–510),
+cleanup (CR 514.3), and the state-based actions we implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -43,6 +43,8 @@ structure GameObject where
   zone : Zone
   status : Status := {}
   timestamp : Nat := 0
+  /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
+  abilityEffect : Option AbilityEffect := none
 deriving Repr, Inhabited
 
 namespace GameObject
@@ -60,6 +62,11 @@ def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
 
+/-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
+def canPayTapCost (o : GameObject) : Bool :=
+  !o.status.tapped &&
+  !(o.printed.isCreature && o.status.summoningSick && !o.printed.keywords.haste)
+
 end GameObject
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
@@ -69,8 +76,14 @@ structure StackEntry where
   targets : Array Target
 deriving Repr, Inhabited
 
-/-- Snapshot of a spell whose total cost is being paid (CR 601.2f–h).
-Used to reverse an illegal cast (CR 601.2 / 733.1). -/
+/-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
+inductive ProposalKind where
+  | spell
+  | activatedAbility
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Snapshot of a spell or activated ability whose total cost is being paid
+(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
 structure ProposedSpell where
   caster : PlayerId
   cost : ManaCost
@@ -80,6 +93,11 @@ structure ProposedSpell where
   stackBefore : Array StackEntry
   manaBefore : ManaPool
   tapped : Array ObjectId := #[]
+  kind : ProposalKind := .spell
+  /-- Source permanent of an activated ability; unused for spells. -/
+  sourceId : Option ObjectId := none
+  tapSource : Bool := false
+  sacrificeSource : Bool := false
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -130,7 +148,9 @@ inductive Action where
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
   | cast (id : ObjectId) (target : Option Target)
-  /-- Pay the locked-in cost of a proposed spell (CR 601.2h). -/
+  /-- Activate a non-mana activated ability of a permanent (CR 602). -/
+  | activate (id : ObjectId) (abilityIdx : Nat)
+  /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
@@ -157,7 +177,8 @@ structure Game where
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
-  /-- Spell proposed and waiting for mana abilities / payment (CR 601.2f–h). -/
+  /-- Spell or ability proposed and waiting for mana abilities / payment
+  (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
 deriving Repr, Inhabited
 
@@ -484,7 +505,7 @@ def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := 
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }
 
-/-- Undo a proposed spell that could not be paid (CR 601.2 / 733.1). -/
+/-- Undo a proposed spell or ability that could not be paid (CR 601.2 / 602.2 / 733.1). -/
 def reverseProposedSpell (g : Game) : Game :=
   match g.proposedSpell with
   | none => g
@@ -492,8 +513,13 @@ def reverseProposedSpell (g : Game) : Game :=
     Id.run do
       let mut g := g
       let name := (g.player prop.caster).name
+      let objects := g.objects.filter (fun o => o.id != prop.spellId)
+      let objects :=
+        match prop.kind with
+        | .spell => objects.push prop.original
+        | .activatedAbility => objects
       g := { g with
-        objects := g.objects.filter (fun o => o.id != prop.spellId) |>.push prop.original
+        objects := objects
         stack := prop.stackBefore
         pending := .none
         proposedSpell := none }
@@ -502,23 +528,66 @@ def reverseProposedSpell (g : Game) : Game :=
       for id in prop.tapped do
         if let some o := g.findObject? id then
           g := g.setObject { o with status := { o.status with tapped := false } }
-      g := g.logMsg
-        s!"{name} cannot pay {prop.cost}; the casting is reversed (CR 601.2 / 733.1)"
+      let reversed :=
+        match prop.kind with
+        | .spell => "the casting is reversed (CR 601.2 / 733.1)"
+        | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
+      g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
 
 def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
   g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
 
-/-- Pay the locked-in cost (CR 601.2h) and finish casting (CR 601.2i). -/
+def becomeActivated (g : Game) (p : PlayerId) (sourceName : String) : Game :=
+  g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
+
+/-- Whether the source of a proposed activated ability can still pay tap/sacrifice. -/
+def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.sourceId with
+  | none => true
+  | some sid =>
+    match g.findObject? sid with
+    | none => false
+    | some src =>
+      src.isOnBattlefield && src.controlledBy prop.caster &&
+      (!prop.tapSource || !src.status.tapped)
+
+/-- Pay `{T}` and/or sacrifice the source as part of an activation cost (CR 601.2h). -/
+def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
+    (tapSource sacrificeSource : Bool) : Except String Game := do
+  let some src := g.findObject? sourceId | throw "The source is no longer in play"
+  if !src.isOnBattlefield then
+    throw "The source is no longer on the battlefield"
+  if !src.controlledBy p then
+    throw "You don't control that permanent"
+  let mut g := g
+  if tapSource then
+    let src := g.object! sourceId
+    if src.status.tapped then
+      throw s!"{src.name} is already tapped"
+    g := g.setObject { src with status := { src.status with tapped := true } }
+  if sacrificeSource then
+    let src := g.object! sourceId
+    g := g.logMsg s!"{(g.player p).name} sacrifices {src.name}"
+    let (g', _) := g.move sourceId (.graveyard src.owner) none
+    g := g'
+  return g
+
+/-- Pay the locked-in cost (CR 601.2h / 602.2b) and finish the proposal. -/
 def finishProposedSpell (g : Game) : Except String Game := do
-  let some prop := g.proposedSpell | throw "No spell is waiting to be paid for"
-  if !(g.player prop.caster).manaPool.canPay prop.cost then
+  let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
+  if !(g.player prop.caster).manaPool.canPay prop.cost || !g.sourceStillPayable prop then
     return g.reverseProposedSpell
-  let spellName := (g.object! prop.spellId).name
   let g ← g.payCost prop.caster prop.cost
+  let g ←
+    match prop.sourceId with
+    | some sid => g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
+    | none => pure g
   let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-  return g.becomeCast prop.caster spellName
+  match prop.kind with
+  | .spell => return g.becomeCast prop.caster (g.object! prop.spellId).name
+  | .activatedAbility => return g.becomeActivated prop.caster prop.original.name
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
     Except String Game := do
@@ -563,6 +632,78 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
   let g := g.logMsg s!"{pl.name} begins casting {original.name}"
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
+/-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
+enough mana in the pool is not required; mana abilities are activated at
+CR 601.2g. -/
+def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
+  o.isOnBattlefield &&
+  o.controlledBy p &&
+  g.hasPriority p &&
+  (if ab.onlyAsSorcery then g.asSorcery? p else true) &&
+  (if ab.cost.tap then o.canPayTapCost else true)
+
+def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
+    Except String Game := do
+  if !g.hasPriority p then
+    throw "You don't have priority"
+  let some o := g.findObject? id | throw "no such object"
+  if !o.isOnBattlefield then
+    throw s!"{o.name} is not on the battlefield"
+  if !o.controlledBy p then
+    throw "You don't control that permanent"
+  if o.printed.activatedAbilities.isEmpty then
+    throw s!"{o.name} has no activated ability"
+  let some ab := o.printed.activatedAbilities[abilityIdx]?
+    | throw s!"{o.name} has no such activated ability"
+  if ab.onlyAsSorcery && !g.asSorcery? p then
+    throw s!"{o.name}'s ability can be activated only as a sorcery"
+  if ab.cost.tap && o.status.tapped then
+    throw s!"{o.name} is already tapped"
+  if ab.cost.tap && o.printed.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
+    throw s!"{o.name} has summoning sickness (CR 302.6)"
+  let pl := g.player p
+  let stackBefore := g.stack
+  let manaBefore := pl.manaPool
+  let (g, newId) := g.allocId
+  let (g, ts) := g.bumpTime
+  let abilityObj : GameObject := {
+    id := newId
+    printed := {
+      name := s!"{o.name}'s ability"
+      types := #[]
+      oracleText := o.printed.oracleText
+    }
+    owner := o.owner
+    controller := some p
+    zone := .stack
+    timestamp := ts
+    abilityEffect := some ab.effect
+  }
+  let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
+  let g := { g with
+    objects := g.objects.push abilityObj
+    stack := g.stack.push entry
+    consecutivePasses := 0 }
+  let g := g.logMsg s!"{pl.name} begins activating {o.name}"
+  if !ab.cost.mana.includesManaPayment then
+    let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
+    return g.becomeActivated p o.name
+  let prop : ProposedSpell := {
+    caster := p
+    cost := ab.cost.mana
+    spellId := newId
+    original := o
+    handBefore := pl.hand
+    stackBefore := stackBefore
+    manaBefore := manaBefore
+    kind := .activatedAbility
+    sourceId := some id
+    tapSource := ab.cost.tap
+    sacrificeSource := ab.cost.sacrificeSource
+  }
+  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
+  return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
 def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   match effect, targets[0]? with
@@ -585,6 +726,32 @@ def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
       g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
   | _, _ => g
 
+/-- Search `p`'s library for a basic land card, put it onto the battlefield
+tapped, then shuffle (CR 701.19). Picks the first matching card in library
+order (bottom first). -/
+def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
+  let pl := g.player p
+  let found := pl.library.find? (fun id =>
+    match g.findObject? id with
+    | some o => isBasicLandCard o.printed
+    | none => false)
+  let g :=
+    match found with
+    | none =>
+      g.logMsg s!"{pl.name} searches their library and finds no basic land card"
+    | some landId =>
+      let landName := (g.object! landId).name
+      let (g, newId) := g.move landId .battlefield (some p)
+      let o := g.object! newId
+      let g := g.setObject { o with
+        status := { o.status with tapped := true, summoningSick := false } }
+      g.logMsg s!"{pl.name} puts {landName} onto the battlefield tapped"
+  g.shuffleLibrary p
+
+def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect) : Game :=
+  match effect with
+  | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -592,21 +759,26 @@ def resolveTop (g : Game) : Game :=
     let g := { g with stack := g.stack.pop }
     match g.findObject? entry.objectId with
     | none => g.logMsg "The spell left the stack unexpectedly"
-    | some spell =>
-      let g :=
-        if let some e := spell.printed.spellEffect then
-          g.applyEffect entry.controller e entry.targets
-        else g
-      if spell.printed.isPermanentCard && !spell.printed.isLand then
-        let (g, newId) := g.move spell.id .battlefield (some entry.controller)
-        let o := g.object! newId
-        let sick := o.printed.isCreature && !o.printed.keywords.haste
-        let g := g.setObject { o with status := { o.status with summoningSick := sick } }
-        g.logMsg s!"{o.name} enters the battlefield"
+    | some obj =>
+      if let some e := obj.abilityEffect then
+        let g := g.applyAbilityEffect entry.controller e
+        -- CR 608.2m: after resolution the ability ceases to exist.
+        { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else
-        let owner := spell.owner
-        let (g, _) := g.move spell.id (.graveyard owner) none
-        g.logMsg s!"{spell.name} goes to the graveyard"
+        let g :=
+          if let some e := obj.printed.spellEffect then
+            g.applyEffect entry.controller e entry.targets
+          else g
+        if obj.printed.isPermanentCard && !obj.printed.isLand then
+          let (g, newId) := g.move obj.id .battlefield (some entry.controller)
+          let o := g.object! newId
+          let sick := o.printed.isCreature && !o.printed.keywords.haste
+          let g := g.setObject { o with status := { o.status with summoningSick := sick } }
+          g.logMsg s!"{o.name} enters the battlefield"
+        else
+          let owner := obj.owner
+          let (g, _) := g.move obj.id (.graveyard owner) none
+          g.logMsg s!"{obj.name} goes to the graveyard"
 
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
   if g.pending != .declareAttackers || g.activePlayer != p then
@@ -809,15 +981,15 @@ def advanceStep (g : Game) : Game :=
     else
       g.startNextTurn |>.beginTurn
 
-/-- Pay the proposed spell (CR 601.2h). If the cost cannot be paid, the
-casting is reversed (CR 601.2 / 733.1). -/
+/-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
+cannot be paid, the action is reversed (CR 733.1). -/
 def pay (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .activateManaAbilities caster =>
     if caster != p then
       throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
     g.finishProposedSpell
-  | _ => throw "No spell is waiting to be paid for (CR 601.2h)"
+  | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.over then
@@ -850,6 +1022,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .cast id t => g.castSpell p id t
+  | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .declareAttackers ids => g.declareAttackers p ids
   | .declareBlockers as => g.declareBlockers p as

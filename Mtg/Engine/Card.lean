@@ -49,6 +49,29 @@ inductive SpellEffect where
   | pump (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
+/-- One-shot effect of an activated ability on resolution (CR 602, 608). -/
+inductive AbilityEffect where
+  /-- Search your library for a basic land card, put it onto the battlefield
+  tapped, then shuffle (e.g. Wayfarer's Bauble). -/
+  | searchBasicLandTapped
+deriving Repr, Inhabited, BEq
+
+/-- Costs of an activated ability besides announcements (CR 602.1). -/
+structure ActivationCost where
+  mana : ManaCost := ManaCost.empty
+  tap : Bool := false
+  sacrificeSource : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- An activated ability printed on a card (CR 602.1). Mana abilities that
+are `{T}: Add` are stored separately on `CardDef.tapAddMana` / basic land types. -/
+structure ActivatedAbility where
+  cost : ActivationCost
+  effect : AbilityEffect
+  /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
+  onlyAsSorcery : Bool := false
+deriving Repr, Inhabited, BEq
+
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
   name : String
@@ -66,6 +89,9 @@ structure CardDef where
   spellEffect : Option SpellEffect := none
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
+  /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
+  `tapAddMana` / basic land types instead. -/
+  activatedAbilities : Array ActivatedAbility := #[]
 deriving Repr, Inhabited
 
 namespace CardDef
