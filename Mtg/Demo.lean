@@ -115,10 +115,10 @@ def helpInteractive : String :=
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
+  sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
-  activate <id> <id>   Activate, sacrificing the second permanent as the cost
   cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
@@ -349,34 +349,38 @@ def applyBottom (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "Not time to put cards on the bottom (CR 103.5)"
   | .ok _ => false
 
-def activateUsage : String := "usage: activate <id> [cost-id]"
+def activateUsage : String := "usage: activate <id>"
 
-/-- Activate the first non-mana activated ability of the named permanent.
-A second id is the creature or artifact sacrificed when the cost requires it. -/
+/-- Activate the first non-mana activated ability of the named permanent. -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
-  let ids ←
-    match tokens with
-    | [arg] =>
-      match parseObjectId? arg with
-      | none => throw activateUsage
-      | some id => pure (id, none)
-    | [arg, sacArg] =>
-      match parseObjectId? arg, parseObjectId? sacArg with
-      | some id, some sac => pure (id, some sac)
-      | _, _ => throw activateUsage
-    | _ => throw activateUsage
-  let (id, sacrifice) := ids
-  match g.findObject? id with
-  | none => throw "no such object"
-  | some o =>
-    match o.printed.activatedAbilities[0]? with
-    | none => throw s!"{o.name} has no activated ability"
-    | some _ =>
-      if let some sacId := sacrifice then
-        if (g.findObject? sacId).isNone then
-          throw "no such object"
-      g.apply p (.activate id 0 sacrifice)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw activateUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some o =>
+        match o.printed.activatedAbilities[0]? with
+        | none => throw s!"{o.name} has no activated ability"
+        | some _ => g.apply p (.activate id 0)
+  | _ => throw activateUsage
+
+def sacrificeUsage : String := "usage: sacrifice <id>"
+
+/-- After `pay`, sacrifice the named creature or artifact to finish activating. -/
+def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw sacrificeUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.sacrifice id)
+  | _ => throw sacrificeUsage
 
 #guard
   match applyActivate Tests.baubleReady ⟨0⟩ [] with
@@ -389,19 +393,14 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok _ => false
 
 #guard
-  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2", "3"] with
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2"] with
   | .error msg => msg == activateUsage
   | .ok _ => false
 
 #guard
-  let g := Tests.baubleReady
-  let bauble := Tests.baubleSource g
-  match (g.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
-  | none => false
-  | some land =>
-    match applyActivate g ⟨0⟩ [toString bauble.id, toString land.id] with
-    | .error msg => Tests.mentions msg "doesn't require sacrificing another permanent"
-    | .ok _ => false
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2", "3"] with
+  | .error msg => msg == activateUsage
+  | .ok _ => false
 
 #guard
   match applyActivate Tests.baubleReady ⟨0⟩ ["99999"] with
@@ -434,18 +433,47 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .error _ => false
 
 #guard
-  match applyActivate Tests.hunterReady ⟨0⟩
-      [toString (Tests.hunterSource Tests.hunterReady).id] with
-  | .error msg => Tests.mentions msg "requires sacrificing another creature or artifact"
+  let g := Tests.hunterReady
+  let hunter := Tests.hunterSource g
+  match applyActivate g ⟨0⟩ [toString hunter.id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Snowslope Hunter")
+  | .error _ => false
+
+#guard
+  match applySacrifice Tests.hunterReady ⟨0⟩ [] with
+  | .error msg => msg == sacrificeUsage
+  | .ok _ => false
+
+#guard
+  match applySacrifice Tests.hunterReady ⟨0⟩ ["nope"] with
+  | .error msg => msg == sacrificeUsage
+  | .ok _ => false
+
+#guard
+  match applySacrifice Tests.hunterReady ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == sacrificeUsage
   | .ok _ => false
 
 #guard
   let g := Tests.hunterReady
-  let hunter := Tests.hunterSource g
+  match applySacrifice g ⟨0⟩ [toString (Tests.hunterFodder g).id] with
+  | .error msg => Tests.mentions msg "Not time to sacrifice"
+  | .ok _ => false
+
+#guard
+  let g := Tests.paidHunter
+  match applySacrifice g ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  let g := Tests.paidHunter
   let fodder := Tests.hunterFodder g
-  match applyActivate g ⟨0⟩ [toString hunter.id, toString fodder.id] with
+  match applySacrifice g ⟨0⟩ [toString fodder.id] with
   | .ok g' =>
-    g'.stack.size == 1 &&
+    g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
@@ -489,6 +517,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
       | "bottom" => applyBottom g chandra (parts.drop 1)
       | "pass" => g.apply chandra .pass
       | "pay" => g.apply chandra .pay
+      | "sacrifice" => applySacrifice g chandra (parts.drop 1)
       | "concede" => g.apply chandra .concede
       | "attack" => applyAttack g chandra (parts.drop 1)
       | "noattack" => g.apply chandra (.declareAttackers #[])

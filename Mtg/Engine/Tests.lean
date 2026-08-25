@@ -853,11 +853,11 @@ def baubleSource (g : Game) : GameObject :=
 -- The heuristic activates the bauble when {2} is available.
 #guard
   match Agent.choose baubleReady ⟨0⟩ with
-  | some (.activate id 0 none) => id == (baubleSource baubleReady).id
+  | some (.activate id 0) => id == (baubleSource baubleReady).id
   | _ => false
 
 def proposedBauble : Game :=
-  mustApply baubleReady ⟨0⟩ (.activate (baubleSource baubleReady).id 0 none)
+  mustApply baubleReady ⟨0⟩ (.activate (baubleSource baubleReady).id 0)
 
 #guard proposedBauble.pending == .activateManaAbilities ⟨0⟩
 #guard proposedBauble.proposedSpell.isSome
@@ -978,37 +978,69 @@ def hunterAbility : ActivatedAbility :=
 #guard (hunterReady.sacrificeCreatureOrArtifactChoices ⟨0⟩
   (hunterSource hunterReady).id).any (fun o => o.name == "Raging Goblin")
 
--- The heuristic activates the hunter when another creature is available.
+-- The heuristic begins activating the hunter when another creature is available.
 #guard
   match Agent.choose hunterReady ⟨0⟩ with
-  | some (.activate id 0 (some sac)) =>
-    id == (hunterSource hunterReady).id &&
-    sac == (hunterFodder hunterReady).id
+  | some (.activate id 0) => id == (hunterSource hunterReady).id
   | _ => false
 
--- Cannot sacrifice the hunter itself, a land, or an opponent's creature.
+def proposedHunter : Game :=
+  mustApply hunterReady ⟨0⟩ (.activate (hunterSource hunterReady).id 0)
+
+#guard proposedHunter.pending == .activateManaAbilities ⟨0⟩
+#guard proposedHunter.proposedSpell.isSome
+#guard proposedHunter.stack.size == 1
+#guard (namedPermanent proposedHunter "Raging Goblin").isOnBattlefield
+#guard proposedHunter.log.any (fun s => mentions s "begins activating Snowslope Hunter")
+#guard proposedHunter.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+
+-- Sacrifice is not chosen at `activate`; it comes after `pay`.
 #guard
-  match hunterReady.activateAbility ⟨0⟩ (hunterSource hunterReady).id 0
-      (some (hunterSource hunterReady).id) with
+  match proposedHunter.apply ⟨0⟩ (.sacrifice (hunterFodder proposedHunter).id) with
+  | .error msg => mentions msg "Not time to sacrifice"
+  | .ok _ => false
+
+-- The heuristic pays the empty mana cost next.
+#guard
+  match Agent.choose proposedHunter ⟨0⟩ with
+  | some .pay => true
+  | _ => false
+
+def paidHunter : Game :=
+  mustApply proposedHunter ⟨0⟩ .pay
+
+#guard
+  match paidHunter.pending with
+  | .sacrificePermanent p sid =>
+    p == ⟨0⟩ && sid == (hunterSource paidHunter).id
+  | _ => false
+#guard paidHunter.proposedSpell.isSome
+#guard (namedPermanent paidHunter "Raging Goblin").isOnBattlefield
+#guard paidHunter.log.any (fun s =>
+  mentions s "must sacrifice another creature or artifact")
+#guard mentions (header paidHunter) "sacrifice a creature or artifact"
+
+-- Cannot sacrifice the hunter itself, a land, or skip the choice.
+#guard
+  match paidHunter.apply ⟨0⟩ (.sacrifice (hunterSource paidHunter).id) with
   | .error msg => mentions msg "Can't sacrifice"
   | .ok _ => false
 
 #guard
-  match (hunterReady.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  match (paidHunter.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
   | none => false
   | some land =>
-    match hunterReady.activateAbility ⟨0⟩ (hunterSource hunterReady).id 0 (some land.id) with
+    match paidHunter.apply ⟨0⟩ (.sacrifice land.id) with
     | .error msg => mentions msg "Can't sacrifice"
     | .ok _ => false
 
 #guard
-  match hunterReady.activateAbility ⟨0⟩ (hunterSource hunterReady).id 0 none with
-  | .error msg => mentions msg "requires sacrificing another creature or artifact"
-  | .ok _ => false
+  match Agent.choose paidHunter ⟨0⟩ with
+  | some (.sacrifice id) => id == (hunterFodder paidHunter).id
+  | _ => false
 
 def activatedHunter : Game :=
-  mustApply hunterReady ⟨0⟩
-    (.activate (hunterSource hunterReady).id 0 (some (hunterFodder hunterReady).id))
+  mustApply paidHunter ⟨0⟩ (.sacrifice (hunterFodder paidHunter).id)
 
 #guard activatedHunter.pending == .none
 #guard activatedHunter.proposedSpell.isNone
@@ -1025,15 +1057,18 @@ def activatedHunter : Game :=
 #guard (changedZones hunterReady activatedHunter).contains .battlefield
 #guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
 
+/-- Finish activating Snowslope Hunter by paying, then sacrificing `sacName`. -/
+def completeHunterActivation (g : Game) (sacName : String) : Game :=
+  let g := mustApply g ⟨0⟩ (.activate (hunterSource g).id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g sacName).id)
+
 -- Only once each turn: a second fodder still cannot be spent this turn.
 def hunterActivatedOnce : Game :=
-  mustApply hunterReady ⟨0⟩
-    (.activate (hunterSource hunterReady).id 0
-      (some (hunterFodder hunterReady).id))
+  completeHunterActivation hunterReady "Raging Goblin"
 
 #guard
-  match hunterActivatedOnce.activateAbility ⟨0⟩ (hunterSource hunterActivatedOnce).id 0
-      (some (namedPermanent hunterActivatedOnce "Gray Ogre").id) with
+  match hunterActivatedOnce.activateAbility ⟨0⟩ (hunterSource hunterActivatedOnce).id 0 with
   | .error msg => mentions msg "only once each turn"
   | .ok _ => false
 #guard !(hunterActivatedOnce.canActivate ⟨0⟩ (hunterSource hunterActivatedOnce) hunterAbility)
@@ -1093,10 +1128,7 @@ def hunterLandReady : Game :=
   addToLibraryTop g mountain ⟨0⟩
 
 def resolvedHunterLand : Game :=
-  let g := mustApply hunterLandReady ⟨0⟩
-    (.activate (hunterSource hunterLandReady).id 0
-      (some (hunterFodder hunterLandReady).id))
-  passBoth g
+  passBoth (completeHunterActivation hunterLandReady "Raging Goblin")
 
 def exiledMountain (g : Game) : GameObject :=
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Mountain") with
@@ -1124,8 +1156,7 @@ def hunterOnNissaTurn : Game :=
 #guard hunterOnNissaTurn.activePlayer == ⟨1⟩
 #guard hunterOnNissaTurn.hasPriority ⟨0⟩
 #guard
-  match hunterOnNissaTurn.activateAbility ⟨0⟩ (hunterSource hunterOnNissaTurn).id 0
-      (some (hunterFodder hunterOnNissaTurn).id) with
+  match hunterOnNissaTurn.activateAbility ⟨0⟩ (hunterSource hunterOnNissaTurn).id 0 with
   | .error msg => mentions msg "only during your turn"
   | .ok _ => false
 
@@ -1154,9 +1185,7 @@ def hunterOnNextTurn : Game :=
 #guard hunterOnNextTurn.canActivate ⟨0⟩ (hunterSource hunterOnNextTurn) hunterAbility
 
 def hunterActivatedNextTurn : Game :=
-  mustApply hunterOnNextTurn ⟨0⟩
-    (.activate (hunterSource hunterOnNextTurn).id 0
-      (some (namedPermanent hunterOnNextTurn "Gray Ogre").id))
+  completeHunterActivation hunterOnNextTurn "Gray Ogre"
 
 #guard hunterActivatedNextTurn.log.any (fun s => mentions s "activates Snowslope Hunter")
 #guard hunterActivatedNextTurn.log.any (fun s => mentions s "sacrifices Gray Ogre")
@@ -1193,10 +1222,7 @@ def hunterEmptyLibrary : Game :=
   g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
 
 def resolvedHunterEmpty : Game :=
-  let g := mustApply hunterEmptyLibrary ⟨0⟩
-    (.activate (hunterSource hunterEmptyLibrary).id 0
-      (some (hunterFodder hunterEmptyLibrary).id))
-  passBoth g
+  passBoth (completeHunterActivation hunterEmptyLibrary "Raging Goblin")
 
 #guard resolvedHunterEmpty.stack.isEmpty
 #guard resolvedHunterEmpty.log.any (fun s => mentions s "no cards in their library to exile")

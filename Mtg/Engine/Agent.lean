@@ -26,6 +26,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.declareBlockers #[])
     | .activateManaAbilities _ =>
       chooseManaPayment g p
+    | .sacrificePermanent _ sourceId =>
+      match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
+      | some sac => some (.sacrifice sac.id)
+      | none => some .pass
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
@@ -62,15 +66,7 @@ where
       | some ab => g.canActivate p o ab && available.canPay ab.cost.mana
       | none => false)
     match candidate with
-    | some o =>
-      match o.printed.activatedAbilities[0]? with
-      | none => chooseCast g p
-      | some ab =>
-        let sac :=
-          if ab.cost.sacrificeAnotherCreatureOrArtifact then
-            (g.sacrificeCreatureOrArtifactChoices p o.id)[0]?.map (·.id)
-          else none
-        some (.activate o.id 0 sac)
+    | some o => some (.activate o.id 0)
     | none => chooseCast g p
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p

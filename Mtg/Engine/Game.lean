@@ -113,8 +113,8 @@ structure ProposedSpell where
   sourceId : Option ObjectId := none
   tapSource : Bool := false
   sacrificeSource : Bool := false
-  /-- Another permanent announced as a sacrifice cost (CR 601.2b / 602.2b). -/
-  sacrificeOther : Option ObjectId := none
+  /-- After mana is paid, the player must sacrifice another creature or artifact. -/
+  needsSacrificeOther : Bool := false
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -124,6 +124,8 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- After `pay`, choose another creature or artifact to sacrifice. -/
+  | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
@@ -175,11 +177,12 @@ inductive Action where
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
   | cast (id : ObjectId) (target : Option Target)
-  /-- Activate a non-mana activated ability of a permanent (CR 602).
-  `sacrifice` is the other creature or artifact paid when the cost requires it. -/
-  | activate (id : ObjectId) (abilityIdx : Nat) (sacrifice : Option ObjectId)
+  /-- Activate a non-mana activated ability of a permanent (CR 602). -/
+  | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
+  /-- After `pay`, sacrifice another creature or artifact to finish activating. -/
+  | sacrifice (id : ObjectId)
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   /-- Keep this hand as the opening hand (CR 103.5). -/
@@ -626,29 +629,18 @@ def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : Objec
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
-  let sourceOk :=
-    match prop.sourceId with
-    | none => true
-    | some sid =>
-      match g.findObject? sid with
-      | none => false
-      | some src =>
-        src.isOnBattlefield && src.controlledBy prop.caster &&
-        (!prop.tapSource || !src.status.tapped)
-  let otherOk :=
-    match prop.sacrificeOther, prop.sourceId with
-    | none, _ => true
-    | some oid, some sid =>
-      match g.findObject? oid with
-      | none => false
-      | some sac => g.canSacrificeAsCreatureOrArtifact prop.caster sid sac
-    | some _, none => false
-  sourceOk && otherOk
+  match prop.sourceId with
+  | none => true
+  | some sid =>
+    match g.findObject? sid with
+    | none => false
+    | some src =>
+      src.isOnBattlefield && src.controlledBy prop.caster &&
+      (!prop.tapSource || !src.status.tapped)
 
-/-- Pay `{T}` and/or sacrifice as part of an activation cost (CR 601.2h). -/
+/-- Pay `{T}` and/or sacrifice the source as part of an activation cost (CR 601.2h). -/
 def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
-    (tapSource sacrificeSource : Bool) (sacrificeOther : Option ObjectId := none) :
-    Except String Game := do
+    (tapSource sacrificeSource : Bool) : Except String Game := do
   let some src := g.findObject? sourceId | throw "The source is no longer in play"
   if !src.isOnBattlefield then
     throw "The source is no longer on the battlefield"
@@ -665,31 +657,38 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     g := g.logMsg s!"{(g.player p).name} sacrifices {src.name}"
     let (g', _) := g.move sourceId (.graveyard src.owner) none
     g := g'
-  if let some oid := sacrificeOther then
-    let some sac := g.findObject? oid | throw "The sacrificed permanent is no longer in play"
-    if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
-      throw s!"Can't sacrifice {sac.name}"
-    g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
-    let (g', _) := g.move oid (.graveyard sac.owner) none
-    g := g'
   return g
 
-/-- Pay the locked-in cost (CR 601.2h / 602.2b) and finish the proposal. -/
+/-- Pay the locked-in cost (CR 601.2h / 602.2b). Abilities that still need
+another creature or artifact sacrificed wait for the `sacrifice` action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   if !(g.player prop.caster).manaPool.canPay prop.cost || !g.sourceStillPayable prop then
     return g.reverseProposedSpell
+  if prop.needsSacrificeOther then
+    match prop.sourceId with
+    | none => return g.reverseProposedSpell
+    | some sid =>
+      if (g.sacrificeCreatureOrArtifactChoices prop.caster sid).isEmpty then
+        return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost
   let g ←
     match prop.sourceId with
     | some sid =>
       g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
-        prop.sacrificeOther
     | none => pure g
-  let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-  match prop.kind with
-  | .spell => return g.becomeCast prop.caster (g.object! prop.spellId).name
-  | .activatedAbility =>
+  match prop.kind, prop.needsSacrificeOther, prop.sourceId with
+  | .spell, _, _ =>
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    return g.becomeCast prop.caster (g.object! prop.spellId).name
+  | .activatedAbility, true, some sid =>
+    let g := { g with
+      pending := .sacrificePermanent prop.caster sid
+      consecutivePasses := 0 }
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+  | .activatedAbility, _, _ =>
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
@@ -750,8 +749,8 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
     !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty
    else true)
 
-def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
-    (sacrifice : Option ObjectId := none) : Except String Game := do
+def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
+    Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   let some o := g.findObject? id | throw "no such object"
@@ -773,18 +772,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     throw s!"{o.name} is already tapped"
   if ab.cost.tap && o.printed.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
-  if sacrifice.isSome && !ab.cost.sacrificeAnotherCreatureOrArtifact then
-    throw s!"{o.name}'s ability doesn't require sacrificing another permanent"
-  let sacrificeOther ←
-    if ab.cost.sacrificeAnotherCreatureOrArtifact then
-      let some sid := sacrifice
-        | throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
-      let some sac := g.findObject? sid | throw "no such object"
-      if !g.canSacrificeAsCreatureOrArtifact p id sac then
-        throw s!"Can't sacrifice {sac.name}"
-      pure (some sid)
-    else
-      pure none
+  if ab.cost.sacrificeAnotherCreatureOrArtifact &&
+      (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
+    throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -809,8 +799,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     stack := g.stack.push entry
     consecutivePasses := 0 }
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
-  if !ab.cost.mana.includesManaPayment then
-    let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource sacrificeOther
+  if !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
+    let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
     return g.becomeActivated p o.name (some id)
   let prop : ProposedSpell := {
     caster := p
@@ -824,10 +814,29 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     sourceId := some id
     tapSource := ab.cost.tap
     sacrificeSource := ab.cost.sacrificeSource
-    sacrificeOther := sacrificeOther
+    needsSacrificeOther := ab.cost.sacrificeAnotherCreatureOrArtifact
   }
   let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
+/-- After mana is paid, sacrifice another creature or artifact (CR 601.2h). -/
+def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .sacrificePermanent caster sourceId =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
+      throw s!"Can't sacrifice {sac.name}"
+    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
+    let (g, _) := g.move id (.graveyard sac.owner) none
+    let sourceName :=
+      match g.proposedSpell with
+      | some prop => prop.original.name
+      | none => (g.object! sourceId).name
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    return g.becomeActivated p sourceName (some sourceId)
+  | _ => throw "Not time to sacrifice a permanent"
 
 def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
@@ -1395,8 +1404,9 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .cast id t => g.castSpell p id t
-  | .activate id idx sac => g.activateAbility p id idx sac
+  | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
+  | .sacrifice id => g.sacrificeForActivation p id
   | .declareAttackers ids => g.declareAttackers p ids
   | .declareBlockers as => g.declareBlockers p as
   | .keep => g.keepOpeningHand p
@@ -1415,6 +1425,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
     | .none =>

@@ -65,6 +65,8 @@ def header (g : Game) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .sacrificePermanent p _ =>
+      s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .declareMulligan p =>
       s!" [mulligan: {g.player p |>.name} may keep or mulligan (CR 103.5)]"
     | .putOnBottom p n =>
