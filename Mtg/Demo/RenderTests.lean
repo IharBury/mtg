@@ -334,6 +334,75 @@ def mountainLine (g : Game) : String :=
     s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
   mentions (header giftScrying) "scry 2" &&
-  mentions (snapshot giftScrying) "Scry (top last):"
+  mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
+
+-- Starting a scry does not move library cards, but the demo reprints that
+-- library so the scrying player sees the looked-at faces (CR 701.20).
+#guard (zoneObjectIds giftKnownLib (.library ⟨0⟩)) ==
+  (zoneObjectIds giftKnownScrying (.library ⟨0⟩))
+#guard (changedZones giftKnownLib giftKnownScrying).contains (.library ⟨0⟩)
+#guard !(changedZones giftKnownScrying giftKnownScrying).contains (.library ⟨0⟩)
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    let forest := (g.object! forestId).name
+    let elves := (g.object! elvesId).name
+    forest == "Forest" && elves == "Llanowar Elves" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) forest &&
+      mentions (zoneBlock g (.library ⟨0⟩)) elves &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId) &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId) &&
+      mentions (playerBlock g (g.player ⟨0⟩)) s!"Looking at (scry 2, top last)" &&
+      mentions (playerBlock g (g.player ⟨0⟩)) forest &&
+      mentions (playerBlock g (g.player ⟨0⟩)) elves &&
+      mentions (snapshot g) forest &&
+      mentions (snapshot g) elves &&
+      match scryLookBlock g with
+      | some s => mentions s forest && mentions s elves
+      | none => false
+  | _, _ => false
+
+-- Other players do not see the scried faces.
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    let forest := (g.object! forestId).name
+    let elves := (g.object! elvesId).name
+    !mentions (zoneBlock g (.library ⟨0⟩) (some ⟨1⟩)) forest &&
+      !mentions (zoneBlock g (.library ⟨0⟩) (some ⟨1⟩)) elves &&
+      zoneBlock g (.library ⟨0⟩) (some ⟨1⟩) ==
+        s!"zone Chandra's library ({(g.player ⟨0⟩).library.size})" &&
+      mentions (playerBlock g (g.player ⟨0⟩) (some ⟨1⟩)) "Looking at (scry 2): (hidden)" &&
+      !mentions (playerBlock g (g.player ⟨0⟩) (some ⟨1⟩)) forest &&
+      mentions (snapshot g (some ⟨1⟩)) "(hidden)" &&
+      match scryLookBlock g (some ⟨1⟩) with
+      | some s => s == "Chandra is scrying 2"
+      | none => false
+  | _, _ => false
+
+-- The scrying player in hidden-information view still sees their own look.
+#guard
+  let g := giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]? with
+  | some forestId =>
+    mentions (zoneBlock g (.library ⟨0⟩) (some ⟨0⟩)) (g.object! forestId).name &&
+      mentions (snapshot g (some ⟨0⟩)) (g.object! forestId).name &&
+      mentions (playerBlock g (g.player ⟨0⟩) (some ⟨0⟩)) (g.object! forestId).name
+  | none => false
+
+-- Finishing a scry that leaves library order unchanged still reprints the
+-- library so the look is no longer shown.
+#guard
+  let before := giftScrying
+  let after := giftScried
+  scryLook before ⟨0⟩ != scryLook after ⟨0⟩ &&
+    (changedZones before after).contains (.library ⟨0⟩) &&
+    !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
 
 end Mtg.Demo.RenderTests
