@@ -55,7 +55,7 @@ The first slice of the engine models the two-player game:
 
 - colors and mana (CR 105–107, 202)
 - cards, types, zones, and turn structure (CR 108–110, 205, 300, 400, 500)
-- starting a game, opening hands, first-turn skipped draw (CR 103, 103.8a)
+- starting a game, opening hands, London mulligans, first-turn skipped draw (CR 103, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, activating mana abilities, and casting spells (CR 601.2, including 601.2g)
 - combat declaration and combat damage

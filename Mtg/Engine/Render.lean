@@ -65,12 +65,20 @@ def header (g : Game) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .declareMulligan p =>
+      s!" [mulligan: {g.player p |>.name} may keep or mulligan (CR 103.5)]"
+    | .putOnBottom p n =>
+      let cards := if n == 1 then "1 card" else s!"{n} cards"
+      s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
   let result :=
     match g.result with
     | none => ""
     | some (.won p) => s!"  RESULT: {g.player p |>.name} wins"
     | some .draw => "  RESULT: draw"
-  s!"Turn {g.turnNumber} · {g.step} · priority: {g.player g.priority |>.name}{pending}{result}"
+  if g.openingHandsPending then
+    s!"Opening hands{pending}{result}"
+  else
+    s!"Turn {g.turnNumber} · {g.step} · priority: {g.player g.priority |>.name}{pending}{result}"
 
 def snapshot (g : Game) : String :=
   let players := g.players.toList.map (playerBlock g)
