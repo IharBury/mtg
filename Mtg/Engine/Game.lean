@@ -13,8 +13,9 @@ Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), activating non-mana abilities of
 permanents (CR 602), static abilities that grant trample (CR 604), attack
-triggers (CR 508.2 / 603), combat (CR 506–510), cleanup (CR 514.3), and the
-state-based actions we implement (CR 704.5).
+triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603), combat
+(CR 506–510, including CR 510.1c), cleanup (CR 514.3), and the state-based
+actions we implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -34,6 +35,9 @@ structure Status where
   pumpToughness : Int := 0
   attacking : Bool := false
   blocking : Option ObjectId := none
+  /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
+  every blocking creature leaves combat. -/
+  blocked : Bool := false
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
 deriving Repr, Inhabited, BEq
@@ -408,6 +412,10 @@ def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
   if creatures.isEmpty then 0
   else creatures.foldl (fun acc o => max acc o.power) (creatures[0]!.power)
 
+/-- Creatures currently blocking `attackerId`. -/
+def blockersOf (g : Game) (attackerId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun b => b.status.blocking == some attackerId)
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
@@ -468,7 +476,8 @@ def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-Attack triggers are put on the stack as they are declared (CR 508.2). -/
+Attack and becomes-blocked triggers are put on the stack as their events
+happen (CR 508.2, 509.5c). -/
 def hasWaitingTriggers (_g : Game) : Bool :=
   false
 
@@ -960,6 +969,52 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
+  | .onBecomesBlockedDeal1ToBlockers =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let blockers := g.blockersOf o.id
+        if blockers.isEmpty then
+          g.logMsg s!"there are no creatures blocking {o.name}"
+        else
+          Id.run do
+            let mut g := g
+            for b in blockers do
+              let bNow := g.object! b.id
+              g := g.setObject { bNow with
+                status := { bNow.status with damage := bNow.status.damage + 1 } }
+              g := g.logMsg s!"{o.name} deals 1 damage to {bNow.name}"
+            return g
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
+
+/-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
+def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
+    (ab : TriggeredAbility) (event : String) : Game :=
+  let (g, newId) := g.allocId
+  let (g, ts) := g.bumpTime
+  let abilityObj : GameObject := {
+    id := newId
+    printed := {
+      name := s!"{source.name}'s ability"
+      types := #[]
+      oracleText := source.printed.oracleText
+    }
+    owner := source.owner
+    controller := some controller
+    zone := .stack
+    timestamp := ts
+    triggeredAbility := some ab
+    sourceId := some source.id
+  }
+  let entry : StackEntry := { objectId := newId, controller := controller, targets := #[] }
+  let g := { g with
+    objects := g.objects.push abilityObj
+    stack := g.stack.push entry
+    consecutivePasses := 0 }
+  g.logMsg s!"{source.name}'s {event} is put on the stack"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
@@ -968,30 +1023,25 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     for id in attackerIds do
       let o := g.object! id
       for ab in o.printed.triggeredAbilities do
-        match ab with
-        | .onAttackPumpByGreatestPower =>
-          let (g1, newId) := g.allocId
-          let (g1, ts) := g1.bumpTime
-          let abilityObj : GameObject := {
-            id := newId
-            printed := {
-              name := s!"{o.name}'s ability"
-              types := #[]
-              oracleText := o.printed.oracleText
-            }
-            owner := o.owner
-            controller := some p
-            zone := .stack
-            timestamp := ts
-            triggeredAbility := some ab
-            sourceId := some id
-          }
-          let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
-          g := { g1 with
-            objects := g1.objects.push abilityObj
-            stack := g1.stack.push entry
-            consecutivePasses := 0 }
-          g := g.logMsg s!"{o.name}'s attack trigger is put on the stack"
+        if ab.triggersWhenAttacking then
+          g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
+    return g
+
+/-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
+def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × ObjectId)) : Game :=
+  Id.run do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for (_, attackerId) in assignments do
+      if !seen.contains attackerId then
+        seen := seen.push attackerId
+        let o := g.object! attackerId
+        match o.controller with
+        | none => pure ()
+        | some p =>
+          for ab in o.printed.triggeredAbilities do
+            if ab.triggersWhenBecomesBlocked then
+              g := g.putTriggeredAbilityOnStack p o ab "becomes-blocked trigger"
     return g
 
 def resolveTop (g : Game) : Game :=
@@ -1053,9 +1103,12 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     if !g.canBlock b a then
       throw s!"{b.name} cannot block {a.name}"
     g := g.setObject { b with status := { b.status with blocking := some attackerId } }
+    let aNow := g.object! attackerId
+    g := g.setObject { aNow with status := { aNow.status with blocked := true } }
     g := g.logMsg s!"{b.name} blocks {a.name}"
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
+  g := g.putBlockedTriggersOnStack assignments
   return { g with pending := .none } |>.receivePriority g.activePlayer
 
 def combatDamage (g : Game) : Game :=
@@ -1063,14 +1116,26 @@ def combatDamage (g : Game) : Game :=
     let mut g := g
     let attackers := g.battlefield.filter (·.status.attacking)
     for a in attackers do
-      let blockers := g.battlefield.filter (fun b => b.status.blocking == some a.id)
+      let blockers := g.blockersOf a.id
       if blockers.isEmpty then
-        let defn := g.opponent g.activePlayer
-        let dmg := max a.power 0
-        if dmg > 0 then
-          let pl := g.player defn
-          g := g.setPlayer { pl with life := pl.life - dmg }
-          g := g.logMsg s!"{a.name} deals {dmg} combat damage to {pl.name} ({(g.player defn).life} life)"
+        if a.status.blocked && !g.hasTrample a then
+          -- CR 510.1c: a blocked creature with no remaining blockers assigns none.
+          g := g.logMsg
+            s!"{a.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
+        else
+          let defn := g.opponent g.activePlayer
+          let dmg := max a.power 0
+          if dmg > 0 then
+            let pl := g.player defn
+            g := g.setPlayer { pl with life := pl.life - dmg }
+            -- Blocked with trample and no remaining blockers: all damage to the
+            -- player (CR 702.19d). Unblocked creatures deal combat damage.
+            if a.status.blocked then
+              g := g.logMsg
+                s!"{a.name} tramples for {dmg} to {pl.name} ({(g.player defn).life} life)"
+            else
+              g := g.logMsg
+                s!"{a.name} deals {dmg} combat damage to {pl.name} ({(g.player defn).life} life)"
       else
         -- All combat damage from the attacker is assigned to the first blocker;
         -- leftover trample damage goes to the defending player.
@@ -1098,8 +1163,9 @@ def clearCombat (g : Game) : Game :=
   Id.run do
     let mut g := g
     for o in g.battlefield do
-      if o.status.attacking || o.status.blocking.isSome then
-        g := g.setObject { o with status := { o.status with attacking := false, blocking := none } }
+      if o.status.attacking || o.status.blocking.isSome || o.status.blocked then
+        g := g.setObject { o with
+          status := { o.status with attacking := false, blocking := none, blocked := false } }
     return g
 
 def clearEOT (g : Game) : Game :=

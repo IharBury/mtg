@@ -208,10 +208,17 @@ def mountainLine (g : Game) : String :=
     s!"{bears.id} Grizzly Bears {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
   mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
-  mentions (objectLine g ogre) "*attacking*"
+  mentions (objectLine g ogre) "*attacking, blocked*"
 #guard !mentions
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
+
+#guard
+  let g := goblinBlockedByBears
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  mentions (objectLine g goblin) "*attacking, blocked*" &&
+    !mentions (objectLine goblinDeclaredAttacker (namedPermanent goblinDeclaredAttacker
+      "Battle-Scarred Goblin")) "*blocked"
 
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty

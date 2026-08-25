@@ -7,7 +7,8 @@ Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords, simple `{T}: Add` mana abilities, non-mana activated abilities
 such as Wayfarer's Bauble and Snowslope Hunter, static abilities that grant
-trample, attack triggers that pump, and a few one-shot spell effects);
+trample, attack triggers that pump, becomes-blocked triggers that damage
+blockers, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -575,6 +576,7 @@ def battleScarredGoblin : CardDef := {
   oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
   power := some 2
   toughness := some 2
+  triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers]
 }
 
 def improvisedClub : CardDef := {
@@ -908,5 +910,7 @@ def attercop : CardDef := {
 #guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
 #guard orcishSiegemaster.triggeredAbilities == #[.onAttackPumpByGreatestPower]
 #guard (orcishSiegemaster.summary.splitOn "Other Orcs and Goblins").length > 1
+#guard battleScarredGoblin.triggeredAbilities == #[.onBecomesBlockedDeal1ToBlockers]
+#guard (battleScarredGoblin.summary.splitOn "becomes blocked").length > 1
 
 end Mtg.Engine.Catalog

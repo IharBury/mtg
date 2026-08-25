@@ -167,6 +167,9 @@ inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
   is the greatest power among creatures you control. -/
   | onAttackPumpByGreatestPower
+  /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
+  blocking it (e.g. Battle-Scarred Goblin). -/
+  | onBecomesBlockedDeal1ToBlockers
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
@@ -174,6 +177,18 @@ namespace TriggeredAbility
 def toNotation : TriggeredAbility → String
   | .onAttackPumpByGreatestPower =>
     "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+  | .onBecomesBlockedDeal1ToBlockers =>
+    "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
+
+/-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
+def triggersWhenAttacking : TriggeredAbility → Bool
+  | .onAttackPumpByGreatestPower => true
+  | .onBecomesBlockedDeal1ToBlockers => false
+
+/-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
+def triggersWhenBecomesBlocked : TriggeredAbility → Bool
+  | .onBecomesBlockedDeal1ToBlockers => true
+  | .onAttackPumpByGreatestPower => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -327,6 +342,10 @@ instance : ToString CardDef where
   "Other Orcs and Goblins you control have trample."
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+#guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
+  "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
+#guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
+#guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 
 end CardDef
 

@@ -81,6 +81,7 @@ The first slice of the engine models the two-player game:
   permanents (CR 602), playing granted cards from exile, and casting spells
   (CR 601.2, including 601.2g)
 - combat declaration and combat damage
-- static abilities that grant trample, and attack triggers that pump power
+- static abilities that grant trample, attack triggers that pump power, and
+  becomes-blocked triggers that damage blocking creatures
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play
