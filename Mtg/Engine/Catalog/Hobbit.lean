@@ -891,5 +891,9 @@ def attercop : CardDef := {
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard roguesPassage.isLand
 #guard elvishMystic.tapAddMana == #[.colored .green]
+#guard (attercop.summary.splitOn "Landfall").length > 1
+#guard (attercop.summary.splitOn "reach").length > 1
+#guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
+#guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 
 end Mtg.Engine.Catalog

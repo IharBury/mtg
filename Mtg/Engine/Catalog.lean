@@ -184,5 +184,10 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard grizzlyBears.hasSorcerySpeed
 #guard !lightningBolt.hasSorcerySpeed
 #guard !mountain.hasSorcerySpeed
+#guard (ragingGoblin.summary.splitOn "haste").length > 1
+#guard (llanowarElves.summary.splitOn "{T}: Add {G}").length > 1
+#guard (lightningBolt.summary.splitOn "deals 3 damage").length > 1
+#guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
+#guard (giantSpider.summary.splitOn "reach").length > 1
 
 end Mtg.Engine.Catalog

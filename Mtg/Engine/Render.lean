@@ -17,6 +17,11 @@ def controlClause (g : Game) (o : GameObject) : String :=
   | some p => s!" ({owned}, controlled by {g.player p |>.name})"
   | none => s!" ({owned}, no controller)"
 
+/-- Keywords and abilities printed after a card's name (and P/T). -/
+def faceExtras (c : CardDef) : String :=
+  let s := c.keywordsAndAbilities
+  if s.isEmpty then "" else s!" {s}"
+
 def objectLine (g : Game) (o : GameObject) : String :=
   let tap := if o.status.tapped then " (tapped)" else ""
   let atk := if o.status.attacking then " *attacking*" else ""
@@ -28,7 +33,7 @@ def objectLine (g : Game) (o : GameObject) : String :=
     if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{controlClause g o}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{faceExtras o.printed}{controlClause g o}{tap}{atk}{blk}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -69,7 +74,7 @@ def stackBlock (g : Game) : String :=
   else
     let lines := g.stack.toList.reverse.map (fun e =>
       match g.findObject? e.objectId with
-      | some o => s!"  {o.name} (controlled by {g.player e.controller |>.name})"
+      | some o => s!"  {o.name}{faceExtras o.printed} (controlled by {g.player e.controller |>.name})"
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
@@ -199,8 +204,8 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         match o.controller with
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
-      s!"{o.id} {o.name}{ctrl}"
-    | _ => s!"{o.id} {o.name}"
+      s!"{o.id} {o.name}{faceExtras o.printed}{ctrl}"
+    | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2). -/
 def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String :=
