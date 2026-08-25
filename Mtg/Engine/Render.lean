@@ -94,6 +94,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .sacrificePermanent p _ =>
+      s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .declareMulligan p =>
       s!" [mulligan: {g.player p |>.name} may keep or mulligan (CR 103.5)]"
     | .putOnBottom p n =>
@@ -111,7 +113,18 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
 
 def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
   let players := g.players.toList.map (fun pl => playerBlock g pl viewer)
-  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players)
+  let exiled := g.objects.filter (fun o => o.zone == .exile)
+  let exileBlock :=
+    if exiled.isEmpty then []
+    else
+      let lines := exiled.toList.map (fun o =>
+        let extra :=
+          match o.playPermission with
+          | some perm => s!" (may be played by {g.player perm.player |>.name})"
+          | none => ""
+        s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
+      ["Exile:\n" ++ String.intercalate "\n" lines]
+  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock)
 
 /-- Hide draws and library-bottoming that `viewer` is not allowed to see
 (CR 401.2, 402.2, 103.5). Other log lines are public. -/
@@ -234,6 +247,12 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
       s!"{o.id} {o.name}{faceExtras o.printed}{ctrl}"
+    | .exile =>
+      let extra :=
+        match o.playPermission with
+        | some perm => s!" (may be played by {g.player perm.player |>.name})"
+        | none => ""
+      s!"{o.id} {o.name}{faceExtras o.printed}{extra}"
     | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2). -/

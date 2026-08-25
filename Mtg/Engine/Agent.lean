@@ -26,13 +26,19 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.declareBlockers #[])
     | .activateManaAbilities _ =>
       chooseManaPayment g p
+    | .sacrificePermanent _ sourceId =>
+      match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
+      | some sac => some (.sacrifice sac.id)
+      | none => some .pass
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .none =>
-      -- Play a land if possible.
-      let lands := (g.handObjects p).filter (·.printed.isLand)
+      -- Play a land if possible (from hand or from exile under a permission).
+      let lands :=
+        (g.handObjects p).filter (·.printed.isLand) ++
+        (g.exiledPlayable p).filter (·.printed.isLand)
       if g.canPlayLand p then
         match lands[0]? with
         | some land => some (.playLand land.id)
@@ -64,7 +70,7 @@ where
     | none => chooseCast g p
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
-    let playable := (g.handObjects p).filter (fun o =>
+    let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o && available.canPay o.printed.manaCost)
     let opp := Target.player (g.opponent p)
     let ownCreature := (g.permanentsOf p).filter (·.printed.isCreature) |>.back?

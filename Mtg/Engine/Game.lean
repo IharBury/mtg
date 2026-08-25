@@ -33,6 +33,18 @@ structure Status where
   pumpToughness : Int := 0
   attacking : Bool := false
   blocking : Option ObjectId := none
+  /-- Non-mana activations this turn, for “only once each turn”. -/
+  activationsThisTurn : Nat := 0
+deriving Repr, Inhabited, BEq
+
+/-- Permission to play a card from exile (CR 701.14), e.g. Snowslope Hunter. -/
+structure PlayPermission where
+  /-- The player who may play the card. -/
+  player : PlayerId
+  /-- Remaining endings of `player`'s turns before the permission expires.
+  Granted as 2 during that player's turn so it lasts until the end of their
+  next turn. -/
+  turnEndsRemaining : Nat
 deriving Repr, Inhabited, BEq
 
 /-- An object currently in the game (CR 109). -/
@@ -46,6 +58,8 @@ structure GameObject where
   timestamp : Nat := 0
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
   abilityEffect : Option AbilityEffect := none
+  /-- Set while this card may be played from exile. -/
+  playPermission : Option PlayPermission := none
 deriving Repr, Inhabited
 
 namespace GameObject
@@ -99,6 +113,8 @@ structure ProposedSpell where
   sourceId : Option ObjectId := none
   tapSource : Bool := false
   sacrificeSource : Bool := false
+  /-- After mana is paid, the player must sacrifice another creature or artifact. -/
+  needsSacrificeOther : Bool := false
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -108,6 +124,8 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- After `pay`, choose another creature or artifact to sacrifice. -/
+  | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
@@ -163,6 +181,8 @@ inductive Action where
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
+  /-- After `pay`, sacrifice another creature or artifact to finish activating. -/
+  | sacrifice (id : ObjectId)
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   /-- Keep this hand as the opening hand (CR 103.5). -/
@@ -444,18 +464,38 @@ def hasPriority (g : Game) (p : PlayerId) : Bool :=
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && (g.player p).landsPlayedThisTurn == 0
 
+/-- Whether `p` may play `o` from exile under a granted permission (CR 701.14). -/
+def mayPlayFromExile (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .exile &&
+  match o.playPermission with
+  | some perm => perm.player == p && perm.turnEndsRemaining > 0
+  | none => false
+
+/-- Cards in exile that `p` currently may play. -/
+def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
+  g.objects.filter (fun o => g.mayPlayFromExile p o)
+
+/-- Whether `p` may play `o` from hand or from exile under a permission. -/
+def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  (g.player p).hand.contains o.id || g.mayPlayFromExile p o
+
+def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
+  if o.zone == .exile && !g.mayPlayFromExile p o then
+    "You may not play that card from exile"
+  else
+    "That card is not in your hand"
+
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
     throw "Can't play a land now (CR 116.2a / 305.3)"
-  let pl := g.player p
-  if !pl.hand.contains id then
-    throw "That card is not in your hand"
-  let card := g.object! id
+  let some card := g.findObject? id | throw "no such object"
+  if !g.mayPlay p card then
+    throw (g.playZoneError p card)
   if !card.printed.isLand then
     throw s!"{card.name} is not a land"
   let (g, newId) := g.move id .battlefield (some p)
   let g := g.modifyPlayer p (fun pl => { pl with landsPlayedThisTurn := pl.landsPlayedThisTurn + 1 })
-  let g := g.logMsg s!"{pl.name} plays {card.name}"
+  let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
   -- Permanents enter untapped (CR 110.5b); lands have no summoning sickness.
   let o := g.object! newId
   let g := g.setObject { o with status := { o.status with summoningSick := false } }
@@ -521,9 +561,8 @@ def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  let pl := g.player p
   !o.printed.isLand &&
-  pl.hand.contains o.id &&
+  g.mayPlay p o &&
   g.hasPriority p &&
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
   match o.printed.spellEffect with
@@ -571,8 +610,29 @@ def reverseProposedSpell (g : Game) : Game :=
 def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
   g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
 
-def becomeActivated (g : Game) (p : PlayerId) (sourceName : String) : Game :=
+def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
+    (sourceId : Option ObjectId := none) : Game :=
+  let g :=
+    match sourceId with
+    | none => g
+    | some sid =>
+      match g.findObject? sid with
+      | some src =>
+        g.setObject { src with status := { src.status with
+          activationsThisTurn := src.status.activationsThisTurn + 1 } }
+      | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
+
+/-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
+def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
+    Array GameObject :=
+  g.permanentsOf p |>.filter (fun o =>
+    o.id != sourceId && (o.printed.isCreature || o.printed.isArtifact))
+
+/-- Whether `sac` is a legal “another creature or artifact” sacrifice for `sourceId`. -/
+def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : ObjectId)
+    (sac : GameObject) : Bool :=
+  (g.sacrificeCreatureOrArtifactChoices p sourceId).any (·.id == sac.id)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
@@ -606,29 +666,46 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     g := g'
   return g
 
-/-- Pay the locked-in cost (CR 601.2h / 602.2b) and finish the proposal. -/
+/-- Pay the locked-in cost (CR 601.2h / 602.2b). Abilities that still need
+another creature or artifact sacrificed wait for the `sacrifice` action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   if !(g.player prop.caster).manaPool.canPay prop.cost || !g.sourceStillPayable prop then
     return g.reverseProposedSpell
+  if prop.needsSacrificeOther then
+    match prop.sourceId with
+    | none => return g.reverseProposedSpell
+    | some sid =>
+      if (g.sacrificeCreatureOrArtifactChoices prop.caster sid).isEmpty then
+        return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost
   let g ←
     match prop.sourceId with
-    | some sid => g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
+    | some sid =>
+      g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     | none => pure g
-  let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-  match prop.kind with
-  | .spell => return g.becomeCast prop.caster (g.object! prop.spellId).name
-  | .activatedAbility => return g.becomeActivated prop.caster prop.original.name
+  match prop.kind, prop.needsSacrificeOther, prop.sourceId with
+  | .spell, _, _ =>
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    return g.becomeCast prop.caster (g.object! prop.spellId).name
+  | .activatedAbility, true, some sid =>
+    let g := { g with
+      pending := .sacrificePermanent prop.caster sid
+      consecutivePasses := 0 }
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+  | .activatedAbility, _, _ =>
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
     Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
+  let some card := g.findObject? id | throw "no such object"
+  if !g.mayPlay p card then
+    throw (g.playZoneError p card)
   let pl := g.player p
-  if !pl.hand.contains id then
-    throw "That card is not in your hand"
-  let card := g.object! id
   if card.printed.isLand then
     throw "Lands are played, not cast (CR 305)"
   if card.printed.hasSorcerySpeed && !g.asSorcery? p then
@@ -672,7 +749,12 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
   o.controlledBy p &&
   g.hasPriority p &&
   (if ab.onlyAsSorcery then g.asSorcery? p else true) &&
-  (if ab.cost.tap then o.canPayTapCost else true)
+  (if ab.onlyDuringYourTurn then g.activePlayer == p else true) &&
+  (if ab.onceEachTurn then o.status.activationsThisTurn == 0 else true) &&
+  (if ab.cost.tap then o.canPayTapCost else true) &&
+  (if ab.cost.sacrificeAnotherCreatureOrArtifact then
+    !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty
+   else true)
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
@@ -689,10 +771,17 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     | throw s!"{o.name} has no such activated ability"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
+  if ab.onlyDuringYourTurn && g.activePlayer != p then
+    throw s!"{o.name}'s ability can be activated only during your turn"
+  if ab.onceEachTurn && o.status.activationsThisTurn != 0 then
+    throw s!"{o.name}'s ability can be activated only once each turn"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
   if ab.cost.tap && o.printed.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
+  if ab.cost.sacrificeAnotherCreatureOrArtifact &&
+      (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
+    throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -717,9 +806,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     stack := g.stack.push entry
     consecutivePasses := 0 }
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
-  if !ab.cost.mana.includesManaPayment then
+  if !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
-    return g.becomeActivated p o.name
+    return g.becomeActivated p o.name (some id)
   let prop : ProposedSpell := {
     caster := p
     cost := ab.cost.mana
@@ -732,9 +821,29 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     sourceId := some id
     tapSource := ab.cost.tap
     sacrificeSource := ab.cost.sacrificeSource
+    needsSacrificeOther := ab.cost.sacrificeAnotherCreatureOrArtifact
   }
   let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
+/-- After mana is paid, sacrifice another creature or artifact (CR 601.2h). -/
+def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .sacrificePermanent caster sourceId =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
+      throw s!"Can't sacrifice {sac.name}"
+    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
+    let (g, _) := g.move id (.graveyard sac.owner) none
+    let sourceName :=
+      match g.proposedSpell with
+      | some prop => prop.original.name
+      | none => (g.object! sourceId).name
+    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+    return g.becomeActivated p sourceName (some sourceId)
+  | _ => throw "Not time to sacrifice a permanent"
 
 def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
@@ -780,9 +889,26 @@ def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
       g.logMsg s!"{pl.name} puts {landName} onto the battlefield tapped"
   g.shuffleLibrary p
 
+/-- Exile the top card of `p`'s library and grant permission to play it until
+the end of that player's next turn (CR 701.14). -/
+def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
+  let pl := g.player p
+  if pl.library.isEmpty then
+    g.logMsg s!"{pl.name} has no cards in their library to exile"
+  else
+    let top := pl.library.back!
+    let cardName := (g.object! top).name
+    let (g, newId) := g.move top .exile none
+    let o := g.object! newId
+    let g := g.setObject { o with
+      playPermission := some { player := p, turnEndsRemaining := 2 } }
+    g.logMsg
+      s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
+
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect) : Game :=
   match effect with
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
+  | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -913,9 +1039,39 @@ def discardToMaxHandSize (g : Game) : Game :=
           g := g'.logMsg s!"{pl.name} discards {card.name} (cleanup)"
       return g
 
+/-- Clear “once each turn” activation counts as a turn ends. -/
+def clearTurnActivations (g : Game) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.status.activationsThisTurn != 0 then
+        g := g.setObject { o with status := { o.status with activationsThisTurn := 0 } }
+    return g
+
+/-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
+def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.objects do
+      match o.playPermission with
+      | none => pure ()
+      | some perm =>
+        if perm.player == endingPlayer then
+          if perm.turnEndsRemaining ≤ 1 then
+            g := g.setObject { o with playPermission := none }
+            if o.zone == .exile then
+              g := g.logMsg s!"{o.name} can no longer be played from exile"
+          else
+            g := g.setObject { o with
+              playPermission := some { perm with
+                turnEndsRemaining := perm.turnEndsRemaining - 1 } }
+    return g
+
 /-- Advance to the next living player's turn after a cleanup step ends. -/
 def startNextTurn (g : Game) : Game :=
-  let nxt := g.nextLiving g.activePlayer
+  let ending := g.activePlayer
+  let g := g.expirePlayPermissions ending |>.clearTurnActivations
+  let nxt := g.nextLiving ending
   let g := { g with
     activePlayer := nxt
     turnNumber := g.turnNumber + 1
@@ -1261,6 +1417,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .cast id t => g.castSpell p id t
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
+  | .sacrifice id => g.sacrificeForActivation p id
   | .declareAttackers ids => g.declareAttackers p ids
   | .declareBlockers as => g.declareBlockers p as
   | .keep => g.keepOpeningHand p
@@ -1279,6 +1436,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
     | .none =>

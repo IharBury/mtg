@@ -554,6 +554,20 @@ def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
     { pl with hand := pl.hand.push id })
 
+/-- Put `card` on top of `p`'s library (the back of the library array). -/
+def addToLibraryTop (g : Game) (card : CardDef) (p : PlayerId) : Game :=
+  let (g, id) := g.allocId
+  let (g, ts) := g.bumpTime
+  let obj : GameObject := {
+    id := id
+    printed := card
+    owner := p
+    zone := .library p
+    timestamp := ts
+  }
+  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
+    { pl with library := pl.library.push id })
+
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   match g.apply p a with
   | .ok g' => g'
@@ -1100,5 +1114,285 @@ def resolvedBauble : Game := passBoth paidBauble
 
 -- Lands put onto the battlefield this way are not a land drop (CR 305.3).
 #guard (resolvedBauble.player ⟨0⟩).landsPlayedThisTurn == 1
+
+/-- Snowslope Hunter plus fodder and a known library top, in the precombat main. -/
+def hunterReady : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addUntappedLand g mountain
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+def hunterSource (g : Game) : GameObject :=
+  namedPermanent g "Snowslope Hunter"
+
+def hunterFodder (g : Game) : GameObject :=
+  namedPermanent g "Raging Goblin"
+
+def hunterAbility : ActivatedAbility :=
+  snowslopeHunter.activatedAbilities[0]!
+
+#guard snowslopeHunter.activatedAbilities.size == 1
+#guard hunterAbility.cost.sacrificeAnotherCreatureOrArtifact
+#guard hunterAbility.effect == .exileTopPlayUntilEndOfNextTurn
+#guard hunterAbility.onlyDuringYourTurn
+#guard hunterAbility.onceEachTurn
+#guard !hunterAbility.onlyAsSorcery
+#guard hunterReady.canActivate ⟨0⟩ (hunterSource hunterReady) hunterAbility
+#guard !(hunterReady.canActivate ⟨1⟩ (hunterSource hunterReady) hunterAbility)
+#guard (hunterReady.sacrificeCreatureOrArtifactChoices ⟨0⟩
+  (hunterSource hunterReady).id).any (fun o => o.name == "Raging Goblin")
+
+-- The heuristic begins activating the hunter when another creature is available.
+#guard
+  match Agent.choose hunterReady ⟨0⟩ with
+  | some (.activate id 0) => id == (hunterSource hunterReady).id
+  | _ => false
+
+def proposedHunter : Game :=
+  mustApply hunterReady ⟨0⟩ (.activate (hunterSource hunterReady).id 0)
+
+#guard proposedHunter.pending == .activateManaAbilities ⟨0⟩
+#guard proposedHunter.proposedSpell.isSome
+#guard proposedHunter.stack.size == 1
+#guard (namedPermanent proposedHunter "Raging Goblin").isOnBattlefield
+#guard proposedHunter.log.any (fun s => mentions s "begins activating Snowslope Hunter")
+#guard proposedHunter.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+
+-- Sacrifice is not chosen at `activate`; it comes after `pay`.
+#guard
+  match proposedHunter.apply ⟨0⟩ (.sacrifice (hunterFodder proposedHunter).id) with
+  | .error msg => mentions msg "Not time to sacrifice"
+  | .ok _ => false
+
+-- The heuristic pays the empty mana cost next.
+#guard
+  match Agent.choose proposedHunter ⟨0⟩ with
+  | some .pay => true
+  | _ => false
+
+def paidHunter : Game :=
+  mustApply proposedHunter ⟨0⟩ .pay
+
+#guard
+  match paidHunter.pending with
+  | .sacrificePermanent p sid =>
+    p == ⟨0⟩ && sid == (hunterSource paidHunter).id
+  | _ => false
+#guard paidHunter.proposedSpell.isSome
+#guard (namedPermanent paidHunter "Raging Goblin").isOnBattlefield
+#guard paidHunter.log.any (fun s =>
+  mentions s "must sacrifice another creature or artifact")
+#guard mentions (header paidHunter) "sacrifice a creature or artifact"
+
+-- Cannot sacrifice the hunter itself, a land, or skip the choice.
+#guard
+  match paidHunter.apply ⟨0⟩ (.sacrifice (hunterSource paidHunter).id) with
+  | .error msg => mentions msg "Can't sacrifice"
+  | .ok _ => false
+
+#guard
+  match (paidHunter.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match paidHunter.apply ⟨0⟩ (.sacrifice land.id) with
+    | .error msg => mentions msg "Can't sacrifice"
+    | .ok _ => false
+
+#guard
+  match Agent.choose paidHunter ⟨0⟩ with
+  | some (.sacrifice id) => id == (hunterFodder paidHunter).id
+  | _ => false
+
+def activatedHunter : Game :=
+  mustApply paidHunter ⟨0⟩ (.sacrifice (hunterFodder paidHunter).id)
+
+#guard activatedHunter.pending == .none
+#guard activatedHunter.proposedSpell.isNone
+#guard activatedHunter.hasPriority ⟨0⟩
+#guard activatedHunter.stack.size == 1
+#guard (namedPermanent activatedHunter "Snowslope Hunter").isOnBattlefield
+#guard !(activatedHunter.battlefield.any (fun o => o.name == "Raging Goblin"))
+#guard (activatedHunter.player ⟨0⟩).graveyard.any (fun id =>
+  (activatedHunter.object! id).name == "Raging Goblin")
+#guard (namedPermanent activatedHunter "Snowslope Hunter").status.activationsThisTurn == 1
+#guard activatedHunter.log.any (fun s => mentions s "sacrifices Raging Goblin")
+#guard activatedHunter.log.any (fun s => mentions s "activates Snowslope Hunter")
+#guard (changedZones hunterReady activatedHunter).contains .stack
+#guard (changedZones hunterReady activatedHunter).contains .battlefield
+#guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
+
+/-- Finish activating Snowslope Hunter by paying, then sacrificing `sacName`. -/
+def completeHunterActivation (g : Game) (sacName : String) : Game :=
+  let g := mustApply g ⟨0⟩ (.activate (hunterSource g).id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g sacName).id)
+
+-- Only once each turn: a second fodder still cannot be spent this turn.
+def hunterActivatedOnce : Game :=
+  completeHunterActivation hunterReady "Raging Goblin"
+
+#guard
+  match hunterActivatedOnce.activateAbility ⟨0⟩ (hunterSource hunterActivatedOnce).id 0 with
+  | .error msg => mentions msg "only once each turn"
+  | .ok _ => false
+#guard !(hunterActivatedOnce.canActivate ⟨0⟩ (hunterSource hunterActivatedOnce) hunterAbility)
+
+def resolvedHunter : Game := passBoth activatedHunter
+
+#guard resolvedHunter.stack.isEmpty
+#guard resolvedHunter.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt")
+#guard resolvedHunter.log.any (fun s =>
+  mentions s "exiles Lightning Bolt and may play it until the end of their next turn")
+#guard (changedZones activatedHunter resolvedHunter).contains .exile
+#guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
+#guard mentions (snapshot resolvedHunter) "may be played by Chandra"
+#guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
+
+def exiledBolt (g : Game) : GameObject :=
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
+  | some o => o
+  | none => panic! "expected Lightning Bolt in exile"
+
+#guard resolvedHunter.mayPlayFromExile ⟨0⟩ (exiledBolt resolvedHunter)
+#guard !(resolvedHunter.mayPlayFromExile ⟨1⟩ (exiledBolt resolvedHunter))
+#guard resolvedHunter.canCast ⟨0⟩ (exiledBolt resolvedHunter)
+#guard !(resolvedHunter.canCast ⟨1⟩ (exiledBolt resolvedHunter))
+
+-- Opponent cannot play the exiled card.
+#guard
+  match resolvedHunter.castSpell ⟨1⟩ (exiledBolt resolvedHunter).id
+      (some (Target.player ⟨0⟩)) with
+  | .error _ => true
+  | .ok _ => false
+
+-- Cast the exiled Lightning Bolt the same turn (CR 701.14).
+def proposedExiledBolt : Game :=
+  mustApply resolvedHunter ⟨0⟩
+    (.cast (exiledBolt resolvedHunter).id (some (Target.player ⟨1⟩)))
+
+#guard proposedExiledBolt.pending == .activateManaAbilities ⟨0⟩
+#guard !(proposedExiledBolt.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt"))
+#guard proposedExiledBolt.log.any (fun s => mentions s "begins casting Lightning Bolt")
+
+def paidExiledBolt : Game :=
+  mustApply (tapNextMana proposedExiledBolt ⟨0⟩) ⟨0⟩ .pay
+
+def resolvedExiledBolt : Game := passBoth paidExiledBolt
+
+#guard resolvedExiledBolt.stack.isEmpty
+#guard (resolvedExiledBolt.player ⟨1⟩).life == 17
+#guard resolvedExiledBolt.log.any (fun s => mentions s "is dealt 3 damage")
+#guard !(resolvedExiledBolt.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt"))
+
+-- Playing an exiled land uses the land drop.
+def hunterLandReady : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  addToLibraryTop g mountain ⟨0⟩
+
+def resolvedHunterLand : Game :=
+  passBoth (completeHunterActivation hunterLandReady "Raging Goblin")
+
+def exiledMountain (g : Game) : GameObject :=
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Mountain") with
+  | some o => o
+  | none => panic! "expected Mountain in exile"
+
+#guard resolvedHunterLand.mayPlayFromExile ⟨0⟩ (exiledMountain resolvedHunterLand)
+#guard resolvedHunterLand.canPlayLand ⟨0⟩
+
+def playedExiledLand : Game :=
+  mustApply resolvedHunterLand ⟨0⟩ (.playLand (exiledMountain resolvedHunterLand).id)
+
+#guard (playedExiledLand.player ⟨0⟩).landsPlayedThisTurn == 1
+#guard playedExiledLand.battlefield.any (fun o => o.name == "Mountain")
+#guard playedExiledLand.log.any (fun s => mentions s "plays Mountain")
+#guard !(playedExiledLand.objects.any (fun o => o.zone == .exile && o.name == "Mountain"))
+
+-- Activate only during your turn: Chandra has priority on Nissa's turn.
+def hunterOnNissaTurn : Game :=
+  let g := skipTo hunterReady .end 80
+  let g := passBoth g
+  let g := skipTo g .precombatMain 80
+  mustApply g ⟨1⟩ .pass
+
+#guard hunterOnNissaTurn.activePlayer == ⟨1⟩
+#guard hunterOnNissaTurn.hasPriority ⟨0⟩
+#guard
+  match hunterOnNissaTurn.activateAbility ⟨0⟩ (hunterSource hunterOnNissaTurn).id 0 with
+  | .error msg => mentions msg "only during your turn"
+  | .ok _ => false
+
+-- Instant-speed: the hunter can activate during the end step of your turn.
+def hunterAtEndStep : Game := skipTo hunterReady .end 80
+
+#guard hunterAtEndStep.step == .end
+#guard hunterAtEndStep.canActivate ⟨0⟩ (hunterSource hunterAtEndStep) hunterAbility
+
+-- Permission lasts through the next turn, then expires.
+def hunterPermissionActive : Game :=
+  let g := skipTo resolvedHunter .end 80
+  let g := passBoth g
+  skipTo g .precombatMain 80
+
+#guard hunterPermissionActive.activePlayer == ⟨1⟩
+#guard hunterPermissionActive.mayPlayFromExile ⟨0⟩ (exiledBolt hunterPermissionActive)
+
+def hunterOnNextTurn : Game :=
+  let g := skipTo hunterPermissionActive .end 80
+  let g := passBoth g
+  skipTo g .precombatMain 80
+
+#guard hunterOnNextTurn.activePlayer == ⟨0⟩
+#guard hunterOnNextTurn.mayPlayFromExile ⟨0⟩ (exiledBolt hunterOnNextTurn)
+#guard hunterOnNextTurn.canActivate ⟨0⟩ (hunterSource hunterOnNextTurn) hunterAbility
+
+def hunterActivatedNextTurn : Game :=
+  completeHunterActivation hunterOnNextTurn "Gray Ogre"
+
+#guard hunterActivatedNextTurn.log.any (fun s => mentions s "activates Snowslope Hunter")
+#guard hunterActivatedNextTurn.log.any (fun s => mentions s "sacrifices Gray Ogre")
+
+def hunterPermissionExpired : Game :=
+  let g := skipTo hunterOnNextTurn .end 80
+  let g := passBoth g
+  let g := skipTo g .precombatMain 80
+  mustApply g ⟨1⟩ .pass
+
+#guard hunterPermissionExpired.activePlayer == ⟨1⟩
+#guard hunterPermissionExpired.hasPriority ⟨0⟩
+#guard hunterPermissionExpired.log.any (fun s =>
+  mentions s "can no longer be played from exile")
+#guard
+  match hunterPermissionExpired.objects.find? (fun o =>
+    o.zone == .exile && o.name == "Lightning Bolt") with
+  | none => false
+  | some o => !hunterPermissionExpired.mayPlayFromExile ⟨0⟩ o
+#guard
+  match hunterPermissionExpired.objects.find? (fun o =>
+    o.zone == .exile && o.name == "Lightning Bolt") with
+  | none => false
+  | some o =>
+    match hunterPermissionExpired.castSpell ⟨0⟩ o.id (some (Target.player ⟨1⟩)) with
+    | .error msg => mentions msg "may not play that card from exile"
+    | .ok _ => false
+
+-- Empty library: the ability still resolves.
+def hunterEmptyLibrary : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addPermanent g snowslopeHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+
+def resolvedHunterEmpty : Game :=
+  passBoth (completeHunterActivation hunterEmptyLibrary "Raging Goblin")
+
+#guard resolvedHunterEmpty.stack.isEmpty
+#guard resolvedHunterEmpty.log.any (fun s => mentions s "no cards in their library to exile")
+#guard !(resolvedHunterEmpty.objects.any (fun o => o.zone == .exile))
 
 end Mtg.Engine.Tests

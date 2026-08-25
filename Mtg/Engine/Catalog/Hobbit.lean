@@ -6,8 +6,8 @@ import Mtg.Engine.Card
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords, simple `{T}: Add` mana abilities, non-mana activated abilities
-such as Wayfarer's Bauble, and a few one-shot spell effects); remaining
-abilities are stored as Oracle text only.
+such as Wayfarer's Bauble and Snowslope Hunter, and a few one-shot spell
+effects); remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -704,6 +704,12 @@ def snowslopeHunter : CardDef := {
   oracleText := "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn."
   power := some 2
   toughness := some 3
+  activatedAbilities := #[{
+    cost := { sacrificeAnotherCreatureOrArtifact := true }
+    effect := .exileTopPlayUntilEndOfNextTurn
+    onlyDuringYourTurn := true
+    onceEachTurn := true
+  }]
 }
 
 def fireOfOrthanc : CardDef := {

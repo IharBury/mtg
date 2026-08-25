@@ -68,6 +68,9 @@ inductive AbilityEffect where
   /-- Search your library for a basic land card, put it onto the battlefield
   tapped, then shuffle (e.g. Wayfarer's Bauble). -/
   | searchBasicLandTapped
+  /-- Exile the top card of your library. You may play it until the end of
+  your next turn (e.g. Snowslope Hunter). -/
+  | exileTopPlayUntilEndOfNextTurn
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -75,6 +78,8 @@ namespace AbilityEffect
 def toNotation : AbilityEffect → String
   | .searchBasicLandTapped =>
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+  | .exileTopPlayUntilEndOfNextTurn =>
+    "Exile the top card of your library. You may play it until the end of your next turn"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -86,6 +91,8 @@ structure ActivationCost where
   mana : ManaCost := ManaCost.empty
   tap : Bool := false
   sacrificeSource : Bool := false
+  /-- Sacrifice another creature or artifact you control (CR 701.17). -/
+  sacrificeAnotherCreatureOrArtifact : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -94,7 +101,10 @@ def toNotation (c : ActivationCost) : String :=
   let parts : List String :=
     (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
     (if c.tap then ["{T}"] else []) ++
-    (if c.sacrificeSource then ["Sacrifice"] else [])
+    (if c.sacrificeSource then ["Sacrifice"] else []) ++
+    (if c.sacrificeAnotherCreatureOrArtifact then
+      ["Sacrifice another creature or artifact"]
+     else [])
   String.intercalate ", " parts
 
 instance : ToString ActivationCost where
@@ -109,12 +119,19 @@ structure ActivatedAbility where
   effect : AbilityEffect
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
+  /-- Timing restriction “Activate only during your turn”. -/
+  onlyDuringYourTurn : Bool := false
+  /-- Frequency restriction “Activate only once each turn”. -/
+  onceEachTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
 
 def toNotation (ab : ActivatedAbility) : String :=
-  let timing := if ab.onlyAsSorcery then " (activate only as a sorcery)" else ""
+  let timing :=
+    (if ab.onlyAsSorcery then " (activate only as a sorcery)" else "") ++
+    (if ab.onlyDuringYourTurn then " (activate only during your turn)" else "") ++
+    (if ab.onceEachTurn then " (activate only once each turn)" else "")
   s!"{ab.cost.toNotation}: {ab.effect.toNotation}{timing}"
 
 instance : ToString ActivatedAbility where
@@ -154,6 +171,7 @@ def colors (c : CardDef) : ColorSet :=
 
 def isLand (c : CardDef) : Bool := c.types.any (· == .land)
 def isCreature (c : CardDef) : Bool := c.types.any (· == .creature)
+def isArtifact (c : CardDef) : Bool := c.types.any (· == .artifact)
 def isInstant (c : CardDef) : Bool := c.types.any (· == .instant)
 def isSorcery (c : CardDef) : Bool := c.types.any (· == .sorcery)
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType

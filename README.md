@@ -63,7 +63,8 @@ The first slice of the engine models the two-player game:
 - starting a game, opening hands, London mulligans, first-turn skipped draw (CR 103, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, activating mana abilities, activating other abilities of
-  permanents (CR 602), and casting spells (CR 601.2, including 601.2g)
+  permanents (CR 602), playing granted cards from exile, and casting spells
+  (CR 601.2, including 601.2g)
 - combat declaration and combat damage
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent
