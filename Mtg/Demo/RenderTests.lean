@@ -367,6 +367,68 @@ def mountainLine (g : Game) : String :=
   mentions (header giftScrying) "scry 2" &&
   mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
 
+-- Attached permanents print next to their host, with two extra spaces.
+#guard
+  let g := giftEntered
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  let auraLine := objectLine g aura (some (some ⟨0⟩))
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (2):\n  Chandra:\n    {hostLine}\n      {auraLine}" &&
+  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}"
+
+-- A later unattached permanent does not sit between a host and its Aura.
+#guard
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Mountain"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  let landLine := objectLine g land (some (some ⟨0⟩))
+  let auraLine := objectLine g aura (some (some ⟨0⟩))
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n      {auraLine}\n    {landLine}" &&
+  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}\n  {landLine}"
+
+-- An Aura you control on an opponent's creature lists with that host.
+#guard
+  let g := giftOnNissa
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  let hostLine := objectLine g bears (some (some ⟨1⟩))
+  let auraLine := objectLine g aura (some (some ⟨1⟩))
+  bears.controller == some ⟨1⟩ && aura.controller == some ⟨0⟩ &&
+    mentions auraLine "(owned by Chandra, controlled by Chandra)" &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (2):\n  Nissa:\n    {hostLine}\n      {auraLine}" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "  (none)" &&
+    mentions (playerBlock g (g.player ⟨1⟩)) s!"  {hostLine}\n    {auraLine}"
+
+-- Other permanents stay in their controller's group when an Aura is elsewhere.
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (3):\n  Chandra:\n    {objectLine g land (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine g bears (some (some ⟨1⟩))}\n      {objectLine g aura (some (some ⟨1⟩))}"
+
+-- Several permanents attached to the same host all indent under it.
+#guard
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let auras := g.battlefield.filter (fun o => o.name == "Gift of Strands")
+  auras.size == 2 &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (3):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n      {objectLine g auras[0]! (some (some ⟨0⟩))}\n      {objectLine g auras[1]! (some (some ⟨0⟩))}"
+
 -- Starting a scry does not move library cards, but the demo reprints that
 -- library so the scrying player sees the looked-at faces (CR 701.20).
 #guard (zoneObjectIds giftKnownLib (.library ⟨0⟩)) ==
