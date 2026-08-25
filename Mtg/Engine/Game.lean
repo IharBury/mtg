@@ -68,7 +68,7 @@ structure GameObject where
   abilityEffect : Option AbilityEffect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
   triggeredAbility : Option TriggeredAbility := none
-  /-- Source permanent of a triggered ability on the stack. -/
+  /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
@@ -981,6 +981,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     zone := .stack
     timestamp := ts
     abilityEffect := some ab.effect
+    sourceId := some id
   }
   let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with

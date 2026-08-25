@@ -955,6 +955,8 @@ def proposedBauble : Game :=
   | some prop => prop.kind == .activatedAbility
   | none => false
 #guard proposedBauble.stack.size == 1
+#guard (proposedBauble.object! proposedBauble.stack.back!.objectId).sourceId ==
+  some (baubleSource proposedBauble).id
 #guard (namedPermanent proposedBauble "Wayfarer's Bauble").isOnBattlefield
 #guard proposedBauble.log.any (fun s => mentions s "begins activating Wayfarer's Bauble")
 #guard proposedBauble.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
@@ -1129,6 +1131,8 @@ def activatedHunter : Game :=
 #guard activatedHunter.proposedSpell.isNone
 #guard activatedHunter.hasPriority ⟨0⟩
 #guard activatedHunter.stack.size == 1
+#guard (activatedHunter.object! activatedHunter.stack.back!.objectId).sourceId ==
+  some (hunterSource activatedHunter).id
 #guard (namedPermanent activatedHunter "Snowslope Hunter").isOnBattlefield
 #guard !(activatedHunter.battlefield.any (fun o => o.name == "Raging Goblin"))
 #guard (activatedHunter.player ⟨0⟩).graveyard.any (fun id =>
@@ -1395,6 +1399,8 @@ def siegeAttackDeclared : Game :=
 #guard siegeAttackDeclared.stack.size == 1
 #guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).name ==
   "Orcish Siegemaster's ability"
+#guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent siegeAttackDeclared "Orcish Siegemaster").id
 #guard siegeAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
 #guard (namedPermanent siegeAttackDeclared "Orcish Siegemaster").power == 0
 #guard siegeAttackDeclared.step == .declareAttackers
@@ -1514,6 +1520,8 @@ def goblinBlockedByBears : Game :=
 #guard goblinBlockedByBears.stack.size == 1
 #guard (goblinBlockedByBears.object! goblinBlockedByBears.stack.back!.objectId).name ==
   "Battle-Scarred Goblin's ability"
+#guard (goblinBlockedByBears.object! goblinBlockedByBears.stack.back!.objectId).sourceId ==
+  some (namedPermanent goblinBlockedByBears "Battle-Scarred Goblin").id
 #guard goblinBlockedByBears.log.any (fun s => mentions s "becomes-blocked trigger is put on the stack")
 #guard (namedPermanent goblinBlockedByBears "Battle-Scarred Goblin").status.blocked
 #guard goblinBlockedByBears.step == .declareBlockers

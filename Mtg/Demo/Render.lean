@@ -36,6 +36,18 @@ def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) 
   | [] => ""
   | ps => s!" ({String.intercalate ", " ps})"
 
+/-- Identity of an object for cross-references (blocker, Aura host, ability source). -/
+def objectRef (g : Game) (id : ObjectId) : String :=
+  match g.findObject? id with
+  | some o => s!"{o.id} {o.name}"
+  | none => toString id
+
+/-- Source of an activated or triggered ability on the stack (CR 113.7). -/
+def sourceClause (g : Game) (o : GameObject) : String :=
+  match o.sourceId with
+  | none => ""
+  | some sid => s!" *source {objectRef g sid}*"
+
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
@@ -56,23 +68,13 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let blk :=
     match o.status.blocking with
     | none => ""
-    | some attackerId =>
-      let whom :=
-        match g.findObject? attackerId with
-        | some attacker => s!"{attacker.id} {attacker.name}"
-        | none => toString attackerId
-      s!" *blocking {whom}*"
+    | some attackerId => s!" *blocking {objectRef g attackerId}*"
   let pt :=
     if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=
     match o.attachedTo with
     | none => ""
-    | some hostId =>
-      let whom :=
-        match g.findObject? hostId with
-        | some host => s!"{host.id} {host.name}"
-        | none => toString hostId
-      s!" *enchanting {whom}*"
+    | some hostId => s!" *enchanting {objectRef g hostId}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
   s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
@@ -116,7 +118,8 @@ def stackBlock (g : Game) : String :=
   else
     let lines := g.stack.toList.reverse.map (fun e =>
       match g.findObject? e.objectId with
-      | some o => s!"  {o.name}{faceExtras o.printed} (controlled by {g.player e.controller |>.name})"
+      | some o =>
+        s!"  {o.name}{faceExtras o.printed}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
@@ -307,7 +310,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         match o.controller with
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
-      s!"{o.id} {o.name}{faceExtras o.printed}{ctrl}"
+      s!"{o.id} {o.name}{faceExtras o.printed}{sourceClause g o}{ctrl}"
     | .exile =>
       let extra :=
         match o.playPermission with
