@@ -137,7 +137,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   play <id>            Play a land
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
-  mode <n>             Choose mode n of a modal ability (CR 601.2b; first mode is 1)
+  mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
@@ -1006,6 +1006,46 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g''.stack.back!.targets == #[Target.permanent tid]
     | .error _ => false
 
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ [] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["nope"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["0"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["3"] with
+  | .error msg => Tests.mentions msg "No such mode"
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 0 &&
+    g'.log.any (fun s => Tests.mentions s "chooses mode 1")
+  | .error _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["2"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 1
+  | .error _ => false
+
 def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
 /-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
@@ -1182,6 +1222,13 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 #guard
   match applyInteractiveAsActor Tests.giftScrying "scry" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedWarg "mode" ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 0
   | .error _ => false
 
 #guard

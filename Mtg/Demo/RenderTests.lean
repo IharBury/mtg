@@ -514,4 +514,21 @@ def mountainLine (g : Game) : String :=
   | some id => mentions (stackBlock g) s!"*source {id}*"
   | none => false
 
+#guard mentions (header proposedWarg) "choose a mode (CR 601.2b"
+#guard mentions (header wargModeDestroy) "choose targets (CR 601.2c"
+#guard
+  let g := resolvedWargPump
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (objectLine g bears) "3/3" &&
+    mentions (objectLine g bears) "+1/+1×1" &&
+    mentions (objectLine g bears) "trample" &&
+    mentions (objectLine g bears) "hexproof"
+#guard
+  let g := afterWargPumpCleanup
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (objectLine g bears) "3/3" &&
+    mentions (objectLine g bears) "+1/+1×1" &&
+    !mentions (objectLine g bears) "hexproof" &&
+    !mentions (objectLine g bears) "trample"
+
 end Mtg.Demo.RenderTests

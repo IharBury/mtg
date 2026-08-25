@@ -79,13 +79,16 @@ The first slice of the engine models the two-player game:
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, activating mana abilities, activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
-  granted cards from exile, and casting spells (CR 601.2, including announcing
-  targets at 601.2c and mana abilities at 601.2g)
+  granted cards from exile, and casting spells (CR 601.2, including choosing
+  modes at 601.2b / 700.2, announcing targets at 601.2c, and mana abilities
+  at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample or pump an enchanted creature, attack
   triggers that pump power, becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, and enters triggers
   that scry (any number to the bottom, the rest on top in any order)
-- destroying permanents and dealing damage with activated abilities
+- modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
+  keyword grants, and destroying permanents or dealing damage with activated
+  abilities
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play

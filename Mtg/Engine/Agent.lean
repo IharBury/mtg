@@ -26,10 +26,16 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.declareBlockers #[])
     | .activateManaAbilities _ =>
       chooseManaPayment g p
+    | .chooseMode _ =>
+      match g.proposedSpell with
+      | some prop =>
+        if prop.kind == .activatedAbility then
+          chooseAbilityMode g p
+        else
+          chooseSpellMode g p
+      | none => some .pass
     | .chooseTargets _ =>
       chooseSpellTarget g p
-    | .chooseMode _ =>
-      chooseAbilityMode g p
     | .sacrificePermanent _ sourceId =>
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
@@ -55,6 +61,14 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       else
         chooseActivate g p
 where
+  /-- During CR 601.2b, announce a legal mode for the proposed modal spell. -/
+  chooseSpellMode (g : Game) (p : PlayerId) : Option Action :=
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | none => some .pass
+    | some spell =>
+      match g.defaultMode p spell with
+      | some i => some (.chooseMode i)
+      | none => some .pass
   /-- During CR 601.2c, announce a legal target for the proposed spell. -/
   chooseSpellTarget (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
@@ -101,6 +115,10 @@ where
       match o.printed.spellEffect with
       | some (.dealDamage _) => true
       | _ => false)
+    let removal := playable.find? (fun o =>
+      !(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
+        (o.printed.spellEffect == some .destroyCreatureWithFlying ||
+          o.printed.spellModes.any (· == .destroyCreatureWithFlying)))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.types.any (· == .artifact) && !o.printed.activatedAbilities.isEmpty)
@@ -108,14 +126,21 @@ where
       if ownCreature.isSome then
         playable.find? (fun o =>
           match o.printed.spellEffect with
-          | some (.pump _ _) => true
-          | _ => false)
+          | some (.pump _ _) | some .plusOnePlusOneTrampleHexproof => true
+          | _ =>
+            o.printed.spellModes.any (fun e =>
+              match e with
+              | .pump _ _ | .plusOnePlusOneTrampleHexproof =>
+                !(g.legalTargets p e).isEmpty
+              | _ => false))
       else none
     let aura :=
       if ownCreature.isSome then
         playable.find? (fun o => o.printed.isAura)
       else none
     if let some o := burn then
+      some (.cast o.id)
+    else if let some o := removal then
       some (.cast o.id)
     else if let some o := creature then
       some (.cast o.id)

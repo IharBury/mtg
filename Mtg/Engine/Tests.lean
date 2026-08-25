@@ -244,6 +244,10 @@ def uncontrolledPermanent : Game :=
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
+#guard mentions wargTactics.summary "Choose one"
+#guard mentions wargTactics.summary "hexproof"
+#guard wargTactics.isModal
+#guard wargTactics.modes.size == 2
 #guard mentions goblinCratermaker.summary "Choose one"
 #guard mentions goblinCratermaker.summary "colorless nonland"
 #guard goblinCratermaker.activatedAbilities.size == 1
@@ -326,6 +330,28 @@ def applyIdle (g : Game) : Game :=
     match g.apply p (.scry (g.scryLookedIds p n) #[]) with
     | .ok g' => g'
     | .error e => panic! e
+  | .chooseMode _, some p =>
+    match g.proposedSpell with
+    | none => panic! "expected a proposed spell or ability while choosing a mode"
+    | some prop =>
+      match prop.kind with
+      | .activatedAbility =>
+        match g.defaultAbilityMode p prop.abilityModes with
+        | none => panic! "no legal mode (CR 601.2b)"
+        | some idx =>
+          match g.apply p (.chooseMode idx) with
+          | .ok g' => g'
+          | .error e => panic! e
+      | .spell =>
+        match g.findObject? prop.spellId with
+        | none => panic! "expected a proposed spell while choosing a mode"
+        | some spell =>
+          match g.defaultMode p spell with
+          | none => panic! "no legal mode (CR 601.2b)"
+          | some i =>
+            match g.apply p (.chooseMode i) with
+            | .ok g' => g'
+            | .error e => panic! e
   | .assignCombatDamage _ _, some p =>
     match g.apply p (.assignCombatDamage #[]) with
     | .ok g' => g'
@@ -338,16 +364,6 @@ def applyIdle (g : Game) : Game :=
       | none => panic! "no legal target (CR 601.2c)"
       | some t =>
         match g.apply p (.target t) with
-        | .ok g' => g'
-        | .error e => panic! e
-  | .chooseMode _, some p =>
-    match g.proposedSpell with
-    | none => panic! "expected a proposed ability while choosing a mode"
-    | some prop =>
-      match g.defaultAbilityMode p prop.abilityModes with
-      | none => panic! "no legal mode (CR 601.2b)"
-      | some idx =>
-        match g.apply p (.chooseMode idx) with
         | .ok g' => g'
         | .error e => panic! e
   | _, some p =>
@@ -2374,5 +2390,299 @@ def bearsAssignsToItself : Bool :=
   | .ok _ => false
 
 #guard bearsAssignsToItself
+
+/-- Propose a modal spell, choose a 0-based mode, then announce its target. -/
+def proposeModal (g : Game) (p : PlayerId) (id : ObjectId) (mode : Nat) (t : Target) : Game :=
+  mustApply (mustApply (mustApply g p (.cast id)) p (.chooseMode mode)) p (.target t)
+
+def hexproofFlyer : CardDef := {
+  name := "Hexproof Flyer"
+  types := #[.creature]
+  power := some 1
+  toughness := some 1
+  keywords := { Keywords.none with flying := true, hexproof := true }
+}
+
+/-- Warg Tactics in hand, Grizzly Bears you control, an opposing flyer, enough mana. -/
+def wargSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+
+#guard wargSetup.canCast ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")
+#guard wargTactics.isModal
+#guard wargTactics.requiresTarget
+#guard (wargSetup.legalModes ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")).size == 2
+
+-- Cannot cast with no legal mode (no flyer and no creature you control).
+#guard
+  let g := withGreenMana (addToHand afterDraw wargTactics ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics")
+#guard
+  let g := withGreenMana (addToHand afterDraw wargTactics ⟨0⟩) ⟨0⟩ 2
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Warg Tactics").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Own creature alone enables only the +1/+1 mode; an opposing flyer alone enables destroy.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") &&
+    g.legalModes ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") == #[1]
+#guard
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") &&
+    g.legalModes ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") == #[0]
+
+-- An opposing hexproof flyer cannot be chosen for destroy (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics")
+#guard
+  let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  g.legalModes ⟨0⟩ (handCardNamed g ⟨0⟩ "Warg Tactics") == #[1]
+
+-- Casting a modal spell asks for a mode before a target (CR 601.2b).
+def proposedWarg : Game :=
+  mustApply wargSetup ⟨0⟩ (.cast (handCardNamed wargSetup ⟨0⟩ "Warg Tactics").id)
+
+#guard
+  match proposedWarg.pending with
+  | .chooseMode ⟨0⟩ => true
+  | _ => false
+#guard proposedWarg.proposedSpell.isSome
+#guard !proposedWarg.stack.isEmpty
+#guard proposedWarg.stack.back!.chosenMode.isNone
+#guard proposedWarg.stack.back!.targets.isEmpty
+#guard proposedWarg.actor == some ⟨0⟩
+#guard proposedWarg.log.any (fun s => mentions s "begins casting Warg Tactics")
+#guard proposedWarg.log.any (fun s => mentions s "must choose a mode (CR 601.2b")
+
+#guard
+  match proposedWarg.apply ⟨0⟩ .pay with
+  | .error msg => mentions msg "Choose a mode first"
+  | .ok _ => false
+#guard
+  match proposedWarg.apply ⟨0⟩ (.target (Target.permanent
+    (namedPermanent proposedWarg "Velvetwing Butterflies").id)) with
+  | .error msg => mentions msg "Not time to choose targets"
+  | .ok _ => false
+#guard
+  match proposedWarg.apply ⟨0⟩ (.chooseMode 2) with
+  | .error msg => mentions msg "No such mode"
+  | .ok _ => false
+#guard
+  match proposedWarg.apply ⟨1⟩ (.chooseMode 0) with
+  | .error msg => mentions msg "may choose a mode"
+  | .ok _ => false
+
+-- The agent prefers destroying an opponent's flyer when that mode is legal.
+#guard
+  match Agent.choose proposedWarg ⟨0⟩ with
+  | some (.chooseMode 0) => true
+  | _ => false
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Warg Tactics").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.chooseMode 1) => true
+  | _ => false
+
+def wargModeDestroy : Game :=
+  mustApply proposedWarg ⟨0⟩ (.chooseMode 0)
+
+#guard wargModeDestroy.pending == .chooseTargets ⟨0⟩
+#guard wargModeDestroy.stack.back!.chosenMode == some 0
+#guard wargModeDestroy.log.any (fun s => mentions s "chooses mode 1")
+#guard wargModeDestroy.log.any (fun s => mentions s "destroy target creature with flying")
+#guard wargModeDestroy.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Mode 1 cannot target a creature without flying or a player.
+#guard
+  match wargModeDestroy.apply ⟨0⟩ (.target (Target.permanent
+    (namedPermanent wargModeDestroy "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match wargModeDestroy.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+#guard
+  match Agent.choose wargModeDestroy ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (wargModeDestroy.object! tid).name == "Velvetwing Butterflies"
+  | _ => false
+
+def targetedWargDestroy : Game :=
+  mustApply wargModeDestroy ⟨0⟩
+    (.target (Target.permanent (namedPermanent wargModeDestroy "Velvetwing Butterflies").id))
+
+#guard targetedWargDestroy.pending == .activateManaAbilities ⟨0⟩
+#guard targetedWargDestroy.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedWargDestroy "Velvetwing Butterflies").id]
+
+def paidWargDestroy : Game :=
+  mustApply targetedWargDestroy ⟨0⟩ .pay
+
+#guard paidWargDestroy.hasPriority ⟨0⟩
+#guard paidWargDestroy.stack.size == 1
+#guard paidWargDestroy.log.any (fun s => mentions s "casts Warg Tactics")
+
+def resolvedWargDestroy : Game := passBoth paidWargDestroy
+
+#guard resolvedWargDestroy.stack.isEmpty
+#guard !(resolvedWargDestroy.battlefield.any (fun o => o.name == "Velvetwing Butterflies"))
+#guard resolvedWargDestroy.objects.any (fun o =>
+  o.name == "Velvetwing Butterflies" && o.zone == .graveyard ⟨1⟩)
+#guard resolvedWargDestroy.log.any (fun s => mentions s "Velvetwing Butterflies is destroyed")
+#guard (resolvedWargDestroy.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedWargDestroy.object! id).name == "Warg Tactics")
+
+-- If the flyer leaves before resolution, the spell does nothing (CR 608.2b).
+def wargDestroyTargetGone : Game :=
+  let id := (namedPermanent paidWargDestroy "Velvetwing Butterflies").id
+  let (g, _) := paidWargDestroy.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard wargDestroyTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(wargDestroyTargetGone.battlefield.any (fun o => o.name == "Velvetwing Butterflies"))
+
+def wargModePump : Game :=
+  mustApply proposedWarg ⟨0⟩ (.chooseMode 1)
+
+#guard wargModePump.pending == .chooseTargets ⟨0⟩
+#guard wargModePump.stack.back!.chosenMode == some 1
+#guard wargModePump.log.any (fun s => mentions s "chooses mode 2")
+
+-- Mode 2 cannot target an opponent's creature.
+#guard
+  match wargModePump.apply ⟨0⟩ (.target (Target.permanent
+    (namedPermanent wargModePump "Velvetwing Butterflies").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def paidWargPump : Game :=
+  let g := mustApply wargModePump ⟨0⟩
+    (.target (Target.permanent (namedPermanent wargModePump "Grizzly Bears").id))
+  mustApply g ⟨0⟩ .pay
+
+def resolvedWargPump : Game := passBoth paidWargPump
+
+#guard resolvedWargPump.stack.isEmpty
+#guard (namedPermanent resolvedWargPump "Grizzly Bears").status.plusOnePlusOne == 1
+#guard resolvedWargPump.power (namedPermanent resolvedWargPump "Grizzly Bears") == 3
+#guard resolvedWargPump.toughness (namedPermanent resolvedWargPump "Grizzly Bears") == 3
+#guard resolvedWargPump.hasTrample (namedPermanent resolvedWargPump "Grizzly Bears")
+#guard resolvedWargPump.hasHexproof (namedPermanent resolvedWargPump "Grizzly Bears")
+#guard (resolvedWargPump.effectiveKeywords
+  (namedPermanent resolvedWargPump "Grizzly Bears")).hexproof
+#guard resolvedWargPump.log.any (fun s =>
+  mentions s "gets a +1/+1 counter and gains trample and hexproof")
+
+/-- A 0/0 survives after receiving a +1/+1 counter. -/
+def zeroWithCounter : Game :=
+  let g := addPermanent started zeroZero ⟨0⟩ ⟨0⟩
+  let id := (namedPermanent g "Zero/Zero").id
+  g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof #[Target.permanent id]
+
+#guard zeroWithCounter.power (namedPermanent zeroWithCounter "Zero/Zero") == 1
+#guard zeroWithCounter.toughness (namedPermanent zeroWithCounter "Zero/Zero") == 1
+#guard (zeroWithCounter.checkSBA).battlefield.any (fun o => o.name == "Zero/Zero")
+
+/-- Hexproof wears off in cleanup; the counter does not. -/
+def afterWargPumpCleanup : Game := passBoth (skipTo resolvedWargPump .end 80)
+
+#guard (namedPermanent afterWargPumpCleanup "Grizzly Bears").status.plusOnePlusOne == 1
+#guard afterWargPumpCleanup.power (namedPermanent afterWargPumpCleanup "Grizzly Bears") == 3
+#guard !afterWargPumpCleanup.hasHexproof (namedPermanent afterWargPumpCleanup "Grizzly Bears")
+#guard !afterWargPumpCleanup.hasTrample (namedPermanent afterWargPumpCleanup "Grizzly Bears")
+#guard afterWargPumpCleanup.turnNumber == 2
+
+/-- Granted trample assigns leftover combat damage. -/
+def afterWargTrampleCombat : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Grizzly Bears").id)])
+  passBoth g
+
+#guard afterWargTrampleCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 1 combat damage to Llanowar Elves")
+#guard afterWargTrampleCombat.log.any (fun s =>
+  mentions s "Grizzly Bears tramples for 2 to Nissa")
+#guard (afterWargTrampleCombat.player ⟨1⟩).life == 18
+
+/-- Nissa has Lightning Bolt while Chandra's pumped Grizzly Bears has hexproof. -/
+def nissaBoltVsHexproof : Game :=
+  let g := addPermanent resolvedWargPump mountain ⟨1⟩ ⟨1⟩
+  let g := addToHand g lightningBolt ⟨1⟩
+  mustApply g ⟨0⟩ .pass
+
+#guard nissaBoltVsHexproof.hasPriority ⟨1⟩
+#guard nissaBoltVsHexproof.canCast ⟨1⟩ (handCardNamed nissaBoltVsHexproof ⟨1⟩ "Lightning Bolt")
+
+def proposedNissaBolt : Game :=
+  mustApply nissaBoltVsHexproof ⟨1⟩
+    (.cast (handCardNamed nissaBoltVsHexproof ⟨1⟩ "Lightning Bolt").id)
+
+#guard
+  match proposedNissaBolt.apply ⟨1⟩ (.target (Target.permanent
+    (namedPermanent proposedNissaBolt "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def paidNissaBoltPlayer : Game :=
+  let g := mustApply proposedNissaBolt ⟨1⟩ (.target (Target.player ⟨0⟩))
+  let g := tapNextMana g ⟨1⟩
+  mustApply g ⟨1⟩ .pay
+
+def resolvedNissaBoltPlayer : Game := passBoth paidNissaBoltPlayer
+
+#guard (resolvedNissaBoltPlayer.player ⟨0⟩).life == 17
+#guard resolvedNissaBoltPlayer.battlefield.any (fun o => o.name == "Grizzly Bears")
+
+-- After hexproof wears off, the same creature is a legal Lightning Bolt target.
+#guard
+  (afterWargPumpCleanup.legalTargets ⟨1⟩ (.dealDamage 3)).contains
+    (Target.permanent (namedPermanent afterWargPumpCleanup "Grizzly Bears").id)
+
+/-- The agent casts Warg Tactics to destroy a flyer when that is the playable spell. -/
+def agentWargDestroyOnly : Game :=
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentWargDestroyOnly ⟨0⟩ with
+  | some (.cast id) => (agentWargDestroyOnly.object! id).name == "Warg Tactics"
+  | _ => false
+
+/-- The agent casts Warg Tactics as a pump when no flyer is available. -/
+def agentWargPumpOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentWargPumpOnly ⟨0⟩ with
+  | some (.cast id) => (agentWargPumpOnly.object! id).name == "Warg Tactics"
+  | _ => false
 
 end Mtg.Engine.Tests

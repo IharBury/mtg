@@ -17,6 +17,7 @@ structure Keywords where
   flash : Bool := false
   haste : Bool := false
   flying : Bool := false
+  hexproof : Bool := false
   reach : Bool := false
   trample : Bool := false
   deathtouch : Bool := false
@@ -31,6 +32,7 @@ def toList (k : Keywords) : List String :=
   (if k.flash then ["flash"] else []) ++
   (if k.haste then ["haste"] else []) ++
   (if k.flying then ["flying"] else []) ++
+  (if k.hexproof then ["hexproof"] else []) ++
   (if k.reach then ["reach"] else []) ++
   (if k.trample then ["trample"] else []) ++
   (if k.deathtouch then ["deathtouch"] else []) ++
@@ -49,6 +51,11 @@ inductive SpellEffect where
   | dealDamage (amount : Nat)
   /-- Target creature gets +P/+T until end of turn. -/
   | pump (power toughness : Int)
+  /-- Destroy target creature with flying (CR 701.8). -/
+  | destroyCreatureWithFlying
+  /-- Put a +1/+1 counter on target creature you control. It gains trample and
+  hexproof until end of turn. -/
+  | plusOnePlusOneTrampleHexproof
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -59,6 +66,9 @@ def signedStat (n : Int) : String :=
 def toNotation : SpellEffect → String
   | .dealDamage n => s!"deals {n} damage to any target"
   | .pump p t => s!"target creature gets {signedStat p}/{signedStat t} until end of turn"
+  | .destroyCreatureWithFlying => "destroy target creature with flying"
+  | .plusOnePlusOneTrampleHexproof =>
+    "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -257,6 +267,8 @@ structure CardDef where
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
   spellEffect : Option SpellEffect := none
+  /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
+  spellModes : Array SpellEffect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
@@ -294,9 +306,17 @@ def hasSorcerySpeed (c : CardDef) : Bool :=
 def hasInstantSpeed (c : CardDef) : Bool :=
   c.isInstant || c.keywords.flash
 
+/-- Modal spell with “Choose one” (CR 700.2). -/
+def isModal (c : CardDef) : Bool :=
+  !c.spellModes.isEmpty
+
+/-- Modes of a modal spell; empty when the card is not modal. -/
+def modes (c : CardDef) : Array SpellEffect :=
+  c.spellModes
+
 /-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
 def requiresTarget (c : CardDef) : Bool :=
-  c.spellEffect.isSome || c.isAura
+  c.spellEffect.isSome || !c.spellModes.isEmpty || c.isAura
 
 def manaValue (c : CardDef) : Nat := c.manaCost.manaValue
 
@@ -386,8 +406,14 @@ instance : ToString CardDef where
 #guard CardDef.isKeywordRestatement
   { Keywords.none with reach := true, deathtouch := true } "Reach, deathtouch"
 #guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
+#guard toString ({ Keywords.none with hexproof := true } : Keywords) == "hexproof"
+#guard CardDef.isKeywordRestatement { Keywords.none with hexproof := true } "Hexproof"
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
+#guard SpellEffect.toNotation .destroyCreatureWithFlying ==
+  "destroy target creature with flying"
+#guard SpellEffect.toNotation .plusOnePlusOneTrampleHexproof ==
+  "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
