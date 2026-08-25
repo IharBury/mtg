@@ -502,4 +502,16 @@ def mountainLine (g : Game) : String :=
     (changedZones before after).contains (.library ⟨0⟩) &&
     !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
 
+#guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
+#guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
+#guard (changedZones cratermakerTargeted paidCratermaker).contains .battlefield
+#guard (changedZones cratermakerTargeted paidCratermaker).contains (.graveyard ⟨0⟩)
+#guard (changedZones paidCratermaker resolvedCratermaker).contains (.graveyard ⟨1⟩)
+#guard
+  let g := paidCratermaker
+  let srcId := (g.object! g.stack.back!.objectId).sourceId
+  match srcId with
+  | some id => mentions (stackBlock g) s!"*source {id}*"
+  | none => false
+
 end Mtg.Demo.RenderTests

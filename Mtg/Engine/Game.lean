@@ -11,11 +11,12 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
-casting the spells we model (CR 601), including announcing targets (CR 601.2c)
-and activating mana abilities while paying (CR 601.2g), activating non-mana
-abilities of permanents (CR 602), static abilities that grant trample or pump
-an enchanted creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry
-(CR 701.20),
+casting the spells we model (CR 601), including choosing modes (CR 601.2b),
+announcing targets (CR 601.2c), and activating mana abilities while paying
+(CR 601.2g), activating non-mana abilities of permanents (CR 602), including
+modal abilities (CR 700.2) and destroying permanents (CR 701.7), static
+abilities that grant trample or pump an enchanted creature (CR 604), Aura
+spells (CR 303.4), flash (CR 702.8), scry (CR 701.20),
 attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
 enters triggers (CR 603.6a), combat (CR 506–510, including combat damage
 assignment under CR 510.1c–d), cleanup (CR 514.3), and the state-based
@@ -106,6 +107,10 @@ def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
 def hasSubtype (o : GameObject) (s : String) : Bool :=
   o.printed.subtypes.any (· == s)
 
+/-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target). -/
+def isColorlessNonland (o : GameObject) : Bool :=
+  o.isOnBattlefield && !o.printed.isLand && o.printed.colors.isColorless
+
 /-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
 def canPayTapCost (o : GameObject) : Bool :=
   !o.status.tapped &&
@@ -144,6 +149,8 @@ structure ProposedSpell where
   sacrificeSource : Bool := false
   /-- After mana is paid, the player must sacrifice another creature or artifact. -/
   needsSacrificeOther : Bool := false
+  /-- Modes of a modal activated ability, announced at CR 601.2b. -/
+  abilityModes : Array AbilityEffect := #[]
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -155,6 +162,8 @@ inductive Pending where
   | activateManaAbilities (caster : PlayerId)
   /-- The player must announce targets for the proposed spell (CR 601.2c). -/
   | chooseTargets (caster : PlayerId)
+  /-- The player must choose a mode of a modal spell or ability (CR 601.2b). -/
+  | chooseMode (caster : PlayerId)
   /-- After `pay`, choose another creature or artifact to sacrifice. -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
@@ -215,6 +224,8 @@ inductive Action where
   | cast (id : ObjectId)
   /-- Announce a target for the proposed spell (CR 601.2c). -/
   | target (t : Target)
+  /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
+  | chooseMode (idx : Nat)
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
@@ -743,19 +754,72 @@ def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target 
   | some e => g.legalTargets p e
   | none => if o.printed.isAura then g.legalAuraTargets else #[]
 
+/-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c). -/
+def legalAbilityTargets (g : Game) (_p : PlayerId) : AbilityEffect → Array Target
+  | .dealDamageToTargetCreature _ =>
+    g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
+  | .destroyTargetColorlessNonland =>
+    g.battlefield.filter (·.isColorlessNonland) |>.map (fun o => Target.permanent o.id)
+  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn => #[]
+
+/-- Legal targets for the object currently being announced (spell or ability). -/
+def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
+  match o.abilityEffect with
+  | some e => g.legalAbilityTargets p e
+  | none => g.legalSpellTargets p o
+
+/-- Whether `e` currently has a legal target, or does not require one. -/
+def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
+  !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
+
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
-prefer the opponent; pumps and Auras prefer a creature the caster controls. -/
-def defaultTarget (g : Game) (p : PlayerId) (spell : GameObject) : Option Target :=
-  let legal := g.legalSpellTargets p spell
+prefer the opponent; creature damage prefers an opposing creature; destroy
+prefers an opposing colorless nonland; pumps and Auras prefer a creature the
+caster controls. -/
+def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
+  let legal := g.legalProposedTargets p obj
   let preferred : Option Target :=
-    match spell.printed.spellEffect with
-    | some (.dealDamage _) => some (Target.player (g.opponent p))
-    | some (.pump _ _) | none =>
+    match obj.abilityEffect, obj.printed.spellEffect with
+    | some (.dealDamageToTargetCreature _), _ =>
+      (g.permanentsOf (g.opponent p)).filter (·.printed.isCreature) |>.back?
+        |>.map (fun c => Target.permanent c.id)
+    | some .destroyTargetColorlessNonland, _ =>
+      (g.permanentsOf (g.opponent p)).filter (·.isColorlessNonland) |>.back?
+        |>.map (fun c => Target.permanent c.id)
+    | _, some (.dealDamage _) => some (Target.player (g.opponent p))
+    | _, some (.pump _ _) | _, none =>
       (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
   match preferred with
   | some t => if legal.contains t then some t else legal[0]?
   | none => legal[0]?
+
+/-- Default mode index for a modal activated ability (CR 601.2b). Prefers
+dealing damage to an opposing creature, then destroying a colorless nonland. -/
+def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) : Option Nat :=
+  let choosable : Array (Nat × AbilityEffect) :=
+    Id.run do
+      let mut acc : Array (Nat × AbilityEffect) := #[]
+      for i in [0:modes.size] do
+        let e := modes[i]!
+        if g.modeIsChoosable p e then
+          acc := acc.push (i, e)
+      return acc
+  let findKind (pred : AbilityEffect → Bool) : Option Nat :=
+    (choosable.find? (fun (_, e) => pred e)).map (·.1)
+  let damageIdx :=
+    findKind (fun e => match e with | .dealDamageToTargetCreature _ => true | _ => false)
+  let destroyIdx :=
+    findKind (fun e => match e with | .destroyTargetColorlessNonland => true | _ => false)
+  let oppHasCreature :=
+    (g.permanentsOf (g.opponent p)).any (·.printed.isCreature)
+  let hasColorless := g.battlefield.any (·.isColorlessNonland)
+  if oppHasCreature then
+    damageIdx <|> destroyIdx <|> choosable[0]?.map (·.1)
+  else if hasColorless then
+    destroyIdx <|> damageIdx <|> choosable[0]?.map (·.1)
+  else
+    choosable[0]?.map (·.1)
 
 def targetLogName (g : Game) : Target → String
   | .player pid => (g.player pid).name
@@ -976,13 +1040,34 @@ def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game :
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some prop := g.proposedSpell | throw "No spell is waiting for a target (CR 601.2c)"
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    if !(g.legalSpellTargets p spell).contains t then
+    if !(g.legalProposedTargets p spell).contains t then
       throw "Illegal target (CR 601.2c)"
     let g := g.setProposedTargets #[t]
     let g := g.logMsg
       s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
     return g.afterTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
+
+/-- Announce the chosen mode for a modal activated ability (CR 601.2b / 700.2). -/
+def announceMode (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
+  match g.pending with
+  | .chooseMode caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose a mode (CR 601.2b)"
+    let some prop := g.proposedSpell | throw "No ability is waiting for a mode (CR 601.2b)"
+    let some chosen := prop.abilityModes[idx]?
+      | throw "No such mode (CR 601.2b)"
+    if !g.modeIsChoosable p chosen then
+      throw "That mode requires a target (CR 700.2d)"
+    let some obj := g.findObject? prop.spellId | throw "The ability left the stack"
+    let g := g.setObject { obj with abilityEffect := some chosen }
+    let g := g.logMsg
+      s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
+    if chosen.requiresTarget then
+      let g := { g with pending := .chooseTargets p }
+      return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+    return g.afterTargetsChosen
+  | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
 enough mana in the pool is not required; mana abilities are activated at
@@ -997,7 +1082,8 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
   (if ab.cost.tap then o.canPayTapCost else true) &&
   (if ab.cost.sacrificeAnotherCreatureOrArtifact then
     !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty
-   else true)
+   else true) &&
+  (ab.allModes.any (g.modeIsChoosable p))
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
     Except String Game := do
@@ -1025,6 +1111,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
+  if !ab.allModes.any (g.modeIsChoosable p) then
+    throw s!"{o.name}'s ability requires a target"
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -1041,7 +1129,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     controller := some p
     zone := .stack
     timestamp := ts
-    abilityEffect := some ab.effect
+    abilityEffect := if ab.isModal then none else some ab.effect
     sourceId := some id
   }
   let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
@@ -1050,7 +1138,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     stack := g.stack.push entry
     consecutivePasses := 0 }
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
-  if !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
+  if !ab.isModal && !ab.effect.requiresTarget &&
+      !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
     return g.becomeActivated p o.name (some id)
   let prop : ProposedSpell := {
@@ -1066,7 +1155,14 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     tapSource := ab.cost.tap
     sacrificeSource := ab.cost.sacrificeSource
     needsSacrificeOther := ab.cost.sacrificeAnotherCreatureOrArtifact
+    abilityModes := ab.allModes
   }
+  if ab.isModal then
+    let g := { g with pending := .chooseMode p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a mode (CR 601.2b)"
+  if ab.effect.requiresTarget then
+    let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
   let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
@@ -1149,10 +1245,42 @@ def resolveExileTopPlayUntilEndOfNextTurn (g : Game) (p : PlayerId) : Game :=
     g.logMsg
       s!"{pl.name} exiles {cardName} and may play it until the end of their next turn"
 
-def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect) : Game :=
+/-- Log why a targeted ability failed to affect its announced target (CR 608.2b). -/
+def illegalAbilityTarget (g : Game) : Target → Game
+  | Target.player _ => g.logMsg "The target is no longer legal"
+  | Target.permanent oid =>
+    match g.findObject? oid with
+    | some o =>
+      if o.isOnBattlefield then g.logMsg "The target is no longer legal"
+      else g.logMsg "The target is no longer in play"
+    | none => g.logMsg "The target is no longer in play"
+
+def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
+    (targets : Array Target) : Game :=
   match effect with
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
   | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
+  | .dealDamageToTargetCreature n =>
+    match targets[0]? with
+    | none => g
+    | some t =>
+      if (g.legalAbilityTargets controller effect).contains t then
+        g.applyEffect controller (.dealDamage n) targets
+      else
+        g.illegalAbilityTarget t
+  | .destroyTargetColorlessNonland =>
+    match targets[0]? with
+    | none => g
+    | some t =>
+      if (g.legalAbilityTargets controller effect).contains t then
+        match t with
+        | Target.permanent oid =>
+          let o := g.object! oid
+          let (g, _) := g.move oid (.graveyard o.owner) none
+          g.logMsg s!"{o.name} is destroyed"
+        | Target.player _ => g.logMsg "The target is no longer legal"
+      else
+        g.illegalAbilityTarget t
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -1305,7 +1433,7 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := g.applyAbilityEffect entry.controller e
+        let g := g.applyAbilityEffect entry.controller e entry.targets
         -- CR 608.2m: after resolution the ability ceases to exist.
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else if let some t := obj.triggeredAbility then
@@ -1743,6 +1871,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     g.finishProposedSpell
   | .chooseTargets _ =>
     throw "Choose a target first (CR 601.2c)"
+  | .chooseMode _ =>
+    throw "Choose a mode first (CR 601.2b)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
@@ -2011,6 +2141,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .tapForMana id m => g.tapForMana p id m
   | .cast id => g.castSpell p id
   | .target t => g.announceTarget p t
+  | .chooseMode idx => g.announceMode p idx
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
@@ -2035,6 +2166,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
     | .chooseTargets p => some p
+    | .chooseMode p => some p
     | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p

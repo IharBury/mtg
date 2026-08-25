@@ -73,6 +73,11 @@ inductive AbilityEffect where
   /-- Exile the top card of your library. You may play it until the end of
   your next turn (e.g. Snowslope Hunter). -/
   | exileTopPlayUntilEndOfNextTurn
+  /-- This creature deals `amount` damage to target creature
+  (e.g. Goblin Cratermaker). -/
+  | dealDamageToTargetCreature (amount : Nat)
+  /-- Destroy target colorless nonland permanent (e.g. Goblin Cratermaker). -/
+  | destroyTargetColorlessNonland
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -82,6 +87,15 @@ def toNotation : AbilityEffect → String
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
   | .exileTopPlayUntilEndOfNextTurn =>
     "Exile the top card of your library. You may play it until the end of your next turn"
+  | .dealDamageToTargetCreature n =>
+    s!"This creature deals {n} damage to target creature"
+  | .destroyTargetColorlessNonland =>
+    "Destroy target colorless nonland permanent"
+
+/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
+def requiresTarget : AbilityEffect → Bool
+  | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland => true
+  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn => false
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -118,7 +132,11 @@ end ActivationCost
 are `{T}: Add` are stored separately on `CardDef.tapAddMana` / basic land types. -/
 structure ActivatedAbility where
   cost : ActivationCost
+  /-- First (or only) mode of this ability. -/
   effect : AbilityEffect
+  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
+  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
+  otherModes : Array AbilityEffect := #[]
   /-- Timing restriction “Activate only as a sorcery” (CR 117.1a). -/
   onlyAsSorcery : Bool := false
   /-- Timing restriction “Activate only during your turn”. -/
@@ -129,12 +147,26 @@ deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
 
+/-- Every mode of this ability; a non-modal ability is a singleton. -/
+def allModes (ab : ActivatedAbility) : Array AbilityEffect :=
+  #[ab.effect] ++ ab.otherModes
+
+/-- True when the player must choose among two or more modes (CR 700.2). -/
+def isModal (ab : ActivatedAbility) : Bool :=
+  !ab.otherModes.isEmpty
+
 def toNotation (ab : ActivatedAbility) : String :=
   let timing :=
     (if ab.onlyAsSorcery then " (activate only as a sorcery)" else "") ++
     (if ab.onlyDuringYourTurn then " (activate only during your turn)" else "") ++
     (if ab.onceEachTurn then " (activate only once each turn)" else "")
-  s!"{ab.cost.toNotation}: {ab.effect.toNotation}{timing}"
+  let body :=
+    if ab.isModal then
+      let modes := ab.allModes.toList.map AbilityEffect.toNotation
+      s!"Choose one — {String.intercalate "; " modes}"
+    else
+      ab.effect.toNotation
+  s!"{ab.cost.toNotation}: {body}{timing}"
 
 instance : ToString ActivatedAbility where
   toString := toNotation
@@ -357,12 +389,29 @@ instance : ToString CardDef where
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
+#guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
+  "This creature deals 2 damage to target creature"
+#guard AbilityEffect.toNotation .destroyTargetColorlessNonland ==
+  "Destroy target colorless nonland permanent"
+#guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
+#guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
+#guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
     effect := .searchBasicLandTapped
   }
   (toString ab).startsWith "{2}, {T}, Sacrifice:"
+#guard
+  let ab : ActivatedAbility := {
+    cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
+    effect := .dealDamageToTargetCreature 2
+    otherModes := #[.destroyTargetColorlessNonland]
+  }
+  ab.isModal &&
+    (toString ab).startsWith "{1}, Sacrifice: Choose one —" &&
+    ((toString ab).splitOn "target creature").length > 1 &&
+    ((toString ab).splitOn "colorless nonland").length > 1
 #guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
   "Other Orcs and Goblins you control have trample."
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==

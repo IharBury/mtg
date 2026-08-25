@@ -244,6 +244,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
+#guard mentions goblinCratermaker.summary "Choose one"
+#guard mentions goblinCratermaker.summary "colorless nonland"
+#guard goblinCratermaker.activatedAbilities.size == 1
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -335,6 +338,16 @@ def applyIdle (g : Game) : Game :=
       | none => panic! "no legal target (CR 601.2c)"
       | some t =>
         match g.apply p (.target t) with
+        | .ok g' => g'
+        | .error e => panic! e
+  | .chooseMode _, some p =>
+    match g.proposedSpell with
+    | none => panic! "expected a proposed ability while choosing a mode"
+    | some prop =>
+      match g.defaultAbilityMode p prop.abilityModes with
+      | none => panic! "no legal mode (CR 601.2b)"
+      | some idx =>
+        match g.apply p (.chooseMode idx) with
         | .ok g' => g'
         | .error e => panic! e
   | _, some p =>
@@ -1945,6 +1958,251 @@ def scryEmpty : Game :=
 
 #guard scryEmpty.pending == .none
 #guard scryEmpty.log.any (fun s => mentions s "no cards to look at")
+
+/-- Goblin Cratermaker plus an opposing 2/2 and a Mountain; a land drop is already
+used so the agent will activate rather than play another land. -/
+def cratermakerReady : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+def cratermakerSource (g : Game) : GameObject :=
+  namedPermanent g "Goblin Cratermaker"
+
+def cratermakerAbility : ActivatedAbility :=
+  goblinCratermaker.activatedAbilities[0]!
+
+#guard cratermakerAbility.isModal
+#guard cratermakerAbility.cost.sacrificeSource
+#guard cratermakerAbility.effect == .dealDamageToTargetCreature 2
+#guard cratermakerAbility.otherModes == #[.destroyTargetColorlessNonland]
+#guard cratermakerReady.canActivate ⟨0⟩ (cratermakerSource cratermakerReady) cratermakerAbility
+#guard !(cratermakerReady.canActivate ⟨1⟩ (cratermakerSource cratermakerReady)
+  cratermakerAbility)
+#guard (namedPermanent cratermakerReady "Grizzly Bears").isColorlessNonland == false
+#guard (cratermakerSource cratermakerReady).printed.colors.contains .red
+
+-- The heuristic begins activating Cratermaker when {1} is available.
+#guard
+  match Agent.choose cratermakerReady ⟨0⟩ with
+  | some (.activate id 0) => id == (cratermakerSource cratermakerReady).id
+  | _ => false
+
+def proposedCratermaker : Game :=
+  mustApply cratermakerReady ⟨0⟩ (.activate (cratermakerSource cratermakerReady).id 0)
+
+#guard
+  match proposedCratermaker.pending with
+  | .chooseMode ⟨0⟩ => true
+  | _ => false
+#guard proposedCratermaker.proposedSpell.isSome
+#guard proposedCratermaker.stack.size == 1
+#guard (proposedCratermaker.object! proposedCratermaker.stack.back!.objectId).abilityEffect.isNone
+#guard (namedPermanent proposedCratermaker "Goblin Cratermaker").isOnBattlefield
+#guard proposedCratermaker.log.any (fun s => mentions s "begins activating Goblin Cratermaker")
+#guard proposedCratermaker.log.any (fun s => mentions s "must choose a mode (CR 601.2b)")
+
+-- Opponent cannot choose Chandra's mode.
+#guard
+  match proposedCratermaker.apply ⟨1⟩ (.chooseMode 0) with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+-- Mode index out of range.
+#guard
+  match proposedCratermaker.apply ⟨0⟩ (.chooseMode 2) with
+  | .error msg => mentions msg "No such mode"
+  | .ok _ => false
+
+-- Targeting is not chosen at `activate`; it comes after the mode.
+#guard
+  match proposedCratermaker.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent proposedCratermaker "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Not time to choose targets"
+  | .ok _ => false
+
+-- The heuristic picks the damage mode when the opponent has a creature.
+#guard
+  match Agent.choose proposedCratermaker ⟨0⟩ with
+  | some (.chooseMode 0) => true
+  | _ => false
+
+def cratermakerModeChosen : Game :=
+  mustApply proposedCratermaker ⟨0⟩ (.chooseMode 0)
+
+#guard cratermakerModeChosen.pending == .chooseTargets ⟨0⟩
+#guard (cratermakerModeChosen.object! cratermakerModeChosen.stack.back!.objectId).abilityEffect ==
+  some (.dealDamageToTargetCreature 2)
+#guard cratermakerModeChosen.log.any (fun s =>
+  mentions s "chooses a mode: This creature deals 2 damage")
+#guard cratermakerModeChosen.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- A player is not a legal target for the damage mode.
+#guard
+  match cratermakerModeChosen.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets Nissa's creature.
+#guard
+  match Agent.choose cratermakerModeChosen ⟨0⟩ with
+  | some (.target (Target.permanent id)) =>
+    (cratermakerModeChosen.object! id).name == "Grizzly Bears"
+  | _ => false
+
+def cratermakerTargeted : Game :=
+  mustApply cratermakerModeChosen ⟨0⟩
+    (.target (Target.permanent (namedPermanent cratermakerModeChosen "Grizzly Bears").id))
+
+#guard cratermakerTargeted.pending == .activateManaAbilities ⟨0⟩
+#guard cratermakerTargeted.stack.back!.targets ==
+  #[Target.permanent (namedPermanent cratermakerTargeted "Grizzly Bears").id]
+#guard cratermakerTargeted.log.any (fun s =>
+  mentions s "chooses Grizzly Bears as a target (CR 601.2c)")
+#guard cratermakerTargeted.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+
+-- Paying without mana reverses the activation (CR 602.2 / 733.1).
+def reversedCratermaker : Game :=
+  mustApply cratermakerTargeted ⟨0⟩ .pay
+
+#guard reversedCratermaker.pending == .none
+#guard reversedCratermaker.stack.isEmpty
+#guard (namedPermanent reversedCratermaker "Goblin Cratermaker").isOnBattlefield
+#guard reversedCratermaker.log.any (fun s => mentions s "the activation is reversed")
+
+def paidCratermaker : Game :=
+  mustApply (tapNextMana cratermakerTargeted ⟨0⟩) ⟨0⟩ .pay
+
+#guard paidCratermaker.pending == .none
+#guard paidCratermaker.proposedSpell.isNone
+#guard paidCratermaker.hasPriority ⟨0⟩
+#guard paidCratermaker.stack.size == 1
+#guard (paidCratermaker.player ⟨0⟩).graveyard.any (fun id =>
+  (paidCratermaker.object! id).name == "Goblin Cratermaker")
+#guard !(paidCratermaker.battlefield.any (fun o => o.name == "Goblin Cratermaker"))
+#guard paidCratermaker.log.any (fun s => mentions s "sacrifices Goblin Cratermaker")
+#guard paidCratermaker.log.any (fun s => mentions s "activates Goblin Cratermaker")
+
+def resolvedCratermaker : Game := passBoth paidCratermaker
+
+#guard resolvedCratermaker.stack.isEmpty
+#guard resolvedCratermaker.log.any (fun s => mentions s "Grizzly Bears is dealt 2 damage")
+#guard resolvedCratermaker.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
+#guard !(resolvedCratermaker.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedCratermaker.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩)
+
+/-- 2 damage is not lethal to a 3-toughness creature. -/
+def cratermakerVsGiant : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
+  addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+
+def resolvedCratermakerVsGiant : Game :=
+  let g := mustApply cratermakerVsGiant ⟨0⟩
+    (.activate (cratermakerSource cratermakerVsGiant).id 0)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Hill Giant").id))
+  let g := mustApply (tapNextMana g ⟨0⟩) ⟨0⟩ .pay
+  passBoth g
+
+#guard (namedPermanent resolvedCratermakerVsGiant "Hill Giant").status.damage == 2
+#guard resolvedCratermakerVsGiant.battlefield.any (fun o => o.name == "Hill Giant")
+#guard resolvedCratermakerVsGiant.log.any (fun s => mentions s "Hill Giant is dealt 2 damage")
+#guard !resolvedCratermakerVsGiant.log.any (fun s => mentions s "Hill Giant dies")
+
+/-- Targeting the Cratermaker itself: it is sacrificed as a cost, so the ability
+does nothing on resolution. -/
+def cratermakerSelfTarget : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
+
+def resolvedCratermakerSelf : Game :=
+  let g := mustApply cratermakerSelfTarget ⟨0⟩
+    (.activate (cratermakerSource cratermakerSelfTarget).id 0)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (cratermakerSource g).id))
+  let g := mustApply (tapNextMana g ⟨0⟩) ⟨0⟩ .pay
+  passBoth g
+
+#guard resolvedCratermakerSelf.stack.isEmpty
+#guard !(resolvedCratermakerSelf.battlefield.any (fun o => o.name == "Goblin Cratermaker"))
+#guard resolvedCratermakerSelf.log.any (fun s => mentions s "The target is no longer in play")
+
+/-- Destroy mode: Wayfarer's Bauble is a colorless nonland permanent. -/
+def cratermakerDestroyReady : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  let g := addPermanent g goblinCratermaker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wayfarersBauble ⟨1⟩ ⟨1⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+#guard (namedPermanent cratermakerDestroyReady "Wayfarer's Bauble").isColorlessNonland
+#guard !(namedPermanent cratermakerDestroyReady "Goblin Cratermaker").isColorlessNonland
+
+-- No opposing creature: the heuristic prefers the destroy mode.
+#guard
+  let g := mustApply cratermakerDestroyReady ⟨0⟩
+    (.activate (cratermakerSource cratermakerDestroyReady).id 0)
+  match Agent.choose g ⟨0⟩ with
+  | some (.chooseMode 1) => true
+  | _ => false
+
+-- A Mountain is a land, so it is not a legal destroy target.
+#guard
+  let g := mustApply cratermakerDestroyReady ⟨0⟩
+    (.activate (cratermakerSource cratermakerDestroyReady).id 0)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  match (g.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match g.apply ⟨0⟩ (.target (Target.permanent land.id)) with
+    | .error msg => mentions msg "Illegal target"
+    | .ok _ => false
+
+-- A colored creature is not a legal destroy target.
+#guard
+  let g := addPermanent cratermakerDestroyReady grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := mustApply g ⟨0⟩ (.activate (cratermakerSource g).id 0)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def resolvedCratermakerDestroy : Game :=
+  let g := mustApply cratermakerDestroyReady ⟨0⟩
+    (.activate (cratermakerSource cratermakerDestroyReady).id 0)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Wayfarer's Bauble").id))
+  let g := mustApply (tapNextMana g ⟨0⟩) ⟨0⟩ .pay
+  passBoth g
+
+#guard resolvedCratermakerDestroy.stack.isEmpty
+#guard resolvedCratermakerDestroy.log.any (fun s => mentions s "Wayfarer's Bauble is destroyed")
+#guard !(resolvedCratermakerDestroy.battlefield.any (fun o => o.name == "Wayfarer's Bauble"))
+#guard resolvedCratermakerDestroy.objects.any (fun o =>
+  o.name == "Wayfarer's Bauble" && o.zone == .graveyard ⟨1⟩)
+#guard !(resolvedCratermakerDestroy.battlefield.any (fun o => o.name == "Goblin Cratermaker"))
+
+-- Destroy mode cannot be chosen when there is no colorless nonland.
+#guard
+  match proposedCratermaker.apply ⟨0⟩ (.chooseMode 1) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Instant-speed: Cratermaker can activate during the end step.
+def cratermakerAtEndStep : Game := skipTo cratermakerReady .end 80
+
+#guard cratermakerAtEndStep.step == .end
+#guard cratermakerAtEndStep.canActivate ⟨0⟩ (cratermakerSource cratermakerAtEndStep)
+  cratermakerAbility
 
 /-- Hill Giant (3/3) blocked by two Llanowar Elves (1/1): CR 510.1c lets the
 attacker assign all 3 damage to one blocker. -/

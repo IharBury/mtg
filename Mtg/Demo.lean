@@ -137,6 +137,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   play <id>            Play a land
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
+  mode <n>             Choose mode n of a modal ability (CR 601.2b; first mode is 1)
   cast <id>            Begin casting a spell (CR 601.2a)
   target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
@@ -162,6 +163,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
 #guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
+#guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
@@ -814,6 +816,64 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
+def modeUsage : String := "usage: mode <n>"
+
+/-- Choose a mode of a modal spell or ability (CR 601.2b). Modes are 1-indexed. -/
+def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match arg.toNat? with
+    | none => throw modeUsage
+    | some 0 => throw modeUsage
+    | some n => g.apply p (.chooseMode (n - 1))
+  | _ => throw modeUsage
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ [] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["nope"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["0"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "chooses a mode")
+  | .error _ => false
+
+#guard
+  match applyMode Tests.proposedCratermaker ⟨0⟩ ["2"] with
+  | .error msg => Tests.mentions msg "requires a target"
+  | .ok _ => false
+
+#guard
+  let g := Tests.cratermakerDestroyReady
+  let src := Tests.cratermakerSource g
+  match applyActivate g ⟨0⟩ [toString src.id] with
+  | .error _ => false
+  | .ok g' =>
+    match applyMode g' ⟨0⟩ ["2"] with
+    | .ok g'' =>
+      g''.pending == .chooseTargets ⟨0⟩ &&
+      (g''.object! g''.stack.back!.objectId).abilityEffect ==
+        some .destroyTargetColorlessNonland
+    | .error _ => false
+
 def castUsage : String := "usage: cast <id>"
 
 /-- Begin casting the named spell (CR 601.2a). Targets are announced later
@@ -1065,6 +1125,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "assign" => applyAssign g p args
   | "play" => applyPlay g p args
   | "activate" => applyActivate g p args
+  | "mode" => applyMode g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
