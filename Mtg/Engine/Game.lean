@@ -12,7 +12,8 @@ import Mtg.Engine.Zone
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), activating non-mana abilities of
-permanents (CR 602), combat (CR 506–510), cleanup (CR 514.3), and the
+permanents (CR 602), static abilities that grant trample (CR 604), attack
+triggers (CR 508.2 / 603), combat (CR 506–510), cleanup (CR 514.3), and the
 state-based actions we implement (CR 704.5).
 -/
 
@@ -58,6 +59,10 @@ structure GameObject where
   timestamp : Nat := 0
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
   abilityEffect : Option AbilityEffect := none
+  /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
+  triggeredAbility : Option TriggeredAbility := none
+  /-- Source permanent of a triggered ability on the stack. -/
+  sourceId : Option ObjectId := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
 deriving Repr, Inhabited
@@ -76,6 +81,9 @@ def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
 
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
+
+def hasSubtype (o : GameObject) (s : String) : Bool :=
+  o.printed.subtypes.any (· == s)
 
 /-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
 def canPayTapCost (o : GameObject) : Bool :=
@@ -372,6 +380,34 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   (!attacker.printed.keywords.flying ||
     blocker.printed.keywords.flying || blocker.printed.keywords.reach)
 
+/-- Whether `src` currently grants trample to `target` (CR 604.2). -/
+def grantsTrampleTo (src target : GameObject) : Bool :=
+  src.id != target.id &&
+  src.isOnBattlefield &&
+  target.isOnBattlefield &&
+  src.controller == target.controller &&
+  src.controller.isSome &&
+  target.printed.isCreature &&
+  src.printed.staticAbilities.any (fun ab =>
+    match ab with
+    | .otherCreaturesHaveTrample subtypes =>
+      subtypes.any target.hasSubtype)
+
+/-- Whether `o` has trample, printed or granted (CR 702.19, 604.2). -/
+def hasTrample (g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.trample ||
+  (o.isOnBattlefield && g.battlefield.any (fun src => grantsTrampleTo src o))
+
+/-- Keywords including those granted by static abilities. -/
+def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
+  { o.printed.keywords with trample := g.hasTrample o }
+
+/-- Greatest power among creatures `p` controls; `0` if they control none. -/
+def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
+  let creatures := g.permanentsOf p |>.filter (·.printed.isCreature)
+  if creatures.isEmpty then 0
+  else creatures.foldl (fun acc o => max acc o.power) (creatures[0]!.power)
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
@@ -432,7 +468,7 @@ def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-None are modeled yet. -/
+Attack triggers are put on the stack as they are declared (CR 508.2). -/
 def hasWaitingTriggers (_g : Game) : Bool :=
   false
 
@@ -910,6 +946,54 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
   | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
 
+/-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
+def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) : Game :=
+  match ab with
+  | .onAttackPumpByGreatestPower =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let x := g.greatestPowerAmongCreatures controller
+        g.applyEffect controller (.pump x 0) #[Target.permanent o.id]
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
+
+/-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
+def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for id in attackerIds do
+      let o := g.object! id
+      for ab in o.printed.triggeredAbilities do
+        match ab with
+        | .onAttackPumpByGreatestPower =>
+          let (g1, newId) := g.allocId
+          let (g1, ts) := g1.bumpTime
+          let abilityObj : GameObject := {
+            id := newId
+            printed := {
+              name := s!"{o.name}'s ability"
+              types := #[]
+              oracleText := o.printed.oracleText
+            }
+            owner := o.owner
+            controller := some p
+            zone := .stack
+            timestamp := ts
+            triggeredAbility := some ab
+            sourceId := some id
+          }
+          let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
+          g := { g1 with
+            objects := g1.objects.push abilityObj
+            stack := g1.stack.push entry
+            consecutivePasses := 0 }
+          g := g.logMsg s!"{o.name}'s attack trigger is put on the stack"
+    return g
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -921,6 +1005,9 @@ def resolveTop (g : Game) : Game :=
       if let some e := obj.abilityEffect then
         let g := g.applyAbilityEffect entry.controller e
         -- CR 608.2m: after resolution the ability ceases to exist.
+        { g with objects := g.objects.filter (fun o => o.id != obj.id) }
+      else if let some t := obj.triggeredAbility then
+        let g := g.applyTriggeredAbility entry.controller t obj.sourceId
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else
         let g :=
@@ -950,6 +1037,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
     g := g.logMsg s!"{g.player p |>.name} attacks with {o.name}"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
+  g := g.putAttackTriggersOnStack p ids
   return { g with pending := .none } |>.receivePriority p
 
 def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × ObjectId)) :
@@ -989,8 +1077,9 @@ def combatDamage (g : Game) : Game :=
         let b := blockers[0]!
         let dmg := max a.power 0
         let lethal := max b.toughness 0
-        let toBlocker := if a.printed.keywords.trample then min dmg lethal else dmg
-        let toPlayer := if a.printed.keywords.trample then dmg - toBlocker else 0
+        let trampling := g.hasTrample a
+        let toBlocker := if trampling then min dmg lethal else dmg
+        let toPlayer := if trampling then dmg - toBlocker else 0
         g := g.setObject { b with status := { b.status with damage := b.status.damage + toBlocker } }
         g := g.logMsg s!"{a.name} deals {toBlocker} combat damage to {b.name}"
         if toPlayer > 0 then

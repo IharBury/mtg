@@ -6,8 +6,9 @@ import Mtg.Engine.Card
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords, simple `{T}: Add` mana abilities, non-mana activated abilities
-such as Wayfarer's Bauble and Snowslope Hunter, and a few one-shot spell
-effects); remaining abilities are stored as Oracle text only.
+such as Wayfarer's Bauble and Snowslope Hunter, static abilities that grant
+trample, attack triggers that pump, and a few one-shot spell effects);
+remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
@@ -694,6 +695,8 @@ def orcishSiegemaster : CardDef := {
   power := some 0
   toughness := some 5
   keywords := { Keywords.none with trample := true }
+  staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+  triggeredAbilities := #[.onAttackPumpByGreatestPower]
 }
 
 def snowslopeHunter : CardDef := {
@@ -901,5 +904,9 @@ def attercop : CardDef := {
 #guard (attercop.summary.splitOn "reach").length > 1
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
+#guard orcishSiegemaster.keywords.trample
+#guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
+#guard orcishSiegemaster.triggeredAbilities == #[.onAttackPumpByGreatestPower]
+#guard (orcishSiegemaster.summary.splitOn "Other Orcs and Goblins").length > 1
 
 end Mtg.Engine.Catalog
