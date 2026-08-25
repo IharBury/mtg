@@ -49,7 +49,10 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
-  let atk := if o.status.attacking then " *attacking*" else ""
+  let atk :=
+    if o.status.attacking then
+      if o.status.blocked then " *attacking, blocked*" else " *attacking*"
+    else ""
   let blk :=
     match o.status.blocking with
     | none => ""

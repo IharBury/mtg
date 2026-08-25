@@ -238,6 +238,8 @@ def uncontrolledPermanent : Game :=
 #guard mentions orcishSiegemaster.summary "greatest power"
 #guard orcishSiegemaster.staticAbilities.size == 1
 #guard orcishSiegemaster.triggeredAbilities.size == 1
+#guard mentions battleScarredGoblin.summary "becomes blocked"
+#guard battleScarredGoblin.triggeredAbilities.size == 1
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -264,6 +266,17 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "Other Orcs and Goblins" &&
     mentions c.abilitiesText "greatest power" &&
     mentions c.summary "trample"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Scar"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers]
+  }
+  mentions c.abilitiesText "becomes blocked" &&
+    mentions c.abilitiesText "each creature blocking it"
 
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
@@ -664,6 +677,7 @@ def bearsBlockOgre : Game :=
 
 #guard (namedPermanent bearsBlockOgre "Grizzly Bears").status.blocking ==
   some (namedPermanent bearsBlockOgre "Gray Ogre").id
+#guard (namedPermanent bearsBlockOgre "Gray Ogre").status.blocked
 #guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
 #guard bearsBlockOgre.pending == .none
 
@@ -1411,5 +1425,177 @@ def afterBeornTrample : Game :=
 #guard afterBeornTrample.log.any (fun s =>
   mentions s "Beorn, Reluctant Host tramples for 3 to Nissa")
 #guard (afterBeornTrample.player ⟨1⟩).life == 17
+
+/-- Battle-Scarred Goblin vs Grizzly Bears: becomes-blocked trigger, then combat. -/
+def goblinVsBears : Game :=
+  addPermanent (addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def goblinDeclaredAttacker : Game :=
+  let g := passBoth (skipTo goblinVsBears .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+
+def goblinReadyToBlock : Game := passBoth goblinDeclaredAttacker
+
+def goblinBlockedByBears : Game :=
+  let g := goblinReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+
+#guard goblinBlockedByBears.stack.size == 1
+#guard (goblinBlockedByBears.object! goblinBlockedByBears.stack.back!.objectId).name ==
+  "Battle-Scarred Goblin's ability"
+#guard goblinBlockedByBears.log.any (fun s => mentions s "becomes-blocked trigger is put on the stack")
+#guard (namedPermanent goblinBlockedByBears "Battle-Scarred Goblin").status.blocked
+#guard goblinBlockedByBears.step == .declareBlockers
+#guard goblinBlockedByBears.hasPriority ⟨0⟩
+#guard (namedPermanent goblinBlockedByBears "Grizzly Bears").status.damage == 0
+
+def goblinTriggerResolved : Game := passBoth goblinBlockedByBears
+
+#guard goblinTriggerResolved.stack.isEmpty
+#guard (namedPermanent goblinTriggerResolved "Grizzly Bears").status.damage == 1
+#guard goblinTriggerResolved.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Grizzly Bears")
+#guard goblinTriggerResolved.step == .declareBlockers
+#guard goblinTriggerResolved.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (goblinTriggerResolved.player ⟨1⟩).life == 20
+
+def afterGoblinBearsCombat : Game := passBoth goblinTriggerResolved
+
+#guard afterGoblinBearsCombat.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 2 combat damage to Grizzly Bears")
+#guard afterGoblinBearsCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 2 combat damage to Battle-Scarred Goblin")
+#guard (afterGoblinBearsCombat.player ⟨1⟩).life == 20
+#guard !(afterGoblinBearsCombat.battlefield.any (fun o => o.name == "Battle-Scarred Goblin"))
+#guard !(afterGoblinBearsCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- A 1/1 blocker dies to the trigger; the Goblin stays blocked and assigns no
+combat damage (CR 509.1h / 510.1c). -/
+def goblinVsElves : Game :=
+  addPermanent (addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def goblinBlockedByElves : Game :=
+  let g := passBoth (skipTo goblinVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+
+def goblinElvesAfterTrigger : Game := passBoth goblinBlockedByElves
+
+#guard goblinElvesAfterTrigger.stack.isEmpty
+#guard goblinElvesAfterTrigger.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")
+#guard goblinElvesAfterTrigger.log.any (fun s => mentions s "Llanowar Elves dies from lethal damage")
+#guard !(goblinElvesAfterTrigger.battlefield.any (fun o => o.name == "Llanowar Elves"))
+#guard goblinElvesAfterTrigger.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨1⟩)
+#guard (namedPermanent goblinElvesAfterTrigger "Battle-Scarred Goblin").status.blocked
+#guard goblinElvesAfterTrigger.step == .declareBlockers
+#guard (goblinElvesAfterTrigger.player ⟨1⟩).life == 20
+
+def afterGoblinElvesCombat : Game := passBoth goblinElvesAfterTrigger
+
+#guard afterGoblinElvesCombat.log.any (fun s =>
+  mentions s "blocked with no remaining blockers and assigns no combat damage")
+#guard !afterGoblinElvesCombat.log.any (fun s => mentions s "combat damage to Nissa")
+#guard (afterGoblinElvesCombat.player ⟨1⟩).life == 20
+#guard afterGoblinElvesCombat.battlefield.any (fun o => o.name == "Battle-Scarred Goblin")
+#guard (namedPermanent afterGoblinElvesCombat "Battle-Scarred Goblin").status.damage == 0
+
+/-- Unblocked: the trigger does not fire, and combat damage hits the player. -/
+def afterGoblinUnblocked : Game :=
+  passBoth (mustApply goblinReadyToBlock ⟨1⟩ (.declareBlockers #[]))
+
+#guard afterGoblinUnblocked.stack.isEmpty
+#guard !afterGoblinUnblocked.log.any (fun s => mentions s "becomes-blocked trigger")
+#guard (afterGoblinUnblocked.player ⟨1⟩).life == 18
+#guard afterGoblinUnblocked.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 2 combat damage to Nissa")
+
+/-- CR 509.5c: two blockers still produce one trigger; each takes 1 damage. -/
+def goblinVsTwoElves : Game :=
+  let g := addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def goblinBlockedByTwoElves : Game :=
+  let g := passBoth (skipTo goblinVsTwoElves .beginningOfCombat 80)
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[goblin.id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(elves[0]!.id, goblin.id), (elves[1]!.id, goblin.id)])
+
+#guard goblinBlockedByTwoElves.stack.size == 1
+#guard (goblinBlockedByTwoElves.battlefield.filter (fun o =>
+  o.status.blocking.isSome)).size == 2
+
+def goblinTwoElvesAfterTrigger : Game := passBoth goblinBlockedByTwoElves
+
+#guard (goblinTwoElvesAfterTrigger.log.filter (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")).size == 2
+#guard (goblinTwoElvesAfterTrigger.battlefield.filter (fun o =>
+  o.name == "Llanowar Elves")).isEmpty
+#guard (goblinTwoElvesAfterTrigger.objects.filter (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨1⟩)).size == 2
+
+/-- Two Goblins, one blocked: only the blocked one triggers. -/
+def twoGoblinsOneBlocked : Game :=
+  let g := addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let goblins := g.battlefield.filter (fun o => o.name == "Battle-Scarred Goblin")
+  let g := mustApply g ⟨0⟩ (.declareAttackers (goblins.map (·.id)))
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    goblins[0]!.id)])
+
+#guard twoGoblinsOneBlocked.stack.size == 1
+#guard (twoGoblinsOneBlocked.battlefield.filter (fun o =>
+  o.name == "Battle-Scarred Goblin" && o.status.blocked)).size == 1
+#guard (twoGoblinsOneBlocked.battlefield.filter (fun o =>
+  o.name == "Battle-Scarred Goblin" && o.status.attacking && !o.status.blocked)).size == 1
+
+/-- If the source leaves before the trigger resolves, blockers are unharmed. -/
+def goblinSourceGone : Game :=
+  let g := goblinBlockedByBears
+  let id := (namedPermanent g "Battle-Scarred Goblin").id
+  let (g, _) := g.move id (.graveyard (g.object! id).owner) none
+  passBoth g
+
+#guard goblinSourceGone.stack.isEmpty
+#guard goblinSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard (namedPermanent goblinSourceGone "Grizzly Bears").status.damage == 0
+
+/-- Granted trample plus a killed 1/1 blocker: leftover damage goes to the player
+(CR 702.19d). -/
+def siegeGoblinVsElves : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g battleScarredGoblin ⟨0⟩ ⟨0⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterSiegeGoblinElves : Game :=
+  let g := passBoth (skipTo siegeGoblinVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+  let g := passBoth g
+  passBoth g
+
+#guard afterSiegeGoblinElves.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")
+#guard afterSiegeGoblinElves.log.any (fun s => mentions s "Llanowar Elves dies from lethal damage")
+#guard afterSiegeGoblinElves.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin tramples for 2 to Nissa")
+#guard (afterSiegeGoblinElves.player ⟨1⟩).life == 18
+#guard afterSiegeGoblinElves.battlefield.any (fun o => o.name == "Battle-Scarred Goblin")
 
 end Mtg.Engine.Tests

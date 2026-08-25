@@ -213,6 +213,13 @@ def mountainLine (g : Game) : String :=
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
 
+#guard
+  let g := goblinBlockedByBears
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  mentions (objectLine g goblin) "*attacking, blocked*" &&
+    !mentions (objectLine goblinDeclaredAttacker (namedPermanent goblinDeclaredAttacker
+      "Battle-Scarred Goblin")) "*blocked"
+
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty
 #guard manaLine (started.player ⟨0⟩) == "Chandra — mana {}"
