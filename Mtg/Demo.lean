@@ -137,8 +137,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
   play <id>            Play a land
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
-  cast <id>            Begin casting a spell (then tap for mana and pay)
-  cast <id> <target>   Cast targeting a permanent (Auras and pump spells)
+  cast <id>            Begin casting a spell (CR 601.2a)
+  target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   attack               Attack with every creature that can
@@ -156,6 +156,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive true).splitOn "the acting player can see").length > 1
 #guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
+#guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 
@@ -710,10 +711,10 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
   | .error _ => false
 
-def castUsage : String := "usage: cast <id> [target]"
+def castUsage : String := "usage: cast <id>"
 
-/-- Begin casting the named spell. Damage spells target the opponent; pump
-spells and Auras target a creature (own creature if none is named). -/
+/-- Begin casting the named spell (CR 601.2a). Targets are announced later
+with `target` (CR 601.2c). -/
 def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -723,26 +724,7 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     | some id =>
       match g.findObject? id with
       | none => throw "no such object"
-      | some o =>
-        let tgt :=
-          match o.printed.spellEffect with
-          | some (.dealDamage _) => some (Target.player (g.opponent p))
-          | some (.pump _ _) =>
-            (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
-              |>.map (fun c => Target.permanent c.id)
-          | none =>
-            if o.printed.isAura then
-              (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
-                |>.map (fun c => Target.permanent c.id)
-            else none
-        g.apply p (.cast id tgt)
-  | [arg, tgtArg] =>
-    match parseObjectId? arg, parseObjectId? tgtArg with
-    | none, _ | _, none => throw castUsage
-    | some id, some tid =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.cast id (some (Target.permanent tid)))
+      | some _ => g.apply p (.cast id)
   | _ => throw castUsage
 
 #guard
@@ -752,6 +734,11 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 
 #guard
   match applyCast Tests.boltSetup ⟨0⟩ ["nope"] with
+  | .error msg => msg == castUsage
+  | .ok _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ ["1", "2"] with
   | .error msg => msg == castUsage
   | .ok _ => false
 
@@ -768,20 +755,93 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 #guard
   match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id] with
   | .ok g' =>
-    g'.pending == .activateManaAbilities ⟨0⟩ &&
-    g'.log.any (fun s => Tests.mentions s "begins casting Lightning Bolt")
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Lightning Bolt") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
   | .error _ => false
 
 #guard
   match applyCast Tests.giftSetup ⟨0⟩
       [toString (Tests.handCardNamed Tests.giftSetup ⟨0⟩ "Gift of Strands").id] with
   | .ok g' =>
-    g'.log.any (fun s => Tests.mentions s "begins casting Gift of Strands") &&
-      match g'.stack.back? with
-      | some e =>
-        e.targets == #[Target.permanent (Tests.namedPermanent Tests.giftSetup "Grizzly Bears").id]
-      | none => false
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Gift of Strands")
   | .error _ => false
+
+def targetUsage : String := "usage: target <id|name|opponent>"
+
+/-- Parse a CR 601.2c target: a permanent id, a player name, or `opponent`. -/
+def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target :=
+  let key := token.trim
+  let lower := key.map Char.toLower
+  if lower == "opponent" then
+    return Target.player (g.opponent p)
+  match g.players.find? (fun pl => pl.name.map Char.toLower == lower) with
+  | some pl => return Target.player pl.id
+  | none =>
+    match parseObjectId? key with
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => return Target.permanent id
+    | none => throw targetUsage
+
+/-- Announce the chosen target for a proposed spell (CR 601.2c). -/
+def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    let t ← parseTarget g p arg
+    g.apply p (.target t)
+  | _ => throw targetUsage
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ [] with
+  | .error msg => msg == targetUsage
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ ["nope"] with
+  | .error msg => msg == targetUsage
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == targetUsage
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ ["opponent"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.stack.back!.targets == #[Target.player ⟨1⟩] &&
+    g'.log.any (fun s => Tests.mentions s "chooses Nissa as a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.proposedBolt ⟨0⟩ ["Nissa"] with
+  | .ok g' => g'.stack.back!.targets == #[Target.player ⟨1⟩]
+  | .error _ => false
+
+#guard
+  let g := Tests.giftSetup
+  let gid := (Tests.handCardNamed g ⟨0⟩ "Gift of Strands").id
+  let tid := (Tests.namedPermanent g "Grizzly Bears").id
+  match applyCast g ⟨0⟩ [toString gid] with
+  | .error _ => false
+  | .ok g' =>
+    match applyTarget g' ⟨0⟩ [toString tid] with
+    | .ok g'' =>
+      g''.pending == .activateManaAbilities ⟨0⟩ &&
+      g''.stack.back!.targets == #[Target.permanent tid]
+    | .error _ => false
 
 def scryUsage : String := "usage: scry [bottom <id> ...]"
 
@@ -842,6 +902,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "activate" => applyActivate g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
+  | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | _ => .error s!"Unknown command: {cmd}"
 
@@ -871,6 +932,13 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
     match g'.result with
     | some (.won p) => p == ⟨0⟩
     | _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedBolt "target" ["opponent"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.stack.back!.targets == #[Target.player ⟨1⟩]
   | .error _ => false
 
 #guard

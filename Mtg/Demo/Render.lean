@@ -131,6 +131,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .chooseTargets p =>
+      s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .declareMulligan p =>

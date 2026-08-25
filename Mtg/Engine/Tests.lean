@@ -323,6 +323,16 @@ def applyIdle (g : Game) : Game :=
     match g.apply p (.scry (g.scryLookedIds p n) #[]) with
     | .ok g' => g'
     | .error e => panic! e
+  | .chooseTargets _, some p =>
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | none => panic! "expected a proposed spell while choosing targets"
+    | some spell =>
+      match g.defaultTarget p spell with
+      | none => panic! "no legal target (CR 601.2c)"
+      | some t =>
+        match g.apply p (.target t) with
+        | .ok g' => g'
+        | .error e => panic! e
   | _, some p =>
     match g.apply p .pass with
     | .ok g' => g'
@@ -491,13 +501,17 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .ok g' => g'
   | .error e => panic! e
 
+/-- Propose a spell (CR 601.2a) and announce its target (CR 601.2c). -/
+def proposeTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t : Target) : Game :=
+  mustApply (mustApply g p (.cast id)) p (.target t)
+
 def handCardNamed (g : Game) (p : PlayerId) (name : String) : GameObject :=
   match (g.handObjects p).find? (fun o => o.name == name) with
   | some o => o
   | none => panic! s!"expected {name} in hand"
 
-/-- CR 601.2g: a player may begin casting without mana in their pool, then
-activate mana abilities, then pay. -/
+/-- CR 601.2: a player may begin casting without mana in their pool, then
+announce a target (601.2c), activate mana abilities (601.2g), then pay. -/
 def boltSetup : Game :=
   addToHand (addUntappedLand started mountain) lightningBolt ⟨0⟩
 
@@ -516,43 +530,77 @@ def boltMountain : GameObject :=
 /-- The agent proposes a spell instead of tapping first. -/
 def agentBeginsCast : Bool :=
   match Agent.choose boltSetup ⟨0⟩ with
-  | some (.cast _ _) => true
+  | some (.cast _) => true
   | _ => false
 
 #guard agentBeginsCast
 
 def proposedBolt : Game :=
-  mustApply boltSetup ⟨0⟩ (.cast boltInHand.id (some (Target.player ⟨1⟩)))
+  mustApply boltSetup ⟨0⟩ (.cast boltInHand.id)
 
-#guard proposedBolt.pending == .activateManaAbilities ⟨0⟩
+#guard
+  match proposedBolt.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
 #guard proposedBolt.proposedSpell.isSome
 #guard !proposedBolt.stack.isEmpty
+#guard proposedBolt.stack.back!.targets.isEmpty
 #guard !(proposedBolt.player ⟨0⟩).hand.contains boltInHand.id
 #guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
 #guard !proposedBolt.hasPriority ⟨0⟩
-#guard proposedBolt.canActivateManaAbility ⟨0⟩
-#guard !proposedBolt.canActivateManaAbility ⟨1⟩
+#guard !proposedBolt.canActivateManaAbility ⟨0⟩
 #guard proposedBolt.actor == some ⟨0⟩
 #guard proposedBolt.log.any (fun s => mentions s "begins casting Lightning Bolt")
-#guard proposedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard proposedBolt.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- CR 601.2c comes before mana abilities and payment.
+#guard
+  match proposedBolt.apply ⟨0⟩ .pay with
+  | .error msg => mentions msg "Choose a target first"
+  | .ok _ => false
+#guard
+  match proposedBolt.apply ⟨0⟩ (.target (Target.permanent ⟨99999⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match proposedBolt.apply ⟨1⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "may choose targets"
+  | .ok _ => false
+
+def agentChoosesTarget : Bool :=
+  match Agent.choose proposedBolt ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+#guard agentChoosesTarget
+
+def targetedBolt : Game :=
+  mustApply proposedBolt ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard targetedBolt.pending == .activateManaAbilities ⟨0⟩
+#guard targetedBolt.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard targetedBolt.canActivateManaAbility ⟨0⟩
+#guard !targetedBolt.canActivateManaAbility ⟨1⟩
+#guard targetedBolt.log.any (fun s => mentions s "chooses Nissa as a target (CR 601.2c)")
+#guard targetedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
 
 /-- Opponent cannot activate mana abilities during the caster's 601.2g window. -/
 def nissaTapDenied : Bool :=
-  match proposedBolt.tapForMana ⟨1⟩ boltMountain.id (.colored .red) with
+  match targetedBolt.tapForMana ⟨1⟩ boltMountain.id (.colored .red) with
   | .error _ => true
   | .ok _ => false
 
 #guard nissaTapDenied
 
 def agentTapsInWindow : Bool :=
-  match Agent.choose proposedBolt ⟨0⟩ with
+  match Agent.choose targetedBolt ⟨0⟩ with
   | some (.tapForMana id _) => id == boltMountain.id
   | _ => false
 
 #guard agentTapsInWindow
 
 def tappedForBolt : Game :=
-  mustApply proposedBolt ⟨0⟩ (.tapForMana boltMountain.id (.colored .red))
+  mustApply targetedBolt ⟨0⟩ (.tapForMana boltMountain.id (.colored .red))
 
 #guard (tappedForBolt.player ⟨0⟩).manaPool.canPay lightningBolt.manaCost
 #guard tappedForBolt.pending == .activateManaAbilities ⟨0⟩
@@ -567,7 +615,7 @@ def agentPaysInWindow : Bool :=
 
 /-- Passing priority is not how the 601.2h payment is made. -/
 def passDuringWindowDenied : Bool :=
-  match proposedBolt.apply ⟨0⟩ .pass with
+  match targetedBolt.apply ⟨0⟩ .pass with
   | .error _ => true
   | .ok _ => false
 
@@ -585,7 +633,7 @@ def paidBolt : Game :=
 
 /-- Paying without enough mana reverses the cast (CR 601.2 / 733.1). -/
 def reversedBolt : Game :=
-  mustApply proposedBolt ⟨0⟩ .pay
+  mustApply targetedBolt ⟨0⟩ .pay
 
 #guard reversedBolt.pending == .none
 #guard reversedBolt.proposedSpell.isNone
@@ -601,7 +649,7 @@ def ogreSetup : Game :=
   addToHand (addUntappedLand (skipTo started .precombatMain 80) mountain) grayOgre ⟨0⟩
 
 def proposedOgre : Game :=
-  mustApply ogreSetup ⟨0⟩ (.cast (handCardNamed ogreSetup ⟨0⟩ "Gray Ogre").id none)
+  mustApply ogreSetup ⟨0⟩ (.cast (handCardNamed ogreSetup ⟨0⟩ "Gray Ogre").id)
 
 def tappedForOgre : Game :=
   mustApply proposedOgre ⟨0⟩ (.tapForMana (lastPermanent ogreSetup).id (.colored .red))
@@ -629,8 +677,9 @@ def resolvedBolt : Game :=
 #guard (resolvedBolt.player ⟨1⟩).life == 17
 #guard resolvedBolt.log.any (fun s => mentions s "casts Lightning Bolt")
 
--- The heuristic still plays, and it activates mana abilities during 601.2g.
+-- The heuristic still plays, and it announces targets then activates mana abilities.
 #guard played.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard played.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
 #guard played.log.any (fun s => mentions s "begins casting")
 
 /-- Two ready creatures: declaring a subset of attackers leaves the rest
@@ -1123,15 +1172,14 @@ def exiledBolt (g : Game) : GameObject :=
 
 -- Opponent cannot play the exiled card.
 #guard
-  match resolvedHunter.castSpell ⟨1⟩ (exiledBolt resolvedHunter).id
-      (some (Target.player ⟨0⟩)) with
+  match resolvedHunter.castSpell ⟨1⟩ (exiledBolt resolvedHunter).id with
   | .error _ => true
   | .ok _ => false
 
 -- Cast the exiled Lightning Bolt the same turn (CR 701.14).
 def proposedExiledBolt : Game :=
-  mustApply resolvedHunter ⟨0⟩
-    (.cast (exiledBolt resolvedHunter).id (some (Target.player ⟨1⟩)))
+  proposeTargeted resolvedHunter ⟨0⟩
+    (exiledBolt resolvedHunter).id (Target.player ⟨1⟩)
 
 #guard proposedExiledBolt.pending == .activateManaAbilities ⟨0⟩
 #guard !(proposedExiledBolt.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt"))
@@ -1237,7 +1285,7 @@ def hunterPermissionExpired : Game :=
     o.zone == .exile && o.name == "Lightning Bolt") with
   | none => false
   | some o =>
-    match hunterPermissionExpired.castSpell ⟨0⟩ o.id (some (Target.player ⟨1⟩)) with
+    match hunterPermissionExpired.castSpell ⟨0⟩ o.id with
     | .error msg => mentions msg "may not play that card from exile"
     | .ok _ => false
 
@@ -1659,16 +1707,30 @@ def giftSetup : Game :=
 #guard
   let g := withGreenMana (addToHand afterDraw giftOfStrands ⟨0⟩) ⟨0⟩
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Gift of Strands")
-
 #guard
-  match giftSetup.apply ⟨0⟩ (.cast (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id none) with
+  let g := withGreenMana (addToHand afterDraw giftOfStrands ⟨0⟩) ⟨0⟩
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gift of Strands").id) with
   | .error msg => mentions msg "requires a target"
   | .ok _ => false
 
+-- Cast proposes the Aura; the target is announced as a later action (CR 601.2c).
+#guard
+  match giftSetup.apply ⟨0⟩ (.cast (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id) with
+  | .ok g' =>
+    match g'.pending with
+    | .chooseTargets ⟨0⟩ => g'.stack.back!.targets.isEmpty
+    | _ => false
+  | .error _ => false
+
 def proposedGift : Game :=
-  mustApply giftSetup ⟨0⟩
-    (.cast (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id
-      (some (Target.permanent (namedPermanent giftSetup "Grizzly Bears").id)))
+  proposeTargeted giftSetup ⟨0⟩
+    (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent giftSetup "Grizzly Bears").id)
+
+#guard proposedGift.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGift.stack.back!.targets ==
+  #[Target.permanent (namedPermanent giftSetup "Grizzly Bears").id]
+#guard proposedGift.log.any (fun s => mentions s "chooses Grizzly Bears as a target (CR 601.2c)")
 
 def paidGift : Game := mustApply proposedGift ⟨0⟩ .pay
 
@@ -1794,9 +1856,9 @@ def flashWindow : Game :=
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Gray Ogre")
 
 def paidFlashGift : Game :=
-  let g := mustApply flashWindow ⟨0⟩
-    (.cast (handCardNamed flashWindow ⟨0⟩ "Gift of Strands").id
-      (some (Target.permanent (namedPermanent flashWindow "Grizzly Bears").id)))
+  let g := proposeTargeted flashWindow ⟨0⟩
+    (handCardNamed flashWindow ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent flashWindow "Grizzly Bears").id)
   mustApply g ⟨0⟩ .pay
 
 def flashGiftEntered : Game := passBoth paidFlashGift
@@ -1809,9 +1871,9 @@ def flashGiftEntered : Game := passBoth paidFlashGift
 def giftOnNissa : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
-  let g := mustApply g ⟨0⟩
-    (.cast (handCardNamed g ⟨0⟩ "Gift of Strands").id
-      (some (Target.permanent (namedPermanent g "Grizzly Bears").id)))
+  let g := proposeTargeted g ⟨0⟩
+    (handCardNamed g ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent g "Grizzly Bears").id)
   let g := mustApply g ⟨0⟩ .pay
   keepScry (passBoth (passBoth g))
 
@@ -1828,9 +1890,14 @@ def agentGiftOnly : Game :=
 
 #guard
   match Agent.choose agentGiftOnly ⟨0⟩ with
-  | some (.cast id (some (Target.permanent tid))) =>
-    (agentGiftOnly.object! id).name == "Gift of Strands" &&
-      (agentGiftOnly.object! tid).name == "Grizzly Bears"
+  | some (.cast id) => (agentGiftOnly.object! id).name == "Gift of Strands"
+  | _ => false
+
+#guard
+  let g := mustApply agentGiftOnly ⟨0⟩
+    (.cast (handCardNamed agentGiftOnly ⟨0⟩ "Gift of Strands").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) => (g.object! tid).name == "Grizzly Bears"
   | _ => false
 
 /-- Scrying 2 with one card looks at that card; an empty library still scries. -/

@@ -11,9 +11,11 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
-casting the spells we model (CR 601), activating non-mana abilities of
-permanents (CR 602), static abilities that grant trample or pump an enchanted
-creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry (CR 701.20),
+casting the spells we model (CR 601), including announcing targets (CR 601.2c)
+and activating mana abilities while paying (CR 601.2g), activating non-mana
+abilities of permanents (CR 602), static abilities that grant trample or pump
+an enchanted creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry
+(CR 701.20),
 attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
 enters triggers (CR 603.6a), combat (CR 506–510, including CR 510.1c), cleanup
 (CR 514.3), and the state-based actions we implement (CR 704.5).
@@ -139,6 +141,8 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- The player must announce targets for the proposed spell (CR 601.2c). -/
+  | chooseTargets (caster : PlayerId)
   /-- After `pay`, choose another creature or artifact to sacrifice. -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
@@ -193,7 +197,9 @@ inductive Action where
   | pass
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
-  | cast (id : ObjectId) (target : Option Target)
+  | cast (id : ObjectId)
+  /-- Announce a target for the proposed spell (CR 601.2c). -/
+  | target (t : Target)
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
@@ -670,11 +676,32 @@ def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array 
 def legalAuraTargets (g : Game) : Array Target :=
   g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
 
-/-- Legal targets for beginning to cast `o` (CR 115.1, 303.4). -/
+/-- Legal targets for beginning to cast `o` (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   match o.printed.spellEffect with
   | some e => g.legalTargets p e
   | none => if o.printed.isAura then g.legalAuraTargets else #[]
+
+/-- Default object or player to announce as a target (CR 601.2c). Damage spells
+prefer the opponent; pumps and Auras prefer a creature the caster controls. -/
+def defaultTarget (g : Game) (p : PlayerId) (spell : GameObject) : Option Target :=
+  let legal := g.legalSpellTargets p spell
+  let preferred : Option Target :=
+    match spell.printed.spellEffect with
+    | some (.dealDamage _) => some (Target.player (g.opponent p))
+    | some (.pump _ _) | none =>
+      (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+        |>.map (fun c => Target.permanent c.id)
+  match preferred with
+  | some t => if legal.contains t then some t else legal[0]?
+  | none => legal[0]?
+
+def targetLogName (g : Game) : Target → String
+  | .player pid => (g.player pid).name
+  | .permanent oid =>
+    match g.findObject? oid with
+    | some o => o.name
+    | none => toString oid
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. -/
@@ -726,6 +753,29 @@ def reverseProposedSpell (g : Game) : Game :=
 
 def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
   g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
+
+/-- Continue after CR 601.2c: activate mana abilities (601.2g) or finish casting. -/
+def afterTargetsChosen (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    if prop.cost.includesManaPayment then
+      { g with pending := .activateManaAbilities prop.caster }
+        |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
+    else
+      let name := (g.object! prop.spellId).name
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      g.becomeCast prop.caster name
+
+/-- Write `targets` onto the stack entry for the proposed spell. -/
+def setProposedTargets (g : Game) (targets : Array Target) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with targets := targets } }
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) : Game :=
@@ -815,8 +865,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
-def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
-    Except String Game := do
+def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   let some card := g.findObject? id | throw "no such object"
@@ -827,22 +876,20 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     throw "Lands are played, not cast (CR 305)"
   if card.printed.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{card.name} has sorcery speed"
-  if card.printed.requiresTarget && target.isNone then
+  if card.printed.requiresTarget && (g.legalSpellTargets p card).isEmpty then
     throw s!"{card.name} requires a target"
-  if let some t := target then
-    if !(g.legalSpellTargets p card).contains t then
-      throw "Illegal target"
-  -- CR 601.2a: propose the spell by moving it onto the stack. Mana is not
-  -- required yet; CR 601.2g is the window to activate mana abilities.
+  -- CR 601.2a: propose the spell by moving it onto the stack. Targets are
+  -- announced at CR 601.2c; mana is not required yet (CR 601.2g).
   let cost := card.printed.manaCost
   let original := card
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
   let (g, newId) := g.move id .stack (some p)
-  let entry : StackEntry := { objectId := newId, controller := p, targets := target.toArray }
+  let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
-  if !cost.includesManaPayment then
+  let needsTarget := original.printed.requiresTarget
+  if !needsTarget && !cost.includesManaPayment then
     return g.becomeCast p original.name
   let prop : ProposedSpell := {
     caster := p
@@ -853,9 +900,28 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     stackBefore := stackBefore
     manaBefore := manaBefore
   }
-  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   let g := g.logMsg s!"{pl.name} begins casting {original.name}"
+  if needsTarget then
+    let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
+  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
+/-- Announce the chosen target for the proposed spell (CR 601.2c). -/
+def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game := do
+  match g.pending with
+  | .chooseTargets caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
+    let some prop := g.proposedSpell | throw "No spell is waiting for a target (CR 601.2c)"
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    if !(g.legalSpellTargets p spell).contains t then
+      throw "Illegal target (CR 601.2c)"
+    let g := g.setProposedTargets #[t]
+    let g := g.logMsg
+      s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
+    return g.afterTargetsChosen
+  | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
 enough mana in the pool is not required; mana abilities are activated at
@@ -1463,6 +1529,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     if caster != p then
       throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
     g.finishProposedSpell
+  | .chooseTargets _ =>
+    throw "Choose a target first (CR 601.2c)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
@@ -1725,7 +1793,8 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
-  | .cast id t => g.castSpell p id t
+  | .cast id => g.castSpell p id
+  | .target t => g.announceTarget p t
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
@@ -1748,6 +1817,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .chooseTargets p => some p
     | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p

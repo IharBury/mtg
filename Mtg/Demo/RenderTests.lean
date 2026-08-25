@@ -194,7 +194,8 @@ def mountainLine (g : Game) : String :=
 #guard lifeLine (afterCombatDamage.player ⟨1⟩) == "Nissa — life 19"
 #guard (changedZones attackingGoblin afterCombatDamage).isEmpty
 
-#guard mentions (header proposedBolt) "activate mana abilities (CR 601.2g)"
+#guard mentions (header proposedBolt) "choose targets (CR 601.2c"
+#guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard !mentions (header paidBolt) "activate mana abilities"
