@@ -741,6 +741,20 @@ def bearsBlockOgre : Game :=
 #guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
 #guard bearsBlockOgre.pending == .none
 
+-- The demo names the attacker a blocker is assigned to (CR 509.1a).
+#guard
+  let g := bearsBlockOgre
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  objectLine g bears ==
+    s!"{bears.id} Grizzly Bears {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
+  mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
+  mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
+  mentions (objectLine g ogre) "*attacking*"
+#guard !mentions
+  (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
+  "*blocking"
+
 /-- Blocking sends combat damage to the creature, not the defending player. -/
 def afterBlockedDamage : Game := passBoth bearsBlockOgre
 
