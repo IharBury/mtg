@@ -89,8 +89,9 @@ def started : Game := keepOpeningHands drawnHands 8
 #guard started.isFirstTurn
 #guard started.step == .upkeep
 
-/-- First player skipped the draw step, so after advancing to the draw step
-the active player's hand is still 7. -/
+/-- First player skipped the draw step (CR 103.8a / 500.11), so after upkeep
+the game proceeds to precombat main: no card is drawn and nobody received
+priority during the skipped step. -/
 def afterDraw : Game :=
   match Game.pass started ⟨0⟩ with
   | .error e => panic! e
@@ -99,8 +100,18 @@ def afterDraw : Game :=
     | .error e => panic! e
     | .ok g2 => g2
 
-#guard afterDraw.step == .draw
+#guard started.skipsFirstDraw
+#guard afterDraw.step == .precombatMain
 #guard (afterDraw.player ⟨0⟩).hand.size == 7
+#guard (afterDraw.player ⟨0⟩).library.size == 53
+#guard afterDraw.hasPriority ⟨0⟩
+#guard afterDraw.asSorcery? ⟨0⟩
+#guard afterDraw.canPlayLand ⟨0⟩
+#guard !afterDraw.hasPriority ⟨1⟩
+#guard afterDraw.actor == some ⟨0⟩
+#guard afterDraw.log.any (· == "Chandra skips their first draw step (CR 103.8a)")
+#guard (started.beginStep .draw).step == .precombatMain
+#guard ((started.beginStep .draw).player ⟨0⟩).hand.size == 7
 
 def played : Game :=
   Agent.play started 80
@@ -313,6 +324,20 @@ def nissaTurn2 : Game := passBoth (skipTo tappedMountain .end 80)
 #guard nissaTurn2.activePlayer == ⟨1⟩
 #guard nissaTurn2.step == .upkeep
 #guard nissaTurn2.battlefield.any (·.status.tapped)
+#guard !nissaTurn2.skipsFirstDraw
+
+/-- The second player does draw on their first turn and receives priority
+during the draw step (CR 103.8a applies only to the starting player). -/
+def nissaDraw : Game := passBoth nissaTurn2
+
+#guard nissaDraw.step == .draw
+#guard nissaDraw.playersReceivePriority
+#guard nissaDraw.hasPriority ⟨1⟩
+#guard nissaDraw.actor == some ⟨1⟩
+#guard (nissaDraw.player ⟨1⟩).hand.size == 8
+#guard (nissaDraw.player ⟨0⟩).hand.size == 7
+#guard !nissaDraw.asSorcery? ⟨1⟩
+#guard nissaDraw.log.any (fun s => mentions s "Nissa draws")
 
 /-- The pass that ends Nissa's turn also runs Chandra's untap. Occupants are
 unchanged, but the land is now untapped, so the demo reprints the battlefield. -/
