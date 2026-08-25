@@ -774,7 +774,7 @@ def targetUsage : String := "usage: target <id|name|opponent>"
 
 /-- Parse a CR 601.2c target: a permanent id, a player name, or `opponent`. -/
 def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target := do
-  let key := token.trim
+  let key := token.trimAscii.copy
   let lower := key.map Char.toLower
   if lower == "opponent" then
     return Target.player (g.opponent p)
