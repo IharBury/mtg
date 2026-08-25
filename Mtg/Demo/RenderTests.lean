@@ -282,8 +282,49 @@ def mountainLine (g : Game) : String :=
   (objectLine siegeAndOppGoblin (namedPermanent siegeAndOppGoblin "Raging Goblin"))
   "trample"
 #guard mentions (stackBlock siegeAttackDeclared) "Orcish Siegemaster's ability"
+#guard
+  let g := siegeAttackDeclared
+  let siege := namedPermanent g "Orcish Siegemaster"
+  mentions (stackBlock g) s!"*source {siege.id} Orcish Siegemaster*" &&
+    mentions (zoneBlock g .stack) s!"*source {siege.id} Orcish Siegemaster*" &&
+    mentions (snapshot g) s!"*source {siege.id} Orcish Siegemaster*"
 #guard mentions (objectLine siegePumpResolved
   (namedPermanent siegePumpResolved "Orcish Siegemaster")) "3/5"
+
+#guard
+  let g := proposedBauble
+  let bauble := baubleSource g
+  mentions (stackBlock g) s!"*source {bauble.id} Wayfarer's Bauble*" &&
+    mentions (zoneBlock g .stack) s!"*source {bauble.id} Wayfarer's Bauble*"
+#guard
+  let g := activatedHunter
+  let hunter := hunterSource g
+  mentions (stackBlock g) s!"*source {hunter.id} Snowslope Hunter*" &&
+    mentions (zoneBlock g .stack) s!"*source {hunter.id} Snowslope Hunter*"
+#guard
+  let g := goblinBlockedByBears
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  mentions (stackBlock g) s!"*source {goblin.id} Battle-Scarred Goblin*"
+#guard
+  let g := twoGoblinsOneBlocked
+  let blocked :=
+    (g.battlefield.filter (fun o => o.name == "Battle-Scarred Goblin" && o.status.blocked))[0]!
+  let unblocked :=
+    (g.battlefield.filter (fun o =>
+      o.name == "Battle-Scarred Goblin" && o.status.attacking && !o.status.blocked))[0]!
+  mentions (stackBlock g) s!"*source {blocked.id} Battle-Scarred Goblin*" &&
+    !mentions (stackBlock g) s!"*source {unblocked.id} Battle-Scarred Goblin*"
+-- Spells on the stack have no ability source.
+#guard !mentions (stackBlock proposedBolt) "*source"
+#guard !mentions (stackBlock targetedBolt) "*source"
+#guard !mentions (zoneBlock targetedBolt .stack) "*source"
+-- If the source has left play, print the last-known id (CR 113.7a / 400.7).
+#guard
+  let g0 := siegeAttackDeclared
+  let id := (namedPermanent g0 "Orcish Siegemaster").id
+  let (g, _) := g0.move id (.graveyard (g0.object! id).owner) none
+  mentions (stackBlock g) s!"*source {id}*" &&
+    !mentions (stackBlock g) s!"*source {id} Orcish Siegemaster*"
 
 #guard
   let g := giftEntered
