@@ -80,7 +80,7 @@ The first slice of the engine models the two-player game:
 - playing lands, activating mana abilities, activating other abilities of
   permanents (CR 602), playing granted cards from exile, and casting spells
   (CR 601.2, including announcing targets at 601.2c and mana abilities at 601.2g)
-- combat declaration and combat damage
+- combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample or pump an enchanted creature, attack
   triggers that pump power, becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, and enters triggers
