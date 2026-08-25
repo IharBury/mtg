@@ -114,7 +114,7 @@ def helpInteractive : String :=
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
-  activate <id>        Activate a permanent's first activated ability
+  activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
