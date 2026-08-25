@@ -50,6 +50,10 @@ open Mtg.Demo.Render
 #guard redactLogLine started ⟨0⟩ "Chandra draws Mountain" == "Chandra draws Mountain"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest on the bottom of their library" ==
   "Nissa puts a card on the bottom of their library"
+#guard redactLogLine started ⟨0⟩ "Nissa puts Forest on top of their library" ==
+  "Nissa puts a card on top of their library"
+#guard redactLogLine started ⟨0⟩ "Chandra puts Forest on top of their library" ==
+  "Chandra puts Forest on top of their library"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest onto the battlefield tapped" ==
   "Nissa puts Forest onto the battlefield tapped"
 #guard (newLog started 0 (some ⟨0⟩)).any (· == "Nissa draws a card")
@@ -194,7 +198,8 @@ def mountainLine (g : Game) : String :=
 #guard lifeLine (afterCombatDamage.player ⟨1⟩) == "Nissa — life 19"
 #guard (changedZones attackingGoblin afterCombatDamage).isEmpty
 
-#guard mentions (header proposedBolt) "activate mana abilities (CR 601.2g)"
+#guard mentions (header proposedBolt) "choose targets (CR 601.2c"
+#guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard mentions (stackBlock proposedBolt) "deals 3 damage"
@@ -209,10 +214,17 @@ def mountainLine (g : Game) : String :=
     s!"{bears.id} Grizzly Bears {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
   mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
-  mentions (objectLine g ogre) "*attacking*"
+  mentions (objectLine g ogre) "*attacking, blocked*"
 #guard !mentions
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
+
+#guard
+  let g := goblinBlockedByBears
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  mentions (objectLine g goblin) "*attacking, blocked*" &&
+    !mentions (objectLine goblinDeclaredAttacker (namedPermanent goblinDeclaredAttacker
+      "Battle-Scarred Goblin")) "*blocked"
 
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty
@@ -301,7 +313,58 @@ def mountainLine (g : Game) : String :=
 #guard !mentions (zoneBlock siegeAttackDeclared .stack) "Other Orcs and Goblins"
 #guard !mentions (stackBlock siegeAttackDeclared) "trample"
 #guard !mentions (stackBlock siegeAttackDeclared) "Trample"
+#guard
+  let g := siegeAttackDeclared
+  let siege := namedPermanent g "Orcish Siegemaster"
+  mentions (stackBlock g) s!"*source {siege.id} Orcish Siegemaster*" &&
+    mentions (zoneBlock g .stack) s!"*source {siege.id} Orcish Siegemaster*" &&
+    mentions (snapshot g) s!"*source {siege.id} Orcish Siegemaster*"
 #guard mentions (objectLine siegePumpResolved
   (namedPermanent siegePumpResolved "Orcish Siegemaster")) "3/5"
+
+#guard
+  let g := proposedBauble
+  let bauble := baubleSource g
+  mentions (stackBlock g) s!"*source {bauble.id} Wayfarer's Bauble*" &&
+    mentions (zoneBlock g .stack) s!"*source {bauble.id} Wayfarer's Bauble*"
+#guard
+  let g := activatedHunter
+  let hunter := hunterSource g
+  mentions (stackBlock g) s!"*source {hunter.id} Snowslope Hunter*" &&
+    mentions (zoneBlock g .stack) s!"*source {hunter.id} Snowslope Hunter*"
+#guard
+  let g := goblinBlockedByBears
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  mentions (stackBlock g) s!"*source {goblin.id} Battle-Scarred Goblin*"
+#guard
+  let g := twoGoblinsOneBlocked
+  let blocked :=
+    (g.battlefield.filter (fun o => o.name == "Battle-Scarred Goblin" && o.status.blocked))[0]!
+  let unblocked :=
+    (g.battlefield.filter (fun o =>
+      o.name == "Battle-Scarred Goblin" && o.status.attacking && !o.status.blocked))[0]!
+  mentions (stackBlock g) s!"*source {blocked.id} Battle-Scarred Goblin*" &&
+    !mentions (stackBlock g) s!"*source {unblocked.id} Battle-Scarred Goblin*"
+-- Spells on the stack have no ability source.
+#guard !mentions (stackBlock proposedBolt) "*source"
+#guard !mentions (stackBlock targetedBolt) "*source"
+#guard !mentions (zoneBlock targetedBolt .stack) "*source"
+-- If the source has left play, print the last-known id (CR 113.7a / 400.7).
+#guard
+  let g0 := siegeAttackDeclared
+  let id := (namedPermanent g0 "Orcish Siegemaster").id
+  let (g, _) := g0.move id (.graveyard (g0.object! id).owner) none
+  mentions (stackBlock g) s!"*source {id}*" &&
+    !mentions (stackBlock g) s!"*source {id} Orcish Siegemaster*"
+
+#guard
+  let g := giftEntered
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  objectLine g bears ==
+    s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
+  mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
+  mentions (header giftScrying) "scry 2" &&
+  mentions (snapshot giftScrying) "Scry (top last):"
 
 end Mtg.Demo.RenderTests

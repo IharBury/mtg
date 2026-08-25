@@ -26,6 +26,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.declareBlockers #[])
     | .activateManaAbilities _ =>
       chooseManaPayment g p
+    | .chooseTargets _ =>
+      chooseSpellTarget g p
     | .sacrificePermanent _ sourceId =>
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
@@ -34,6 +36,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some .keep
     | .putOnBottom _ n =>
       some (.putOnBottom ((g.player p).hand.extract 0 n))
+    | .scry _ n =>
+      some (.scry (g.scryLookedIds p n) #[])
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
@@ -47,6 +51,14 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       else
         chooseActivate g p
 where
+  /-- During CR 601.2c, announce a legal target for the proposed spell. -/
+  chooseSpellTarget (g : Game) (p : PlayerId) : Option Action :=
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | none => some .pass
+    | some spell =>
+      match g.defaultTarget p spell with
+      | some t => some (.target t)
+      | none => some .pass
   /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
   chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell with
@@ -72,7 +84,6 @@ where
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o && available.canPay o.printed.manaCost)
-    let opp := Target.player (g.opponent p)
     let ownCreature := (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
     let burn := playable.find? (fun o =>
       match o.printed.spellEffect with
@@ -88,16 +99,20 @@ where
           | some (.pump _ _) => true
           | _ => false)
       else none
+    let aura :=
+      if ownCreature.isSome then
+        playable.find? (fun o => o.printed.isAura)
+      else none
     if let some o := burn then
-      some (.cast o.id (some opp))
+      some (.cast o.id)
     else if let some o := creature then
-      some (.cast o.id none)
+      some (.cast o.id)
     else if let some o := artifact then
-      some (.cast o.id none)
+      some (.cast o.id)
     else if let some o := pump then
-      match ownCreature with
-      | some t => some (.cast o.id (some (.permanent t.id)))
-      | none => some .pass
+      some (.cast o.id)
+    else if let some o := aura then
+      some (.cast o.id)
     else
       some .pass
 

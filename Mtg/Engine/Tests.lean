@@ -238,6 +238,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions orcishSiegemaster.summary "greatest power"
 #guard orcishSiegemaster.staticAbilities.size == 1
 #guard orcishSiegemaster.triggeredAbilities.size == 1
+#guard mentions battleScarredGoblin.summary "becomes blocked"
+#guard battleScarredGoblin.triggeredAbilities.size == 1
+#guard mentions giftOfStrands.summary "flash"
+#guard mentions giftOfStrands.summary "Enchanted creature"
+#guard giftOfStrands.staticAbilities.size == 1
+#guard giftOfStrands.triggeredAbilities.size == 1
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -265,6 +271,30 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "greatest power" &&
     mentions c.summary "trample"
 
+#guard
+  let c : CardDef := {
+    name := "Silent Scar"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers]
+  }
+  mentions c.abilitiesText "becomes blocked" &&
+    mentions c.abilitiesText "each creature blocking it"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Strands"
+    types := #[.enchantment]
+    subtypes := #["Aura"]
+    keywords := { Keywords.none with flash := true }
+    staticAbilities := #[.enchantedCreatureGets 3 3]
+    triggeredAbilities := #[.onEnterScry 2]
+  }
+  mentions c.abilitiesText "Enchanted creature gets +3/+3" &&
+    mentions c.abilitiesText "scry 2" &&
+    mentions c.summary "flash"
+
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
@@ -289,6 +319,20 @@ def applyIdle (g : Game) : Game :=
     match g.apply p (.putOnBottom ((g.player p).hand.extract 0 n)) with
     | .ok g' => g'
     | .error e => panic! e
+  | .scry _ n, some p =>
+    match g.apply p (.scry (g.scryLookedIds p n) #[]) with
+    | .ok g' => g'
+    | .error e => panic! e
+  | .chooseTargets _, some p =>
+    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | none => panic! "expected a proposed spell while choosing targets"
+    | some spell =>
+      match g.defaultTarget p spell with
+      | none => panic! "no legal target (CR 601.2c)"
+      | some t =>
+        match g.apply p (.target t) with
+        | .ok g' => g'
+        | .error e => panic! e
   | _, some p =>
     match g.apply p .pass with
     | .ok g' => g'
@@ -457,13 +501,17 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .ok g' => g'
   | .error e => panic! e
 
+/-- Propose a spell (CR 601.2a) and announce its target (CR 601.2c). -/
+def proposeTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t : Target) : Game :=
+  mustApply (mustApply g p (.cast id)) p (.target t)
+
 def handCardNamed (g : Game) (p : PlayerId) (name : String) : GameObject :=
   match (g.handObjects p).find? (fun o => o.name == name) with
   | some o => o
   | none => panic! s!"expected {name} in hand"
 
-/-- CR 601.2g: a player may begin casting without mana in their pool, then
-activate mana abilities, then pay. -/
+/-- CR 601.2: a player may begin casting without mana in their pool, then
+announce a target (601.2c), activate mana abilities (601.2g), then pay. -/
 def boltSetup : Game :=
   addToHand (addUntappedLand started mountain) lightningBolt ⟨0⟩
 
@@ -482,43 +530,77 @@ def boltMountain : GameObject :=
 /-- The agent proposes a spell instead of tapping first. -/
 def agentBeginsCast : Bool :=
   match Agent.choose boltSetup ⟨0⟩ with
-  | some (.cast _ _) => true
+  | some (.cast _) => true
   | _ => false
 
 #guard agentBeginsCast
 
 def proposedBolt : Game :=
-  mustApply boltSetup ⟨0⟩ (.cast boltInHand.id (some (Target.player ⟨1⟩)))
+  mustApply boltSetup ⟨0⟩ (.cast boltInHand.id)
 
-#guard proposedBolt.pending == .activateManaAbilities ⟨0⟩
+#guard
+  match proposedBolt.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
 #guard proposedBolt.proposedSpell.isSome
 #guard !proposedBolt.stack.isEmpty
+#guard proposedBolt.stack.back!.targets.isEmpty
 #guard !(proposedBolt.player ⟨0⟩).hand.contains boltInHand.id
 #guard (proposedBolt.player ⟨0⟩).manaPool.isEmpty
 #guard !proposedBolt.hasPriority ⟨0⟩
-#guard proposedBolt.canActivateManaAbility ⟨0⟩
-#guard !proposedBolt.canActivateManaAbility ⟨1⟩
+#guard !proposedBolt.canActivateManaAbility ⟨0⟩
 #guard proposedBolt.actor == some ⟨0⟩
 #guard proposedBolt.log.any (fun s => mentions s "begins casting Lightning Bolt")
-#guard proposedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard proposedBolt.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- CR 601.2c comes before mana abilities and payment.
+#guard
+  match proposedBolt.apply ⟨0⟩ .pay with
+  | .error msg => mentions msg "Choose a target first"
+  | .ok _ => false
+#guard
+  match proposedBolt.apply ⟨0⟩ (.target (Target.permanent ⟨99999⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match proposedBolt.apply ⟨1⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "may choose targets"
+  | .ok _ => false
+
+def agentChoosesTarget : Bool :=
+  match Agent.choose proposedBolt ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+#guard agentChoosesTarget
+
+def targetedBolt : Game :=
+  mustApply proposedBolt ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard targetedBolt.pending == .activateManaAbilities ⟨0⟩
+#guard targetedBolt.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard targetedBolt.canActivateManaAbility ⟨0⟩
+#guard !targetedBolt.canActivateManaAbility ⟨1⟩
+#guard targetedBolt.log.any (fun s => mentions s "chooses Nissa as a target (CR 601.2c)")
+#guard targetedBolt.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
 
 /-- Opponent cannot activate mana abilities during the caster's 601.2g window. -/
 def nissaTapDenied : Bool :=
-  match proposedBolt.tapForMana ⟨1⟩ boltMountain.id (.colored .red) with
+  match targetedBolt.tapForMana ⟨1⟩ boltMountain.id (.colored .red) with
   | .error _ => true
   | .ok _ => false
 
 #guard nissaTapDenied
 
 def agentTapsInWindow : Bool :=
-  match Agent.choose proposedBolt ⟨0⟩ with
+  match Agent.choose targetedBolt ⟨0⟩ with
   | some (.tapForMana id _) => id == boltMountain.id
   | _ => false
 
 #guard agentTapsInWindow
 
 def tappedForBolt : Game :=
-  mustApply proposedBolt ⟨0⟩ (.tapForMana boltMountain.id (.colored .red))
+  mustApply targetedBolt ⟨0⟩ (.tapForMana boltMountain.id (.colored .red))
 
 #guard (tappedForBolt.player ⟨0⟩).manaPool.canPay lightningBolt.manaCost
 #guard tappedForBolt.pending == .activateManaAbilities ⟨0⟩
@@ -533,7 +615,7 @@ def agentPaysInWindow : Bool :=
 
 /-- Passing priority is not how the 601.2h payment is made. -/
 def passDuringWindowDenied : Bool :=
-  match proposedBolt.apply ⟨0⟩ .pass with
+  match targetedBolt.apply ⟨0⟩ .pass with
   | .error _ => true
   | .ok _ => false
 
@@ -551,7 +633,7 @@ def paidBolt : Game :=
 
 /-- Paying without enough mana reverses the cast (CR 601.2 / 733.1). -/
 def reversedBolt : Game :=
-  mustApply proposedBolt ⟨0⟩ .pay
+  mustApply targetedBolt ⟨0⟩ .pay
 
 #guard reversedBolt.pending == .none
 #guard reversedBolt.proposedSpell.isNone
@@ -567,7 +649,7 @@ def ogreSetup : Game :=
   addToHand (addUntappedLand (skipTo started .precombatMain 80) mountain) grayOgre ⟨0⟩
 
 def proposedOgre : Game :=
-  mustApply ogreSetup ⟨0⟩ (.cast (handCardNamed ogreSetup ⟨0⟩ "Gray Ogre").id none)
+  mustApply ogreSetup ⟨0⟩ (.cast (handCardNamed ogreSetup ⟨0⟩ "Gray Ogre").id)
 
 def tappedForOgre : Game :=
   mustApply proposedOgre ⟨0⟩ (.tapForMana (lastPermanent ogreSetup).id (.colored .red))
@@ -595,8 +677,9 @@ def resolvedBolt : Game :=
 #guard (resolvedBolt.player ⟨1⟩).life == 17
 #guard resolvedBolt.log.any (fun s => mentions s "casts Lightning Bolt")
 
--- The heuristic still plays, and it activates mana abilities during 601.2g.
+-- The heuristic still plays, and it announces targets then activates mana abilities.
 #guard played.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard played.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
 #guard played.log.any (fun s => mentions s "begins casting")
 
 /-- Two ready creatures: declaring a subset of attackers leaves the rest
@@ -664,6 +747,7 @@ def bearsBlockOgre : Game :=
 
 #guard (namedPermanent bearsBlockOgre "Grizzly Bears").status.blocking ==
   some (namedPermanent bearsBlockOgre "Gray Ogre").id
+#guard (namedPermanent bearsBlockOgre "Gray Ogre").status.blocked
 #guard bearsBlockOgre.log.any (fun s => mentions s "Grizzly Bears blocks Gray Ogre")
 #guard bearsBlockOgre.pending == .none
 
@@ -871,6 +955,8 @@ def proposedBauble : Game :=
   | some prop => prop.kind == .activatedAbility
   | none => false
 #guard proposedBauble.stack.size == 1
+#guard (proposedBauble.object! proposedBauble.stack.back!.objectId).sourceId ==
+  some (baubleSource proposedBauble).id
 #guard (namedPermanent proposedBauble "Wayfarer's Bauble").isOnBattlefield
 #guard proposedBauble.log.any (fun s => mentions s "begins activating Wayfarer's Bauble")
 #guard proposedBauble.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
@@ -1045,6 +1131,8 @@ def activatedHunter : Game :=
 #guard activatedHunter.proposedSpell.isNone
 #guard activatedHunter.hasPriority ⟨0⟩
 #guard activatedHunter.stack.size == 1
+#guard (activatedHunter.object! activatedHunter.stack.back!.objectId).sourceId ==
+  some (hunterSource activatedHunter).id
 #guard (namedPermanent activatedHunter "Snowslope Hunter").isOnBattlefield
 #guard !(activatedHunter.battlefield.any (fun o => o.name == "Raging Goblin"))
 #guard (activatedHunter.player ⟨0⟩).graveyard.any (fun id =>
@@ -1088,15 +1176,14 @@ def exiledBolt (g : Game) : GameObject :=
 
 -- Opponent cannot play the exiled card.
 #guard
-  match resolvedHunter.castSpell ⟨1⟩ (exiledBolt resolvedHunter).id
-      (some (Target.player ⟨0⟩)) with
+  match resolvedHunter.castSpell ⟨1⟩ (exiledBolt resolvedHunter).id with
   | .error _ => true
   | .ok _ => false
 
 -- Cast the exiled Lightning Bolt the same turn (CR 701.14).
 def proposedExiledBolt : Game :=
-  mustApply resolvedHunter ⟨0⟩
-    (.cast (exiledBolt resolvedHunter).id (some (Target.player ⟨1⟩)))
+  proposeTargeted resolvedHunter ⟨0⟩
+    (exiledBolt resolvedHunter).id (Target.player ⟨1⟩)
 
 #guard proposedExiledBolt.pending == .activateManaAbilities ⟨0⟩
 #guard !(proposedExiledBolt.objects.any (fun o => o.zone == .exile && o.name == "Lightning Bolt"))
@@ -1202,7 +1289,7 @@ def hunterPermissionExpired : Game :=
     o.zone == .exile && o.name == "Lightning Bolt") with
   | none => false
   | some o =>
-    match hunterPermissionExpired.castSpell ⟨0⟩ o.id (some (Target.player ⟨1⟩)) with
+    match hunterPermissionExpired.castSpell ⟨0⟩ o.id with
     | .error msg => mentions msg "may not play that card from exile"
     | .ok _ => false
 
@@ -1312,6 +1399,8 @@ def siegeAttackDeclared : Game :=
 #guard siegeAttackDeclared.stack.size == 1
 #guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).name ==
   "Orcish Siegemaster's ability"
+#guard (siegeAttackDeclared.object! siegeAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent siegeAttackDeclared "Orcish Siegemaster").id
 #guard siegeAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
 #guard (namedPermanent siegeAttackDeclared "Orcish Siegemaster").power == 0
 #guard siegeAttackDeclared.step == .declareAttackers
@@ -1411,5 +1500,446 @@ def afterBeornTrample : Game :=
 #guard afterBeornTrample.log.any (fun s =>
   mentions s "Beorn, Reluctant Host tramples for 3 to Nissa")
 #guard (afterBeornTrample.player ⟨1⟩).life == 17
+
+/-- Battle-Scarred Goblin vs Grizzly Bears: becomes-blocked trigger, then combat. -/
+def goblinVsBears : Game :=
+  addPermanent (addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def goblinDeclaredAttacker : Game :=
+  let g := passBoth (skipTo goblinVsBears .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+
+def goblinReadyToBlock : Game := passBoth goblinDeclaredAttacker
+
+def goblinBlockedByBears : Game :=
+  let g := goblinReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+
+#guard goblinBlockedByBears.stack.size == 1
+#guard (goblinBlockedByBears.object! goblinBlockedByBears.stack.back!.objectId).name ==
+  "Battle-Scarred Goblin's ability"
+#guard (goblinBlockedByBears.object! goblinBlockedByBears.stack.back!.objectId).sourceId ==
+  some (namedPermanent goblinBlockedByBears "Battle-Scarred Goblin").id
+#guard goblinBlockedByBears.log.any (fun s => mentions s "becomes-blocked trigger is put on the stack")
+#guard (namedPermanent goblinBlockedByBears "Battle-Scarred Goblin").status.blocked
+#guard goblinBlockedByBears.step == .declareBlockers
+#guard goblinBlockedByBears.hasPriority ⟨0⟩
+#guard (namedPermanent goblinBlockedByBears "Grizzly Bears").status.damage == 0
+
+def goblinTriggerResolved : Game := passBoth goblinBlockedByBears
+
+#guard goblinTriggerResolved.stack.isEmpty
+#guard (namedPermanent goblinTriggerResolved "Grizzly Bears").status.damage == 1
+#guard goblinTriggerResolved.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Grizzly Bears")
+#guard goblinTriggerResolved.step == .declareBlockers
+#guard goblinTriggerResolved.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (goblinTriggerResolved.player ⟨1⟩).life == 20
+
+def afterGoblinBearsCombat : Game := passBoth goblinTriggerResolved
+
+#guard afterGoblinBearsCombat.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 2 combat damage to Grizzly Bears")
+#guard afterGoblinBearsCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 2 combat damage to Battle-Scarred Goblin")
+#guard (afterGoblinBearsCombat.player ⟨1⟩).life == 20
+#guard !(afterGoblinBearsCombat.battlefield.any (fun o => o.name == "Battle-Scarred Goblin"))
+#guard !(afterGoblinBearsCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- A 1/1 blocker dies to the trigger; the Goblin stays blocked and assigns no
+combat damage (CR 509.1h / 510.1c). -/
+def goblinVsElves : Game :=
+  addPermanent (addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def goblinBlockedByElves : Game :=
+  let g := passBoth (skipTo goblinVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+
+def goblinElvesAfterTrigger : Game := passBoth goblinBlockedByElves
+
+#guard goblinElvesAfterTrigger.stack.isEmpty
+#guard goblinElvesAfterTrigger.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")
+#guard goblinElvesAfterTrigger.log.any (fun s => mentions s "Llanowar Elves dies from lethal damage")
+#guard !(goblinElvesAfterTrigger.battlefield.any (fun o => o.name == "Llanowar Elves"))
+#guard goblinElvesAfterTrigger.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨1⟩)
+#guard (namedPermanent goblinElvesAfterTrigger "Battle-Scarred Goblin").status.blocked
+#guard goblinElvesAfterTrigger.step == .declareBlockers
+#guard (goblinElvesAfterTrigger.player ⟨1⟩).life == 20
+
+def afterGoblinElvesCombat : Game := passBoth goblinElvesAfterTrigger
+
+#guard afterGoblinElvesCombat.log.any (fun s =>
+  mentions s "blocked with no remaining blockers and assigns no combat damage")
+#guard !afterGoblinElvesCombat.log.any (fun s => mentions s "combat damage to Nissa")
+#guard (afterGoblinElvesCombat.player ⟨1⟩).life == 20
+#guard afterGoblinElvesCombat.battlefield.any (fun o => o.name == "Battle-Scarred Goblin")
+#guard (namedPermanent afterGoblinElvesCombat "Battle-Scarred Goblin").status.damage == 0
+
+/-- Unblocked: the trigger does not fire, and combat damage hits the player. -/
+def afterGoblinUnblocked : Game :=
+  passBoth (mustApply goblinReadyToBlock ⟨1⟩ (.declareBlockers #[]))
+
+#guard afterGoblinUnblocked.stack.isEmpty
+#guard !afterGoblinUnblocked.log.any (fun s => mentions s "becomes-blocked trigger")
+#guard (afterGoblinUnblocked.player ⟨1⟩).life == 18
+#guard afterGoblinUnblocked.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 2 combat damage to Nissa")
+
+/-- CR 509.5c: two blockers still produce one trigger; each takes 1 damage. -/
+def goblinVsTwoElves : Game :=
+  let g := addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def goblinBlockedByTwoElves : Game :=
+  let g := passBoth (skipTo goblinVsTwoElves .beginningOfCombat 80)
+  let goblin := namedPermanent g "Battle-Scarred Goblin"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[goblin.id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(elves[0]!.id, goblin.id), (elves[1]!.id, goblin.id)])
+
+#guard goblinBlockedByTwoElves.stack.size == 1
+#guard (goblinBlockedByTwoElves.battlefield.filter (fun o =>
+  o.status.blocking.isSome)).size == 2
+
+def goblinTwoElvesAfterTrigger : Game := passBoth goblinBlockedByTwoElves
+
+#guard (goblinTwoElvesAfterTrigger.log.filter (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")).size == 2
+#guard (goblinTwoElvesAfterTrigger.battlefield.filter (fun o =>
+  o.name == "Llanowar Elves")).isEmpty
+#guard (goblinTwoElvesAfterTrigger.objects.filter (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨1⟩)).size == 2
+
+/-- Two Goblins, one blocked: only the blocked one triggers. -/
+def twoGoblinsOneBlocked : Game :=
+  let g := addPermanent started battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g battleScarredGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let goblins := g.battlefield.filter (fun o => o.name == "Battle-Scarred Goblin")
+  let g := mustApply g ⟨0⟩ (.declareAttackers (goblins.map (·.id)))
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    goblins[0]!.id)])
+
+#guard twoGoblinsOneBlocked.stack.size == 1
+#guard (twoGoblinsOneBlocked.battlefield.filter (fun o =>
+  o.name == "Battle-Scarred Goblin" && o.status.blocked)).size == 1
+#guard (twoGoblinsOneBlocked.battlefield.filter (fun o =>
+  o.name == "Battle-Scarred Goblin" && o.status.attacking && !o.status.blocked)).size == 1
+
+/-- If the source leaves before the trigger resolves, blockers are unharmed. -/
+def goblinSourceGone : Game :=
+  let g := goblinBlockedByBears
+  let id := (namedPermanent g "Battle-Scarred Goblin").id
+  let (g, _) := g.move id (.graveyard (g.object! id).owner) none
+  passBoth g
+
+#guard goblinSourceGone.stack.isEmpty
+#guard goblinSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard (namedPermanent goblinSourceGone "Grizzly Bears").status.damage == 0
+
+/-- Granted trample plus a killed 1/1 blocker: leftover damage goes to the player
+(CR 702.19d). -/
+def siegeGoblinVsElves : Game :=
+  let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
+  let g := addPermanent g battleScarredGoblin ⟨0⟩ ⟨0⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterSiegeGoblinElves : Game :=
+  let g := passBoth (skipTo siegeGoblinVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Battle-Scarred Goblin").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Battle-Scarred Goblin").id)])
+  let g := passBoth g
+  passBoth g
+
+#guard afterSiegeGoblinElves.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin deals 1 damage to Llanowar Elves")
+#guard afterSiegeGoblinElves.log.any (fun s => mentions s "Llanowar Elves dies from lethal damage")
+#guard afterSiegeGoblinElves.log.any (fun s =>
+  mentions s "Battle-Scarred Goblin tramples for 2 to Nissa")
+#guard (afterSiegeGoblinElves.player ⟨1⟩).life == 18
+#guard afterSiegeGoblinElves.battlefield.any (fun o => o.name == "Battle-Scarred Goblin")
+
+/-- Fill `p`'s mana pool with `n` green mana. -/
+def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
+  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .green) n })
+
+/-- Put `aura` onto the battlefield already attached to `host`. -/
+def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
+    (owner controller : PlayerId) : Game :=
+  let (g, id) := g.allocId
+  let (g, ts) := g.bumpTime
+  let obj : GameObject := {
+    id := id
+    printed := aura
+    owner := owner
+    controller := some controller
+    zone := .battlefield
+    timestamp := ts
+    attachedTo := some host.id
+  }
+  { g with objects := g.objects.push obj }
+
+/-- Keep the looked-at cards on top in their current order (CR 701.20). -/
+def keepScry (g : Game) : Game :=
+  match g.pending with
+  | .scry p n => mustApply g p (.scry (g.scryLookedIds p n) #[])
+  | _ => panic! "expected a pending scry"
+
+/-- Gift of Strands in hand, Grizzly Bears on the battlefield, enough mana. -/
+def giftSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
+
+#guard giftSetup.canCast ⟨0⟩ (handCardNamed giftSetup ⟨0⟩ "Gift of Strands")
+#guard giftSetup.asSorcery? ⟨0⟩
+#guard giftOfStrands.keywords.flash
+#guard !giftOfStrands.hasSorcerySpeed
+
+-- An Aura cannot be cast with no creature on the battlefield.
+#guard
+  let g := withGreenMana (addToHand afterDraw giftOfStrands ⟨0⟩) ⟨0⟩
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Gift of Strands")
+#guard
+  let g := withGreenMana (addToHand afterDraw giftOfStrands ⟨0⟩) ⟨0⟩
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gift of Strands").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Cast proposes the Aura; the target is announced as a later action (CR 601.2c).
+#guard
+  match giftSetup.apply ⟨0⟩ (.cast (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id) with
+  | .ok g' =>
+    match g'.pending with
+    | .chooseTargets ⟨0⟩ => g'.stack.back!.targets.isEmpty
+    | _ => false
+  | .error _ => false
+
+def proposedGift : Game :=
+  proposeTargeted giftSetup ⟨0⟩
+    (handCardNamed giftSetup ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent giftSetup "Grizzly Bears").id)
+
+#guard proposedGift.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGift.stack.back!.targets ==
+  #[Target.permanent (namedPermanent giftSetup "Grizzly Bears").id]
+#guard proposedGift.log.any (fun s => mentions s "chooses Grizzly Bears as a target (CR 601.2c)")
+
+def paidGift : Game := mustApply proposedGift ⟨0⟩ .pay
+
+#guard paidGift.stack.size == 1
+#guard paidGift.hasPriority ⟨0⟩
+
+/-- The Aura enters attached and the creature is immediately +3/+3; scry waits on the stack. -/
+def giftEntered : Game := passBoth paidGift
+
+#guard (namedPermanent giftEntered "Gift of Strands").attachedTo ==
+  some (namedPermanent giftEntered "Grizzly Bears").id
+#guard giftEntered.power (namedPermanent giftEntered "Grizzly Bears") == 5
+#guard giftEntered.toughness (namedPermanent giftEntered "Grizzly Bears") == 5
+#guard (namedPermanent giftEntered "Grizzly Bears").power == 2
+#guard giftEntered.stack.size == 1
+#guard giftEntered.log.any (fun s => mentions s "attached to Grizzly Bears")
+#guard giftEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+def giftScrying : Game := passBoth giftEntered
+
+#guard
+  match giftScrying.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+#guard giftScrying.actor == some ⟨0⟩
+#guard !giftScrying.hasPriority ⟨0⟩
+#guard giftScrying.log.any (fun s => mentions s "scries 2")
+#guard giftScrying.stack.isEmpty
+
+def giftScried : Game := keepScry giftScrying
+
+#guard giftScried.pending == .none
+#guard giftScried.hasPriority ⟨0⟩
+#guard giftScried.power (namedPermanent giftScried "Grizzly Bears") == 5
+
+-- The agent keeps scried cards on top.
+#guard
+  match Agent.choose giftScrying ⟨0⟩ with
+  | some (.scry top bottom) =>
+    bottom.isEmpty && top == giftScrying.scryLookedIds ⟨0⟩ 2
+  | _ => false
+
+/-- Put the current top card on the bottom; the next stays on top. -/
+def giftKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop giftEntered forest ⟨0⟩) llanowarElves ⟨0⟩
+
+def giftKnownScrying : Game := passBoth giftKnownLib
+
+def giftBottomedElves : Game :=
+  let looked := giftKnownScrying.scryLookedIds ⟨0⟩ 2
+  -- looked is [Forest, Llanowar Elves] with Elves on top.
+  mustApply giftKnownScrying ⟨0⟩ (.scry looked.pop #[looked.back!])
+
+#guard (giftBottomedElves.object! (giftBottomedElves.player ⟨0⟩).library.back!).name == "Forest"
+#guard (giftBottomedElves.object! (giftBottomedElves.player ⟨0⟩).library[0]!).name ==
+  "Llanowar Elves"
+#guard giftBottomedElves.log.any (fun s =>
+  mentions s "puts Llanowar Elves on the bottom of their library")
+
+/-- The rest may be put on top in any order (CR 701.20). -/
+def giftReorderedTop : Game :=
+  let looked := giftKnownScrying.scryLookedIds ⟨0⟩ 2
+  -- Reverse the two looked-at cards: Forest becomes the new top.
+  mustApply giftKnownScrying ⟨0⟩ (.scry looked.reverse #[])
+
+#guard (giftReorderedTop.object! (giftReorderedTop.player ⟨0⟩).library.back!).name == "Forest"
+#guard
+  let lib := (giftReorderedTop.player ⟨0⟩).library
+  (giftReorderedTop.object! lib[lib.size - 2]!).name == "Llanowar Elves"
+#guard giftReorderedTop.log.any (fun s => mentions s "puts Forest on top of their library")
+#guard giftReorderedTop.log.any (fun s =>
+  mentions s "puts Llanowar Elves on top of their library")
+#guard !(giftReorderedTop.log.any (fun s => mentions s "on the bottom of their library"))
+
+/-- The +3/+3 is a continuous effect, so it does not wear off in cleanup. -/
+def afterGiftCleanup : Game := passBoth (skipTo giftScried .end 80)
+
+#guard afterGiftCleanup.power (namedPermanent afterGiftCleanup "Grizzly Bears") == 5
+#guard (namedPermanent afterGiftCleanup "Grizzly Bears").status.pumpPower == 0
+
+/-- If the target leaves before the Aura resolves, the Aura goes to the graveyard (CR 608.3a). -/
+def giftTargetGone : Game :=
+  let id := (namedPermanent paidGift "Grizzly Bears").id
+  let (g, _) := paidGift.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard !(giftTargetGone.battlefield.any (fun o => o.name == "Gift of Strands"))
+#guard giftTargetGone.log.any (fun s => mentions s "illegal Aura target")
+#guard (giftTargetGone.player ⟨0⟩).graveyard.any (fun id =>
+  (giftTargetGone.object! id).name == "Gift of Strands")
+
+/-- If the enchanted creature leaves, the Aura becomes unattached and SBA 704.5n puts it
+in the graveyard. -/
+def afterHostLeaves : Game :=
+  let id := (namedPermanent giftScried "Grizzly Bears").id
+  let (g, _) := giftScried.move id (.graveyard ⟨0⟩) none
+  g.checkSBA
+
+#guard afterHostLeaves.log.any (fun s => mentions s "becomes unattached")
+#guard afterHostLeaves.log.any (fun s => mentions s "704.5n")
+#guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Gift of Strands"))
+#guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- A 0/0 creature survives while Gift of Strands is attached. -/
+def zeroEnchanted : Game :=
+  let g := addPermanent started zeroZero ⟨0⟩ ⟨0⟩
+  addAttachedAura g giftOfStrands (namedPermanent g "Zero/Zero") ⟨0⟩ ⟨0⟩
+
+#guard zeroEnchanted.power (namedPermanent zeroEnchanted "Zero/Zero") == 3
+#guard zeroEnchanted.toughness (namedPermanent zeroEnchanted "Zero/Zero") == 3
+#guard (zeroEnchanted.checkSBA).battlefield.any (fun o => o.name == "Zero/Zero")
+
+/-- Combat uses the enchanted power. -/
+def afterEnchantedCombat : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  passBoth g
+
+#guard afterEnchantedCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 5 combat damage to Nissa")
+#guard (afterEnchantedCombat.player ⟨1⟩).life == 15
+
+/-- Flash lets Gift of Strands be cast when it is not a main phase. -/
+def flashWindow : Game :=
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
+
+#guard flashWindow.hasPriority ⟨0⟩
+#guard !flashWindow.asSorcery? ⟨0⟩
+#guard flashWindow.canCast ⟨0⟩ (handCardNamed flashWindow ⟨0⟩ "Gift of Strands")
+#guard
+  let g := addToHand flashWindow grayOgre ⟨0⟩
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Gray Ogre")
+
+def paidFlashGift : Game :=
+  let g := proposeTargeted flashWindow ⟨0⟩
+    (handCardNamed flashWindow ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent flashWindow "Grizzly Bears").id)
+  mustApply g ⟨0⟩ .pay
+
+def flashGiftEntered : Game := passBoth paidFlashGift
+
+#guard flashGiftEntered.step == .upkeep
+#guard flashGiftEntered.activePlayer == ⟨1⟩
+#guard flashGiftEntered.power (namedPermanent flashGiftEntered "Grizzly Bears") == 5
+
+/-- You may enchant an opponent's creature. -/
+def giftOnNissa : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
+  let g := proposeTargeted g ⟨0⟩
+    (handCardNamed g ⟨0⟩ "Gift of Strands").id
+    (Target.permanent (namedPermanent g "Grizzly Bears").id)
+  let g := mustApply g ⟨0⟩ .pay
+  keepScry (passBoth (passBoth g))
+
+#guard giftOnNissa.power (namedPermanent giftOnNissa "Grizzly Bears") == 5
+#guard (namedPermanent giftOnNissa "Grizzly Bears").controller == some ⟨1⟩
+#guard (namedPermanent giftOnNissa "Gift of Strands").controller == some ⟨0⟩
+
+/-- The agent casts Gift of Strands on its own creature when that is the
+playable spell. -/
+def agentGiftOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
+
+#guard
+  match Agent.choose agentGiftOnly ⟨0⟩ with
+  | some (.cast id) => (agentGiftOnly.object! id).name == "Gift of Strands"
+  | _ => false
+
+#guard
+  let g := mustApply agentGiftOnly ⟨0⟩
+    (.cast (handCardNamed agentGiftOnly ⟨0⟩ "Gift of Strands").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) => (g.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+/-- Scrying 2 with one card looks at that card; an empty library still scries. -/
+def scryOneCard : Game :=
+  let g := { giftEntered with pending := .none, stack := #[] }
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := pl.library.extract (pl.library.size - 1) pl.library.size })
+  g.beginScry ⟨0⟩ 2
+
+#guard
+  match scryOneCard.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+
+def scryEmpty : Game :=
+  let g := { giftEntered with pending := .none, stack := #[] }
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  g.beginScry ⟨0⟩ 2
+
+#guard scryEmpty.pending == .none
+#guard scryEmpty.log.any (fun s => mentions s "no cards to look at")
 
 end Mtg.Engine.Tests

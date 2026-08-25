@@ -36,6 +36,18 @@ def controlClause (g : Game) (o : GameObject) (group : Option (Option PlayerId) 
   | [] => ""
   | ps => s!" ({String.intercalate ", " ps})"
 
+/-- Identity of an object for cross-references (blocker, Aura host, ability source). -/
+def objectRef (g : Game) (id : ObjectId) : String :=
+  match g.findObject? id with
+  | some o => s!"{o.id} {o.name}"
+  | none => toString id
+
+/-- Source of an activated or triggered ability on the stack (CR 113.7). -/
+def sourceClause (g : Game) (o : GameObject) : String :=
+  match o.sourceId with
+  | none => ""
+  | some sid => s!" *source {objectRef g sid}*"
+
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
@@ -85,21 +97,23 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
-  let atk := if o.status.attacking then " *attacking*" else ""
+  let atk :=
+    if o.status.attacking then
+      if o.status.blocked then " *attacking, blocked*" else " *attacking*"
+    else ""
   let blk :=
     match o.status.blocking with
     | none => ""
-    | some attackerId =>
-      let whom :=
-        match g.findObject? attackerId with
-        | some attacker => s!"{attacker.id} {attacker.name}"
-        | none => toString attackerId
-      s!" *blocking {whom}*"
+    | some attackerId => s!" *blocking {objectRef g attackerId}*"
   let pt :=
-    if o.printed.isCreature then s!" {o.power}/{o.toughness}" else ""
+    if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
+  let ench :=
+    match o.attachedTo with
+    | none => ""
+    | some hostId => s!" *enchanting {objectRef g hostId}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{dmg}"
+  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -140,7 +154,8 @@ def stackBlock (g : Game) : String :=
   else
     let lines := g.stack.toList.reverse.map (fun e =>
       match g.findObject? e.objectId with
-      | some o => s!"  {o.name}{stackFaceExtras o} (controlled by {g.player e.controller |>.name})"
+      | some o =>
+        s!"  {o.name}{stackFaceExtras o}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
@@ -155,6 +170,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .chooseTargets p =>
+      s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .declareMulligan p =>
@@ -162,6 +179,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .putOnBottom p n =>
       let cards := if n == 1 then "1 card" else s!"{n} cards"
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
+    | .scry p n =>
+      s!" [scry {n} ({g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""
@@ -185,10 +204,26 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
           | none => ""
         s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
-  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock)
+  let scryInfo :=
+    match g.pending with
+    | .scry p n =>
+      let canSee :=
+        match viewer with
+        | none => true
+        | some v => v == p
+      if canSee then
+        let cards := (g.scryLookedIds p n).toList.map (fun id =>
+          match g.findObject? id with
+          | some o => s!"{o.id} {o.name}"
+          | none => toString id)
+        [s!"Scry (top last): {String.intercalate ", " cards}"]
+      else
+        [s!"{(g.player p).name} is scrying {n}"]
+    | _ => []
+  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock ++ scryInfo)
 
-/-- Hide draws and library-bottoming that `viewer` is not allowed to see
-(CR 401.2, 402.2, 103.5). Other log lines are public. -/
+/-- Hide draws and library rearrangements that `viewer` is not allowed to see
+(CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
 def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
   Id.run do
     for pl in g.players do
@@ -196,10 +231,11 @@ def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
         let drawPrefix := s!"{pl.name} draws "
         if line.startsWith drawPrefix then
           return s!"{pl.name} draws a card"
-        let bottomPrefix := s!"{pl.name} puts "
-        let bottomSuffix := " on the bottom of their library"
-        if line.startsWith bottomPrefix && line.endsWith bottomSuffix then
+        let putsPrefix := s!"{pl.name} puts "
+        if line.startsWith putsPrefix && line.endsWith " on the bottom of their library" then
           return s!"{pl.name} puts a card on the bottom of their library"
+        if line.startsWith putsPrefix && line.endsWith " on top of their library" then
+          return s!"{pl.name} puts a card on top of their library"
     return line
 
 /-- New log lines starting at `startIdx`, optionally redacted for `viewer`. -/
@@ -310,7 +346,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
         match o.controller with
         | some p => s!" (controlled by {g.player p |>.name})"
         | none => ""
-      s!"{o.id} {o.name}{stackFaceExtras o}{ctrl}"
+      s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}{ctrl}"
     | .exile =>
       let extra :=
         match o.playPermission with

@@ -11,10 +11,14 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
-casting the spells we model (CR 601), activating non-mana abilities of
-permanents (CR 602), static abilities that grant trample (CR 604), attack
-triggers (CR 508.2 / 603), combat (CR 506–510), cleanup (CR 514.3), and the
-state-based actions we implement (CR 704.5).
+casting the spells we model (CR 601), including announcing targets (CR 601.2c)
+and activating mana abilities while paying (CR 601.2g), activating non-mana
+abilities of permanents (CR 602), static abilities that grant trample or pump
+an enchanted creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry
+(CR 701.20),
+attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
+enters triggers (CR 603.6a), combat (CR 506–510, including CR 510.1c), cleanup
+(CR 514.3), and the state-based actions we implement (CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -34,6 +38,9 @@ structure Status where
   pumpToughness : Int := 0
   attacking : Bool := false
   blocking : Option ObjectId := none
+  /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
+  every blocking creature leaves combat. -/
+  blocked : Bool := false
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
 deriving Repr, Inhabited, BEq
@@ -61,10 +68,12 @@ structure GameObject where
   abilityEffect : Option AbilityEffect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
   triggeredAbility : Option TriggeredAbility := none
-  /-- Source permanent of a triggered ability on the stack. -/
+  /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
+  /-- Object this Aura is attached to (CR 303.4). -/
+  attachedTo : Option ObjectId := none
 deriving Repr, Inhabited
 
 namespace GameObject
@@ -132,12 +141,16 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- The player must announce targets for the proposed spell (CR 601.2c). -/
+  | chooseTargets (caster : PlayerId)
   /-- After `pay`, choose another creature or artifact to sacrifice. -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
   | putOnBottom (player : PlayerId) (count : Nat)
+  /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
+  | scry (player : PlayerId) (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -184,7 +197,9 @@ inductive Action where
   | pass
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
-  | cast (id : ObjectId) (target : Option Target)
+  | cast (id : ObjectId)
+  /-- Announce a target for the proposed spell (CR 601.2c). -/
+  | target (t : Target)
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
@@ -200,6 +215,9 @@ inductive Action where
   | takeMulligan
   /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
   | putOnBottom (ids : Array ObjectId)
+  /-- Finish scrying: `top` (last = new top) go on top of the library in that
+  order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
+  | scry (top : Array ObjectId) (bottom : Array ObjectId)
   | concede
 deriving Repr
 
@@ -307,10 +325,23 @@ def removeFromZoneList (g : Game) (id : ObjectId) (z : Zone) : Game :=
   | .stack => { g with stack := g.stack.filter (fun e => e.objectId != id) }
   | _ => g
 
-/-- Move an object to a new zone, assigning a new object identity (CR 400.7). -/
+/-- Move an object to a new zone, assigning a new object identity (CR 400.7).
+Auras attached to a permanent that leaves the battlefield become unattached
+and remain on the battlefield (CR 400.7d). -/
+def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.attachedTo == some hostId then
+        g := g.setObject { o with attachedTo := none }
+        g := g.logMsg s!"{o.name} becomes unattached"
+    return g
+
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
   let old := g.object! id
+  let g :=
+    if old.zone == .battlefield then g.unattachFrom id else g
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime
@@ -391,7 +422,8 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
   src.printed.staticAbilities.any (fun ab =>
     match ab with
     | .otherCreaturesHaveTrample subtypes =>
-      subtypes.any target.hasSubtype)
+      subtypes.any target.hasSubtype
+    | .enchantedCreatureGets _ _ => false)
 
 /-- Whether `o` has trample, printed or granted (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
@@ -402,11 +434,44 @@ def hasTrample (g : Game) (o : GameObject) : Bool :=
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
   { o.printed.keywords with trample := g.hasTrample o }
 
+/-- Continuous +P/+T this Aura currently grants its host (CR 613.3c). -/
+def auraStatBonus (aura : GameObject) : Int × Int :=
+  aura.printed.staticAbilities.foldl
+    (fun acc ab =>
+      match ab with
+      | .enchantedCreatureGets p t => (acc.1 + p, acc.2 + t)
+      | .otherCreaturesHaveTrample _ => acc)
+    (0, 0)
+
+/-- Static power/toughness from Auras attached to `o`. -/
+def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc aura =>
+        if aura.attachedTo == some o.id then
+          let b := auraStatBonus aura
+          (acc.1 + b.1, acc.2 + b.2)
+        else acc)
+      (0, 0)
+
+/-- Current power, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+def power (g : Game) (o : GameObject) : Int :=
+  o.power + (g.attachedStatBonus o).1
+
+/-- Current toughness, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+def toughness (g : Game) (o : GameObject) : Int :=
+  o.toughness + (g.attachedStatBonus o).2
+
 /-- Greatest power among creatures `p` controls; `0` if they control none. -/
 def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
   let creatures := g.permanentsOf p |>.filter (·.printed.isCreature)
   if creatures.isEmpty then 0
-  else creatures.foldl (fun acc o => max acc o.power) (creatures[0]!.power)
+  else creatures.foldl (fun acc o => max acc (g.power o)) (g.power creatures[0]!)
+
+/-- Creatures currently blocking `attackerId`. -/
+def blockersOf (g : Game) (attackerId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun b => b.status.blocking == some attackerId)
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
 any state-based action was performed (used by CR 514.3a). -/
@@ -434,7 +499,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       for o in g.battlefield do
         if o.printed.isCreature then
-          let t := o.toughness
+          let t := g.toughness o
           if t ≤ 0 then
             g := g.logMsg s!"{o.name} dies (toughness {t})"
             let (g', _) := g.move o.id (.graveyard o.owner) none
@@ -449,6 +514,18 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             -- Simplified: any damage from a deathtouch source is tracked as
             -- ordinary damage; full 704.5h tracking is future work.
             pure ()
+      -- Unattached or illegally attached Auras (CR 704.5n).
+      for o in g.battlefield do
+        if o.printed.isAura then
+          let legal :=
+            match o.attachedTo.bind g.findObject? with
+            | some host => host.isOnBattlefield && host.printed.isCreature
+            | none => false
+          if !legal then
+            g := g.logMsg s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
+            let (g', _) := g.move o.id (.graveyard o.owner) none
+            g := g'
+            changed := true
       let living := g.livingPlayers
       if living.size == 0 then
         g := { g with result := some .draw }
@@ -468,7 +545,8 @@ def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-Attack triggers are put on the stack as they are declared (CR 508.2). -/
+Attack, becomes-blocked, and enters triggers are put on the stack as their
+events happen (CR 508.2, 509.5c, 603.6a). -/
 def hasWaitingTriggers (_g : Game) : Bool :=
   false
 
@@ -594,6 +672,37 @@ def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array 
   | .pump _ _ =>
     g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
 
+/-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
+def legalAuraTargets (g : Game) : Array Target :=
+  g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
+
+/-- Legal targets for beginning to cast `o` (CR 115.1, 303.4, 601.2c). -/
+def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
+  match o.printed.spellEffect with
+  | some e => g.legalTargets p e
+  | none => if o.printed.isAura then g.legalAuraTargets else #[]
+
+/-- Default object or player to announce as a target (CR 601.2c). Damage spells
+prefer the opponent; pumps and Auras prefer a creature the caster controls. -/
+def defaultTarget (g : Game) (p : PlayerId) (spell : GameObject) : Option Target :=
+  let legal := g.legalSpellTargets p spell
+  let preferred : Option Target :=
+    match spell.printed.spellEffect with
+    | some (.dealDamage _) => some (Target.player (g.opponent p))
+    | some (.pump _ _) | none =>
+      (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+        |>.map (fun c => Target.permanent c.id)
+  match preferred with
+  | some t => if legal.contains t then some t else legal[0]?
+  | none => legal[0]?
+
+def targetLogName (g : Game) : Target → String
+  | .player pid => (g.player pid).name
+  | .permanent oid =>
+    match g.findObject? oid with
+    | some o => o.name
+    | none => toString oid
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -601,9 +710,8 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.mayPlay p o &&
   g.hasPriority p &&
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
-  match o.printed.spellEffect with
-  | some e => !(g.legalTargets p e |>.isEmpty)
-  | none => o.printed.isPermanentCard
+  if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
+  else o.printed.isPermanentCard
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := do
   let pl := g.player p
@@ -645,6 +753,29 @@ def reverseProposedSpell (g : Game) : Game :=
 
 def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
   g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
+
+/-- Continue after CR 601.2c: activate mana abilities (601.2g) or finish casting. -/
+def afterTargetsChosen (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    if prop.cost.includesManaPayment then
+      { g with pending := .activateManaAbilities prop.caster }
+        |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
+    else
+      let name := (g.object! prop.spellId).name
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      g.becomeCast prop.caster name
+
+/-- Write `targets` onto the stack entry for the proposed spell. -/
+def setProposedTargets (g : Game) (targets : Array Target) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with targets := targets } }
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) : Game :=
@@ -734,8 +865,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
-def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target) :
-    Except String Game := do
+def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   let some card := g.findObject? id | throw "no such object"
@@ -746,23 +876,20 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     throw "Lands are played, not cast (CR 305)"
   if card.printed.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{card.name} has sorcery speed"
-  if card.printed.spellEffect.isSome && target.isNone then
+  if card.printed.requiresTarget && (g.legalSpellTargets p card).isEmpty then
     throw s!"{card.name} requires a target"
-  if let some e := card.printed.spellEffect then
-    if let some t := target then
-      if !(g.legalTargets p e).contains t then
-        throw "Illegal target"
-  -- CR 601.2a: propose the spell by moving it onto the stack. Mana is not
-  -- required yet; CR 601.2g is the window to activate mana abilities.
+  -- CR 601.2a: propose the spell by moving it onto the stack. Targets are
+  -- announced at CR 601.2c; mana is not required yet (CR 601.2g).
   let cost := card.printed.manaCost
   let original := card
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
   let (g, newId) := g.move id .stack (some p)
-  let entry : StackEntry := { objectId := newId, controller := p, targets := target.toArray }
+  let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
-  if !cost.includesManaPayment then
+  let needsTarget := original.printed.requiresTarget
+  if !needsTarget && !cost.includesManaPayment then
     return g.becomeCast p original.name
   let prop : ProposedSpell := {
     caster := p
@@ -773,9 +900,28 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (target : Option Target)
     stackBefore := stackBefore
     manaBefore := manaBefore
   }
-  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   let g := g.logMsg s!"{pl.name} begins casting {original.name}"
+  if needsTarget then
+    let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
+  let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
+/-- Announce the chosen target for the proposed spell (CR 601.2c). -/
+def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game := do
+  match g.pending with
+  | .chooseTargets caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
+    let some prop := g.proposedSpell | throw "No spell is waiting for a target (CR 601.2c)"
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    if !(g.legalSpellTargets p spell).contains t then
+      throw "Illegal target (CR 601.2c)"
+    let g := g.setProposedTargets #[t]
+    let g := g.logMsg
+      s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
+    return g.afterTargetsChosen
+  | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
 enough mana in the pool is not required; mana abilities are activated at
@@ -835,6 +981,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     zone := .stack
     timestamp := ts
     abilityEffect := some ab.effect
+    sourceId := some id
   }
   let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with
@@ -946,6 +1093,21 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
   | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
 
+/-- Top `count` cards of `p`'s library (last = current top). -/
+def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
+  let lib := (g.player p).library
+  let n := min count lib.size
+  lib.extract (lib.size - n) lib.size
+
+/-- Start scrying `n` as a keyword action during resolution (CR 701.20). -/
+def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  let count := min n pl.library.size
+  if count == 0 then
+    g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
+  else
+    { g with pending := .scry p count }.logMsg s!"{pl.name} scries {n}"
+
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) : Game :=
@@ -960,6 +1122,54 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
+  | .onBecomesBlockedDeal1ToBlockers =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let blockers := g.blockersOf o.id
+        if blockers.isEmpty then
+          g.logMsg s!"there are no creatures blocking {o.name}"
+        else
+          Id.run do
+            let mut g := g
+            for b in blockers do
+              let bNow := g.object! b.id
+              g := g.setObject { bNow with
+                status := { bNow.status with damage := bNow.status.damage + 1 } }
+              g := g.logMsg s!"{o.name} deals 1 damage to {bNow.name}"
+            return g
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
+  | .onEnterScry n =>
+    g.beginScry controller n
+
+/-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
+def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
+    (ab : TriggeredAbility) (event : String) : Game :=
+  let (g, newId) := g.allocId
+  let (g, ts) := g.bumpTime
+  let abilityObj : GameObject := {
+    id := newId
+    printed := {
+      name := s!"{source.name}'s ability"
+      types := #[]
+      oracleText := source.printed.oracleText
+    }
+    owner := source.owner
+    controller := some controller
+    zone := .stack
+    timestamp := ts
+    triggeredAbility := some ab
+    sourceId := some source.id
+  }
+  let entry : StackEntry := { objectId := newId, controller := controller, targets := #[] }
+  let g := { g with
+    objects := g.objects.push abilityObj
+    stack := g.stack.push entry
+    consecutivePasses := 0 }
+  g.logMsg s!"{source.name}'s {event} is put on the stack"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
@@ -968,31 +1178,62 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     for id in attackerIds do
       let o := g.object! id
       for ab in o.printed.triggeredAbilities do
-        match ab with
-        | .onAttackPumpByGreatestPower =>
-          let (g1, newId) := g.allocId
-          let (g1, ts) := g1.bumpTime
-          let abilityObj : GameObject := {
-            id := newId
-            printed := {
-              name := s!"{o.name}'s ability"
-              types := #[]
-              oracleText := o.printed.oracleText
-            }
-            owner := o.owner
-            controller := some p
-            zone := .stack
-            timestamp := ts
-            triggeredAbility := some ab
-            sourceId := some id
-          }
-          let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
-          g := { g1 with
-            objects := g1.objects.push abilityObj
-            stack := g1.stack.push entry
-            consecutivePasses := 0 }
-          g := g.logMsg s!"{o.name}'s attack trigger is put on the stack"
+        if ab.triggersWhenAttacking then
+          g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
     return g
+
+/-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
+def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × ObjectId)) : Game :=
+  Id.run do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for (_, attackerId) in assignments do
+      if !seen.contains attackerId then
+        seen := seen.push attackerId
+        let o := g.object! attackerId
+        match o.controller with
+        | none => pure ()
+        | some p =>
+          for ab in o.printed.triggeredAbilities do
+            if ab.triggersWhenBecomesBlocked then
+              g := g.putTriggeredAbilityOnStack p o ab "becomes-blocked trigger"
+    return g
+
+/-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a). -/
+def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
+  match o.controller with
+  | none => g
+  | some p =>
+    Id.run do
+      let mut g := g
+      for ab in o.printed.triggeredAbilities do
+        if ab.triggersWhenEntering then
+          g := g.putTriggeredAbilityOnStack p o ab "enters trigger"
+      return g
+
+/-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
+def isLegalAuraHost (host : GameObject) : Bool :=
+  host.isOnBattlefield && host.printed.isCreature
+
+/-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
+def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
+  let toGraveyard (g : Game) : Game :=
+    let (g, _) := g.move obj.id (.graveyard obj.owner) none
+    g.logMsg s!"{obj.name} goes to the graveyard (illegal Aura target)"
+  match entry.targets[0]? with
+  | some (Target.permanent hostId) =>
+    match g.findObject? hostId with
+    | some host =>
+      if isLegalAuraHost host then
+        let (g, newId) := g.move obj.id .battlefield (some entry.controller)
+        let o := g.object! newId
+        let g := g.setObject { o with attachedTo := some host.id }
+        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        g.putEnterTriggersOnStack (g.object! newId)
+      else
+        toGraveyard g
+    | none => toGraveyard g
+  | _ => toGraveyard g
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -1014,12 +1255,15 @@ def resolveTop (g : Game) : Game :=
           if let some e := obj.printed.spellEffect then
             g.applyEffect entry.controller e entry.targets
           else g
-        if obj.printed.isPermanentCard && !obj.printed.isLand then
+        if obj.printed.isAura then
+          g.resolveAuraSpell entry obj
+        else if obj.printed.isPermanentCard && !obj.printed.isLand then
           let (g, newId) := g.move obj.id .battlefield (some entry.controller)
           let o := g.object! newId
           let sick := o.printed.isCreature && !o.printed.keywords.haste
           let g := g.setObject { o with status := { o.status with summoningSick := sick } }
-          g.logMsg s!"{o.name} enters the battlefield"
+          let g := g.logMsg s!"{o.name} enters the battlefield"
+          g.putEnterTriggersOnStack (g.object! newId)
         else
           let owner := obj.owner
           let (g, _) := g.move obj.id (.graveyard owner) none
@@ -1053,9 +1297,12 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     if !g.canBlock b a then
       throw s!"{b.name} cannot block {a.name}"
     g := g.setObject { b with status := { b.status with blocking := some attackerId } }
+    let aNow := g.object! attackerId
+    g := g.setObject { aNow with status := { aNow.status with blocked := true } }
     g := g.logMsg s!"{b.name} blocks {a.name}"
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
+  g := g.putBlockedTriggersOnStack assignments
   return { g with pending := .none } |>.receivePriority g.activePlayer
 
 def combatDamage (g : Game) : Game :=
@@ -1063,20 +1310,32 @@ def combatDamage (g : Game) : Game :=
     let mut g := g
     let attackers := g.battlefield.filter (·.status.attacking)
     for a in attackers do
-      let blockers := g.battlefield.filter (fun b => b.status.blocking == some a.id)
+      let blockers := g.blockersOf a.id
       if blockers.isEmpty then
-        let defn := g.opponent g.activePlayer
-        let dmg := max a.power 0
-        if dmg > 0 then
-          let pl := g.player defn
-          g := g.setPlayer { pl with life := pl.life - dmg }
-          g := g.logMsg s!"{a.name} deals {dmg} combat damage to {pl.name} ({(g.player defn).life} life)"
+        if a.status.blocked && !g.hasTrample a then
+          -- CR 510.1c: a blocked creature with no remaining blockers assigns none.
+          g := g.logMsg
+            s!"{a.name} is blocked with no remaining blockers and assigns no combat damage (CR 510.1c)"
+        else
+          let defn := g.opponent g.activePlayer
+          let dmg := max (g.power a) 0
+          if dmg > 0 then
+            let pl := g.player defn
+            g := g.setPlayer { pl with life := pl.life - dmg }
+            -- Blocked with trample and no remaining blockers: all damage to the
+            -- player (CR 702.19d). Unblocked creatures deal combat damage.
+            if a.status.blocked then
+              g := g.logMsg
+                s!"{a.name} tramples for {dmg} to {pl.name} ({(g.player defn).life} life)"
+            else
+              g := g.logMsg
+                s!"{a.name} deals {dmg} combat damage to {pl.name} ({(g.player defn).life} life)"
       else
         -- All combat damage from the attacker is assigned to the first blocker;
         -- leftover trample damage goes to the defending player.
         let b := blockers[0]!
-        let dmg := max a.power 0
-        let lethal := max b.toughness 0
+        let dmg := max (g.power a) 0
+        let lethal := max (g.toughness b) 0
         let trampling := g.hasTrample a
         let toBlocker := if trampling then min dmg lethal else dmg
         let toPlayer := if trampling then dmg - toBlocker else 0
@@ -1087,7 +1346,7 @@ def combatDamage (g : Game) : Game :=
           let pl := g.player defn
           g := g.setPlayer { pl with life := pl.life - toPlayer }
           g := g.logMsg s!"{a.name} tramples for {toPlayer} to {pl.name} ({(g.player defn).life} life)"
-        let back := max b.power 0
+        let back := max (g.power b) 0
         if back > 0 then
           let aNow := g.object! a.id
           g := g.setObject { aNow with status := { aNow.status with damage := aNow.status.damage + back } }
@@ -1098,8 +1357,9 @@ def clearCombat (g : Game) : Game :=
   Id.run do
     let mut g := g
     for o in g.battlefield do
-      if o.status.attacking || o.status.blocking.isSome then
-        g := g.setObject { o with status := { o.status with attacking := false, blocking := none } }
+      if o.status.attacking || o.status.blocking.isSome || o.status.blocked then
+        g := g.setObject { o with
+          status := { o.status with attacking := false, blocking := none, blocked := false } }
     return g
 
 def clearEOT (g : Game) : Game :=
@@ -1270,6 +1530,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     if caster != p then
       throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
     g.finishProposedSpell
+  | .chooseTargets _ =>
+    throw "Choose a target first (CR 601.2c)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
@@ -1286,6 +1548,8 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.consecutivePasses ≥ g.livingPlayers.size then
     if !g.stack.isEmpty then
       let g := g.resolveTop
+      if g.pending != .none then
+        return g
       return g.receivePriority g.activePlayer
     else
       return g.advanceStep
@@ -1435,6 +1699,37 @@ def uniqueObjectIds (ids : Array ObjectId) : Bool :=
       seen := seen.push id
     return true
 
+def isPermutation (a b : Array ObjectId) : Bool :=
+  a.size == b.size && uniqueObjectIds a && a.all (fun x => b.contains x)
+
+/-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
+on top (last = new top) of the library, each pile in the given order (CR 701.20). -/
+def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .scry q count =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may scry"
+    if !uniqueObjectIds (top ++ bottom) then
+      throw "Duplicate card"
+    let looked := g.scryLookedIds p count
+    if !isPermutation (top ++ bottom) looked then
+      throw "Scry must rearrange the cards you looked at (CR 701.20)"
+    let pl := g.player p
+    let lower := pl.library.extract 0 (pl.library.size - count)
+    let mut g := g
+    for id in bottom do
+      g := g.logMsg
+        s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
+    if top != looked then
+      for id in top do
+        g := g.logMsg
+          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
+    g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
+    g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to scry (CR 701.20)"
+
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .declareMulligan q =>
@@ -1503,7 +1798,8 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
-  | .cast id t => g.castSpell p id t
+  | .cast id => g.castSpell p id
+  | .target t => g.announceTarget p t
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
@@ -1512,6 +1808,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .keep => g.keepOpeningHand p
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
+  | .scry top bottom => g.finishScry p top bottom
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -1525,9 +1822,11 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .chooseTargets p => some p
     | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
+    | .scry p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

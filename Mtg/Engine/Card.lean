@@ -14,6 +14,7 @@ namespace Mtg.Engine
 
 /-- Keyword abilities that the engine currently understands. -/
 structure Keywords where
+  flash : Bool := false
   haste : Bool := false
   flying : Bool := false
   reach : Bool := false
@@ -27,6 +28,7 @@ namespace Keywords
 def none : Keywords := {}
 
 def toList (k : Keywords) : List String :=
+  (if k.flash then ["flash"] else []) ++
   (if k.haste then ["haste"] else []) ++
   (if k.flying then ["flying"] else []) ++
   (if k.reach then ["reach"] else []) ++
@@ -144,6 +146,8 @@ inductive StaticAbility where
   /-- Other creatures you control that have any of these subtypes have trample
   (e.g. Orcish Siegemaster). -/
   | otherCreaturesHaveTrample (subtypes : Array String)
+  /-- Enchanted creature gets +P/+T (e.g. Gift of Strands). -/
+  | enchantedCreatureGets (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -156,6 +160,8 @@ def toNotation : StaticAbility → String
   | .otherCreaturesHaveTrample subtypes =>
     let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
     s!"Other {who} you control have trample."
+  | .enchantedCreatureGets p t =>
+    s!"Enchanted creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -167,6 +173,11 @@ inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
   is the greatest power among creatures you control. -/
   | onAttackPumpByGreatestPower
+  /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
+  blocking it (e.g. Battle-Scarred Goblin). -/
+  | onBecomesBlockedDeal1ToBlockers
+  /-- When this permanent enters, scry `n` (e.g. Gift of Strands). -/
+  | onEnterScry (n : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
@@ -174,6 +185,25 @@ namespace TriggeredAbility
 def toNotation : TriggeredAbility → String
   | .onAttackPumpByGreatestPower =>
     "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+  | .onBecomesBlockedDeal1ToBlockers =>
+    "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
+  | .onEnterScry n =>
+    s!"When this permanent enters, scry {n}."
+
+/-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
+def triggersWhenAttacking : TriggeredAbility → Bool
+  | .onAttackPumpByGreatestPower => true
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ => false
+
+/-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
+def triggersWhenBecomesBlocked : TriggeredAbility → Bool
+  | .onBecomesBlockedDeal1ToBlockers => true
+  | .onAttackPumpByGreatestPower | .onEnterScry _ => false
+
+/-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
+def triggersWhenEntering : TriggeredAbility → Bool
+  | .onEnterScry _ => true
+  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -219,14 +249,22 @@ def isCreature (c : CardDef) : Bool := c.types.any (· == .creature)
 def isArtifact (c : CardDef) : Bool := c.types.any (· == .artifact)
 def isInstant (c : CardDef) : Bool := c.types.any (· == .instant)
 def isSorcery (c : CardDef) : Bool := c.types.any (· == .sorcery)
+def isEnchantment (c : CardDef) : Bool := c.types.any (· == .enchantment)
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
+/-- Aura subtype on an Enchantment (CR 303.4). -/
+def isAura (c : CardDef) : Bool :=
+  c.isEnchantment && c.subtypes.any (· == "Aura")
 
 /-- Timing of a sorcery: also the default for permanent spells without flash (CR 302.1, 307.1). -/
 def hasSorcerySpeed (c : CardDef) : Bool :=
-  !c.isInstant && !c.isLand
+  !c.isInstant && !c.isLand && !c.keywords.flash
 
 def hasInstantSpeed (c : CardDef) : Bool :=
-  c.isInstant
+  c.isInstant || c.keywords.flash
+
+/-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
+def requiresTarget (c : CardDef) : Bool :=
+  c.spellEffect.isSome || c.isAura
 
 def manaValue (c : CardDef) : Nat := c.manaCost.manaValue
 
@@ -310,7 +348,9 @@ instance : ToString CardDef where
   toString := summary
 
 #guard toString ({ Keywords.none with haste := true } : Keywords) == "haste"
+#guard toString ({ Keywords.none with flash := true } : Keywords) == "flash"
 #guard CardDef.isKeywordRestatement { Keywords.none with haste := true } "Haste"
+#guard CardDef.isKeywordRestatement { Keywords.none with flash := true } "Flash"
 #guard CardDef.isKeywordRestatement
   { Keywords.none with reach := true, deathtouch := true } "Reach, deathtouch"
 #guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
@@ -325,8 +365,18 @@ instance : ToString CardDef where
   (toString ab).startsWith "{2}, {T}, Sacrifice:"
 #guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
   "Other Orcs and Goblins you control have trample."
+#guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==
+  "Enchanted creature gets +3/+3."
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+#guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
+  "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
+#guard TriggeredAbility.toNotation (.onEnterScry 2) ==
+  "When this permanent enters, scry 2."
+#guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
+#guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
+#guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
+#guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
 
 end CardDef
 
