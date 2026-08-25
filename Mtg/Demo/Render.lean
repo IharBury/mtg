@@ -77,7 +77,9 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     | some hostId => s!" *enchanting {objectRef g hostId}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
-  s!"{o.id} {o.name}{pt}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
+  let counters :=
+    if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
+  s!"{o.id} {o.name}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -134,6 +136,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
     | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .chooseMode p =>
+      s!" [choose a mode (CR 601.2b, {g.player p |>.name})]"
     | .chooseTargets p =>
       s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
     | .sacrificePermanent p _ =>

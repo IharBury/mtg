@@ -138,6 +138,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   cast <id>            Begin casting a spell (CR 601.2a)
+  mode <n>             Choose a mode for a modal spell (CR 601.2b / 700.2)
   target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
@@ -160,6 +161,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
 #guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
+#guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 
@@ -860,6 +862,59 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g''.stack.back!.targets == #[Target.permanent tid]
     | .error _ => false
 
+def modeUsage : String := "usage: mode <n>"
+
+/-- Announce a 1-based mode for a modal spell (CR 601.2b / 700.2). -/
+def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match arg.toNat? with
+    | none => throw modeUsage
+    | some 0 => throw modeUsage
+    | some n => g.apply p (.chooseMode (n - 1))
+  | _ => throw modeUsage
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ [] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["nope"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["0"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == modeUsage
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["3"] with
+  | .error msg => Tests.mentions msg "No such mode"
+  | .ok _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 0 &&
+    g'.log.any (fun s => Tests.mentions s "chooses mode 1")
+  | .error _ => false
+
+#guard
+  match applyMode Tests.proposedWarg ⟨0⟩ ["2"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 1
+  | .error _ => false
+
 def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
 /-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
@@ -980,6 +1035,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "activate" => applyActivate g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
+  | "mode" => applyMode g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | _ => .error s!"Unknown command: {cmd}"
@@ -1034,6 +1090,13 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 #guard
   match applyInteractiveAsActor Tests.giftScrying "scry" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedWarg "mode" ["1"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.chosenMode == some 0
   | .error _ => false
 
 #guard

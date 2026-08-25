@@ -11,14 +11,16 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
-casting the spells we model (CR 601), including announcing targets (CR 601.2c)
-and activating mana abilities while paying (CR 601.2g), activating non-mana
-abilities of permanents (CR 602), static abilities that grant trample or pump
-an enchanted creature (CR 604), Aura spells (CR 303.4), flash (CR 702.8), scry
-(CR 701.20),
-attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
-enters triggers (CR 603.6a), combat (CR 506–510, including CR 510.1c), cleanup
-(CR 514.3), and the state-based actions we implement (CR 704.5).
+casting the spells we model (CR 601), including choosing modes of modal spells
+(CR 601.2b / 700.2), announcing targets (CR 601.2c) and activating mana
+abilities while paying (CR 601.2g), activating non-mana abilities of permanents
+(CR 602), static abilities that grant trample or pump an enchanted creature
+(CR 604), Aura spells (CR 303.4), flash (CR 702.8), hexproof (CR 702.11), scry
+(CR 701.20), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
+keyword grants, attack triggers (CR 508.2 / 603), becomes-blocked triggers
+(CR 509.5c / 603), enters triggers (CR 603.6a), combat (CR 506–510, including
+CR 510.1c), cleanup (CR 514.3), and the state-based actions we implement
+(CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -43,6 +45,11 @@ structure Status where
   blocked : Bool := false
   /-- Non-mana activations this turn, for “only once each turn”. -/
   activationsThisTurn : Nat := 0
+  /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
+  plusOnePlusOne : Nat := 0
+  /-- Granted until end of turn (cleared in cleanup, CR 514.3). -/
+  untilEotTrample : Bool := false
+  untilEotHexproof : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Permission to play a card from exile (CR 701.14), e.g. Snowslope Hunter. -/
@@ -81,10 +88,10 @@ namespace GameObject
 def name (o : GameObject) : String := o.printed.name
 
 def power (o : GameObject) : Int :=
-  (o.printed.power.getD 0) + o.status.pumpPower
+  (o.printed.power.getD 0) + o.status.pumpPower + (o.status.plusOnePlusOne : Int)
 
 def toughness (o : GameObject) : Int :=
-  (o.printed.toughness.getD 0) + o.status.pumpToughness
+  (o.printed.toughness.getD 0) + o.status.pumpToughness + (o.status.plusOnePlusOne : Int)
 
 def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
 
@@ -106,6 +113,8 @@ structure StackEntry where
   objectId : ObjectId
   controller : PlayerId
   targets : Array Target
+  /-- Chosen mode index for a modal spell (CR 700.2). -/
+  chosenMode : Option Nat := none
 deriving Repr, Inhabited
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
@@ -141,6 +150,8 @@ inductive Pending where
   | declareBlockers
   /-- The player may activate mana abilities before paying (CR 601.2g). -/
   | activateManaAbilities (caster : PlayerId)
+  /-- The player must announce a mode for a modal spell (CR 601.2b / 700.2). -/
+  | chooseMode (caster : PlayerId)
   /-- The player must announce targets for the proposed spell (CR 601.2c). -/
   | chooseTargets (caster : PlayerId)
   /-- After `pay`, choose another creature or artifact to sacrifice. -/
@@ -198,6 +209,8 @@ inductive Action where
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
   | cast (id : ObjectId)
+  /-- Announce a mode for a modal spell (CR 601.2b / 700.2). -/
+  | chooseMode (idx : Nat)
   /-- Announce a target for the proposed spell (CR 601.2c). -/
   | target (t : Target)
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
@@ -403,13 +416,17 @@ def canAttack (g : Game) (o : GameObject) : Bool :=
   !o.status.tapped && !o.printed.keywords.defender &&
   (!o.status.summoningSick || o.printed.keywords.haste)
 
+/-- Whether `o` has flying, printed or granted (CR 702.9). -/
+def hasFlying (_g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.flying
+
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
   blocker.isOnBattlefield && blocker.printed.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
   attacker.status.attacking &&
-  (!attacker.printed.keywords.flying ||
-    blocker.printed.keywords.flying || blocker.printed.keywords.reach)
+  (!g.hasFlying attacker ||
+    g.hasFlying blocker || blocker.printed.keywords.reach)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (src target : GameObject) : Bool :=
@@ -425,14 +442,24 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
       subtypes.any target.hasSubtype
     | .enchantedCreatureGets _ _ => false)
 
-/-- Whether `o` has trample, printed or granted (CR 702.19, 604.2). -/
+/-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
+def hasHexproof (_g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.hexproof ||
+  (o.isOnBattlefield && o.status.untilEotHexproof)
+
+/-- Whether `o` has trample, printed, granted until end of turn, or granted by
+a static ability (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
   o.printed.keywords.trample ||
+  (o.isOnBattlefield && o.status.untilEotTrample) ||
   (o.isOnBattlefield && g.battlefield.any (fun src => grantsTrampleTo src o))
 
-/-- Keywords including those granted by static abilities. -/
+/-- Keywords including those granted by static abilities and until-EOT effects. -/
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
-  { o.printed.keywords with trample := g.hasTrample o }
+  { o.printed.keywords with
+    flying := g.hasFlying o
+    hexproof := g.hasHexproof o
+    trample := g.hasTrample o }
 
 /-- Continuous +P/+T this Aura currently grants its host (CR 613.3c). -/
 def auraStatBonus (aura : GameObject) : Int × Int :=
@@ -663,33 +690,93 @@ def availableMana (g : Game) (p : PlayerId) : ManaPool :=
       | none => pool)
     (g.player p).manaPool
 
-def legalTargets (g : Game) (_caster : PlayerId) (effect : SpellEffect) : Array Target :=
+/-- Whether `caster` may target `o` (CR 115.1, 702.11b). -/
+def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject) : Bool :=
+  !g.hasHexproof o || o.controlledBy caster
+
+/-- Battlefield creatures matching `pred` that `caster` may target. -/
+def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → Bool) :
+    Array Target :=
+  g.battlefield.filter (fun o =>
+    o.printed.isCreature && pred o && g.canBeTargetedBy caster o)
+  |>.map (fun o => Target.permanent o.id)
+
+def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
   match effect with
   | .dealDamage _ =>
     let players := g.livingPlayers.map (fun pl => Target.player pl.id)
-    let creatures := g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
-    players ++ creatures
+    players ++ g.legalCreatureTargets caster (fun _ => true)
   | .pump _ _ =>
-    g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
+    g.legalCreatureTargets caster (fun _ => true)
+  | .destroyCreatureWithFlying =>
+    g.legalCreatureTargets caster (fun o => g.hasFlying o)
+  | .plusOnePlusOneTrampleHexproof =>
+    g.legalCreatureTargets caster (fun o => o.controlledBy caster)
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
-def legalAuraTargets (g : Game) : Array Target :=
-  g.battlefield.filter (·.printed.isCreature) |>.map (fun o => Target.permanent o.id)
+def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
+  g.legalCreatureTargets caster (fun _ => true)
 
-/-- Legal targets for beginning to cast `o` (CR 115.1, 303.4, 601.2c). -/
+/-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
+def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
+  match g.stack.find? (fun e => e.objectId == o.id) with
+  | some e => e.chosenMode
+  | none => none
+
+/-- Spell effect after a modal choice, if one has been announced (CR 700.2). -/
+def currentSpellEffect (g : Game) (o : GameObject) : Option SpellEffect :=
+  if o.printed.isModal then
+    match g.chosenModeOf o with
+    | some i => o.printed.spellModes[i]?
+    | none => none
+  else
+    o.printed.spellEffect
+
+/-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
-  match o.printed.spellEffect with
-  | some e => g.legalTargets p e
-  | none => if o.printed.isAura then g.legalAuraTargets else #[]
+  if o.printed.isModal && (g.chosenModeOf o).isNone then
+    o.printed.spellModes.foldl (fun acc e => acc ++ g.legalTargets p e) #[]
+  else
+    match g.currentSpellEffect o with
+    | some e => g.legalTargets p e
+    | none => if o.printed.isAura then g.legalAuraTargets p else #[]
+
+/-- Legal mode indices for a modal spell (CR 700.2d). -/
+def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
+  if !o.printed.isModal then #[]
+  else
+    Id.run do
+      let mut acc : Array Nat := #[]
+      for i in [0:o.printed.spellModes.size] do
+        if !(g.legalTargets p o.printed.spellModes[i]!).isEmpty then
+          acc := acc.push i
+      return acc
+
+/-- Default mode: destroy an opponent's flyer if that mode is legal, else the
+first legal mode. -/
+def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
+  let legal := g.legalModes p spell
+  let destroyIdx := legal.find? (fun i =>
+    match spell.printed.spellModes[i]? with
+    | some .destroyCreatureWithFlying => true
+    | _ => false)
+  match destroyIdx with
+  | some i => some i
+  | none => legal[0]?
 
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
-prefer the opponent; pumps and Auras prefer a creature the caster controls. -/
+prefer the opponent; destroy-flying prefers an opponent's flyer; pumps, the
++1/+1-counter mode, and Auras prefer a creature the caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (spell : GameObject) : Option Target :=
   let legal := g.legalSpellTargets p spell
   let preferred : Option Target :=
-    match spell.printed.spellEffect with
+    match g.currentSpellEffect spell with
     | some (.dealDamage _) => some (Target.player (g.opponent p))
-    | some (.pump _ _) | none =>
+    | some .destroyCreatureWithFlying =>
+      (g.permanentsOf (g.opponent p)).filter (fun o =>
+        o.printed.isCreature && g.hasFlying o && g.canBeTargetedBy p o)
+      |>.back?.map (fun c => Target.permanent c.id)
+    | some (.pump _ _) | some .plusOnePlusOneTrampleHexproof | none =>
       (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
   match preferred with
@@ -776,6 +863,16 @@ def setProposedTargets (g : Game) (targets : Array Target) : Game :=
     | none => g
     | some i =>
       { g with stack := g.stack.set! i { g.stack[i]! with targets := targets } }
+
+/-- Record the chosen mode on the proposed spell's stack entry (CR 700.2). -/
+def setProposedMode (g : Game) (mode : Nat) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    match g.stack.findIdx? (fun e => e.objectId == prop.spellId) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with chosenMode := some mode } }
 
 def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceId : Option ObjectId := none) : Game :=
@@ -876,10 +973,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := 
     throw "Lands are played, not cast (CR 305)"
   if card.printed.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{card.name} has sorcery speed"
-  if card.printed.requiresTarget && (g.legalSpellTargets p card).isEmpty then
+  if (card.printed.requiresTarget || card.printed.isModal) &&
+      (g.legalSpellTargets p card).isEmpty then
     throw s!"{card.name} requires a target"
-  -- CR 601.2a: propose the spell by moving it onto the stack. Targets are
-  -- announced at CR 601.2c; mana is not required yet (CR 601.2g).
+  -- CR 601.2a: propose the spell by moving it onto the stack. Modes are
+  -- announced at CR 601.2b, targets at CR 601.2c; mana is not required yet
+  -- (CR 601.2g).
   let cost := card.printed.manaCost
   let original := card
   let handBefore := pl.hand
@@ -888,8 +987,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := 
   let (g, newId) := g.move id .stack (some p)
   let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
-  let needsTarget := original.printed.requiresTarget
-  if !needsTarget && !cost.includesManaPayment then
+  let needsMode := original.printed.isModal
+  let needsTarget := original.printed.requiresTarget && !needsMode
+  if !needsMode && !needsTarget && !cost.includesManaPayment then
     return g.becomeCast p original.name
   let prop : ProposedSpell := {
     caster := p
@@ -901,11 +1001,34 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := 
     manaBefore := manaBefore
   }
   let g := g.logMsg s!"{pl.name} begins casting {original.name}"
+  if needsMode then
+    let g := { g with pending := .chooseMode p, proposedSpell := some prop }
+    return g.logMsg s!"{pl.name} must choose a mode (CR 601.2b / 700.2)"
   if needsTarget then
     let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
     return g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
   let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
+
+/-- Announce the chosen mode for a modal spell (CR 601.2b / 700.2). -/
+def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := do
+  match g.pending with
+  | .chooseMode caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose a mode (CR 601.2b)"
+    let some prop := g.proposedSpell | throw "No spell is waiting for a mode (CR 601.2b)"
+    let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+    if !spell.printed.isModal then
+      throw "That spell is not modal (CR 700.2)"
+    let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
+    if (g.legalTargets p effect).isEmpty then
+      throw "That mode has no legal target (CR 700.2d)"
+    let g := g.setProposedMode mode
+    let g := g.logMsg
+      s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
+    let g := { g with pending := .chooseTargets p }
+    return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+  | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- Announce the chosen target for the proposed spell (CR 601.2c). -/
 def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game := do
@@ -1028,26 +1151,62 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     return g.becomeActivated p sourceName (some sourceId)
   | _ => throw "Not time to sacrifice a permanent"
 
-def applyEffect (g : Game) (_controller : PlayerId) (effect : SpellEffect)
+def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
+  let illegal : Game := g.logMsg "The target is illegal"
   match effect, targets[0]? with
   | .dealDamage n, some (Target.player pid) =>
-    let pl := g.player pid
-    let g := g.setPlayer { pl with life := pl.life - n }
-    g.logMsg s!"{pl.name} is dealt {n} damage ({g.player pid |>.life} life)"
+    if !(g.legalTargets controller (.dealDamage n)).contains (Target.player pid) then
+      illegal
+    else
+      let pl := g.player pid
+      let g := g.setPlayer { pl with life := pl.life - n }
+      g.logMsg s!"{pl.name} is dealt {n} damage ({g.player pid |>.life} life)"
   | .dealDamage n, some (Target.permanent oid) =>
     match g.findObject? oid with
     | none => g.logMsg "The target is no longer in play"
     | some o =>
-      let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
-      g.logMsg s!"{o.name} is dealt {n} damage"
+      if !(g.legalTargets controller (.dealDamage n)).contains (Target.permanent oid) then
+        illegal
+      else
+        let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
+        g.logMsg s!"{o.name} is dealt {n} damage"
   | .pump pw tw, some (Target.permanent oid) =>
     match g.findObject? oid with
     | none => g.logMsg "The target is no longer in play"
     | some o =>
-      let g := g.setObject { o with
-        status := { o.status with pumpPower := o.status.pumpPower + pw, pumpToughness := o.status.pumpToughness + tw } }
-      g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+      if !(g.legalTargets controller (.pump pw tw)).contains (Target.permanent oid) then
+        illegal
+      else
+        let g := g.setObject { o with
+          status := { o.status with pumpPower := o.status.pumpPower + pw, pumpToughness := o.status.pumpToughness + tw } }
+        g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+  | .destroyCreatureWithFlying, some (Target.permanent oid) =>
+    match g.findObject? oid with
+    | none => g.logMsg "The target is no longer in play"
+    | some o =>
+      if !(g.legalTargets controller .destroyCreatureWithFlying).contains
+          (Target.permanent oid) then
+        illegal
+      else
+        let g := g.logMsg s!"{o.name} is destroyed"
+        let (g, _) := g.move oid (.graveyard o.owner) none
+        g
+  | .plusOnePlusOneTrampleHexproof, some (Target.permanent oid) =>
+    match g.findObject? oid with
+    | none => g.logMsg "The target is no longer in play"
+    | some o =>
+      if !(g.legalTargets controller .plusOnePlusOneTrampleHexproof).contains
+          (Target.permanent oid) then
+        illegal
+      else
+        let g := g.setObject { o with
+          status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne + 1
+            untilEotTrample := true
+            untilEotHexproof := true } }
+        g.logMsg
+          s!"{o.name} gets a +1/+1 counter and gains trample and hexproof until end of turn"
   | _, _ => g
 
 /-- Search `p`'s library for a basic land card, put it onto the battlefield
@@ -1252,9 +1411,16 @@ def resolveTop (g : Game) : Game :=
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else
         let g :=
-          if let some e := obj.printed.spellEffect then
-            g.applyEffect entry.controller e entry.targets
-          else g
+          let effect? :=
+            if obj.printed.isModal then
+              match entry.chosenMode with
+              | some i => obj.printed.spellModes[i]?
+              | none => none
+            else
+              obj.printed.spellEffect
+          match effect? with
+          | some e => g.applyEffect entry.controller e entry.targets
+          | none => g
         if obj.printed.isAura then
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
@@ -1366,9 +1532,12 @@ def clearEOT (g : Game) : Game :=
   Id.run do
     let mut g := g
     for o in g.battlefield do
-      if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 then
+      if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
+          o.status.untilEotTrample || o.status.untilEotHexproof then
         g := g.setObject { o with
-          status := { o.status with damage := 0, pumpPower := 0, pumpToughness := 0 } }
+          status := { o.status with
+            damage := 0, pumpPower := 0, pumpToughness := 0
+            untilEotTrample := false, untilEotHexproof := false } }
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
@@ -1530,6 +1699,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     if caster != p then
       throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
     g.finishProposedSpell
+  | .chooseMode _ =>
+    throw "Choose a mode first (CR 601.2b)"
   | .chooseTargets _ =>
     throw "Choose a target first (CR 601.2c)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
@@ -1799,6 +1970,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .cast id => g.castSpell p id
+  | .chooseMode idx => g.announceMode p idx
   | .target t => g.announceTarget p t
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
@@ -1822,6 +1994,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareAttackers => some g.activePlayer
     | .declareBlockers => some (g.opponent g.activePlayer)
     | .activateManaAbilities caster => some caster
+    | .chooseMode p => some p
     | .chooseTargets p => some p
     | .sacrificePermanent p _ => some p
     | .declareMulligan p => some p

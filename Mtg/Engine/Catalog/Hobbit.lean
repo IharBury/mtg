@@ -5,11 +5,12 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash, simple `{T}: Add` mana abilities, non-mana activated
+(keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana activated
 abilities such as Wayfarer's Bauble and Snowslope Hunter, static abilities that
 grant trample or pump an enchanted creature, attack triggers that pump,
 becomes-blocked triggers that damage blockers, enters triggers that scry, Aura
-attachment, and a few one-shot spell effects);
+attachment, modal spells, destroy, +1/+1 counters, until-end-of-turn keyword
+grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -779,6 +780,7 @@ def wargTactics : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .green
   types := #[.instant]
   oracleText := "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)"
+  spellModes := #[.destroyCreatureWithFlying, .plusOnePlusOneTrampleHexproof]
 }
 
 def beornsHospitality : CardDef := {
@@ -925,5 +927,13 @@ def attercop : CardDef := {
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
+#guard wargTactics.isInstant
+#guard wargTactics.isModal
+#guard wargTactics.requiresTarget
+#guard wargTactics.spellModes == #[
+  .destroyCreatureWithFlying,
+  .plusOnePlusOneTrampleHexproof]
+#guard (wargTactics.summary.splitOn "Choose one").length > 1
+#guard (wargTactics.summary.splitOn "hexproof").length > 1
 
 end Mtg.Engine.Catalog
