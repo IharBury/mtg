@@ -1,4 +1,6 @@
 import Mtg.Engine
+import Mtg.Demo.Render
+import Mtg.Demo.RenderTests
 import Mtg.Demo.WelcomeDecks
 
 /-!
@@ -12,8 +14,8 @@ prints only information Chandra can see; `--visible` starts in that player view.
 
 open Mtg.Engine
 open Mtg.Engine.Game
-open Mtg.Engine.Render
 open Mtg.Demo
+open Mtg.Demo.Render
 
 def usage : String :=
   "Mtg.Demo — demonstration of the Mtg.Engine rules engine
