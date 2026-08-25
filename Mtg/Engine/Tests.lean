@@ -1,5 +1,6 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
+import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Game
 import Mtg.Engine.Render
 
@@ -814,5 +815,123 @@ def agentKeepsHands : Game := Agent.play drawnHands 10
 #guard (agentKeepsHands.player ⟨1⟩).keptOpeningHand
 #guard !agentKeepsHands.openingHandsPending
 #guard agentKeepsHands.log.any (fun s => mentions s "takes the first turn")
+
+/-- Two untapped Mountains and a Wayfarer's Bauble; a land has already been
+played this turn so the agent will activate rather than play another land. -/
+def baubleReady : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  let g := addUntappedLand g mountain
+  let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+def baubleSource (g : Game) : GameObject :=
+  namedPermanent g "Wayfarer's Bauble"
+
+#guard wayfarersBauble.activatedAbilities.size == 1
+#guard wayfarersBauble.manaAbilities.isEmpty
+#guard baubleReady.hasPriority ⟨0⟩
+#guard baubleReady.canActivate ⟨0⟩ (baubleSource baubleReady)
+  (wayfarersBauble.activatedAbilities[0]!)
+#guard !(baubleReady.canActivate ⟨1⟩ (baubleSource baubleReady)
+  (wayfarersBauble.activatedAbilities[0]!))
+
+-- The heuristic activates the bauble when {2} is available.
+#guard
+  match Agent.choose baubleReady ⟨0⟩ with
+  | some (.activate id 0) => id == (baubleSource baubleReady).id
+  | _ => false
+
+def proposedBauble : Game :=
+  mustApply baubleReady ⟨0⟩ (.activate (baubleSource baubleReady).id 0)
+
+#guard proposedBauble.pending == .activateManaAbilities ⟨0⟩
+#guard proposedBauble.proposedSpell.isSome
+#guard
+  match proposedBauble.proposedSpell with
+  | some prop => prop.kind == .activatedAbility
+  | none => false
+#guard proposedBauble.stack.size == 1
+#guard (namedPermanent proposedBauble "Wayfarer's Bauble").isOnBattlefield
+#guard proposedBauble.log.any (fun s => mentions s "begins activating Wayfarer's Bauble")
+#guard proposedBauble.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard (changedZones baubleReady proposedBauble).contains .stack
+
+-- Opponent cannot activate Chandra's bauble.
+#guard
+  match baubleReady.activateAbility ⟨1⟩ (baubleSource baubleReady).id 0 with
+  | .error _ => true
+  | .ok _ => false
+
+-- A land has no non-mana activated ability.
+#guard
+  match (baubleReady.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match baubleReady.activateAbility ⟨0⟩ land.id 0 with
+    | .error msg => mentions msg "has no activated ability"
+    | .ok _ => false
+
+def tapNextMana (g : Game) (p : PlayerId) : Game :=
+  match (g.manaSources p)[0]? with
+  | none => panic! "expected a mana source"
+  | some (src, types) =>
+    match types[0]? with
+    | none => panic! "expected a mana type"
+    | some t => mustApply g p (.tapForMana src.id t)
+
+/-- Paying without enough mana reverses the activation (CR 602.2 / 733.1). -/
+def reversedBauble : Game :=
+  mustApply proposedBauble ⟨0⟩ .pay
+
+#guard reversedBauble.pending == .none
+#guard reversedBauble.proposedSpell.isNone
+#guard reversedBauble.stack.isEmpty
+#guard reversedBauble.hasPriority ⟨0⟩
+#guard (namedPermanent reversedBauble "Wayfarer's Bauble").isOnBattlefield
+#guard reversedBauble.log.any (fun s => mentions s "the activation is reversed")
+
+def tappedOnceForBauble : Game := tapNextMana proposedBauble ⟨0⟩
+def tappedTwiceForBauble : Game := tapNextMana tappedOnceForBauble ⟨0⟩
+
+#guard (tappedTwiceForBauble.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 2)
+#guard tappedTwiceForBauble.pending == .activateManaAbilities ⟨0⟩
+
+def paidBauble : Game :=
+  mustApply tappedTwiceForBauble ⟨0⟩ .pay
+
+#guard paidBauble.pending == .none
+#guard paidBauble.proposedSpell.isNone
+#guard paidBauble.hasPriority ⟨0⟩
+#guard paidBauble.stack.size == 1
+#guard (paidBauble.player ⟨0⟩).manaPool.isEmpty
+#guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
+  (paidBauble.object! id).name == "Wayfarer's Bauble")
+#guard !(paidBauble.battlefield.any (fun o => o.name == "Wayfarer's Bauble"))
+#guard paidBauble.log.any (fun s => mentions s "sacrifices Wayfarer's Bauble")
+#guard paidBauble.log.any (fun s => mentions s "activates Wayfarer's Bauble")
+#guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
+#guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
+
+-- The agent pays once the pool covers {2}.
+#guard
+  match Agent.choose tappedTwiceForBauble ⟨0⟩ with
+  | some .pay => true
+  | _ => false
+
+def resolvedBauble : Game := passBoth paidBauble
+
+#guard resolvedBauble.stack.isEmpty
+#guard (resolvedBauble.battlefield.filter (fun o => o.name == "Mountain")).size == 3
+#guard (resolvedBauble.battlefield.filter (fun o =>
+  o.name == "Mountain" && o.status.tapped)).size == 3
+#guard resolvedBauble.log.any (fun s =>
+  mentions s "puts Mountain onto the battlefield tapped")
+#guard resolvedBauble.log.any (fun s => mentions s "shuffles their library")
+#guard (changedZones paidBauble resolvedBauble).contains .battlefield
+#guard (changedZones paidBauble resolvedBauble).contains (.library ⟨0⟩)
+
+-- Lands put onto the battlefield this way are not a land drop (CR 305.3).
+#guard (resolvedBauble.player ⟨0⟩).landsPlayedThisTurn == 1
 
 end Mtg.Engine.Tests

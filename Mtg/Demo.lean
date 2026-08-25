@@ -114,9 +114,10 @@ def helpInteractive : String :=
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
-  pay                  Pay a proposed spell's cost (CR 601.2h)
+  pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   play <id>            Play a land
   tap <id>             Tap a permanent for its first mana ability
+  activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   cast <id>            Begin casting a spell (then tap for mana and pay)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
@@ -347,6 +348,69 @@ def applyBottom (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "Not time to put cards on the bottom (CR 103.5)"
   | .ok _ => false
 
+def activateUsage : String := "usage: activate <id>"
+
+/-- Activate the first non-mana activated ability of the named permanent. -/
+def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw activateUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some o =>
+        match o.printed.activatedAbilities[0]? with
+        | none => throw s!"{o.name} has no activated ability"
+        | some _ => g.apply p (.activate id 0)
+  | _ => throw activateUsage
+
+#guard
+  match applyActivate Tests.baubleReady ⟨0⟩ [] with
+  | .error msg => msg == activateUsage
+  | .ok _ => false
+
+#guard
+  match applyActivate Tests.baubleReady ⟨0⟩ ["nope"] with
+  | .error msg => msg == activateUsage
+  | .ok _ => false
+
+#guard
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == activateUsage
+  | .ok _ => false
+
+#guard
+  match applyActivate Tests.baubleReady ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  let g := Tests.baubleReady
+  match (g.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match applyActivate g ⟨0⟩ [toString land.id] with
+    | .error msg => Tests.mentions msg "has no activated ability"
+    | .ok _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match applyActivate g ⟨0⟩ [toString bauble.id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Wayfarer's Bauble")
+  | .error _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match applyActivate g ⟨0⟩ [s!"{bauble.id.raw}"] with
+  | .ok g' => g'.stack.size == 1
+  | .error _ => false
+
 partial def interactiveLoop (g : Game) : IO Unit := do
   let mut g := g
   let mut seen := g.log.size
@@ -395,6 +459,7 @@ partial def interactiveLoop (g : Game) : IO Unit := do
         match parseObjectId? arg with
         | none => .error "usage: play <id>"
         | some id => g.apply chandra (.playLand id)
+      | "activate" => applyActivate g chandra (parts.drop 1)
       | "tap" =>
         match parseObjectId? arg with
         | none => .error "usage: tap <id>"

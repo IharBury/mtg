@@ -37,9 +37,9 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         match lands[0]? with
         | some land => some (.playLand land.id)
         | none =>
-          chooseCast g p
+          chooseActivate g p
       else
-        chooseCast g p
+        chooseActivate g p
 where
   /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
   chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
@@ -52,6 +52,16 @@ where
         match (g.manaSources p)[0]?, (g.manaSources p)[0]?.bind (fun s => s.snd[0]?) with
         | some (src, _), some t => some (.tapForMana src.id t)
         | _, _ => some .pay
+  /-- Activate a non-mana ability if the available mana covers its cost. -/
+  chooseActivate (g : Game) (p : PlayerId) : Option Action :=
+    let available := g.availableMana p
+    let candidate := (g.permanentsOf p).find? (fun o =>
+      match o.printed.activatedAbilities[0]? with
+      | some ab => g.canActivate p o ab && available.canPay ab.cost.mana
+      | none => false)
+    match candidate with
+    | some o => some (.activate o.id 0)
+    | none => chooseCast g p
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let playable := (g.handObjects p).filter (fun o =>
@@ -63,6 +73,8 @@ where
       | some (.dealDamage _) => true
       | _ => false)
     let creature := playable.find? (fun o => o.printed.isCreature)
+    let artifact := playable.find? (fun o =>
+      o.printed.types.any (· == .artifact) && !o.printed.activatedAbilities.isEmpty)
     let pump :=
       if ownCreature.isSome then
         playable.find? (fun o =>
@@ -73,6 +85,8 @@ where
     if let some o := burn then
       some (.cast o.id (some opp))
     else if let some o := creature then
+      some (.cast o.id none)
+    else if let some o := artifact then
       some (.cast o.id none)
     else if let some o := pump then
       match ownCreature with
