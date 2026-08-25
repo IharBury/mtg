@@ -84,6 +84,6 @@ The first slice of the engine models the two-player game:
 - static abilities that grant trample or pump an enchanted creature, attack
   triggers that pump power, becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, and enters triggers
-  that scry
+  that scry (any number to the bottom, the rest on top in any order)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play

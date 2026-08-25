@@ -183,8 +183,8 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
     | _ => []
   String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock ++ scryInfo)
 
-/-- Hide draws and library-bottoming that `viewer` is not allowed to see
-(CR 401.2, 402.2, 103.5). Other log lines are public. -/
+/-- Hide draws and library rearrangements that `viewer` is not allowed to see
+(CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
 def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
   Id.run do
     for pl in g.players do
@@ -192,10 +192,11 @@ def redactLogLine (g : Game) (viewer : PlayerId) (line : String) : String :=
         let drawPrefix := s!"{pl.name} draws "
         if line.startsWith drawPrefix then
           return s!"{pl.name} draws a card"
-        let bottomPrefix := s!"{pl.name} puts "
-        let bottomSuffix := " on the bottom of their library"
-        if line.startsWith bottomPrefix && line.endsWith bottomSuffix then
+        let putsPrefix := s!"{pl.name} puts "
+        if line.startsWith putsPrefix && line.endsWith " on the bottom of their library" then
           return s!"{pl.name} puts a card on the bottom of their library"
+        if line.startsWith putsPrefix && line.endsWith " on top of their library" then
+          return s!"{pl.name} puts a card on top of their library"
     return line
 
 /-- New log lines starting at `startIdx`, optionally redacted for `viewer`. -/

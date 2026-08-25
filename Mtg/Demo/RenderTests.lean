@@ -50,6 +50,10 @@ open Mtg.Demo.Render
 #guard redactLogLine started ⟨0⟩ "Chandra draws Mountain" == "Chandra draws Mountain"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest on the bottom of their library" ==
   "Nissa puts a card on the bottom of their library"
+#guard redactLogLine started ⟨0⟩ "Nissa puts Forest on top of their library" ==
+  "Nissa puts a card on top of their library"
+#guard redactLogLine started ⟨0⟩ "Chandra puts Forest on top of their library" ==
+  "Chandra puts Forest on top of their library"
 #guard redactLogLine started ⟨0⟩ "Nissa puts Forest onto the battlefield tapped" ==
   "Nissa puts Forest onto the battlefield tapped"
 #guard (newLog started 0 (some ⟨0⟩)).any (· == "Nissa draws a card")

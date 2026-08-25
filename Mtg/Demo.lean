@@ -140,7 +140,9 @@ def helpInteractive (controlAll : Bool := false) : String :=
   cast <id>            Begin casting a spell (CR 601.2a)
   target <id|name|opponent>  Announce a target (CR 601.2c)
   scry                 Finish scrying; keep looked-at cards on top
+  scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
+  scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -156,6 +158,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive true).splitOn "the acting player can see").length > 1
 #guard ((helpInteractive false).splitOn "tap <id> [id...]").length > 1
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
+#guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
@@ -178,6 +181,20 @@ where
       match parseObjectId? t with
       | none => .error usage
       | some id => go rest (acc.push id)
+
+/-- Split `tokens` at the first `kw`. `none` means the keyword was absent. -/
+def splitAtKeyword (kw : String) (tokens : List String) : List String × Option (List String) :=
+  go [] tokens
+where
+  go (acc : List String) : List String → List String × Option (List String)
+    | [] => (acc.reverse, none)
+    | t :: rest =>
+      if t == kw then (acc.reverse, some rest)
+      else go (t :: acc) rest
+
+#guard splitAtKeyword "bottom" ["1", "2", "bottom", "3"] == (["1", "2"], some ["3"])
+#guard splitAtKeyword "bottom" ["1", "2"] == (["1", "2"], none)
+#guard splitAtKeyword "bottom" ["bottom", "3"] == ([], some ["3"])
 
 /-- Attackers for an interactive `attack` command. Omitted ids mean every
 creature that currently can attack. -/
@@ -843,11 +860,14 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g''.stack.back!.targets == #[Target.permanent tid]
     | .error _ => false
 
-def scryUsage : String := "usage: scry [bottom <id> ...]"
+def scryUsage : String := "usage: scry [top <id> ...] [bottom <id> ...]"
 
-/-- Finish a pending scry. Bare `scry` keeps the looked-at cards on top.
+/-- Finish a pending scry (CR 701.20). Bare `scry` keeps the looked-at cards
+on top in their current order. `scry top <ids>` puts those cards on top
+(last = new top) and the rest on the bottom in their current relative order.
 `scry bottom <ids>` puts those cards on the bottom (first = new bottom) and
-the rest stay on top in their current relative order. -/
+the rest stay on top in their current relative order. Both piles may be
+listed to choose each order. -/
 def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match g.pending with
   | .scry q n =>
@@ -864,6 +884,23 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
           throw "no such object"
       let top := looked.filter (fun id => !ids.contains id)
       g.apply p (.scry top ids)
+    | "top" :: rest =>
+      let (topToks, botRest) := splitAtKeyword "bottom" rest
+      let topIds ← parseObjectIds topToks scryUsage
+      for id in topIds do
+        if (g.findObject? id).isNone then
+          throw "no such object"
+      let bottomIds ←
+        match botRest with
+        | none => pure (looked.filter (fun id => !topIds.contains id))
+        | some [] => pure #[]
+        | some ts =>
+          let ids ← parseObjectIds ts scryUsage
+          for id in ids do
+            if (g.findObject? id).isNone then
+              throw "no such object"
+          pure ids
+      g.apply p (.scry topIds bottomIds)
     | _ => throw scryUsage
   | _ => throw "Not time to scry (CR 701.20)"
 
@@ -881,6 +918,47 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   match applyScry Tests.giftScrying ⟨0⟩ ["keep"] with
   | .error msg => msg == scryUsage
   | .ok _ => false
+
+#guard
+  match applyScry Tests.giftKnownScrying ⟨0⟩ ["top"] with
+  | .error msg => msg == scryUsage
+  | .ok _ => false
+
+#guard
+  let g := Tests.giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forest, some elves =>
+    match applyScry g ⟨0⟩ ["top", toString elves, toString forest] with
+    | .ok g' =>
+      (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest" &&
+        g'.log.any (fun s => Tests.mentions s "puts Forest on top of their library")
+    | .error _ => false
+  | _ => false
+
+#guard
+  let g := Tests.giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forest, some elves =>
+    match applyScry g ⟨0⟩ ["top", toString forest, "bottom", toString elves] with
+    | .ok g' =>
+      (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest" &&
+        (g'.object! (g'.player ⟨0⟩).library[0]!).name == "Llanowar Elves"
+    | .error _ => false
+  | _ => false
+
+#guard
+  let g := Tests.giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]? with
+  | some forest =>
+    match applyScry g ⟨0⟩ ["top", toString forest] with
+    | .ok g' =>
+      (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest" &&
+        (g'.object! (g'.player ⟨0⟩).library[0]!).name == "Llanowar Elves"
+    | .error _ => false
+  | none => false
 
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
 handled by the console loop. Actions are issued as `p`. -/
@@ -957,6 +1035,16 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   match applyInteractiveAsActor Tests.giftScrying "scry" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
   | .error _ => false
+
+#guard
+  let g := Tests.giftKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forest, some elves =>
+    match applyInteractiveAsActor g "scry" ["top", toString elves, toString forest] with
+    | .ok g' => (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest"
+    | .error _ => false
+  | _ => false
 
 #guard
   match applyInteractiveAsActor Tests.drawnHands "xyzzy" [] with

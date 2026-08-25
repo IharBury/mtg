@@ -1790,6 +1790,21 @@ def giftBottomedElves : Game :=
 #guard giftBottomedElves.log.any (fun s =>
   mentions s "puts Llanowar Elves on the bottom of their library")
 
+/-- The rest may be put on top in any order (CR 701.20). -/
+def giftReorderedTop : Game :=
+  let looked := giftKnownScrying.scryLookedIds ⟨0⟩ 2
+  -- Reverse the two looked-at cards: Forest becomes the new top.
+  mustApply giftKnownScrying ⟨0⟩ (.scry looked.reverse #[])
+
+#guard (giftReorderedTop.object! (giftReorderedTop.player ⟨0⟩).library.back!).name == "Forest"
+#guard
+  let lib := (giftReorderedTop.player ⟨0⟩).library
+  (giftReorderedTop.object! lib[lib.size - 2]!).name == "Llanowar Elves"
+#guard giftReorderedTop.log.any (fun s => mentions s "puts Forest on top of their library")
+#guard giftReorderedTop.log.any (fun s =>
+  mentions s "puts Llanowar Elves on top of their library")
+#guard !(giftReorderedTop.log.any (fun s => mentions s "on the bottom of their library"))
+
 /-- The +3/+3 is a continuous effect, so it does not wear off in cleanup. -/
 def afterGiftCleanup : Game := passBoth (skipTo giftScried .end 80)
 

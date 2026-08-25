@@ -215,8 +215,8 @@ inductive Action where
   | takeMulligan
   /-- Put these cards on the bottom after a mulligan, first listed = new bottom. -/
   | putOnBottom (ids : Array ObjectId)
-  /-- Finish scrying: `top` (last = new top) stay on top; `bottom` (first = new
-  bottom) go to the bottom of the library (CR 701.20). -/
+  /-- Finish scrying: `top` (last = new top) go on top of the library in that
+  order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
   | scry (top : Array ObjectId) (bottom : Array ObjectId)
   | concede
 deriving Repr
@@ -1702,7 +1702,7 @@ def isPermutation (a b : Array ObjectId) : Bool :=
   a.size == b.size && uniqueObjectIds a && a.all (fun x => b.contains x)
 
 /-- Finish scrying: put `bottom` on the bottom (first = new bottom) and `top`
-on top (last = new top) of the library (CR 701.20). -/
+on top (last = new top) of the library, each pile in the given order (CR 701.20). -/
 def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     Except String Game := do
   match g.pending with
@@ -1720,6 +1720,10 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     for id in bottom do
       g := g.logMsg
         s!"{(g.player p).name} puts {(g.object! id).name} on the bottom of their library"
+    if top != looked then
+      for id in top do
+        g := g.logMsg
+          s!"{(g.player p).name} puts {(g.object! id).name} on top of their library"
     g := g.setPlayer { (g.player p) with library := bottom ++ lower ++ top }
     g := { g with pending := .none }
     return g.receivePriority g.activePlayer
