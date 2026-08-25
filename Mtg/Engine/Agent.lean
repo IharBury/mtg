@@ -28,6 +28,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       chooseManaPayment g p
     | .chooseTargets _ =>
       chooseSpellTarget g p
+    | .chooseMode _ =>
+      chooseAbilityMode g p
     | .sacrificePermanent _ sourceId =>
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
@@ -58,6 +60,14 @@ where
     | some spell =>
       match g.defaultTarget p spell with
       | some t => some (.target t)
+      | none => some .pass
+  /-- During CR 601.2b, announce a mode of a modal activated ability. -/
+  chooseAbilityMode (g : Game) (p : PlayerId) : Option Action :=
+    match g.proposedSpell with
+    | none => some .pass
+    | some prop =>
+      match g.defaultAbilityMode p prop.abilityModes with
+      | some idx => some (.chooseMode idx)
       | none => some .pass
   /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
   chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
