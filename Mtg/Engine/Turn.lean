@@ -72,7 +72,8 @@ def isEndingPhase : Step → Bool
 
 /-- Players do not normally receive priority during the untap step (CR 502.4)
 or the cleanup step (CR 514.3). Cleanup may still grant priority under the
-CR 514.3a exception; that is decided from the game state, not the step alone. -/
+CR 514.3a exception; a skipped draw step grants none (CR 103.8a / 500.11).
+Those exceptions are decided from the game state, not the step alone. -/
 def playersReceivePriority : Step → Bool
   | .untap | .cleanup => false
   | _ => true
