@@ -1,0 +1,20 @@
+name: Mtg Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+      - name: Run demo
+        run: lake exe mtg-demo -- --auto 2>&1 | tee mtg-demo.log
+      - name: Upload demo log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtg-demo-log
+          path: mtg-demo.log
