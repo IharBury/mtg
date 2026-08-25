@@ -934,7 +934,7 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
       (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest" &&
         g'.log.any (fun s => Tests.mentions s "puts Forest on top of their library")
     | .error _ => false
-  | _ => false
+  | _, _ => false
 
 #guard
   let g := Tests.giftKnownScrying
@@ -946,7 +946,7 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
       (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest" &&
         (g'.object! (g'.player ⟨0⟩).library[0]!).name == "Llanowar Elves"
     | .error _ => false
-  | _ => false
+  | _, _ => false
 
 #guard
   let g := Tests.giftKnownScrying
@@ -1044,7 +1044,7 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
     match applyInteractiveAsActor g "scry" ["top", toString elves, toString forest] with
     | .ok g' => (g'.object! (g'.player ⟨0⟩).library.back!).name == "Forest"
     | .error _ => false
-  | _ => false
+  | _, _ => false
 
 #guard
   match applyInteractiveAsActor Tests.drawnHands "xyzzy" [] with
