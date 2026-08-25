@@ -38,6 +38,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
+    | .assignCombatDamage _ _ =>
+      some (.assignCombatDamage #[])
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=

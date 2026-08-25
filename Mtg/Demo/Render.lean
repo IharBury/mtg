@@ -66,9 +66,10 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
       if o.status.blocked then " *attacking, blocked*" else " *attacking*"
     else ""
   let blk :=
-    match o.status.blocking with
-    | none => ""
-    | some attackerId => s!" *blocking {objectRef g attackerId}*"
+    if o.status.blocking.isEmpty then ""
+    else
+      let refs := o.status.blocking.toList.map (objectRef g)
+      s!" *blocking {String.intercalate ", " refs}*"
   let pt :=
     if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=
@@ -145,6 +146,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
     | .scry p n =>
       s!" [scry {n} ({g.player p |>.name})]"
+    | .assignCombatDamage p true =>
+      s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
+    | .assignCombatDamage p false =>
+      s!" [assign combat damage (CR 510.1d, {g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""

@@ -218,6 +218,9 @@ def mountainLine (g : Game) : String :=
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
 
+#guard mentions (header giantReadyToAssign) "assign combat damage (CR 510.1c"
+#guard mentions (header bearsBlockingTwoOgresReady) "assign combat damage (CR 510.1d"
+
 #guard
   let g := goblinBlockedByBears
   let goblin := namedPermanent g "Battle-Scarred Goblin"
