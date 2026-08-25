@@ -293,6 +293,38 @@ def afterControlChange : Game :=
 #guard mentions (objectLine afterControlChange (lastPermanent afterControlChange))
   "(owned by Chandra, controlled by Nissa)"
 
+/-- The shared battlefield listing is grouped by controller (CR 110.2). -/
+#guard zoneBlock started .battlefield == "zone battlefield (0): (empty)"
+
+#guard
+  let m := lastPermanent withMountain
+  zoneBlock withMountain .battlefield ==
+    s!"zone battlefield (1):\n  Chandra:\n    {objectLine withMountain m}"
+
+#guard
+  let m := lastPermanent stolenMountain
+  zoneBlock stolenMountain .battlefield ==
+    s!"zone battlefield (1):\n  Nissa:\n    {objectLine stolenMountain m}"
+
+/-- Nissa's permanent entered first; the listing still groups Chandra before Nissa. -/
+def mixedControllers : Game := addPermanent stolenMountain forest ⟨0⟩ ⟨0⟩
+
+#guard
+  let forestP := (mixedControllers.permanentsOf ⟨0⟩)[0]!
+  let mountainP := (mixedControllers.permanentsOf ⟨1⟩)[0]!
+  forestP.name == "Forest" && mountainP.name == "Mountain" &&
+    zoneBlock mixedControllers .battlefield ==
+      s!"zone battlefield (2):\n  Chandra:\n    {objectLine mixedControllers forestP}\n  Nissa:\n    {objectLine mixedControllers mountainP}"
+
+def uncontrolledPermanent : Game :=
+  let o := lastPermanent withMountain
+  withMountain.setObject { o with controller := none }
+
+#guard
+  let m := lastPermanent uncontrolledPermanent
+  zoneBlock uncontrolledPermanent .battlefield ==
+    s!"zone battlefield (1):\n  (no controller):\n    {objectLine uncontrolledPermanent m}"
+
 /- Hands, battlefield, and other zones print keywords and abilities. -/
 #guard mentions ragingGoblin.summary "haste"
 #guard mentions giantSpider.summary "reach"

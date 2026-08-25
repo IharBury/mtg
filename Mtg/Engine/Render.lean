@@ -182,6 +182,30 @@ def allZones (g : Game) : Array Zone :=
 def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
+/-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
+are omitted. Permanents with no controller are listed last. -/
+def battlefieldGroups (g : Game) : Array (String × Array GameObject) :=
+  Id.run do
+    let mut groups : Array (String × Array GameObject) := #[]
+    for pl in g.players do
+      let ps := g.permanentsOf pl.id
+      if !ps.isEmpty then
+        groups := groups.push (pl.name, ps)
+    let uncontrolled := g.battlefield.filter (fun o => o.controller.isNone)
+    if !uncontrolled.isEmpty then
+      groups := groups.push ("(no controller)", uncontrolled)
+    return groups
+
+/-- Shared-zone battlefield lines grouped under each controller's name. -/
+def battlefieldGroupLines (g : Game) : List String :=
+  Id.run do
+    let mut lines : Array String := #[]
+    for (label, os) in battlefieldGroups g do
+      lines := lines.push s!"{label}:"
+      for o in os do
+        lines := lines.push s!"  {objectLine g o}"
+    return lines.toList
+
 /-- Zones whose occupants, order, or (for the battlefield) visible status
 differ between two game states. Tapping or untapping a land does not move it,
 but it does change the battlefield (CR 110.5 / 502.2), so the demo reprints
@@ -220,7 +244,10 @@ def zoneBlock (g : Game) (z : Zone) (viewer : Option PlayerId := none) : String 
   else if shown.isEmpty then
     s!"{title}: (empty)"
   else
-    let lines := shown.toList.map (zoneLine g z)
+    let lines :=
+      match z with
+      | .battlefield => battlefieldGroupLines g
+      | _ => shown.toList.map (zoneLine g z)
     title ++ ":\n  " ++ String.intercalate "\n  " lines
 
 end Mtg.Engine.Render
