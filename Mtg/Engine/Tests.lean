@@ -183,6 +183,9 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 #guard (changedZones started drawnOnce).contains (.library ⟨0⟩)
 #guard !(changedZones started drawnOnce).contains .battlefield
 #guard !(changedZones started drawnOnce).contains .stack
+#guard zoneBlock drawnOnce (.hand ⟨1⟩) (some ⟨0⟩) == "zone Nissa's hand (7)"
+#guard mentions (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)) (firstHandCard drawnOnce ⟨0⟩).name
+#guard (zoneBlock drawnOnce (.hand ⟨0⟩) (some ⟨0⟩)).startsWith "zone Chandra's hand (8):"
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=

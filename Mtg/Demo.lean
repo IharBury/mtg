@@ -113,8 +113,8 @@ def helpInteractive : String :=
   help                 Show this help
   state                Print the board
   visible              Print only information Chandra can see (CR 400.2)
-  visible on           Hide hidden information in later updates
-  visible off          Show full information in later updates
+  visible on           Use Chandra's view for state and later updates
+  visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
@@ -133,6 +133,9 @@ def helpInteractive : String :=
   concede              Concede
   quit                 Exit
 "
+
+#guard (helpInteractive.splitOn "visible").length > 1
+#guard (helpInteractive.splitOn "Chandra can see").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -540,7 +543,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit 
       IO.println "Goodbye."
       return
     | "help" => IO.println helpInteractive
-    | "state" => printState g
+    | "state" => printState g (chandraView playerView)
     | "visible" =>
       match applyVisible (parts.drop 1) with
       | .error e => IO.println s!"! {e}"
@@ -548,10 +551,10 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false) : IO Unit 
       | .ok (some on) =>
         playerView := on
         if on then
-          IO.println "Later updates show only information Chandra can see."
+          IO.println "Showing only information Chandra can see."
           printState g (some chandra)
         else
-          IO.println "Later updates show full game information."
+          IO.println "Showing full game information."
     | _ =>
       match act with
       | .error e => IO.println s!"! {e}"

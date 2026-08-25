@@ -41,8 +41,8 @@ lake exe mtg-demo -- --seed 42 --fuel 200
 ```
 
 In interactive mode, `visible` prints the board as Chandra sees it (other
-players' hand sizes but not the cards themselves). `visible on` keeps later
-log and zone updates in that player view.
+players' hand sizes but not the cards themselves). `visible on` (or the
+`--visible` flag) keeps `state` and later log/zone updates in that player view.
 
 ## Project layout
 
