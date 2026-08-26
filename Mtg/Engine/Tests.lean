@@ -7963,7 +7963,8 @@ def passageUnblockedDamage : Game :=
 /-- After attackers are declared, the heuristic activates Passage with {4} in the pool. -/
 def passageAfterAttack : Game :=
   let g := passBoth (skipTo passageReady .beginningOfCombat 80)
-  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  withRedMana g ⟨0⟩ 4
 
 #guard passageAfterAttack.hasPriority ⟨0⟩
 #guard (namedPermanent passageAfterAttack "Gray Ogre").status.attacking
