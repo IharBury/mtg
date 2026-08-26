@@ -296,6 +296,11 @@ inductive TriggeredAbility where
   /-- Whenever you cast an instant or sorcery spell, this creature deals
   `amount` damage to each opponent (e.g. Guttersnipe). -/
   | onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat)
+  /-- Whenever you attack with one or more Elves, scry `n` (e.g. Celeborn the Wise). -/
+  | onAttackWithElvesScry (n : Nat)
+  /-- Whenever you scry, this creature gets +1/+1 until end of turn for each card
+  looked at while scrying this way (e.g. Celeborn the Wise). -/
+  | onScryPumpSelfForEachLookedAt
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
@@ -335,6 +340,10 @@ def toNotation : TriggeredAbility → String
     "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
   | .onCastInstantOrSorceryDealDamageToEachOpponent amount =>
     s!"Whenever you cast an instant or sorcery spell, this creature deals {amount} damage to each opponent."
+  | .onAttackWithElvesScry n =>
+    s!"Whenever you attack with one or more Elves, scry {n}."
+  | .onScryPumpSelfForEachLookedAt =>
+    "Whenever you scry, this creature gets +1/+1 until end of turn for each card looked at while scrying this way."
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -345,7 +354,8 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterDraw _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => none
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
@@ -355,7 +365,8 @@ def triggersWhenAttacking : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
@@ -365,7 +376,8 @@ def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
@@ -375,7 +387,8 @@ def triggersWhenEntering : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
@@ -386,7 +399,8 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
 def triggersWhenDying : TriggeredAbility → Bool
@@ -396,7 +410,8 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
 def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
@@ -406,7 +421,29 @@ def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
+
+/-- True for abilities that trigger once when you attack with one or more Elves
+(CR 508.2 / 603.2a). Not the same as “whenever this creature attacks”. -/
+def triggersWhenYouAttackWithElves : TriggeredAbility → Bool
+  | .onAttackWithElvesScry _ => true
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onScryPumpSelfForEachLookedAt => false
+
+/-- True for abilities that trigger when you scry (CR 701.20 / 603.2). -/
+def triggersWhenYouScry : TriggeredAbility → Bool
+  | .onScryPumpSelfForEachLookedAt => true
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _ => false
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
@@ -417,7 +454,8 @@ def requiresTarget : TriggeredAbility → Bool
   | .onAttackOtherGets2AndTrample => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterDraw _ | .onEnterMayDiscardDraw _
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
@@ -428,7 +466,8 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -714,6 +753,10 @@ instance : ToString CardDef where
   "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
 #guard TriggeredAbility.toNotation (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
   "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent."
+#guard TriggeredAbility.toNotation (.onAttackWithElvesScry 1) ==
+  "Whenever you attack with one or more Elves, scry 1."
+#guard TriggeredAbility.toNotation .onScryPumpSelfForEachLookedAt ==
+  "Whenever you scry, this creature gets +1/+1 until end of turn for each card looked at while scrying this way."
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
@@ -729,6 +772,13 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenAttacking (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenAttacking .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.triggersWhenAttacking (.onEnterDealDividedDamage 3 3)
+#guard !TriggeredAbility.triggersWhenAttacking (.onAttackWithElvesScry 1)
+#guard !TriggeredAbility.triggersWhenAttacking .onScryPumpSelfForEachLookedAt
+#guard TriggeredAbility.triggersWhenYouAttackWithElves (.onAttackWithElvesScry 1)
+#guard !TriggeredAbility.triggersWhenYouAttackWithElves .onAttackPumpByGreatestPower
+#guard TriggeredAbility.triggersWhenYouScry .onScryPumpSelfForEachLookedAt
+#guard !TriggeredAbility.triggersWhenYouScry (.onEnterScry 2)
+#guard !TriggeredAbility.triggersWhenYouScry (.onAttackWithElvesScry 1)
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDraw 1)
@@ -766,6 +816,10 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterDraw 1)
 #guard !TriggeredAbility.requiresTarget (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard !TriggeredAbility.requiresTarget (.onAttackWithElvesScry 1)
+#guard !TriggeredAbility.requiresTarget .onScryPumpSelfForEachLookedAt
+#guard (TriggeredAbility.dividedDamage? (.onAttackWithElvesScry 1)).isNone
+#guard (TriggeredAbility.dividedDamage? .onScryPumpSelfForEachLookedAt).isNone
 #guard
   let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }

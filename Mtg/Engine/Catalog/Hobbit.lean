@@ -10,8 +10,9 @@ activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
-power and toughness, give another creature +2/+0 and trample, or deal damage
-divided among targets, becomes-blocked triggers that
+power and toughness, give another creature +2/+0 and trample, deal damage
+divided among targets, or scry when you attack with Elves, scry triggers that
+pump for each card looked at, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, may discard to draw, or deal damage
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
@@ -867,6 +868,7 @@ def celebornTheWise : CardDef := {
   oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way."
   power := some 3
   toughness := some 3
+  triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
 }
 
 def giftOfStrands : CardDef := {
@@ -1005,6 +1007,13 @@ def attercop : CardDef := {
 #guard mirkwoodElk.toughness == some 6
 #guard (mirkwoodElk.summary.splitOn "trample").length > 1
 #guard (mirkwoodElk.summary.splitOn "Elf card").length > 1
+#guard celebornTheWise.triggeredAbilities ==
+  #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
+#guard celebornTheWise.power == some 3
+#guard celebornTheWise.toughness == some 3
+#guard celebornTheWise.subtypes.any (· == "Elf")
+#guard (celebornTheWise.summary.splitOn "one or more Elves").length > 1
+#guard (celebornTheWise.summary.splitOn "looked at").length > 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButler.power == some 4
