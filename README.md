@@ -101,8 +101,9 @@ The first slice of the engine models the two-player game:
   enters or attacks), landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, dies triggers that deal damage equal
-  to last-known power to a creature an opponent controls, and adventurer
-  cards (casting an Adventure, then the creature from exile)
+  to last-known power to a creature an opponent controls, cast triggers that
+  deal damage to each opponent when you cast an instant or sorcery, and
+  adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes

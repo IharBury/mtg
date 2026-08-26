@@ -1504,6 +1504,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.guttersnipeBoltSetup "cast"
+      [toString (Tests.handCardNamed Tests.guttersnipeBoltSetup ⟨0⟩ "Lightning Bolt").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.paidGuttersnipeBolt "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      (g'.player ⟨1⟩).life == 18 &&
+      g'.stack.size == 1 &&
+      (g'.object! g'.stack.back!.objectId).name == "Lightning Bolt"
+    | .error _ => false
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.hospitalityLandPlayed "target"
       [toString (Tests.namedPermanent Tests.hospitalityLandPlayed "Grizzly Bears").id] with
   | .ok g' =>

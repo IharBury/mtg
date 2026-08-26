@@ -29,6 +29,8 @@ creature's P/T onto another creature you control or giving another creature
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
 you choose when a creature enters or attacks (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
+cast triggers that deal damage to each opponent when you cast an instant or
+sorcery (CR 601.2i / 603.3),
 activated pumps that last until end of turn (CR 602 / 611.2a),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
@@ -913,9 +915,9 @@ def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-Attack, becomes-blocked, and enters triggers are put on the stack as their
-events happen (CR 508.2, 509.5c, 603.6a). Dies triggers wait until a player
-would receive priority (CR 603.3 / 700.4). -/
+Attack, becomes-blocked, enters, and cast triggers are put on the stack as
+their events happen (CR 508.2, 509.5c, 603.6a, 601.2i). Dies triggers wait
+until a player would receive priority (CR 603.3 / 700.4). -/
 def hasWaitingTriggers (g : Game) : Bool :=
   !g.waitingDeathTriggers.isEmpty
 
@@ -990,7 +992,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterMayDiscardDraw _ =>
+  | .onEnterMayDiscardDraw _ | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -1129,6 +1131,20 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
                 else
                   g := g.putTriggeredAbilityOnStack landController o ab "landfall trigger"
         return g.promptTriggerTargetsIfNeeded
+
+/-- Put “whenever you cast an instant or sorcery” triggers onto the stack
+(CR 601.2i / 603.3). -/
+def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
+  if !spell.printed.isInstantOrSorcery then g
+  else
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.controlledBy caster then
+          for ab in o.printed.triggeredAbilities do
+            if ab.triggersWhenYouCastInstantOrSorcery then
+              g := g.putTriggeredAbilityOnStack caster o ab "cast trigger"
+      return g
 
 /-- After a land enters, put its enters triggers and landfall triggers. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
@@ -1474,8 +1490,10 @@ def reverseProposedSpell (g : Game) : Game :=
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
 
-def becomeCast (g : Game) (p : PlayerId) (cardName : String) : Game :=
-  g.logMsg s!"{(g.player p).name} casts {cardName}" |>.receivePriority p
+def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
+  let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  let g := g.putCastTriggersOnStack p spell
+  g.receivePriority p
 
 /-- Continue after CR 601.2c: activate mana abilities (601.2g) or finish casting. -/
 def afterTargetsChosen (g : Game) : Game :=
@@ -1486,9 +1504,9 @@ def afterTargetsChosen (g : Game) : Game :=
       { g with pending := .activateManaAbilities prop.caster }
         |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
     else
-      let name := (g.object! prop.spellId).name
+      let spell := g.object! prop.spellId
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-      g.becomeCast prop.caster name
+      g.becomeCast prop.caster spell
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
@@ -1592,7 +1610,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
   match prop.kind, prop.needsSacrificeOther, prop.sourceId with
   | .spell, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-    return g.becomeCast prop.caster (g.object! prop.spellId).name
+    return g.becomeCast prop.caster (g.object! prop.spellId)
   | .activatedAbility, true, some sid =>
     let g := { g with
       pending := .sacrificePermanent prop.caster sid
@@ -1646,7 +1664,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   if !needsMode && !needsTarget && !cost.includesManaPayment then
-    return g.becomeCast p face.name
+    return g.becomeCast p (g.object! newId)
   let prop : ProposedSpell := {
     caster := p
     cost := cost
@@ -2226,6 +2244,13 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else
           g.logMsg "The target is no longer in play"
     | _ => g.logMsg "The target is no longer legal"
+  | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
+    Id.run do
+      let mut g := g
+      for pl in g.livingPlayers do
+        if pl.id != controller then
+          g := g.applyEffect controller (.dealDamage n) #[Target.player pl.id]
+      return g
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=

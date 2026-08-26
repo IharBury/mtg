@@ -758,4 +758,16 @@ def mountainLine (g : Game) : String :=
   let o := namedPermanent g "Inferno Titan"
   mentions (objectLine g o) "7/6"
 
+#guard mentions (stackBlock paidGuttersnipeBolt) "Guttersnipe's ability"
+#guard mentions (stackBlock paidGuttersnipeBolt) "instant or sorcery"
+#guard mentions (stackBlock paidGuttersnipeBolt) "Lightning Bolt"
+#guard
+  let g := paidGuttersnipeBolt
+  let src := namedPermanent g "Guttersnipe"
+  mentions (stackBlock g) s!"*source {src.id} Guttersnipe*" &&
+    mentions (objectLine g src) "2/2"
+#guard
+  let g := guttersnipeTriggerResolved
+  mentions (playerBlock g (g.player ⟨1⟩)) "life 18"
+
 end Mtg.Demo.RenderTests

@@ -279,6 +279,9 @@ inductive TriggeredAbility where
   /-- When this creature dies, it deals damage equal to its power to target
   creature an opponent controls (e.g. Goblin Fireleaper). -/
   | onDiesDealDamageEqualToPowerToOppCreature
+  /-- Whenever you cast an instant or sorcery spell, this creature deals
+  `amount` damage to each opponent (e.g. Guttersnipe). -/
+  | onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
@@ -311,6 +314,8 @@ def toNotation : TriggeredAbility → String
     s!"Whenever this creature enters or attacks, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
+  | .onCastInstantOrSorceryDealDamageToEachOpponent amount =>
+    s!"Whenever you cast an instant or sorcery spell, this creature deals {amount} damage to each opponent."
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -320,7 +325,8 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onDiesDealDamageEqualToPowerToOppCreature => none
+  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
@@ -328,7 +334,8 @@ def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
@@ -336,7 +343,8 @@ def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onEnterScry _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
@@ -344,7 +352,8 @@ def triggersWhenEntering : TriggeredAbility → Bool
   | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
@@ -353,7 +362,8 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
 def triggersWhenDying : TriggeredAbility → Bool
@@ -361,7 +371,16 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ => false
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
+
+/-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
+def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => true
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _
+  | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
+  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
@@ -371,7 +390,7 @@ def requiresTarget : TriggeredAbility → Bool
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterMayDiscardDraw _ => false
+  | .onEnterMayDiscardDraw _ | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
@@ -381,7 +400,8 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -443,6 +463,7 @@ def isCreature (c : CardDef) : Bool := c.types.any (· == .creature)
 def isArtifact (c : CardDef) : Bool := c.types.any (· == .artifact)
 def isInstant (c : CardDef) : Bool := c.types.any (· == .instant)
 def isSorcery (c : CardDef) : Bool := c.types.any (· == .sorcery)
+def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
 def isEnchantment (c : CardDef) : Bool := c.types.any (· == .enchantment)
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
@@ -638,12 +659,15 @@ instance : ToString CardDef where
   "Whenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation .onDiesDealDamageEqualToPowerToOppCreature ==
   "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
+#guard TriggeredAbility.toNotation (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
+  "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent."
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
+#guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
@@ -655,6 +679,9 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
 #guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
+#guard TriggeredAbility.triggersWhenYouCastInstantOrSorcery
+  (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard !TriggeredAbility.triggersWhenYouCastInstantOrSorcery (.onEnterScry 2)
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 3 }
@@ -677,6 +704,12 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
+#guard !TriggeredAbility.requiresTarget (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard
+  let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
+  let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
+  let creature : CardDef := { name := "Silent Ogre", types := #[.creature] }
+  instant.isInstantOrSorcery && sorcery.isInstantOrSorcery && !creature.isInstantOrSorcery
 
 end CardDef
 

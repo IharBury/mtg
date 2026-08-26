@@ -328,6 +328,10 @@ def uncontrolledPermanent : Game :=
 #guard infernoTitan.activatedAbilities.size == 1
 #guard infernoTitan.triggeredAbilities.size == 1
 #guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
+#guard mentions guttersnipe.summary "instant or sorcery"
+#guard mentions guttersnipe.summary "each opponent"
+#guard guttersnipe.triggeredAbilities.size == 1
+#guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
@@ -472,6 +476,17 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "enters or attacks" &&
     mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "{R}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Snipe"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
+  }
+  mentions c.abilitiesText "instant or sorcery" &&
+    mentions c.abilitiesText "each opponent"
 
 #guard
   let c : CardDef := {
@@ -4959,6 +4974,161 @@ def agentTitanOnly : Game :=
 #guard
   match Agent.choose agentTitanOnly ⟨0⟩ with
   | some (.cast id) => (agentTitanOnly.object! id).name == "Inferno Titan"
+  | _ => false
+
+/- Guttersnipe: whenever you cast an instant or sorcery, 2 damage to each opponent. -/
+
+#guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
+#guard lightningBolt.isInstantOrSorcery
+#guard !grayOgre.isInstantOrSorcery
+
+/-- Guttersnipe in play with Lightning Bolt in hand and {R} in the pool. -/
+def guttersnipeBoltSetup : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+
+#guard guttersnipeBoltSetup.canCast ⟨0⟩
+  (handCardNamed guttersnipeBoltSetup ⟨0⟩ "Lightning Bolt")
+#guard (guttersnipeBoltSetup.player ⟨1⟩).life == 20
+
+/-- Propose, announce Nissa, and pay. The trigger goes on the stack above the Bolt
+(CR 601.2i / 603.3). -/
+def paidGuttersnipeBolt : Game :=
+  let g := mustApply guttersnipeBoltSetup ⟨0⟩
+    (.cast (handCardNamed guttersnipeBoltSetup ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidGuttersnipeBolt.hasPriority ⟨0⟩
+#guard paidGuttersnipeBolt.pending == .none
+#guard paidGuttersnipeBolt.stack.size == 2
+#guard (paidGuttersnipeBolt.object! paidGuttersnipeBolt.stack.back!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard (paidGuttersnipeBolt.object! paidGuttersnipeBolt.stack[0]!.objectId).name == "Lightning Bolt"
+#guard paidGuttersnipeBolt.log.any (fun s => mentions s "casts Lightning Bolt")
+#guard paidGuttersnipeBolt.log.any (fun s => mentions s "cast trigger is put on the stack")
+#guard (paidGuttersnipeBolt.player ⟨1⟩).life == 20
+
+/-- The trigger resolves first, then the Bolt. -/
+def guttersnipeTriggerResolved : Game := passBoth paidGuttersnipeBolt
+
+#guard guttersnipeTriggerResolved.stack.size == 1
+#guard (guttersnipeTriggerResolved.object! guttersnipeTriggerResolved.stack.back!.objectId).name ==
+  "Lightning Bolt"
+#guard (guttersnipeTriggerResolved.player ⟨1⟩).life == 18
+#guard guttersnipeTriggerResolved.log.any (fun s => mentions s "Nissa is dealt 2 damage")
+
+def guttersnipeBoltResolved : Game := passBoth guttersnipeTriggerResolved
+
+#guard guttersnipeBoltResolved.stack.isEmpty
+#guard (guttersnipeBoltResolved.player ⟨1⟩).life == 15
+#guard guttersnipeBoltResolved.log.any (fun s => mentions s "Nissa is dealt 3 damage")
+
+-- Casting a creature does not trigger Guttersnipe.
+def paidOgreWithGuttersnipe : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := withRedMana (addToHand g grayOgre ⟨0⟩) ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gray Ogre").id)
+  mustApply g ⟨0⟩ .pay
+
+#guard paidOgreWithGuttersnipe.stack.size == 1
+#guard (paidOgreWithGuttersnipe.object! paidOgreWithGuttersnipe.stack.back!.objectId).name ==
+  "Gray Ogre"
+#guard !paidOgreWithGuttersnipe.log.any (fun s => mentions s "cast trigger")
+#guard (paidOgreWithGuttersnipe.player ⟨1⟩).life == 20
+
+-- An opponent's Guttersnipe does not trigger when you cast a spell.
+def paidBoltOppGuttersnipe : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidBoltOppGuttersnipe.stack.size == 1
+#guard (paidBoltOppGuttersnipe.object! paidBoltOppGuttersnipe.stack.back!.objectId).name ==
+  "Lightning Bolt"
+#guard !paidBoltOppGuttersnipe.log.any (fun s => mentions s "cast trigger")
+
+-- Two Guttersnipes both trigger.
+def paidBoltTwoGuttersnipes : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := addPermanent g guttersnipe ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidBoltTwoGuttersnipes.stack.size == 3
+#guard (paidBoltTwoGuttersnipes.object! paidBoltTwoGuttersnipes.stack.back!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard (paidBoltTwoGuttersnipes.object!
+  paidBoltTwoGuttersnipes.stack[1]!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+
+def twoGuttersnipesResolved : Game :=
+  passBoth (passBoth (passBoth paidBoltTwoGuttersnipes))
+
+#guard twoGuttersnipesResolved.stack.isEmpty
+#guard (twoGuttersnipesResolved.player ⟨1⟩).life == 13
+
+/-- The trigger still deals damage if Guttersnipe leaves before it resolves
+(CR 113.7 / 608.2g). -/
+def guttersnipeGoneResolved : Game :=
+  let id := (namedPermanent paidGuttersnipeBolt "Guttersnipe").id
+  let (g, _) := paidGuttersnipeBolt.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard !(guttersnipeGoneResolved.battlefield.any (fun o => o.name == "Guttersnipe"))
+#guard (guttersnipeGoneResolved.player ⟨1⟩).life == 18
+#guard guttersnipeGoneResolved.log.any (fun s => mentions s "Nissa is dealt 2 damage")
+
+/-- Lethal Guttersnipe damage ends the game before the spell resolves. -/
+def guttersnipeLethal : Game :=
+  let g := paidGuttersnipeBolt.modifyPlayer ⟨1⟩ (fun pl => { pl with life := 2 })
+  passBoth g
+
+#guard guttersnipeLethal.over
+#guard guttersnipeLethal.result == some (.won ⟨0⟩)
+#guard (guttersnipeLethal.player ⟨1⟩).life == 0
+#guard guttersnipeLethal.log.any (fun s => mentions s "Nissa loses the game")
+#guard guttersnipeLethal.log.any (fun s => mentions s "Chandra wins the game")
+#guard guttersnipeLethal.stack.size == 1
+
+-- A sorcery Adventure is an instant-or-sorcery spell (CR 715.3b / 601.2i).
+def paidSpewWithGuttersnipe : Game :=
+  let g := addPermanent smaugSetup guttersnipe ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.castAdventure (handCardNamed g ⟨0⟩ "Smaug, the Great Calamity").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidSpewWithGuttersnipe.stack.size == 2
+#guard (paidSpewWithGuttersnipe.object! paidSpewWithGuttersnipe.stack.back!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard (paidSpewWithGuttersnipe.object! paidSpewWithGuttersnipe.stack[0]!.objectId).name ==
+  "Spew Flame"
+#guard paidSpewWithGuttersnipe.log.any (fun s => mentions s "casts Spew Flame")
+#guard paidSpewWithGuttersnipe.log.any (fun s => mentions s "cast trigger is put on the stack")
+
+def spewWithGuttersnipeResolved : Game :=
+  passBoth (passBoth paidSpewWithGuttersnipe)
+
+#guard (spewWithGuttersnipeResolved.player ⟨1⟩).life == 18
+#guard !(spewWithGuttersnipeResolved.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+-- The heuristic casts Bolt when that is the playable spell with Guttersnipe in play.
+def agentGuttersnipeBoltOnly : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+
+#guard
+  match Agent.choose agentGuttersnipeBoltOnly ⟨0⟩ with
+  | some (.cast id) => (agentGuttersnipeBoltOnly.object! id).name == "Lightning Bolt"
   | _ => false
 
 end Mtg.Engine.Tests
