@@ -332,6 +332,13 @@ def uncontrolledPermanent : Game :=
 #guard mentions guttersnipe.summary "each opponent"
 #guard guttersnipe.triggeredAbilities.size == 1
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
+#guard mentions guardianOfTheHalls.summary "trample"
+#guard mentions guardianOfTheHalls.summary "+1/+1"
+#guard guardianOfTheHalls.keywords.trample
+#guard guardianOfTheHalls.activatedAbilities.size == 1
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
+  ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard mentions improvisedClub.summary "additional cost"
 #guard mentions improvisedClub.summary "4 damage"
 #guard improvisedClub.isInstant
@@ -493,6 +500,22 @@ def uncontrolledPermanent : Game :=
   }
   mentions c.abilitiesText "instant or sorcery" &&
     mentions c.abilitiesText "each opponent"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Guardian"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    keywords := { Keywords.none with trample := true }
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
+      effect := .putPlusOnePlusOneOnSource 3
+    }]
+  }
+  mentions c.abilitiesText "Put 3 +1/+1 counters" &&
+    mentions c.abilitiesText "{5}{G}{G}" &&
+    mentions c.summary "trample"
 
 #guard
   let c : CardDef := {
@@ -5383,5 +5406,162 @@ def clubSacrificesFireleaper : Game :=
 #guard clubSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
 #guard clubSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
 #guard clubSacrificesFireleaper.log.any (fun s => mentions s "casts Improvised Club")
+
+/- Guardian of the Halls: trample and {5}{G}{G} for three +1/+1 counters. -/
+
+def guardianAbility : ActivatedAbility :=
+  guardianOfTheHalls.activatedAbilities[0]!
+
+#guard guardianAbility.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianAbility.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
+#guard !guardianAbility.effect.requiresTarget
+#guard guardianOfTheHalls.keywords.trample
+
+/-- Guardian in play with {5}{G}{G} in the pool; a land drop is already used. -/
+def guardianReady : Game :=
+  let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
+  withGreenMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 7
+
+def guardianSource (g : Game) : GameObject :=
+  namedPermanent g "Guardian of the Halls"
+
+#guard guardianReady.canActivate ⟨0⟩ (guardianSource guardianReady) guardianAbility
+#guard !(guardianReady.canActivate ⟨1⟩ (guardianSource guardianReady) guardianAbility)
+#guard (guardianReady.player ⟨0⟩).manaPool.canPay guardianAbility.cost.mana
+#guard guardianReady.power (guardianSource guardianReady) == 2
+#guard guardianReady.toughness (guardianSource guardianReady) == 2
+#guard guardianReady.hasTrample (guardianSource guardianReady)
+#guard (guardianSource guardianReady).status.plusOnePlusOne == 0
+
+-- Six green cannot pay {5}{G}{G}.
+#guard
+  let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
+  let g := withGreenMana
+    (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 6
+  !(g.player ⟨0⟩).manaPool.canPay guardianAbility.cost.mana
+
+-- The heuristic activates Guardian when {5}{G}{G} is available.
+#guard
+  match Agent.choose guardianReady ⟨0⟩ with
+  | some (.activate id 0) => id == (guardianSource guardianReady).id
+  | _ => false
+
+def proposedGuardian : Game :=
+  mustApply guardianReady ⟨0⟩ (.activate (guardianSource guardianReady).id 0)
+
+#guard proposedGuardian.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGuardian.proposedSpell.isSome
+#guard proposedGuardian.stack.size == 1
+#guard (proposedGuardian.object! proposedGuardian.stack.back!.objectId).abilityEffect ==
+  some (.putPlusOnePlusOneOnSource 3)
+#guard (namedPermanent proposedGuardian "Guardian of the Halls").isOnBattlefield
+#guard proposedGuardian.log.any (fun s => mentions s "begins activating Guardian of the Halls")
+
+-- Opponent cannot pay Chandra's activation.
+#guard
+  match proposedGuardian.apply ⟨1⟩ .pay with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+def paidGuardian : Game :=
+  mustApply proposedGuardian ⟨0⟩ .pay
+
+#guard paidGuardian.hasPriority ⟨0⟩
+#guard paidGuardian.stack.size == 1
+#guard paidGuardian.log.any (fun s => mentions s "activates Guardian of the Halls")
+#guard (namedPermanent paidGuardian "Guardian of the Halls").status.plusOnePlusOne == 0
+
+def guardianResolved : Game := passBoth paidGuardian
+
+#guard guardianResolved.stack.isEmpty
+#guard (namedPermanent guardianResolved "Guardian of the Halls").status.plusOnePlusOne == 3
+#guard guardianResolved.power (namedPermanent guardianResolved "Guardian of the Halls") == 5
+#guard guardianResolved.toughness (namedPermanent guardianResolved "Guardian of the Halls") == 5
+#guard guardianResolved.hasTrample
+  (namedPermanent guardianResolved "Guardian of the Halls")
+#guard guardianResolved.log.any (fun s =>
+  mentions s "Guardian of the Halls gets 3 +1/+1 counters")
+
+/-- A second activation stacks. -/
+def guardianResolvedTwice : Game :=
+  let g := withGreenMana guardianResolved ⟨0⟩ 7
+  let g := mustApply g ⟨0⟩ (.activate (guardianSource g).id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard guardianResolvedTwice.power
+  (namedPermanent guardianResolvedTwice "Guardian of the Halls") == 8
+#guard guardianResolvedTwice.toughness
+  (namedPermanent guardianResolvedTwice "Guardian of the Halls") == 8
+#guard (namedPermanent guardianResolvedTwice "Guardian of the Halls").status.plusOnePlusOne == 6
+
+/-- Counters do not wear off in cleanup (CR 122.1 / 514.3). -/
+def afterGuardianCleanup : Game :=
+  passBoth (skipTo guardianResolved .end 80)
+
+#guard afterGuardianCleanup.power
+  (namedPermanent afterGuardianCleanup "Guardian of the Halls") == 5
+#guard afterGuardianCleanup.toughness
+  (namedPermanent afterGuardianCleanup "Guardian of the Halls") == 5
+#guard (namedPermanent afterGuardianCleanup "Guardian of the Halls").status.plusOnePlusOne == 3
+
+/-- If the source leaves before the ability resolves, the counters are not placed. -/
+def guardianSourceGone : Game :=
+  let id := (namedPermanent paidGuardian "Guardian of the Halls").id
+  let (g, _) := paidGuardian.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard guardianSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard !(guardianSourceGone.battlefield.any (fun o => o.name == "Guardian of the Halls"))
+
+-- Instant-speed: Guardian can activate during the end step.
+def guardianAtEndStep : Game := skipTo guardianReady .end 80
+
+#guard guardianAtEndStep.step == .end
+#guard guardianAtEndStep.canActivate ⟨0⟩ (guardianSource guardianAtEndStep)
+  guardianAbility
+
+/-- Two damage is lethal to the 2/2, but not after three +1/+1 counters. -/
+def guardianDiesFromTwoDamage : Game :=
+  let o := namedPermanent guardianReady "Guardian of the Halls"
+  let g := guardianReady.setObject { o with status := { o.status with damage := 2 } }
+  g.receivePriority ⟨0⟩
+
+#guard !(guardianDiesFromTwoDamage.battlefield.any (fun o =>
+  o.name == "Guardian of the Halls"))
+#guard guardianDiesFromTwoDamage.log.any (fun s =>
+  mentions s "Guardian of the Halls dies from lethal damage")
+
+def guardianSurvivesTwoDamage : Game :=
+  let o := namedPermanent guardianResolved "Guardian of the Halls"
+  let g := guardianResolved.setObject { o with status := { o.status with
+    plusOnePlusOne := o.status.plusOnePlusOne, damage := 2 } }
+  g.receivePriority ⟨0⟩
+
+#guard guardianSurvivesTwoDamage.battlefield.any (fun o =>
+  o.name == "Guardian of the Halls")
+#guard (namedPermanent guardianSurvivesTwoDamage "Guardian of the Halls").status.damage == 2
+#guard guardianSurvivesTwoDamage.power
+  (namedPermanent guardianSurvivesTwoDamage "Guardian of the Halls") == 5
+
+/-- Printed trample assigns leftover combat damage (5/5 vs 2/2 Bears). -/
+def afterGuardianTrampleCombat : Game :=
+  let g := addPermanent guardianResolved grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Guardian of the Halls").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Guardian of the Halls").id)])
+  passBoth g
+
+#guard afterGuardianTrampleCombat.log.any (fun s =>
+  mentions s "Guardian of the Halls deals 2 combat damage to Grizzly Bears")
+#guard afterGuardianTrampleCombat.log.any (fun s =>
+  mentions s "Guardian of the Halls tramples for 3 to Nissa")
+#guard afterGuardianTrampleCombat.log.any (fun s =>
+  mentions s "Grizzly Bears dies from lethal damage")
+#guard (afterGuardianTrampleCombat.player ⟨1⟩).life == 17
+#guard !(afterGuardianTrampleCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
 
 end Mtg.Engine.Tests

@@ -99,9 +99,15 @@ inductive AbilityEffect where
   | becomeBearCreatureWithLandsPT
   /-- This creature gets +P/+T until end of turn (e.g. Goblin Fireleaper). -/
   | sourceGets (power toughness : Int)
+  /-- Put `n` +1/+1 counters on this creature (e.g. Guardian of the Halls). -/
+  | putPlusOnePlusOneOnSource (n : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
+
+/-- English for putting `n` +1/+1 counters on a creature. -/
+def plusOnePlusOneCountersPhrase (n : Nat) : String :=
+  if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
 def toNotation : AbilityEffect → String
   | .searchBasicLandTapped =>
@@ -118,13 +124,15 @@ def toNotation : AbilityEffect → String
     "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
   | .sourceGets p t =>
     s!"This creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
+  | .putPlusOnePlusOneOnSource n =>
+    s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : AbilityEffect → Bool
   | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland
   | .attachToTargetCreatureYouControl => true
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ => false
+  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => false
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -620,12 +628,17 @@ instance : ToString CardDef where
   "This enchantment becomes a Bear creature"
 #guard AbilityEffect.toNotation (.sourceGets 1 0) ==
   "This creature gets +1/+0 until end of turn"
+#guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 3) ==
+  "Put 3 +1/+1 counters on this creature"
+#guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 1) ==
+  "Put a +1/+1 counter on this creature"
 #guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
+#guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
