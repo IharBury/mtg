@@ -1075,6 +1075,9 @@ def attercop : CardDef := {
 #guard (beornsHospitality.summary.splitOn "Landfall").length > 1
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
+#guard mirkwoodPathmaker.power.isNone
+#guard mirkwoodPathmaker.toughness.isNone
+#guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
 #guard ologHaiCrusher.keywords.trample
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]

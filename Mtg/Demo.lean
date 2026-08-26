@@ -1875,6 +1875,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.pathmakerSetup "cast"
+      [toString (Tests.handCardNamed Tests.pathmakerSetup ⟨0⟩ "Mirkwood Pathmaker").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Mirkwood Pathmaker")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.paidPathmaker "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.stack.isEmpty &&
+      g'.power (Tests.namedPermanent g' "Mirkwood Pathmaker") == 2 &&
+        g'.log.any (fun s => Tests.mentions s "enters the battlefield")
+    | .error _ => false
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.archAndElves "tap"
       [toString (Tests.namedPermanent Tests.archAndElves "Elvish Archdruid").id] with
   | .ok g' =>

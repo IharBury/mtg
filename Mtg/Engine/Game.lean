@@ -20,7 +20,7 @@ including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
 trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
-equal to lands you control, or restrict blocking unless you control certain
+equal to lands you control in all zones (CR 604.3 / 208.2a), or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
@@ -166,10 +166,9 @@ def typeLine (o : GameObject) : String :=
     if super.isEmpty then types else s!"{super} {types}"
   if sub.isEmpty then head else s!"{head} — {sub}"
 
-/-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7b
-setting effects such as “equal to the number of lands you control” or an
-until-end-of-turn base P/T set, attached Aura/Equipment bonuses, and lord
-bonuses are applied in `Game.power` / `Game.toughness`. -/
+/-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7a
+lands-you-control CDAs (all zones), layer-7b setting, attached Aura/Equipment
+bonuses, and lord bonuses are applied in `Game.power` / `Game.toughness`. -/
 def power (o : GameObject) : Int :=
   (o.printed.power.getD 0) + o.status.pumpPower + (o.status.plusOnePlusOne : Int)
 
@@ -180,6 +179,11 @@ def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
 
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
+
+/-- The player “you” and “your” refer to on this object (CR 109.5): its
+controller, or its owner if it has none. -/
+def you (o : GameObject) : PlayerId :=
+  o.controller.getD o.owner
 
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
@@ -478,6 +482,44 @@ def battlefield (g : Game) : Array GameObject :=
 def permanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o => o.controlledBy p)
 
+/-- Lands `p` currently controls (CR 305.1). -/
+def landsYouControl (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (·.printed.isLand) |>.size
+
+/-- Whether `o` currently has a “P/T equal to lands you control” ability.
+This characteristic-defining ability functions in all zones (CR 208.2a / 604.3). -/
+def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun ab =>
+    match ab with
+    | .powerToughnessEqualLandsYouControl => true
+    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+    | .enchantedCreatureGets _ _
+    | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
+
+/-- Power or toughness from a lands-you-control CDA (CR 208.2a / 604.3). -/
+def landsYouControlPT (g : Game) (o : GameObject) : Int :=
+  Int.ofNat (g.landsYouControl o.you)
+
+/-- Characteristic power before pumps, counters, and attached bonuses: an
+until-EOT layer-7b set on the battlefield, else lands you control when that
+CDA applies (in all zones), else printed power (CR 208.2a / 604.3 / 613.3). -/
+def characteristicBasePower (g : Game) (o : GameObject) : Int :=
+  let fromCdaOrPrinted :=
+    if g.hasLandsYouControlPT o then g.landsYouControlPT o else o.printed.power.getD 0
+  if o.isOnBattlefield then
+    o.status.setBasePower.getD fromCdaOrPrinted
+  else
+    fromCdaOrPrinted
+
+/-- Characteristic toughness before pumps, counters, and attached bonuses. -/
+def characteristicBaseToughness (g : Game) (o : GameObject) : Int :=
+  let fromCdaOrPrinted :=
+    if g.hasLandsYouControlPT o then g.landsYouControlPT o else o.printed.toughness.getD 0
+  if o.isOnBattlefield then
+    o.status.setBaseToughness.getD fromCdaOrPrinted
+  else
+    fromCdaOrPrinted
+
 def allocId (g : Game) : Game × ObjectId :=
   ({ g with nextObjectId := g.nextObjectId + 1 }, ⟨g.nextObjectId⟩)
 
@@ -557,25 +599,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
                 (0 : Int)
           else acc)
         (0 : Int)
-  let setByLands :=
-    o.staticAbilities.any (fun ab =>
-      match ab with
-      | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
-      | .enchantedCreatureGets _ _
-      | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
-  let base :=
-    match o.status.setBasePower with
-    | some n => n
-    | none =>
-      if o.isOnBattlefield && setByLands then
-        match o.controller with
-        | some p => Int.ofNat ((g.permanentsOf p).filter (·.printed.isLand) |>.size)
-        | none => 0
-      else
-        o.printed.power.getD 0
-  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached +
-    (g.lordStatBonus o).1
+  g.characteristicBasePower o + o.status.pumpPower + (o.status.plusOnePlusOne : Int) +
+    attached + (g.lordStatBonus o).1
 
 /-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
@@ -596,25 +621,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
                 (0 : Int)
           else acc)
         (0 : Int)
-  let setByLands :=
-    o.staticAbilities.any (fun ab =>
-      match ab with
-      | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
-      | .enchantedCreatureGets _ _
-      | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
-  let base :=
-    match o.status.setBaseToughness with
-    | some n => n
-    | none =>
-      if o.isOnBattlefield && setByLands then
-        match o.controller with
-        | some p => Int.ofNat ((g.permanentsOf p).filter (·.printed.isLand) |>.size)
-        | none => 0
-      else
-        o.printed.toughness.getD 0
-  base + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) + attached +
-    (g.lordStatBonus o).2
+  g.characteristicBaseToughness o + o.status.pumpToughness +
+    (o.status.plusOnePlusOne : Int) + attached + (g.lordStatBonus o).2
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
@@ -784,50 +792,13 @@ def auraStatBonus (aura : GameObject) : Int × Int :=
       | .cantBlockUnlessYouControl _ => acc)
     (0, 0)
 
-/-- Lands `p` currently controls (CR 305.1). -/
-def landsYouControl (g : Game) (p : PlayerId) : Nat :=
-  (g.permanentsOf p).filter (·.printed.isLand) |>.size
-
-/-- Whether `o` currently has a “P/T equal to lands you control” ability. -/
-def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
-  o.staticAbilities.any (fun ab =>
-    match ab with
-    | .powerToughnessEqualLandsYouControl => true
-    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
-    | .enchantedCreatureGets _ _
-    | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
-
-/-- Characteristic power before pumps, counters, and attached bonuses: an
-until-EOT layer-7b set, else lands you control when that CDA applies, else
-printed power (CR 208.2a / 613.3). -/
+/-- Characteristic power before pumps, counters, and attached bonuses. -/
 def basePower (g : Game) (o : GameObject) : Int :=
-  if o.isOnBattlefield then
-    match o.status.setBasePower with
-    | some n => n
-    | none =>
-      if g.hasLandsYouControlPT o then
-        match o.controller with
-        | some p => Int.ofNat (g.landsYouControl p)
-        | none => 0
-      else
-        o.printed.power.getD 0
-  else
-    o.printed.power.getD 0
+  g.characteristicBasePower o
 
 /-- Characteristic toughness before pumps, counters, and attached bonuses. -/
 def baseToughness (g : Game) (o : GameObject) : Int :=
-  if o.isOnBattlefield then
-    match o.status.setBaseToughness with
-    | some n => n
-    | none =>
-      if g.hasLandsYouControlPT o then
-        match o.controller with
-        | some p => Int.ofNat (g.landsYouControl p)
-        | none => 0
-      else
-        o.printed.toughness.getD 0
-  else
-    o.printed.toughness.getD 0
+  g.characteristicBaseToughness o
 
 /-- Static power/toughness from Auras and Equipment attached to `o`. -/
 def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
@@ -2508,7 +2479,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       | none => g.logMsg "The target is no longer in the graveyard"
       | some o =>
         if (g.legalTriggerTargets controller ab sourceId).contains (Target.card oid) then
-          let n := (o.printed.power.getD 0).toNat
+          let n := (g.power o).toNat
           let name := o.name
           let (g, _) := g.move oid (.hand controller) none
           let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
