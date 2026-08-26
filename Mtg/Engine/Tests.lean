@@ -4291,7 +4291,7 @@ def oliphauntResolved : Game := passBoth oliphauntTargeted
 #guard oliphauntResolved.log.any (fun s =>
   mentions s "gets +2/+0 and gains trample until end of turn")
 
-/-- Pump stacks with printed power; Oliphaunt itself is unchanged. -/
+-- Pump stacks with printed power; Oliphaunt itself is unchanged.
 #guard oliphauntResolved.power (namedPermanent oliphauntResolved "Oliphaunt") == 6
 #guard oliphauntResolved.hasTrample (namedPermanent oliphauntResolved "Oliphaunt")
 
