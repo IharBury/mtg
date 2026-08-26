@@ -502,6 +502,29 @@ def mountainLine (g : Game) : String :=
     (changedZones before after).contains (.library ⟨0⟩) &&
     !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
 
+#guard mentions (stackBlock guideEntered) "Galadhrim Guide's ability"
+#guard mentions (stackBlock guideEntered) "When this creature enters, scry 2"
+#guard !mentions (stackBlock guideEntered) "When this permanent enters"
+#guard
+  let g := guideEntered
+  let guide := namedPermanent g "Galadhrim Guide"
+  mentions (stackBlock g) s!"*source {guide.id} Galadhrim Guide*" &&
+    mentions (zoneBlock g .stack) s!"*source {guide.id} Galadhrim Guide*" &&
+    mentions (objectLine g guide) "3/4"
+#guard mentions (header guideScrying) "scry 2"
+#guard mentions (snapshot guideScrying) "Looking at (scry 2, top last):"
+#guard
+  let g := guideKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Forest" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Llanowar Elves" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId) &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId)
+  | _, _ => false
+
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
 #guard (changedZones cratermakerTargeted paidCratermaker).contains .battlefield

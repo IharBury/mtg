@@ -1225,6 +1225,21 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.guideSetup "cast"
+      [toString (Tests.handCardNamed Tests.guideSetup ⟨0⟩ "Galadhrim Guide").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Galadhrim Guide")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.guideScrying "scry" [] with
+  | .ok g' =>
+    g'.pending == .none && g'.hasPriority ⟨0⟩ &&
+      g'.battlefield.any (fun o => o.name == "Galadhrim Guide")
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.proposedWarg "mode" ["1"] with
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&

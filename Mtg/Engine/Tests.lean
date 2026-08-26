@@ -244,6 +244,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
+#guard mentions galadhrimGuide.summary "scry 2"
+#guard galadhrimGuide.triggeredAbilities.size == 1
+#guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -1974,6 +1977,108 @@ def scryEmpty : Game :=
 
 #guard scryEmpty.pending == .none
 #guard scryEmpty.log.any (fun s => mentions s "no cards to look at")
+
+/-- Galadhrim Guide in hand with enough mana to cast it (CR 601.2). -/
+def guideSetup : Game :=
+  withGreenMana (addToHand afterDraw galadhrimGuide ⟨0⟩) ⟨0⟩
+
+#guard guideSetup.canCast ⟨0⟩ (handCardNamed guideSetup ⟨0⟩ "Galadhrim Guide")
+#guard guideSetup.asSorcery? ⟨0⟩
+#guard !galadhrimGuide.keywords.flash
+#guard galadhrimGuide.hasSorcerySpeed
+
+-- A creature without flash cannot be cast when it is not a main phase.
+#guard
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
+  !g.asSorcery? ⟨0⟩ && !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Galadhrim Guide")
+
+def proposedGuide : Game :=
+  mustApply guideSetup ⟨0⟩ (.cast (handCardNamed guideSetup ⟨0⟩ "Galadhrim Guide").id)
+
+#guard proposedGuide.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGuide.log.any (fun s => mentions s "begins casting Galadhrim Guide")
+
+def paidGuide : Game := mustApply proposedGuide ⟨0⟩ .pay
+
+#guard paidGuide.stack.size == 1
+#guard paidGuide.hasPriority ⟨0⟩
+#guard paidGuide.log.any (fun s => mentions s "casts Galadhrim Guide")
+
+/-- The creature enters; scry waits on the stack (CR 603.6a). -/
+def guideEntered : Game := passBoth paidGuide
+
+#guard (namedPermanent guideEntered "Galadhrim Guide").printed.power == some 3
+#guard guideEntered.power (namedPermanent guideEntered "Galadhrim Guide") == 3
+#guard guideEntered.toughness (namedPermanent guideEntered "Galadhrim Guide") == 4
+#guard guideEntered.stack.size == 1
+#guard (guideEntered.object! guideEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterScry 2)
+#guard (guideEntered.object! guideEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent guideEntered "Galadhrim Guide").id
+#guard guideEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard guideEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+def guideScrying : Game := passBoth guideEntered
+
+#guard
+  match guideScrying.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+#guard guideScrying.actor == some ⟨0⟩
+#guard !guideScrying.hasPriority ⟨0⟩
+#guard guideScrying.log.any (fun s => mentions s "scries 2")
+#guard guideScrying.stack.isEmpty
+#guard guideScrying.battlefield.any (fun o => o.name == "Galadhrim Guide")
+
+def guideScried : Game := keepScry guideScrying
+
+#guard guideScried.pending == .none
+#guard guideScried.hasPriority ⟨0⟩
+#guard guideScried.battlefield.any (fun o => o.name == "Galadhrim Guide")
+
+-- The agent keeps scried cards on top.
+#guard
+  match Agent.choose guideScrying ⟨0⟩ with
+  | some (.scry top bottom) =>
+    bottom.isEmpty && top == guideScrying.scryLookedIds ⟨0⟩ 2
+  | _ => false
+
+/-- Known library: Forest then Elves on top; scry 2 looks at both. -/
+def guideKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop guideEntered forest ⟨0⟩) llanowarElves ⟨0⟩
+
+def guideKnownScrying : Game := passBoth guideKnownLib
+
+#guard
+  let looked := guideKnownScrying.scryLookedIds ⟨0⟩ 2
+  looked.size == 2 &&
+    (guideKnownScrying.object! looked[0]!).name == "Forest" &&
+    (guideKnownScrying.object! looked.back!).name == "Llanowar Elves"
+
+/-- The trigger still scries if Galadhrim Guide has left the battlefield (CR 113.7a). -/
+def guideLeftBeforeTrigger : Game :=
+  let id := (namedPermanent guideEntered "Galadhrim Guide").id
+  let (g, _) := guideEntered.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard
+  match guideLeftBeforeTrigger.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+#guard !(guideLeftBeforeTrigger.battlefield.any (fun o => o.name == "Galadhrim Guide"))
+#guard (guideLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (guideLeftBeforeTrigger.object! id).name == "Galadhrim Guide")
+
+/-- The agent casts Galadhrim Guide when that is the playable spell. -/
+def agentGuideOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
+
+#guard
+  match Agent.choose agentGuideOnly ⟨0⟩ with
+  | some (.cast id) => (agentGuideOnly.object! id).name == "Galadhrim Guide"
+  | _ => false
 
 /-- Goblin Cratermaker plus an opposing 2/2 and a Mountain; a land drop is already
 used so the agent will activate rather than play another land. -/

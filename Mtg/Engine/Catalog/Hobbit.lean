@@ -757,6 +757,7 @@ def galadhrimGuide : CardDef := {
   oracleText := "When this creature enters, scry 2."
   power := some 3
   toughness := some 4
+  triggeredAbilities := #[.onEnterScry 2]
 }
 
 def galionElvenkingsButler : CardDef := {
@@ -932,6 +933,10 @@ def attercop : CardDef := {
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
+#guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
+#guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
+#guard galadhrimGuide.power == some 3
+#guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1
 #guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
 #guard goblinCratermaker.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
