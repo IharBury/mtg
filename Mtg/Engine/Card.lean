@@ -240,6 +240,10 @@ inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
   is the greatest power among creatures you control. -/
   | onAttackPumpByGreatestPower
+  /-- Whenever this creature attacks, choose up to one other target creature you
+  control. Its base power and toughness become equal to this creature's power
+  and toughness until end of turn (e.g. Galion, Elvenking's Butler). -/
+  | onAttackSetOtherBasePT
   /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
   blocking it (e.g. Battle-Scarred Goblin). -/
   | onBecomesBlockedDeal1ToBlockers
@@ -264,6 +268,8 @@ namespace TriggeredAbility
 def toNotation : TriggeredAbility → String
   | .onAttackPumpByGreatestPower =>
     "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+  | .onAttackSetOtherBasePT =>
+    "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
   | .onBecomesBlockedDeal1ToBlockers =>
     "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
   | .onEnterScry n =>
@@ -286,13 +292,14 @@ def toNotation : TriggeredAbility → String
 damage as the controller chooses (CR 601.2d). -/
 def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onEnterDealDividedDamage amount maxTargets => some (amount, maxTargets)
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
-  | .onAttackPumpByGreatestPower => true
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature => false
@@ -300,38 +307,48 @@ def triggersWhenAttacking : TriggeredAbility → Bool
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers => true
-  | .onAttackPumpByGreatestPower | .onEnterScry _ | .onEnterMayDiscardDraw _
-  | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onEnterScry _
+  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
   | .onEnterScry _ | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _ => true
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onBecomesBlockedDeal1ToBlockers
   | .onLandYouControlEntersPlusOnePlusOne | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
 def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne => true
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
 def triggersWhenDying : TriggeredAbility → Bool
   | .onDiesDealDamageEqualToPowerToOppCreature => true
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ => false
 
 /-- True when putting this trigger on the stack requires announcing a target
-(CR 603.3d / 601.2c). -/
+(CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => true
+  | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ => false
+
+/-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
+“choose up to one”. Such a trigger is never removed for lack of targets. -/
+def allowsZeroTargets : TriggeredAbility → Bool
+  | .onAttackSetOtherBasePT => true
+  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -546,6 +563,8 @@ instance : ToString CardDef where
   "This creature's power and toughness are each equal to the number of lands you control."
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
+#guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
+  "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
 #guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
   "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
 #guard TriggeredAbility.toNotation (.onEnterScry 2) ==
@@ -561,7 +580,9 @@ instance : ToString CardDef where
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
+#guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
+#guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterMayDiscardDraw 2)
@@ -580,6 +601,9 @@ instance : ToString CardDef where
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onDiesDealDamageEqualToPowerToOppCreature
+#guard TriggeredAbility.requiresTarget .onAttackSetOtherBasePT
+#guard TriggeredAbility.allowsZeroTargets .onAttackSetOtherBasePT
+#guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)

@@ -240,7 +240,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
   discard <id>         Discard a card; if you do, draw (CR 701.9)
-  decline              Decline an optional discard
+  decline              Decline an optional discard or choose no target
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -267,6 +267,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
+#guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "first <name>").length > 1
@@ -1339,7 +1340,7 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 
 def declineUsage : String := "usage: decline"
 
-/-- Decline an optional discard. -/
+/-- Decline an optional discard or choose no target for an “up to one” trigger. -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1465,6 +1466,26 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .none &&
     g'.stack.back!.dividedDamage == #[3]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.galionAttackDeclared "target"
+      [toString (Tests.namedPermanent Tests.galionAttackDeclared "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.galionAttackDeclared "decline" [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.stack.back!.targetsAnnounced &&
+    g'.log.any (fun s => Tests.mentions s "chooses no target")
   | .error _ => false
 
 #guard

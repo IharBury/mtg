@@ -74,14 +74,19 @@ where
       | some i => some (.chooseMode i)
       | none => some .pass
   /-- During CR 601.2c / 603.3d, announce a legal target for the proposed
-  spell, activated ability, or triggered ability. -/
+  spell, activated ability, or triggered ability. Optional “up to one”
+  triggers may choose no target. -/
   chooseSpellTarget (g : Game) (p : PlayerId) : Option Action :=
     match g.objectAwaitingTargets with
     | none => some .pass
     | some spell =>
       match g.defaultTarget p spell with
       | some t => some (.target t)
-      | none => some .pass
+      | none =>
+        match spell.triggeredAbility with
+        | some ab =>
+          if ab.allowsZeroTargets then some .decline else some .pass
+        | none => some .pass
   /-- During CR 601.2b, announce a mode of a modal activated ability. -/
   chooseAbilityMode (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell with

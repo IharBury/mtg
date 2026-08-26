@@ -701,4 +701,17 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine flyerVsGandalf
   (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")) "reach"
 
+#guard mentions (header galionAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (stackBlock galionAttackDeclared) "Galion, Elvenking's Butler's ability"
+#guard mentions (stackBlock galionAttackDeclared) "base power and toughness"
+#guard
+  let g := galionAttackDeclared
+  let src := namedPermanent g "Galion, Elvenking's Butler"
+  mentions (stackBlock g) s!"*source {src.id} Galion, Elvenking's Butler*" &&
+    mentions (objectLine g src) "4/4"
+#guard
+  let g := galionResolved
+  let elves := namedPermanent g "Llanowar Elves"
+  mentions (objectLine g elves) "4/4"
+
 end Mtg.Demo.RenderTests
