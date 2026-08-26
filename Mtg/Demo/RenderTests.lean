@@ -40,6 +40,8 @@ open Mtg.Demo.Render
   (firstHandCard started ⟨1⟩).name
 #guard mentions (playerBlock started (started.player ⟨0⟩) (some ⟨0⟩))
   (firstHandCard started ⟨0⟩).name
+#guard mentions (playerBlock started (started.player ⟨0⟩)) "Graveyard (0):"
+#guard mentions (playerBlock started (started.player ⟨0⟩)) "  (empty)"
 
 #guard mentions (snapshot started (some ⟨0⟩)) "Chandra's view"
 #guard !mentions (snapshot started) "view"
@@ -806,5 +808,26 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := guttersnipeTriggerResolved
   mentions (playerBlock g (g.player ⟨1⟩)) "life 18"
+
+#guard mentions (header elkEntered) "choose targets (CR 601.2c"
+#guard mentions (stackBlock elkEntered) "Mirkwood Elk's ability"
+#guard mentions (stackBlock elkEntered) "Elf card"
+#guard mentions (stackBlock elkEntered) "Whenever this creature enters or attacks"
+#guard !mentions (stackBlock elkEntered) "When this permanent enters"
+#guard
+  let g := elkEntered
+  let src := namedPermanent g "Mirkwood Elk"
+  let elf := namedGraveyardCard g ⟨0⟩ "Llanowar Elves"
+  mentions (stackBlock g) s!"*source {src.id} Mirkwood Elk*" &&
+    mentions (objectLine g src) "6/6" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (1):" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) elf.name
+#guard mentions (header elkAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (stackBlock elkAttackDeclared) "Mirkwood Elk's ability"
+#guard mentions (stackBlock elkAttackDeclared) "Whenever this creature enters or attacks"
+#guard
+  let g := elkResolved
+  mentions (playerBlock g (g.player ⟨0⟩)) "life 21" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (0):"
 
 end Mtg.Demo.RenderTests

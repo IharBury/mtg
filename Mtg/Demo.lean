@@ -1126,7 +1126,8 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 def targetUsage : String := "usage: target <id|name|opponent>"
 def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."
 
-/-- Parse a CR 601.2c target: a permanent id, a player name, or `opponent`. -/
+/-- Parse a CR 601.2c target: a permanent or graveyard-card id, a player name,
+or `opponent`. Card names match a current legal target. -/
 def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target := do
   let key := token.trimAscii.copy
   let lower := key.map Char.toLower
@@ -1139,8 +1140,24 @@ def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Targe
     | some id =>
       match g.findObject? id with
       | none => throw "no such object"
-      | some _ => return Target.permanent id
-    | none => throw targetUsage
+      | some o =>
+        match o.zone with
+        | .graveyard _ => return Target.card id
+        | _ => return Target.permanent id
+    | none =>
+      match g.objectAwaitingTargets with
+      | none => throw targetUsage
+      | some obj =>
+        let named := (g.legalProposedTargets p obj).filter (fun t =>
+          match t with
+          | .player pid => (g.player pid).name.map Char.toLower == lower
+          | .permanent oid | .card oid =>
+            match g.findObject? oid with
+            | some o => o.name.map Char.toLower == lower
+            | none => false)
+        match named.back? with
+        | some t => return t
+        | none => throw targetUsage
 
 /-- Parse target/amount pairs for a divided-damage announcement (CR 601.2d). -/
 def parseTargetAmountPairs (g : Game) (p : PlayerId) (tokens : List String) :
@@ -1573,6 +1590,53 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .none &&
     g'.stack.back!.dividedDamage == #[3]
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.elkEntered ⟨0⟩
+      [toString (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.elkEntered ⟨0⟩ ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "target"
+      [toString (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard g' ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "target" ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "decline" [] with
+  | .error msg => Tests.mentions msg "requires a target"
+  | .ok _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkAttackDeclared "target" ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkAttackDeclared ⟨0⟩ "Llanowar Elves").id]
   | .error _ => false
 
 #guard

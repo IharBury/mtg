@@ -95,13 +95,15 @@ The first slice of the engine models the two-player game:
   set power and toughness equal to the number of lands you control, or
   restrict blocking unless you control a Goblin or Orc; attack
   triggers that pump power, set another creature's base power and toughness,
-  or give another creature +2/+0 and trample,
+  give another creature +2/+0 and trample, or scry when you attack with one or
+  more Elves; scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, may discard a card to draw, or deal damage
   divided as you choose among one, two, or three targets (including whenever
-  a creature enters or attacks), landfall triggers that
+  a creature enters or attacks), return an Elf card from your graveyard and
+  gain life equal to its power, landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal

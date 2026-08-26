@@ -29,10 +29,13 @@ keyword grants, attack triggers (CR 508.2 / 603), including copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
-you choose when a creature enters or attacks (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
+you choose when a creature enters or attacks (CR 601.2d) and returning an Elf
+card from your graveyard to gain life equal to its power (CR 701.19 / 118.2),
+landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
-sorcery (CR 601.2i / 603.3),
+sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
+for each card looked at (CR 508.2 / 701.20 / 603),
 activated pumps that last until end of turn and activated abilities that
 put +1/+1 counters on the source (CR 602 / 611.2a / 122),
 adventurer cards including casting an Adventure and later the permanent
@@ -43,10 +46,13 @@ CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
 
 namespace Mtg.Engine
 
-/-- A target chosen while casting a spell (CR 115). -/
+/-- A target chosen while casting a spell or putting an ability on the stack
+(CR 115). -/
 inductive Target where
   | player (id : PlayerId)
   | permanent (id : ObjectId)
+  /-- A card in a graveyard (CR 404 / 115.1). -/
+  | card (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Permanent status (CR 110.5). Extra fields track combat and EOT pumps. -/
@@ -207,6 +213,16 @@ structure WaitingDeathTrigger where
   source : GameObject
   ability : TriggeredAbility
   lastKnownPower : Int
+deriving Repr, Inhabited
+
+/-- A “whenever you scry” trigger waiting to be put onto the stack after the
+scry keyword action finishes (CR 603.2 / 701.20). `lookedAt` is how many cards
+were looked at. -/
+structure WaitingScryTrigger where
+  controller : PlayerId
+  source : GameObject
+  ability : TriggeredAbility
+  lookedAt : Nat
 deriving Repr, Inhabited
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
@@ -401,6 +417,9 @@ structure Game where
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Dies triggers waiting to be put onto the stack (CR 603.3 / 700.4). -/
   waitingDeathTriggers : Array WaitingDeathTrigger := #[]
+  /-- “Whenever you scry” triggers waiting until the scry action finishes
+  (CR 603.3 / 701.20). -/
+  waitingScryTriggers : Array WaitingScryTrigger := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -1021,6 +1040,15 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
     o.isCreature && pred o && g.canBeTargetedBy caster o)
   |>.map (fun o => Target.permanent o.id)
 
+/-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
+not apply off the battlefield (CR 702.11b). -/
+def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → Bool) :
+    Array Target :=
+  (g.player p).graveyard.filterMap (fun id =>
+    match g.findObject? id with
+    | some o => if pred o then some (Target.card o.id) else none
+    | none => none)
+
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
@@ -1033,11 +1061,14 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
       g.legalCreatureTargets p (fun _ => true)
+  | .onEnterOrAttackReturnElfGainLife =>
+    g.legalGraveyardCardTargets p (fun o => o.hasSubtype "Elf")
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterDraw _ | .onEnterMayDiscardDraw _
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -1129,13 +1160,32 @@ def putWaitingDeathTriggers (g : Game) : Game :=
             (some wt.lastKnownPower)
       return g.promptTriggerTargetsIfNeeded
 
+/-- Put queued “whenever you scry” triggers onto the stack (CR 603.3 / 701.20).
+`lastKnownPower` stores the number of cards looked at. -/
+def putWaitingScryTriggers (g : Game) : Game :=
+  if g.waitingScryTriggers.isEmpty then g
+  else
+    Id.run do
+      let waiting := g.waitingScryTriggers
+      let mut g := { g with waitingScryTriggers := #[] }
+      for wt in waiting do
+        g := g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability "scry trigger"
+          (some (Int.ofNat wt.lookedAt))
+      return g.promptTriggerTargetsIfNeeded
+
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
   if g.over then g
   else
     let g := g.putWaitingDeathTriggers
-    if g.over || g.pending != .none then g
-    else { g with priority := p, consecutivePasses := 0 }
+    if g.over then g
+    else
+      let g :=
+        match g.pending with
+        | .scry _ _ => g
+        | _ => g.putWaitingScryTriggers
+      if g.over || g.pending != .none then g
+      else { g with priority := p, consecutivePasses := 0 }
 
 /-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
@@ -1397,7 +1447,8 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
-destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
+destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
+card in the controller's graveyard; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1407,6 +1458,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | some (.onEnterDealDividedDamage _ _), _, _
     | some (.onEnterOrAttackDealDividedDamage _ _), _, _ =>
       some (Target.player (g.opponent p))
+    | some .onEnterOrAttackReturnElfGainLife, _, _ =>
+      (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
     | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
@@ -1472,7 +1525,7 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) :
 
 def targetLogName (g : Game) : Target → String
   | .player pid => (g.player pid).name
-  | .permanent oid =>
+  | .permanent oid | .card oid =>
     match g.findObject? oid with
     | some o => o.name
     | none => toString oid
@@ -2091,6 +2144,21 @@ def illegalAbilityTarget (g : Game) : Target → Game
       if o.isOnBattlefield then g.logMsg "The target is no longer legal"
       else g.logMsg "The target is no longer in play"
     | none => g.logMsg "The target is no longer in play"
+  | Target.card oid =>
+    match g.findObject? oid with
+    | some o =>
+      match o.zone with
+      | .graveyard _ => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer in the graveyard"
+    | none => g.logMsg "The target is no longer in the graveyard"
+
+/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setPlayer { pl with life := pl.life + (n : Int) }
+    g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
@@ -2115,7 +2183,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let o := g.object! oid
           let (g, _) := g.move oid (.graveyard o.owner) none
           g.logMsg s!"{o.name} is destroyed"
-        | Target.player _ => g.logMsg "The target is no longer legal"
+        | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .attachToTargetCreatureYouControl =>
@@ -2138,7 +2206,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
               g.logMsg s!"{src.name} attaches to {host.name}"
         | Target.permanent _, none =>
           g.logMsg "The Equipment is no longer in play"
-        | Target.player _, _ => g.logMsg "The target is no longer legal"
+        | Target.player _, _ | Target.card _, _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .becomeBearCreatureWithLandsPT =>
@@ -2194,10 +2262,28 @@ def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
   let n := min count lib.size
   lib.extract (lib.size - n) lib.size
 
-/-- Start scrying `n` as a keyword action during resolution (CR 701.20). -/
+/-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
+def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.controlledBy p then
+        for ab in o.printed.triggeredAbilities do
+          if ab.triggersWhenYouScry then
+            g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
+              controller := p
+              source := o
+              ability := ab
+              lookedAt := lookedAt
+            } }
+    return g
+
+/-- Start scrying `n` as a keyword action during resolution (CR 701.20).
+Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
+  let g := if n == 0 then g else g.queueScryTriggers p count
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
@@ -2254,7 +2340,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg "The target is no longer legal"
         else
           g.logMsg "The target is no longer in play"
-    | some (Target.player _) =>
+    | some (Target.player _) | some (Target.card _) =>
       g.logMsg "The target is no longer legal"
   | .onAttackOtherGets2AndTrample =>
     match targets[0]? with
@@ -2293,7 +2379,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
-  | .onEnterScry n =>
+  | .onEnterScry n | .onAttackWithElvesScry n =>
     g.beginScry controller n
   | .onEnterDraw n =>
     g.draw controller n
@@ -2339,6 +2425,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else
           g.logMsg "The target is no longer in play"
     | _ => g.logMsg "The target is no longer legal"
+  | .onEnterOrAttackReturnElfGainLife =>
+    match targets[0]? with
+    | some (Target.card oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in the graveyard"
+      | some o =>
+        if (g.legalTriggerTargets controller ab sourceId).contains (Target.card oid) then
+          let n := (o.printed.power.getD 0).toNat
+          let name := o.name
+          let (g, _) := g.move oid (.hand controller) none
+          let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+          g.gainLife controller n
+        else
+          match o.zone with
+          | .graveyard _ => g.logMsg "The target is no longer legal"
+          | _ => g.logMsg "The target is no longer in the graveyard"
+    | _ => g.logMsg "The target is no longer legal"
   | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
     Id.run do
       let mut g := g
@@ -2346,8 +2449,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         if pl.id != controller then
           g := g.applyEffect controller (.dealDamage n) #[Target.player pl.id]
       return g
+  | .onScryPumpSelfForEachLookedAt =>
+    let n := (lastKnownPower.getD 0).toNat
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with
+          status := { o.status with
+            pumpPower := o.status.pumpPower + (n : Int)
+            pumpToughness := o.status.pumpToughness + (n : Int) } }
+        g.logMsg s!"{o.name} gets +{n}/+{n} until end of turn"
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
 
-/-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
+/-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
+including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
@@ -2362,6 +2480,13 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
           else
             g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
               (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+    let attackedWithElves := attackerIds.any (fun id => (g.object! id).hasSubtype "Elf")
+    if attackedWithElves then
+      for o in g.battlefield do
+        if o.controlledBy p then
+          for ab in o.printed.triggeredAbilities do
+            if ab.triggersWhenYouAttackWithElves then
+              g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
