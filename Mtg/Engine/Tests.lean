@@ -310,6 +310,13 @@ def uncontrolledPermanent : Game :=
 #guard mentions lothlorienLookout.summary "scry 1"
 #guard lothlorienLookout.triggeredAbilities.size == 1
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
+#guard mentions woodlandWeavemaster.summary "vigilance"
+#guard mentions woodlandWeavemaster.summary "another Elf"
+#guard mentions woodlandWeavemaster.summary "any one color"
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities.size == 1
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
@@ -445,6 +452,24 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
     !mentions c.abilitiesText "{T}: Add {G};" &&
     c.manaAbilities == #[.colored .green]
+
+#guard
+  let c : CardDef := {
+    name := "Silent Weavemaster"
+    types := #[.creature]
+    subtypes := #["Elf", "Druid"]
+    power := some 1
+    toughness := some 2
+    keywords := { Keywords.none with vigilance := true }
+    triggeredAbilities := #[.onAnotherElfYouControlEntersGets1]
+    tapAddAnyColorEqualToPower := true
+  }
+  mentions c.summary "vigilance" &&
+    mentions c.abilitiesText "another Elf you control enters" &&
+    mentions c.abilitiesText "any one color" &&
+    mentions c.abilitiesText "Elf spells" &&
+    c.tapAddAnyColorEqualToPower &&
+    c.manaAbilities.size == 5
 
 #guard
   let c : CardDef := {
@@ -6475,6 +6500,276 @@ def afterCelebornCleanup : Game := passBoth (skipTo celebornPumped .end 80)
 #guard afterCelebornCleanup.power (namedPermanent afterCelebornCleanup "Celeborn the Wise") == 3
 #guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpPower == 0
 #guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpToughness == 0
+
+/- Woodland Weavemaster: vigilance, another-Elf-enters +1/+1, and restricted
+any-color mana equal to power. -/
+
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.manaAbilities.contains (.colored .green)
+#guard woodlandWeavemaster.manaAbilities.contains (.colored .white)
+#guard !woodlandWeavemaster.manaAbilities.contains .colorless
+
+def weavemasterReady : Game :=
+  addPermanent afterDraw woodlandWeavemaster ⟨0⟩ ⟨0⟩
+
+#guard (weavemasterReady.effectiveKeywords
+  (namedPermanent weavemasterReady "Woodland Weavemaster")).vigilance
+#guard weavemasterReady.hasVigilance
+  (namedPermanent weavemasterReady "Woodland Weavemaster")
+#guard weavemasterReady.power (namedPermanent weavemasterReady "Woodland Weavemaster") == 1
+#guard weavemasterReady.manaFromTap
+  (namedPermanent weavemasterReady "Woodland Weavemaster") (.colored .green) == 1
+#guard (weavemasterReady.availableMana ⟨0⟩).green == 1
+#guard (weavemasterReady.availableMana ⟨0⟩).elfGreen == 1
+#guard (weavemasterReady.availableMana ⟨0⟩).canPay (ManaCost.ofColor .green) true
+#guard !(weavemasterReady.availableMana ⟨0⟩).canPay (ManaCost.ofColor .green)
+
+/-- Casting another Elf you control pumps Weavemaster (CR 603.6a). -/
+def weavemasterElfSetup : Game :=
+  withGreenMana (addToHand weavemasterReady llanowarElves ⟨0⟩) ⟨0⟩
+
+def proposedWeavemasterElf : Game :=
+  mustApply weavemasterElfSetup ⟨0⟩
+    (.cast (handCardNamed weavemasterElfSetup ⟨0⟩ "Llanowar Elves").id)
+
+def paidWeavemasterElf : Game := mustApply proposedWeavemasterElf ⟨0⟩ .pay
+
+def weavemasterElfEntered : Game := passBoth paidWeavemasterElf
+
+#guard weavemasterElfEntered.stack.size == 1
+#guard (weavemasterElfEntered.object! weavemasterElfEntered.stack.back!.objectId).triggeredAbility ==
+  some .onAnotherElfYouControlEntersGets1
+#guard (weavemasterElfEntered.object! weavemasterElfEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent weavemasterElfEntered "Woodland Weavemaster").id
+#guard weavemasterElfEntered.log.any (fun s => mentions s "Llanowar Elves enters the battlefield")
+#guard weavemasterElfEntered.log.any (fun s => mentions s "Elf-enters trigger is put on the stack")
+#guard weavemasterElfEntered.power
+  (namedPermanent weavemasterElfEntered "Woodland Weavemaster") == 1
+
+def weavemasterElfPumped : Game := passBoth weavemasterElfEntered
+
+#guard weavemasterElfPumped.stack.isEmpty
+#guard weavemasterElfPumped.power
+  (namedPermanent weavemasterElfPumped "Woodland Weavemaster") == 2
+#guard weavemasterElfPumped.toughness
+  (namedPermanent weavemasterElfPumped "Woodland Weavemaster") == 3
+#guard weavemasterElfPumped.log.any (fun s =>
+  mentions s "Woodland Weavemaster gets +1/+1 until end of turn")
+#guard weavemasterElfPumped.manaFromTap
+  (namedPermanent weavemasterElfPumped "Woodland Weavemaster") (.colored .green) == 2
+
+/-- Weavemaster entering alone does not pump itself. -/
+def weavemasterEntersAlone : Game :=
+  let g := withGreenMana (addToHand afterDraw woodlandWeavemaster ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Woodland Weavemaster").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard weavemasterEntersAlone.battlefield.any (fun o => o.name == "Woodland Weavemaster")
+#guard weavemasterEntersAlone.stack.isEmpty
+#guard weavemasterEntersAlone.power
+  (namedPermanent weavemasterEntersAlone "Woodland Weavemaster") == 1
+#guard !weavemasterEntersAlone.log.any (fun s => mentions s "Elf-enters trigger")
+
+/-- A non-Elf you control does not trigger the pump. -/
+def weavemasterBearsEntered : Game :=
+  let g := withGreenMana (addToHand weavemasterReady grizzlyBears ⟨0⟩) ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Grizzly Bears").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard weavemasterBearsEntered.stack.isEmpty
+#guard weavemasterBearsEntered.power
+  (namedPermanent weavemasterBearsEntered "Woodland Weavemaster") == 1
+
+/-- An opponent's Elf does not trigger the pump. -/
+def weavemasterOppElf : Game :=
+  let g := addPermanent weavemasterReady llanowarElves ⟨1⟩ ⟨1⟩
+  g.putAnotherElfYouControlEntersTriggers (namedPermanent g "Llanowar Elves")
+
+#guard weavemasterOppElf.stack.isEmpty
+
+/-- Two Weavemasters: the first triggers when the second enters. -/
+def twoWeavemastersEntered : Game :=
+  let g := addPermanent afterDraw woodlandWeavemaster ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g woodlandWeavemaster ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Woodland Weavemaster").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard twoWeavemastersEntered.stack.size == 1
+#guard (twoWeavemastersEntered.object! twoWeavemastersEntered.stack.back!.objectId).triggeredAbility ==
+  some .onAnotherElfYouControlEntersGets1
+
+def twoWeavemastersPumped : Game := passBoth twoWeavemastersEntered
+
+#guard
+  let weavers := twoWeavemastersPumped.battlefield.filter
+    (fun o => o.name == "Woodland Weavemaster")
+  weavers.size == 2 &&
+    (weavers.filter (fun o => twoWeavemastersPumped.power o == 2)).size == 1 &&
+    (weavers.filter (fun o => twoWeavemastersPumped.power o == 1)).size == 1
+
+/-- If Weavemaster leaves before the trigger resolves, it is not pumped. -/
+def weavemasterPumpSourceGone : Game :=
+  let id := (namedPermanent weavemasterElfEntered "Woodland Weavemaster").id
+  let (g, _) := weavemasterElfEntered.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard weavemasterPumpSourceGone.stack.isEmpty
+#guard !(weavemasterPumpSourceGone.battlefield.any (fun o => o.name == "Woodland Weavemaster"))
+#guard weavemasterPumpSourceGone.log.any (fun s => mentions s "source is no longer in play")
+
+/-- The +1/+1 wears off in cleanup. -/
+def afterWeavemasterCleanup : Game := passBoth (skipTo weavemasterElfPumped .end 80)
+
+#guard afterWeavemasterCleanup.power
+  (namedPermanent afterWeavemasterCleanup "Woodland Weavemaster") == 1
+#guard (namedPermanent afterWeavemasterCleanup "Woodland Weavemaster").status.pumpPower == 0
+
+/-- Tapping adds power of the chosen color as Elf-restricted mana. -/
+def tappedWeavemasterGreen : Game :=
+  mustApply weavemasterReady ⟨0⟩
+    (.tapForMana (namedPermanent weavemasterReady "Woodland Weavemaster").id
+      (.colored .green))
+
+#guard (namedPermanent tappedWeavemasterGreen "Woodland Weavemaster").status.tapped
+#guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.green == 1
+#guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.elfGreen == 1
+#guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) true
+#guard !(tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green)
+#guard !(tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red) true
+#guard tappedWeavemasterGreen.log.any (fun s =>
+  mentions s "taps Woodland Weavemaster for green (Elf spells and abilities)")
+
+def tappedWeavemasterWhite : Game :=
+  mustApply weavemasterReady ⟨0⟩
+    (.tapForMana (namedPermanent weavemasterReady "Woodland Weavemaster").id
+      (.colored .white))
+
+#guard (tappedWeavemasterWhite.player ⟨0⟩).manaPool.white == 1
+#guard (tappedWeavemasterWhite.player ⟨0⟩).manaPool.elfWhite == 1
+
+#guard
+  match weavemasterReady.tapForMana ⟨0⟩
+      (namedPermanent weavemasterReady "Woodland Weavemaster").id .colorless with
+  | .error msg => mentions msg "cannot produce"
+  | .ok _ => false
+
+/-- Pumped power produces that much mana. -/
+def tappedWeavemasterPumped : Game :=
+  let g := weavemasterElfPumped.emptyManaPools
+  mustApply g ⟨0⟩
+    (.tapForMana (namedPermanent g "Woodland Weavemaster").id
+      (.colored .green))
+
+#guard (tappedWeavemasterPumped.player ⟨0⟩).manaPool.green == 2
+#guard (tappedWeavemasterPumped.player ⟨0⟩).manaPool.elfGreen == 2
+#guard tappedWeavemasterPumped.log.any (fun s =>
+  mentions s "taps Woodland Weavemaster for green ×2 (Elf spells and abilities)")
+
+/-- Restricted mana can pay for an Elf spell. -/
+def weavemasterPaysElf : Game :=
+  let g := addToHand tappedWeavemasterGreen llanowarElves ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Llanowar Elves").id)
+  mustApply g ⟨0⟩ .pay
+
+#guard weavemasterPaysElf.log.any (fun s => mentions s "casts Llanowar Elves")
+#guard (weavemasterPaysElf.player ⟨0⟩).manaPool.isEmpty
+#guard weavemasterPaysElf.stack.size == 1
+
+/-- Restricted mana cannot pay for a non-Elf spell (CR 106.10). -/
+def weavemasterPaysGrowth : Game :=
+  let g := addToHand tappedWeavemasterGreen giantGrowth ⟨0⟩
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Woodland Weavemaster").id)
+  mustApply g ⟨0⟩ .pay
+
+#guard weavemasterPaysGrowth.log.any (fun s => mentions s "cannot pay")
+#guard weavemasterPaysGrowth.log.any (fun s => mentions s "casting is reversed")
+#guard weavemasterPaysGrowth.stack.isEmpty
+#guard (weavemasterPaysGrowth.handObjects ⟨0⟩).any (fun o => o.name == "Giant Growth")
+#guard (namedPermanent weavemasterPaysGrowth "Woodland Weavemaster").status.tapped
+#guard (weavemasterPaysGrowth.player ⟨0⟩).manaPool.elfGreen == 1
+
+/-- Summoning sickness still stops the mana ability (CR 302.6). -/
+def weavemasterSick : Game :=
+  let o := namedPermanent weavemasterReady "Woodland Weavemaster"
+  weavemasterReady.setObject { o with status := { o.status with summoningSick := true } }
+
+#guard
+  match weavemasterSick.tapForMana ⟨0⟩
+      (namedPermanent weavemasterSick "Woodland Weavemaster").id (.colored .green) with
+  | .error msg => mentions msg "summoning sickness"
+  | .ok _ => false
+
+/-- Attacking with vigilance does not tap the creature (CR 702.20). -/
+def weavemasterVsGoblin : Game :=
+  addPermanent (addPermanent started woodlandWeavemaster ⟨0⟩ ⟨0⟩) ragingGoblin ⟨1⟩ ⟨1⟩
+
+def weavemasterAttackDeclared : Game :=
+  let g := passBoth (skipTo weavemasterVsGoblin .beginningOfCombat 80)
+  mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Woodland Weavemaster").id])
+
+#guard (namedPermanent weavemasterAttackDeclared "Woodland Weavemaster").status.attacking
+#guard !(namedPermanent weavemasterAttackDeclared "Woodland Weavemaster").status.tapped
+#guard weavemasterAttackDeclared.log.any (fun s =>
+  mentions s "attacks with Woodland Weavemaster")
+
+/-- After attacking, Weavemaster can still block on the opponent's turn. -/
+def nissaAttacksAfterVigilance : Game :=
+  let g := passBoth (skipTo weavemasterAttackDeclared .beginningOfCombat 80)
+  mustApply g ⟨1⟩ (.declareAttackers #[(namedPermanent g "Raging Goblin").id])
+
+#guard !(namedPermanent nissaAttacksAfterVigilance "Woodland Weavemaster").status.tapped
+#guard nissaAttacksAfterVigilance.canBlock
+  (namedPermanent nissaAttacksAfterVigilance "Woodland Weavemaster")
+  (namedPermanent nissaAttacksAfterVigilance "Raging Goblin")
+
+def weavemasterBlocksAfterAttack : Game :=
+  let g := passBoth nissaAttacksAfterVigilance
+  mustApply g ⟨0⟩ (.declareBlockers #[(
+    (namedPermanent g "Woodland Weavemaster").id,
+    (namedPermanent g "Raging Goblin").id)])
+
+#guard (namedPermanent weavemasterBlocksAfterAttack "Woodland Weavemaster").status.blocking.size == 1
+#guard weavemasterBlocksAfterAttack.log.any (fun s =>
+  mentions s "Woodland Weavemaster blocks Raging Goblin")
+
+/-- The agent casts an Elf using Weavemaster's restricted mana. -/
+def agentWeavemasterElf : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g woodlandWeavemaster ⟨0⟩ ⟨0⟩
+  addToHand g llanowarElves ⟨0⟩
+
+#guard
+  match Agent.choose agentWeavemasterElf ⟨0⟩ with
+  | some (.cast id) => (agentWeavemasterElf.object! id).name == "Llanowar Elves"
+  | _ => false
+
+def agentWeavemasterPaying : Game :=
+  mustApply agentWeavemasterElf ⟨0⟩
+    (.cast (handCardNamed agentWeavemasterElf ⟨0⟩ "Llanowar Elves").id)
+
+#guard
+  match Agent.choose agentWeavemasterPaying ⟨0⟩ with
+  | some (.tapForMana id (.colored .green)) =>
+    (agentWeavemasterPaying.object! id).name == "Woodland Weavemaster"
+  | _ => false
+
+/-- The agent will not try to cast a non-Elf with only restricted mana. -/
+def agentWeavemasterGrowth : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g woodlandWeavemaster ⟨0⟩ ⟨0⟩
+  addToHand g giantGrowth ⟨0⟩
+
+#guard
+  match Agent.choose agentWeavemasterGrowth ⟨0⟩ with
+  | some (.cast id) => (agentWeavemasterGrowth.object! id).name != "Giant Growth"
+  | _ => true
 
 end Mtg.Engine.Tests
 

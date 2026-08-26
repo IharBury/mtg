@@ -83,7 +83,8 @@ The first slice of the engine models the two-player game:
   mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, activating mana abilities (including `{T}: Add` for each
-  permanent of a listed type), activating other abilities of
+  permanent of a listed type, and `{T}: Add` X mana of any color equal to
+  power that may be spent only on Elf spells and abilities), activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
   modes at 601.2b / 700.2, announcing targets at 601.2c, additional costs
@@ -103,14 +104,15 @@ The first slice of the engine models the two-player game:
   top in any order), draw a card, may discard a card to draw, or deal damage
   divided as you choose among one, two, or three targets (including whenever
   a creature enters or attacks), return an Elf card from your graveyard and
-  gain life equal to its power, landfall triggers that
+  gain life equal to its power, pumps when another Elf you control enters,
+  landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
   deal damage to each opponent when you cast an instant or sorcery, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
+- modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)

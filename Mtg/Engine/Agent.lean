@@ -100,19 +100,25 @@ where
     match g.proposedSpell with
     | none => some .pay
     | some prop =>
-      if (g.player p).manaPool.canPay prop.cost then
+      let allowElf := g.proposedAllowsElfRestricted prop
+      if (g.player p).manaPool.canPay prop.cost allowElf then
         some .pay
       else
-        match (g.manaSources p)[0]?, (g.manaSources p)[0]?.bind (fun s => s.snd[0]?) with
-        | some (src, _), some t => some (.tapForMana src.id t)
-        | _, _ => some .pay
+        match (g.manaSources p).find? (fun (src, types) =>
+          !(src.printed.tapAddAnyColorEqualToPower && !allowElf) && !types.isEmpty) with
+        | some (src, types) =>
+          match g.preferredManaType p types prop.cost allowElf with
+          | some t => some (.tapForMana src.id t)
+          | none => some .pay
+        | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let candidate := (g.permanentsOf p).find? (fun o =>
       match o.printed.activatedAbilities[0]? with
       | some ab =>
-        g.canActivate p o ab && available.canPay ab.cost.mana &&
+        g.canActivate p o ab &&
+        available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
         -- Don't spend mana re-equipping a creature that is already equipped.
         !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome)
       | none => false)
@@ -122,7 +128,8 @@ where
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
-      g.canCast p o && available.canPay o.printed.manaCost)
+      g.canCast p o &&
+        available.canPay o.printed.manaCost (allowElfRestricted := o.hasSubtype "Elf"))
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
         match o.printed.adventure with

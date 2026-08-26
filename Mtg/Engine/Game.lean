@@ -31,11 +31,13 @@ creature's P/T onto another creature you control or giving another creature
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
 you choose when a creature enters or attacks (CR 601.2d) and returning an Elf
 card from your graveyard to gain life equal to its power (CR 701.19 / 118.2),
-landfall triggers that target (CR 603.3d / 601.2c),
+another-Elf-enters pumps (CR 603.6a), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
 for each card looked at (CR 508.2 / 701.20 / 603),
+vigilance (CR 702.20), `{T}: Add` mana equal to power of any color with an
+Elf-only spending restriction (CR 106.10 / 605),
 activated pumps that last until end of turn and activated abilities that
 put +1/+1 counters on the source (CR 602 / 611.2a / 122),
 adventurer cards including casting an Adventure and later the permanent
@@ -718,6 +720,10 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
     | .enchantedCreatureGets _ _
     | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl => true)
 
+/-- Whether `o` has vigilance (CR 702.20). Attacking does not cause it to tap. -/
+def hasVigilance (_g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.vigilance
+
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
   o.printed.keywords.flying
@@ -764,7 +770,8 @@ def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
   { o.printed.keywords with
     flying := g.hasFlying o
     hexproof := g.hasHexproof o
-    trample := g.hasTrample o }
+    trample := g.hasTrample o
+    vigilance := g.hasVigilance o }
 
 /-- Continuous +P/+T this Aura or Equipment currently grants its host (CR 613.3c). -/
 def auraStatBonus (aura : GameObject) : Int × Int :=
@@ -1068,7 +1075,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
   | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt =>
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -1241,9 +1248,32 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
               g := g.putTriggeredAbilityOnStack caster o ab "cast trigger"
       return g
 
-/-- After a land enters, put its enters triggers and landfall triggers. -/
+/-- Put “whenever another Elf you control enters” triggers onto the stack
+(CR 603.6a). The entering permanent itself does not trigger. -/
+def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : Game :=
+  if !entering.hasSubtype "Elf" then g
+  else
+    match entering.controller with
+    | none => g
+    | some p =>
+      Id.run do
+        let mut g := g
+        for o in g.battlefield do
+          if o.id != entering.id && o.controlledBy p then
+            for ab in o.printed.triggeredAbilities do
+              if ab.triggersWhenAnotherElfYouControlEnters then
+                g := g.putTriggeredAbilityOnStack p o ab "Elf-enters trigger"
+        return g.promptTriggerTargetsIfNeeded
+
+/-- After a permanent enters, put its enters triggers and “another Elf you
+control enters” triggers (CR 603.6a). -/
+def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
+  let g := g.putEnterTriggersOnStack o
+  g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
+
+/-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
-  let g := g.putEnterTriggersOnStack land
+  let g := g.afterPermanentEnters land
   g.putLandYouControlEntersTriggers (g.object! land.id)
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -1278,14 +1308,20 @@ def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
 
 /-- Mana added by tapping `o` for `mana` (CR 106.4 / 605.3b). A
 `tapAddManaForEach` ability counts permanents the controller currently
-controls with the listed subtype. -/
+controls with the listed subtype. `tapAddAnyColorEqualToPower` adds this
+creature's current power (CR 208.2). -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
-  match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
-  | some a =>
-    match o.controller with
-    | some p => g.countSubtype p a.subtype
-    | none => 0
-  | none => 1
+  if o.printed.tapAddAnyColorEqualToPower then
+    match mana with
+    | .colored _ => (g.power o).toNat
+    | .colorless => 0
+  else
+    match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
+    | some a =>
+      match o.controller with
+      | some p => g.countSubtype p a.subtype
+      | none => 0
+    | none => 1
 
 /-- A player may activate mana abilities with priority, or while paying a
 spell they are casting (CR 605.3a / 601.2g). -/
@@ -1310,11 +1346,15 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   if !o.printed.manaAbilities.contains mana then
     throw s!"{o.name} cannot produce {mana}"
   let amount := g.manaFromTap o mana
+  let elfRestricted := o.printed.tapAddAnyColorEqualToPower
   let g := g.setObject { o with status := { o.status with tapped := true } }
-  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana amount })
+  let g := g.modifyPlayer p (fun pl =>
+    { pl with manaPool := pl.manaPool.add mana amount (elfRestricted := elfRestricted) })
   let produced :=
     if amount == 1 then toString mana else s!"{mana} ×{amount}"
-  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}"
+  let restrictNote :=
+    if elfRestricted then " (Elf spells and abilities)" else ""
+  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}{restrictNote}"
   let g :=
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
@@ -1322,13 +1362,18 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   -- Mana abilities don't use the stack (CR 605.3b).
   return { g with consecutivePasses := 0 }
 
-/-- Mana in `p`'s pool plus mana from each of their untapped sources. -/
+/-- Mana in `p`'s pool plus mana from each of their untapped sources. Any-color
+power mana is counted as green Elf-restricted mana for the heuristic. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   (g.manaSources p).foldl
     (fun pool (src, types) =>
-      match types[0]? with
-      | some t => pool.add t (g.manaFromTap src t)
-      | none => pool)
+      if src.printed.tapAddAnyColorEqualToPower then
+        let n := g.manaFromTap src (.colored .green)
+        pool.add (.colored .green) n (elfRestricted := true)
+      else
+        match types[0]? with
+        | some t => pool.add t (g.manaFromTap src t)
+        | none => pool)
     (g.player p).manaPool
 
 def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
@@ -1573,9 +1618,39 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
-def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := do
+/-- Whether paying this proposed spell or ability may spend Elf-restricted mana
+(CR 106.10): Elf spells, and activated abilities of Elf sources. -/
+def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.kind with
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o => o.hasSubtype "Elf"
+    | none => false
+  | .activatedAbility =>
+    match prop.sourceId.bind g.findObject? with
+    | some src => src.hasSubtype "Elf"
+    | none => prop.original.hasSubtype "Elf"
+
+/-- A mana type among `types` that helps pay an unmet colored requirement. -/
+def preferredManaType (g : Game) (p : PlayerId) (types : Array ManaType)
+    (cost : ManaCost) (allowElfRestricted : Bool) : Option ManaType :=
+  match types[0]? with
+  | none => none
+  | some first =>
+    let pool := (g.player p).manaPool
+    match Color.all.find? (fun c =>
+      let req := cost.coloredCount c
+      let held :=
+        if allowElfRestricted then pool.get (.colored c)
+        else pool.unrestricted (.colored c)
+      held < req && types.contains (.colored c)) with
+    | some c => some (.colored c)
+    | none => some first
+
+def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
+    (allowElfRestricted : Bool := false) : Except String Game := do
   let pl := g.player p
-  match pl.manaPool.pay? cost with
+  match pl.manaPool.pay? cost allowElfRestricted with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }
@@ -1714,13 +1789,14 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
 need an artifact or creature sacrificed wait for the `sacrifice` action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
-  if !(g.player prop.caster).manaPool.canPay prop.cost || !g.sourceStillPayable prop then
+  let allowElf := g.proposedAllowsElfRestricted prop
+  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf || !g.sourceStillPayable prop then
     return g.reverseProposedSpell
   if prop.needsSacrificeOther then
     let excludeId := prop.sourceId.getD prop.spellId
     if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return g.reverseProposedSpell
-  let g ← g.payCost prop.caster prop.cost
+  let g ← g.payCost prop.caster prop.cost allowElf
   let g ←
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
@@ -2463,6 +2539,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
+  | .onAnotherElfYouControlEntersGets1 =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with
+          status := { o.status with
+            pumpPower := o.status.pumpPower + 1
+            pumpToughness := o.status.pumpToughness + 1 } }
+        g.logMsg s!"{o.name} gets +1/+1 until end of turn"
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -2524,7 +2613,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
         let o := g.object! newId
         let g := g.setObject { o with attachedTo := some host.id }
         let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
-        g.putEnterTriggersOnStack (g.object! newId)
+        g.afterPermanentEnters (g.object! newId)
       else
         toGraveyard g
     | none => toGraveyard g
@@ -2585,7 +2674,7 @@ def resolveTop (g : Game) : Game :=
           let sick := !o.printed.keywords.haste
           let g := g.setObject { o with status := { o.status with summoningSick := sick } }
           let g := g.logMsg s!"{o.name} enters the battlefield"
-          g.putEnterTriggersOnStack (g.object! newId)
+          g.afterPermanentEnters (g.object! newId)
         else
           let owner := obj.owner
           let (g, _) := g.move obj.id (.graveyard owner) none
@@ -2599,7 +2688,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
     let o := g.object! id
     if !g.canAttack o then
       throw s!"{o.name} cannot attack"
-    g := g.setObject { o with status := { o.status with attacking := true, tapped := true } }
+    g := g.setObject { o with status := { o.status with
+      attacking := true
+      tapped := o.status.tapped || !g.hasVigilance o } }
     g := g.logMsg s!"{g.player p |>.name} attacks with {o.name}"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
