@@ -264,7 +264,7 @@ def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
     let attackers := g.battlefield.filter (·.status.attacking)
     let defender := g.opponent g.activePlayer
     let candidates := g.battlefield.filter (fun b =>
-      b.printed.isCreature && b.controlledBy defender && !b.status.tapped)
+      b.isCreature && b.controlledBy defender && !b.status.tapped)
     let mut blocked : Array ObjectId := #[]
     let mut asgn : Array (ObjectId × ObjectId) := #[]
     for b in candidates do

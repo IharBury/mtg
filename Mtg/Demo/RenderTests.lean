@@ -554,4 +554,28 @@ def mountainLine (g : Game) : String :=
     !mentions (objectLine g bears) "hexproof" &&
     !mentions (objectLine g bears) "trample"
 
+#guard mentions (header hospitalityLandPlayed) "choose targets (CR 601.2c"
+#guard mentions (stackBlock hospitalityLandPlayed) "Beorn's Hospitality's ability"
+#guard mentions (stackBlock hospitalityLandPlayed) "Whenever a land you control enters"
+#guard !mentions (stackBlock hospitalityLandPlayed) "{5}{G}{G}"
+#guard
+  let g := hospitalityLandPlayed
+  let src := namedPermanent g "Beorn's Hospitality"
+  mentions (stackBlock g) s!"*source {src.id} Beorn's Hospitality*"
+#guard
+  let g := animatedHospitality
+  let o := namedPermanent g "Beorn's Hospitality"
+  mentions (objectLine g o) "Enchantment Creature" &&
+    mentions (objectLine g o) "Bear" &&
+    mentions (objectLine g o) "3/3"
+#guard
+  let g := hospitalityLandfallResolved
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (objectLine g bears) "3/3" &&
+    mentions (objectLine g bears) "+1/+1×1"
+#guard
+  let g := pathmakerWithLands
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "2/2"
+
 end Mtg.Demo.RenderTests
