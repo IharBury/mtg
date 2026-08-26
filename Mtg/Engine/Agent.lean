@@ -169,9 +169,11 @@ where
       | some .creatureYouControlDealsPowerToOppCreature => true
       | _ => false)
     let removal := playable.find? (fun o =>
-      !(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
+      (!(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
         (o.printed.spellEffect == some .destroyCreatureWithFlying ||
-          o.printed.spellModes.any (· == .destroyCreatureWithFlying)))
+          o.printed.spellModes.any (· == .destroyCreatureWithFlying))) ||
+      (!(g.legalTargets p .destroyArtifactOrLandNonflyersCantBlock).isEmpty &&
+        o.printed.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.types.any (· == .artifact) &&

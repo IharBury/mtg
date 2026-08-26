@@ -396,6 +396,11 @@ def uncontrolledPermanent : Game :=
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
 #guard improvisedClub.requiresTarget
+#guard mentions fireOfOrthanc.summary "artifact or land"
+#guard mentions fireOfOrthanc.summary "can't block this turn"
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
@@ -7426,6 +7431,202 @@ def agentPathmaker : Game :=
 #guard
   match Agent.choose agentPathmaker ⟨0⟩ with
   | some (.cast id) => (agentPathmaker.object! id).name == "Mirkwood Pathmaker"
+  | _ => false
+
+/- Fire of Orthanc (CR 701.8 / 509.1b / 611.2a). -/
+
+/-- Fire of Orthanc in hand, an opposing Forest, enough mana. -/
+def fireOfOrthancSetup : Game :=
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.requiresTarget
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthancSetup.canCast ⟨0⟩ (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc")
+#guard fireOfOrthancSetup.asSorcery? ⟨0⟩
+#guard
+  (fireOfOrthancSetup.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (Target.permanent (namedPermanent fireOfOrthancSetup "Forest").id)
+
+-- Cannot cast with no artifact or land.
+#guard
+  let g := withRedMana (addToHand afterDraw fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+#guard
+  let g := withRedMana (addToHand afterDraw fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- An opposing artifact is a legal target; a non-artifact creature is not.
+#guard
+  let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (Target.permanent (namedPermanent g "Wayfarer's Bauble").id) &&
+    !(g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+      (Target.permanent (namedPermanent g "Grizzly Bears").id)
+
+-- Own lands are legal; hexproof on an opponent's land is not (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw mountain ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc") &&
+    (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+      (Target.permanent (namedPermanent g "Mountain").id)
+#guard
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let forest := namedPermanent g "Forest"
+  let g := g.setObject { forest with
+    status := { forest.status with untilEotHexproof := true } }
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+
+def proposedFireOfOrthanc : Game :=
+  mustApply fireOfOrthancSetup ⟨0⟩
+    (.cast (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc").id)
+
+#guard proposedFireOfOrthanc.pending == .chooseTargets ⟨0⟩
+#guard proposedFireOfOrthanc.log.any (fun s => mentions s "begins casting Fire of Orthanc")
+#guard proposedFireOfOrthanc.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Cannot target a player or a creature that is not an artifact.
+#guard
+  match proposedFireOfOrthanc.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def targetedFireOfOrthanc : Game :=
+  mustApply proposedFireOfOrthanc ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedFireOfOrthanc "Forest").id))
+
+#guard targetedFireOfOrthanc.pending == .activateManaAbilities ⟨0⟩
+#guard targetedFireOfOrthanc.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedFireOfOrthanc "Forest").id]
+
+#guard
+  match Agent.choose proposedFireOfOrthanc ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedFireOfOrthanc.object! tid).name == "Forest"
+  | _ => false
+
+-- Prefer an opposing land over your own (CR 601.2c heuristic).
+#guard
+  let g := addPermanent fireOfOrthancSetup mountain ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (g.object! tid).name == "Forest"
+  | _ => false
+
+def paidFireOfOrthanc : Game := mustApply targetedFireOfOrthanc ⟨0⟩ .pay
+
+#guard paidFireOfOrthanc.hasPriority ⟨0⟩
+#guard paidFireOfOrthanc.stack.size == 1
+#guard paidFireOfOrthanc.log.any (fun s => mentions s "casts Fire of Orthanc")
+
+def resolvedFireOfOrthanc : Game := passBoth paidFireOfOrthanc
+
+#guard resolvedFireOfOrthanc.stack.isEmpty
+#guard !(resolvedFireOfOrthanc.battlefield.any (fun o => o.name == "Forest"))
+#guard resolvedFireOfOrthanc.objects.any (fun o =>
+  o.name == "Forest" && o.zone == .graveyard ⟨1⟩)
+#guard resolvedFireOfOrthanc.log.any (fun s => mentions s "Forest is destroyed")
+#guard resolvedFireOfOrthanc.log.any (fun s =>
+  mentions s "Creatures without flying can't block this turn")
+#guard resolvedFireOfOrthanc.creaturesWithoutFlyingCantBlock
+#guard (resolvedFireOfOrthanc.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedFireOfOrthanc.object! id).name == "Fire of Orthanc")
+
+-- Destroying an artifact also sets the can't-block effect.
+#guard
+  let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Wayfarer's Bauble").id]
+  !(g.battlefield.any (fun o => o.name == "Wayfarer's Bauble")) &&
+    g.creaturesWithoutFlyingCantBlock &&
+    g.log.any (fun s => mentions s "Wayfarer's Bauble is destroyed")
+
+-- If the target leaves before resolution, neither effect happens (CR 608.2b).
+def fireOfOrthancTargetGone : Game :=
+  let id := (namedPermanent paidFireOfOrthanc "Forest").id
+  let (g, _) := paidFireOfOrthanc.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard fireOfOrthancTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !fireOfOrthancTargetGone.creaturesWithoutFlyingCantBlock
+
+/-- Chandra's Gray Ogre attacks after Fire of Orthanc; Nissa's Grizzly Bears
+cannot block. -/
+def fireOfOrthancReadyToBlock : Game :=
+  let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Forest").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard fireOfOrthancReadyToBlock.pending == .declareBlockers
+#guard fireOfOrthancReadyToBlock.creaturesWithoutFlyingCantBlock
+#guard
+  let g := fireOfOrthancReadyToBlock
+  !g.canBlock (namedPermanent g "Grizzly Bears") (namedPermanent g "Gray Ogre")
+#guard
+  match fireOfOrthancReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent fireOfOrthancReadyToBlock "Grizzly Bears").id,
+    (namedPermanent fireOfOrthancReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+/-- A flying creature can still block after Fire of Orthanc. -/
+def fireOfOrthancFlyerReadyToBlock : Game :=
+  let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Forest").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard
+  let g := fireOfOrthancFlyerReadyToBlock
+  g.canBlock (namedPermanent g "Velvetwing Butterflies") (namedPermanent g "Gray Ogre")
+
+def fireOfOrthancFlyerBlocks : Game :=
+  let g := fireOfOrthancFlyerReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Velvetwing Butterflies").id,
+    (namedPermanent g "Gray Ogre").id)])
+
+#guard (namedPermanent fireOfOrthancFlyerBlocks "Velvetwing Butterflies").status.blocking ==
+  #[(namedPermanent fireOfOrthancFlyerBlocks "Gray Ogre").id]
+#guard (namedPermanent fireOfOrthancFlyerBlocks "Gray Ogre").status.blocked
+
+/-- The can't-block effect wears off in cleanup (CR 514.2). -/
+def afterFireOfOrthancCleanup : Game :=
+  passBoth (skipTo resolvedFireOfOrthanc .end 80)
+
+#guard afterFireOfOrthancCleanup.turnNumber == 2
+#guard !afterFireOfOrthancCleanup.creaturesWithoutFlyingCantBlock
+
+/-- The agent casts Fire of Orthanc when that is the playable spell. -/
+def agentFireOfOrthancOnly : Game :=
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+
+#guard
+  match Agent.choose agentFireOfOrthancOnly ⟨0⟩ with
+  | some (.cast id) => (agentFireOfOrthancOnly.object! id).name == "Fire of Orthanc"
   | _ => false
 
 /- Quarrel: target creature you control deals damage equal to its power to

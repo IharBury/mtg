@@ -74,6 +74,9 @@ inductive SpellEffect where
   | creatureYouControlDealsPowerToOppCreature
   /-- You may play an additional land this turn (e.g. Till and Tend). -/
   | playAdditionalLandThisTurn
+  /-- Destroy target artifact or land. Creatures without flying can't block
+  this turn (e.g. Fire of Orthanc). -/
+  | destroyArtifactOrLandNonflyersCantBlock
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -93,6 +96,8 @@ def toNotation : SpellEffect → String
   | .creatureYouControlDealsPowerToOppCreature =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .playAdditionalLandThisTurn => "you may play an additional land this turn"
+  | .destroyArtifactOrLandNonflyersCantBlock =>
+    "destroy target artifact or land. Creatures without flying can't block this turn"
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
 def targetCount : SpellEffect → Nat
@@ -100,7 +105,8 @@ def targetCount : SpellEffect → Nat
   | .creatureYouControlDealsPowerToOppCreature => 2
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
   | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
-  | .dealDamageLoseIndestructibleExile _ => 1
+  | .dealDamageLoseIndestructibleExile _
+  | .destroyArtifactOrLandNonflyersCantBlock => 1
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : SpellEffect → Bool
@@ -108,7 +114,8 @@ def requiresTarget : SpellEffect → Bool
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
   | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
   | .dealDamageLoseIndestructibleExile _
-  | .creatureYouControlDealsPowerToOppCreature => true
+  | .creatureYouControlDealsPowerToOppCreature
+  | .destroyArtifactOrLandNonflyersCantBlock => true
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -808,11 +815,15 @@ instance : ToString CardDef where
   "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
   "you may play an additional land this turn"
+#guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
+  "destroy target artifact or land. Creatures without flying can't block this turn"
 #guard SpellEffect.targetCount (.dealDamage 3) == 1
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
+#guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
 #guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature

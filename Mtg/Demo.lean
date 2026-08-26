@@ -1172,6 +1172,16 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error _ => false
 
 #guard
+  match applyCast Tests.fireOfOrthancSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Fire of Orthanc") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
   match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id, "adventure"] with
   | .error msg => Tests.mentions msg "has no Adventure"
   | .ok _ => false
@@ -1984,6 +1994,15 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.stack.back!.chosenMode == some 0
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedFireOfOrthanc "target"
+      [toString (Tests.namedPermanent Tests.proposedFireOfOrthanc "Forest").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Forest").id]
   | .error _ => false
 
 #guard
