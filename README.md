@@ -112,10 +112,11 @@ The first slice of the engine models the two-player game:
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
-  deal damage to each opponent when you cast an instant or sorcery, and
+  deal damage to each opponent when you cast an instant or sorcery,
+  `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
-  keyword grants, destroying permanents or dealing damage with activated
+  keyword grants including can't be blocked, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a
   creature an opponent controls, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)

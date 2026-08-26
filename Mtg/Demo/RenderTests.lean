@@ -904,4 +904,16 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine flyerVsAttercop
   (namedPermanent flyerVsAttercop "Attercop")) "reach"
 
+#guard pendingCostNotation targetedPassage == some "{4}, {T}"
+#guard pendingCostLine targetedPassage == some "Cost: {4}, {T}"
+#guard mentions (header proposedPassage) "choose targets (CR 601.2c"
+#guard mentions (stackBlock paidPassage) "can't be blocked"
+#guard mentions (stackBlock paidPassage) "Rogue's Passage's ability"
+#guard
+  let g := passageResolved
+  mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"
+#guard
+  let g := afterPassageCleanup
+  !mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"
+
 end Mtg.Demo.RenderTests
