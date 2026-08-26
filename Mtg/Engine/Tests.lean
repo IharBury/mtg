@@ -2395,7 +2395,7 @@ def visionaryDrew : Game := passBoth visionaryKnownLib
 #guard (visionaryDrew.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
 #guard visionaryDrew.log.any (fun s => mentions s "draws Forest")
 
-/-- Direct resolution of an enters-draw trigger draws that many cards (CR 121). -/
+-- Direct resolution of an enters-draw trigger draws that many cards (CR 121).
 #guard
   let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) llanowarElves ⟨0⟩
   let beforeHand := (g.player ⟨0⟩).hand.size
