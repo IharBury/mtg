@@ -9,10 +9,12 @@ import Mtg.Demo.WelcomeDecks
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted two-player
 game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
 to play Chandra against the agent-controlled Nissa, or `--multiplayer` to issue
-every player's actions from the console. In either interactive mode, `visible`
-prints only information that player can see; `--visible` starts in that view.
-`--input FILE` runs commands from the file first, then reads from the console.
-`--output FILE` writes every command (from the file or the console) to that file.
+every player's actions from the console. In either interactive mode, choose who
+takes the first turn with `first <name>` (CR 103.1) before opening hands are
+drawn. `visible` prints only information that player can see; `--visible` starts
+in that view. `--input FILE` runs commands from the file first, then reads from
+the console. `--output FILE` writes every command (from the file or the console)
+to that file.
 -/
 
 open Mtg.Engine
@@ -47,17 +49,88 @@ https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 
 The engine follows the Magic: The Gathering Comprehensive Rules
 effective 7 August 2026.
+
+In --interactive and --multiplayer, choose who takes the first turn
+(CR 103.1) with `first <name>` before opening hands are drawn.
 "
 
-def demoConfig (seed : UInt64) : StartConfig := {
-  seats := #[
-    { name := "Chandra", deck := hobbitRed },
-    { name := "Nissa", deck := hobbitGreen }
-  ]
+def demoSeats : Array Seat := #[
+  { name := "Chandra", deck := hobbitRed },
+  { name := "Nissa", deck := hobbitGreen }
+]
+
+/-- Auto mode uses Chandra as the starting player. Interactive modes pass the
+seat chosen at the console (CR 103.1). -/
+def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0) : StartConfig := {
+  seats := demoSeats
   format := .limited
   seed := seed
-  startingPlayer := some 0
+  startingPlayer := startingPlayer
 }
+
+/-- Usage for the CR 103.1 `first` command, listing legal player names. -/
+def firstUsage (seats : Array Seat) : String :=
+  let names := String.intercalate " or " (seats.toList.map (·.name))
+  s!"usage: first <name> ({names})"
+
+/-- Seat index of the player who takes the first turn (CR 103.1). -/
+def parseFirstPlayer (seats : Array Seat) (tokens : List String) : Except String Nat :=
+  match tokens.filter (fun t => !t.isEmpty) with
+  | [name] =>
+    let lower := name.map Char.toLower
+    match seats.findIdx? (fun s => s.name.map Char.toLower == lower) with
+    | some i => .ok i
+    | none => .error s!"No player named {name}"
+  | _ => .error (firstUsage seats)
+
+#guard firstUsage demoSeats == "usage: first <name> (Chandra or Nissa)"
+
+#guard
+  match parseFirstPlayer demoSeats ["Chandra"] with
+  | .ok 0 => true
+  | _ => false
+
+#guard
+  match parseFirstPlayer demoSeats ["nissa"] with
+  | .ok 1 => true
+  | _ => false
+
+#guard
+  match parseFirstPlayer demoSeats ["Nissa"] with
+  | .ok 1 => true
+  | _ => false
+
+#guard
+  match parseFirstPlayer demoSeats ["Frodo"] with
+  | .error msg => msg == "No player named Frodo"
+  | .ok _ => false
+
+#guard
+  match parseFirstPlayer demoSeats [] with
+  | .error msg => msg == firstUsage demoSeats
+  | .ok _ => false
+
+#guard
+  match parseFirstPlayer demoSeats ["Chandra", "Nissa"] with
+  | .error msg => msg == firstUsage demoSeats
+  | .ok _ => false
+
+#guard
+  match Start.start (demoConfig 1 (some 1)) with
+  | .ok g =>
+    g.startingPlayer == ⟨1⟩ &&
+    g.pending == .declareMulligan ⟨1⟩ &&
+    g.actor == some ⟨1⟩ &&
+    (g.player ⟨1⟩).name == "Nissa" &&
+    g.log.any (· == "Starting player: Nissa")
+  | .error _ => false
+
+#guard
+  match Start.start (demoConfig 1) with
+  | .ok g =>
+    g.startingPlayer == ⟨0⟩ &&
+    g.pending == .declareMulligan ⟨0⟩
+  | .error _ => false
 
 def printLog (g : Game) (startIdx : Nat) (viewer : Option PlayerId := none) : IO Nat := do
   for line in newLog g startIdx viewer do
@@ -85,18 +158,32 @@ def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println (snapshot g viewer)
   IO.println ""
 
-def startDemo (seed : UInt64) (viewer : Option PlayerId := none) : IO Game := do
-  match Start.start (demoConfig seed) with
+def printEngineBanner : IO Unit := do
+  IO.println Mtg.Engine.identification
+  IO.println s!"Rules source: {Rules.sourceUrl}"
+  IO.println ""
+
+/-- Create the demo game after the starting player is known (CR 103.1). -/
+def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0) : IO Game := do
+  match Start.start (demoConfig seed startingPlayer) with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
-  | .ok g =>
-    IO.println Mtg.Engine.identification
-    IO.println s!"Rules source: {Rules.sourceUrl}"
-    IO.println ""
-    let _ ← printLog g 0 viewer
-    printState g viewer
-    return g
+  | .ok g => return g
+
+/-- Print the opening log and board after the game has started. -/
+def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
+  let _ ← printLog g 0 viewer
+  printState g viewer
+
+/-- Start a demo game and print the opening snapshot. Auto mode uses Chandra
+as the starting player. -/
+def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (viewer : Option PlayerId := none) : IO Game := do
+  printEngineBanner
+  let g ← startGame seed startingPlayer
+  printOpening g viewer
+  return g
 
 partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
   let mut g := g
@@ -124,6 +211,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   let viewWho := if controlAll then "the acting player" else "Chandra"
   s!"Commands:
   help                 Show this help
+  first <name>         Choose who takes the first turn (CR 103.1)
   state                Print the board
   visible              Print only information {viewWho} can see (CR 400.2)
   visible on           Use {viewWho}'s view for state and later updates
@@ -165,8 +253,23 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
+#guard ((helpInteractive false).splitOn "first <name>").length > 1
+#guard ((helpInteractive false).splitOn "CR 103.1").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
+#guard (usage.splitOn "first <name>").length > 1
+#guard (usage.splitOn "CR 103.1").length > 1
+
+def helpChooseFirst : String :=
+  "Commands:
+  help                 Show this help
+  first <name>         Choose who takes the first turn (CR 103.1)
+  quit                 Exit
+"
+
+#guard (helpChooseFirst.splitOn "first <name>").length > 1
+#guard (helpChooseFirst.splitOn "CR 103.1").length > 1
+#guard (helpChooseFirst.splitOn "quit").length > 1
 
 /-- Object ids print as `#12`; accept that form or a bare decimal. -/
 def parseObjectId? (token : String) : Option ObjectId :=
@@ -1336,6 +1439,42 @@ def recordCommand (output : Option IO.FS.Handle) (line : String) : IO Unit := do
     h.putStrLn line
     h.flush
 
+/-- CR 103.1: before opening hands, choose who takes the first turn. Returns
+the seat index and remaining `--input` lines, or `none` if the user quits. -/
+partial def chooseStartingPlayer (pending : List String)
+    (output : Option IO.FS.Handle) : IO (Option (Nat × List String)) := do
+  IO.println "At the start of a game, choose who takes the first turn (CR 103.1)."
+  for seat in demoSeats do
+    IO.println s!"  first {seat.name}"
+  IO.println ""
+  let mut pending := pending
+  let mut chosen : Option Nat := none
+  while chosen.isNone do
+    IO.print "mtg> "
+    (← IO.getStdout).flush
+    let (line, rest) ← nextCommandLine pending
+    pending := rest
+    if line.isEmpty then
+      continue
+    recordCommand output line
+    let parts := line.splitOn " "
+    let cmd := parts.headD ""
+    match cmd with
+    | "quit" | "exit" =>
+      IO.println "Goodbye."
+      return none
+    | "help" =>
+      IO.println helpChooseFirst
+    | "first" =>
+      match parseFirstPlayer demoSeats (parts.drop 1) with
+      | .error e => IO.println s!"! {e}"
+      | .ok idx => chosen := some idx
+    | _ =>
+      IO.println "! Choose who takes the first turn (CR 103.1): first <name>"
+  match chosen with
+  | some idx => return some (idx, pending)
+  | none => return none
+
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     (controlAll : Bool := false) (pending : List String := [])
     (output : Option IO.FS.Handle := none) : IO Unit := do
@@ -1391,6 +1530,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       IO.println "Goodbye."
       return
     | "help" => IO.println (helpInteractive controlAll)
+    | "first" =>
+      IO.println "! Starting player already chosen (CR 103.1)"
     | "state" => printState g (currentView g playerView controlAll)
     | "visible" =>
       match applyVisible (parts.drop 1) with
@@ -1639,9 +1780,16 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln e
         return 1
       | .ok output =>
-        let g ← startDemo opt.seed (chandraView (opt.interactive && opt.playerView))
         if opt.interactive then
-          interactiveLoop g opt.playerView opt.multiplayer pending output
+          printEngineBanner
+          match (← chooseStartingPlayer pending output) with
+          | none => return 0
+          | some (startIdx, pending) =>
+            let g ← startGame opt.seed (some startIdx)
+            printOpening g (currentView g opt.playerView opt.multiplayer)
+            interactiveLoop g opt.playerView opt.multiplayer pending output
+            return 0
         else
+          let g ← startDemo opt.seed
           runAuto g opt.fuel
-        return 0
+          return 0

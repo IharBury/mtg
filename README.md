@@ -48,10 +48,14 @@ lake exe mtg-demo -- --seed 42 --fuel 200
 
 `--interactive` is Chandra against a heuristic Nissa. `--multiplayer` lets you
 issue every player's actions from the console; the prompt names who must act.
+In either interactive mode, `first <name>` chooses who takes the first turn
+(CR 103.1) before libraries are shuffled and opening hands are drawn. Auto
+mode always has Chandra start.
 `--input FILE` (one command per line) runs those commands first in either
 interactive mode, then further commands come from the console. `--output FILE`
 writes every command from the input file and from the console (one per line),
-so a session can be replayed with `--input`.
+so a session can be replayed with `--input`. Put `first Chandra` or
+`first Nissa` at the top of an input file.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
@@ -75,7 +79,8 @@ The first slice of the engine models the two-player game:
 
 - colors and mana (CR 105–107, 202)
 - cards, types, zones, and turn structure (CR 108–110, 205, 300, 400, 500)
-- starting a game, opening hands, London mulligans, first-turn skipped draw (CR 103, 103.5, 103.8a)
+- starting a game, choosing who takes the first turn, opening hands, London
+  mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
 - playing lands, activating mana abilities, activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
@@ -94,4 +99,5 @@ The first slice of the engine models the two-player game:
   abilities, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
-- a console demo with a heuristic opponent or multiplayer interactive play
+- a console demo with a heuristic opponent or multiplayer interactive play,
+  including choosing the starting player (CR 103.1)
