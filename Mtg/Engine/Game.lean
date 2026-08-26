@@ -997,7 +997,8 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterMayDiscardDraw _ | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
+  | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -2237,6 +2238,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg "The triggered ability's source is no longer in play"
   | .onEnterScry n =>
     g.beginScry controller n
+  | .onEnterDraw n =>
+    g.draw controller n
   | .onEnterMayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
   | .onLandYouControlEntersPlusOnePlusOne =>

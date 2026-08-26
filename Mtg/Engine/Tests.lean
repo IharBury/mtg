@@ -286,6 +286,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
+#guard mentions elvishVisionary.summary "draw a card"
+#guard elvishVisionary.triggeredAbilities.size == 1
+#guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
@@ -399,6 +402,16 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "Enchanted creature gets +3/+3" &&
     mentions c.abilitiesText "scry 2" &&
     mentions c.summary "flash"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Visionary"
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+    triggeredAbilities := #[.onEnterDraw 1]
+  }
+  mentions c.abilitiesText "draw a card"
 
 #guard
   let c : CardDef := {
@@ -2331,6 +2344,98 @@ def agentGuideOnly : Game :=
 #guard
   match Agent.choose agentGuideOnly ⟨0⟩ with
   | some (.cast id) => (agentGuideOnly.object! id).name == "Galadhrim Guide"
+  | _ => false
+
+/-- Elvish Visionary in hand with enough mana to cast it (CR 601.2). -/
+def visionarySetup : Game :=
+  withGreenMana (addToHand afterDraw elvishVisionary ⟨0⟩) ⟨0⟩
+
+#guard visionarySetup.canCast ⟨0⟩ (handCardNamed visionarySetup ⟨0⟩ "Elvish Visionary")
+#guard visionarySetup.asSorcery? ⟨0⟩
+#guard !elvishVisionary.keywords.flash
+#guard elvishVisionary.hasSorcerySpeed
+
+def proposedVisionary : Game :=
+  mustApply visionarySetup ⟨0⟩ (.cast (handCardNamed visionarySetup ⟨0⟩ "Elvish Visionary").id)
+
+#guard proposedVisionary.pending == .activateManaAbilities ⟨0⟩
+#guard proposedVisionary.log.any (fun s => mentions s "begins casting Elvish Visionary")
+
+def paidVisionary : Game := mustApply proposedVisionary ⟨0⟩ .pay
+
+#guard paidVisionary.stack.size == 1
+#guard paidVisionary.hasPriority ⟨0⟩
+#guard paidVisionary.log.any (fun s => mentions s "casts Elvish Visionary")
+
+/-- The creature enters; draw waits on the stack (CR 603.6a). -/
+def visionaryEntered : Game := passBoth paidVisionary
+
+#guard (namedPermanent visionaryEntered "Elvish Visionary").printed.power == some 1
+#guard visionaryEntered.power (namedPermanent visionaryEntered "Elvish Visionary") == 1
+#guard visionaryEntered.toughness (namedPermanent visionaryEntered "Elvish Visionary") == 1
+#guard visionaryEntered.stack.size == 1
+#guard (visionaryEntered.object! visionaryEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterDraw 1)
+#guard (visionaryEntered.object! visionaryEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent visionaryEntered "Elvish Visionary").id
+#guard visionaryEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard visionaryEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+/-- Known library: Forest on top is drawn when the trigger resolves (CR 121). -/
+def visionaryKnownLib : Game :=
+  addToLibraryTop visionaryEntered forest ⟨0⟩
+
+def visionaryDrew : Game := passBoth visionaryKnownLib
+
+#guard visionaryDrew.pending == .none
+#guard visionaryDrew.hasPriority ⟨0⟩
+#guard visionaryDrew.stack.isEmpty
+#guard visionaryDrew.battlefield.any (fun o => o.name == "Elvish Visionary")
+#guard (visionaryDrew.player ⟨0⟩).hand.size == (visionaryKnownLib.player ⟨0⟩).hand.size + 1
+#guard (visionaryDrew.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+#guard visionaryDrew.log.any (fun s => mentions s "draws Forest")
+
+-- Direct resolution of an enters-draw trigger draws that many cards (CR 121).
+#guard
+  let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) llanowarElves ⟨0⟩
+  let beforeHand := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterDraw 2) none
+  (g.player ⟨0⟩).hand.size == beforeHand + 2 &&
+    g.log.any (fun s => mentions s "draws Llanowar Elves") &&
+    g.log.any (fun s => mentions s "draws Forest")
+
+/-- The trigger still draws if Elvish Visionary has left the battlefield (CR 113.7a). -/
+def visionaryLeftBeforeTrigger : Game :=
+  let id := (namedPermanent visionaryKnownLib "Elvish Visionary").id
+  let (g, _) := visionaryKnownLib.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard !(visionaryLeftBeforeTrigger.battlefield.any (fun o => o.name == "Elvish Visionary"))
+#guard (visionaryLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (visionaryLeftBeforeTrigger.object! id).name == "Elvish Visionary")
+#guard (visionaryLeftBeforeTrigger.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+#guard visionaryLeftBeforeTrigger.log.any (fun s => mentions s "draws Forest")
+
+/-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
+def visionaryEmptyLib : Game :=
+  let g := visionaryEntered.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  passBoth g
+
+#guard visionaryEmptyLib.over
+#guard visionaryEmptyLib.result == some (.won ⟨1⟩)
+#guard (visionaryEmptyLib.player ⟨0⟩).lost
+#guard visionaryEmptyLib.log.any (fun s => mentions s "tries to draw from an empty library")
+#guard visionaryEmptyLib.log.any (fun s => mentions s "loses the game (drew from empty library)")
+#guard visionaryEmptyLib.log.any (fun s => mentions s "Nissa wins the game")
+
+/-- The agent casts Elvish Visionary when that is the playable spell. -/
+def agentVisionaryOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g elvishVisionary ⟨0⟩) ⟨0⟩
+
+#guard
+  match Agent.choose agentVisionaryOnly ⟨0⟩ with
+  | some (.cast id) => (agentVisionaryOnly.object! id).name == "Elvish Visionary"
   | _ => false
 
 /-- Goblin Cratermaker plus an opposing 2/2 and a Mountain; a land drop is already
