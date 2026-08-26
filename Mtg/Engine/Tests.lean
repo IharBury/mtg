@@ -260,6 +260,10 @@ def uncontrolledPermanent : Game :=
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
 #guard mentions attercop.summary "Landfall"
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities.size == 1
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
 #guard mentions landrovalHorizonWitness.summary "flying"
 #guard mentions landrovalHorizonWitness.summary "Whenever two or more creatures"
 #guard mentions soldierOfTheGreyHost.summary "Flash"
@@ -524,6 +528,21 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "land you control enters" &&
     mentions c.abilitiesText "Bear creature" &&
     mentions c.abilitiesText "{5}{G}{G}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Attercop"
+    types := #[.creature]
+    subtypes := #["Spider"]
+    power := some 2
+    toughness := some 1
+    keywords := { Keywords.none with reach := true, deathtouch := true }
+    triggeredAbilities := #[.onLandYouControlEntersGets1]
+  }
+  mentions c.summary "reach" &&
+    mentions c.summary "deathtouch" &&
+    mentions c.abilitiesText "land you control enters" &&
+    mentions c.abilitiesText "+1/+1 until end of turn"
 
 #guard
   let c : CardDef := {
@@ -7379,6 +7398,160 @@ def agentPathmaker : Game :=
 #guard
   match Agent.choose agentPathmaker ⟨0⟩ with
   | some (.cast id) => (agentPathmaker.object! id).name == "Mirkwood Pathmaker"
+  | _ => false
+
+/- Attercop: reach, deathtouch, and landfall +1/+1 until end of turn. -/
+
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
+#guard attercop.power == some 2
+#guard attercop.toughness == some 1
+
+/-- A flying attacker can be blocked by Attercop (reach) but not by a Gray Ogre. -/
+def flyerVsAttercop : Game :=
+  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent g attercop ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let smaug := namedPermanent g "Smaug, the Great Calamity"
+  g.setObject { smaug with status := { smaug.status with attacking := true } }
+
+#guard flyerVsAttercop.canBlock
+  (namedPermanent flyerVsAttercop "Attercop")
+  (namedPermanent flyerVsAttercop "Smaug, the Great Calamity")
+#guard !flyerVsAttercop.canBlock
+  (namedPermanent flyerVsAttercop "Gray Ogre")
+  (namedPermanent flyerVsAttercop "Smaug, the Great Calamity")
+
+/-- Attercop in play; a Forest in hand. -/
+def attercopLandfallSetup : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  addToHand g forest ⟨0⟩
+
+#guard attercopLandfallSetup.canPlayLand ⟨0⟩
+#guard attercopLandfallSetup.power (namedPermanent attercopLandfallSetup "Attercop") == 2
+#guard attercopLandfallSetup.toughness (namedPermanent attercopLandfallSetup "Attercop") == 1
+
+def attercopLandPlayed : Game :=
+  mustApply attercopLandfallSetup ⟨0⟩
+    (.playLand (handCardNamed attercopLandfallSetup ⟨0⟩ "Forest").id)
+
+#guard attercopLandPlayed.pending == .none
+#guard attercopLandPlayed.hasPriority ⟨0⟩
+#guard attercopLandPlayed.stack.size == 1
+#guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).sourceId ==
+  some (namedPermanent attercopLandPlayed "Attercop").id
+#guard attercopLandPlayed.stack.back!.targets.isEmpty
+#guard attercopLandPlayed.log.any (fun s => mentions s "landfall trigger is put on the stack")
+#guard attercopLandPlayed.power (namedPermanent attercopLandPlayed "Attercop") == 2
+
+def attercopLandfallResolved : Game := passBoth attercopLandPlayed
+
+#guard attercopLandfallResolved.stack.isEmpty
+#guard attercopLandfallResolved.hasPriority ⟨0⟩
+#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpPower == 1
+#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpToughness == 1
+#guard attercopLandfallResolved.power
+  (namedPermanent attercopLandfallResolved "Attercop") == 3
+#guard attercopLandfallResolved.toughness
+  (namedPermanent attercopLandfallResolved "Attercop") == 2
+#guard attercopLandfallResolved.log.any (fun s =>
+  mentions s "Attercop gets +1/+1 until end of turn")
+
+-- Direct resolution of a landfall pump stacks with an existing pump.
+#guard
+  let id := (namedPermanent attercopLandfallResolved "Attercop").id
+  let g := attercopLandfallResolved.applyTriggeredAbility ⟨0⟩
+    .onLandYouControlEntersGets1 (some id)
+  g.power (namedPermanent g "Attercop") == 4 &&
+    g.toughness (namedPermanent g "Attercop") == 3
+
+/-- An opponent's land does not trigger your landfall. -/
+def nissaLandVsAttercop : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .end 80)
+  let g := skipTo g .precombatMain 80
+  let g := addToHand g forest ⟨1⟩
+  mustApply g ⟨1⟩ (.playLand (handCardNamed g ⟨1⟩ "Forest").id)
+
+#guard nissaLandVsAttercop.stack.isEmpty
+#guard !(nissaLandVsAttercop.log.any (fun s => mentions s "landfall"))
+#guard nissaLandVsAttercop.power (namedPermanent nissaLandVsAttercop "Attercop") == 2
+
+/-- If Attercop leaves before the trigger resolves, it is not pumped. -/
+def attercopSourceGone : Game :=
+  let id := (namedPermanent attercopLandPlayed "Attercop").id
+  let (g, _) := attercopLandPlayed.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard attercopSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard !(attercopSourceGone.battlefield.any (fun o => o.name == "Attercop"))
+
+/-- The +1/+1 wears off in cleanup (CR 514.3). -/
+def afterAttercopCleanup : Game := passBoth (skipTo attercopLandfallResolved .end 80)
+
+#guard afterAttercopCleanup.power (namedPermanent afterAttercopCleanup "Attercop") == 2
+#guard afterAttercopCleanup.toughness (namedPermanent afterAttercopCleanup "Attercop") == 1
+#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpPower == 0
+#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpToughness == 0
+
+/-- Two Attercops both trigger from one land. -/
+def twoAttercopsLandPlayed : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard twoAttercopsLandPlayed.stack.size == 2
+#guard (twoAttercopsLandPlayed.object! twoAttercopsLandPlayed.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard (twoAttercopsLandPlayed.object!
+  twoAttercopsLandPlayed.stack[0]!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+
+def twoAttercopsPumped : Game := passBoth (passBoth twoAttercopsLandPlayed)
+
+#guard twoAttercopsPumped.stack.isEmpty
+#guard
+  let spiders := twoAttercopsPumped.battlefield.filter (fun o => o.name == "Attercop")
+  spiders.size == 2 && spiders.all (fun o => twoAttercopsPumped.power o == 3)
+
+/-- Wood Elves putting a Forest onto the battlefield also triggers landfall. -/
+def attercopWoodElvesResolved : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g woodElves ⟨0⟩) ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Wood Elves").id)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  let g := addToLibraryTop (addToLibraryTop g forest ⟨0⟩) mountain ⟨0⟩
+  passBoth g
+
+#guard attercopWoodElvesResolved.battlefield.any (fun o => o.name == "Forest")
+#guard attercopWoodElvesResolved.stack.size == 1
+#guard (attercopWoodElvesResolved.object!
+  attercopWoodElvesResolved.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard attercopWoodElvesResolved.log.any (fun s => mentions s "landfall trigger is put on the stack")
+
+def attercopWoodElvesPumped : Game := passBoth attercopWoodElvesResolved
+
+#guard attercopWoodElvesPumped.stack.isEmpty
+#guard attercopWoodElvesPumped.power
+  (namedPermanent attercopWoodElvesPumped "Attercop") == 3
+#guard attercopWoodElvesPumped.log.any (fun s =>
+  mentions s "Attercop gets +1/+1 until end of turn")
+
+/-- The heuristic plays a land when Attercop is in play. -/
+def agentAttercopLand : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
+  addToHand g forest ⟨0⟩
+
+#guard
+  match Agent.choose agentAttercopLand ⟨0⟩ with
+  | some (.playLand id) => (agentAttercopLand.object! id).name == "Forest"
   | _ => false
 
 end Mtg.Engine.Tests

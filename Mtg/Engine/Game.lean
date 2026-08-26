@@ -34,7 +34,8 @@ for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
 discard-to-draw, damage divided as you choose when a creature enters or
 attacks (CR 601.2d), and returning an Elf card from your graveyard to gain
 life equal to its power (CR 701.19 / 118.2), another-Elf-enters pumps
-(CR 603.6a), landfall triggers that target (CR 603.3d / 601.2c),
+(CR 603.6a), landfall triggers that put +1/+1 counters or pump the source
+until end of turn (CR 603.6a / 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
@@ -1055,7 +1056,8 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
   | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 =>
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -2539,7 +2541,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
-  | .onAnotherElfYouControlEntersGets1 =>
+  | .onAnotherElfYouControlEntersGets1 | .onLandYouControlEntersGets1 =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then

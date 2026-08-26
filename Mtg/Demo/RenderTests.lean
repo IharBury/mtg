@@ -883,4 +883,25 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine resolvedExiledBeorn
   (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host")) "trample"
 
+#guard mentions (stackBlock attercopLandPlayed) "Attercop's ability"
+#guard mentions (stackBlock attercopLandPlayed) "Whenever a land you control enters"
+#guard mentions (stackBlock attercopLandPlayed) "+1/+1 until end of turn"
+#guard
+  let g := attercopLandPlayed
+  let src := namedPermanent g "Attercop"
+  mentions (stackBlock g) s!"*source {src.id} Attercop*" &&
+    mentions (objectLine g src) "2/1" &&
+    mentions (objectLine g src) "reach" &&
+    mentions (objectLine g src) "deathtouch"
+#guard
+  let g := attercopLandfallResolved
+  let o := namedPermanent g "Attercop"
+  mentions (objectLine g o) "3/2"
+#guard
+  let g := afterAttercopCleanup
+  let o := namedPermanent g "Attercop"
+  mentions (objectLine g o) "2/1"
+#guard mentions (objectLine flyerVsAttercop
+  (namedPermanent flyerVsAttercop "Attercop")) "reach"
+
 end Mtg.Demo.RenderTests

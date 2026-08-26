@@ -107,7 +107,8 @@ The first slice of the engine models the two-player game:
   a creature enters or attacks), return an Elf card from your graveyard and
   gain life equal to its power, pumps when another Elf you control enters,
   landfall triggers that
-  put +1/+1 counters on a target creature you control, activated pumps
+  put +1/+1 counters on a target creature you control or give this creature
+  +1/+1 until end of turn, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
