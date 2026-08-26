@@ -11,6 +11,7 @@ import Mtg.Engine.Zone
 
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
+including additional land plays this turn (CR 305.2b),
 casting the spells we model (CR 601), including choosing modes of modal spells
 and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), additional costs such as sacrificing
@@ -317,6 +318,8 @@ structure Player where
   startingHandSize : Nat := 7
   manaPool : ManaPool := {}
   landsPlayedThisTurn : Nat := 0
+  /-- Extra land plays granted this turn (CR 305.2b). Reset in untap. -/
+  additionalLandsThisTurn : Nat := 0
   poison : Nat := 0
   lost : Bool := false
   drewFromEmpty : Bool := false
@@ -981,9 +984,13 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
-/-- Lands remaining this turn (CR 305.3 / 116.2a). -/
+/-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
+def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
+  1 + (g.player p).additionalLandsThisTurn
+
+/-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
-  g.asSorcery? p && (g.player p).landsPlayedThisTurn == 0
+  g.asSorcery? p && (g.player p).landsPlayedThisTurn < g.landPlaysAllowed p
 
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
 def mayPlayFromExile (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -1360,6 +1367,7 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array T
     g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .plusOnePlusOneTrampleHexproof =>
     g.legalCreatureTargets caster (fun o => o.controlledBy caster)
+  | .playAdditionalLandThisTurn => #[]
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
@@ -1508,6 +1516,7 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | _, _, some (.pump _ _) | _, _, some .plusOnePlusOneTrampleHexproof | _, _, none =>
       (g.permanentsOf p).filter (·.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
+    | _, _, some .playAdditionalLandThisTurn => none
   match preferred with
   | some t => if legal.contains t then some t else legal[0]?
   | none => legal[0]?
@@ -2141,6 +2150,10 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       else
         let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
         g.logMsg s!"{o.name} is dealt {n} damage"
+  | .playAdditionalLandThisTurn, _ =>
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
+    g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | _, _ => g
 
 /-- Search `p`'s library for a basic land card, put it onto the battlefield
@@ -2993,7 +3006,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
-      g := g.modifyPlayer ap (fun pl => { pl with landsPlayedThisTurn := 0 })
+      g := g.modifyPlayer ap (fun pl =>
+        { pl with landsPlayedThisTurn := 0, additionalLandsThisTurn := 0 })
       for o in g.permanentsOf ap do
         -- CR 502.2: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change

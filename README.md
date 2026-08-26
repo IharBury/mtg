@@ -82,7 +82,7 @@ The first slice of the engine models the two-player game:
 - starting a game, choosing who takes the first turn, opening hands, London
   mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
-- playing lands, activating mana abilities (including `{T}: Add` for each
+- playing lands, including additional land plays this turn (CR 305.2b), activating mana abilities (including `{T}: Add` for each
   permanent of a listed type, and `{T}: Add` X mana of any color equal to
   power that may be spent only on Elf spells and abilities), activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing

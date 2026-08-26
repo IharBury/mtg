@@ -20,7 +20,8 @@ divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
 Aura and Equipment attachment, adventurer cards
-(casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
+(casting an Adventure, then the creature from exile, including additional land
+plays this turn), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
@@ -936,10 +937,18 @@ def beornReluctantHost : CardDef := {
   types := #[.creature]
   subtypes := #["Human", "Bear", "Shapeshifter"]
   supertypes := #[.legendary]
-  oracleText := "Trample"
+  oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
   power := some 5
   toughness := some 5
   keywords := { Keywords.none with trample := true }
+  adventure := some {
+    name := "Till and Tend"
+    manaCost := ManaCost.ofGenericAndColor 1 .green
+    types := #[.sorcery]
+    subtypes := #["Adventure"]
+    oracleText := "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
+    spellEffect := some .playAdditionalLandThisTurn
+  }
 }
 
 def woodElves : CardDef := {
@@ -1143,5 +1152,23 @@ def attercop : CardDef := {
   | none => false
 #guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame").length > 1
 #guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
+#guard beornReluctantHost.keywords.trample
+#guard beornReluctantHost.hasAdventure
+#guard beornReluctantHost.supertypes.any (· == .legendary)
+#guard beornReluctantHost.power == some 5
+#guard beornReluctantHost.toughness == some 5
+#guard
+  match beornReluctantHost.adventure with
+  | some adv =>
+    adv.name == "Till and Tend" &&
+      adv.manaCost == ManaCost.ofGenericAndColor 1 .green &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some .playAdditionalLandThisTurn &&
+      !adv.toCardDef.requiresTarget
+  | none => false
+#guard (beornReluctantHost.summary.splitOn "Till and Tend").length > 1
+#guard (beornReluctantHost.summary.splitOn "trample").length > 1
+#guard (beornReluctantHost.summary.splitOn "additional land").length > 1
 
 end Mtg.Engine.Catalog

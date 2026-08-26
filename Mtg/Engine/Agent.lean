@@ -175,6 +175,11 @@ where
       if ownCreature.isSome then
         playable.find? (fun o => o.printed.isAura)
       else none
+    let extraLandAdventure :=
+      adventurePlayable.find? (fun o =>
+        match o.printed.adventure with
+        | some adv => adv.spellEffect == some .playAdditionalLandThisTurn
+        | none => false)
     if let some o := burn then
       some (.cast o.id)
     else if let some o := adventureRemoval then
@@ -189,6 +194,8 @@ where
       some (.cast o.id)
     else if let some o := aura then
       some (.cast o.id)
+    else if let some o := extraLandAdventure then
+      some (.castAdventure o.id)
     else
       some .pass
 
