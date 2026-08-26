@@ -18,7 +18,10 @@ structure Keywords where
   haste : Bool := false
   vigilance : Bool := false
   flying : Bool := false
+  /-- This creature can't be blocked (printed or granted until end of turn). -/
+  cantBeBlocked : Bool := false
   hexproof : Bool := false
+  indestructible : Bool := false
   reach : Bool := false
   trample : Bool := false
   deathtouch : Bool := false
@@ -34,7 +37,9 @@ def toList (k : Keywords) : List String :=
   (if k.haste then ["haste"] else []) ++
   (if k.vigilance then ["vigilance"] else []) ++
   (if k.flying then ["flying"] else []) ++
+  (if k.cantBeBlocked then ["can't be blocked"] else []) ++
   (if k.hexproof then ["hexproof"] else []) ++
+  (if k.indestructible then ["indestructible"] else []) ++
   (if k.reach then ["reach"] else []) ++
   (if k.trample then ["trample"] else []) ++
   (if k.deathtouch then ["deathtouch"] else []) ++
@@ -60,8 +65,18 @@ inductive SpellEffect where
   | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
   | dealDamageToCreature (amount : Nat)
+  /-- Deal `amount` damage to target creature. That creature loses
+  indestructible until end of turn. If it would die this turn, exile it instead
+  (e.g. Smite the Deathless). -/
+  | dealDamageLoseIndestructibleExile (amount : Nat)
+  /-- Target creature you control deals damage equal to its power to target
+  creature an opponent controls (e.g. Quarrel). -/
+  | creatureYouControlDealsPowerToOppCreature
   /-- You may play an additional land this turn (e.g. Till and Tend). -/
   | playAdditionalLandThisTurn
+  /-- Destroy target artifact or land. Creatures without flying can't block
+  this turn (e.g. Fire of Orthanc). -/
+  | destroyArtifactOrLandNonflyersCantBlock
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -76,13 +91,31 @@ def toNotation : SpellEffect → String
   | .plusOnePlusOneTrampleHexproof =>
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
   | .dealDamageToCreature n => s!"deals {n} damage to target creature"
+  | .dealDamageLoseIndestructibleExile n =>
+    s!"deals {n} damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
+  | .creatureYouControlDealsPowerToOppCreature =>
+    "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .playAdditionalLandThisTurn => "you may play an additional land this turn"
+  | .destroyArtifactOrLandNonflyersCantBlock =>
+    "destroy target artifact or land. Creatures without flying can't block this turn"
+
+/-- How many targets must be announced for this effect (CR 601.2c). -/
+def targetCount : SpellEffect → Nat
+  | .playAdditionalLandThisTurn => 0
+  | .creatureYouControlDealsPowerToOppCreature => 2
+  | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .dealDamageLoseIndestructibleExile _
+  | .destroyArtifactOrLandNonflyersCantBlock => 1
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : SpellEffect → Bool
   | .playAdditionalLandThisTurn => false
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => true
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .dealDamageLoseIndestructibleExile _
+  | .creatureYouControlDealsPowerToOppCreature
+  | .destroyArtifactOrLandNonflyersCantBlock => true
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -112,6 +145,8 @@ inductive AbilityEffect where
   | sourceGets (power toughness : Int)
   /-- Put `n` +1/+1 counters on this creature (e.g. Guardian of the Halls). -/
   | putPlusOnePlusOneOnSource (n : Nat)
+  /-- Target creature can't be blocked this turn (e.g. Rogue's Passage). -/
+  | targetCantBeBlockedThisTurn
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -137,11 +172,13 @@ def toNotation : AbilityEffect → String
     s!"This creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
   | .putPlusOnePlusOneOnSource n =>
     s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
+  | .targetCantBeBlockedThisTurn =>
+    "Target creature can't be blocked this turn"
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : AbilityEffect → Bool
   | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland
-  | .attachToTargetCreatureYouControl => true
+  | .attachToTargetCreatureYouControl | .targetCantBeBlockedThisTurn => true
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
   | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => false
 
@@ -327,6 +364,9 @@ inductive TriggeredAbility where
   /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
   target creature you control (e.g. Beorn's Hospitality). -/
   | onLandYouControlEntersPlusOnePlusOne
+  /-- Landfall — Whenever a land you control enters, this creature gets +1/+1
+  until end of turn (e.g. Attercop). -/
+  | onLandYouControlEntersGets1
   /-- When this permanent enters, it deals `amount` damage divided as you
   choose among one to `maxTargets` targets (e.g. Gandalf, Spark Starter). -/
   | onEnterDealDividedDamage (amount maxTargets : Nat)
@@ -384,6 +424,8 @@ def toNotation : TriggeredAbility → String
     s!"When this permanent enters, you may discard a card. If you do, draw {cards}."
   | .onLandYouControlEntersPlusOnePlusOne =>
     "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
+  | .onLandYouControlEntersGets1 =>
+    "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
   | .onEnterDealDividedDamage amount maxTargets =>
     s!"When this permanent enters, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
@@ -437,6 +479,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterMayDiscardDraw _ => { whenEntering := true }
   | .onLandYouControlEntersPlusOnePlusOne =>
     { whenLandYouControlEnters := true, requiresTarget := true }
+  | .onLandYouControlEntersGets1 =>
+    { whenLandYouControlEnters := true }
   | .onEnterDealDividedDamage amount maxTargets =>
     { whenEntering := true, requiresTarget := true, dividedDamage := some (amount, maxTargets) }
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
@@ -721,6 +765,8 @@ instance : ToString CardDef where
 #guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
 #guard toString ({ Keywords.none with hexproof := true } : Keywords) == "hexproof"
 #guard CardDef.isKeywordRestatement { Keywords.none with hexproof := true } "Hexproof"
+#guard toString ({ Keywords.none with indestructible := true } : Keywords) == "indestructible"
+#guard CardDef.isKeywordRestatement { Keywords.none with indestructible := true } "Indestructible"
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
@@ -729,10 +775,24 @@ instance : ToString CardDef where
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
+#guard SpellEffect.toNotation (.dealDamageLoseIndestructibleExile 3) ==
+  "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
+#guard SpellEffect.toNotation .creatureYouControlDealsPowerToOppCreature ==
+  "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
   "you may play an additional land this turn"
+#guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
+  "destroy target artifact or land. Creatures without flying can't block this turn"
+#guard SpellEffect.targetCount (.dealDamage 3) == 1
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
+#guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
+#guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
+#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
+#guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
 #guard
   let c : CardDef := {
@@ -758,13 +818,19 @@ instance : ToString CardDef where
   "Put 3 +1/+1 counters on this creature"
 #guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 1) ==
   "Put a +1/+1 counter on this creature"
+#guard AbilityEffect.toNotation .targetCantBeBlockedThisTurn ==
+  "Target creature can't be blocked this turn"
 #guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
+#guard AbilityEffect.requiresTarget .targetCantBeBlockedThisTurn
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
+#guard
+  let k : Keywords := { Keywords.none with cantBeBlocked := true }
+  toString k == "can't be blocked"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
@@ -831,6 +897,8 @@ instance : ToString CardDef where
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
+#guard TriggeredAbility.toNotation .onLandYouControlEntersGets1 ==
+  "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation (.onEnterOrAttackDealDividedDamage 3 3) ==
@@ -850,7 +918,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
-#guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
+#guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersPlusOnePlusOne).isNone
+#guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersGets1).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
@@ -902,8 +971,10 @@ instance : ToString CardDef where
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
 #guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersPlusOnePlusOne
+#guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersGets1
 #guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.requiresTarget .onLandYouControlEntersGets1
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
@@ -914,6 +985,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.allowsZeroTargets .onAttackOtherGets2AndTrample
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)

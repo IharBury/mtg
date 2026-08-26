@@ -9,7 +9,7 @@ The Hobbit Welcome Decks. The engine models a subset of rules text
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Passage, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 types, attack triggers that pump, set another creature's base
@@ -20,11 +20,15 @@ damage blockers, dies triggers that deal last-known power, enters triggers that 
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
+landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy, +1/+1
+plays this turn), modal spells, destroy (including target artifact or land,
+after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
-artifact or creature, and a few one-shot spell effects);
+artifact or creature, a creature you control dealing damage equal to its power
+to a creature an opponent controls, dealing damage that also makes a creature
+lose indestructible and exile it if it would die this turn, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -121,6 +125,10 @@ def roguesPassage : CardDef := {
   types := #[.land]
   oracleText := "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn."
   tapAddMana := #[.colorless]
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGeneric 4, tap := true }
+    effect := .targetCantBeBlockedThisTurn
+  }]
 }
 
 def soldierOfTheGreyHost : CardDef := {
@@ -669,7 +677,7 @@ def smiteTheDeathless : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .red
   types := #[.instant]
   oracleText := "Smite the Deathless deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead."
-  spellEffect := some (.dealDamage 3)
+  spellEffect := some (.dealDamageLoseIndestructibleExile 3)
 }
 
 def goblinFireleaper : CardDef := {
@@ -774,6 +782,7 @@ def fireOfOrthanc : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 3 .red
   types := #[.sorcery]
   oracleText := "Destroy target artifact or land. Creatures without flying can't block this turn."
+  spellEffect := some .destroyArtifactOrLandNonflyersCantBlock
 }
 
 def guardianOfTheHalls : CardDef := {
@@ -796,6 +805,7 @@ def quarrel : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .green
   types := #[.instant]
   oracleText := "Target creature you control deals damage equal to its power to target creature an opponent controls."
+  spellEffect := some .creatureYouControlDealsPowerToOppCreature
 }
 
 def galadhrimGuide : CardDef := {
@@ -983,13 +993,22 @@ def attercop : CardDef := {
   power := some 2
   toughness := some 1
   keywords := { Keywords.none with reach := true, deathtouch := true }
+  triggeredAbilities := #[.onLandYouControlEntersGets1]
 }
 
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard roguesPassage.isLand
+#guard roguesPassage.activatedAbilities.size == 1
+#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.cost.tap
+#guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
+#guard roguesPassage.tapAddMana == #[.colorless]
 #guard elvishMystic.tapAddMana == #[.colored .green]
 #guard (attercop.summary.splitOn "Landfall").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.keywords.trample
@@ -1070,6 +1089,17 @@ def attercop : CardDef := {
   #[.destroyTargetColorlessNonland]
 #guard (goblinCratermaker.summary.splitOn "Choose one").length > 1
 #guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
+#guard quarrel.isInstant
+#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard quarrel.requiresTarget
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
+#guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
+#guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget
@@ -1140,6 +1170,11 @@ def attercop : CardDef := {
 #guard improvisedClub.requiresTarget
 #guard (improvisedClub.summary.splitOn "additional cost").length > 1
 #guard (improvisedClub.summary.splitOn "4 damage").length > 1
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.requiresTarget
+#guard (fireOfOrthanc.summary.splitOn "artifact or land").length > 1
+#guard (fireOfOrthanc.summary.splitOn "can't block this turn").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)

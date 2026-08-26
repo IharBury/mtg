@@ -105,6 +105,7 @@ where
         some .pay
       else
         match (g.manaSources p).find? (fun (src, types) =>
+          !(prop.tapSource && prop.sourceId == some src.id) &&
           !(src.printed.tapAddAnyColorEqualToPower && !allowElf) && !types.isEmpty) with
         | some (src, types) =>
           match g.preferredManaType p types prop.cost allowElf with
@@ -113,14 +114,18 @@ where
         | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let available := g.availableMana p
     let candidate := (g.permanentsOf p).find? (fun o =>
       match o.printed.activatedAbilities[0]? with
       | some ab =>
+        let available :=
+          g.availableManaExcept p (if ab.cost.tap then some o.id else none)
         g.canActivate p o ab &&
         available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
         -- Don't spend mana re-equipping a creature that is already equipped.
-        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome)
+        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
+        -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
+        !(ab.effect == .targetCantBeBlockedThisTurn &&
+          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking))
       | none => false)
     match candidate with
     | some o => some (.activate o.id 0)
@@ -151,10 +156,24 @@ where
       match o.printed.spellEffect with
       | some (.dealDamage _) => true
       | _ => false)
+    let creatureDamage :=
+      if oppHasCreature then
+        playable.find? (fun o =>
+          match o.printed.spellEffect with
+          | some (.dealDamageToCreature _) | some (.dealDamageLoseIndestructibleExile _) =>
+            true
+          | _ => false)
+      else none
+    let fight := playable.find? (fun o =>
+      match o.printed.spellEffect with
+      | some .creatureYouControlDealsPowerToOppCreature => true
+      | _ => false)
     let removal := playable.find? (fun o =>
-      !(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
+      (!(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
         (o.printed.spellEffect == some .destroyCreatureWithFlying ||
-          o.printed.spellModes.any (· == .destroyCreatureWithFlying)))
+          o.printed.spellModes.any (· == .destroyCreatureWithFlying))) ||
+      (!(g.legalTargets p .destroyArtifactOrLandNonflyersCantBlock).isEmpty &&
+        o.printed.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.types.any (· == .artifact) &&
@@ -184,7 +203,11 @@ where
       some (.cast o.id)
     else if let some o := adventureRemoval then
       some (.castAdventure o.id)
+    else if let some o := creatureDamage then
+      some (.cast o.id)
     else if let some o := removal then
+      some (.cast o.id)
+    else if let some o := fight then
       some (.cast o.id)
     else if let some o := creature then
       some (.cast o.id)

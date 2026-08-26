@@ -266,12 +266,20 @@ def uncontrolledPermanent : Game :=
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
 #guard mentions attercop.summary "Landfall"
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities.size == 1
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
 #guard mentions landrovalHorizonWitness.summary "flying"
 #guard mentions landrovalHorizonWitness.summary "Whenever two or more creatures"
 #guard mentions soldierOfTheGreyHost.summary "Flash"
 #guard mentions soldierOfTheGreyHost.summary "flying"
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
+#guard roguesPassage.activatedAbilities.size == 1
+#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.cost.tap
+#guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
 #guard mentions orcishSiegemaster.summary "trample"
 #guard mentions orcishSiegemaster.summary "Other Orcs and Goblins"
 #guard mentions orcishSiegemaster.summary "greatest power"
@@ -295,6 +303,15 @@ def uncontrolledPermanent : Game :=
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
+#guard mentions quarrel.summary "deals damage equal to its power"
+#guard quarrel.isInstant
+#guard quarrel.requiresTarget
+#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard mentions smiteTheDeathless.summary "loses indestructible"
+#guard mentions smiteTheDeathless.summary "exile it instead"
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
 #guard mentions woodElves.summary "Forest card"
 #guard woodElves.triggeredAbilities.size == 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -385,6 +402,11 @@ def uncontrolledPermanent : Game :=
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
 #guard improvisedClub.requiresTarget
+#guard mentions fireOfOrthanc.summary "artifact or land"
+#guard mentions fireOfOrthanc.summary "can't block this turn"
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
@@ -533,6 +555,21 @@ def uncontrolledPermanent : Game :=
 
 #guard
   let c : CardDef := {
+    name := "Silent Attercop"
+    types := #[.creature]
+    subtypes := #["Spider"]
+    power := some 2
+    toughness := some 1
+    keywords := { Keywords.none with reach := true, deathtouch := true }
+    triggeredAbilities := #[.onLandYouControlEntersGets1]
+  }
+  mentions c.summary "reach" &&
+    mentions c.summary "deathtouch" &&
+    mentions c.abilitiesText "land you control enters" &&
+    mentions c.abilitiesText "+1/+1 until end of turn"
+
+#guard
+  let c : CardDef := {
     name := "Silent Pathmaker"
     types := #[.creature]
     staticAbilities := #[.powerToughnessEqualLandsYouControl]
@@ -574,6 +611,21 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
     mentions c.abilitiesText "{1}{R}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Passage"
+    types := #[.land]
+    tapAddMana := #[.colorless]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 4, tap := true }
+      effect := .targetCantBeBlockedThisTurn
+    }]
+  }
+  mentions c.abilitiesText "{T}: Add {C}" &&
+    mentions c.abilitiesText "can't be blocked this turn" &&
+    mentions c.abilitiesText "{4}" &&
+    mentions c.abilitiesText "{T}"
 
 #guard
   let c : CardDef := {
@@ -7319,6 +7371,1047 @@ def agentPathmaker : Game :=
 #guard
   match Agent.choose agentPathmaker ⟨0⟩ with
   | some (.cast id) => (agentPathmaker.object! id).name == "Mirkwood Pathmaker"
+  | _ => false
+
+/- Fire of Orthanc (CR 701.8 / 509.1b / 611.2a). -/
+
+/-- Fire of Orthanc in hand, an opposing Forest, enough mana. -/
+def fireOfOrthancSetup : Game :=
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.requiresTarget
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthancSetup.canCast ⟨0⟩ (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc")
+#guard fireOfOrthancSetup.asSorcery? ⟨0⟩
+#guard
+  (fireOfOrthancSetup.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (Target.permanent (namedPermanent fireOfOrthancSetup "Forest").id)
+
+-- Cannot cast with no artifact or land.
+#guard
+  let g := withRedMana (addToHand afterDraw fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+#guard
+  let g := withRedMana (addToHand afterDraw fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- An opposing artifact is a legal target; a non-artifact creature is not.
+#guard
+  let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (Target.permanent (namedPermanent g "Wayfarer's Bauble").id) &&
+    !(g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+      (Target.permanent (namedPermanent g "Grizzly Bears").id)
+
+-- Own lands are legal; hexproof on an opponent's land is not (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw mountain ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc") &&
+    (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+      (Target.permanent (namedPermanent g "Mountain").id)
+#guard
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let forest := namedPermanent g "Forest"
+  let g := g.setObject { forest with
+    status := { forest.status with untilEotHexproof := true } }
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
+
+def proposedFireOfOrthanc : Game :=
+  mustApply fireOfOrthancSetup ⟨0⟩
+    (.cast (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc").id)
+
+#guard proposedFireOfOrthanc.pending == .chooseTargets ⟨0⟩
+#guard proposedFireOfOrthanc.log.any (fun s => mentions s "begins casting Fire of Orthanc")
+#guard proposedFireOfOrthanc.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Cannot target a player or a creature that is not an artifact.
+#guard
+  match proposedFireOfOrthanc.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def targetedFireOfOrthanc : Game :=
+  mustApply proposedFireOfOrthanc ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedFireOfOrthanc "Forest").id))
+
+#guard targetedFireOfOrthanc.pending == .activateManaAbilities ⟨0⟩
+#guard targetedFireOfOrthanc.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedFireOfOrthanc "Forest").id]
+
+#guard
+  match Agent.choose proposedFireOfOrthanc ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedFireOfOrthanc.object! tid).name == "Forest"
+  | _ => false
+
+-- Prefer an opposing land over your own (CR 601.2c heuristic).
+#guard
+  let g := addPermanent fireOfOrthancSetup mountain ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (g.object! tid).name == "Forest"
+  | _ => false
+
+def paidFireOfOrthanc : Game := mustApply targetedFireOfOrthanc ⟨0⟩ .pay
+
+#guard paidFireOfOrthanc.hasPriority ⟨0⟩
+#guard paidFireOfOrthanc.stack.size == 1
+#guard paidFireOfOrthanc.log.any (fun s => mentions s "casts Fire of Orthanc")
+
+def resolvedFireOfOrthanc : Game := passBoth paidFireOfOrthanc
+
+#guard resolvedFireOfOrthanc.stack.isEmpty
+#guard !(resolvedFireOfOrthanc.battlefield.any (fun o => o.name == "Forest"))
+#guard resolvedFireOfOrthanc.objects.any (fun o =>
+  o.name == "Forest" && o.zone == .graveyard ⟨1⟩)
+#guard resolvedFireOfOrthanc.log.any (fun s => mentions s "Forest is destroyed")
+#guard resolvedFireOfOrthanc.log.any (fun s =>
+  mentions s "Creatures without flying can't block this turn")
+#guard resolvedFireOfOrthanc.creaturesWithoutFlyingCantBlock
+#guard (resolvedFireOfOrthanc.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedFireOfOrthanc.object! id).name == "Fire of Orthanc")
+
+-- Destroying an artifact also sets the can't-block effect.
+#guard
+  let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Wayfarer's Bauble").id]
+  !(g.battlefield.any (fun o => o.name == "Wayfarer's Bauble")) &&
+    g.creaturesWithoutFlyingCantBlock &&
+    g.log.any (fun s => mentions s "Wayfarer's Bauble is destroyed")
+
+-- If the target leaves before resolution, neither effect happens (CR 608.2b).
+def fireOfOrthancTargetGone : Game :=
+  let id := (namedPermanent paidFireOfOrthanc "Forest").id
+  let (g, _) := paidFireOfOrthanc.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard fireOfOrthancTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !fireOfOrthancTargetGone.creaturesWithoutFlyingCantBlock
+
+/-- Chandra's Gray Ogre attacks after Fire of Orthanc; Nissa's Grizzly Bears
+cannot block. -/
+def fireOfOrthancReadyToBlock : Game :=
+  let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Forest").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard fireOfOrthancReadyToBlock.pending == .declareBlockers
+#guard fireOfOrthancReadyToBlock.creaturesWithoutFlyingCantBlock
+#guard
+  let g := fireOfOrthancReadyToBlock
+  !g.canBlock (namedPermanent g "Grizzly Bears") (namedPermanent g "Gray Ogre")
+#guard
+  match fireOfOrthancReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent fireOfOrthancReadyToBlock "Grizzly Bears").id,
+    (namedPermanent fireOfOrthancReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+/-- A flying creature can still block after Fire of Orthanc. -/
+def fireOfOrthancFlyerReadyToBlock : Game :=
+  let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+    #[Target.permanent (namedPermanent g "Forest").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard
+  let g := fireOfOrthancFlyerReadyToBlock
+  g.canBlock (namedPermanent g "Velvetwing Butterflies") (namedPermanent g "Gray Ogre")
+
+def fireOfOrthancFlyerBlocks : Game :=
+  let g := fireOfOrthancFlyerReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Velvetwing Butterflies").id,
+    (namedPermanent g "Gray Ogre").id)])
+
+#guard (namedPermanent fireOfOrthancFlyerBlocks "Velvetwing Butterflies").status.blocking ==
+  #[(namedPermanent fireOfOrthancFlyerBlocks "Gray Ogre").id]
+#guard (namedPermanent fireOfOrthancFlyerBlocks "Gray Ogre").status.blocked
+
+/-- The can't-block effect wears off in cleanup (CR 514.2). -/
+def afterFireOfOrthancCleanup : Game :=
+  passBoth (skipTo resolvedFireOfOrthanc .end 80)
+
+#guard afterFireOfOrthancCleanup.turnNumber == 2
+#guard !afterFireOfOrthancCleanup.creaturesWithoutFlyingCantBlock
+
+/-- The agent casts Fire of Orthanc when that is the playable spell. -/
+def agentFireOfOrthancOnly : Game :=
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+
+#guard
+  match Agent.choose agentFireOfOrthancOnly ⟨0⟩ with
+  | some (.cast id) => (agentFireOfOrthancOnly.object! id).name == "Fire of Orthanc"
+  | _ => false
+
+/- Quarrel: target creature you control deals damage equal to its power to
+target creature an opponent controls (CR 601.2c / 608.2b / 120.3a). -/
+
+/-- Propose a two-target spell (CR 601.2a / 601.2c). -/
+def proposeTwoTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t1 t2 : Target) : Game :=
+  mustApply (proposeTargeted g p id t1) p (.target t2)
+
+/-- Quarrel in hand, Llanowar Elves you control, Grizzly Bears opposing. -/
+def quarrelSetup : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+#guard quarrel.isInstant
+#guard quarrel.requiresTarget
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
+#guard quarrelSetup.asSorcery? ⟨0⟩
+#guard (quarrelSetup.legalTargets ⟨0⟩ .creatureYouControlDealsPowerToOppCreature).size == 2
+
+-- Cannot cast with no creature you control.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Quarrel").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Cannot cast with no opposing creature.
+#guard
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+
+-- Hexproof makes an opposing creature an illegal dest (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+
+def proposedQuarrel : Game :=
+  mustApply quarrelSetup ⟨0⟩ (.cast (handCardNamed quarrelSetup ⟨0⟩ "Quarrel").id)
+
+#guard proposedQuarrel.pending == .chooseTargets ⟨0⟩
+#guard proposedQuarrel.stack.back!.targets.isEmpty
+#guard proposedQuarrel.log.any (fun s => mentions s "begins casting Quarrel")
+#guard proposedQuarrel.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- First target must be a creature you control, not a player or an opponent's creature.
+#guard
+  match proposedQuarrel.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match proposedQuarrel.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent proposedQuarrel "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic's first target is the creature you control.
+#guard
+  match Agent.choose proposedQuarrel ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedQuarrel.object! tid).name == "Llanowar Elves"
+  | _ => false
+
+def quarrelSourceChosen : Game :=
+  mustApply proposedQuarrel ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedQuarrel "Llanowar Elves").id))
+
+#guard quarrelSourceChosen.pending == .chooseTargets ⟨0⟩
+#guard quarrelSourceChosen.proposedSpell.isSome
+#guard quarrelSourceChosen.stack.back!.targets ==
+  #[Target.permanent (namedPermanent quarrelSourceChosen "Llanowar Elves").id]
+#guard quarrelSourceChosen.log.any (fun s => mentions s "chooses Llanowar Elves as a target")
+
+-- Second target must be an opposing creature.
+#guard
+  match quarrelSourceChosen.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match quarrelSourceChosen.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent quarrelSourceChosen "Llanowar Elves").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic's second target is the opposing creature.
+#guard
+  match Agent.choose quarrelSourceChosen ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (quarrelSourceChosen.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def targetedQuarrel : Game :=
+  mustApply quarrelSourceChosen ⟨0⟩
+    (.target (Target.permanent (namedPermanent quarrelSourceChosen "Grizzly Bears").id))
+
+#guard targetedQuarrel.pending == .activateManaAbilities ⟨0⟩
+#guard targetedQuarrel.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedQuarrel "Llanowar Elves").id,
+    Target.permanent (namedPermanent targetedQuarrel "Grizzly Bears").id]
+
+def paidQuarrel : Game := mustApply targetedQuarrel ⟨0⟩ .pay
+
+#guard paidQuarrel.hasPriority ⟨0⟩
+#guard paidQuarrel.log.any (fun s => mentions s "casts Quarrel")
+
+def resolvedQuarrel : Game := passBoth paidQuarrel
+
+#guard resolvedQuarrel.stack.isEmpty
+#guard resolvedQuarrel.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent resolvedQuarrel "Grizzly Bears").status.damage == 1
+#guard resolvedQuarrel.log.any (fun s => mentions s "Llanowar Elves deals 1 damage to Grizzly Bears")
+#guard resolvedQuarrel.log.any (fun s => mentions s "goes to the graveyard")
+#guard (resolvedQuarrel.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedQuarrel.object! id).name == "Quarrel")
+
+/-- A 3-power source deals lethal damage to a 2/2. -/
+def quarrelLethalSetup : Game :=
+  let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+def resolvedQuarrelLethal : Game :=
+  let g := proposeTwoTargeted quarrelLethalSetup ⟨0⟩
+    (handCardNamed quarrelLethalSetup ⟨0⟩ "Quarrel").id
+    (Target.permanent (namedPermanent quarrelLethalSetup "Hill Giant").id)
+    (Target.permanent (namedPermanent quarrelLethalSetup "Grizzly Bears").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedQuarrelLethal.stack.isEmpty
+#guard !(resolvedQuarrelLethal.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedQuarrelLethal.log.any (fun s => mentions s "Hill Giant deals 3 damage to Grizzly Bears")
+#guard resolvedQuarrelLethal.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
+
+/-- Pumping the source after targeting uses the new power (CR 608.2g / 611.3a). -/
+def quarrelPumpedSource : Game :=
+  let g := addToHand paidQuarrel giantGrowth ⟨0⟩
+  let g := withGreenMana g ⟨0⟩ 1
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Llanowar Elves").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth (passBoth g)
+
+#guard quarrelPumpedSource.power (namedPermanent quarrelPumpedSource "Llanowar Elves") == 4
+#guard !(quarrelPumpedSource.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard quarrelPumpedSource.log.any (fun s =>
+  mentions s "Llanowar Elves deals 4 damage to Grizzly Bears")
+
+/-- If the dest leaves before resolution, no damage is dealt (CR 608.2b). -/
+def quarrelDestGone : Game :=
+  let dest := namedPermanent paidQuarrel "Grizzly Bears"
+  let (g, _) := paidQuarrel.move dest.id (.graveyard dest.owner) none
+  passBoth g
+
+#guard quarrelDestGone.log.any (fun s => mentions s "The target is no longer in play")
+#guard !quarrelDestGone.log.any (fun s => mentions s "deals")
+#guard !(quarrelDestGone.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- If the source leaves before resolution, no damage is dealt (CR 608.2b). -/
+def quarrelSourceGone : Game :=
+  let src := namedPermanent paidQuarrel "Llanowar Elves"
+  let (g, _) := paidQuarrel.move src.id (.graveyard src.owner) none
+  passBoth g
+
+#guard quarrelSourceGone.log.any (fun s => mentions s "The target is no longer in play")
+#guard !quarrelSourceGone.log.any (fun s => mentions s "deals")
+#guard quarrelSourceGone.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent quarrelSourceGone "Grizzly Bears").status.damage == 0
+
+/-- Hexproof gained after targeting makes the dest illegal (CR 608.2b / 702.11b). -/
+def quarrelDestHexproof : Game :=
+  let dest := namedPermanent paidQuarrel "Grizzly Bears"
+  let g := paidQuarrel.setObject { dest with
+    status := { dest.status with untilEotHexproof := true } }
+  passBoth g
+
+#guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
+#guard !quarrelDestHexproof.log.any (fun s => mentions s "deals")
+#guard (namedPermanent quarrelDestHexproof "Grizzly Bears").status.damage == 0
+
+/-- The heuristic casts Quarrel when it is the playable spell. -/
+def agentQuarrel : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentQuarrel ⟨0⟩ with
+  | some (.cast id) => (agentQuarrel.object! id).name == "Quarrel"
+  | _ => false
+
+/- Attercop: reach, deathtouch, and landfall +1/+1 until end of turn. -/
+
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
+#guard attercop.power == some 2
+#guard attercop.toughness == some 1
+
+/-- A flying attacker can be blocked by Attercop (reach) but not by a Gray Ogre. -/
+def flyerVsAttercop : Game :=
+  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent g attercop ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let smaug := namedPermanent g "Smaug, the Great Calamity"
+  g.setObject { smaug with status := { smaug.status with attacking := true } }
+
+#guard flyerVsAttercop.canBlock
+  (namedPermanent flyerVsAttercop "Attercop")
+  (namedPermanent flyerVsAttercop "Smaug, the Great Calamity")
+#guard !flyerVsAttercop.canBlock
+  (namedPermanent flyerVsAttercop "Gray Ogre")
+  (namedPermanent flyerVsAttercop "Smaug, the Great Calamity")
+
+/-- Attercop in play; a Forest in hand. -/
+def attercopLandfallSetup : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  addToHand g forest ⟨0⟩
+
+#guard attercopLandfallSetup.canPlayLand ⟨0⟩
+#guard attercopLandfallSetup.power (namedPermanent attercopLandfallSetup "Attercop") == 2
+#guard attercopLandfallSetup.toughness (namedPermanent attercopLandfallSetup "Attercop") == 1
+
+def attercopLandPlayed : Game :=
+  mustApply attercopLandfallSetup ⟨0⟩
+    (.playLand (handCardNamed attercopLandfallSetup ⟨0⟩ "Forest").id)
+
+#guard attercopLandPlayed.pending == .none
+#guard attercopLandPlayed.hasPriority ⟨0⟩
+#guard attercopLandPlayed.stack.size == 1
+#guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).sourceId ==
+  some (namedPermanent attercopLandPlayed "Attercop").id
+#guard attercopLandPlayed.stack.back!.targets.isEmpty
+#guard attercopLandPlayed.log.any (fun s => mentions s "landfall trigger is put on the stack")
+#guard attercopLandPlayed.power (namedPermanent attercopLandPlayed "Attercop") == 2
+
+def attercopLandfallResolved : Game := passBoth attercopLandPlayed
+
+#guard attercopLandfallResolved.stack.isEmpty
+#guard attercopLandfallResolved.hasPriority ⟨0⟩
+#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpPower == 1
+#guard (namedPermanent attercopLandfallResolved "Attercop").status.pumpToughness == 1
+#guard attercopLandfallResolved.power
+  (namedPermanent attercopLandfallResolved "Attercop") == 3
+#guard attercopLandfallResolved.toughness
+  (namedPermanent attercopLandfallResolved "Attercop") == 2
+#guard attercopLandfallResolved.log.any (fun s =>
+  mentions s "Attercop gets +1/+1 until end of turn")
+
+-- Direct resolution of a landfall pump stacks with an existing pump.
+#guard
+  let id := (namedPermanent attercopLandfallResolved "Attercop").id
+  let g := attercopLandfallResolved.applyTriggeredAbility ⟨0⟩
+    .onLandYouControlEntersGets1 (some id)
+  g.power (namedPermanent g "Attercop") == 4 &&
+    g.toughness (namedPermanent g "Attercop") == 3
+
+/-- An opponent's land does not trigger your landfall. -/
+def nissaLandVsAttercop : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .end 80)
+  let g := skipTo g .precombatMain 80
+  let g := addToHand g forest ⟨1⟩
+  mustApply g ⟨1⟩ (.playLand (handCardNamed g ⟨1⟩ "Forest").id)
+
+#guard nissaLandVsAttercop.stack.isEmpty
+#guard !(nissaLandVsAttercop.log.any (fun s => mentions s "landfall"))
+#guard nissaLandVsAttercop.power (namedPermanent nissaLandVsAttercop "Attercop") == 2
+
+/-- If Attercop leaves before the trigger resolves, it is not pumped. -/
+def attercopSourceGone : Game :=
+  let id := (namedPermanent attercopLandPlayed "Attercop").id
+  let (g, _) := attercopLandPlayed.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard attercopSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard !(attercopSourceGone.battlefield.any (fun o => o.name == "Attercop"))
+
+/-- The +1/+1 wears off in cleanup (CR 514.3). -/
+def afterAttercopCleanup : Game := passBoth (skipTo attercopLandfallResolved .end 80)
+
+#guard afterAttercopCleanup.power (namedPermanent afterAttercopCleanup "Attercop") == 2
+#guard afterAttercopCleanup.toughness (namedPermanent afterAttercopCleanup "Attercop") == 1
+#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpPower == 0
+#guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpToughness == 0
+
+/-- Two Attercops both trigger from one land. -/
+def twoAttercopsLandPlayed : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard twoAttercopsLandPlayed.stack.size == 2
+#guard (twoAttercopsLandPlayed.object! twoAttercopsLandPlayed.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard (twoAttercopsLandPlayed.object!
+  twoAttercopsLandPlayed.stack[0]!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+
+def twoAttercopsPumped : Game := passBoth (passBoth twoAttercopsLandPlayed)
+
+#guard twoAttercopsPumped.stack.isEmpty
+#guard
+  let spiders := twoAttercopsPumped.battlefield.filter (fun o => o.name == "Attercop")
+  spiders.size == 2 && spiders.all (fun o => twoAttercopsPumped.power o == 3)
+
+/-- Wood Elves putting a Forest onto the battlefield also triggers landfall. -/
+def attercopWoodElvesResolved : Game :=
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g woodElves ⟨0⟩) ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Wood Elves").id)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  let g := addToLibraryTop (addToLibraryTop g forest ⟨0⟩) mountain ⟨0⟩
+  passBoth g
+
+#guard attercopWoodElvesResolved.battlefield.any (fun o => o.name == "Forest")
+#guard attercopWoodElvesResolved.stack.size == 1
+#guard (attercopWoodElvesResolved.object!
+  attercopWoodElvesResolved.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersGets1
+#guard attercopWoodElvesResolved.log.any (fun s => mentions s "landfall trigger is put on the stack")
+
+def attercopWoodElvesPumped : Game := passBoth attercopWoodElvesResolved
+
+#guard attercopWoodElvesPumped.stack.isEmpty
+#guard attercopWoodElvesPumped.power
+  (namedPermanent attercopWoodElvesPumped "Attercop") == 3
+#guard attercopWoodElvesPumped.log.any (fun s =>
+  mentions s "Attercop gets +1/+1 until end of turn")
+
+/-- The heuristic plays a land when Attercop is in play. -/
+def agentAttercopLand : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
+  addToHand g forest ⟨0⟩
+
+#guard
+  match Agent.choose agentAttercopLand ⟨0⟩ with
+  | some (.playLand id) => (agentAttercopLand.object! id).name == "Forest"
+  | _ => false
+
+/- Rogue's Passage: {T}: Add {C} and {4}, {T}: target creature can't be blocked. -/
+
+def passageAbility : ActivatedAbility :=
+  roguesPassage.activatedAbilities[0]!
+
+/-- Passage, Gray Ogre, and opposing Bears; {4} in the pool; land drop used. -/
+def passageReady : Game :=
+  let g := addPermanent afterDraw roguesPassage ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 4
+
+def passageSource (g : Game) : GameObject :=
+  namedPermanent g "Rogue's Passage"
+
+#guard passageAbility.effect == .targetCantBeBlockedThisTurn
+#guard passageAbility.cost.tap
+#guard passageAbility.cost.mana == ManaCost.ofGeneric 4
+#guard passageAbility.effect.requiresTarget
+#guard !passageAbility.onlyAsSorcery
+#guard passageReady.canActivate ⟨0⟩ (passageSource passageReady) passageAbility
+#guard !(passageReady.canActivate ⟨1⟩ (passageSource passageReady) passageAbility)
+#guard (passageReady.player ⟨0⟩).manaPool.canPay passageAbility.cost.mana
+#guard roguesPassage.manaAbilities == #[.colorless]
+
+-- Cannot activate with no creature in play.
+#guard
+  let g := addPermanent afterDraw roguesPassage ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 4
+  !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
+
+-- Cannot activate while the land is tapped.
+#guard
+  let o := passageSource passageReady
+  let g := passageReady.setObject { o with status := { o.status with tapped := true } }
+  !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
+
+-- Instant-speed: Passage can activate during the end step.
+#guard
+  let g := skipTo passageReady .end 80
+  g.step == .end && g.canActivate ⟨0⟩ (passageSource g) passageAbility
+
+-- The {T}: Add {C} mana ability still works when the land is untapped.
+#guard
+  match passageReady.tapForMana ⟨0⟩ (passageSource passageReady).id .colorless with
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.get .colorless >= 1 &&
+      (namedPermanent g "Rogue's Passage").status.tapped
+  | .error _ => false
+
+-- The heuristic does not dump {4} in the main phase.
+#guard
+  match Agent.choose passageReady ⟨0⟩ with
+  | some (.activate id 0) => (passageReady.object! id).name != "Rogue's Passage"
+  | _ => true
+
+def proposedPassage : Game :=
+  mustApply passageReady ⟨0⟩ (.activate (passageSource passageReady).id 0)
+
+#guard
+  match proposedPassage.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedPassage.proposedSpell.isSome
+#guard proposedPassage.stack.size == 1
+#guard (proposedPassage.object! proposedPassage.stack.back!.objectId).abilityEffect ==
+  some .targetCantBeBlockedThisTurn
+#guard (namedPermanent proposedPassage "Rogue's Passage").isOnBattlefield
+#guard !(namedPermanent proposedPassage "Rogue's Passage").status.tapped
+#guard proposedPassage.log.any (fun s => mentions s "begins activating Rogue's Passage")
+#guard proposedPassage.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Opponent cannot choose Chandra's target.
+#guard
+  match proposedPassage.apply ⟨1⟩
+      (.target (Target.permanent (namedPermanent proposedPassage "Gray Ogre").id)) with
+  | .error msg => mentions msg "may choose targets"
+  | .ok _ => false
+
+-- The heuristic targets Chandra's creature, not Nissa's.
+#guard
+  match Agent.choose proposedPassage ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedPassage.object! tid).name == "Gray Ogre"
+  | _ => false
+
+def targetedPassage : Game :=
+  mustApply proposedPassage ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedPassage "Gray Ogre").id))
+
+#guard targetedPassage.pending == .activateManaAbilities ⟨0⟩
+#guard targetedPassage.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedPassage "Gray Ogre").id]
+#guard targetedPassage.log.any (fun s => mentions s "chooses Gray Ogre as a target")
+
+-- Cannot tap Passage for mana while its {T} is part of the activation cost.
+#guard
+  match targetedPassage.tapForMana ⟨0⟩ (passageSource targetedPassage).id .colorless with
+  | .error msg => mentions msg "needed to pay"
+  | .ok _ => false
+
+-- Opponent cannot pay Chandra's activation.
+#guard
+  match targetedPassage.apply ⟨1⟩ .pay with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
+
+#guard paidPassage.hasPriority ⟨0⟩
+#guard paidPassage.stack.size == 1
+#guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
+#guard !(namedPermanent paidPassage "Gray Ogre").status.untilEotCantBeBlocked
+#guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
+
+def passageResolved : Game := passBoth paidPassage
+
+#guard passageResolved.stack.isEmpty
+#guard (namedPermanent passageResolved "Gray Ogre").status.untilEotCantBeBlocked
+#guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
+#guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
+#guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
+
+-- Targeting an opponent's creature is legal.
+#guard
+  let g := mustApply proposedPassage ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedPassage "Grizzly Bears").id))
+  g.stack.back!.targets ==
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+-- Hexproof makes an opposing creature an illegal target (CR 702.11b).
+#guard
+  let bears := namedPermanent proposedPassage "Grizzly Bears"
+  let g := proposedPassage.setObject { bears with
+    status := { bears.status with untilEotHexproof := true } }
+  match g.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+/-- If the target leaves before the ability resolves, it does nothing. -/
+def passageTargetGone : Game :=
+  let id := (namedPermanent paidPassage "Gray Ogre").id
+  let (g, _) := paidPassage.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard passageTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(passageTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
+
+/-- The can't-be-blocked grant wears off in cleanup. -/
+def afterPassageCleanup : Game :=
+  passBoth (skipTo passageResolved .end 80)
+
+#guard !(namedPermanent afterPassageCleanup "Gray Ogre").status.untilEotCantBeBlocked
+#guard !afterPassageCleanup.hasCantBeBlocked
+  (namedPermanent afterPassageCleanup "Gray Ogre")
+
+/-- Gray Ogre attacks after becoming unblockable; Bears cannot block. -/
+def passageOgreAttacking : Game :=
+  let g := passBoth (skipTo passageResolved .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+
+def passageReadyToBlock : Game := passBoth passageOgreAttacking
+
+#guard passageReadyToBlock.pending == .declareBlockers
+#guard !passageReadyToBlock.canBlock
+  (namedPermanent passageReadyToBlock "Grizzly Bears")
+  (namedPermanent passageReadyToBlock "Gray Ogre")
+#guard
+  match passageReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent passageReadyToBlock "Grizzly Bears").id,
+    (namedPermanent passageReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+def passageUnblockedDamage : Game :=
+  passBoth (mustApply passageReadyToBlock ⟨1⟩ (.declareBlockers #[]))
+
+#guard (passageUnblockedDamage.player ⟨1⟩).life == 18
+#guard passageUnblockedDamage.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Nissa")
+#guard !passageUnblockedDamage.log.any (fun s =>
+  mentions s "Grizzly Bears blocks Gray Ogre")
+
+/-- After attackers are declared, the heuristic activates Passage with {4} in the pool. -/
+def passageAfterAttack : Game :=
+  let g := passBoth (skipTo passageReady .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  withRedMana g ⟨0⟩ 4
+
+#guard passageAfterAttack.hasPriority ⟨0⟩
+#guard (namedPermanent passageAfterAttack "Gray Ogre").status.attacking
+#guard
+  match Agent.choose passageAfterAttack ⟨0⟩ with
+  | some (.activate id 0) => id == (passageSource passageAfterAttack).id
+  | _ => false
+
+/-- Three Mountains plus Passage is not enough {4} once Passage must stay untapped. -/
+def passageThreeMountainsAttacking : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addUntappedLand g mountain
+  let g := addUntappedLand g mountain
+  let g := addUntappedLand g mountain
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+
+#guard
+  (passageThreeMountainsAttacking.availableMana ⟨0⟩).canPay (ManaCost.ofGeneric 4)
+#guard
+  !(passageThreeMountainsAttacking.availableManaExcept ⟨0⟩
+    (some (passageSource passageThreeMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
+#guard
+  match Agent.choose passageThreeMountainsAttacking ⟨0⟩ with
+  | some (.activate id 0) => (passageThreeMountainsAttacking.object! id).name != "Rogue's Passage"
+  | _ => true
+
+/-- Four Mountains plus Passage: the heuristic activates and taps Mountains, not Passage. -/
+def passageFourMountainsAttacking : Game :=
+  let g := addUntappedLand passageThreeMountainsAttacking mountain
+  g
+
+#guard
+  (passageFourMountainsAttacking.availableManaExcept ⟨0⟩
+    (some (passageSource passageFourMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
+#guard
+  match Agent.choose passageFourMountainsAttacking ⟨0⟩ with
+  | some (.activate id 0) => id == (passageSource passageFourMountainsAttacking).id
+  | _ => false
+
+def targetedPassageFromLands : Game :=
+  let g := mustApply passageFourMountainsAttacking ⟨0⟩
+    (.activate (passageSource passageFourMountainsAttacking).id 0)
+  mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Gray Ogre").id))
+
+#guard targetedPassageFromLands.pending == .activateManaAbilities ⟨0⟩
+#guard
+  match Agent.choose targetedPassageFromLands ⟨0⟩ with
+  | some (.tapForMana id _) =>
+    (targetedPassageFromLands.object! id).name != "Rogue's Passage"
+  | _ => false
+
+/- Smite the Deathless: 3 damage, lose indestructible until EOT, exile if it
+would die this turn (CR 702.12 / 614.1 / 700.4). -/
+
+def indestructibleBeast : CardDef := {
+  name := "Indestructible Beast"
+  types := #[.creature]
+  power := some 2
+  toughness := some 2
+  keywords := { Keywords.none with indestructible := true }
+}
+
+def indestructibleFlyer : CardDef := {
+  name := "Indestructible Flyer"
+  types := #[.creature]
+  power := some 4
+  toughness := some 4
+  keywords := { Keywords.none with flying := true, indestructible := true }
+}
+
+def indestructibleZero : CardDef := {
+  name := "Indestructible Zero"
+  types := #[.creature]
+  power := some 0
+  toughness := some 0
+  keywords := { Keywords.none with indestructible := true }
+}
+
+def smiteOn (card : CardDef) : Game :=
+  let g := addPermanent afterDraw card ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+def smiteSetup : Game := smiteOn grizzlyBears
+
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteSetup.canCast ⟨0⟩ (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless")
+#guard smiteSetup.asSorcery? ⟨0⟩
+#guard (smiteSetup.legalTargets ⟨0⟩ (.dealDamageLoseIndestructibleExile 3)).size == 1
+
+-- Cannot cast with no creature on the battlefield.
+#guard
+  let g := withRedMana (addToHand afterDraw smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Smite the Deathless")
+#guard
+  let g := withRedMana (addToHand afterDraw smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+def proposedSmite : Game :=
+  mustApply smiteSetup ⟨0⟩ (.cast (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless").id)
+
+#guard
+  match proposedSmite.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedSmite.log.any (fun s => mentions s "begins casting Smite the Deathless")
+#guard proposedSmite.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Smite cannot target a player.
+#guard
+  match proposedSmite.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets an opposing creature.
+#guard
+  match Agent.choose proposedSmite ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedSmite.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def paidSmite : Game :=
+  let g := mustApply proposedSmite ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedSmite "Grizzly Bears").id))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidSmite.hasPriority ⟨0⟩
+#guard paidSmite.log.any (fun s => mentions s "casts Smite the Deathless")
+
+def resolvedSmiteOnBears : Game := passBoth paidSmite
+
+#guard resolvedSmiteOnBears.stack.isEmpty
+#guard !(resolvedSmiteOnBears.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedSmiteOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard !(resolvedSmiteOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩))
+#guard resolvedSmiteOnBears.log.any (fun s =>
+  mentions s "is dealt 3 damage, loses indestructible until end of turn")
+#guard resolvedSmiteOnBears.log.any (fun s => mentions s "dies from lethal damage")
+#guard resolvedSmiteOnBears.log.any (fun s => mentions s "is exiled instead of dying")
+#guard (resolvedSmiteOnBears.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedSmiteOnBears.object! id).name == "Smite the Deathless")
+
+/-- 3 damage is not lethal to a 4-toughness creature; the replacement lasts. -/
+def resolvedSmiteOnWurm : Game :=
+  let g := smiteOn crawWurm
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Craw Wurm").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnWurm.battlefield.any (fun o => o.name == "Craw Wurm")
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.damage == 3
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotLosesIndestructible
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotExileIfDies
+#guard !resolvedSmiteOnWurm.objects.any (fun o =>
+  o.name == "Craw Wurm" && o.zone == .exile)
+
+/-- Later this turn, 0 toughness is replaced by exile. -/
+def smiteWurmThenZeroToughness : Game :=
+  let o := namedPermanent resolvedSmiteOnWurm "Craw Wurm"
+  let g := resolvedSmiteOnWurm.setObject { o with
+    status := { o.status with pumpToughness := -4 } }
+  g.receivePriority ⟨0⟩
+
+#guard !(smiteWurmThenZeroToughness.battlefield.any (fun o => o.name == "Craw Wurm"))
+#guard smiteWurmThenZeroToughness.objects.any (fun o =>
+  o.name == "Craw Wurm" && o.zone == .exile)
+#guard smiteWurmThenZeroToughness.log.any (fun s => mentions s "dies (toughness 0)")
+#guard smiteWurmThenZeroToughness.log.any (fun s => mentions s "is exiled instead of dying")
+
+/-- The until-EOT flags and marked damage wear off in cleanup. -/
+def afterSmiteWurmCleanup : Game :=
+  passBoth (skipTo resolvedSmiteOnWurm .end 80)
+
+#guard (namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.damage == 0
+#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotLosesIndestructible
+#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotExileIfDies
+
+/-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
+def indestructibleSurvivesDamage : Game :=
+  let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ (.dealDamage 3)
+    #[Target.permanent (namedPermanent g "Indestructible Beast").id]
+  g.receivePriority ⟨0⟩
+
+#guard indestructibleSurvivesDamage.battlefield.any (fun o =>
+  o.name == "Indestructible Beast")
+#guard (namedPermanent indestructibleSurvivesDamage "Indestructible Beast").status.damage == 3
+#guard indestructibleSurvivesDamage.hasIndestructible
+  (namedPermanent indestructibleSurvivesDamage "Indestructible Beast")
+#guard !indestructibleSurvivesDamage.log.any (fun s => mentions s "dies from lethal damage")
+
+/-- Indestructible does not save a creature with 0 toughness (CR 704.5f). -/
+def indestructibleZeroDies : Game :=
+  let g := addPermanent afterDraw indestructibleZero ⟨1⟩ ⟨1⟩
+  g.receivePriority ⟨0⟩
+
+#guard !(indestructibleZeroDies.battlefield.any (fun o => o.name == "Indestructible Zero"))
+#guard indestructibleZeroDies.objects.any (fun o =>
+  o.name == "Indestructible Zero" && o.zone == .graveyard ⟨1⟩)
+#guard indestructibleZeroDies.log.any (fun s => mentions s "dies (toughness 0)")
+#guard !indestructibleZeroDies.log.any (fun s => mentions s "exiled instead")
+
+/-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b). -/
+def destroyIndestructibleFlyer : Game :=
+  let g := addPermanent afterDraw indestructibleFlyer ⟨1⟩ ⟨1⟩
+  g.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+    #[Target.permanent (namedPermanent g "Indestructible Flyer").id]
+
+#guard destroyIndestructibleFlyer.battlefield.any (fun o =>
+  o.name == "Indestructible Flyer")
+#guard destroyIndestructibleFlyer.log.any (fun s =>
+  mentions s "is indestructible and isn't destroyed")
+#guard !destroyIndestructibleFlyer.log.any (fun s =>
+  mentions s "Indestructible Flyer is destroyed")
+
+/-- Smite strips indestructible from a 2/2 and exiles it to lethal damage. -/
+def resolvedSmiteOnIndestructibleBeast : Game :=
+  let g := smiteOn indestructibleBeast
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Indestructible Beast").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard !(resolvedSmiteOnIndestructibleBeast.battlefield.any (fun o =>
+  o.name == "Indestructible Beast"))
+#guard resolvedSmiteOnIndestructibleBeast.objects.any (fun o =>
+  o.name == "Indestructible Beast" && o.zone == .exile)
+#guard resolvedSmiteOnIndestructibleBeast.log.any (fun s =>
+  mentions s "is exiled instead of dying")
+
+/-- After Smite, a 4/4 flyer can be destroyed and is exiled instead of dying. -/
+def resolvedSmiteOnIndestructibleFlyer : Game :=
+  let g := smiteOn indestructibleFlyer
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Indestructible Flyer").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnIndestructibleFlyer.battlefield.any (fun o =>
+  o.name == "Indestructible Flyer")
+#guard !resolvedSmiteOnIndestructibleFlyer.hasIndestructible
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")
+#guard (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").status.damage
+  == 3
+#guard (resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).flying
+#guard !(resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).indestructible
+
+def smiteFlyerThenDestroy : Game :=
+  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+    #[Target.permanent
+      (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").id]
+
+#guard !(smiteFlyerThenDestroy.battlefield.any (fun o => o.name == "Indestructible Flyer"))
+#guard smiteFlyerThenDestroy.objects.any (fun o =>
+  o.name == "Indestructible Flyer" && o.zone == .exile)
+#guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is destroyed")
+#guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is exiled instead of dying")
+
+/-- Exile-instead-of-dying means dies triggers do not go on the stack (CR 700.4). -/
+def smiteOnFireleaper : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+def resolvedSmiteOnFireleaper : Game :=
+  let g := mustApply smiteOnFireleaper ⟨0⟩
+    (.cast (handCardNamed smiteOnFireleaper ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Goblin Fireleaper").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnFireleaper.objects.any (fun o =>
+  o.name == "Goblin Fireleaper" && o.zone == .exile)
+#guard resolvedSmiteOnFireleaper.stack.isEmpty
+#guard !resolvedSmiteOnFireleaper.log.any (fun s => mentions s "dies trigger")
+#guard resolvedSmiteOnFireleaper.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent resolvedSmiteOnFireleaper "Grizzly Bears").status.damage == 0
+
+/-- The heuristic casts Smite when it is the playable spell. -/
+def agentSmite : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentSmite ⟨0⟩ with
+  | some (.cast id) => (agentSmite.object! id).name == "Smite the Deathless"
   | _ => false
 
 end Mtg.Engine.Tests

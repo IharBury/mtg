@@ -94,7 +94,8 @@ The first slice of the engine models the two-player game:
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
-  zones), or restrict blocking unless you control a Goblin or Orc; attack
+  zones), or restrict blocking unless you control a Goblin or Orc; an until-end-of-turn
+  restriction that creatures without flying can't block; attack
   triggers that pump power, set another creature's base power and toughness,
   give another creature +2/+0 and trample, scry, or scry when you attack with one
   or more Elves; scry triggers that pump for each card looked at;
@@ -107,15 +108,20 @@ The first slice of the engine models the two-player game:
   a creature enters or attacks), return an Elf card from your graveyard and
   gain life equal to its power, pumps when another Elf you control enters,
   landfall triggers that
-  put +1/+1 counters on a target creature you control, activated pumps
+  put +1/+1 counters on a target creature you control or give this creature
+  +1/+1 until end of turn, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
-  deal damage to each opponent when you cast an instant or sorcery, and
+  deal damage to each opponent when you cast an instant or sorcery,
+  `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
-  keyword grants, destroying permanents or dealing damage with activated
-  abilities, and lasting type-changing animations (a permanent that becomes
+- modal instants, destroy (including target artifact or land, after which
+  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, vigilance, until-end-of-turn
+  keyword grants including can't be blocked, until-end-of-turn loss of
+  indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
+  abilities, a creature you control dealing damage equal to its power to a
+  creature an opponent controls, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
