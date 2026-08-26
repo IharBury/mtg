@@ -11,7 +11,7 @@ activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
-power and toughness, give another creature +2/+0 and trample, deal damage
+power and toughness, give another creature +2/+0 and trample, scry, deal damage
 divided among targets, or scry when you attack with Elves, scry triggers that
 pump for each card looked at, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, may discard to draw, or deal damage
@@ -903,6 +903,7 @@ def lothlorienLookout : CardDef := {
   oracleText := "Whenever this creature attacks, scry 1."
   power := some 1
   toughness := some 3
+  triggeredAbilities := #[.onAttackScry 1]
 }
 
 def woodlandWeavemaster : CardDef := {
@@ -1026,6 +1027,10 @@ def attercop : CardDef := {
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButler.power == some 4
 #guard galionElvenkingsButler.toughness == some 4
+#guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
+#guard (lothlorienLookout.summary.splitOn "scry 1").length > 1
+#guard lothlorienLookout.power == some 1
+#guard lothlorienLookout.toughness == some 3
 #guard galadhrimGuide.power == some 3
 #guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1

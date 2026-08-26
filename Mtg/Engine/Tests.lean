@@ -307,6 +307,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard mentions lothlorienLookout.summary "scry 1"
+#guard lothlorienLookout.triggeredAbilities.size == 1
+#guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
@@ -596,6 +599,17 @@ def uncontrolledPermanent : Game :=
   }
   mentions c.abilitiesText "up to one other target" &&
     mentions c.abilitiesText "base power and toughness"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Lookout"
+    types := #[.creature]
+    power := some 1
+    toughness := some 3
+    triggeredAbilities := #[.onAttackScry 1]
+  }
+  mentions c.abilitiesText "Whenever this creature attacks" &&
+    mentions c.abilitiesText "scry 1"
 
 #guard
   let c : CardDef := {
@@ -4630,6 +4644,128 @@ def oliphauntTargetGone : Game :=
 
 #guard oliphauntTargetGone.log.any (fun s => mentions s "no longer in play")
 #guard !(oliphauntTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
+
+/- Lothlórien Lookout: attack trigger scries 1 (CR 508.2 / 701.20). -/
+
+#guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
+#guard lothlorienLookout.power == some 1
+#guard lothlorienLookout.toughness == some 3
+
+def lookoutOnBattlefield : Game :=
+  addPermanent started lothlorienLookout ⟨0⟩ ⟨0⟩
+
+#guard lookoutOnBattlefield.power (namedPermanent lookoutOnBattlefield "Lothlórien Lookout") == 1
+#guard lookoutOnBattlefield.toughness (namedPermanent lookoutOnBattlefield "Lothlórien Lookout") == 3
+
+def lookoutAttackDeclared : Game :=
+  let g := passBoth (skipTo lookoutOnBattlefield .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Lothlórien Lookout").id])
+
+#guard lookoutAttackDeclared.stack.size == 1
+#guard (lookoutAttackDeclared.object! lookoutAttackDeclared.stack.back!.objectId).name ==
+  "Lothlórien Lookout's ability"
+#guard (lookoutAttackDeclared.object! lookoutAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onAttackScry 1)
+#guard (lookoutAttackDeclared.object! lookoutAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent lookoutAttackDeclared "Lothlórien Lookout").id
+#guard lookoutAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard lookoutAttackDeclared.step == .declareAttackers
+#guard lookoutAttackDeclared.hasPriority ⟨0⟩
+#guard (namedPermanent lookoutAttackDeclared "Lothlórien Lookout").status.attacking
+
+def lookoutScrying : Game := passBoth lookoutAttackDeclared
+
+#guard
+  match lookoutScrying.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+#guard lookoutScrying.actor == some ⟨0⟩
+#guard !lookoutScrying.hasPriority ⟨0⟩
+#guard lookoutScrying.log.any (fun s => mentions s "scries 1")
+#guard lookoutScrying.stack.isEmpty
+#guard lookoutScrying.battlefield.any (fun o => o.name == "Lothlórien Lookout")
+
+def lookoutScried : Game := keepScry lookoutScrying
+
+#guard lookoutScried.pending == .none
+#guard lookoutScried.hasPriority ⟨0⟩
+#guard lookoutScried.battlefield.any (fun o => o.name == "Lothlórien Lookout")
+
+-- The agent keeps scried cards on top.
+#guard
+  match Agent.choose lookoutScrying ⟨0⟩ with
+  | some (.scry top bottom) =>
+    bottom.isEmpty && top == lookoutScrying.scryLookedIds ⟨0⟩ 1
+  | _ => false
+
+/-- Known library: Forest on top; scry 1 looks at that card. -/
+def lookoutKnownLib : Game :=
+  addToLibraryTop lookoutAttackDeclared forest ⟨0⟩
+
+def lookoutKnownScrying : Game := passBoth lookoutKnownLib
+
+#guard
+  let looked := lookoutKnownScrying.scryLookedIds ⟨0⟩ 1
+  looked.size == 1 &&
+    (lookoutKnownScrying.object! looked[0]!).name == "Forest"
+
+def lookoutForestToBottom : Game :=
+  let looked := lookoutKnownScrying.scryLookedIds ⟨0⟩ 1
+  mustApply lookoutKnownScrying ⟨0⟩ (.scry #[] looked)
+
+#guard
+  let lib := (lookoutForestToBottom.player ⟨0⟩).library
+  lib.size == (lookoutKnownScrying.player ⟨0⟩).library.size &&
+    (lookoutForestToBottom.object! lib[0]!).name == "Forest"
+#guard lookoutForestToBottom.log.any (fun s =>
+  mentions s "puts Forest on the bottom of their library")
+
+/-- The trigger still scries if Lothlórien Lookout has left the battlefield (CR 113.7a). -/
+def lookoutLeftBeforeTrigger : Game :=
+  let id := (namedPermanent lookoutKnownLib "Lothlórien Lookout").id
+  let (g, _) := lookoutKnownLib.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard
+  match lookoutLeftBeforeTrigger.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+#guard !(lookoutLeftBeforeTrigger.battlefield.any (fun o => o.name == "Lothlórien Lookout"))
+#guard (lookoutLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (lookoutLeftBeforeTrigger.object! id).name == "Lothlórien Lookout")
+#guard
+  let looked := lookoutLeftBeforeTrigger.scryLookedIds ⟨0⟩ 1
+  looked.size == 1 &&
+    (lookoutLeftBeforeTrigger.object! looked[0]!).name == "Forest"
+
+/-- Another creature attacking does not trigger Lothlórien Lookout. -/
+def lookoutIdleWhileBearsAttack : Game :=
+  let g := addPermanent lookoutOnBattlefield grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+
+#guard lookoutIdleWhileBearsAttack.stack.isEmpty
+#guard !lookoutIdleWhileBearsAttack.log.any (fun s => mentions s "attack trigger")
+#guard (namedPermanent lookoutIdleWhileBearsAttack "Grizzly Bears").status.attacking
+#guard !(namedPermanent lookoutIdleWhileBearsAttack "Lothlórien Lookout").status.attacking
+
+/-- Entering the battlefield does not scry. -/
+def lookoutSetup : Game :=
+  withGreenMana (addToHand afterDraw lothlorienLookout ⟨0⟩) ⟨0⟩ 2
+
+#guard lookoutSetup.canCast ⟨0⟩ (handCardNamed lookoutSetup ⟨0⟩ "Lothlórien Lookout")
+#guard lookoutSetup.asSorcery? ⟨0⟩
+
+def lookoutEntered : Game :=
+  let g := mustApply lookoutSetup ⟨0⟩
+    (.cast (handCardNamed lookoutSetup ⟨0⟩ "Lothlórien Lookout").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard lookoutEntered.stack.isEmpty
+#guard lookoutEntered.pending == .none
+#guard lookoutEntered.battlefield.any (fun o => o.name == "Lothlórien Lookout")
+#guard !lookoutEntered.log.any (fun s => mentions s "scries")
+#guard !lookoutEntered.log.any (fun s => mentions s "enters trigger")
 
 /- Smaug, the Great Calamity // Spew Flame (CR 715). -/
 

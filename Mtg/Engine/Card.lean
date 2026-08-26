@@ -290,6 +290,8 @@ inductive TriggeredAbility where
   /-- Whenever this creature attacks, another target creature you control gets
   +2/+0 and gains trample until end of turn (e.g. Oliphaunt). -/
   | onAttackOtherGets2AndTrample
+  /-- Whenever this creature attacks, scry `n` (e.g. Lothlórien Lookout). -/
+  | onAttackScry (n : Nat)
   /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
   blocking it (e.g. Battle-Scarred Goblin). -/
   | onBecomesBlockedDeal1ToBlockers
@@ -341,6 +343,8 @@ def toNotation : TriggeredAbility → String
     "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
   | .onAttackOtherGets2AndTrample =>
     "Whenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn."
+  | .onAttackScry n =>
+    s!"Whenever this creature attacks, scry {n}."
   | .onBecomesBlockedDeal1ToBlockers =>
     "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
   | .onEnterScry n =>
@@ -374,16 +378,17 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onEnterDealDividedDamage amount maxTargets
   | .onEnterOrAttackDealDividedDamage amount maxTargets => some (amount, maxTargets)
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterDraw _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onAttackOtherGets2AndTrample | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onLandYouControlEntersPlusOnePlusOne | .onEnterOrAttackReturnElfGainLife
+  | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
   | .onScryPumpSelfForEachLookedAt => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _
+  | .onAttackOtherGets2AndTrample | .onAttackScry _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
@@ -395,7 +400,7 @@ def triggersWhenAttacking : TriggeredAbility → Bool
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onAttackScry _ | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
@@ -408,7 +413,7 @@ def triggersWhenEntering : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
   | .onScryPumpSelfForEachLookedAt => false
@@ -418,7 +423,7 @@ def triggersWhenEntering : TriggeredAbility → Bool
 def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
@@ -429,7 +434,7 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
 def triggersWhenDying : TriggeredAbility → Bool
   | .onDiesDealDamageEqualToPowerToOppCreature => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
@@ -440,7 +445,7 @@ def triggersWhenDying : TriggeredAbility → Bool
 def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
@@ -452,7 +457,7 @@ def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
 def triggersWhenYouAttackWithElves : TriggeredAbility → Bool
   | .onAttackWithElvesScry _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
@@ -462,7 +467,7 @@ def triggersWhenYouAttackWithElves : TriggeredAbility → Bool
 def triggersWhenYouScry : TriggeredAbility → Bool
   | .onScryPumpSelfForEachLookedAt => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
+  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
@@ -475,8 +480,8 @@ def requiresTarget : TriggeredAbility → Bool
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample => true
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
   | .onScryPumpSelfForEachLookedAt => false
 
@@ -484,7 +489,7 @@ def requiresTarget : TriggeredAbility → Bool
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
 def allowsZeroTargets : TriggeredAbility → Bool
   | .onAttackSetOtherBasePT => true
-  | .onAttackPumpByGreatestPower | .onAttackOtherGets2AndTrample
+  | .onAttackPumpByGreatestPower | .onAttackOtherGets2AndTrample | .onAttackScry _
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
@@ -767,6 +772,8 @@ instance : ToString CardDef where
   "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
 #guard TriggeredAbility.toNotation .onAttackOtherGets2AndTrample ==
   "Whenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn."
+#guard TriggeredAbility.toNotation (.onAttackScry 1) ==
+  "Whenever this creature attacks, scry 1."
 #guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
   "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
 #guard TriggeredAbility.toNotation (.onEnterScry 2) ==
@@ -801,20 +808,25 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
+#guard (TriggeredAbility.dividedDamage? (.onAttackScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
+#guard TriggeredAbility.triggersWhenAttacking (.onAttackScry 1)
 #guard TriggeredAbility.triggersWhenAttacking (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenAttacking .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.triggersWhenAttacking (.onEnterDealDividedDamage 3 3)
+#guard !TriggeredAbility.triggersWhenAttacking (.onEnterScry 2)
 #guard !TriggeredAbility.triggersWhenAttacking (.onAttackWithElvesScry 1)
 #guard !TriggeredAbility.triggersWhenAttacking .onScryPumpSelfForEachLookedAt
 #guard TriggeredAbility.triggersWhenYouAttackWithElves (.onAttackWithElvesScry 1)
 #guard !TriggeredAbility.triggersWhenYouAttackWithElves .onAttackPumpByGreatestPower
+#guard !TriggeredAbility.triggersWhenYouAttackWithElves (.onAttackScry 1)
 #guard TriggeredAbility.triggersWhenYouScry .onScryPumpSelfForEachLookedAt
 #guard !TriggeredAbility.triggersWhenYouScry (.onEnterScry 2)
 #guard !TriggeredAbility.triggersWhenYouScry (.onAttackWithElvesScry 1)
+#guard !TriggeredAbility.triggersWhenYouScry (.onAttackScry 1)
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDraw 1)
@@ -823,6 +835,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenEntering .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
+#guard !TriggeredAbility.triggersWhenEntering (.onAttackScry 1)
 #guard TriggeredAbility.triggersWhenYouCastInstantOrSorcery
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard !TriggeredAbility.triggersWhenYouCastInstantOrSorcery (.onEnterScry 2)
@@ -850,6 +863,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
+#guard !TriggeredAbility.requiresTarget (.onAttackScry 1)
 #guard !TriggeredAbility.requiresTarget (.onEnterDraw 1)
 #guard !TriggeredAbility.requiresTarget (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard !TriggeredAbility.requiresTarget (.onAttackWithElvesScry 1)
