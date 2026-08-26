@@ -24,7 +24,7 @@ creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
-keyword grants, attack triggers (CR 508.2 / 603), including copying this
+keyword grants, attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
@@ -996,8 +996,8 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
       g.legalCreatureTargets p (fun _ => true)
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
     #[]
 
@@ -2236,7 +2236,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
-  | .onEnterScry n =>
+  | .onEnterScry n | .onAttackScry n =>
     g.beginScry controller n
   | .onEnterDraw n =>
     g.draw controller n

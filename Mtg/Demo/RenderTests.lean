@@ -636,6 +636,26 @@ def mountainLine (g : Game) : String :=
       mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId)
   | _, _ => false
 
+#guard mentions (stackBlock lookoutAttackDeclared) "Lothlórien Lookout's ability"
+#guard mentions (stackBlock lookoutAttackDeclared) "Whenever this creature attacks, scry 1"
+#guard !mentions (stackBlock lookoutAttackDeclared) "When this permanent enters"
+#guard
+  let g := lookoutAttackDeclared
+  let src := namedPermanent g "Lothlórien Lookout"
+  mentions (stackBlock g) s!"*source {src.id} Lothlórien Lookout*" &&
+    mentions (objectLine g src) "1/3"
+#guard mentions (header lookoutScrying) "scry 1"
+#guard mentions (snapshot lookoutScrying) "Looking at (scry 1, top last):"
+#guard
+  let g := lookoutKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 1
+  match looked[0]? with
+  | some forestId =>
+    mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Forest" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId)
+  | none => false
+
 #guard mentions (stackBlock visionaryEntered) "Elvish Visionary's ability"
 #guard mentions (stackBlock visionaryEntered) "When this creature enters, draw a card"
 #guard !mentions (stackBlock visionaryEntered) "When this permanent enters"

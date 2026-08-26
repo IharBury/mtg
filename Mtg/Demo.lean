@@ -1677,6 +1677,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.lookoutScrying "scry" [] with
+  | .ok g' =>
+    g'.pending == .none && g'.hasPriority ⟨0⟩ &&
+      g'.battlefield.any (fun o => o.name == "Lothlórien Lookout")
+  | .error _ => false
+
+#guard
+  let g := Tests.lookoutKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 1
+  match looked[0]? with
+  | some forest =>
+    match applyInteractiveAsActor g "scry" ["bottom", toString forest] with
+    | .ok g' =>
+      (g'.object! (g'.player ⟨0⟩).library[0]!).name == "Forest" &&
+        g'.log.any (fun s => Tests.mentions s "puts Forest on the bottom")
+    | .error _ => false
+  | none => false
+
+#guard
   match applyInteractiveAsActor Tests.visionarySetup "cast"
       [toString (Tests.handCardNamed Tests.visionarySetup ⟨0⟩ "Elvish Visionary").id] with
   | .ok g' =>
