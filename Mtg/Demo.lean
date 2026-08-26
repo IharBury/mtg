@@ -1541,6 +1541,21 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.oliphauntAttackDeclared "target"
+      [toString (Tests.namedPermanent Tests.oliphauntAttackDeclared "Gray Ogre").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Gray Ogre").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.oliphauntAttackDeclared "decline" [] with
+  | .error msg => Tests.mentions msg "requires a target"
+  | .ok _ => false
+
+#guard
   match applyInteractiveAsActor Tests.hospitalityAnimateSetup "activate"
       [toString (Tests.namedPermanent Tests.hospitalityAnimateSetup "Beorn's Hospitality").id] with
   | .ok g' =>

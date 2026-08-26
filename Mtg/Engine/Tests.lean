@@ -289,6 +289,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard mentions oliphaunt.summary "trample"
+#guard mentions oliphaunt.summary "+2/+0"
+#guard mentions oliphaunt.summary "Mountaincycling"
+#guard oliphaunt.keywords.trample
+#guard oliphaunt.triggeredAbilities.size == 1
+#guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -457,6 +463,19 @@ def uncontrolledPermanent : Game :=
   }
   mentions c.abilitiesText "up to one other target" &&
     mentions c.abilitiesText "base power and toughness"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Oliphaunt"
+    types := #[.creature]
+    power := some 6
+    toughness := some 4
+    keywords := { Keywords.none with trample := true }
+    triggeredAbilities := #[.onAttackOtherGets2AndTrample]
+  }
+  mentions c.abilitiesText "+2/+0" &&
+    mentions c.abilitiesText "gains trample" &&
+    mentions c.summary "trample"
 
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
@@ -4195,6 +4214,178 @@ def galionTargetGone : Game :=
 
 #guard galionTargetGone.log.any (fun s => mentions s "no longer in play")
 #guard !(galionTargetGone.battlefield.any (fun o => o.name == "Llanowar Elves"))
+
+/- Oliphaunt: attack trigger pumps another creature you control and grants trample. -/
+
+def oliphauntAndOgre : Game :=
+  addPermanent (addPermanent started oliphaunt ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩
+
+#guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
+#guard oliphauntAndOgre.hasTrample (namedPermanent oliphauntAndOgre "Oliphaunt")
+#guard !oliphauntAndOgre.hasTrample (namedPermanent oliphauntAndOgre "Gray Ogre")
+#guard oliphauntAndOgre.power (namedPermanent oliphauntAndOgre "Gray Ogre") == 2
+
+def oliphauntAttackDeclared : Game :=
+  let g := passBoth (skipTo oliphauntAndOgre .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Oliphaunt").id])
+
+#guard oliphauntAttackDeclared.pending == .chooseTargets ⟨0⟩
+#guard oliphauntAttackDeclared.stack.size == 1
+#guard (oliphauntAttackDeclared.object! oliphauntAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some .onAttackOtherGets2AndTrample
+#guard oliphauntAttackDeclared.stack.back!.targets.isEmpty
+#guard !oliphauntAttackDeclared.stack.back!.targetsAnnounced
+#guard oliphauntAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard oliphauntAttackDeclared.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+#guard !oliphauntAttackDeclared.hasPriority ⟨0⟩
+#guard oliphauntAttackDeclared.actor == some ⟨0⟩
+
+-- Cannot target Oliphaunt himself, an opponent's creature, or a player.
+#guard
+  match oliphauntAttackDeclared.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent oliphauntAttackDeclared "Oliphaunt").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  let g := addPermanent oliphauntAttackDeclared grizzlyBears ⟨1⟩ ⟨1⟩
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match oliphauntAttackDeclared.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The trigger is not optional: decline is illegal when a target is required.
+#guard
+  match oliphauntAttackDeclared.apply ⟨0⟩ .decline with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- The heuristic targets the other creature you control.
+#guard
+  match Agent.choose oliphauntAttackDeclared ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (oliphauntAttackDeclared.object! tid).name == "Gray Ogre"
+  | _ => false
+
+def oliphauntTargeted : Game :=
+  mustApply oliphauntAttackDeclared ⟨0⟩
+    (.target (Target.permanent (namedPermanent oliphauntAttackDeclared "Gray Ogre").id))
+
+#guard oliphauntTargeted.pending == .none
+#guard oliphauntTargeted.hasPriority ⟨0⟩
+#guard oliphauntTargeted.stack.back!.targets ==
+  #[Target.permanent (namedPermanent oliphauntTargeted "Gray Ogre").id]
+#guard oliphauntTargeted.stack.back!.targetsAnnounced
+#guard oliphauntTargeted.log.any (fun s => mentions s "chooses Gray Ogre as a target")
+
+def oliphauntResolved : Game := passBoth oliphauntTargeted
+
+#guard oliphauntResolved.stack.isEmpty
+#guard oliphauntResolved.power (namedPermanent oliphauntResolved "Gray Ogre") == 4
+#guard oliphauntResolved.toughness (namedPermanent oliphauntResolved "Gray Ogre") == 2
+#guard oliphauntResolved.hasTrample (namedPermanent oliphauntResolved "Gray Ogre")
+#guard (oliphauntResolved.effectiveKeywords
+  (namedPermanent oliphauntResolved "Gray Ogre")).trample
+#guard oliphauntResolved.log.any (fun s =>
+  mentions s "gets +2/+0 and gains trample until end of turn")
+
+/-- Pump stacks with printed power; Oliphaunt itself is unchanged. -/
+#guard oliphauntResolved.power (namedPermanent oliphauntResolved "Oliphaunt") == 6
+#guard oliphauntResolved.hasTrample (namedPermanent oliphauntResolved "Oliphaunt")
+
+/-- The pump and granted trample wear off in cleanup. -/
+def afterOliphauntCleanup : Game := passBoth (skipTo oliphauntResolved .end 80)
+
+#guard afterOliphauntCleanup.power (namedPermanent afterOliphauntCleanup "Gray Ogre") == 2
+#guard !afterOliphauntCleanup.hasTrample (namedPermanent afterOliphauntCleanup "Gray Ogre")
+#guard afterOliphauntCleanup.hasTrample (namedPermanent afterOliphauntCleanup "Oliphaunt")
+
+/-- Granted trample assigns leftover combat damage (4/2 Ogre vs 1/1 Elves). -/
+def oliphauntBothAttackDeclared : Game :=
+  let g := passBoth (skipTo oliphauntAndOgre .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[
+    (namedPermanent g "Oliphaunt").id,
+    (namedPermanent g "Gray Ogre").id])
+
+def oliphauntBothResolved : Game :=
+  let g := mustApply oliphauntBothAttackDeclared ⟨0⟩
+    (.target (Target.permanent (namedPermanent oliphauntBothAttackDeclared "Gray Ogre").id))
+  passBoth g
+
+#guard oliphauntBothResolved.power (namedPermanent oliphauntBothResolved "Gray Ogre") == 4
+#guard oliphauntBothResolved.hasTrample (namedPermanent oliphauntBothResolved "Gray Ogre")
+#guard (namedPermanent oliphauntBothResolved "Gray Ogre").status.attacking
+#guard (namedPermanent oliphauntBothResolved "Oliphaunt").status.attacking
+
+def afterOliphauntTrampleCombat : Game :=
+  let g := addPermanent oliphauntBothResolved llanowarElves ⟨1⟩ ⟨1⟩
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Gray Ogre").id)])
+  passBoth g
+
+#guard afterOliphauntTrampleCombat.log.any (fun s =>
+  mentions s "Gray Ogre deals 1 combat damage to Llanowar Elves")
+#guard afterOliphauntTrampleCombat.log.any (fun s =>
+  mentions s "Gray Ogre tramples for 3 to Nissa")
+#guard afterOliphauntTrampleCombat.log.any (fun s =>
+  mentions s "Oliphaunt deals 6 combat damage to Nissa")
+#guard (afterOliphauntTrampleCombat.player ⟨1⟩).life == 11
+
+/-- Without the trigger, the same Ogre assigns all damage to the blocker. -/
+def ogreOnlyVsElves : Game :=
+  addPermanent (addPermanent started grayOgre ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterOgreNoGrantedTrample : Game :=
+  let g := passBoth (skipTo ogreOnlyVsElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Gray Ogre").id)])
+  passBoth g
+
+#guard afterOgreNoGrantedTrample.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Llanowar Elves")
+#guard !afterOgreNoGrantedTrample.log.any (fun s => mentions s "tramples")
+#guard (afterOgreNoGrantedTrample.player ⟨1⟩).life == 20
+
+/-- No other creature you control: the trigger is removed (CR 603.3d). -/
+def oliphauntAloneDeclared : Game :=
+  let g := addPermanent started oliphaunt ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Oliphaunt").id])
+
+#guard oliphauntAloneDeclared.stack.isEmpty
+#guard oliphauntAloneDeclared.pending == .none
+#guard oliphauntAloneDeclared.hasPriority ⟨0⟩
+#guard oliphauntAloneDeclared.log.any (fun s => mentions s "no legal target")
+
+/-- The effect does not depend on Oliphaunt remaining in play. -/
+def oliphauntSourceGone : Game :=
+  let g := oliphauntTargeted
+  let id := (namedPermanent g "Oliphaunt").id
+  let (g, _) := g.move id (.graveyard (g.object! id).owner) none
+  passBoth g
+
+#guard oliphauntSourceGone.stack.isEmpty
+#guard !(oliphauntSourceGone.battlefield.any (fun o => o.name == "Oliphaunt"))
+#guard oliphauntSourceGone.power (namedPermanent oliphauntSourceGone "Gray Ogre") == 4
+#guard oliphauntSourceGone.hasTrample (namedPermanent oliphauntSourceGone "Gray Ogre")
+#guard oliphauntSourceGone.log.any (fun s =>
+  mentions s "gets +2/+0 and gains trample until end of turn")
+
+/-- If the targeted creature leaves before resolution, the trigger does nothing. -/
+def oliphauntTargetGone : Game :=
+  let id := (namedPermanent oliphauntTargeted "Gray Ogre").id
+  let (g, _) := oliphauntTargeted.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard oliphauntTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(oliphauntTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
 
 /- Smaug, the Great Calamity // Spew Flame (CR 715). -/
 

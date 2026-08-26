@@ -716,4 +716,26 @@ def mountainLine (g : Game) : String :=
   let elves := namedPermanent g "Llanowar Elves"
   mentions (objectLine g elves) "4/4"
 
+#guard mentions (header oliphauntAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (stackBlock oliphauntAttackDeclared) "Oliphaunt's ability"
+#guard mentions (stackBlock oliphauntAttackDeclared) "+2/+0"
+#guard mentions (stackBlock oliphauntAttackDeclared) "trample"
+#guard !mentions (stackBlock oliphauntAttackDeclared) "Mountaincycling"
+#guard
+  let g := oliphauntAttackDeclared
+  let src := namedPermanent g "Oliphaunt"
+  mentions (stackBlock g) s!"*source {src.id} Oliphaunt*" &&
+    mentions (objectLine g src) "6/4" &&
+    mentions (objectLine g src) "trample"
+#guard
+  let g := oliphauntResolved
+  let ogre := namedPermanent g "Gray Ogre"
+  mentions (objectLine g ogre) "4/2" &&
+    mentions (objectLine g ogre) "trample"
+#guard
+  let g := afterOliphauntCleanup
+  let ogre := namedPermanent g "Gray Ogre"
+  mentions (objectLine g ogre) "2/2" &&
+    !mentions (objectLine g ogre) "trample"
+
 end Mtg.Demo.RenderTests
