@@ -726,6 +726,7 @@ def guttersnipe : CardDef := {
   oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent."
   power := some 2
   toughness := some 2
+  triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
 }
 
 def orcishSiegemaster : CardDef := {
@@ -1048,6 +1049,10 @@ def attercop : CardDef := {
 #guard infernoTitan.toughness == some 6
 #guard (infernoTitan.summary.splitOn "+1/+0").length > 1
 #guard (infernoTitan.summary.splitOn "divided as you choose").length > 1
+#guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
+#guard guttersnipe.power == some 2
+#guard guttersnipe.toughness == some 2
+#guard (guttersnipe.summary.splitOn "instant or sorcery").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
