@@ -5,8 +5,9 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash and hexproof, simple `{T}: Add` mana abilities, `{T}: Add`
-for each permanent of a listed type, non-mana
+(keywords including flash, hexproof, and vigilance, simple `{T}: Add` mana abilities, `{T}: Add`
+for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
+with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
@@ -17,6 +18,7 @@ pump for each card looked at, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, may discard to draw, or deal damage
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
+another Elf you control entering that pumps this creature,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
@@ -914,6 +916,9 @@ def woodlandWeavemaster : CardDef := {
   oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."
   power := some 1
   toughness := some 2
+  keywords := { Keywords.none with vigilance := true }
+  triggeredAbilities := #[.onAnotherElfYouControlEntersGets1]
+  tapAddAnyColorEqualToPower := true
 }
 
 def mirkwoodPathmaker : CardDef := {
@@ -1031,6 +1036,16 @@ def attercop : CardDef := {
 #guard (lothlorienLookout.summary.splitOn "scry 1").length > 1
 #guard lothlorienLookout.power == some 1
 #guard lothlorienLookout.toughness == some 3
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.manaAbilities == #[
+  .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+#guard woodlandWeavemaster.power == some 1
+#guard woodlandWeavemaster.toughness == some 2
+#guard (woodlandWeavemaster.summary.splitOn "vigilance").length > 1
+#guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
+#guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
 #guard galadhrimGuide.power == some 3
 #guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1
