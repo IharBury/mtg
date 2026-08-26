@@ -528,11 +528,7 @@ def uncontrolledPermanent : Game :=
     subtypes := #["Equipment"]
     staticAbilities := #[.equippedCreatureGets 2 0]
     triggeredAbilities := #[.onEnterMayDiscardDraw 2]
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 3 }
-      effect := .attachToTargetCreatureYouControl
-      onlyAsSorcery := true
-    }]
+    activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)]
   }
   mentions c.abilitiesText "Equipped creature gets +2/+0" &&
     mentions c.abilitiesText "you may discard a card" &&

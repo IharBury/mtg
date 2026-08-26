@@ -1,4 +1,5 @@
 import Mtg.Engine.Card
+import Mtg.Engine.Catalog
 
 /-!
 # The Hobbit catalog
@@ -592,70 +593,45 @@ def wayfarersBauble : CardDef := {
   }]
 }
 
-def battleScarredGoblin : CardDef := {
-  name := "Battle-Scarred Goblin"
-  manaCost := ManaCost.ofGenericAndColor 1 .red
-  types := #[.creature]
-  subtypes := #["Goblin", "Warrior"]
-  oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
-  power := some 2
-  toughness := some 2
-  triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers]
-}
+def battleScarredGoblin : CardDef :=
+  creature "Battle-Scarred Goblin" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
+    (oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it.")
+    (triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers])
 
-def improvisedClub : CardDef := {
-  name := "Improvised Club"
-  manaCost := ManaCost.ofGenericAndColor 1 .red
-  types := #[.instant]
-  oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target."
-  spellEffect := some (.dealDamage 4)
-  additionalCostSacrificeArtifactOrCreature := true
-}
+def improvisedClub : CardDef :=
+  instant "Improvised Club" (ManaCost.ofGenericAndColor 1 .red)
+    "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target."
+    (some (.dealDamage 4))
+    (additionalCostSacrificeArtifactOrCreature := true)
 
-def smaugTheGreatCalamity : CardDef := {
-  name := "Smaug, the Great Calamity"
-  manaCost := ManaCost.ofGenericAndColors 5 [.red, .red]
-  types := #[.creature]
-  subtypes := #["Dragon"]
-  supertypes := #[.legendary]
-  oracleText := "Flying\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
-  power := some 5
-  toughness := some 5
-  keywords := { Keywords.none with flying := true }
-  adventure := some {
-    name := "Spew Flame"
-    manaCost := ManaCost.ofGenericAndColor 4 .red
-    types := #[.sorcery]
-    subtypes := #["Adventure"]
-    oracleText := "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
-    spellEffect := some (.dealDamageToCreature 5)
-  }
-}
+def smaugTheGreatCalamity : CardDef :=
+  creature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
+    #["Dragon"] 5 5
+    (oracleText := "Flying\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
+    (supertypes := #[.legendary])
+    (keywords := { Keywords.none with flying := true })
+    (adventure := some {
+      name := "Spew Flame"
+      manaCost := ManaCost.ofGenericAndColor 4 .red
+      types := #[.sorcery]
+      subtypes := #["Adventure"]
+      oracleText := "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
+      spellEffect := some (.dealDamageToCreature 5)
+    })
 
-def ologHaiCrusher : CardDef := {
-  name := "Olog-hai Crusher"
-  manaCost := ManaCost.ofGenericAndColor 3 .red
-  types := #[.creature]
-  subtypes := #["Troll", "Soldier"]
-  oracleText := "Trample\nThis creature can't block unless you control a Goblin or Orc."
-  power := some 4
-  toughness := some 4
-  keywords := { Keywords.none with trample := true }
-  staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
-}
+def ologHaiCrusher : CardDef :=
+  creature "Olog-hai Crusher" (ManaCost.ofGenericAndColor 3 .red) #["Troll", "Soldier"] 4 4
+    (oracleText := "Trample\nThis creature can't block unless you control a Goblin or Orc.")
+    (keywords := { Keywords.none with trample := true })
+    (staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]])
 
-def gandalfSparkStarter : CardDef := {
-  name := "Gandalf, Spark Starter"
-  manaCost := ManaCost.ofGenericAndColors 4 [.red, .red]
-  types := #[.creature]
-  subtypes := #["Avatar", "Wizard"]
-  supertypes := #[.legendary]
-  oracleText := "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets."
-  power := some 4
-  toughness := some 3
-  keywords := { Keywords.none with reach := true }
-  triggeredAbilities := #[.onEnterDealDividedDamage 3 3]
-}
+def gandalfSparkStarter : CardDef :=
+  creature "Gandalf, Spark Starter" (ManaCost.ofGenericAndColors 4 [.red, .red])
+    #["Avatar", "Wizard"] 4 3
+    (oracleText := "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets.")
+    (supertypes := #[.legendary])
+    (keywords := { Keywords.none with reach := true })
+    (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
 
 def raggedShortSpear : CardDef := {
   name := "Ragged Short Spear"
@@ -665,190 +641,109 @@ def raggedShortSpear : CardDef := {
   oracleText := "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
   staticAbilities := #[.equippedCreatureGets 2 0]
   triggeredAbilities := #[.onEnterMayDiscardDraw 2]
-  activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGeneric 3 }
-    effect := .attachToTargetCreatureYouControl
-    onlyAsSorcery := true
-  }]
+  activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)]
 }
 
-def smiteTheDeathless : CardDef := {
-  name := "Smite the Deathless"
-  manaCost := ManaCost.ofGenericAndColor 1 .red
-  types := #[.instant]
-  oracleText := "Smite the Deathless deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead."
-  spellEffect := some (.dealDamageLoseIndestructibleExile 3)
-}
+def smiteTheDeathless : CardDef :=
+  instant "Smite the Deathless" (ManaCost.ofGenericAndColor 1 .red)
+    "Smite the Deathless deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead."
+    (some (.dealDamageLoseIndestructibleExile 3))
 
-def goblinFireleaper : CardDef := {
-  name := "Goblin Fireleaper"
-  manaCost := ManaCost.ofGenericAndColor 1 .red
-  types := #[.creature]
-  subtypes := #["Goblin", "Warrior"]
-  oracleText := "{1}{R}: This creature gets +1/+0 until end of turn.\nWhen this creature dies, it deals damage equal to its power to target creature an opponent controls."
-  power := some 1
-  toughness := some 1
-  activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGenericAndColor 1 .red }
-    effect := .sourceGets 1 0
-  }]
-  triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature]
-}
+def goblinFireleaper : CardDef :=
+  creature "Goblin Fireleaper" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 1 1
+    (oracleText := "{1}{R}: This creature gets +1/+0 until end of turn.\nWhen this creature dies, it deals damage equal to its power to target creature an opponent controls.")
+    (activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGenericAndColor 1 .red }
+      effect := .sourceGets 1 0
+    }])
+    (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
 
-def oliphaunt : CardDef := {
-  name := "Oliphaunt"
-  manaCost := ManaCost.ofGenericAndColor 5 .red
-  types := #[.creature]
-  subtypes := #["Elephant"]
-  oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
-  power := some 6
-  toughness := some 4
-  keywords := { Keywords.none with trample := true }
-  triggeredAbilities := #[.onAttackOtherGets2AndTrample]
-}
+def oliphaunt : CardDef :=
+  creature "Oliphaunt" (ManaCost.ofGenericAndColor 5 .red) #["Elephant"] 6 4
+    (oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)")
+    (keywords := { Keywords.none with trample := true })
+    (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
 
-def goblinCratermaker : CardDef := {
-  name := "Goblin Cratermaker"
-  manaCost := ManaCost.ofGenericAndColor 1 .red
-  types := #[.creature]
-  subtypes := #["Goblin", "Warrior"]
-  oracleText := "{1}, Sacrifice this creature: Choose one —\n• This creature deals 2 damage to target creature.\n• Destroy target colorless nonland permanent."
-  power := some 2
-  toughness := some 2
-  activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
-    effect := .dealDamageToTargetCreature 2
-    otherModes := #[.destroyTargetColorlessNonland]
-  }]
-}
+def goblinCratermaker : CardDef :=
+  creature "Goblin Cratermaker" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
+    (oracleText := "{1}, Sacrifice this creature: Choose one —\n• This creature deals 2 damage to target creature.\n• Destroy target colorless nonland permanent.")
+    (activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
+      effect := .dealDamageToTargetCreature 2
+      otherModes := #[.destroyTargetColorlessNonland]
+    }])
 
-def infernoTitan : CardDef := {
-  name := "Inferno Titan"
-  manaCost := ManaCost.ofGenericAndColors 4 [.red, .red]
-  types := #[.creature]
-  subtypes := #["Giant"]
-  oracleText := "{R}: This creature gets +1/+0 until end of turn.\nWhenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets."
-  power := some 6
-  toughness := some 6
-  activatedAbilities := #[{
-    cost := { mana := ManaCost.ofColor .red }
-    effect := .sourceGets 1 0
-  }]
-  triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3]
-}
+def infernoTitan : CardDef :=
+  creature "Inferno Titan" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Giant"] 6 6
+    (oracleText := "{R}: This creature gets +1/+0 until end of turn.\nWhenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets.")
+    (activatedAbilities := #[{
+      cost := { mana := ManaCost.ofColor .red }
+      effect := .sourceGets 1 0
+    }])
+    (triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3])
 
-def guttersnipe : CardDef := {
-  name := "Guttersnipe"
-  manaCost := ManaCost.ofGenericAndColor 2 .red
-  types := #[.creature]
-  subtypes := #["Goblin", "Shaman"]
-  oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent."
-  power := some 2
-  toughness := some 2
-  triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
-}
+def guttersnipe : CardDef :=
+  creature "Guttersnipe" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Shaman"] 2 2
+    (oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent.")
+    (triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2])
 
-def orcishSiegemaster : CardDef := {
-  name := "Orcish Siegemaster"
-  manaCost := ManaCost.ofGenericAndColor 2 .red
-  types := #[.creature]
-  subtypes := #["Orc", "Soldier"]
-  oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
-  power := some 0
-  toughness := some 5
-  keywords := { Keywords.none with trample := true }
-  staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
-  triggeredAbilities := #[.onAttackPumpByGreatestPower]
-}
+def orcishSiegemaster : CardDef :=
+  creature "Orcish Siegemaster" (ManaCost.ofGenericAndColor 2 .red) #["Orc", "Soldier"] 0 5
+    (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
+    (keywords := { Keywords.none with trample := true })
+    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (triggeredAbilities := #[.onAttackPumpByGreatestPower])
 
-def snowslopeHunter : CardDef := {
-  name := "Snowslope Hunter"
-  manaCost := ManaCost.ofGenericAndColor 2 .red
-  types := #[.creature]
-  subtypes := #["Goblin", "Ranger"]
-  oracleText := "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn."
-  power := some 2
-  toughness := some 3
-  activatedAbilities := #[{
-    cost := { sacrificeAnotherCreatureOrArtifact := true }
-    effect := .exileTopPlayUntilEndOfNextTurn
-    onlyDuringYourTurn := true
-    onceEachTurn := true
-  }]
-}
+def snowslopeHunter : CardDef :=
+  creature "Snowslope Hunter" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Ranger"] 2 3
+    (oracleText := "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.")
+    (activatedAbilities := #[{
+      cost := { sacrificeAnotherCreatureOrArtifact := true }
+      effect := .exileTopPlayUntilEndOfNextTurn
+      onlyDuringYourTurn := true
+      onceEachTurn := true
+    }])
 
-def fireOfOrthanc : CardDef := {
-  name := "Fire of Orthanc"
-  manaCost := ManaCost.ofGenericAndColor 3 .red
-  types := #[.sorcery]
-  oracleText := "Destroy target artifact or land. Creatures without flying can't block this turn."
-  spellEffect := some .destroyArtifactOrLandNonflyersCantBlock
-}
+def fireOfOrthanc : CardDef :=
+  sorcery "Fire of Orthanc" (ManaCost.ofGenericAndColor 3 .red)
+    "Destroy target artifact or land. Creatures without flying can't block this turn."
+    .destroyArtifactOrLandNonflyersCantBlock
 
-def guardianOfTheHalls : CardDef := {
-  name := "Guardian of the Halls"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Soldier"]
-  oracleText := "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature."
-  power := some 2
-  toughness := some 2
-  keywords := { Keywords.none with trample := true }
-  activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
-    effect := .putPlusOnePlusOneOnSource 3
-  }]
-}
+def guardianOfTheHalls : CardDef :=
+  creature "Guardian of the Halls" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Soldier"] 2 2
+    (oracleText := "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature.")
+    (keywords := { Keywords.none with trample := true })
+    (activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
+      effect := .putPlusOnePlusOneOnSource 3
+    }])
 
-def quarrel : CardDef := {
-  name := "Quarrel"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.instant]
-  oracleText := "Target creature you control deals damage equal to its power to target creature an opponent controls."
-  spellEffect := some .creatureYouControlDealsPowerToOppCreature
-}
+def quarrel : CardDef :=
+  instant "Quarrel" (ManaCost.ofGenericAndColor 1 .green)
+    "Target creature you control deals damage equal to its power to target creature an opponent controls."
+    (some .creatureYouControlDealsPowerToOppCreature)
 
-def galadhrimGuide : CardDef := {
-  name := "Galadhrim Guide"
-  manaCost := ManaCost.ofGenericAndColor 3 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Scout"]
-  oracleText := "When this creature enters, scry 2."
-  power := some 3
-  toughness := some 4
-  triggeredAbilities := #[.onEnterScry 2]
-}
+def galadhrimGuide : CardDef :=
+  creature "Galadhrim Guide" (ManaCost.ofGenericAndColor 3 .green) #["Elf", "Scout"] 3 4
+    (oracleText := "When this creature enters, scry 2.")
+    (triggeredAbilities := #[.onEnterScry 2])
 
-def galionElvenkingsButler : CardDef := {
-  name := "Galion, Elvenking's Butler"
-  manaCost := ManaCost.ofGenericAndColors 2 [.green, .green]
-  types := #[.creature]
-  subtypes := #["Elf", "Advisor"]
-  supertypes := #[.legendary]
-  oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn."
-  power := some 4
-  toughness := some 4
-  triggeredAbilities := #[.onAttackSetOtherBasePT]
-}
+def galionElvenkingsButler : CardDef :=
+  creature "Galion, Elvenking's Butler" (ManaCost.ofGenericAndColors 2 [.green, .green])
+    #["Elf", "Advisor"] 4 4
+    (oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn.")
+    (supertypes := #[.legendary])
+    (triggeredAbilities := #[.onAttackSetOtherBasePT])
 
-def elvishVisionary : CardDef := {
-  name := "Elvish Visionary"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Shaman"]
-  oracleText := "When this creature enters, draw a card."
-  power := some 1
-  toughness := some 1
-  triggeredAbilities := #[.onEnterDraw 1]
-}
+def elvishVisionary : CardDef :=
+  creature "Elvish Visionary" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Shaman"] 1 1
+    (oracleText := "When this creature enters, draw a card.")
+    (triggeredAbilities := #[.onEnterDraw 1])
 
-def wargTactics : CardDef := {
-  name := "Warg Tactics"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.instant]
-  oracleText := "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)"
-  spellModes := #[.destroyCreatureWithFlying, .plusOnePlusOneTrampleHexproof]
-}
+def wargTactics : CardDef :=
+  instant "Warg Tactics" (ManaCost.ofGenericAndColor 1 .green)
+    "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)"
+    (spellModes := #[.destroyCreatureWithFlying, .plusOnePlusOneTrampleHexproof])
 
 def beornsHospitality : CardDef := {
   name := "Beorn's Hospitality"
@@ -862,29 +757,17 @@ def beornsHospitality : CardDef := {
   }]
 }
 
-def mirkwoodElk : CardDef := {
-  name := "Mirkwood Elk"
-  manaCost := ManaCost.ofGenericAndColor 5 .green
-  types := #[.creature]
-  subtypes := #["Elk"]
-  oracleText := "Trample\nWhenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power."
-  power := some 6
-  toughness := some 6
-  keywords := { Keywords.none with trample := true }
-  triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife]
-}
+def mirkwoodElk : CardDef :=
+  creature "Mirkwood Elk" (ManaCost.ofGenericAndColor 5 .green) #["Elk"] 6 6
+    (oracleText := "Trample\nWhenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power.")
+    (keywords := { Keywords.none with trample := true })
+    (triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife])
 
-def celebornTheWise : CardDef := {
-  name := "Celeborn the Wise"
-  manaCost := ManaCost.ofGenericAndColor 3 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Noble"]
-  supertypes := #[.legendary]
-  oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way."
-  power := some 3
-  toughness := some 3
-  triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
-}
+def celebornTheWise : CardDef :=
+  creature "Celeborn the Wise" (ManaCost.ofGenericAndColor 3 .green) #["Elf", "Noble"] 3 3
+    (oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way.")
+    (supertypes := #[.legendary])
+    (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
 
 def giftOfStrands : CardDef := {
   name := "Gift of Strands"
@@ -897,41 +780,24 @@ def giftOfStrands : CardDef := {
   triggeredAbilities := #[.onEnterScry 2]
 }
 
-def elvishArchdruid : CardDef := {
-  name := "Elvish Archdruid"
-  manaCost := ManaCost.ofGenericAndColors 1 [.green, .green]
-  types := #[.creature]
-  subtypes := #["Elf", "Druid"]
-  oracleText := "Other Elf creatures you control get +1/+1.\n{T}: Add {G} for each Elf you control."
-  power := some 2
-  toughness := some 2
-  staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1]
-  tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }]
-}
+def elvishArchdruid : CardDef :=
+  creature "Elvish Archdruid" (ManaCost.ofGenericAndColors 1 [.green, .green])
+    #["Elf", "Druid"] 2 2
+    (oracleText := "Other Elf creatures you control get +1/+1.\n{T}: Add {G} for each Elf you control.")
+    (staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1])
+    (tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }])
 
-def lothlorienLookout : CardDef := {
-  name := "Lothlórien Lookout"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Scout"]
-  oracleText := "Whenever this creature attacks, scry 1."
-  power := some 1
-  toughness := some 3
-  triggeredAbilities := #[.onAttackScry 1]
-}
+def lothlorienLookout : CardDef :=
+  creature "Lothlórien Lookout" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Scout"] 1 3
+    (oracleText := "Whenever this creature attacks, scry 1.")
+    (triggeredAbilities := #[.onAttackScry 1])
 
-def woodlandWeavemaster : CardDef := {
-  name := "Woodland Weavemaster"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Druid"]
-  oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."
-  power := some 1
-  toughness := some 2
-  keywords := { Keywords.none with vigilance := true }
-  triggeredAbilities := #[.onAnotherElfYouControlEntersGets1]
-  tapAddAnyColorEqualToPower := true
-}
+def woodlandWeavemaster : CardDef :=
+  creature "Woodland Weavemaster" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Druid"] 1 2
+    (oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.")
+    (keywords := { Keywords.none with vigilance := true })
+    (triggeredAbilities := #[.onAnotherElfYouControlEntersGets1])
+    (tapAddAnyColorEqualToPower := true)
 
 def mirkwoodPathmaker : CardDef := {
   name := "Mirkwood Pathmaker"
@@ -942,59 +808,36 @@ def mirkwoodPathmaker : CardDef := {
   staticAbilities := #[.powerToughnessEqualLandsYouControl]
 }
 
-def beornReluctantHost : CardDef := {
-  name := "Beorn, Reluctant Host"
-  manaCost := ManaCost.ofGenericAndColor 4 .green
-  types := #[.creature]
-  subtypes := #["Human", "Bear", "Shapeshifter"]
-  supertypes := #[.legendary]
-  oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
-  power := some 5
-  toughness := some 5
-  keywords := { Keywords.none with trample := true }
-  adventure := some {
-    name := "Till and Tend"
-    manaCost := ManaCost.ofGenericAndColor 1 .green
-    types := #[.sorcery]
-    subtypes := #["Adventure"]
-    oracleText := "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
-    spellEffect := some .playAdditionalLandThisTurn
-  }
-}
+def beornReluctantHost : CardDef :=
+  creature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
+    #["Human", "Bear", "Shapeshifter"] 5 5
+    (oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
+    (supertypes := #[.legendary])
+    (keywords := { Keywords.none with trample := true })
+    (adventure := some {
+      name := "Till and Tend"
+      manaCost := ManaCost.ofGenericAndColor 1 .green
+      types := #[.sorcery]
+      subtypes := #["Adventure"]
+      oracleText := "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
+      spellEffect := some .playAdditionalLandThisTurn
+    })
 
-def woodElves : CardDef := {
-  name := "Wood Elves"
-  manaCost := ManaCost.ofGenericAndColor 2 .green
-  types := #[.creature]
-  subtypes := #["Elf", "Scout"]
-  oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
-  power := some 1
-  toughness := some 1
-  triggeredAbilities := #[.onEnterSearchForest]
-}
+def woodElves : CardDef :=
+  creature "Wood Elves" (ManaCost.ofGenericAndColor 2 .green) #["Elf", "Scout"] 1 1
+    (oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.")
+    (triggeredAbilities := #[.onEnterSearchForest])
 
-def elvishMystic : CardDef := {
-  name := "Elvish Mystic"
-  manaCost := ManaCost.ofColor .green
-  types := #[.creature]
-  subtypes := #["Elf", "Druid"]
-  oracleText := "{T}: Add {G}."
-  power := some 1
-  toughness := some 1
-  tapAddMana := #[.colored .green]
-}
+def elvishMystic : CardDef :=
+  creature "Elvish Mystic" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
+    (oracleText := "{T}: Add {G}.")
+    (tapAddMana := #[.colored .green])
 
-def attercop : CardDef := {
-  name := "Attercop"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Spider"]
-  oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn."
-  power := some 2
-  toughness := some 1
-  keywords := { Keywords.none with reach := true, deathtouch := true }
-  triggeredAbilities := #[.onLandYouControlEntersGets1]
-}
+def attercop : CardDef :=
+  creature "Attercop" (ManaCost.ofGenericAndColor 1 .green) #["Spider"] 2 1
+    (oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn.")
+    (keywords := { Keywords.none with reach := true, deathtouch := true })
+    (triggeredAbilities := #[.onLandYouControlEntersGets1])
 
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard roguesPassage.isLand

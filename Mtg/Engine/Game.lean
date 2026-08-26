@@ -1045,24 +1045,41 @@ def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → B
     | some o => if pred o then some (Target.card o.id) else none
     | none => none)
 
+/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
+`sourceId` excludes the source of an “another” creature. -/
+def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  match kind with
+  | .none => #[]
+  | .creatureYouControl =>
+    g.legalCreatureYouControlTargets caster
+  | .anotherCreatureYouControl =>
+    g.legalCreatureTargets caster (fun o => o.controlledBy caster && some o.id != sourceId)
+  | .playerOrCreature =>
+    g.livingPlayers.map (fun pl => Target.player pl.id) ++
+      g.legalCreatureTargets caster (fun _ => true)
+  | .elfInYourGraveyard =>
+    g.legalGraveyardCardTargets caster (fun o => o.hasSubtype "Elf")
+  | .oppCreature =>
+    g.legalOppCreatureTargets caster
+  | .creature =>
+    g.legalCreatureTargets caster (fun _ => true)
+  | .creatureWithFlying =>
+    g.legalCreatureTargets caster (fun o => g.hasFlying o)
+  | .artifactOrLand =>
+    g.legalPermanentTargets caster (·.isArtifactOrLand)
+  | .colorlessNonland =>
+    g.legalPermanentTargets caster (·.isColorlessNonland)
+  | .creatureYouControlThenOppCreature =>
+    let own := g.legalCreatureYouControlTargets caster
+    let opp := g.legalOppCreatureTargets caster
+    if own.isEmpty || opp.isEmpty then #[] else own ++ opp
+
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId := none) : Array Target :=
-  match ab.targetKind with
-  | .creatureYouControl =>
-    g.legalCreatureYouControlTargets p
-  | .anotherCreatureYouControl =>
-    g.legalCreatureTargets p (fun o => o.controlledBy p && some o.id != sourceId)
-  | .playerOrCreature =>
-    g.livingPlayers.map (fun pl => Target.player pl.id) ++
-      g.legalCreatureTargets p (fun _ => true)
-  | .elfInYourGraveyard =>
-    g.legalGraveyardCardTargets p (fun o => o.hasSubtype "Elf")
-  | .oppCreature =>
-    g.legalOppCreatureTargets p
-  | .none =>
-    #[]
+  g.legalTargetsForKind p ab.targetKind sourceId
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
 def assignedDividedDamage (e : StackEntry) : Nat :=
@@ -1394,27 +1411,11 @@ def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   g.availableManaExcept p none
 
 def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
-  match effect with
-  | .dealDamage _ =>
-    g.livingPlayers.map (fun pl => Target.player pl.id) ++
-      g.legalCreatureTargets caster (fun _ => true)
-  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ | .pump _ _ =>
-    g.legalCreatureTargets caster (fun _ => true)
-  | .destroyCreatureWithFlying =>
-    g.legalCreatureTargets caster (fun o => g.hasFlying o)
-  | .plusOnePlusOneTrampleHexproof =>
-    g.legalCreatureYouControlTargets caster
-  | .creatureYouControlDealsPowerToOppCreature =>
-    let own := g.legalCreatureYouControlTargets caster
-    let opp := g.legalOppCreatureTargets caster
-    if own.isEmpty || opp.isEmpty then #[] else own ++ opp
-  | .playAdditionalLandThisTurn => #[]
-  | .destroyArtifactOrLandNonflyersCantBlock =>
-    g.legalPermanentTargets caster (·.isArtifactOrLand)
+  g.legalTargetsForKind caster effect.targetKind
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
-  g.legalCreatureTargets caster (fun _ => true)
+  g.legalTargetsForKind caster .creature
 
 /-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
 def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
@@ -1474,15 +1475,8 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   | none => legal[0]?
 
 /-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b). -/
-def legalAbilityTargets (g : Game) (p : PlayerId) : AbilityEffect → Array Target
-  | .dealDamageToTargetCreature _ | .targetCantBeBlockedThisTurn =>
-    g.legalCreatureTargets p (fun _ => true)
-  | .destroyTargetColorlessNonland =>
-    g.legalPermanentTargets p (·.isColorlessNonland)
-  | .attachToTargetCreatureYouControl =>
-    g.legalCreatureYouControlTargets p
-  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => #[]
+def legalAbilityTargets (g : Game) (p : PlayerId) (e : AbilityEffect) : Array Target :=
+  g.legalTargetsForKind p e.targetKind
 
 /-- The spell, activated ability, or triggered ability currently waiting for
 targets (CR 601.2c / 603.3d). -/
@@ -1501,6 +1495,20 @@ def announcingDividedDamage (g : Game) : Bool :=
 def stackEntry? (g : Game) (objectId : ObjectId) : Option StackEntry :=
   g.stack.find? (fun e => e.objectId == objectId)
 
+/-- Targeting shape of the object currently being announced. -/
+def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
+  match obj.abilityEffect with
+  | some e => e.targeting
+  | none =>
+    match obj.triggeredAbility with
+    | some ab => { kind := ab.targetKind }
+    | none =>
+      match g.currentSpellEffect obj with
+      | some e => e.targeting
+      | none =>
+        if obj.printed.isAura then { kind := .creature, preferOwn := true }
+        else {}
+
 /-- Legal targets for the object currently being announced (spell or ability).
 Already-chosen targets are excluded (CR 115.3). A two-target spell such as
 Quarrel offers the next unset target slot. -/
@@ -1510,28 +1518,50 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
     | some e => e.targets
     | none => #[]
   let raw :=
-    match o.abilityEffect with
-    | some e => g.legalAbilityTargets p e
-    | none =>
-      match o.triggeredAbility with
-      | some t => g.legalTriggerTargets p t o.sourceId
-      | none =>
-        match g.currentSpellEffect o with
-        | some .creatureYouControlDealsPowerToOppCreature =>
-          if already.isEmpty then
-            g.legalCreatureYouControlTargets p
-          else
-            g.legalOppCreatureTargets p
-        | _ => g.legalSpellTargets p o
+    match o.abilityEffect, o.triggeredAbility, (g.targetingOf o).kind with
+    | _, _, .creatureYouControlThenOppCreature =>
+      if already.isEmpty then
+        g.legalCreatureYouControlTargets p
+      else
+        g.legalOppCreatureTargets p
+    | some _, _, kind => g.legalTargetsForKind p kind
+    | _, some _, kind => g.legalTargetsForKind p kind o.sourceId
+    | _, _, _ => g.legalSpellTargets p o
   raw.filter (fun t => !already.contains t)
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
   !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
 
-/-- Last battlefield object as a permanent target, if any. -/
-def lastPermanentTarget (os : Array GameObject) : Option Target :=
-  os.back?.map (fun c => Target.permanent c.id)
+/-- Last target in `legal` matching `pred`. -/
+def lastLegalTarget (legal : Array Target) (pred : Target → Bool) : Option Target :=
+  legal.filter pred |>.back?
+
+/-- Whether this target is a permanent `p` controls. -/
+def isOwnPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
+  | .permanent oid => (g.findObject? oid).any (fun o => o.controlledBy p)
+  | _ => false
+
+/-- Whether this target is a permanent an opponent of `p` controls. -/
+def isOppPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
+  | .permanent oid => (g.findObject? oid).any (fun o => o.controlledBy (g.opponent p))
+  | _ => false
+
+/-- Default choice among `legal` for this targeting shape (CR 601.2c). -/
+def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
+    (legal : Array Target) : Option Target :=
+  let own := lastLegalTarget legal (g.isOwnPermanentTarget p)
+  let opp := lastLegalTarget legal (g.isOppPermanentTarget p)
+  match targeting.kind with
+  | .none => own
+  | .playerOrCreature =>
+    let player := Target.player (g.opponent p)
+    if legal.contains player then some player else legal[0]?
+  | .elfInYourGraveyard => legal.back?
+  | .creatureYouControl | .anotherCreatureYouControl => own
+  | .oppCreature | .creatureWithFlying | .artifactOrLand | .colorlessNonland => opp
+  | .creatureYouControlThenOppCreature => own <|> opp
+  | .creature => if targeting.preferOwn then own else opp
 
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
@@ -1544,63 +1574,7 @@ mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefe
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
-  let ownCreature := lastPermanentTarget ((g.permanentsOf p).filter (·.isCreature))
-  let fromSpellOrAbility : Option Target :=
-    match obj.abilityEffect, g.currentSpellEffect obj with
-    | some (.dealDamageToTargetCreature _), _ =>
-      (g.legalOppCreatureTargets p).back?
-    | some .destroyTargetColorlessNonland, _ =>
-      lastPermanentTarget
-        ((g.permanentsOf (g.opponent p)).filter (fun o =>
-          o.isColorlessNonland && g.canBeTargetedBy p o))
-    | some .attachToTargetCreatureYouControl, _ =>
-      lastPermanentTarget ((g.permanentsOf p).filter (·.printed.isCreature))
-    | some .targetCantBeBlockedThisTurn, _ =>
-      ownCreature
-    | _, some (.dealDamage _) =>
-      some (Target.player (g.opponent p))
-    | _, some (.dealDamageToCreature _)
-    | _, some (.dealDamageLoseIndestructibleExile _) =>
-      (g.legalOppCreatureTargets p).back?
-    | _, some .destroyCreatureWithFlying =>
-      lastPermanentTarget
-        ((g.permanentsOf (g.opponent p)).filter (fun o =>
-          o.isCreature && g.hasFlying o && g.canBeTargetedBy p o))
-    | _, some .destroyArtifactOrLandNonflyersCantBlock =>
-      lastPermanentTarget
-        ((g.permanentsOf (g.opponent p)).filter (fun o =>
-          o.isArtifactOrLand && g.canBeTargetedBy p o))
-    | _, some .creatureYouControlDealsPowerToOppCreature =>
-      match g.stackEntry? obj.id with
-      | some e =>
-        if e.targets.isEmpty then
-          (g.legalCreatureYouControlTargets p).back?
-        else
-          (g.legalOppCreatureTargets p).back?
-      | none => (g.legalCreatureYouControlTargets p).back?
-    | _, some .playAdditionalLandThisTurn => none
-    | _, some (.pump _ _) | _, some .plusOnePlusOneTrampleHexproof | _, none =>
-      ownCreature
-  let preferred : Option Target :=
-    match obj.triggeredAbility with
-    | some ab =>
-      match ab.targetKind with
-      | .playerOrCreature =>
-        some (Target.player (g.opponent p))
-      | .elfInYourGraveyard =>
-        (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
-      | .oppCreature =>
-        (g.legalOppCreatureTargets p).back?
-      | .anotherCreatureYouControl =>
-        lastPermanentTarget
-          ((g.permanentsOf p).filter (fun o => o.isCreature && some o.id != obj.sourceId))
-      | .creatureYouControl =>
-        ownCreature
-      | .none =>
-        fromSpellOrAbility
-    | none =>
-      fromSpellOrAbility
-  match preferred with
+  match g.preferredTarget p (g.targetingOf obj) legal with
   | some t => if legal.contains t then some t else legal[0]?
   | none => legal[0]?
 
@@ -1618,9 +1592,9 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) :
   let findKind (pred : AbilityEffect → Bool) : Option Nat :=
     (choosable.find? (fun (_, e) => pred e)).map (·.1)
   let damageIdx :=
-    findKind (fun e => match e with | .dealDamageToTargetCreature _ => true | _ => false)
+    findKind (fun e => e.targetKind == .creature)
   let destroyIdx :=
-    findKind (fun e => match e with | .destroyTargetColorlessNonland => true | _ => false)
+    findKind (fun e => e.targetKind == .colorlessNonland)
   let oppHasCreature :=
     (g.permanentsOf (g.opponent p)).any (·.isCreature)
   let hasColorless := g.battlefield.any (·.isColorlessNonland)
@@ -1638,14 +1612,18 @@ def targetLogName (g : Game) : Target → String
     | some o => o.name
     | none => toString oid
 
+/-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
+def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
+  g.hasPriority p &&
+  (if face.hasSorcerySpeed then g.asSorcery? p else true)
+
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
 non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !o.printed.isLand &&
   g.mayPlay p o &&
-  g.hasPriority p &&
-  (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
+  g.timingAllowsCast p o.printed &&
   (if o.printed.additionalCostSacrificeArtifactOrCreature then
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id && (perm.isCreature || perm.printed.isArtifact))
@@ -1671,8 +1649,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     let face := adv.toCardDef
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
-    g.hasPriority p &&
-    (if face.hasSorcerySpeed then g.asSorcery? p else true) &&
+    g.timingAllowsCast p face &&
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
@@ -2189,6 +2166,16 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   let g := g.mapObjectStatus o (·.addDamage n)
   g.logMsg s!"{o.name} is dealt {n} damage"
 
+/-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). -/
+def pumpPermanent (g : Game) (o : GameObject) (p t : Int) : Game :=
+  let g := g.mapObjectStatus o (·.addPump p t)
+  g.logMsg s!"{o.name} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
+
+/-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
+def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
+  g.logMsg s!"{o.name} gets {AbilityEffect.plusOnePlusOneCountersPhrase n}"
+
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   let illegal : Game := g.logMsg "The target is illegal"
@@ -2214,8 +2201,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       g.dealDamageToPermanent o n
   | .pump pw tw, some (Target.permanent oid) =>
     withPermanent oid fun g o =>
-      let g := g.mapObjectStatus o (·.addPump pw tw)
-      g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+      g.pumpPermanent o pw tw
   | .destroyCreatureWithFlying, some (Target.permanent oid) =>
     withPermanent oid fun g o =>
       g.destroyPermanent o
@@ -2339,53 +2325,53 @@ def illegalAbilityTarget (g : Game) : Target → Game
       | _ => g.logMsg "The target is no longer in the graveyard"
     | none => g.logMsg "The target is no longer in the graveyard"
 
+/-- Apply `f` when the announced target is still in `legal` (CR 608.2b).
+`missing` is logged when no target was announced; `none` leaves the game unchanged. -/
+def withLegalTarget (g : Game) (legal : Array Target) (targets : Array Target)
+    (f : Game → Target → Game) (missing : Option String := none) : Game :=
+  match targets[0]? with
+  | none =>
+    match missing with
+    | some msg => g.logMsg msg
+    | none => g
+  | some t =>
+    if legal.contains t then f g t else g.illegalAbilityTarget t
+
+/-- Apply `f` to a still-legal permanent target. -/
+def withLegalPermanentTarget (g : Game) (legal : Array Target) (targets : Array Target)
+    (f : Game → GameObject → Game) (missing : Option String := none) : Game :=
+  g.withLegalTarget legal targets (fun g t =>
+    match t with
+    | Target.permanent oid =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in play"
+      | some o => f g o
+    | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal")
+    missing
+
 /-- Apply `f` when the announced trigger target is still legal (CR 608.2b). -/
 def withLegalTriggerTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (f : Game → Target → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  match targets[0]? with
-  | none => g.logMsg noneMsg
-  | some t =>
-    if (g.legalTriggerTargets controller ab sourceId).contains t then
-      f g t
-    else
-      g.illegalAbilityTarget t
+  g.withLegalTarget (g.legalTriggerTargets controller ab sourceId) targets f (some noneMsg)
 
 /-- Apply `f` to a still-legal permanent target of a triggered ability. -/
 def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-    match t with
-    | Target.permanent oid =>
-      match g.findObject? oid with
-      | none => g.logMsg "The target is no longer in play"
-      | some o => f g o
-    | _ => g.logMsg "The target is no longer legal")
-    noneMsg
+  g.withLegalPermanentTarget (g.legalTriggerTargets controller ab sourceId) targets f
+    (some noneMsg)
 
 /-- Apply `f` when the announced ability target is still legal (CR 608.2b).
 A missing target leaves the game unchanged. -/
 def withLegalAbilityTarget (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (f : Game → Target → Game) : Game :=
-  match targets[0]? with
-  | none => g
-  | some t =>
-    if (g.legalAbilityTargets controller effect).contains t then
-      f g t
-    else
-      g.illegalAbilityTarget t
+  g.withLegalTarget (g.legalAbilityTargets controller effect) targets f none
 
 /-- Apply `f` to a still-legal permanent target of an activated ability. -/
 def withLegalAbilityPermanent (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (f : Game → GameObject → Game) : Game :=
-  g.withLegalAbilityTarget controller effect targets fun g t =>
-    match t with
-    | Target.permanent oid =>
-      match g.findObject? oid with
-      | none => g.logMsg "The target is no longer in play"
-      | some o => f g o
-    | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
+  g.withLegalPermanentTarget (g.legalAbilityTargets controller effect) targets f none
 
 /-- Apply `f` if `sourceId` is still on the battlefield. -/
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
@@ -2419,19 +2405,15 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       g.destroyPermanent o
   | .attachToTargetCreatureYouControl =>
     g.withLegalAbilityPermanent controller effect targets fun g host =>
-      match sourceId.bind g.findObject? with
-      | none =>
-        g.logMsg "The Equipment is no longer in play"
-      | some src =>
-        if !src.isOnBattlefield then
-          g.logMsg s!"{src.name} is no longer on the battlefield"
-        else if src.attachedTo == some host.id then
+      g.withSourceOnBattlefield sourceId (fun g src =>
+        if src.attachedTo == some host.id then
           g.logMsg s!"{src.name} is already attached to {host.name}"
         else
           let (g, ts) := g.bumpTime
           let src := g.object! src.id
           let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
-          g.logMsg s!"{src.name} attaches to {host.name}"
+          g.logMsg s!"{src.name} attaches to {host.name}")
+        "The Equipment is no longer in play"
   | .becomeBearCreatureWithLandsPT =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let subtypes :=
@@ -2449,12 +2431,10 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
   | .sourceGets pw tw =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.addPump pw tw)
-      g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+      g.pumpPermanent o pw tw
   | .putPlusOnePlusOneOnSource n =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
-      g.logMsg s!"{o.name} gets {AbilityEffect.plusOnePlusOneCountersPhrase n}"
+      g.addPlusOnePlusOneTo o n
   | .targetCantBeBlockedThisTurn =>
     g.withLegalAbilityPermanent controller effect targets fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with untilEotCantBeBlocked := true })
@@ -2565,8 +2545,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.beginMayDiscardDraw controller n
   | .onLandYouControlEntersPlusOnePlusOne =>
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      let g := g.mapObjectStatus o (·.addPlusOnePlusOne 1)
-      g.logMsg s!"{o.name} gets a +1/+1 counter"
+      g.addPlusOnePlusOneTo o 1
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     Id.run do
       let mut g := g
@@ -2604,12 +2583,10 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .onScryPumpSelfForEachLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
     g.withTriggerSource sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.addPump (n : Int) (n : Int))
-      g.logMsg s!"{o.name} gets +{n}/+{n} until end of turn"
+      g.pumpPermanent o (n : Int) (n : Int)
   | .onAnotherElfYouControlEntersGets1 | .onLandYouControlEntersGets1 =>
     g.withTriggerSource sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.addPump 1 1)
-      g.logMsg s!"{o.name} gets +1/+1 until end of turn"
+      g.pumpPermanent o 1 1
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
