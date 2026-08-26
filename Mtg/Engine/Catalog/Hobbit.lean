@@ -26,7 +26,8 @@ Aura and Equipment attachment, adventurer cards
 plays this turn), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
-to a creature an opponent controls, and a few one-shot spell effects);
+to a creature an opponent controls, dealing damage that also makes a creature
+lose indestructible and exile it if it would die this turn, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -675,7 +676,7 @@ def smiteTheDeathless : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .red
   types := #[.instant]
   oracleText := "Smite the Deathless deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead."
-  spellEffect := some (.dealDamage 3)
+  spellEffect := some (.dealDamageLoseIndestructibleExile 3)
 }
 
 def goblinFireleaper : CardDef := {
@@ -1091,6 +1092,12 @@ def attercop : CardDef := {
 #guard quarrel.requiresTarget
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
+#guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
+#guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget

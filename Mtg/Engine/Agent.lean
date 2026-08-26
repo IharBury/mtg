@@ -156,6 +156,14 @@ where
       match o.printed.spellEffect with
       | some (.dealDamage _) => true
       | _ => false)
+    let creatureDamage :=
+      if oppHasCreature then
+        playable.find? (fun o =>
+          match o.printed.spellEffect with
+          | some (.dealDamageToCreature _) | some (.dealDamageLoseIndestructibleExile _) =>
+            true
+          | _ => false)
+      else none
     let fight := playable.find? (fun o =>
       match o.printed.spellEffect with
       | some .creatureYouControlDealsPowerToOppCreature => true
@@ -193,6 +201,8 @@ where
       some (.cast o.id)
     else if let some o := adventureRemoval then
       some (.castAdventure o.id)
+    else if let some o := creatureDamage then
+      some (.cast o.id)
     else if let some o := removal then
       some (.cast o.id)
     else if let some o := fight then

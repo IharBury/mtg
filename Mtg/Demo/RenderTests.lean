@@ -916,4 +916,23 @@ def mountainLine (g : Game) : String :=
   let g := afterPassageCleanup
   !mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"
 
+#guard mentions smiteTheDeathless.summary "loses indestructible"
+#guard mentions smiteTheDeathless.summary "exile it instead"
+#guard
+  let g := addPermanent started indestructibleBeast ⟨0⟩ ⟨0⟩
+  mentions (objectLine g (lastPermanent g)) "indestructible"
+#guard mentions (zoneBlock resolvedSmiteOnBears .exile) "Grizzly Bears"
+#guard
+  let g := resolvedSmiteOnWurm
+  let w := namedPermanent g "Craw Wurm"
+  mentions (objectLine g w) "dmg:3" &&
+    mentions (objectLine g w) "exile if dies"
+#guard
+  let g := resolvedSmiteOnIndestructibleFlyer
+  let o := namedPermanent g "Indestructible Flyer"
+  mentions (objectLine g o) "flying" &&
+    !mentions (objectLine g o) "indestructible" &&
+    mentions (objectLine g o) "exile if dies" &&
+    mentions (objectLine g o) "dmg:3"
+
 end Mtg.Demo.RenderTests

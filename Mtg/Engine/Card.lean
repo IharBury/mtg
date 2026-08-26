@@ -21,6 +21,7 @@ structure Keywords where
   /-- This creature can't be blocked (printed or granted until end of turn). -/
   cantBeBlocked : Bool := false
   hexproof : Bool := false
+  indestructible : Bool := false
   reach : Bool := false
   trample : Bool := false
   deathtouch : Bool := false
@@ -38,6 +39,7 @@ def toList (k : Keywords) : List String :=
   (if k.flying then ["flying"] else []) ++
   (if k.cantBeBlocked then ["can't be blocked"] else []) ++
   (if k.hexproof then ["hexproof"] else []) ++
+  (if k.indestructible then ["indestructible"] else []) ++
   (if k.reach then ["reach"] else []) ++
   (if k.trample then ["trample"] else []) ++
   (if k.deathtouch then ["deathtouch"] else []) ++
@@ -63,6 +65,10 @@ inductive SpellEffect where
   | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
   | dealDamageToCreature (amount : Nat)
+  /-- Deal `amount` damage to target creature. That creature loses
+  indestructible until end of turn. If it would die this turn, exile it instead
+  (e.g. Smite the Deathless). -/
+  | dealDamageLoseIndestructibleExile (amount : Nat)
   /-- Target creature you control deals damage equal to its power to target
   creature an opponent controls (e.g. Quarrel). -/
   | creatureYouControlDealsPowerToOppCreature
@@ -82,6 +88,8 @@ def toNotation : SpellEffect → String
   | .plusOnePlusOneTrampleHexproof =>
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
   | .dealDamageToCreature n => s!"deals {n} damage to target creature"
+  | .dealDamageLoseIndestructibleExile n =>
+    s!"deals {n} damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
   | .creatureYouControlDealsPowerToOppCreature =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .playAdditionalLandThisTurn => "you may play an additional land this turn"
@@ -91,13 +99,15 @@ def targetCount : SpellEffect → Nat
   | .playAdditionalLandThisTurn => 0
   | .creatureYouControlDealsPowerToOppCreature => 2
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => 1
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .dealDamageLoseIndestructibleExile _ => 1
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : SpellEffect → Bool
   | .playAdditionalLandThisTurn => false
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
   | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .dealDamageLoseIndestructibleExile _
   | .creatureYouControlDealsPowerToOppCreature => true
 
 instance : ToString SpellEffect where
@@ -782,6 +792,8 @@ instance : ToString CardDef where
 #guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
 #guard toString ({ Keywords.none with hexproof := true } : Keywords) == "hexproof"
 #guard CardDef.isKeywordRestatement { Keywords.none with hexproof := true } "Hexproof"
+#guard toString ({ Keywords.none with indestructible := true } : Keywords) == "indestructible"
+#guard CardDef.isKeywordRestatement { Keywords.none with indestructible := true } "Indestructible"
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
@@ -790,6 +802,8 @@ instance : ToString CardDef where
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
+#guard SpellEffect.toNotation (.dealDamageLoseIndestructibleExile 3) ==
+  "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
 #guard SpellEffect.toNotation .creatureYouControlDealsPowerToOppCreature ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
@@ -799,6 +813,8 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
+#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
 #guard

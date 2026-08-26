@@ -1312,6 +1312,15 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       | .error _ => false
 
 #guard
+  let g := Tests.smiteSetup
+  match applyCast g ⟨0⟩ [toString (Tests.handCardNamed g ⟨0⟩ "Smite the Deathless").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Smite the Deathless") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ [] with
   | .error msg => msg == divideTargetUsage
   | .ok _ => false

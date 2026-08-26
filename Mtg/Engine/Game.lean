@@ -25,9 +25,11 @@ equal to lands you control in all zones (CR 604.3 / 208.2a), or restrict blockin
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 can't-be-blocked (CR 509.1b / 611.2a), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
-Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
+Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
+indestructible (CR 702.12), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
-keyword grants, attack triggers (CR 508.2 / 603), including scrying, copying this
+keyword grants and losses, replacement effects that exile a creature instead of
+dying this turn (CR 614.1 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
@@ -84,6 +86,10 @@ structure Status where
   untilEotTrample : Bool := false
   untilEotHexproof : Bool := false
   untilEotCantBeBlocked : Bool := false
+  /-- This creature loses indestructible until end of turn (e.g. Smite). -/
+  untilEotLosesIndestructible : Bool := false
+  /-- If this creature would die this turn, exile it instead (CR 614.1). -/
+  untilEotExileIfDies : Bool := false
   /-- Until-end-of-turn layer-7b setting of base power (e.g. Galion). -/
   setBasePower : Option Int := none
   /-- Until-end-of-turn layer-7b setting of base toughness (e.g. Galion). -/
@@ -654,6 +660,12 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingDea
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
   let old := g.object! id
+  let exileInstead :=
+    old.zone == .battlefield && old.status.untilEotExileIfDies &&
+      match dest with
+      | .graveyard _ => true
+      | _ => false
+  let dest := if exileInstead then Zone.exile else dest
   let dying := g.dyingTriggers old dest
   let g :=
     if old.zone == .battlefield then g.unattachFrom id else g
@@ -678,6 +690,8 @@ def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId 
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
   let g := { g with waitingDeathTriggers := g.waitingDeathTriggers ++ dying }
+  let g :=
+    if exileInstead then g.logMsg s!"{old.name} is exiled instead of dying" else g
   (g, newId)
 
 def emptyManaPools (g : Game) : Game :=
@@ -782,6 +796,12 @@ def hasHexproof (_g : Game) (o : GameObject) : Bool :=
   o.printed.keywords.hexproof ||
   (o.isOnBattlefield && o.status.untilEotHexproof)
 
+/-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
+make it lose the keyword. -/
+def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.indestructible &&
+  !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
+
 /-- Whether `o` has trample, printed, granted until end of turn, or granted by
 a static ability (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
@@ -795,6 +815,7 @@ def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
     flying := g.hasFlying o
     cantBeBlocked := g.hasCantBeBlocked o
     hexproof := g.hasHexproof o
+    indestructible := g.hasIndestructible o
     trample := g.hasTrample o
     vigilance := g.hasVigilance o }
 
@@ -922,7 +943,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             let (g', _) := g.move o.id (.graveyard o.owner) none
             g := g'
             changed := true
-          else if o.status.damage ≥ t then
+          else if o.status.damage ≥ t && !g.hasIndestructible o then
             g := g.logMsg s!"{o.name} dies from lethal damage"
             let (g', _) := g.move o.id (.graveyard o.owner) none
             g := g'
@@ -1393,7 +1414,7 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array T
   | .dealDamage _ =>
     let players := g.livingPlayers.map (fun pl => Target.player pl.id)
     players ++ g.legalCreatureTargets caster (fun _ => true)
-  | .dealDamageToCreature _ =>
+  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ =>
     g.legalCreatureTargets caster (fun _ => true)
   | .pump _ _ =>
     g.legalCreatureTargets caster (fun _ => true)
@@ -1519,7 +1540,7 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
-card in the controller's graveyard; Quarrel prefers a creature you control, then
+card in the controller's graveyard; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
 an opposing creature; Rogue's Passage, pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
@@ -1552,7 +1573,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
       (g.permanentsOf p).filter (·.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
     | _, _, some (.dealDamage _) => some (Target.player (g.opponent p))
-    | _, _, some (.dealDamageToCreature _) =>
+    | _, _, some (.dealDamageToCreature _)
+    | _, _, some (.dealDamageLoseIndestructibleExile _) =>
       (g.legalOppCreatureTargets p).back?
     | _, _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
@@ -2144,6 +2166,17 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)
   | _ => throw "Not time to sacrifice a permanent"
 
+/-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
+(CR 702.12b / 701.7b). If it would die this turn under an exile replacement,
+`move` sends it to exile instead of the graveyard (CR 614.1). -/
+def destroyPermanent (g : Game) (o : GameObject) : Game :=
+  if g.hasIndestructible o then
+    g.logMsg s!"{o.name} is indestructible and isn't destroyed"
+  else
+    let g := g.logMsg s!"{o.name} is destroyed"
+    let (g, _) := g.move o.id (.graveyard o.owner) none
+    g
+
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   let illegal : Game := g.logMsg "The target is illegal"
@@ -2182,9 +2215,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
           (Target.permanent oid) then
         illegal
       else
-        let g := g.logMsg s!"{o.name} is destroyed"
-        let (g, _) := g.move oid (.graveyard o.owner) none
-        g
+        g.destroyPermanent o
   | .plusOnePlusOneTrampleHexproof, some (Target.permanent oid) =>
     match g.findObject? oid with
     | none => g.logMsg "The target is no longer in play"
@@ -2210,6 +2241,21 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       else
         let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
         g.logMsg s!"{o.name} is dealt {n} damage"
+  | .dealDamageLoseIndestructibleExile n, some (Target.permanent oid) =>
+    match g.findObject? oid with
+    | none => g.logMsg "The target is no longer in play"
+    | some o =>
+      if !(g.legalTargets controller (.dealDamageLoseIndestructibleExile n)).contains
+          (Target.permanent oid) then
+        illegal
+      else
+        let g := g.setObject { o with
+          status := { o.status with
+            damage := o.status.damage + n
+            untilEotLosesIndestructible := true
+            untilEotExileIfDies := true } }
+        g.logMsg
+          s!"{o.name} is dealt {n} damage, loses indestructible until end of turn, and will be exiled if it would die this turn"
   | .creatureYouControlDealsPowerToOppCreature, _ =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
@@ -2337,9 +2383,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       if (g.legalAbilityTargets controller effect).contains t then
         match t with
         | Target.permanent oid =>
-          let o := g.object! oid
-          let (g, _) := g.move oid (.graveyard o.owner) none
-          g.logMsg s!"{o.name} is destroyed"
+          g.destroyPermanent (g.object! oid)
         | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
@@ -3038,12 +3082,14 @@ def clearEOT (g : Game) : Game :=
       if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
           o.status.untilEotTrample || o.status.untilEotHexproof ||
           o.status.untilEotCantBeBlocked ||
+          o.status.untilEotLosesIndestructible || o.status.untilEotExileIfDies ||
           o.status.setBasePower.isSome || o.status.setBaseToughness.isSome then
         g := g.setObject { o with
           status := { o.status with
             damage := 0, pumpPower := 0, pumpToughness := 0
             untilEotTrample := false, untilEotHexproof := false
             untilEotCantBeBlocked := false
+            untilEotLosesIndestructible := false, untilEotExileIfDies := false
             setBasePower := none, setBaseToughness := none } }
     return g
 
