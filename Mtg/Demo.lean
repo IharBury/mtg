@@ -144,6 +144,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
+  discard <id>         Discard a card; if you do, draw (CR 701.9)
+  decline              Decline an optional discard
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -165,6 +167,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
+#guard ((helpInteractive false).splitOn "discard <id>").length > 1
+#guard ((helpInteractive false).splitOn "decline").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 
@@ -1146,6 +1150,71 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     | .error _ => false
   | none => false
 
+def discardUsage : String := "usage: discard <id>"
+
+/-- Discard the named card from hand for a pending “may discard, then draw”. -/
+def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw discardUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.discard id)
+  | _ => throw discardUsage
+
+def declineUsage : String := "usage: decline"
+
+/-- Decline an optional discard. -/
+def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [] => g.apply p .decline
+  | _ => throw declineUsage
+
+#guard
+  match applyDiscard Tests.spearMayDiscard ⟨0⟩ [] with
+  | .error msg => msg == discardUsage
+  | .ok _ => false
+
+#guard
+  match applyDiscard Tests.spearMayDiscard ⟨0⟩ ["nope"] with
+  | .error msg => msg == discardUsage
+  | .ok _ => false
+
+#guard
+  match applyDiscard Tests.spearMayDiscard ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == discardUsage
+  | .ok _ => false
+
+#guard
+  match applyDiscard Tests.spearMayDiscard ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  let g := Tests.spearKnownMayDiscard
+  let forest := Tests.handCardNamed g ⟨0⟩ "Forest"
+  match applyDiscard g ⟨0⟩ [toString forest.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "discards Forest")
+  | .error _ => false
+
+#guard
+  match applyDecline Tests.spearMayDiscard ⟨0⟩ ["extra"] with
+  | .error msg => msg == declineUsage
+  | .ok _ => false
+
+#guard
+  match applyDecline Tests.spearMayDiscard ⟨0⟩ [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "declines to discard")
+  | .error _ => false
+
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
 handled by the console loop. Actions are issued as `p`. -/
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
@@ -1170,6 +1239,8 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
+  | "discard" => applyDiscard g p args
+  | "decline" => applyDecline g p args
   | _ => .error s!"Unknown command: {cmd}"
 
 /-- Issue a console command as the player who currently must act. -/
@@ -1222,6 +1293,20 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 #guard
   match applyInteractiveAsActor Tests.giftScrying "scry" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.spearMayDiscard "decline" [] with
+  | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  let g := Tests.spearKnownMayDiscard
+  let forest := Tests.handCardNamed g ⟨0⟩ "Forest"
+  match applyInteractiveAsActor g "discard" [toString forest.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "discards Forest")
   | .error _ => false
 
 #guard

@@ -6,10 +6,11 @@ import Mtg.Engine.Card
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
-activated abilities such as Wayfarer's Bauble, Snowslope Hunter, and Goblin
-Cratermaker, static abilities that grant trample or pump an enchanted creature,
-attack triggers that pump, becomes-blocked triggers that damage blockers, enters
-triggers that scry, Aura attachment, modal spells, destroy, +1/+1 counters,
+activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
+Cratermaker, and Equip, static abilities that grant trample or pump an enchanted
+or equipped creature, attack triggers that pump, becomes-blocked triggers that
+damage blockers, enters triggers that scry or may discard to draw, Aura and
+Equipment attachment, modal spells, destroy, +1/+1 counters,
 until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
@@ -629,6 +630,13 @@ def raggedShortSpear : CardDef := {
   types := #[.artifact]
   subtypes := #["Equipment"]
   oracleText := "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
+  staticAbilities := #[.equippedCreatureGets 2 0]
+  triggeredAbilities := #[.onEnterMayDiscardDraw 2]
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGeneric 3 }
+    effect := .attachToTargetCreatureYouControl
+    onlyAsSorcery := true
+  }]
 }
 
 def smiteTheDeathless : CardDef := {
@@ -930,6 +938,16 @@ def attercop : CardDef := {
 #guard giftOfStrands.requiresTarget
 #guard giftOfStrands.staticAbilities == #[.enchantedCreatureGets 3 3]
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
+#guard raggedShortSpear.isEquipment
+#guard !raggedShortSpear.isAura
+#guard !raggedShortSpear.requiresTarget
+#guard raggedShortSpear.staticAbilities == #[.equippedCreatureGets 2 0]
+#guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
+#guard raggedShortSpear.activatedAbilities.size == 1
+#guard raggedShortSpear.activatedAbilities[0]!.onlyAsSorcery
+#guard raggedShortSpear.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
+#guard raggedShortSpear.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 3
+#guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard goblinCratermaker.activatedAbilities.size == 1

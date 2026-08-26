@@ -14,9 +14,10 @@ ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), including choosing modes of modal spells
 and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c) and activating
 mana abilities while paying (CR 601.2g), activating non-mana abilities of
-permanents (CR 602), including destroying permanents (CR 701.7), static
-abilities that grant trample or pump an enchanted creature (CR 604), Aura
-spells (CR 303.4), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
+permanents (CR 602), including destroying permanents (CR 701.7) and equip
+(CR 702.6), static abilities that grant trample or pump an enchanted or
+equipped creature (CR 604), Aura spells (CR 303.4), Equipment (CR 301.5),
+flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20), discard (CR 701.9),
 destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn keyword grants,
 attack triggers (CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603),
 enters triggers (CR 603.6a), combat (CR 506–510, including combat damage
@@ -81,7 +82,7 @@ structure GameObject where
   sourceId : Option ObjectId := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
-  /-- Object this Aura is attached to (CR 303.4). -/
+  /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
   attachedTo : Option ObjectId := none
 deriving Repr, Inhabited
 
@@ -180,6 +181,8 @@ inductive Pending where
   | putOnBottom (player : PlayerId) (count : Nat)
   /-- This player is looking at the top `count` cards of their library (CR 701.20). -/
   | scry (player : PlayerId) (count : Nat)
+  /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
+  | mayDiscardDraw (player : PlayerId) (drawCount : Nat)
   /-- The player announces how attacking (`forAttackers`) or blocking creatures
   assign combat damage (CR 510.1c–d). -/
   | assignCombatDamage (player : PlayerId) (forAttackers : Bool)
@@ -256,6 +259,11 @@ inductive Action where
   /-- Finish scrying: `top` (last = new top) go on top of the library in that
   order; `bottom` (first = new bottom) go to the bottom (CR 701.20). -/
   | scry (top : Array ObjectId) (bottom : Array ObjectId)
+  /-- Discard this card from hand; if a pending “may discard, then draw” is
+  waiting, draw afterward (CR 701.9). -/
+  | discard (id : ObjectId)
+  /-- Decline an optional “you may discard a card” (CR 608.2d). -/
+  | decline
   | concede
 deriving Repr
 
@@ -366,8 +374,8 @@ def removeFromZoneList (g : Game) (id : ObjectId) (z : Zone) : Game :=
   | _ => g
 
 /-- Move an object to a new zone, assigning a new object identity (CR 400.7).
-Auras attached to a permanent that leaves the battlefield become unattached
-and remain on the battlefield (CR 400.7d). -/
+Auras and Equipment attached to a permanent that leaves the battlefield
+become unattached and remain on the battlefield (CR 701.3d). -/
 def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
   Id.run do
     let mut g := g
@@ -468,7 +476,7 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
     match ab with
     | .otherCreaturesHaveTrample subtypes =>
       subtypes.any target.hasSubtype
-    | .enchantedCreatureGets _ _ => false)
+    | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _ => false)
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
@@ -489,16 +497,16 @@ def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
     hexproof := g.hasHexproof o
     trample := g.hasTrample o }
 
-/-- Continuous +P/+T this Aura currently grants its host (CR 613.3c). -/
+/-- Continuous +P/+T this Aura or Equipment currently grants its host (CR 613.3c). -/
 def auraStatBonus (aura : GameObject) : Int × Int :=
   aura.printed.staticAbilities.foldl
     (fun acc ab =>
       match ab with
-      | .enchantedCreatureGets p t => (acc.1 + p, acc.2 + t)
+      | .enchantedCreatureGets p t | .equippedCreatureGets p t => (acc.1 + p, acc.2 + t)
       | .otherCreaturesHaveTrample _ => acc)
     (0, 0)
 
-/-- Static power/toughness from Auras attached to `o`. -/
+/-- Static power/toughness from Auras and Equipment attached to `o`. -/
 def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
   if !o.isOnBattlefield then (0, 0)
   else
@@ -510,11 +518,11 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
         else acc)
       (0, 0)
 
-/-- Current power, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+/-- Current power, including until-end-of-turn pumps and attached bonuses (CR 208.2). -/
 def power (g : Game) (o : GameObject) : Int :=
   o.power + (g.attachedStatBonus o).1
 
-/-- Current toughness, including until-end-of-turn pumps and Aura bonuses (CR 208.2). -/
+/-- Current toughness, including until-end-of-turn pumps and attached bonuses (CR 208.2). -/
 def toughness (g : Game) (o : GameObject) : Int :=
   o.toughness + (g.attachedStatBonus o).2
 
@@ -608,7 +616,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             -- Simplified: any damage from a deathtouch source is tracked as
             -- ordinary damage; full 704.5h tracking is future work.
             pure ()
-      -- Unattached or illegally attached Auras (CR 704.5n).
+      -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
           let legal :=
@@ -619,6 +627,17 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.logMsg s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
             let (g', _) := g.move o.id (.graveyard o.owner) none
             g := g'
+            changed := true
+      -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
+      for o in g.battlefield do
+        if o.printed.isEquipment then
+          let legal :=
+            match o.attachedTo.bind g.findObject? with
+            | some host => host.isOnBattlefield && host.printed.isCreature
+            | none => true
+          if !legal then
+            g := g.setObject { o with attachedTo := none }
+            g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
       let living := g.livingPlayers
       if living.size == 0 then
@@ -838,6 +857,8 @@ def legalAbilityTargets (g : Game) (p : PlayerId) : AbilityEffect → Array Targ
   | .destroyTargetColorlessNonland =>
     g.battlefield.filter (fun o => o.isColorlessNonland && g.canBeTargetedBy p o)
       |>.map (fun o => Target.permanent o.id)
+  | .attachToTargetCreatureYouControl =>
+    g.legalCreatureTargets p (fun o => o.controlledBy p)
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn => #[]
 
 /-- Legal targets for the object currently being announced (spell or ability). -/
@@ -853,7 +874,7 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 prefer the opponent; creature-damage abilities prefer an opposing creature;
 destroy-flying prefers an opponent's flyer; destroy-colorless prefers an opposing
-colorless nonland; pumps, the +1/+1-counter mode, and Auras prefer a creature
+colorless nonland; pumps, the +1/+1-counter mode, Equip, and Auras prefer a creature
 the caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
@@ -867,6 +888,9 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isColorlessNonland && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
+    | some .attachToTargetCreatureYouControl, _ =>
+      (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+        |>.map (fun c => Target.permanent c.id)
     | _, some (.dealDamage _) => some (Target.player (g.opponent p))
     | _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
@@ -1409,7 +1433,7 @@ def illegalAbilityTarget (g : Game) : Target → Game
     | none => g.logMsg "The target is no longer in play"
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
-    (targets : Array Target) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
   match effect with
   | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
   | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
@@ -1434,6 +1458,29 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         | Target.player _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
+  | .attachToTargetCreatureYouControl =>
+    match targets[0]? with
+    | none => g
+    | some t =>
+      if (g.legalAbilityTargets controller effect).contains t then
+        match t, sourceId.bind g.findObject? with
+        | Target.permanent hostId, some src =>
+          if !src.isOnBattlefield then
+            g.logMsg s!"{src.name} is no longer on the battlefield"
+          else
+            let host := g.object! hostId
+            if src.attachedTo == some host.id then
+              g.logMsg s!"{src.name} is already attached to {host.name}"
+            else
+              let (g, ts) := g.bumpTime
+              let src := g.object! src.id
+              let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
+              g.logMsg s!"{src.name} attaches to {host.name}"
+        | Target.permanent _, none =>
+          g.logMsg "The Equipment is no longer in play"
+        | Target.player _, _ => g.logMsg "The target is no longer legal"
+      else
+        g.illegalAbilityTarget t
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -1449,6 +1496,15 @@ def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
     { g with pending := .scry p count }.logMsg s!"{pl.name} scries {n}"
+
+/-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
+def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  let pl := g.player p
+  if pl.hand.isEmpty then
+    g.logMsg s!"{pl.name} has no card to discard"
+  else
+    { g with pending := .mayDiscardDraw p n }.logMsg
+      s!"{pl.name} may discard a card. If they do, they draw {n}"
 
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -1486,6 +1542,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg "The triggered ability's source is no longer in play"
   | .onEnterScry n =>
     g.beginScry controller n
+  | .onEnterMayDiscardDraw n =>
+    g.beginMayDiscardDraw controller n
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
@@ -1586,7 +1644,7 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := g.applyAbilityEffect entry.controller e entry.targets
+        let g := g.applyAbilityEffect entry.controller e entry.targets obj.sourceId
         -- CR 608.2m: after resolution the ability ceases to exist.
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else if let some t := obj.triggeredAbility then
@@ -2234,6 +2292,35 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to scry (CR 701.20)"
 
+/-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
+draw that many cards (CR 701.9). -/
+def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .mayDiscardDraw q n =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may discard"
+    let pl := g.player p
+    if !pl.hand.contains id then
+      throw "That card is not in your hand"
+    let some card := g.findObject? id | throw "no such object"
+    let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
+    let (g, _) := g.move id (.graveyard card.owner) none
+    let g := g.draw p n
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to discard a card (CR 701.9)"
+
+/-- Decline an optional discard (CR 608.2d). -/
+def declineDiscard (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .mayDiscardDraw q _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to discard"
+    let g := g.logMsg s!"{(g.player p).name} declines to discard a card"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to decline a discard"
+
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .declareMulligan q =>
@@ -2315,6 +2402,8 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
+  | .discard id => g.discardForDraw p id
+  | .decline => g.declineDiscard p
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -2334,6 +2423,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
     | .scry p _ => some p
+    | .mayDiscardDraw p _ => some p
     | .assignCombatDamage p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
