@@ -1,0 +1,20 @@
+# Depot CI Migration
+# Source: .github/workflows/lean_action_ci.yml
+#
+# Changes made:
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+name: Lean Action CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: leanprover/lean-action@v1
+        with:
+          # Fail if Lean or Lake logs any warning (e.g. deprecations).
+          build-args: "--wfail"
