@@ -299,6 +299,11 @@ def uncontrolledPermanent : Game :=
 #guard beornsHospitality.activatedAbilities.size == 1
 #guard mentions mirkwoodPathmaker.summary "lands you control"
 #guard mirkwoodPathmaker.staticAbilities.size == 1
+#guard mentions gandalfSparkStarter.summary "reach"
+#guard mentions gandalfSparkStarter.summary "divided as you choose"
+#guard gandalfSparkStarter.keywords.reach
+#guard gandalfSparkStarter.triggeredAbilities.size == 1
+#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -389,6 +394,17 @@ def uncontrolledPermanent : Game :=
     staticAbilities := #[.powerToughnessEqualLandsYouControl]
   }
   mentions c.abilitiesText "lands you control"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Spark"
+    types := #[.creature]
+    keywords := { Keywords.none with reach := true }
+    triggeredAbilities := #[.onEnterDealDividedDamage 3 3]
+  }
+  mentions c.abilitiesText "divided as you choose" &&
+    mentions c.abilitiesText "one, two, or three" &&
+    mentions c.summary "reach"
 
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
@@ -3406,6 +3422,249 @@ def hospitalityEnteredThisTurn : Game :=
   match Agent.choose hospitalityAnimateSetup ⟨0⟩ with
   | some (.activate id 0) =>
     (hospitalityAnimateSetup.object! id).name == "Beorn's Hospitality"
+  | _ => false
+
+/- Gandalf, Spark Starter: reach and divided-damage enters trigger (CR 601.2d). -/
+
+/-- A flying attacker can be blocked by Gandalf (reach) but not by a Gray Ogre. -/
+def flyerVsGandalf : Game :=
+  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent g gandalfSparkStarter ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let smaug := namedPermanent g "Smaug, the Great Calamity"
+  g.setObject { smaug with status := { smaug.status with attacking := true } }
+
+#guard flyerVsGandalf.canBlock
+  (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")
+  (namedPermanent flyerVsGandalf "Smaug, the Great Calamity")
+#guard !flyerVsGandalf.canBlock
+  (namedPermanent flyerVsGandalf "Gray Ogre")
+  (namedPermanent flyerVsGandalf "Smaug, the Great Calamity")
+
+/-- Gandalf in hand with enough mana to cast him. -/
+def gandalfSetup : Game :=
+  withRedMana (addToHand afterDraw gandalfSparkStarter ⟨0⟩) ⟨0⟩ 6
+
+#guard gandalfSetup.canCast ⟨0⟩ (handCardNamed gandalfSetup ⟨0⟩ "Gandalf, Spark Starter")
+#guard gandalfSetup.asSorcery? ⟨0⟩
+#guard gandalfSparkStarter.hasSorcerySpeed
+
+def proposedGandalf : Game :=
+  mustApply gandalfSetup ⟨0⟩ (.cast (handCardNamed gandalfSetup ⟨0⟩ "Gandalf, Spark Starter").id)
+
+#guard proposedGandalf.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGandalf.log.any (fun s => mentions s "begins casting Gandalf, Spark Starter")
+
+def paidGandalf : Game := mustApply proposedGandalf ⟨0⟩ .pay
+
+#guard paidGandalf.stack.size == 1
+#guard paidGandalf.hasPriority ⟨0⟩
+#guard paidGandalf.log.any (fun s => mentions s "casts Gandalf, Spark Starter")
+
+/-- The creature enters; the divided-damage trigger waits for a division (CR 601.2d). -/
+def gandalfEntered : Game := passBoth paidGandalf
+
+#guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.power == some 4
+#guard gandalfEntered.power (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 4
+#guard gandalfEntered.toughness (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 3
+#guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.keywords.reach
+#guard gandalfEntered.stack.size == 1
+#guard (gandalfEntered.object! gandalfEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterDealDividedDamage 3 3)
+#guard (gandalfEntered.object! gandalfEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent gandalfEntered "Gandalf, Spark Starter").id
+#guard gandalfEntered.stack.back!.targets.isEmpty
+#guard gandalfEntered.stack.back!.dividedDamage.isEmpty
+#guard gandalfEntered.pending == .chooseTargets ⟨0⟩
+#guard gandalfEntered.actor == some ⟨0⟩
+#guard !gandalfEntered.hasPriority ⟨0⟩
+#guard gandalfEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard gandalfEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+#guard gandalfEntered.log.any (fun s => mentions s "must divide 3 damage")
+#guard gandalfEntered.announcingDividedDamage
+
+-- The heuristic puts all 3 damage on the opponent.
+#guard
+  match Agent.choose gandalfEntered ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+-- A player is a legal target; hexproof does not apply to players.
+#guard (gandalfEntered.legalProposedTargets ⟨0⟩
+  (gandalfEntered.object! gandalfEntered.stack.back!.objectId)).contains
+  (Target.player ⟨1⟩)
+
+-- `target` without an amount assigns all remaining damage (CR 601.2d).
+def gandalfTargetedOpponent : Game :=
+  mustApply gandalfEntered ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard gandalfTargetedOpponent.pending == .none
+#guard gandalfTargetedOpponent.hasPriority ⟨0⟩
+#guard gandalfTargetedOpponent.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard gandalfTargetedOpponent.stack.back!.dividedDamage == #[3]
+#guard gandalfTargetedOpponent.log.any (fun s =>
+  mentions s "chooses Nissa to be dealt 3 damage (CR 601.2d)")
+
+def gandalfResolvedOpponent : Game := passBoth gandalfTargetedOpponent
+
+#guard gandalfResolvedOpponent.stack.isEmpty
+#guard (gandalfResolvedOpponent.player ⟨1⟩).life == 17
+#guard (gandalfResolvedOpponent.player ⟨0⟩).life == 20
+#guard gandalfResolvedOpponent.log.any (fun s => mentions s "Nissa is dealt 3 damage")
+#guard gandalfResolvedOpponent.battlefield.any (fun o => o.name == "Gandalf, Spark Starter")
+
+-- Zero damage to a target is illegal.
+#guard
+  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 0) with
+  | .error msg => mentions msg "at least 1 damage"
+  | .ok _ => false
+
+-- More than the remaining damage is illegal.
+#guard
+  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 4) with
+  | .error msg => mentions msg "remains to divide"
+  | .ok _ => false
+
+-- `divideDamage` is not used for ordinary targeted spells.
+#guard
+  match proposedBolt.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 3) with
+  | .error msg => mentions msg "does not divide damage"
+  | .ok _ => false
+
+/-- An opposing 2/2 is in play so damage can be split. -/
+def gandalfSplitSetup : Game :=
+  addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
+
+#guard
+  match gandalfSplitSetup.apply ⟨0⟩
+      (.divideDamage (Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id) 2) with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+      g'.stack.back!.targets.size == 1 &&
+      g'.stack.back!.dividedDamage == #[2] &&
+      g'.announcingDividedDamage
+  | .error _ => false
+
+-- Duplicate targets are illegal (CR 115.3).
+#guard
+  let g := mustApply gandalfSplitSetup ⟨0⟩
+    (.divideDamage (Target.player ⟨1⟩) 2)
+  match g.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- Leaving leftover damage on the last of three target slots is illegal.
+#guard
+  let g := mustApply gandalfSplitSetup ⟨0⟩
+    (.divideDamage (Target.player ⟨0⟩) 1)
+  let g := mustApply g ⟨0⟩
+    (.divideDamage (Target.player ⟨1⟩) 1)
+  -- two targets announced, 1 damage left, one slot left: assigning 0 already rejected;
+  -- assigning 1 completes. Using a third target is fine; the illegal case is
+  -- choosing a 1-damage assignment that wouldn't fill when already at max.
+  -- With maxTargets 3 and 1 remaining after two 1s, leftover after a third 1 is 0.
+  g.pending == .chooseTargets ⟨0⟩ && g.stack.back!.dividedDamage == #[1, 1]
+
+def gandalfSplitAnnounced : Game :=
+  let g := mustApply gandalfSplitSetup ⟨0⟩
+    (.divideDamage (Target.player ⟨1⟩) 2)
+  mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id) 1)
+
+#guard gandalfSplitAnnounced.pending == .none
+#guard gandalfSplitAnnounced.hasPriority ⟨0⟩
+#guard gandalfSplitAnnounced.stack.back!.targets.size == 2
+#guard gandalfSplitAnnounced.stack.back!.dividedDamage == #[2, 1]
+#guard gandalfSplitAnnounced.log.any (fun s =>
+  mentions s "chooses Nissa to be dealt 2 damage")
+#guard gandalfSplitAnnounced.log.any (fun s =>
+  mentions s "chooses Grizzly Bears to be dealt 1 damage")
+
+def gandalfSplitResolved : Game := passBoth gandalfSplitAnnounced
+
+#guard gandalfSplitResolved.stack.isEmpty
+#guard (gandalfSplitResolved.player ⟨1⟩).life == 18
+#guard (namedPermanent gandalfSplitResolved "Grizzly Bears").status.damage == 1
+#guard gandalfSplitResolved.log.any (fun s => mentions s "Nissa is dealt 2 damage")
+#guard gandalfSplitResolved.log.any (fun s => mentions s "Grizzly Bears is dealt 1 damage")
+
+/-- Three targets, 1 damage each. -/
+def gandalfThreeAnnounced : Game :=
+  let g := addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1)
+  let g := mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
+  mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent g "Gray Ogre").id) 1)
+
+#guard gandalfThreeAnnounced.stack.back!.dividedDamage == #[1, 1, 1]
+#guard gandalfThreeAnnounced.pending == .none
+
+def gandalfThreeResolved : Game := passBoth gandalfThreeAnnounced
+
+#guard (gandalfThreeResolved.player ⟨1⟩).life == 19
+#guard (namedPermanent gandalfThreeResolved "Grizzly Bears").status.damage == 1
+#guard (namedPermanent gandalfThreeResolved "Gray Ogre").status.damage == 1
+
+-- A fourth target is illegal once three have been chosen; leftover must be assigned
+-- before filling the last slot. With 1+1 already, a 1 to a third target completes.
+#guard
+  let g := addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1)
+  let g := mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
+  let g := mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent g "Raging Goblin").id) 1)
+  match g.apply ⟨0⟩
+      (.divideDamage (Target.permanent (namedPermanent g "Gray Ogre").id) 1) with
+  | .error msg => mentions msg "Not time to choose targets"
+  | .ok _ => false
+
+/-- If a targeted creature leaves before resolution, that portion is skipped. -/
+def gandalfTargetGone : Game :=
+  let id := (namedPermanent gandalfSplitAnnounced "Grizzly Bears").id
+  let (g, _) := gandalfSplitAnnounced.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard (gandalfTargetGone.player ⟨1⟩).life == 18
+#guard gandalfTargetGone.log.any (fun s => mentions s "Nissa is dealt 2 damage")
+#guard gandalfTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(gandalfTargetGone.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- The trigger still deals damage if Gandalf has left (CR 113.7a). -/
+def gandalfLeftBeforeTrigger : Game :=
+  let id := (namedPermanent gandalfTargetedOpponent "Gandalf, Spark Starter").id
+  let (g, _) := gandalfTargetedOpponent.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (gandalfLeftBeforeTrigger.player ⟨1⟩).life == 17
+#guard !(gandalfLeftBeforeTrigger.battlefield.any (fun o =>
+  o.name == "Gandalf, Spark Starter"))
+#guard (gandalfLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (gandalfLeftBeforeTrigger.object! id).name == "Gandalf, Spark Starter")
+
+-- Hexproof makes an opposing creature an illegal target (CR 702.11b).
+#guard
+  let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let o := namedPermanent g "Velvetwing Butterflies"
+  let g := g.setObject { o with
+    status := { o.status with untilEotHexproof := true } }
+  match g.apply ⟨0⟩
+      (.divideDamage (Target.permanent (namedPermanent g "Velvetwing Butterflies").id) 3) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+/-- The agent casts Gandalf when that is the playable spell. -/
+def agentGandalfOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g gandalfSparkStarter ⟨0⟩) ⟨0⟩ 6
+
+#guard
+  match Agent.choose agentGandalfOnly ⟨0⟩ with
+  | some (.cast id) => (agentGandalfOnly.object! id).name == "Gandalf, Spark Starter"
   | _ => false
 
 end Mtg.Engine.Tests

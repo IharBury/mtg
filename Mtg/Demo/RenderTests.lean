@@ -596,4 +596,18 @@ def mountainLine (g : Game) : String :=
   let o := namedPermanent g "Mirkwood Pathmaker"
   mentions (objectLine g o) "2/2"
 
+#guard mentions (header gandalfEntered) "choose targets (CR 601.2c"
+#guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
+#guard mentions (stackBlock gandalfEntered) "divided as you choose"
+#guard mentions (stackBlock gandalfEntered) "When Gandalf enters"
+#guard !mentions (stackBlock gandalfEntered) "When this permanent enters"
+#guard
+  let g := gandalfEntered
+  let src := namedPermanent g "Gandalf, Spark Starter"
+  mentions (stackBlock g) s!"*source {src.id} Gandalf, Spark Starter*" &&
+    mentions (objectLine g src) "reach" &&
+    mentions (objectLine g src) "4/3"
+#guard mentions (objectLine flyerVsGandalf
+  (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")) "reach"
+
 end Mtg.Demo.RenderTests

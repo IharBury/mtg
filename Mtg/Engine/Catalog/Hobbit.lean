@@ -9,9 +9,9 @@ The Hobbit Welcome Decks. The engine models a subset of rules text
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, and Equip, static abilities that grant trample or pump an enchanted
 or equipped creature, attack triggers that pump, becomes-blocked triggers that
-damage blockers, enters triggers that scry or may discard to draw, Aura and
-Equipment attachment, modal spells, destroy, +1/+1 counters,
-until-end-of-turn keyword grants, and a few one-shot spell effects);
+damage blockers, enters triggers that scry, may discard to draw, or deal damage
+divided among targets, Aura and Equipment attachment, modal spells, destroy, +1/+1
+counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -622,6 +622,7 @@ def gandalfSparkStarter : CardDef := {
   power := some 4
   toughness := some 3
   keywords := { Keywords.none with reach := true }
+  triggeredAbilities := #[.onEnterDealDividedDamage 3 3]
 }
 
 def raggedShortSpear : CardDef := {
@@ -989,5 +990,9 @@ def attercop : CardDef := {
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
+#guard gandalfSparkStarter.keywords.reach
+#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
+#guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1
+#guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
 
 end Mtg.Engine.Catalog

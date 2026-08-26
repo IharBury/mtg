@@ -227,7 +227,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
-  target <id|name|opponent>  Announce a target (CR 601.2c)
+  target <id|name|opponent> [n] ...  Announce a target (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
@@ -253,6 +253,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
 #guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
+#guard ((helpInteractive false).splitOn "CR 601.2d").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
@@ -1041,6 +1042,7 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error _ => false
 
 def targetUsage : String := "usage: target <id|name|opponent>"
+def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."
 
 /-- Parse a CR 601.2c target: a permanent id, a player name, or `opponent`. -/
 def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target := do
@@ -1058,14 +1060,39 @@ def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Targe
       | some _ => return Target.permanent id
     | none => throw targetUsage
 
-/-- Announce the chosen target for a proposed spell (CR 601.2c). -/
+/-- Parse target/amount pairs for a divided-damage announcement (CR 601.2d). -/
+def parseTargetAmountPairs (g : Game) (p : PlayerId) (tokens : List String) :
+    Except String (Array (Target × Nat)) :=
+  go tokens #[]
+where
+  go : List String → Array (Target × Nat) → Except String (Array (Target × Nat))
+    | [], acc => if acc.isEmpty then .error divideTargetUsage else .ok acc
+    | t :: n :: rest, acc =>
+      match n.toNat? with
+      | none => .error divideTargetUsage
+      | some amt => do
+        let tgt ← parseTarget g p t
+        go rest (acc.push (tgt, amt))
+    | _ :: [], _ => .error divideTargetUsage
+
+/-- Announce the chosen target for a proposed spell, or divide damage among
+targets of a triggered ability (CR 601.2c / 601.2d). -/
 def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    let t ← parseTarget g p arg
-    g.apply p (.target t)
-  | _ => throw targetUsage
+  if g.announcingDividedDamage then
+    match tokens with
+    | [arg] =>
+      let t ← parseTarget g p arg
+      g.apply p (.target t)
+    | _ =>
+      let pairs ← parseTargetAmountPairs g p tokens
+      pairs.foldlM (fun acc (t, n) => acc.apply p (.divideDamage t n)) g
+  else
+    match tokens with
+    | [arg] =>
+      let t ← parseTarget g p arg
+      g.apply p (.target t)
+    | _ => throw targetUsage
 
 #guard
   match applyTarget Tests.proposedBolt ⟨0⟩ [] with
@@ -1112,6 +1139,41 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g''.pending == .activateManaAbilities ⟨0⟩ &&
       g''.stack.back!.targets == #[Target.permanent tid]
     | .error _ => false
+
+#guard
+  match applyTarget Tests.gandalfEntered ⟨0⟩ [] with
+  | .error msg => msg == divideTargetUsage
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.targets == #[Target.player ⟨1⟩] &&
+    g'.stack.back!.dividedDamage == #[3] &&
+    g'.log.any (fun s => Tests.mentions s "chooses Nissa to be dealt 3 damage")
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.gandalfSplitSetup ⟨0⟩
+      ["opponent", "2", toString (Tests.namedPermanent Tests.gandalfSplitSetup "Grizzly Bears").id, "1"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.dividedDamage == #[2, 1] &&
+    (g'.player ⟨1⟩).life == 20
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent", "2"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.dividedDamage == #[2]
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent", "x"] with
+  | .error msg => msg == divideTargetUsage
+  | .ok _ => false
 
 #guard
   match applyMode Tests.proposedWarg ⟨0⟩ [] with
@@ -1389,6 +1451,13 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
     g'.hasPriority ⟨0⟩ &&
     g'.stack.back!.targets ==
       #[Target.permanent (Tests.namedPermanent g' "Grizzly Bears").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gandalfEntered "target" ["opponent"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.dividedDamage == #[3]
   | .error _ => false
 
 #guard
