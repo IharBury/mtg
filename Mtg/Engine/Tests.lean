@@ -1987,7 +1987,7 @@ def guideSetup : Game :=
 #guard !galadhrimGuide.keywords.flash
 #guard galadhrimGuide.hasSorcerySpeed
 
-/-- A creature without flash cannot be cast when it is not a main phase. -/
+-- A creature without flash cannot be cast when it is not a main phase.
 #guard
   let g := applyIdle (passBoth (skipTo afterDraw .end 80))
   let g := withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
