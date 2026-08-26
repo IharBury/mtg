@@ -153,6 +153,12 @@ def printChangedMana (before after : Game) : IO Unit := do
   for pl in changedManaPools before after do
     IO.println s!"  {manaLine pl}"
 
+/-- Print the locked-in cost while it still needs to be paid (CR 601.2h). -/
+def printPendingCost (g : Game) : IO Unit := do
+  match pendingCostLine g with
+  | some line => IO.println s!"  {line}"
+  | none => pure ()
+
 def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
   IO.println (snapshot g viewer)
@@ -200,6 +206,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
       printChangedZones g g'
       printChangedLife g g'
       printChangedMana g g'
+      printPendingCost g'
       g := g'
   printState g
   match g.result with
@@ -1653,6 +1660,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printChangedZones g g' (chandraView playerView)
           printChangedLife g g'
           printChangedMana g g'
+          printPendingCost g'
           g := g'
     if g.over then break
     if controlAll && g.actor != lastActor then
@@ -1713,6 +1721,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         printChangedZones g g' (currentView g' playerView controlAll)
         printChangedLife g g'
         printChangedMana g g'
+        printPendingCost g'
         g := g'
         if g.over then
           printState g (currentView g playerView controlAll)

@@ -266,6 +266,34 @@ def stackBlock (g : Game) : String :=
       | none => "  (missing)")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
+/-- Locked-in total cost of a proposed spell or ability (CR 601.2f / 602.2b). -/
+def proposedCostNotation (prop : ProposedSpell) : String :=
+  ActivationCost.toNotation {
+    mana := prop.cost
+    tap := prop.tapSource
+    sacrificeSource := prop.sacrificeSource
+    sacrificeAnotherCreatureOrArtifact := prop.needsSacrificeOther
+  }
+
+/-- Cost notation while the player may still pay (CR 601.2g / 602.2b). -/
+def pendingCostNotation (g : Game) : Option String :=
+  match g.pending with
+  | .activateManaAbilities _ =>
+    match g.proposedSpell with
+    | some prop =>
+      let cost := proposedCostNotation prop
+      if cost.isEmpty then none else some cost
+    | none => none
+  | _ => none
+
+/-- Board line for a cost that still needs to be paid. -/
+def pendingCostLine (g : Game) : Option String :=
+  pendingCostNotation g |>.map (fun cost => s!"Cost: {cost}")
+
+/-- Snapshot section for a cost that still needs to be paid. -/
+def costBlock (g : Game) : Option String :=
+  pendingCostLine g
+
 def header (g : Game) (viewer : Option PlayerId := none) : String :=
   let viewTag :=
     match viewer with
@@ -276,7 +304,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .none => ""
     | .declareAttackers => " [declare attackers]"
     | .declareBlockers => " [declare blockers]"
-    | .activateManaAbilities _ => " [activate mana abilities (CR 601.2g)]"
+    | .activateManaAbilities _ =>
+      match pendingCostNotation g with
+      | some cost => s!" [activate mana abilities (CR 601.2g); cost {cost}]"
+      | none => " [activate mana abilities (CR 601.2g)]"
     | .chooseMode p =>
       s!" [choose a mode (CR 601.2b, {g.player p |>.name})]"
     | .chooseTargets p =>
@@ -319,7 +350,12 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
           | none => ""
         s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
-  String.intercalate "\n\n" (header g viewer :: stackBlock g :: players ++ exileBlock)
+  let cost :=
+    match costBlock g with
+    | some line => [line]
+    | none => []
+  String.intercalate "\n\n"
+    (header g viewer :: cost ++ [stackBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
 (CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
