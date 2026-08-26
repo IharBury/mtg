@@ -1521,6 +1521,28 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.titanEntered "target" ["opponent"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.dividedDamage == #[3]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.titanAttackDeclared "target" ["opponent"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.dividedDamage == #[3]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.titanPumpReady "activate"
+      [toString (Tests.titanSource Tests.titanPumpReady).id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Inferno Titan")
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.galionAttackDeclared "target"
       [toString (Tests.namedPermanent Tests.galionAttackDeclared "Llanowar Elves").id] with
   | .ok g' =>

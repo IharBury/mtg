@@ -7,12 +7,13 @@ Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, and Equip, static abilities that grant trample, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
-power and toughness, or give another creature +2/+0 and trample, becomes-blocked triggers that
+power and toughness, give another creature +2/+0 and trample, or deal damage
+divided among targets, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
-divided among targets, Aura and Equipment attachment, adventurer cards
+divided among targets (including whenever the creature enters or attacks), Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
@@ -710,6 +711,11 @@ def infernoTitan : CardDef := {
   oracleText := "{R}: This creature gets +1/+0 until end of turn.\nWhenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets."
   power := some 6
   toughness := some 6
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofColor .red }
+    effect := .sourceGets 1 0
+  }]
+  triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3]
 }
 
 def guttersnipe : CardDef := {
@@ -1034,6 +1040,14 @@ def attercop : CardDef := {
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
 #guard (goblinFireleaper.summary.splitOn "+1/+0").length > 1
 #guard (goblinFireleaper.summary.splitOn "dies").length > 1
+#guard infernoTitan.activatedAbilities.size == 1
+#guard infernoTitan.activatedAbilities[0]!.effect == .sourceGets 1 0
+#guard infernoTitan.activatedAbilities[0]!.cost.mana == ManaCost.ofColor .red
+#guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
+#guard infernoTitan.power == some 6
+#guard infernoTitan.toughness == some 6
+#guard (infernoTitan.summary.splitOn "+1/+0").length > 1
+#guard (infernoTitan.summary.splitOn "divided as you choose").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)

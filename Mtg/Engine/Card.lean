@@ -273,12 +273,21 @@ inductive TriggeredAbility where
   /-- When this permanent enters, it deals `amount` damage divided as you
   choose among one to `maxTargets` targets (e.g. Gandalf, Spark Starter). -/
   | onEnterDealDividedDamage (amount maxTargets : Nat)
+  /-- Whenever this creature enters or attacks, it deals `amount` damage divided
+  as you choose among one to `maxTargets` targets (e.g. Inferno Titan). -/
+  | onEnterOrAttackDealDividedDamage (amount maxTargets : Nat)
   /-- When this creature dies, it deals damage equal to its power to target
   creature an opponent controls (e.g. Goblin Fireleaper). -/
   | onDiesDealDamageEqualToPowerToOppCreature
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
+
+/-- English for “divided as you choose among …” (CR 601.2d). -/
+def dividedAmong (maxTargets : Nat) : String :=
+  if maxTargets == 3 then "one, two, or three targets"
+  else if maxTargets == 1 then "one target"
+  else s!"up to {maxTargets} targets"
 
 def toNotation : TriggeredAbility → String
   | .onAttackPumpByGreatestPower =>
@@ -297,18 +306,17 @@ def toNotation : TriggeredAbility → String
   | .onLandYouControlEntersPlusOnePlusOne =>
     "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
   | .onEnterDealDividedDamage amount maxTargets =>
-    let among :=
-      if maxTargets == 3 then "one, two, or three targets"
-      else if maxTargets == 1 then "one target"
-      else s!"up to {maxTargets} targets"
-    s!"When this permanent enters, it deals {amount} damage divided as you choose among {among}."
+    s!"When this permanent enters, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
+  | .onEnterOrAttackDealDividedDamage amount maxTargets =>
+    s!"Whenever this creature enters or attacks, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
 def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
-  | .onEnterDealDividedDamage amount maxTargets => some (amount, maxTargets)
+  | .onEnterDealDividedDamage amount maxTargets
+  | .onEnterOrAttackDealDividedDamage amount maxTargets => some (amount, maxTargets)
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
@@ -317,7 +325,7 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample => true
+  | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature => false
@@ -327,11 +335,13 @@ def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onEnterScry _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
-  | .onEnterScry _ | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _ => true
+  | .onEnterScry _ | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
+  | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature => false
@@ -343,7 +353,7 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
 def triggersWhenDying : TriggeredAbility → Bool
@@ -351,12 +361,13 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ => false
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ => false
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
+  | .onEnterOrAttackDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
@@ -369,7 +380,8 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature => false
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -622,9 +634,12 @@ instance : ToString CardDef where
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
+#guard TriggeredAbility.toNotation (.onEnterOrAttackDealDividedDamage 3 3) ==
+  "Whenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation .onDiesDealDamageEqualToPowerToOppCreature ==
   "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
+#guard TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
@@ -632,10 +647,13 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
+#guard TriggeredAbility.triggersWhenAttacking (.onEnterOrAttackDealDividedDamage 3 3)
+#guard !TriggeredAbility.triggersWhenAttacking (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterMayDiscardDraw 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDealDividedDamage 3 3)
+#guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
 #guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
 #guard
   let ab : ActivatedAbility := {
@@ -649,6 +667,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
+#guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onDiesDealDamageEqualToPowerToOppCreature
 #guard TriggeredAbility.requiresTarget .onAttackSetOtherBasePT
 #guard TriggeredAbility.requiresTarget .onAttackOtherGets2AndTrample
