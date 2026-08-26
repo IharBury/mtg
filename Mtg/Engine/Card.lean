@@ -214,6 +214,10 @@ inductive StaticAbility where
   /-- This creature's power and toughness are each equal to the number of lands
   you control (e.g. Mirkwood Pathmaker, animated Beorn's Hospitality). -/
   | powerToughnessEqualLandsYouControl
+  /-- This creature can't block unless its controller controls a permanent with
+  any of these subtypes (e.g. Olog-hai Crusher). An empty list means it can't
+  block at all. The restriction is checked when declaring blockers (CR 509.1b). -/
+  | cantBlockUnlessYouControl (subtypes : Array String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -232,6 +236,11 @@ def toNotation : StaticAbility → String
     s!"Equipped creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
   | .powerToughnessEqualLandsYouControl =>
     "This creature's power and toughness are each equal to the number of lands you control."
+  | .cantBlockUnlessYouControl subtypes =>
+    match subtypes.toList with
+    | [] => "This creature can't block."
+    | xs =>
+      s!"This creature can't block unless you control a {String.intercalate " or " xs}."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -584,6 +593,10 @@ instance : ToString CardDef where
   "Equipped creature gets +2/+0."
 #guard StaticAbility.toNotation .powerToughnessEqualLandsYouControl ==
   "This creature's power and toughness are each equal to the number of lands you control."
+#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
+  "This creature can't block unless you control a Goblin or Orc."
+#guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==
+  "This creature can't block."
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==

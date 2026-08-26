@@ -7,8 +7,9 @@ Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample or pump an enchanted
-or equipped creature, attack triggers that pump or set another creature's base
+Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample, pump an enchanted
+or equipped creature, or restrict blocking unless you control certain creature
+types, attack triggers that pump or set another creature's base
 power and toughness, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
 divided among targets, Aura and Equipment attachment, adventurer cards
@@ -620,6 +621,7 @@ def ologHaiCrusher : CardDef := {
   power := some 4
   toughness := some 4
   keywords := { Keywords.none with trample := true }
+  staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
 }
 
 def gandalfSparkStarter : CardDef := {
@@ -1010,6 +1012,10 @@ def attercop : CardDef := {
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
+#guard ologHaiCrusher.keywords.trample
+#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
+#guard (ologHaiCrusher.summary.splitOn "trample").length > 1
+#guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
 #guard gandalfSparkStarter.keywords.reach
 #guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1

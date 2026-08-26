@@ -89,7 +89,8 @@ The first slice of the engine models the two-player game:
   at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample, pump an enchanted or equipped creature,
-  or set power and toughness equal to the number of lands you control; attack
+  set power and toughness equal to the number of lands you control, or
+  restrict blocking unless you control a Goblin or Orc; attack
   triggers that pump power or set another creature's base power and toughness,
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including

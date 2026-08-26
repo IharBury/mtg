@@ -483,6 +483,33 @@ def applyBlock (g : Game) (p : PlayerId) (tokens : List String) : Except String 
   | .error msg => msg == "Not time to declare blockers"
   | .ok _ => false
 
+#guard
+  match blockAssignmentsForCommand Tests.ogreVsCrusherReadyToBlock [] with
+  | .ok asgn => asgn.isEmpty
+  | .error _ => false
+
+#guard
+  let g := Tests.ogreVsCrusherReadyToBlock
+  match applyBlock g ⟨1⟩ [
+      toString (Tests.namedPermanent g "Olog-hai Crusher").id,
+      toString (Tests.namedPermanent g "Gray Ogre").id] with
+  | .error msg => Tests.mentions msg "cannot block"
+  | .ok _ => false
+
+#guard
+  match applyBlock Tests.ogreVsCrusherReadyToBlock ⟨1⟩ [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking.isEmpty &&
+      !(Tests.namedPermanent g' "Gray Ogre").status.blocked
+  | .error _ => false
+
+#guard
+  match applyBlock Tests.ogreVsCrusherAndGoblinReadyToBlock ⟨1⟩ [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking ==
+      #[(Tests.namedPermanent g' "Gray Ogre").id]
+  | .error _ => false
+
 def assignUsage : String := "usage: assign [source target amount ...]"
 
 /-- Add `amt` from `src` to creature `tgt` in an accumulating assignment list. -/
@@ -1525,6 +1552,20 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   match applyInteractiveAsActor Tests.readyToDeclareBlockers "block" [] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
+      #[(Tests.namedPermanent g' "Gray Ogre").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.ogreVsCrusherReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking.isEmpty &&
+      !(Tests.namedPermanent g' "Gray Ogre").status.blocked
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.ogreVsCrusherAndGoblinReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking ==
       #[(Tests.namedPermanent g' "Gray Ogre").id]
   | .error _ => false
 
