@@ -20,6 +20,7 @@ damage blockers, dies triggers that deal last-known power, enters triggers that 
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
+landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
 plays this turn), modal spells, destroy, +1/+1
@@ -983,6 +984,7 @@ def attercop : CardDef := {
   power := some 2
   toughness := some 1
   keywords := { Keywords.none with reach := true, deathtouch := true }
+  triggeredAbilities := #[.onLandYouControlEntersGets1]
 }
 
 #guard bofurReliableGuardian.colors.isMonocolored
@@ -990,6 +992,9 @@ def attercop : CardDef := {
 #guard elvishMystic.tapAddMana == #[.colored .green]
 #guard (attercop.summary.splitOn "Landfall").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
+#guard attercop.keywords.reach
+#guard attercop.keywords.deathtouch
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.keywords.trample
