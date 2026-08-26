@@ -62,6 +62,9 @@ inductive SpellEffect where
   | dealDamageToCreature (amount : Nat)
   /-- You may play an additional land this turn (e.g. Till and Tend). -/
   | playAdditionalLandThisTurn
+  /-- Destroy target artifact or land. Creatures without flying can't block
+  this turn (e.g. Fire of Orthanc). -/
+  | destroyArtifactOrLandNonflyersCantBlock
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -77,12 +80,15 @@ def toNotation : SpellEffect → String
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
   | .dealDamageToCreature n => s!"deals {n} damage to target creature"
   | .playAdditionalLandThisTurn => "you may play an additional land this turn"
+  | .destroyArtifactOrLandNonflyersCantBlock =>
+    "destroy target artifact or land. Creatures without flying can't block this turn"
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : SpellEffect → Bool
   | .playAdditionalLandThisTurn => false
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => true
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .destroyArtifactOrLandNonflyersCantBlock => true
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -759,8 +765,11 @@ instance : ToString CardDef where
   "deals 5 damage to target creature"
 #guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
   "you may play an additional land this turn"
+#guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
+  "destroy target artifact or land. Creatures without flying can't block this turn"
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
 #guard
   let c : CardDef := {

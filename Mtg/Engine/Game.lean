@@ -23,9 +23,10 @@ trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
 equal to lands you control in all zones (CR 604.3 / 208.2a), or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
+effects that prevent creatures without flying from blocking (CR 509.1b / 611.2a),
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
-discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
+discard (CR 701.9), destroy (CR 701.8), including a target artifact or land, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants, attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
@@ -206,6 +207,10 @@ def staticAbilities (o : GameObject) : Array StaticAbility :=
 /-- Colorless nonland permanent (e.g. a legal Goblin Cratermaker destroy target). -/
 def isColorlessNonland (o : GameObject) : Bool :=
   o.isOnBattlefield && !o.printed.isLand && o.printed.colors.isColorless
+
+/-- Artifact or land on the battlefield (e.g. a legal Fire of Orthanc target). -/
+def isArtifactOrLand (o : GameObject) : Bool :=
+  o.isOnBattlefield && (o.printed.isArtifact || o.printed.isLand)
 
 /-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
 def canPayTapCost (o : GameObject) : Bool :=
@@ -414,6 +419,9 @@ structure Game where
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
+  /-- Until-end-of-turn continuous effect: creatures without flying can't
+  block (e.g. Fire of Orthanc). Cleared in cleanup (CR 514.2 / 611.2a). -/
+  creaturesWithoutFlyingCantBlock : Bool := false
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
@@ -747,6 +755,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   blocker.controlledBy defender && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty &&
   g.mayDeclareAsBlocker blocker &&
+  (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
   attacker.status.attacking &&
   (!g.hasFlying attacker ||
     g.hasFlying blocker || blocker.printed.keywords.reach)
@@ -1370,6 +1379,10 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array T
   | .plusOnePlusOneTrampleHexproof =>
     g.legalCreatureTargets caster (fun o => o.controlledBy caster)
   | .playAdditionalLandThisTurn => #[]
+  | .destroyArtifactOrLandNonflyersCantBlock =>
+    g.battlefield.filter (fun o =>
+      o.isArtifactOrLand && g.canBeTargetedBy caster o)
+      |>.map (fun o => Target.permanent o.id)
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
@@ -1473,7 +1486,8 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
-destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
+destroy-colorless prefers an opposing colorless nonland; destroy-artifact-or-land prefers
+an opposing artifact or land; Mirkwood Elk prefers an Elf
 card in the controller's graveyard; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
@@ -1514,6 +1528,10 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | _, _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.hasFlying o && g.canBeTargetedBy p o)
+      |>.back?.map (fun c => Target.permanent c.id)
+    | _, _, some .destroyArtifactOrLandNonflyersCantBlock =>
+      (g.permanentsOf (g.opponent p)).filter (fun o =>
+        o.isArtifactOrLand && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
     | _, _, some (.pump _ _) | _, _, some .plusOnePlusOneTrampleHexproof | _, _, none =>
       (g.permanentsOf p).filter (·.isCreature) |>.back?
@@ -2156,6 +2174,18 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
+  | .destroyArtifactOrLandNonflyersCantBlock, some (Target.permanent oid) =>
+    match g.findObject? oid with
+    | none => g.logMsg "The target is no longer in play"
+    | some o =>
+      if !(g.legalTargets controller .destroyArtifactOrLandNonflyersCantBlock).contains
+          (Target.permanent oid) then
+        illegal
+      else
+        let g := g.logMsg s!"{o.name} is destroyed"
+        let (g, _) := g.move oid (.graveyard o.owner) none
+        let g := { g with creaturesWithoutFlyingCantBlock := true }
+        g.logMsg "Creatures without flying can't block this turn"
   | _, _ => g
 
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
@@ -2934,7 +2964,7 @@ def clearCombat (g : Game) : Game :=
 
 def clearEOT (g : Game) : Game :=
   Id.run do
-    let mut g := g
+    let mut g := { g with creaturesWithoutFlyingCantBlock := false }
     for o in g.battlefield do
       if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
           o.status.untilEotTrample || o.status.untilEotHexproof ||

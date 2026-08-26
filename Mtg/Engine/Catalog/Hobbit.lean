@@ -22,7 +22,8 @@ returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy, +1/+1
+plays this turn), modal spells, destroy (including target artifact or land,
+after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
@@ -774,6 +775,7 @@ def fireOfOrthanc : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 3 .red
   types := #[.sorcery]
   oracleText := "Destroy target artifact or land. Creatures without flying can't block this turn."
+  spellEffect := some .destroyArtifactOrLandNonflyersCantBlock
 }
 
 def guardianOfTheHalls : CardDef := {
@@ -1140,6 +1142,11 @@ def attercop : CardDef := {
 #guard improvisedClub.requiresTarget
 #guard (improvisedClub.summary.splitOn "additional cost").length > 1
 #guard (improvisedClub.summary.splitOn "4 damage").length > 1
+#guard fireOfOrthanc.isSorcery
+#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.requiresTarget
+#guard (fireOfOrthanc.summary.splitOn "artifact or land").length > 1
+#guard (fireOfOrthanc.summary.splitOn "can't block this turn").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)

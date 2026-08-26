@@ -94,7 +94,8 @@ The first slice of the engine models the two-player game:
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
-  zones), or restrict blocking unless you control a Goblin or Orc; attack
+  zones), or restrict blocking unless you control a Goblin or Orc; an until-end-of-turn
+  restriction that creatures without flying can't block; attack
   triggers that pump power, set another creature's base power and toughness,
   give another creature +2/+0 and trample, scry, or scry when you attack with one
   or more Elves; scry triggers that pump for each card looked at;
@@ -113,7 +114,8 @@ The first slice of the engine models the two-player game:
   to last-known power to a creature an opponent controls, cast triggers that
   deal damage to each opponent when you cast an instant or sorcery, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
+- modal instants, destroy (including target artifact or land, after which
+  creatures without flying can't block this turn), +1/+1 counters, hexproof, vigilance, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)

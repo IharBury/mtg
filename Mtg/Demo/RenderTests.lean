@@ -883,4 +883,11 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine resolvedExiledBeorn
   (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host")) "trample"
 
+#guard mentions (stackBlock paidFireOfOrthanc) "Fire of Orthanc"
+#guard mentions (stackBlock paidFireOfOrthanc) "artifact or land"
+#guard mentions (stackBlock paidFireOfOrthanc) "can't block this turn"
+#guard resolvedFireOfOrthanc.log.any (fun s => mentions s "Forest is destroyed")
+#guard resolvedFireOfOrthanc.log.any (fun s =>
+  mentions s "Creatures without flying can't block this turn")
+
 end Mtg.Demo.RenderTests
