@@ -201,18 +201,37 @@ def attachedToBattlefield (g : Game) (o : GameObject) : Bool :=
   | some host => host.isOnBattlefield
   | none => false
 
-/-- Lines for unattached permanents in `os`. Each is followed by what is
-attached to it (from the whole battlefield), indented two extra spaces so
-attached permanents sit next to their host. -/
+/-- Unattached permanents from `os` in three unlabeled subgroups: creatures
+(including creature-lands), non-creature non-lands, then non-creature lands.
+Attached permanents are omitted here; they print under their host. Empty
+subgroups are dropped. -/
+def battlefieldSubgroups (g : Game) (os : Array GameObject) : Array (Array GameObject) :=
+  let hosts := os.filter (fun o => !attachedToBattlefield g o)
+  #[
+    hosts.filter (·.isCreature),
+    hosts.filter (fun o => !o.isCreature && !o.printed.isLand),
+    hosts.filter (fun o => !o.isCreature && o.printed.isLand)
+  ].filter (fun sg => !sg.isEmpty)
+
+/-- Lines for one unattached host and the permanents attached to it. -/
+def battlefieldHostLines (g : Game) (o : GameObject)
+    (group : Option (Option PlayerId)) : Array String :=
+  Id.run do
+    let mut lines : Array String := #[objectLine g o group]
+    for att in attachmentsOf g o.id do
+      lines := lines.push s!"  {objectLine g att group}"
+    return lines
+
+/-- Lines for unattached permanents in `os`, grouped by kind. Each host is
+followed by what is attached to it (from the whole battlefield), indented
+two extra spaces so attached permanents sit next to their host. -/
 def battlefieldPermanentLines (g : Game) (os : Array GameObject)
     (group : Option (Option PlayerId)) : List String :=
   Id.run do
     let mut lines : Array String := #[]
-    for o in os do
-      if !attachedToBattlefield g o then
-        lines := lines.push (objectLine g o group)
-        for att in attachmentsOf g o.id do
-          lines := lines.push s!"  {objectLine g att group}"
+    for sg in battlefieldSubgroups g os do
+      for o in sg do
+        lines := lines ++ battlefieldHostLines g o group
     return lines.toList
 
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
@@ -379,7 +398,9 @@ def battlefieldView (g : Game) : Array String :=
 
 /-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
 are omitted. Permanents attached to another battlefield permanent are listed
-with that host rather than in their own controller's group. Permanents with
+with that host rather than in their own controller's group. Within each
+controller, unattached permanents are split into unlabeled subgroups:
+creatures, non-creature non-lands, then non-creature lands. Permanents with
 no controller are listed last. The `Option PlayerId` is the group heading
 (`none` = no controller). -/
 def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=

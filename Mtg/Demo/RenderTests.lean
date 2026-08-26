@@ -451,6 +451,70 @@ def mountainLine (g : Game) : String :=
     zoneBlock g .battlefield ==
       s!"zone battlefield (3):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n      {objectLine g auras[0]! (some (some ⟨0⟩))}\n      {objectLine g auras[1]! (some (some ⟨0⟩))}"
 
+-- Unattached permanents under a controller are creatures, then other non-lands,
+-- then non-creature lands, regardless of the order they entered.
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let bauble := namedPermanent g "Wayfarer's Bauble"
+  let bears := namedPermanent g "Grizzly Bears"
+  let landLine := objectLine g land (some (some ⟨0⟩))
+  let baubleLine := objectLine g bauble (some (some ⟨0⟩))
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n    {baubleLine}\n    {landLine}" &&
+  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n  {baubleLine}\n  {landLine}"
+
+-- An Aura stays with its creature host; unattached Equipment sits with other
+-- non-lands, even if it entered before the creature.
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let spear := namedPermanent g "Ragged Short Spear"
+  let bears := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Gift of Strands"
+  spear.attachedTo.isNone &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (4):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n      {objectLine g aura (some (some ⟨0⟩))}\n    {objectLine g spear (some (some ⟨0⟩))}\n    {objectLine g land (some (some ⟨0⟩))}"
+
+-- A non-creature enchantment sits with other non-lands. After it becomes a
+-- creature, it joins the creature subgroup (ahead of a later creature).
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let hosp := namedPermanent g "Beorn's Hospitality"
+  let bears := namedPermanent g "Grizzly Bears"
+  let land := namedPermanent g "Mountain"
+  let g' := g.setObject { hosp with
+    status := { hosp.status with
+      additionalCreature := true
+      additionalSubtypes := #["Bear"] } }
+  let hosp' := namedPermanent g' "Beorn's Hospitality"
+  !hosp.isCreature && hosp'.isCreature &&
+    zoneBlock g .battlefield ==
+      s!"zone battlefield (3):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n    {objectLine g hosp (some (some ⟨0⟩))}\n    {objectLine g land (some (some ⟨0⟩))}" &&
+    zoneBlock g' .battlefield ==
+      s!"zone battlefield (3):\n  Chandra:\n    {objectLine g' hosp' (some (some ⟨0⟩))}\n    {objectLine g' bears (some (some ⟨0⟩))}\n    {objectLine g' land (some (some ⟨0⟩))}"
+
+-- Each controller's subgroups are independent.
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let land0 := namedPermanent g "Mountain"
+  let bears := namedPermanent g "Grizzly Bears"
+  let land1 := namedPermanent g "Forest"
+  let ogre := namedPermanent g "Gray Ogre"
+  zoneBlock g .battlefield ==
+    s!"zone battlefield (4):\n  Chandra:\n    {objectLine g bears (some (some ⟨0⟩))}\n    {objectLine g land0 (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine g ogre (some (some ⟨1⟩))}\n    {objectLine g land1 (some (some ⟨1⟩))}"
+
 -- Starting a scry does not move library cards, but the demo reprints that
 -- library so the scrying player sees the looked-at faces (CR 701.20).
 #guard (zoneObjectIds giftKnownLib (.library ⟨0⟩)) ==
