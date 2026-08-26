@@ -1303,6 +1303,34 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
     | .error _ => false
 
 #guard
+  let g := Tests.quarrelSetup
+  let qid := (Tests.handCardNamed g ⟨0⟩ "Quarrel").id
+  let src := (Tests.namedPermanent g "Llanowar Elves").id
+  let dest := (Tests.namedPermanent g "Grizzly Bears").id
+  match applyCast g ⟨0⟩ [toString qid] with
+  | .error _ => false
+  | .ok g' =>
+    match applyTarget g' ⟨0⟩ ["Llanowar Elves"] with
+    | .error _ => false
+    | .ok g'' =>
+      g''.pending == .chooseTargets ⟨0⟩ &&
+      g''.stack.back!.targets == #[Target.permanent src] &&
+      match applyTarget g'' ⟨0⟩ [toString dest] with
+      | .ok g''' =>
+        g'''.pending == .activateManaAbilities ⟨0⟩ &&
+        g'''.stack.back!.targets == #[Target.permanent src, Target.permanent dest]
+      | .error _ => false
+
+#guard
+  let g := Tests.smiteSetup
+  match applyCast g ⟨0⟩ [toString (Tests.handCardNamed g ⟨0⟩ "Smite the Deathless").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Smite the Deathless") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ [] with
   | .error msg => msg == divideTargetUsage
   | .ok _ => false
@@ -1711,6 +1739,14 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.passageReady "activate"
+      [toString (Tests.passageSource Tests.passageReady).id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Rogue's Passage")
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.galionAttackDeclared "target"
       [toString (Tests.namedPermanent Tests.galionAttackDeclared "Llanowar Elves").id] with
   | .ok g' =>
@@ -1904,6 +1940,17 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
     | .ok g' =>
       g'.power (Tests.namedPermanent g' "Woodland Weavemaster") == 2 &&
         g'.log.any (fun s => Tests.mentions s "gets +1/+1 until end of turn")
+    | .error _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.attercopLandPlayed "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.power (Tests.namedPermanent g' "Attercop") == 3 &&
+        g'.toughness (Tests.namedPermanent g' "Attercop") == 2 &&
+        g'.log.any (fun s => Tests.mentions s "Attercop gets +1/+1 until end of turn")
     | .error _ => false
   | .error _ => false
 

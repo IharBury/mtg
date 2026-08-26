@@ -889,5 +889,56 @@ def mountainLine (g : Game) : String :=
 #guard resolvedFireOfOrthanc.log.any (fun s => mentions s "Forest is destroyed")
 #guard resolvedFireOfOrthanc.log.any (fun s =>
   mentions s "Creatures without flying can't block this turn")
+#guard mentions (stackBlock attercopLandPlayed) "Attercop's ability"
+#guard mentions (stackBlock attercopLandPlayed) "Whenever a land you control enters"
+#guard mentions (stackBlock attercopLandPlayed) "+1/+1 until end of turn"
+#guard
+  let g := attercopLandPlayed
+  let src := namedPermanent g "Attercop"
+  mentions (stackBlock g) s!"*source {src.id} Attercop*" &&
+    mentions (objectLine g src) "2/1" &&
+    mentions (objectLine g src) "reach" &&
+    mentions (objectLine g src) "deathtouch"
+#guard
+  let g := attercopLandfallResolved
+  let o := namedPermanent g "Attercop"
+  mentions (objectLine g o) "3/2"
+#guard
+  let g := afterAttercopCleanup
+  let o := namedPermanent g "Attercop"
+  mentions (objectLine g o) "2/1"
+#guard mentions (objectLine flyerVsAttercop
+  (namedPermanent flyerVsAttercop "Attercop")) "reach"
+
+#guard pendingCostNotation targetedPassage == some "{4}, {T}"
+#guard pendingCostLine targetedPassage == some "Cost: {4}, {T}"
+#guard mentions (header proposedPassage) "choose targets (CR 601.2c"
+#guard mentions (stackBlock paidPassage) "can't be blocked"
+#guard mentions (stackBlock paidPassage) "Rogue's Passage's ability"
+#guard
+  let g := passageResolved
+  mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"
+#guard
+  let g := afterPassageCleanup
+  !mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"
+
+#guard mentions smiteTheDeathless.summary "loses indestructible"
+#guard mentions smiteTheDeathless.summary "exile it instead"
+#guard
+  let g := addPermanent started indestructibleBeast ⟨0⟩ ⟨0⟩
+  mentions (objectLine g (lastPermanent g)) "indestructible"
+#guard mentions (zoneBlock resolvedSmiteOnBears .exile) "Grizzly Bears"
+#guard
+  let g := resolvedSmiteOnWurm
+  let w := namedPermanent g "Craw Wurm"
+  mentions (objectLine g w) "dmg:3" &&
+    mentions (objectLine g w) "exile if dies"
+#guard
+  let g := resolvedSmiteOnIndestructibleFlyer
+  let o := namedPermanent g "Indestructible Flyer"
+  mentions (objectLine g o) "flying" &&
+    !mentions (objectLine g o) "indestructible" &&
+    mentions (objectLine g o) "exile if dies" &&
+    mentions (objectLine g o) "dmg:3"
 
 end Mtg.Demo.RenderTests
