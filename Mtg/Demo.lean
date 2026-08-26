@@ -264,7 +264,7 @@ def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
     let attackers := g.battlefield.filter (·.status.attacking)
     let defender := g.opponent g.activePlayer
     let candidates := g.battlefield.filter (fun b =>
-      b.printed.isCreature && b.controlledBy defender && !b.status.tapped)
+      b.isCreature && b.controlledBy defender && !b.status.tapped)
     let mut blocked : Array ObjectId := #[]
     let mut asgn : Array (ObjectId × ObjectId) := #[]
     for b in candidates do
@@ -1205,6 +1205,24 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .activateManaAbilities ⟨0⟩ &&
     g'.stack.back!.targets == #[Target.player ⟨1⟩]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.hospitalityLandPlayed "target"
+      [toString (Tests.namedPermanent Tests.hospitalityLandPlayed "Grizzly Bears").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Grizzly Bears").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.hospitalityAnimateSetup "activate"
+      [toString (Tests.namedPermanent Tests.hospitalityAnimateSetup "Beorn's Hospitality").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Beorn's Hospitality")
   | .error _ => false
 
 #guard
