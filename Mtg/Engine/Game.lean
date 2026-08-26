@@ -1545,55 +1545,61 @@ caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
   let ownCreature := lastPermanentTarget ((g.permanentsOf p).filter (·.isCreature))
-  let preferred : Option Target :=
-    match obj.triggeredAbility.map (·.targetKind) with
-    | some .playerOrCreature =>
-      some (Target.player (g.opponent p))
-    | some .elfInYourGraveyard =>
-      (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
-    | some .oppCreature =>
+  let fromSpellOrAbility : Option Target :=
+    match obj.abilityEffect, g.currentSpellEffect obj with
+    | some (.dealDamageToTargetCreature _), _ =>
       (g.legalOppCreatureTargets p).back?
-    | some .anotherCreatureYouControl =>
+    | some .destroyTargetColorlessNonland, _ =>
       lastPermanentTarget
-        ((g.permanentsOf p).filter (fun o => o.isCreature && some o.id != obj.sourceId))
-    | some .creatureYouControl =>
+        ((g.permanentsOf (g.opponent p)).filter (fun o =>
+          o.isColorlessNonland && g.canBeTargetedBy p o))
+    | some .attachToTargetCreatureYouControl, _ =>
+      lastPermanentTarget ((g.permanentsOf p).filter (·.printed.isCreature))
+    | some .targetCantBeBlockedThisTurn, _ =>
       ownCreature
-    | some .none | none =>
-      match obj.abilityEffect, g.currentSpellEffect obj with
-      | some (.dealDamageToTargetCreature _), _ =>
-        (g.legalOppCreatureTargets p).back?
-      | some .destroyTargetColorlessNonland, _ =>
-        lastPermanentTarget
-          ((g.permanentsOf (g.opponent p)).filter (fun o =>
-            o.isColorlessNonland && g.canBeTargetedBy p o))
-      | some .attachToTargetCreatureYouControl, _ =>
-        lastPermanentTarget ((g.permanentsOf p).filter (·.printed.isCreature))
-      | some .targetCantBeBlockedThisTurn, _ =>
-        ownCreature
-      | _, some (.dealDamage _) =>
+    | _, some (.dealDamage _) =>
+      some (Target.player (g.opponent p))
+    | _, some (.dealDamageToCreature _)
+    | _, some (.dealDamageLoseIndestructibleExile _) =>
+      (g.legalOppCreatureTargets p).back?
+    | _, some .destroyCreatureWithFlying =>
+      lastPermanentTarget
+        ((g.permanentsOf (g.opponent p)).filter (fun o =>
+          o.isCreature && g.hasFlying o && g.canBeTargetedBy p o))
+    | _, some .destroyArtifactOrLandNonflyersCantBlock =>
+      lastPermanentTarget
+        ((g.permanentsOf (g.opponent p)).filter (fun o =>
+          o.isArtifactOrLand && g.canBeTargetedBy p o))
+    | _, some .creatureYouControlDealsPowerToOppCreature =>
+      match g.stackEntry? obj.id with
+      | some e =>
+        if e.targets.isEmpty then
+          (g.legalCreatureYouControlTargets p).back?
+        else
+          (g.legalOppCreatureTargets p).back?
+      | none => (g.legalCreatureYouControlTargets p).back?
+    | _, some .playAdditionalLandThisTurn => none
+    | _, some (.pump _ _) | _, some .plusOnePlusOneTrampleHexproof | _, none =>
+      ownCreature
+  let preferred : Option Target :=
+    match obj.triggeredAbility with
+    | some ab =>
+      match ab.targetKind with
+      | .playerOrCreature =>
         some (Target.player (g.opponent p))
-      | _, some (.dealDamageToCreature _)
-      | _, some (.dealDamageLoseIndestructibleExile _) =>
+      | .elfInYourGraveyard =>
+        (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
+      | .oppCreature =>
         (g.legalOppCreatureTargets p).back?
-      | _, some .destroyCreatureWithFlying =>
+      | .anotherCreatureYouControl =>
         lastPermanentTarget
-          ((g.permanentsOf (g.opponent p)).filter (fun o =>
-            o.isCreature && g.hasFlying o && g.canBeTargetedBy p o))
-      | _, some .destroyArtifactOrLandNonflyersCantBlock =>
-        lastPermanentTarget
-          ((g.permanentsOf (g.opponent p)).filter (fun o =>
-            o.isArtifactOrLand && g.canBeTargetedBy p o))
-      | _, some .creatureYouControlDealsPowerToOppCreature =>
-        match g.stackEntry? obj.id with
-        | some e =>
-          if e.targets.isEmpty then
-            (g.legalCreatureYouControlTargets p).back?
-          else
-            (g.legalOppCreatureTargets p).back?
-        | none => (g.legalCreatureYouControlTargets p).back?
-      | _, some .playAdditionalLandThisTurn => none
-      | _, some (.pump _ _) | _, some .plusOnePlusOneTrampleHexproof | _, none =>
+          ((g.permanentsOf p).filter (fun o => o.isCreature && some o.id != obj.sourceId))
+      | .creatureYouControl =>
         ownCreature
+      | .none =>
+        fromSpellOrAbility
+    | none =>
+      fromSpellOrAbility
   match preferred with
   | some t => if legal.contains t then some t else legal[0]?
   | none => legal[0]?
