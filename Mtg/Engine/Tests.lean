@@ -7469,7 +7469,7 @@ def targetedFireOfOrthanc : Game :=
     (proposedFireOfOrthanc.object! tid).name == "Forest"
   | _ => false
 
-/-- Prefer an opposing land over your own (CR 601.2c heuristic). -/
+-- Prefer an opposing land over your own (CR 601.2c heuristic).
 #guard
   let g := addPermanent fireOfOrthancSetup mountain ⟨0⟩ ⟨0⟩
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
