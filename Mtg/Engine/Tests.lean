@@ -87,6 +87,39 @@ def started : Game := keepOpeningHands drawnHands 8
 #guard started.isFirstTurn
 #guard started.step == .upkeep
 
+/-- CR 103.1: the starting player is chosen before opening hands; that player
+declares keep-or-mulligan first (CR 103.5). -/
+def nissaStarts : Game :=
+  match Start.start { testConfig 1 with startingPlayer := some 1 } with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard nissaStarts.startingPlayer == ⟨1⟩
+#guard nissaStarts.activePlayer == ⟨1⟩
+#guard nissaStarts.pending == .declareMulligan ⟨1⟩
+#guard nissaStarts.actor == some ⟨1⟩
+#guard nissaStarts.log.any (· == "Starting player: Nissa")
+
+def nissaStarted : Game := keepOpeningHands nissaStarts 8
+
+#guard nissaStarted.startingPlayer == ⟨1⟩
+#guard nissaStarted.activePlayer == ⟨1⟩
+#guard nissaStarted.skipsFirstDraw
+#guard nissaStarted.log.any (· == "Nissa takes the first turn")
+
+def nissaAfterDraw : Game :=
+  match Game.pass nissaStarted ⟨1⟩ with
+  | .error e => panic! e
+  | .ok g1 =>
+    match Game.pass g1 ⟨0⟩ with
+    | .error e => panic! e
+    | .ok g2 => g2
+
+#guard nissaAfterDraw.step == .precombatMain
+#guard (nissaAfterDraw.player ⟨1⟩).hand.size == 7
+#guard nissaAfterDraw.hasPriority ⟨1⟩
+#guard nissaAfterDraw.log.any (· == "Nissa skips their first draw step (CR 103.8a)")
+
 /-- First player skipped the draw step (CR 103.8a / 500.11), so after upkeep
 the game proceeds to precombat main: no card is drawn and nobody received
 priority during the skipped step. -/
