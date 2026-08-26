@@ -109,13 +109,8 @@ def targetCount : SpellEffect → Nat
   | .destroyArtifactOrLandNonflyersCantBlock => 1
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget : SpellEffect → Bool
-  | .playAdditionalLandThisTurn => false
-  | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
-  | .dealDamageLoseIndestructibleExile _
-  | .creatureYouControlDealsPowerToOppCreature
-  | .destroyArtifactOrLandNonflyersCantBlock => true
+def requiresTarget (e : SpellEffect) : Bool :=
+  e.targetCount != 0
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -309,12 +304,49 @@ def toNotation : StaticAbility → String
 instance : ToString StaticAbility where
   toString := toNotation
 
+/-- Classification of a static ability. Exhaustive so a new constructor is a
+compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
+structure StaticTiming where
+  /-- Lord +P/+T granted to other matching creatures you control. -/
+  lordPump : Option (Array String × Int × Int) := none
+  /-- Subtypes of other creatures you control that gain trample. -/
+  trampleSubtypes : Option (Array String) := none
+  /-- Continuous +P/+T granted to the enchanted or equipped host (CR 613.3c). -/
+  hostStatBonus : Int × Int := (0, 0)
+  /-- Characteristic-defining P/T equal to lands you control (CR 208.2a / 604.3). -/
+  landsYouControlPT : Bool := false
+  /-- Subtypes required to declare this creature as a blocker, if any. -/
+  cantBlockUnless : Option (Array String) := none
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this static ability. -/
+def timing : StaticAbility → StaticTiming
+  | .otherCreaturesHaveTrample subtypes => { trampleSubtypes := some subtypes }
+  | .otherCreaturesGet subtypes p t => { lordPump := some (subtypes, p, t) }
+  | .enchantedCreatureGets p t | .equippedCreatureGets p t => { hostStatBonus := (p, t) }
+  | .powerToughnessEqualLandsYouControl => { landsYouControlPT := true }
+  | .cantBlockUnlessYouControl subtypes => { cantBlockUnless := some subtypes }
+
+/-- Lord +P/+T this ability grants other matching creatures, if any. -/
+def lordPump? (ab : StaticAbility) : Option (Array String × Int × Int) :=
+  ab.timing.lordPump
+
+/-- Subtypes this ability grants trample to, if any. -/
+def trampleSubtypes? (ab : StaticAbility) : Option (Array String) :=
+  ab.timing.trampleSubtypes
+
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
 (CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
-def hostStatBonus : StaticAbility → Int × Int
-  | .enchantedCreatureGets p t | .equippedCreatureGets p t => (p, t)
-  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
-  | .powerToughnessEqualLandsYouControl | .cantBlockUnlessYouControl _ => (0, 0)
+def hostStatBonus (ab : StaticAbility) : Int × Int :=
+  ab.timing.hostStatBonus
+
+/-- True for the lands-you-control P/T characteristic-defining ability. -/
+def isLandsYouControlPT (ab : StaticAbility) : Bool :=
+  ab.timing.landsYouControlPT
+
+/-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
+def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
+  ab.timing.cantBlockUnless
 
 end StaticAbility
 
@@ -443,9 +475,27 @@ def toNotation : TriggeredAbility → String
   | .onAnotherElfYouControlEntersGets1 =>
     "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn."
 
-/-- When a triggered ability fires, whether it needs a target, and optional
-divided-damage parameters (CR 603 / 601.2d). Adding a constructor only requires
-updating `timing` (plus `toNotation`) instead of nine parallel match trees. -/
+/-- How a triggered ability selects targets when it is put on the stack
+(CR 603.3d / 601.2c). Adding a targeting shape here is a compile error in
+`Game.legalTriggerTargets` rather than silently offering no targets. -/
+inductive TriggerTargetKind where
+  /-- No target. -/
+  | none
+  /-- Target creature you control. -/
+  | creatureYouControl
+  /-- Another target creature you control (not the source). -/
+  | anotherCreatureYouControl
+  /-- A player or a creature (e.g. damage divided as you choose). -/
+  | playerOrCreature
+  /-- Target Elf card in your graveyard. -/
+  | elfInYourGraveyard
+  /-- Target creature an opponent controls. -/
+  | oppCreature
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- When a triggered ability fires, how it targets, and optional divided-damage
+parameters (CR 603 / 601.2d). Adding a constructor only requires updating
+`timing` (plus `toNotation`) instead of parallel match trees. -/
 structure TriggerTiming where
   whenAttacking : Bool := false
   whenBecomesBlocked : Bool := false
@@ -456,7 +506,7 @@ structure TriggerTiming where
   whenYouAttackWithElves : Bool := false
   whenYouScry : Bool := false
   whenAnotherElfYouControlEnters : Bool := false
-  requiresTarget : Bool := false
+  targetKind : TriggerTargetKind := .none
   /-- Zero targets is a legal announcement (CR 115.1c / 601.2c), e.g. “up to one”. -/
   allowsZeroTargets : Bool := false
   /-- Damage amount and maximum number of targets when this ability divides
@@ -469,8 +519,10 @@ is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .onAttackPumpByGreatestPower => { whenAttacking := true }
   | .onAttackSetOtherBasePT =>
-    { whenAttacking := true, requiresTarget := true, allowsZeroTargets := true }
-  | .onAttackOtherGets2AndTrample => { whenAttacking := true, requiresTarget := true }
+    { whenAttacking := true, targetKind := .anotherCreatureYouControl,
+      allowsZeroTargets := true }
+  | .onAttackOtherGets2AndTrample =>
+    { whenAttacking := true, targetKind := .anotherCreatureYouControl }
   | .onAttackScry _ => { whenAttacking := true }
   | .onBecomesBlockedDeal1ToBlockers => { whenBecomesBlocked := true }
   | .onEnterScry _ => { whenEntering := true }
@@ -478,18 +530,19 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterSearchForest => { whenEntering := true }
   | .onEnterMayDiscardDraw _ => { whenEntering := true }
   | .onLandYouControlEntersPlusOnePlusOne =>
-    { whenLandYouControlEnters := true, requiresTarget := true }
+    { whenLandYouControlEnters := true, targetKind := .creatureYouControl }
   | .onLandYouControlEntersGets1 =>
     { whenLandYouControlEnters := true }
   | .onEnterDealDividedDamage amount maxTargets =>
-    { whenEntering := true, requiresTarget := true, dividedDamage := some (amount, maxTargets) }
+    { whenEntering := true, targetKind := .playerOrCreature,
+      dividedDamage := some (amount, maxTargets) }
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
-    { whenAttacking := true, whenEntering := true, requiresTarget := true,
+    { whenAttacking := true, whenEntering := true, targetKind := .playerOrCreature,
       dividedDamage := some (amount, maxTargets) }
   | .onEnterOrAttackReturnElfGainLife =>
-    { whenAttacking := true, whenEntering := true, requiresTarget := true }
+    { whenAttacking := true, whenEntering := true, targetKind := .elfInYourGraveyard }
   | .onDiesDealDamageEqualToPowerToOppCreature =>
-    { whenDying := true, requiresTarget := true }
+    { whenDying := true, targetKind := .oppCreature }
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
     { whenYouCastInstantOrSorcery := true }
   | .onAttackWithElvesScry _ => { whenYouAttackWithElves := true }
@@ -540,10 +593,14 @@ enters (CR 603.6a). Does not trigger from this permanent entering. -/
 def triggersWhenAnotherElfYouControlEnters (ab : TriggeredAbility) : Bool :=
   ab.timing.whenAnotherElfYouControlEnters
 
+/-- Whom this trigger may target when announced (CR 603.3d / 601.2c). -/
+def targetKind (ab : TriggeredAbility) : TriggerTargetKind :=
+  ab.timing.targetKind
+
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget (ab : TriggeredAbility) : Bool :=
-  ab.timing.requiresTarget
+  ab.targetKind != .none
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
@@ -729,12 +786,7 @@ def keywordsAndAbilities (c : CardDef) : String :=
   c.keywordsAndAbilitiesOf c.keywords
 
 def typeLine (c : CardDef) : String :=
-  let super := String.intercalate " " (c.supertypes.toList.map toString)
-  let types := String.intercalate " " (c.types.toList.map toString)
-  let sub := String.intercalate " " c.subtypes.toList
-  let head :=
-    if super.isEmpty then types else s!"{super} {types}"
-  if sub.isEmpty then head else s!"{head} — {sub}"
+  formatTypeLine c.supertypes c.types c.subtypes
 
 def ptString (c : CardDef) : String :=
   match c.power, c.toughness with
@@ -975,6 +1027,25 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.requiresTarget .onLandYouControlEntersGets1
+#guard TriggeredAbility.targetKind .onLandYouControlEntersPlusOnePlusOne ==
+  .creatureYouControl
+#guard TriggeredAbility.targetKind .onAttackSetOtherBasePT ==
+  .anotherCreatureYouControl
+#guard TriggeredAbility.targetKind (.onEnterDealDividedDamage 3 3) ==
+  .playerOrCreature
+#guard TriggeredAbility.targetKind .onEnterOrAttackReturnElfGainLife ==
+  .elfInYourGraveyard
+#guard TriggeredAbility.targetKind .onDiesDealDamageEqualToPowerToOppCreature ==
+  .oppCreature
+#guard TriggeredAbility.targetKind (.onEnterDraw 1) == .none
+#guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
+#guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
+#guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
+#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]
+#guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl
+#guard !StaticAbility.isLandsYouControlPT (.enchantedCreatureGets 1 1)
+#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #["Goblin"])) ==
+  some #["Goblin"]
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife

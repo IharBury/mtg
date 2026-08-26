@@ -29,118 +29,61 @@ def swamp : CardDef := basicLand "Swamp" .black
 def mountain : CardDef := basicLand "Mountain" .red
 def forest : CardDef := basicLand "Forest" .green
 
-def grizzlyBears : CardDef := {
-  name := "Grizzly Bears"
-  manaCost := ManaCost.ofGenericAndColor 1 .green
-  types := #[.creature]
-  subtypes := #["Bear"]
-  oracleText := ""
-  power := some 2
-  toughness := some 2
+/-- A creature used by engine tests. -/
+def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+    (power toughness : Int) (oracleText : String := "")
+    (keywords : Keywords := Keywords.none)
+    (tapAddMana : Array ManaType := #[]) : CardDef := {
+  name, manaCost, types := #[.creature], subtypes, oracleText,
+  power := some power, toughness := some toughness, keywords, tapAddMana
 }
 
-def grayOgre : CardDef := {
-  name := "Gray Ogre"
-  manaCost := ManaCost.ofGenericAndColor 2 .red
-  types := #[.creature]
-  subtypes := #["Ogre"]
-  power := some 2
-  toughness := some 2
-}
-
-def hillGiant : CardDef := {
-  name := "Hill Giant"
-  manaCost := ManaCost.ofGenericAndColor 3 .red
-  types := #[.creature]
-  subtypes := #["Giant"]
-  power := some 3
-  toughness := some 3
-}
-
-def canyonMinotaur : CardDef := {
-  name := "Canyon Minotaur"
-  manaCost := ManaCost.ofGenericAndColor 3 .red
-  types := #[.creature]
-  subtypes := #["Minotaur"]
-  power := some 3
-  toughness := some 3
-}
-
-def ragingGoblin : CardDef := {
-  name := "Raging Goblin"
-  manaCost := ManaCost.ofColor .red
-  types := #[.creature]
-  subtypes := #["Goblin"]
-  oracleText := "Haste"
-  power := some 1
-  toughness := some 1
-  keywords := { Keywords.none with haste := true }
-}
-
-def llanowarElves : CardDef := {
-  name := "Llanowar Elves"
-  manaCost := ManaCost.ofColor .green
-  types := #[.creature]
-  subtypes := #["Elf", "Druid"]
-  oracleText := "{T}: Add {G}."
-  power := some 1
-  toughness := some 1
-  tapAddMana := #[.colored .green]
-}
-
-def crawWurm : CardDef := {
-  name := "Craw Wurm"
-  manaCost := ManaCost.ofGenericAndColor 4 .green
-  types := #[.creature]
-  subtypes := #["Wurm"]
-  power := some 6
-  toughness := some 4
-}
-
-def centaurCourser : CardDef := {
-  name := "Centaur Courser"
-  manaCost := ManaCost.ofGenericAndColor 2 .green
-  types := #[.creature]
-  subtypes := #["Centaur"]
-  power := some 3
-  toughness := some 3
-}
-
-def rumblingBaloth : CardDef := {
-  name := "Rumbling Baloth"
-  manaCost := ManaCost.ofGenericAndColors 2 [.green, .green]
-  types := #[.creature]
-  subtypes := #["Beast"]
-  power := some 4
-  toughness := some 4
-}
-
-def giantSpider : CardDef := {
-  name := "Giant Spider"
-  manaCost := ManaCost.ofGenericAndColor 3 .green
-  types := #[.creature]
-  subtypes := #["Spider"]
-  oracleText := "Reach"
-  power := some 2
-  toughness := some 4
-  keywords := { Keywords.none with reach := true }
-}
-
-def lightningBolt : CardDef := {
-  name := "Lightning Bolt"
+/-- A red instant that deals `amount` damage to any target. -/
+def damageInstant (name : String) (amount : Nat) : CardDef := {
+  name
   manaCost := ManaCost.ofColor .red
   types := #[.instant]
-  oracleText := "Lightning Bolt deals 3 damage to any target."
-  spellEffect := some (.dealDamage 3)
+  oracleText := s!"{name} deals {amount} damage to any target."
+  spellEffect := some (.dealDamage amount)
 }
 
-def shock : CardDef := {
-  name := "Shock"
-  manaCost := ManaCost.ofColor .red
-  types := #[.instant]
-  oracleText := "Shock deals 2 damage to any target."
-  spellEffect := some (.dealDamage 2)
-}
+def grizzlyBears : CardDef :=
+  creature "Grizzly Bears" (ManaCost.ofGenericAndColor 1 .green) #["Bear"] 2 2
+
+def grayOgre : CardDef :=
+  creature "Gray Ogre" (ManaCost.ofGenericAndColor 2 .red) #["Ogre"] 2 2
+
+def hillGiant : CardDef :=
+  creature "Hill Giant" (ManaCost.ofGenericAndColor 3 .red) #["Giant"] 3 3
+
+def canyonMinotaur : CardDef :=
+  creature "Canyon Minotaur" (ManaCost.ofGenericAndColor 3 .red) #["Minotaur"] 3 3
+
+def ragingGoblin : CardDef :=
+  creature "Raging Goblin" (ManaCost.ofColor .red) #["Goblin"] 1 1
+    (oracleText := "Haste") (keywords := { Keywords.none with haste := true })
+
+def llanowarElves : CardDef :=
+  creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
+    (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
+
+def crawWurm : CardDef :=
+  creature "Craw Wurm" (ManaCost.ofGenericAndColor 4 .green) #["Wurm"] 6 4
+
+def centaurCourser : CardDef :=
+  creature "Centaur Courser" (ManaCost.ofGenericAndColor 2 .green) #["Centaur"] 3 3
+
+def rumblingBaloth : CardDef :=
+  creature "Rumbling Baloth" (ManaCost.ofGenericAndColors 2 [.green, .green])
+    #["Beast"] 4 4
+
+def giantSpider : CardDef :=
+  creature "Giant Spider" (ManaCost.ofGenericAndColor 3 .green) #["Spider"] 2 4
+    (oracleText := "Reach") (keywords := { Keywords.none with reach := true })
+
+def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
+
+def shock : CardDef := damageInstant "Shock" 2
 
 def giantGrowth : CardDef := {
   name := "Giant Growth"

@@ -101,9 +101,22 @@ def manaForBasicLandType : Subtype → Option Color
   | "Forest" => some .green
   | _ => none
 
+/-- Oracle-style type line from supertypes, types, and subtypes (CR 205.1). -/
+def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
+    (subtypes : Array Subtype) : String :=
+  let super := String.intercalate " " (supertypes.toList.map toString)
+  let types := String.intercalate " " (types.toList.map toString)
+  let sub := String.intercalate " " subtypes.toList
+  let head :=
+    if super.isEmpty then types else s!"{super} {types}"
+  if sub.isEmpty then head else s!"{head} — {sub}"
+
 #guard basicLandTypes.length == 5
 #guard CardType.creature.isPermanentType
 #guard !CardType.instant.isPermanentType
 #guard CardType.sorcery.isInstantOrSorcery
+#guard formatTypeLine #[.basic] #[.land] #["Forest"] == "Basic Land — Forest"
+#guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
+#guard formatTypeLine #[] #[.instant] #[] == "Instant"
 
 end Mtg.Engine
