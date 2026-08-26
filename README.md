@@ -85,8 +85,9 @@ The first slice of the engine models the two-player game:
 - playing lands, activating mana abilities, activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
-  modes at 601.2b / 700.2, announcing targets at 601.2c, and mana abilities
-  at 601.2g)
+  modes at 601.2b / 700.2, announcing targets at 601.2c, additional costs
+  such as sacrificing an artifact or creature at 601.2f / 601.2h, and mana
+  abilities at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample, pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control, or

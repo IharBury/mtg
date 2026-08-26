@@ -15,7 +15,8 @@ divided among targets, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
 divided among targets (including whenever the creature enters or attacks), Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
-counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
+counters, until-end-of-turn keyword grants, additional costs that sacrifice an
+artifact or creature, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -591,6 +592,8 @@ def improvisedClub : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .red
   types := #[.instant]
   oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target."
+  spellEffect := some (.dealDamage 4)
+  additionalCostSacrificeArtifactOrCreature := true
 }
 
 def smaugTheGreatCalamity : CardDef := {
@@ -1053,6 +1056,12 @@ def attercop : CardDef := {
 #guard guttersnipe.power == some 2
 #guard guttersnipe.toughness == some 2
 #guard (guttersnipe.summary.splitOn "instant or sorcery").length > 1
+#guard improvisedClub.isInstant
+#guard improvisedClub.spellEffect == some (.dealDamage 4)
+#guard improvisedClub.additionalCostSacrificeArtifactOrCreature
+#guard improvisedClub.requiresTarget
+#guard (improvisedClub.summary.splitOn "additional cost").length > 1
+#guard (improvisedClub.summary.splitOn "4 damage").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)

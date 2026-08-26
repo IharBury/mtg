@@ -434,6 +434,9 @@ structure CardDef where
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
   spellEffect : Option SpellEffect := none
+  /-- Additional cost: sacrifice an artifact or creature (CR 601.2f), e.g.
+  Improvised Club. -/
+  additionalCostSacrificeArtifactOrCreature : Bool := false
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array SpellEffect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
@@ -524,9 +527,12 @@ def leftoverOracleLines (c : CardDef) : List String :=
   c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filter (fun line =>
     !line.isEmpty && !isKeywordRestatement c.keywords line)
 
-/-- `{T}: Add` mana abilities, activated, static, triggered, and spell abilities. -/
+/-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
   c.manaAbilities.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  (if c.additionalCostSacrificeArtifactOrCreature then
+    ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
+   else []) ++
   c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
@@ -594,6 +600,15 @@ instance : ToString CardDef where
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
+#guard
+  let c : CardDef := {
+    name := "Silent Club"
+    types := #[.instant]
+    spellEffect := some (.dealDamage 4)
+    additionalCostSacrificeArtifactOrCreature := true
+  }
+  (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
+    (c.abilitiesText.splitOn "deals 4 damage").length > 1
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
