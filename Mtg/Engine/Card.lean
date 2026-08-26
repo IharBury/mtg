@@ -52,6 +52,53 @@ instance : ToString Keywords where
 
 end Keywords
 
+/-- Whom a spell, activated ability, or triggered ability may target
+(CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
+in `Game.legalTargetsForKind` rather than silently offering no targets. -/
+inductive EffectTargetKind where
+  /-- No target. -/
+  | none
+  /-- Target creature you control. -/
+  | creatureYouControl
+  /-- Another target creature you control (not the source). -/
+  | anotherCreatureYouControl
+  /-- A player or a creature (e.g. damage to any target). -/
+  | playerOrCreature
+  /-- Target Elf card in your graveyard. -/
+  | elfInYourGraveyard
+  /-- Target creature an opponent controls. -/
+  | oppCreature
+  /-- Target creature (any controller). -/
+  | creature
+  /-- Target creature with flying. -/
+  | creatureWithFlying
+  /-- Target artifact or land. -/
+  | artifactOrLand
+  /-- Target colorless nonland permanent. -/
+  | colorlessNonland
+  /-- First a creature you control, then a creature an opponent controls. -/
+  | creatureYouControlThenOppCreature
+deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace EffectTargetKind
+
+/-- How many targets must be announced for this shape (CR 601.2c). -/
+def targetCount : EffectTargetKind → Nat
+  | .none => 0
+  | .creatureYouControlThenOppCreature => 2
+  | .creatureYouControl | .anotherCreatureYouControl | .playerOrCreature
+  | .elfInYourGraveyard | .oppCreature | .creature | .creatureWithFlying
+  | .artifactOrLand | .colorlessNonland => 1
+
+end EffectTargetKind
+
+/-- Targeting shape plus a default-choice hint used by the demonstration agent. -/
+structure EffectTargeting where
+  kind : EffectTargetKind := .none
+  /-- When `kind` is `.creature`, prefer a creature the caster controls. -/
+  preferOwn : Bool := false
+deriving Repr, Inhabited, BEq
+
 /-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
 inductive SpellEffect where
   /-- Deal `amount` damage to the chosen target (player or creature). -/
@@ -99,14 +146,28 @@ def toNotation : SpellEffect → String
   | .destroyArtifactOrLandNonflyersCantBlock =>
     "destroy target artifact or land. Creatures without flying can't block this turn"
 
+/-- Classification of this spell effect's targeting (CR 115.1 / 601.2c).
+Exhaustive so a new constructor is a compile error here rather than silently
+matching no targets in `Game`. -/
+def targeting : SpellEffect → EffectTargeting
+  | .dealDamage _ => { kind := .playerOrCreature }
+  | .pump _ _ => { kind := .creature, preferOwn := true }
+  | .destroyCreatureWithFlying => { kind := .creatureWithFlying }
+  | .plusOnePlusOneTrampleHexproof => { kind := .creatureYouControl }
+  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ =>
+    { kind := .creature }
+  | .creatureYouControlDealsPowerToOppCreature =>
+    { kind := .creatureYouControlThenOppCreature }
+  | .playAdditionalLandThisTurn => {}
+  | .destroyArtifactOrLandNonflyersCantBlock => { kind := .artifactOrLand }
+
+/-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
+def targetKind (e : SpellEffect) : EffectTargetKind :=
+  e.targeting.kind
+
 /-- How many targets must be announced for this effect (CR 601.2c). -/
-def targetCount : SpellEffect → Nat
-  | .playAdditionalLandThisTurn => 0
-  | .creatureYouControlDealsPowerToOppCreature => 2
-  | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
-  | .dealDamageLoseIndestructibleExile _
-  | .destroyArtifactOrLandNonflyersCantBlock => 1
+def targetCount (e : SpellEffect) : Nat :=
+  e.targetKind.targetCount
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
@@ -170,12 +231,25 @@ def toNotation : AbilityEffect → String
   | .targetCantBeBlockedThisTurn =>
     "Target creature can't be blocked this turn"
 
-/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget : AbilityEffect → Bool
-  | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland
-  | .attachToTargetCreatureYouControl | .targetCantBeBlockedThisTurn => true
+/-- Classification of this ability effect's targeting (CR 115.1 / 601.2c).
+Exhaustive so a new constructor is a compile error here rather than silently
+matching no targets in `Game`. -/
+def targeting : AbilityEffect → EffectTargeting
+  | .dealDamageToTargetCreature _ => { kind := .creature }
+  | .destroyTargetColorlessNonland => { kind := .colorlessNonland }
+  | .attachToTargetCreatureYouControl => { kind := .creatureYouControl }
+  | .targetCantBeBlockedThisTurn => { kind := .creature, preferOwn := true }
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => false
+  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ =>
+    {}
+
+/-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
+def targetKind (e : AbilityEffect) : EffectTargetKind :=
+  e.targeting.kind
+
+/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
+def requiresTarget (e : AbilityEffect) : Bool :=
+  e.targetKind != .none
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -476,22 +550,9 @@ def toNotation : TriggeredAbility → String
     "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn."
 
 /-- How a triggered ability selects targets when it is put on the stack
-(CR 603.3d / 601.2c). Adding a targeting shape here is a compile error in
-`Game.legalTriggerTargets` rather than silently offering no targets. -/
-inductive TriggerTargetKind where
-  /-- No target. -/
-  | none
-  /-- Target creature you control. -/
-  | creatureYouControl
-  /-- Another target creature you control (not the source). -/
-  | anotherCreatureYouControl
-  /-- A player or a creature (e.g. damage divided as you choose). -/
-  | playerOrCreature
-  /-- Target Elf card in your graveyard. -/
-  | elfInYourGraveyard
-  /-- Target creature an opponent controls. -/
-  | oppCreature
-deriving Repr, Inhabited, BEq, DecidableEq
+(CR 603.3d / 601.2c). Spell and activated-ability targeting use the same
+`EffectTargetKind` constructors. -/
+abbrev TriggerTargetKind := EffectTargetKind
 
 /-- When a triggered ability fires, how it targets, and optional divided-damage
 parameters (CR 603 / 601.2d). Adding a constructor only requires updating
@@ -839,6 +900,17 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
+#guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
+#guard SpellEffect.targetKind (.pump 3 3) == .creature
+#guard SpellEffect.targeting (.pump 3 3) == { kind := .creature, preferOwn := true }
+#guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
+#guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
+#guard SpellEffect.targetKind (.dealDamageToCreature 5) == .creature
+#guard SpellEffect.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
+#guard SpellEffect.targetKind .creatureYouControlDealsPowerToOppCreature ==
+  .creatureYouControlThenOppCreature
+#guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
+#guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
 #guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
@@ -876,6 +948,12 @@ instance : ToString CardDef where
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
 #guard AbilityEffect.requiresTarget .targetCantBeBlockedThisTurn
+#guard AbilityEffect.targetKind (.dealDamageToTargetCreature 2) == .creature
+#guard AbilityEffect.targetKind .destroyTargetColorlessNonland == .colorlessNonland
+#guard AbilityEffect.targetKind .attachToTargetCreatureYouControl == .creatureYouControl
+#guard AbilityEffect.targeting .targetCantBeBlockedThisTurn ==
+  { kind := .creature, preferOwn := true }
+#guard AbilityEffect.targetKind .searchBasicLandTapped == .none
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
