@@ -24,7 +24,8 @@ layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
 keyword grants, attack triggers (CR 508.2 / 603), including copying this
-creature's P/T onto another creature you control, becomes-blocked triggers
+creature's P/T onto another creature you control or giving another creature
++2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
 you choose (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
@@ -981,7 +982,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   match ab with
   | .onLandYouControlEntersPlusOnePlusOne =>
     g.legalCreatureTargets p (fun o => o.controlledBy p)
-  | .onAttackSetOtherBasePT =>
+  | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample =>
     g.legalCreatureTargets p (fun o => o.controlledBy p && some o.id != sourceId)
   | .onEnterDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
@@ -1317,7 +1318,7 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 and divided-damage enters triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
-mode, Equip, landfall, Galion's attack trigger, and Auras prefer a creature the
+mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
@@ -1329,7 +1330,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
-    | some .onAttackSetOtherBasePT, _, _ =>
+    | some .onAttackSetOtherBasePT, _, _
+    | some .onAttackOtherGets2AndTrample, _, _ =>
       (g.permanentsOf p).filter (fun o =>
         o.isCreature && some o.id != obj.sourceId)
       |>.back?.map (fun c => Target.permanent c.id)
@@ -2141,6 +2143,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg "The target is no longer in play"
     | some (Target.player _) =>
       g.logMsg "The target is no longer legal"
+  | .onAttackOtherGets2AndTrample =>
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in play"
+      | some o =>
+        if (g.legalTriggerTargets controller ab sourceId).contains (Target.permanent oid) then
+          let g := g.setObject { o with
+            status := { o.status with
+              pumpPower := o.status.pumpPower + 2
+              untilEotTrample := true } }
+          g.logMsg s!"{o.name} gets +2/+0 and gains trample until end of turn"
+        else if o.isOnBattlefield then
+          g.logMsg "The target is no longer legal"
+        else
+          g.logMsg "The target is no longer in play"
+    | _ => g.logMsg "The target is no longer legal"
   | .onBecomesBlockedDeal1ToBlockers =>
     match sourceId.bind g.findObject? with
     | some o =>
