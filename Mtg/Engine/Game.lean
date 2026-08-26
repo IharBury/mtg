@@ -17,8 +17,9 @@ damage among those targets (CR 601.2d), and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
-trample, pump an enchanted or equipped creature, or set power and toughness
-equal to lands you control (CR 604 / 208.2a / 613.3), until-end-of-turn
+trample, pump an enchanted or equipped creature, set power and toughness
+equal to lands you control, or restrict blocking unless you control certain
+creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
@@ -491,7 +492,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets p _ | .equippedCreatureGets p _ => n + p
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl => n)
+                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
         (0 : Int)
@@ -500,7 +502,7 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
       match ab with
       | .powerToughnessEqualLandsYouControl => true
       | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
-      | .equippedCreatureGets _ _ => false)
+      | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBasePower with
     | some n => n
@@ -526,7 +528,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets _ t | .equippedCreatureGets _ t => n + t
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl => n)
+                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
         (0 : Int)
@@ -535,7 +538,7 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
       match ab with
       | .powerToughnessEqualLandsYouControl => true
       | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
-      | .equippedCreatureGets _ _ => false)
+      | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBaseToughness with
     | some n => n
@@ -635,6 +638,22 @@ def canAttack (g : Game) (o : GameObject) : Bool :=
   !o.status.tapped && !o.printed.keywords.defender &&
   (!o.status.summoningSick || o.printed.keywords.haste)
 
+/-- Whether `p` currently controls a permanent with any of these subtypes. -/
+def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
+  (g.permanentsOf p).any (fun o => subtypes.any o.hasSubtype)
+
+/-- Whether `blocker`'s static abilities currently allow it to be declared as
+a blocker (CR 509.1b). Checked only when declaring blockers. -/
+def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
+  blocker.staticAbilities.all (fun ab =>
+    match ab with
+    | .cantBlockUnlessYouControl subtypes =>
+      match blocker.controller with
+      | none => false
+      | some p => g.controlsAnySubtype p subtypes
+    | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+    | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl => true)
+
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
   o.printed.keywords.flying
@@ -644,6 +663,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   blocker.isOnBattlefield && blocker.isCreature &&
   blocker.controlledBy defender && !blocker.status.tapped &&
   blocker.status.blocking.isEmpty &&
+  g.mayDeclareAsBlocker blocker &&
   attacker.status.attacking &&
   (!g.hasFlying attacker ||
     g.hasFlying blocker || blocker.printed.keywords.reach)
@@ -661,7 +681,7 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
     | .otherCreaturesHaveTrample subtypes =>
       subtypes.any target.hasSubtype
     | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _
-    | .powerToughnessEqualLandsYouControl => false)
+    | .powerToughnessEqualLandsYouControl | .cantBlockUnlessYouControl _ => false)
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
@@ -688,7 +708,8 @@ def auraStatBonus (aura : GameObject) : Int × Int :=
     (fun acc ab =>
       match ab with
       | .enchantedCreatureGets p t | .equippedCreatureGets p t => (acc.1 + p, acc.2 + t)
-      | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl => acc)
+      | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+      | .cantBlockUnlessYouControl _ => acc)
     (0, 0)
 
 /-- Lands `p` currently controls (CR 305.1). -/
@@ -701,7 +722,7 @@ def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
     match ab with
     | .powerToughnessEqualLandsYouControl => true
     | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
-    | .equippedCreatureGets _ _ => false)
+    | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
 
 /-- Characteristic power before pumps, counters, and attached bonuses: an
 until-EOT layer-7b set, else lands you control when that CDA applies, else

@@ -302,6 +302,11 @@ def uncontrolledPermanent : Game :=
 #guard beornsHospitality.activatedAbilities.size == 1
 #guard mentions mirkwoodPathmaker.summary "lands you control"
 #guard mirkwoodPathmaker.staticAbilities.size == 1
+#guard mentions ologHaiCrusher.summary "trample"
+#guard mentions ologHaiCrusher.summary "can't block unless"
+#guard ologHaiCrusher.keywords.trample
+#guard ologHaiCrusher.staticAbilities.size == 1
+#guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
 #guard mentions gandalfSparkStarter.summary "reach"
 #guard mentions gandalfSparkStarter.summary "divided as you choose"
 #guard gandalfSparkStarter.keywords.reach
@@ -409,6 +414,16 @@ def uncontrolledPermanent : Game :=
 
 #guard
   let c : CardDef := {
+    name := "Silent Crusher"
+    types := #[.creature]
+    keywords := { Keywords.none with trample := true }
+    staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
+  }
+  mentions c.abilitiesText "can't block unless you control a Goblin or Orc" &&
+    mentions c.summary "trample"
+
+#guard
+  let c : CardDef := {
     name := "Silent Spark"
     types := #[.creature]
     keywords := { Keywords.none with reach := true }
@@ -447,6 +462,7 @@ def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
+def withCrusher : Game := addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩
 
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
@@ -4380,5 +4396,135 @@ def agentSmaugCreatureOnly : Game :=
   | some (.cast id) =>
     (agentSmaugCreatureOnly.object! id).name == "Smaug, the Great Calamity"
   | _ => false
+
+/-- Chandra's Gray Ogre attacks; Nissa has Olog-hai Crusher with no Goblin or Orc. -/
+def ogreVsCrusher : Game :=
+  addPermanent (addPermanent started grayOgre ⟨0⟩ ⟨0⟩) ologHaiCrusher ⟨1⟩ ⟨1⟩
+
+def ogreVsCrusherReadyToBlock : Game :=
+  let g := passBoth (skipTo ogreVsCrusher .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard ogreVsCrusherReadyToBlock.pending == .declareBlockers
+#guard
+  let g := ogreVsCrusherReadyToBlock
+  !g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Gray Ogre")
+#guard
+  match ogreVsCrusherReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent ogreVsCrusherReadyToBlock "Olog-hai Crusher").id,
+    (namedPermanent ogreVsCrusherReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+/-- Nissa's Goblin lets Olog-hai Crusher block. The Goblin need not block. -/
+def ogreVsCrusherAndGoblin : Game :=
+  addPermanent ogreVsCrusher ragingGoblin ⟨1⟩ ⟨1⟩
+
+def ogreVsCrusherAndGoblinReadyToBlock : Game :=
+  let g := passBoth (skipTo ogreVsCrusherAndGoblin .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard
+  let g := ogreVsCrusherAndGoblinReadyToBlock
+  g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Gray Ogre")
+
+def crusherBlocksOgre : Game :=
+  let g := ogreVsCrusherAndGoblinReadyToBlock
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Olog-hai Crusher").id,
+    (namedPermanent g "Gray Ogre").id)])
+
+#guard (namedPermanent crusherBlocksOgre "Olog-hai Crusher").status.blocking ==
+  #[(namedPermanent crusherBlocksOgre "Gray Ogre").id]
+#guard (namedPermanent crusherBlocksOgre "Gray Ogre").status.blocked
+#guard crusherBlocksOgre.log.any (fun s => mentions s "Olog-hai Crusher blocks Gray Ogre")
+
+/-- A tapped Goblin still enables blocking (it does not have to block). -/
+def ogreVsCrusherTappedGoblinReadyToBlock : Game :=
+  let g := ogreVsCrusherAndGoblinReadyToBlock
+  let goblin := namedPermanent g "Raging Goblin"
+  g.setObject { goblin with status := { goblin.status with tapped := true } }
+
+#guard
+  let g := ogreVsCrusherTappedGoblinReadyToBlock
+  g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Gray Ogre")
+#guard !(ogreVsCrusherTappedGoblinReadyToBlock.canBlock
+  (namedPermanent ogreVsCrusherTappedGoblinReadyToBlock "Raging Goblin")
+  (namedPermanent ogreVsCrusherTappedGoblinReadyToBlock "Gray Ogre"))
+
+/-- An Orc also enables blocking. -/
+def ogreVsCrusherAndOrc : Game :=
+  addPermanent ogreVsCrusher orcishSiegemaster ⟨1⟩ ⟨1⟩
+
+def ogreVsCrusherAndOrcReadyToBlock : Game :=
+  let g := passBoth (skipTo ogreVsCrusherAndOrc .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard
+  let g := ogreVsCrusherAndOrcReadyToBlock
+  g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Gray Ogre")
+
+/-- An opponent's Goblin does not enable blocking. -/
+def ogreVsCrusherOppGoblin : Game :=
+  addPermanent ogreVsCrusher ragingGoblin ⟨0⟩ ⟨0⟩
+
+def ogreVsCrusherOppGoblinReadyToBlock : Game :=
+  let g := passBoth (skipTo ogreVsCrusherOppGoblin .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  passBoth g
+
+#guard
+  let g := ogreVsCrusherOppGoblinReadyToBlock
+  !g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Gray Ogre")
+
+/-- Whether you control a Goblin or Orc is checked only when declaring blockers. -/
+def crusherStillBlockingAfterGoblinLeaves : Game :=
+  let g := crusherBlocksOgre
+  let goblin := namedPermanent g "Raging Goblin"
+  (g.move goblin.id (.graveyard ⟨1⟩) none).1
+
+#guard !(crusherStillBlockingAfterGoblinLeaves.battlefield.any
+  (fun o => o.name == "Raging Goblin"))
+#guard (namedPermanent crusherStillBlockingAfterGoblinLeaves "Olog-hai Crusher").status.blocking ==
+  #[(namedPermanent crusherStillBlockingAfterGoblinLeaves "Gray Ogre").id]
+
+/-- A Goblin still does not let Crusher block a flyer. -/
+def flyerVsCrusherAndGoblinReadyToBlock : Game :=
+  let g := addPermanent (addPermanent (addPermanent started greatFierceBee ⟨0⟩ ⟨0⟩)
+    ologHaiCrusher ⟨1⟩ ⟨1⟩) ragingGoblin ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Great Fierce Bee").id])
+  passBoth g
+
+#guard
+  let g := flyerVsCrusherAndGoblinReadyToBlock
+  !g.canBlock (namedPermanent g "Olog-hai Crusher") (namedPermanent g "Great Fierce Bee")
+
+/-- Crusher can attack without a Goblin or Orc; printed trample assigns leftover. -/
+def crusherReadyToAttack : Game :=
+  passBoth (skipTo (addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩) .beginningOfCombat 80)
+
+#guard crusherReadyToAttack.canAttack (namedPermanent crusherReadyToAttack "Olog-hai Crusher")
+#guard crusherReadyToAttack.hasTrample (namedPermanent crusherReadyToAttack "Olog-hai Crusher")
+
+def afterCrusherTrample : Game :=
+  let g := addPermanent (addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Olog-hai Crusher").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Olog-hai Crusher").id)])
+  passBoth g
+
+#guard afterCrusherTrample.log.any (fun s =>
+  mentions s "Olog-hai Crusher deals 2 combat damage to Grizzly Bears")
+#guard afterCrusherTrample.log.any (fun s =>
+  mentions s "Olog-hai Crusher tramples for 2 to Nissa")
+#guard (afterCrusherTrample.player ⟨1⟩).life == 18
 
 end Mtg.Engine.Tests

@@ -177,6 +177,8 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "Landfall"
 #guard mentions (zoneLine withAttercop .battlefield (lastPermanent withAttercop).id)
   "Landfall"
+#guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "trample"
+#guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "can't block unless"
 
 #guard (zoneObjectIds nissaEnd .battlefield) == (zoneObjectIds chandraTurn3 .battlefield)
 #guard battlefieldView nissaEnd != battlefieldView chandraTurn3
