@@ -32,7 +32,8 @@ you choose when a creature enters or attacks (CR 601.2d), landfall triggers that
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3),
-activated pumps that last until end of turn (CR 602 / 611.2a),
+activated pumps that last until end of turn and activated abilities that
+put +1/+1 counters on the source (CR 602 / 611.2a / 122),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
@@ -1297,7 +1298,7 @@ def legalAbilityTargets (g : Game) (p : PlayerId) : AbilityEffect → Array Targ
   | .attachToTargetCreatureYouControl =>
     g.legalCreatureTargets p (fun o => o.controlledBy p)
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ => #[]
+  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => #[]
 
 /-- The spell, activated ability, or triggered ability currently waiting for
 targets (CR 601.2c / 603.3d). -/
@@ -2112,6 +2113,18 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
             pumpPower := o.status.pumpPower + pw
             pumpToughness := o.status.pumpToughness + tw } }
         g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The ability's source is no longer in play"
+  | .putPlusOnePlusOneOnSource n =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with
+          status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne + n } }
+        g.logMsg s!"{o.name} gets {AbilityEffect.plusOnePlusOneCountersPhrase n}"
       else
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>

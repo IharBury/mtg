@@ -7,7 +7,7 @@ Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, and Equip, static abilities that grant trample, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, or deal damage
@@ -777,6 +777,10 @@ def guardianOfTheHalls : CardDef := {
   power := some 2
   toughness := some 2
   keywords := { Keywords.none with trample := true }
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
+    effect := .putPlusOnePlusOneOnSource 3
+  }]
 }
 
 def quarrel : CardDef := {
@@ -1056,6 +1060,15 @@ def attercop : CardDef := {
 #guard guttersnipe.power == some 2
 #guard guttersnipe.toughness == some 2
 #guard (guttersnipe.summary.splitOn "instant or sorcery").length > 1
+#guard guardianOfTheHalls.keywords.trample
+#guard guardianOfTheHalls.activatedAbilities.size == 1
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
+  ManaCost.ofGenericAndColors 5 [.green, .green]
+#guard guardianOfTheHalls.power == some 2
+#guard guardianOfTheHalls.toughness == some 2
+#guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
+#guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
