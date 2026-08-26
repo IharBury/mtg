@@ -5,16 +5,24 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
+(keywords including flash, hexproof, and vigilance, simple `{T}: Add` mana abilities, `{T}: Add`
+for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
+with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
-power and toughness, give another creature +2/+0 and trample, or deal damage
-divided among targets, becomes-blocked triggers that
+types, attack triggers that pump, set another creature's base
+power and toughness, give another creature +2/+0 and trample, scry, deal damage
+divided among targets, or scry when you attack with Elves, scry triggers that
+pump for each card looked at, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, or deal damage
-divided among targets (including whenever the creature enters or attacks), Aura and Equipment attachment, adventurer cards
-(casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
+divided among targets (including whenever the creature enters or attacks),
+returning an Elf from the graveyard and gaining life equal to its power,
+another Elf you control entering that pumps this creature,
+Aura and Equipment attachment, adventurer cards
+(casting an Adventure, then the creature from exile, including additional land
+plays this turn), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
@@ -853,6 +861,7 @@ def mirkwoodElk : CardDef := {
   power := some 6
   toughness := some 6
   keywords := { Keywords.none with trample := true }
+  triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife]
 }
 
 def celebornTheWise : CardDef := {
@@ -864,6 +873,7 @@ def celebornTheWise : CardDef := {
   oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way."
   power := some 3
   toughness := some 3
+  triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
 }
 
 def giftOfStrands : CardDef := {
@@ -885,6 +895,8 @@ def elvishArchdruid : CardDef := {
   oracleText := "Other Elf creatures you control get +1/+1.\n{T}: Add {G} for each Elf you control."
   power := some 2
   toughness := some 2
+  staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1]
+  tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }]
 }
 
 def lothlorienLookout : CardDef := {
@@ -895,6 +907,7 @@ def lothlorienLookout : CardDef := {
   oracleText := "Whenever this creature attacks, scry 1."
   power := some 1
   toughness := some 3
+  triggeredAbilities := #[.onAttackScry 1]
 }
 
 def woodlandWeavemaster : CardDef := {
@@ -905,6 +918,9 @@ def woodlandWeavemaster : CardDef := {
   oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."
   power := some 1
   toughness := some 2
+  keywords := { Keywords.none with vigilance := true }
+  triggeredAbilities := #[.onAnotherElfYouControlEntersGets1]
+  tapAddAnyColorEqualToPower := true
 }
 
 def mirkwoodPathmaker : CardDef := {
@@ -922,10 +938,18 @@ def beornReluctantHost : CardDef := {
   types := #[.creature]
   subtypes := #["Human", "Bear", "Shapeshifter"]
   supertypes := #[.legendary]
-  oracleText := "Trample"
+  oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
   power := some 5
   toughness := some 5
   keywords := { Keywords.none with trample := true }
+  adventure := some {
+    name := "Till and Tend"
+    manaCost := ManaCost.ofGenericAndColor 1 .green
+    types := #[.sorcery]
+    subtypes := #["Adventure"]
+    oracleText := "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
+    spellEffect := some .playAdditionalLandThisTurn
+  }
 }
 
 def woodElves : CardDef := {
@@ -999,10 +1023,42 @@ def attercop : CardDef := {
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard (woodElves.summary.splitOn "Forest card").length > 1
+#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
+#guard elvishArchdruid.manaAbilities == #[.colored .green]
+#guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
+#guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1
+#guard mirkwoodElk.keywords.trample
+#guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
+#guard mirkwoodElk.power == some 6
+#guard mirkwoodElk.toughness == some 6
+#guard (mirkwoodElk.summary.splitOn "trample").length > 1
+#guard (mirkwoodElk.summary.splitOn "Elf card").length > 1
+#guard celebornTheWise.triggeredAbilities ==
+  #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
+#guard celebornTheWise.power == some 3
+#guard celebornTheWise.toughness == some 3
+#guard celebornTheWise.subtypes.any (· == "Elf")
+#guard (celebornTheWise.summary.splitOn "one or more Elves").length > 1
+#guard (celebornTheWise.summary.splitOn "looked at").length > 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButler.power == some 4
 #guard galionElvenkingsButler.toughness == some 4
+#guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
+#guard (lothlorienLookout.summary.splitOn "scry 1").length > 1
+#guard lothlorienLookout.power == some 1
+#guard lothlorienLookout.toughness == some 3
+#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.manaAbilities == #[
+  .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+#guard woodlandWeavemaster.power == some 1
+#guard woodlandWeavemaster.toughness == some 2
+#guard (woodlandWeavemaster.summary.splitOn "vigilance").length > 1
+#guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
+#guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
 #guard galadhrimGuide.power == some 3
 #guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1
@@ -1032,6 +1088,9 @@ def attercop : CardDef := {
 #guard (beornsHospitality.summary.splitOn "Landfall").length > 1
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
+#guard mirkwoodPathmaker.power.isNone
+#guard mirkwoodPathmaker.toughness.isNone
+#guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
 #guard ologHaiCrusher.keywords.trample
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
@@ -1097,5 +1156,23 @@ def attercop : CardDef := {
   | none => false
 #guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame").length > 1
 #guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
+#guard beornReluctantHost.keywords.trample
+#guard beornReluctantHost.hasAdventure
+#guard beornReluctantHost.supertypes.any (· == .legendary)
+#guard beornReluctantHost.power == some 5
+#guard beornReluctantHost.toughness == some 5
+#guard
+  match beornReluctantHost.adventure with
+  | some adv =>
+    adv.name == "Till and Tend" &&
+      adv.manaCost == ManaCost.ofGenericAndColor 1 .green &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some .playAdditionalLandThisTurn &&
+      !adv.toCardDef.requiresTarget
+  | none => false
+#guard (beornReluctantHost.summary.splitOn "Till and Tend").length > 1
+#guard (beornReluctantHost.summary.splitOn "trample").length > 1
+#guard (beornReluctantHost.summary.splitOn "additional land").length > 1
 
 end Mtg.Engine.Catalog

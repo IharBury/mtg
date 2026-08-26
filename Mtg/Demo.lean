@@ -230,7 +230,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating or casting
   play <id>            Play a land
-  tap <id> [id...]     Tap listed permanents for their first mana abilities
+  tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
@@ -295,6 +295,21 @@ def parseObjectId? (token : String) : Option ObjectId :=
     | '#' :: rest => String.ofList rest
     | cs => String.ofList cs
   digits.toNat?.map (fun n => ⟨n⟩)
+
+/-- Parse a mana type from a letter (`G`) or English name (`green`). -/
+def parseManaType? (token : String) : Option ManaType :=
+  match token.map Char.toLower with
+  | "w" | "white" => some (.colored .white)
+  | "u" | "blue" => some (.colored .blue)
+  | "b" | "black" => some (.colored .black)
+  | "r" | "red" => some (.colored .red)
+  | "g" | "green" => some (.colored .green)
+  | "c" | "colorless" => some .colorless
+  | _ => none
+
+#guard parseManaType? "G" == some (.colored .green)
+#guard parseManaType? "white" == some (.colored .white)
+#guard (parseManaType? "12").isNone
 
 /-- Parse one or more object identifiers from command tokens. -/
 def parseObjectIds (tokens : List String) (usage : String) : Except String (Array ObjectId) :=
@@ -711,19 +726,46 @@ def actingPlayer (g : Game) : Except String PlayerId :=
   | .ok p => p == ⟨1⟩
   | .error _ => false
 
-def tapUsage : String := "usage: tap <id> [id ...]"
+def tapUsage : String := "usage: tap <id> [id ...] [color]"
 
-/-- Tap each listed permanent for its first mana ability. -/
+/-- Color to tap `o` for when the player did not name one. -/
+def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType :=
+  match o.printed.manaAbilities[0]? with
+  | none => none
+  | some first =>
+    if o.printed.tapAddAnyColorEqualToPower then
+      match g.proposedSpell with
+      | some prop =>
+        some ((g.preferredManaType p o.printed.manaAbilities prop.cost
+          (g.proposedAllowsElfRestricted prop)).getD (.colored .green))
+      | none => some (.colored .green)
+    else some first
+
+/-- Tap each listed permanent for mana. A trailing color letter applies to all. -/
 def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let ids ← parseObjectIds tokens tapUsage
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  let (idTokens, chosen) :=
+    match tokens.reverse with
+    | t :: rest =>
+      match parseManaType? t with
+      | some m => (rest.reverse, some m)
+      | none => (tokens, none)
+    | [] => (tokens, none)
+  let ids ← parseObjectIds idTokens tapUsage
   let mut jobs : Array (ObjectId × ManaType) := #[]
   for id in ids do
     match g.findObject? id with
     | none => throw "no such object"
     | some o =>
-      match o.printed.manaAbilities[0]? with
-      | none => throw s!"{o.name} has no mana ability"
-      | some m => jobs := jobs.push (id, m)
+      match chosen with
+      | some m =>
+        if !o.printed.manaAbilities.contains m then
+          throw s!"{o.name} cannot produce {m}"
+        jobs := jobs.push (id, m)
+      | none =>
+        match defaultTapMana g p o with
+        | none => throw s!"{o.name} has no mana ability"
+        | some m => jobs := jobs.push (id, m)
   let mut g := g
   for (id, m) in jobs do
     g := (← g.apply p (.tapForMana id m))
@@ -758,6 +800,16 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
   | .ok g' =>
     (Tests.lastPermanent g').status.tapped &&
     (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red)
+  | .error _ => false
+
+#guard
+  let g := Tests.archAndElves
+  let arch := Tests.namedPermanent g "Elvish Archdruid"
+  match applyTap g ⟨0⟩ [toString arch.id] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Elvish Archdruid").status.tapped &&
+    (g'.player ⟨0⟩).manaPool.green == 2 &&
+    g'.log.any (fun s => Tests.mentions s "green ×2")
   | .error _ => false
 
 #guard
@@ -1109,6 +1161,17 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error _ => false
 
 #guard
+  match applyCast Tests.beornSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.beornSetup ⟨0⟩ "Beorn, Reluctant Host").id,
+        "adventure"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    (g'.object! g'.stack.back!.objectId).name == "Till and Tend" &&
+    (g'.object! g'.stack.back!.objectId).isAdventureSpell &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Till and Tend")
+  | .error _ => false
+
+#guard
   match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id, "adventure"] with
   | .error msg => Tests.mentions msg "has no Adventure"
   | .ok _ => false
@@ -1116,7 +1179,8 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 def targetUsage : String := "usage: target <id|name|opponent>"
 def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."
 
-/-- Parse a CR 601.2c target: a permanent id, a player name, or `opponent`. -/
+/-- Parse a CR 601.2c target: a permanent or graveyard-card id, a player name,
+or `opponent`. Card names match a current legal target. -/
 def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target := do
   let key := token.trimAscii.copy
   let lower := key.map Char.toLower
@@ -1129,8 +1193,24 @@ def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Targe
     | some id =>
       match g.findObject? id with
       | none => throw "no such object"
-      | some _ => return Target.permanent id
-    | none => throw targetUsage
+      | some o =>
+        match o.zone with
+        | .graveyard _ => return Target.card id
+        | _ => return Target.permanent id
+    | none =>
+      match g.objectAwaitingTargets with
+      | none => throw targetUsage
+      | some obj =>
+        let named := (g.legalProposedTargets p obj).filter (fun t =>
+          match t with
+          | .player pid => (g.player pid).name.map Char.toLower == lower
+          | .permanent oid | .card oid =>
+            match g.findObject? oid with
+            | some o => o.name.map Char.toLower == lower
+            | none => false)
+        match named.back? with
+        | some t => return t
+        | none => throw targetUsage
 
 /-- Parse target/amount pairs for a divided-damage announcement (CR 601.2d). -/
 def parseTargetAmountPairs (g : Game) (p : PlayerId) (tokens : List String) :
@@ -1566,6 +1646,53 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyTarget Tests.elkEntered ⟨0⟩
+      [toString (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.elkEntered ⟨0⟩ ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "target"
+      [toString (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard g' ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "target" ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkEntered ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkEntered "decline" [] with
+  | .error msg => Tests.mentions msg "requires a target"
+  | .ok _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.elkAttackDeclared "target" ["Llanowar Elves"] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.stack.back!.targets ==
+      #[Target.card (Tests.namedGraveyardCard Tests.elkAttackDeclared ⟨0⟩ "Llanowar Elves").id]
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.titanPumpReady "activate"
       [toString (Tests.titanSource Tests.titanPumpReady).id] with
   | .ok g' =>
@@ -1677,6 +1804,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.lookoutScrying "scry" [] with
+  | .ok g' =>
+    g'.pending == .none && g'.hasPriority ⟨0⟩ &&
+      g'.battlefield.any (fun o => o.name == "Lothlórien Lookout")
+  | .error _ => false
+
+#guard
+  let g := Tests.lookoutKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 1
+  match looked[0]? with
+  | some forest =>
+    match applyInteractiveAsActor g "scry" ["bottom", toString forest] with
+    | .ok g' =>
+      (g'.object! (g'.player ⟨0⟩).library[0]!).name == "Forest" &&
+        g'.log.any (fun s => Tests.mentions s "puts Forest on the bottom")
+    | .error _ => false
+  | none => false
+
+#guard
   match applyInteractiveAsActor Tests.visionarySetup "cast"
       [toString (Tests.handCardNamed Tests.visionarySetup ⟨0⟩ "Elvish Visionary").id] with
   | .ok g' =>
@@ -1712,6 +1858,78 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
       g'.log.any (fun s => Tests.mentions s "puts Forest onto the battlefield") &&
       g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped)
     | .error _ => false
+  | .error _ => false
+
+#guard
+  let g := Tests.weavemasterReady
+  let w := Tests.namedPermanent g "Woodland Weavemaster"
+  match applyTap g ⟨0⟩ [toString w.id] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Woodland Weavemaster").status.tapped &&
+      (g'.player ⟨0⟩).manaPool.elfGreen == 1 &&
+      (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) true
+  | .error _ => false
+
+#guard
+  let g := Tests.weavemasterReady
+  let w := Tests.namedPermanent g "Woodland Weavemaster"
+  match applyTap g ⟨0⟩ [toString w.id, "W"] with
+  | .ok g' =>
+    (g'.player ⟨0⟩).manaPool.elfWhite == 1 &&
+      (g'.player ⟨0⟩).manaPool.green == 0
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.weavemasterElfSetup "cast"
+      [toString (Tests.handCardNamed Tests.weavemasterElfSetup ⟨0⟩ "Llanowar Elves").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Llanowar Elves")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.weavemasterElfEntered "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.power (Tests.namedPermanent g' "Woodland Weavemaster") == 2 &&
+        g'.log.any (fun s => Tests.mentions s "gets +1/+1 until end of turn")
+    | .error _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.weavemasterAttackDeclared "pass" [] with
+  | .ok g' =>
+    !(Tests.namedPermanent g' "Woodland Weavemaster").status.tapped &&
+      (Tests.namedPermanent g' "Woodland Weavemaster").status.attacking
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.pathmakerSetup "cast"
+      [toString (Tests.handCardNamed Tests.pathmakerSetup ⟨0⟩ "Mirkwood Pathmaker").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Mirkwood Pathmaker")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.paidPathmaker "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.stack.isEmpty &&
+      g'.power (Tests.namedPermanent g' "Mirkwood Pathmaker") == 2 &&
+        g'.log.any (fun s => Tests.mentions s "enters the battlefield")
+    | .error _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.archAndElves "tap"
+      [toString (Tests.namedPermanent Tests.archAndElves "Elvish Archdruid").id] with
+  | .ok g' =>
+    (g'.player ⟨0⟩).manaPool.green == 2 &&
+      (Tests.namedPermanent g' "Elvish Archdruid").status.tapped &&
+      g'.log.any (fun s => Tests.mentions s "taps Elvish Archdruid for green ×2")
   | .error _ => false
 
 #guard

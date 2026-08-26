@@ -40,6 +40,8 @@ open Mtg.Demo.Render
   (firstHandCard started ⟨1⟩).name
 #guard mentions (playerBlock started (started.player ⟨0⟩) (some ⟨0⟩))
   (firstHandCard started ⟨0⟩).name
+#guard mentions (playerBlock started (started.player ⟨0⟩)) "Graveyard (0):"
+#guard mentions (playerBlock started (started.player ⟨0⟩)) "  (empty)"
 
 #guard mentions (snapshot started (some ⟨0⟩)) "Chandra's view"
 #guard !mentions (snapshot started) "view"
@@ -636,6 +638,26 @@ def mountainLine (g : Game) : String :=
       mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId)
   | _, _ => false
 
+#guard mentions (stackBlock lookoutAttackDeclared) "Lothlórien Lookout's ability"
+#guard mentions (stackBlock lookoutAttackDeclared) "Whenever this creature attacks, scry 1"
+#guard !mentions (stackBlock lookoutAttackDeclared) "When this permanent enters"
+#guard
+  let g := lookoutAttackDeclared
+  let src := namedPermanent g "Lothlórien Lookout"
+  mentions (stackBlock g) s!"*source {src.id} Lothlórien Lookout*" &&
+    mentions (objectLine g src) "1/3"
+#guard mentions (header lookoutScrying) "scry 1"
+#guard mentions (snapshot lookoutScrying) "Looking at (scry 1, top last):"
+#guard
+  let g := lookoutKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 1
+  match looked[0]? with
+  | some forestId =>
+    mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Forest" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId)
+  | none => false
+
 #guard mentions (stackBlock visionaryEntered) "Elvish Visionary's ability"
 #guard mentions (stackBlock visionaryEntered) "When this creature enters, draw a card"
 #guard !mentions (stackBlock visionaryEntered) "When this permanent enters"
@@ -665,6 +687,19 @@ def mountainLine (g : Game) : String :=
   mentions (zoneBlock g .battlefield) "Forest" &&
     (changedZones woodElvesKnownLib g).contains .battlefield &&
     (changedZones woodElvesKnownLib g).contains (.library ⟨0⟩)
+
+#guard
+  let g := archAndElves
+  mentions (objectLine g (namedPermanent g "Llanowar Elves")) "2/2" &&
+    mentions (objectLine g (namedPermanent g "Elvish Archdruid")) "2/2" &&
+    mentions (objectFaceExtras g (namedPermanent g "Elvish Archdruid"))
+      "Other Elf creatures you control get +1/+1" &&
+    mentions (objectFaceExtras g (namedPermanent g "Elvish Archdruid"))
+      "{T}: Add {G} for each Elf you control"
+#guard
+  let g := tappedArchAndElves
+  mentions (objectLine g (namedPermanent g "Elvish Archdruid")) "(tapped)" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "{G}×2"
 
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
@@ -727,6 +762,17 @@ def mountainLine (g : Game) : String :=
   let g := pathmakerWithLands
   let o := namedPermanent g "Mirkwood Pathmaker"
   mentions (objectLine g o) "2/2"
+#guard
+  let g := pathmakerGrowsWithLand
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "3/3"
+#guard
+  let g := pathmakerEntered
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "2/2"
+#guard mentions (handLine pathmakerInHand
+  (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").id) "*/*"
+#guard mentions mirkwoodPathmaker.summary "*/*"
 
 #guard mentions (header gandalfEntered) "choose targets (CR 601.2c"
 #guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
@@ -808,5 +854,33 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := guttersnipeTriggerResolved
   mentions (playerBlock g (g.player ⟨1⟩)) "life 18"
+
+#guard mentions (header elkEntered) "choose targets (CR 601.2c"
+#guard mentions (stackBlock elkEntered) "Mirkwood Elk's ability"
+#guard mentions (stackBlock elkEntered) "Elf card"
+#guard mentions (stackBlock elkEntered) "Whenever this creature enters or attacks"
+#guard !mentions (stackBlock elkEntered) "When this permanent enters"
+#guard
+  let g := elkEntered
+  let src := namedPermanent g "Mirkwood Elk"
+  let elf := namedGraveyardCard g ⟨0⟩ "Llanowar Elves"
+  mentions (stackBlock g) s!"*source {src.id} Mirkwood Elk*" &&
+    mentions (objectLine g src) "6/6" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (1):" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) elf.name
+#guard mentions (header elkAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (stackBlock elkAttackDeclared) "Mirkwood Elk's ability"
+#guard mentions (stackBlock elkAttackDeclared) "Whenever this creature enters or attacks"
+#guard
+  let g := elkResolved
+  mentions (playerBlock g (g.player ⟨0⟩)) "life 21" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (0):"
+
+#guard mentions (stackBlock paidTillAndTend) "Till and Tend"
+#guard mentions (stackBlock paidTillAndTend) "additional land"
+#guard mentions (zoneBlock resolvedTillAndTend .exile) "Beorn, Reluctant Host"
+#guard resolvedTillAndTend.log.any (fun s => mentions s "may play an additional land this turn")
+#guard mentions (objectLine resolvedExiledBeorn
+  (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host")) "trample"
 
 end Mtg.Demo.RenderTests
