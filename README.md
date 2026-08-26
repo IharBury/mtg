@@ -82,24 +82,28 @@ The first slice of the engine models the two-player game:
 - starting a game, choosing who takes the first turn, opening hands, London
   mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
 - ending a game via life, empty library, or concession (CR 104, 704.5)
-- playing lands, activating mana abilities, activating other abilities of
+- playing lands, activating mana abilities (including `{T}: Add` for each
+  permanent of a listed type), activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
   modes at 601.2b / 700.2, announcing targets at 601.2c, additional costs
   such as sacrificing an artifact or creature at 601.2f / 601.2h, and mana
   abilities at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
-- static abilities that grant trample, pump an enchanted or equipped creature,
+- static abilities that grant trample, pump other creatures of listed types,
+  pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control, or
   restrict blocking unless you control a Goblin or Orc; attack
   triggers that pump power, set another creature's base power and toughness,
-  give another creature +2/+0 and trample, or scry,
+  give another creature +2/+0 and trample, scry, or scry when you attack with one
+  or more Elves; scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, may discard a card to draw, or deal damage
   divided as you choose among one, two, or three targets (including whenever
-  a creature enters or attacks), landfall triggers that
+  a creature enters or attacks), return an Elf card from your graveyard and
+  gain life equal to its power, landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal

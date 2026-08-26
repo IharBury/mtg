@@ -18,7 +18,8 @@ an artifact or creature (CR 601.2f / 601.2h), and activating mana abilities whil
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
-trample, pump an enchanted or equipped creature, set power and toughness
+trample, pump other creatures of listed types, pump an enchanted or equipped
+creature, set power and toughness
 equal to lands you control, or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
@@ -28,10 +29,13 @@ keyword grants, attack triggers (CR 508.2 / 603), including scrying, copying thi
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
-you choose when a creature enters or attacks (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
+you choose when a creature enters or attacks (CR 601.2d) and returning an Elf
+card from your graveyard to gain life equal to its power (CR 701.19 / 118.2),
+landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
-sorcery (CR 601.2i / 603.3),
+sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
+for each card looked at (CR 508.2 / 701.20 / 603),
 activated pumps that last until end of turn and activated abilities that
 put +1/+1 counters on the source (CR 602 / 611.2a / 122),
 adventurer cards including casting an Adventure and later the permanent
@@ -42,10 +46,13 @@ CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
 
 namespace Mtg.Engine
 
-/-- A target chosen while casting a spell (CR 115). -/
+/-- A target chosen while casting a spell or putting an ability on the stack
+(CR 115). -/
 inductive Target where
   | player (id : PlayerId)
   | permanent (id : ObjectId)
+  /-- A card in a graveyard (CR 404 / 115.1). -/
+  | card (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Permanent status (CR 110.5). Extra fields track combat and EOT pumps. -/
@@ -159,7 +166,8 @@ def typeLine (o : GameObject) : String :=
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7b
 setting effects such as “equal to the number of lands you control” or an
-until-end-of-turn base P/T set are applied in `Game.power` / `Game.toughness`. -/
+until-end-of-turn base P/T set, attached Aura/Equipment bonuses, and lord
+bonuses are applied in `Game.power` / `Game.toughness`. -/
 def power (o : GameObject) : Int :=
   (o.printed.power.getD 0) + o.status.pumpPower + (o.status.plusOnePlusOne : Int)
 
@@ -205,6 +213,16 @@ structure WaitingDeathTrigger where
   source : GameObject
   ability : TriggeredAbility
   lastKnownPower : Int
+deriving Repr, Inhabited
+
+/-- A “whenever you scry” trigger waiting to be put onto the stack after the
+scry keyword action finishes (CR 603.2 / 701.20). `lookedAt` is how many cards
+were looked at. -/
+structure WaitingScryTrigger where
+  controller : PlayerId
+  source : GameObject
+  ability : TriggeredAbility
+  lookedAt : Nat
 deriving Repr, Inhabited
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
@@ -399,6 +417,9 @@ structure Game where
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Dies triggers waiting to be put onto the stack (CR 603.3 / 700.4). -/
   waitingDeathTriggers : Array WaitingDeathTrigger := #[]
+  /-- “Whenever you scry” triggers waiting until the scry action finishes
+  (CR 603.3 / 701.20). -/
+  waitingScryTriggers : Array WaitingScryTrigger := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -485,8 +506,36 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
         g := g.logMsg s!"{o.name} becomes unattached"
     return g
 
+/-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
+def grantsStatBonusTo (src target : GameObject) : Int × Int :=
+  if src.id == target.id || !src.isOnBattlefield || !target.isOnBattlefield then (0, 0)
+  else if src.controller != target.controller || src.controller.isNone then (0, 0)
+  else if !target.isCreature then (0, 0)
+  else
+    src.staticAbilities.foldl
+      (fun acc ab =>
+        match ab with
+        | .otherCreaturesGet subtypes p t =>
+          if subtypes.any target.hasSubtype then (acc.1 + p, acc.2 + t)
+          else acc
+        | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+        | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl
+        | .cantBlockUnlessYouControl _ => acc)
+      (0, 0)
+
+/-- Continuous +P/+T granted to `o` by other permanents you control (CR 613.3c). -/
+def lordStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc src =>
+        let b := grantsStatBonusTo src o
+        (acc.1 + b.1, acc.2 + b.2))
+      (0, 0)
+
 /-- Power of `o` as last known information, including pumps, counters, land-count
-setting effects, until-EOT base setting, and attached bonuses (CR 113.7a / 208.2).
+setting effects, until-EOT base setting, attached bonuses, and lord bonuses
+(CR 113.7a / 208.2).
 Computed before `o` leaves the battlefield. -/
 def snapshotPower (g : Game) (o : GameObject) : Int :=
   let attached : Int :=
@@ -500,7 +549,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets p _ | .equippedCreatureGets p _ => n + p
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+                  | .powerToughnessEqualLandsYouControl
                   | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
@@ -509,7 +559,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
     o.staticAbilities.any (fun ab =>
       match ab with
       | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .enchantedCreatureGets _ _
       | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBasePower with
@@ -521,7 +572,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
         | none => 0
       else
         o.printed.power.getD 0
-  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached
+  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached +
+    (g.lordStatBonus o).1
 
 /-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
@@ -536,7 +588,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets _ t | .equippedCreatureGets _ t => n + t
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+                  | .powerToughnessEqualLandsYouControl
                   | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
@@ -545,7 +598,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
     o.staticAbilities.any (fun ab =>
       match ab with
       | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .enchantedCreatureGets _ _
       | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBaseToughness with
@@ -557,7 +611,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
         | none => 0
       else
         o.printed.toughness.getD 0
-  base + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) + attached
+  base + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) + attached +
+    (g.lordStatBonus o).2
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
@@ -659,7 +714,8 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
       match blocker.controller with
       | none => false
       | some p => g.controlsAnySubtype p subtypes
-    | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+    | .enchantedCreatureGets _ _
     | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl => true)
 
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
@@ -688,7 +744,7 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
     match ab with
     | .otherCreaturesHaveTrample subtypes =>
       subtypes.any target.hasSubtype
-    | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _
+    | .otherCreaturesGet _ _ _ | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _
     | .powerToughnessEqualLandsYouControl | .cantBlockUnlessYouControl _ => false)
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
@@ -716,7 +772,8 @@ def auraStatBonus (aura : GameObject) : Int × Int :=
     (fun acc ab =>
       match ab with
       | .enchantedCreatureGets p t | .equippedCreatureGets p t => (acc.1 + p, acc.2 + t)
-      | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .powerToughnessEqualLandsYouControl
       | .cantBlockUnlessYouControl _ => acc)
     (0, 0)
 
@@ -729,7 +786,8 @@ def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any (fun ab =>
     match ab with
     | .powerToughnessEqualLandsYouControl => true
-    | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+    | .enchantedCreatureGets _ _
     | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
 
 /-- Characteristic power before pumps, counters, and attached bonuses: an
@@ -777,16 +835,16 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
       (0, 0)
 
 /-- Current power, including until-end-of-turn pumps, counters, land-count and
-until-EOT base setting effects, and attached bonuses (CR 208.2). -/
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
 def power (g : Game) (o : GameObject) : Int :=
   g.basePower o + o.status.pumpPower + (o.status.plusOnePlusOne : Int) +
-    (g.attachedStatBonus o).1
+    (g.attachedStatBonus o).1 + (g.lordStatBonus o).1
 
 /-- Current toughness, including until-end-of-turn pumps, counters, land-count and
-until-EOT base setting effects, and attached bonuses (CR 208.2). -/
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
 def toughness (g : Game) (o : GameObject) : Int :=
   g.baseToughness o + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) +
-    (g.attachedStatBonus o).2
+    (g.attachedStatBonus o).2 + (g.lordStatBonus o).2
 
 /-- Greatest power among creatures `p` controls; `0` if they control none. -/
 def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
@@ -982,6 +1040,15 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
     o.isCreature && pred o && g.canBeTargetedBy caster o)
   |>.map (fun o => Target.permanent o.id)
 
+/-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
+not apply off the battlefield (CR 702.11b). -/
+def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → Bool) :
+    Array Target :=
+  (g.player p).graveyard.filterMap (fun id =>
+    match g.findObject? id with
+    | some o => if pred o then some (Target.card o.id) else none
+    | none => none)
+
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
@@ -994,11 +1061,14 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
       g.legalCreatureTargets p (fun _ => true)
+  | .onEnterOrAttackReturnElfGainLife =>
+    g.legalGraveyardCardTargets p (fun o => o.hasSubtype "Elf")
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
   | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
+  | .onScryPumpSelfForEachLookedAt =>
     #[]
 
 /-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
@@ -1090,13 +1160,32 @@ def putWaitingDeathTriggers (g : Game) : Game :=
             (some wt.lastKnownPower)
       return g.promptTriggerTargetsIfNeeded
 
+/-- Put queued “whenever you scry” triggers onto the stack (CR 603.3 / 701.20).
+`lastKnownPower` stores the number of cards looked at. -/
+def putWaitingScryTriggers (g : Game) : Game :=
+  if g.waitingScryTriggers.isEmpty then g
+  else
+    Id.run do
+      let waiting := g.waitingScryTriggers
+      let mut g := { g with waitingScryTriggers := #[] }
+      for wt in waiting do
+        g := g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability "scry trigger"
+          (some (Int.ofNat wt.lookedAt))
+      return g.promptTriggerTargetsIfNeeded
+
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
   if g.over then g
   else
     let g := g.putWaitingDeathTriggers
-    if g.over || g.pending != .none then g
-    else { g with priority := p, consecutivePasses := 0 }
+    if g.over then g
+    else
+      let g :=
+        match g.pending with
+        | .scry _ _ => g
+        | _ => g.putWaitingScryTriggers
+      if g.over || g.pending != .none then g
+      else { g with priority := p, consecutivePasses := 0 }
 
 /-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
@@ -1183,6 +1272,21 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
     else if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then none
     else some (o, types))
 
+/-- Permanents `p` currently controls with this subtype. -/
+def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+  (g.permanentsOf p).filter (·.hasSubtype subtype) |>.size
+
+/-- Mana added by tapping `o` for `mana` (CR 106.4 / 605.3b). A
+`tapAddManaForEach` ability counts permanents the controller currently
+controls with the listed subtype. -/
+def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
+  match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
+  | some a =>
+    match o.controller with
+    | some p => g.countSubtype p a.subtype
+    | none => 0
+  | none => 1
+
 /-- A player may activate mana abilities with priority, or while paying a
 spell they are casting (CR 605.3a / 601.2g). -/
 def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
@@ -1205,9 +1309,12 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if !o.printed.manaAbilities.contains mana then
     throw s!"{o.name} cannot produce {mana}"
+  let amount := g.manaFromTap o mana
   let g := g.setObject { o with status := { o.status with tapped := true } }
-  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana })
-  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {mana}"
+  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana amount })
+  let produced :=
+    if amount == 1 then toString mana else s!"{mana} ×{amount}"
+  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}"
   let g :=
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
@@ -1215,12 +1322,12 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   -- Mana abilities don't use the stack (CR 605.3b).
   return { g with consecutivePasses := 0 }
 
-/-- Mana in `p`'s pool plus one mana from each of their untapped sources. -/
+/-- Mana in `p`'s pool plus mana from each of their untapped sources. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   (g.manaSources p).foldl
-    (fun pool (_, types) =>
+    (fun pool (src, types) =>
       match types[0]? with
-      | some t => pool.add t
+      | some t => pool.add t (g.manaFromTap src t)
       | none => pool)
     (g.player p).manaPool
 
@@ -1340,7 +1447,8 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
-destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
+destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
+card in the controller's graveyard; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1350,6 +1458,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | some (.onEnterDealDividedDamage _ _), _, _
     | some (.onEnterOrAttackDealDividedDamage _ _), _, _ =>
       some (Target.player (g.opponent p))
+    | some .onEnterOrAttackReturnElfGainLife, _, _ =>
+      (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
     | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
@@ -1415,7 +1525,7 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) :
 
 def targetLogName (g : Game) : Target → String
   | .player pid => (g.player pid).name
-  | .permanent oid =>
+  | .permanent oid | .card oid =>
     match g.findObject? oid with
     | some o => o.name
     | none => toString oid
@@ -2034,6 +2144,21 @@ def illegalAbilityTarget (g : Game) : Target → Game
       if o.isOnBattlefield then g.logMsg "The target is no longer legal"
       else g.logMsg "The target is no longer in play"
     | none => g.logMsg "The target is no longer in play"
+  | Target.card oid =>
+    match g.findObject? oid with
+    | some o =>
+      match o.zone with
+      | .graveyard _ => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer in the graveyard"
+    | none => g.logMsg "The target is no longer in the graveyard"
+
+/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setPlayer { pl with life := pl.life + (n : Int) }
+    g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
@@ -2058,7 +2183,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let o := g.object! oid
           let (g, _) := g.move oid (.graveyard o.owner) none
           g.logMsg s!"{o.name} is destroyed"
-        | Target.player _ => g.logMsg "The target is no longer legal"
+        | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .attachToTargetCreatureYouControl =>
@@ -2081,7 +2206,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
               g.logMsg s!"{src.name} attaches to {host.name}"
         | Target.permanent _, none =>
           g.logMsg "The Equipment is no longer in play"
-        | Target.player _, _ => g.logMsg "The target is no longer legal"
+        | Target.player _, _ | Target.card _, _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .becomeBearCreatureWithLandsPT =>
@@ -2137,10 +2262,28 @@ def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
   let n := min count lib.size
   lib.extract (lib.size - n) lib.size
 
-/-- Start scrying `n` as a keyword action during resolution (CR 701.20). -/
+/-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
+def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.controlledBy p then
+        for ab in o.printed.triggeredAbilities do
+          if ab.triggersWhenYouScry then
+            g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
+              controller := p
+              source := o
+              ability := ab
+              lookedAt := lookedAt
+            } }
+    return g
+
+/-- Start scrying `n` as a keyword action during resolution (CR 701.20).
+Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
 def beginScry (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let pl := g.player p
   let count := min n pl.library.size
+  let g := if n == 0 then g else g.queueScryTriggers p count
   if count == 0 then
     g.logMsg s!"{pl.name} scries {n} (no cards to look at)"
   else
@@ -2197,7 +2340,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg "The target is no longer legal"
         else
           g.logMsg "The target is no longer in play"
-    | some (Target.player _) =>
+    | some (Target.player _) | some (Target.card _) =>
       g.logMsg "The target is no longer legal"
   | .onAttackOtherGets2AndTrample =>
     match targets[0]? with
@@ -2236,7 +2379,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The triggered ability's source is no longer in play"
-  | .onEnterScry n | .onAttackScry n =>
+  | .onEnterScry n | .onAttackScry n | .onAttackWithElvesScry n =>
     g.beginScry controller n
   | .onEnterDraw n =>
     g.draw controller n
@@ -2282,6 +2425,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else
           g.logMsg "The target is no longer in play"
     | _ => g.logMsg "The target is no longer legal"
+  | .onEnterOrAttackReturnElfGainLife =>
+    match targets[0]? with
+    | some (Target.card oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in the graveyard"
+      | some o =>
+        if (g.legalTriggerTargets controller ab sourceId).contains (Target.card oid) then
+          let n := (o.printed.power.getD 0).toNat
+          let name := o.name
+          let (g, _) := g.move oid (.hand controller) none
+          let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+          g.gainLife controller n
+        else
+          match o.zone with
+          | .graveyard _ => g.logMsg "The target is no longer legal"
+          | _ => g.logMsg "The target is no longer in the graveyard"
+    | _ => g.logMsg "The target is no longer legal"
   | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
     Id.run do
       let mut g := g
@@ -2289,8 +2449,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         if pl.id != controller then
           g := g.applyEffect controller (.dealDamage n) #[Target.player pl.id]
       return g
+  | .onScryPumpSelfForEachLookedAt =>
+    let n := (lastKnownPower.getD 0).toNat
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with
+          status := { o.status with
+            pumpPower := o.status.pumpPower + (n : Int)
+            pumpToughness := o.status.pumpToughness + (n : Int) } }
+        g.logMsg s!"{o.name} gets +{n}/+{n} until end of turn"
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The triggered ability's source is no longer in play"
 
-/-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
+/-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
+including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
   Id.run do
     let mut g := g
@@ -2305,6 +2480,13 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
           else
             g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
               (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+    let attackedWithElves := attackerIds.any (fun id => (g.object! id).hasSubtype "Elf")
+    if attackedWithElves then
+      for o in g.battlefield do
+        if o.controlledBy p then
+          for ab in o.printed.triggeredAbilities do
+            if ab.triggersWhenYouAttackWithElves then
+              g := g.putTriggeredAbilityOnStack p o ab "attack trigger"
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
