@@ -97,9 +97,9 @@ The first slice of the engine models the two-player game:
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
-  top in any order), may discard a card to draw, or deal damage divided as
-  you choose among one, two, or three targets (including whenever a creature
-  enters or attacks), landfall triggers that
+  top in any order), draw a card, may discard a card to draw, or deal damage
+  divided as you choose among one, two, or three targets (including whenever
+  a creature enters or attacks), landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal

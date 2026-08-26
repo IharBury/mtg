@@ -1677,6 +1677,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.visionarySetup "cast"
+      [toString (Tests.handCardNamed Tests.visionarySetup ⟨0⟩ "Elvish Visionary").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Elvish Visionary")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.visionaryKnownLib "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.stack.isEmpty &&
+      g'.log.any (fun s => Tests.mentions s "draws Forest") &&
+      (g'.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+    | .error _ => false
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.proposedWarg "mode" ["1"] with
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&

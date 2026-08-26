@@ -636,6 +636,21 @@ def mountainLine (g : Game) : String :=
       mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId)
   | _, _ => false
 
+#guard mentions (stackBlock visionaryEntered) "Elvish Visionary's ability"
+#guard mentions (stackBlock visionaryEntered) "When this creature enters, draw a card"
+#guard !mentions (stackBlock visionaryEntered) "When this permanent enters"
+#guard
+  let g := visionaryEntered
+  let visionary := namedPermanent g "Elvish Visionary"
+  mentions (stackBlock g) s!"*source {visionary.id} Elvish Visionary*" &&
+    mentions (zoneBlock g .stack) s!"*source {visionary.id} Elvish Visionary*" &&
+    mentions (objectLine g visionary) "1/1"
+#guard
+  let g := visionaryDrew
+  mentions (zoneBlock g (.hand ⟨0⟩)) "Forest" &&
+    (changedZones visionaryKnownLib g).contains (.hand ⟨0⟩) &&
+    (changedZones visionaryKnownLib g).contains (.library ⟨0⟩)
+
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
 #guard pendingCostNotation cratermakerTargeted == some "{1}, Sacrifice"
