@@ -24,6 +24,8 @@ discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-tu
 keyword grants, attack triggers (CR 508.2 / 603), becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
 you choose (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
+dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
+activated pumps that last until end of turn (CR 602 / 611.2a),
 combat (CR 506–510, including combat damage assignment under CR 510.1c–d),
 cleanup (CR 514.3), and the state-based actions we implement (CR 704.5).
 -/
@@ -90,6 +92,8 @@ structure GameObject where
   triggeredAbility : Option TriggeredAbility := none
   /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
+  /-- Last known power of a dies-trigger source (CR 113.7a / 608.2g). -/
+  lastKnownPower : Option Int := none
   /-- Set while this card may be played from exile. -/
   playPermission : Option PlayPermission := none
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
@@ -166,6 +170,16 @@ def canPayTapCost (o : GameObject) : Bool :=
   !(o.isCreature && o.status.summoningSick && !o.printed.keywords.haste)
 
 end GameObject
+
+/-- A dies trigger waiting to be put onto the stack after state-based actions
+(CR 603.3, 700.4). `source` is a snapshot of the creature as it last existed
+on the battlefield. -/
+structure WaitingDeathTrigger where
+  controller : PlayerId
+  source : GameObject
+  ability : TriggeredAbility
+  lastKnownPower : Int
+deriving Repr, Inhabited
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
 structure StackEntry where
@@ -348,6 +362,8 @@ structure Game where
   mulliganToBottom : Array PlayerId := #[]
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
+  /-- Dies triggers waiting to be put onto the stack (CR 603.3 / 700.4). -/
+  waitingDeathTriggers : Array WaitingDeathTrigger := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -434,9 +450,62 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
         g := g.logMsg s!"{o.name} becomes unattached"
     return g
 
+/-- Power of `o` as last known information, including pumps, counters, land-count
+setting effects, and attached bonuses (CR 113.7a / 208.2). Computed before `o`
+leaves the battlefield. -/
+def snapshotPower (g : Game) (o : GameObject) : Int :=
+  let attached : Int :=
+    if !o.isOnBattlefield then 0
+    else
+      g.battlefield.foldl
+        (fun acc aura =>
+          if aura.attachedTo == some o.id then
+            acc +
+              aura.staticAbilities.foldl
+                (fun n ab =>
+                  match ab with
+                  | .enchantedCreatureGets p _ | .equippedCreatureGets p _ => n + p
+                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl => n)
+                (0 : Int)
+          else acc)
+        (0 : Int)
+  let setByLands :=
+    o.staticAbilities.any (fun ab =>
+      match ab with
+      | .powerToughnessEqualLandsYouControl => true
+      | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+      | .equippedCreatureGets _ _ => false)
+  let base :=
+    if o.isOnBattlefield && setByLands then
+      match o.controller with
+      | some p => Int.ofNat ((g.permanentsOf p).filter (·.printed.isLand) |>.size)
+      | none => 0
+    else
+      o.printed.power.getD 0
+  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached
+
+/-- Dies triggers of a creature leaving the battlefield for a graveyard
+(CR 700.4 / 603.6c). -/
+def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingDeathTrigger :=
+  if old.zone == .battlefield && old.isCreature then
+    match dest, old.controller with
+    | .graveyard _, some p =>
+      old.printed.triggeredAbilities.filterMap (fun ab =>
+        if ab.triggersWhenDying then
+          some {
+            controller := p
+            source := old
+            ability := ab
+            lastKnownPower := g.snapshotPower old
+          }
+        else (none : Option WaitingDeathTrigger))
+    | _, _ => (#[] : Array WaitingDeathTrigger)
+  else (#[] : Array WaitingDeathTrigger)
+
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
   let old := g.object! id
+  let dying := g.dyingTriggers old dest
   let g :=
     if old.zone == .battlefield then g.unattachFrom id else g
   let g := g.removeFromZoneList id old.zone
@@ -451,13 +520,15 @@ def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId 
     status := {}
     timestamp := ts
   }
-  let g := { g with objects := g.objects.filter (fun o => o.id != id) |>.push fresh }
+  let g : Game :=
+    { g with objects := g.objects.filter (fun (o : GameObject) => o.id != id) |>.push fresh }
   let g :=
     match dest with
     | .library p => g.modifyPlayer p (fun pl => { pl with library := pl.library.push newId })
     | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.push newId })
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
+  let g := { g with waitingDeathTriggers := g.waitingDeathTriggers ++ dying }
   (g, newId)
 
 def emptyManaPools (g : Game) : Game :=
@@ -745,9 +816,10 @@ def checkSBA (g : Game) : Game :=
 
 /-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
 Attack, becomes-blocked, and enters triggers are put on the stack as their
-events happen (CR 508.2, 509.5c, 603.6a). -/
-def hasWaitingTriggers (_g : Game) : Bool :=
-  false
+events happen (CR 508.2, 509.5c, 603.6a). Dies triggers wait until a player
+would receive priority (CR 603.3 / 700.4). -/
+def hasWaitingTriggers (g : Game) : Bool :=
+  !g.waitingDeathTriggers.isEmpty
 
 /-- CR 103.8a: in a two-player game the starting player skips the draw step
 of their first turn. -/
@@ -760,11 +832,6 @@ def playersReceivePriority (g : Game) : Bool :=
   if g.step == .cleanup then g.cleanupGivesPriority
   else if g.step == .draw && g.skipsFirstDraw then false
   else g.step.playersReceivePriority
-
-def receivePriority (g : Game) (p : PlayerId) : Game :=
-  let g := g.checkSBA
-  if g.over then g
-  else { g with priority := p, consecutivePasses := 0 }
 
 def asSorcery? (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.stack.isEmpty &&
@@ -816,6 +883,8 @@ def legalTriggerTargets (g : Game) (p : PlayerId) : TriggeredAbility → Array T
   | .onEnterDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
       g.legalCreatureTargets p (fun _ => true)
+  | .onDiesDealDamageEqualToPowerToOppCreature =>
+    g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ =>
     #[]
@@ -845,7 +914,7 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). -/
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
-    (ab : TriggeredAbility) (event : String) : Game :=
+    (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none) : Game :=
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime
   let abilityObj : GameObject := {
@@ -861,6 +930,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     timestamp := ts
     triggeredAbility := some ab
     sourceId := some source.id
+    lastKnownPower := lastKnownPower
   }
   let entry : StackEntry := { objectId := newId, controller := controller, targets := #[] }
   let g := { g with
@@ -884,6 +954,32 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
           s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
       { g with pending := .chooseTargets e.controller }.logMsg msg
   | none => g
+
+/-- Put queued dies triggers onto the stack (CR 603.3 / 700.4). Abilities that
+require a target and have none are removed (CR 603.3d). -/
+def putWaitingDeathTriggers (g : Game) : Game :=
+  if g.waitingDeathTriggers.isEmpty then g
+  else
+    Id.run do
+      let waiting := g.waitingDeathTriggers
+      let mut g := { g with waitingDeathTriggers := #[] }
+      for wt in waiting do
+        if wt.ability.requiresTarget &&
+            (g.legalTriggerTargets wt.controller wt.ability).isEmpty then
+          g := g.logMsg
+            s!"{wt.source.name}'s dies trigger is removed from the stack (no legal target) (CR 603.3d)"
+        else
+          g := g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability "dies trigger"
+            (some wt.lastKnownPower)
+      return g.promptTriggerTargetsIfNeeded
+
+def receivePriority (g : Game) (p : PlayerId) : Game :=
+  let g := g.checkSBA
+  if g.over then g
+  else
+    let g := g.putWaitingDeathTriggers
+    if g.over || g.pending != .none then g
+    else { g with priority := p, consecutivePasses := 0 }
 
 /-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
@@ -1068,7 +1164,7 @@ def legalAbilityTargets (g : Game) (p : PlayerId) : AbilityEffect → Array Targ
   | .attachToTargetCreatureYouControl =>
     g.legalCreatureTargets p (fun o => o.controlledBy p)
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT => #[]
+  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ => #[]
 
 /-- The spell, activated ability, or triggered ability currently waiting for
 targets (CR 601.2c / 603.3d). -/
@@ -1108,7 +1204,7 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters triggers prefer the opponent; creature-damage abilities
-prefer an opposing creature; destroy-flying prefers an opponent's flyer;
+and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
 mode, Equip, landfall, and Auras prefer a creature the caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1117,6 +1213,10 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     match obj.triggeredAbility, obj.abilityEffect, g.currentSpellEffect obj with
     | some (.onEnterDealDividedDamage _ _), _, _ =>
       some (Target.player (g.opponent p))
+    | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
+      (g.permanentsOf (g.opponent p)).filter (fun o =>
+        o.isCreature && g.canBeTargetedBy p o)
+      |>.back?.map (fun c => Target.permanent c.id)
     | _, some (.dealDamageToTargetCreature _), _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
@@ -1786,6 +1886,19 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The ability's source is no longer in play"
+  | .sourceGets pw tw =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.setObject { o with
+          status := { o.status with
+            pumpPower := o.status.pumpPower + pw
+            pumpToughness := o.status.pumpToughness + tw } }
+        g.logMsg s!"{o.name} gets +{pw}/+{tw} until end of turn"
+      else
+        g.logMsg s!"{o.name} is no longer on the battlefield"
+    | none =>
+      g.logMsg "The ability's source is no longer in play"
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -1814,7 +1927,8 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (dividedDamage : Array Nat := #[]) : Game :=
+    (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
+    (sourceName : String := "This creature") : Game :=
   match ab with
   | .onAttackPumpByGreatestPower =>
     match sourceId.bind g.findObject? with
@@ -1874,6 +1988,22 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         if n > 0 then
           g := g.applyEffect controller (.dealDamage n) #[t]
       return g
+  | .onDiesDealDamageEqualToPowerToOppCreature =>
+    let n := (lastKnownPower.getD 0).toNat
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in play"
+      | some o =>
+        if (g.legalTriggerTargets controller ab).contains (Target.permanent oid) then
+          let g := g.setObject { o with
+            status := { o.status with damage := o.status.damage + (n : Int) } }
+          g.logMsg s!"{sourceName} deals {n} damage to {o.name}"
+        else if o.isOnBattlefield then
+          g.logMsg "The target is no longer legal"
+        else
+          g.logMsg "The target is no longer in play"
+    | _ => g.logMsg "The target is no longer legal"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
@@ -1940,8 +2070,9 @@ def resolveTop (g : Game) : Game :=
         -- CR 608.2m: after resolution the ability ceases to exist.
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else if let some t := obj.triggeredAbility then
+        let srcName := obj.printed.name.replace "'s ability" ""
         let g := g.applyTriggeredAbility entry.controller t obj.sourceId
-          entry.targets entry.dividedDamage
+          entry.targets entry.dividedDamage obj.lastKnownPower srcName
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else
         let g :=

@@ -7,9 +7,9 @@ Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, and Equip, static abilities that grant trample or pump an enchanted
+Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample or pump an enchanted
 or equipped creature, attack triggers that pump, becomes-blocked triggers that
-damage blockers, enters triggers that scry, may discard to draw, or deal damage
+damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
 divided among targets, Aura and Equipment attachment, modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
@@ -656,6 +656,11 @@ def goblinFireleaper : CardDef := {
   oracleText := "{1}{R}: This creature gets +1/+0 until end of turn.\nWhen this creature dies, it deals damage equal to its power to target creature an opponent controls."
   power := some 1
   toughness := some 1
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGenericAndColor 1 .red }
+    effect := .sourceGets 1 0
+  }]
+  triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature]
 }
 
 def oliphaunt : CardDef := {
@@ -994,5 +999,11 @@ def attercop : CardDef := {
 #guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1
 #guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
+#guard goblinFireleaper.activatedAbilities.size == 1
+#guard goblinFireleaper.activatedAbilities[0]!.effect == .sourceGets 1 0
+#guard goblinFireleaper.activatedAbilities[0]!.cost.mana == ManaCost.ofGenericAndColor 1 .red
+#guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
+#guard (goblinFireleaper.summary.splitOn "+1/+0").length > 1
+#guard (goblinFireleaper.summary.splitOn "dies").length > 1
 
 end Mtg.Engine.Catalog
