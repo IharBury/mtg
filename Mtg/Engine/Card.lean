@@ -274,6 +274,9 @@ inductive TriggeredAbility where
   | onEnterScry (n : Nat)
   /-- When this permanent enters, draw `n` cards (e.g. Elvish Visionary). -/
   | onEnterDraw (n : Nat)
+  /-- When this permanent enters, search your library for a Forest card, put
+  that card onto the battlefield, then shuffle (e.g. Wood Elves). -/
+  | onEnterSearchForest
   /-- When this permanent enters, you may discard a card. If you do, draw `n`
   cards (e.g. Ragged Short Spear). -/
   | onEnterMayDiscardDraw (n : Nat)
@@ -316,6 +319,8 @@ def toNotation : TriggeredAbility → String
   | .onEnterDraw n =>
     let cards := if n == 1 then "a card" else s!"{n} cards"
     s!"When this permanent enters, draw {cards}."
+  | .onEnterSearchForest =>
+    "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
   | .onEnterMayDiscardDraw n =>
     let cards := if n == 1 then "a card" else s!"{n} cards"
     s!"When this permanent enters, you may discard a card. If you do, draw {cards}."
@@ -337,7 +342,8 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onEnterOrAttackDealDividedDamage amount maxTargets => some (amount, maxTargets)
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterDraw _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
+  | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => none
 
@@ -346,7 +352,7 @@ def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
@@ -354,14 +360,14 @@ def triggersWhenAttacking : TriggeredAbility → Bool
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
@@ -374,7 +380,7 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
+  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
   | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
@@ -383,7 +389,7 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onDiesDealDamageEqualToPowerToOppCreature => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
@@ -392,7 +398,7 @@ def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature => false
 
@@ -404,7 +410,7 @@ def requiresTarget : TriggeredAbility → Bool
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
-  | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
@@ -413,7 +419,7 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onAttackSetOtherBasePT => true
   | .onAttackPumpByGreatestPower | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
+  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
@@ -688,6 +694,8 @@ instance : ToString CardDef where
   "When this permanent enters, draw a card."
 #guard TriggeredAbility.toNotation (.onEnterDraw 2) ==
   "When this permanent enters, draw 2 cards."
+#guard TriggeredAbility.toNotation .onEnterSearchForest ==
+  "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
 #guard TriggeredAbility.toNotation (.onEnterMayDiscardDraw 2) ==
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
@@ -704,6 +712,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
+#guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
@@ -716,6 +725,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDraw 1)
+#guard TriggeredAbility.triggersWhenEntering .onEnterSearchForest
 #guard TriggeredAbility.triggersWhenEntering (.onEnterMayDiscardDraw 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
@@ -746,6 +756,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterDraw 1)
+#guard !TriggeredAbility.requiresTarget .onEnterSearchForest
 #guard !TriggeredAbility.requiresTarget (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard
   let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
@@ -783,5 +794,9 @@ end AdventureFace
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/
 def isBasicLandCard (c : CardDef) : Bool :=
   c.isLand && c.supertypes.any (· == .basic)
+
+/-- A card with the Forest land type (CR 205.3i / 305.7). -/
+def isForestCard (c : CardDef) : Bool :=
+  c.isLand && c.subtypes.any (· == "Forest")
 
 end Mtg.Engine

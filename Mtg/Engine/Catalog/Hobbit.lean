@@ -12,7 +12,7 @@ or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, or deal damage
 divided among targets, becomes-blocked triggers that
-damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, may discard to draw, or deal damage
+damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, or deal damage
 divided among targets (including whenever the creature enters or attacks), Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
@@ -936,6 +936,7 @@ def woodElves : CardDef := {
   oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
   power := some 1
   toughness := some 1
+  triggeredAbilities := #[.onEnterSearchForest]
 }
 
 def elvishMystic : CardDef := {
@@ -996,6 +997,8 @@ def attercop : CardDef := {
 #guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
+#guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
+#guard (woodElves.summary.splitOn "Forest card").length > 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButler.power == some 4
