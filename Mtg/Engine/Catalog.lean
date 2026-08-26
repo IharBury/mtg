@@ -14,45 +14,20 @@ namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-def plains : CardDef := {
-  name := "Plains"
+/-- A basic land whose name is also its land type (CR 305.6). -/
+def basicLand (landName : String) (color : Color) : CardDef := {
+  name := landName
   types := #[.land]
-  subtypes := #["Plains"]
+  subtypes := #[landName]
   supertypes := #[.basic]
-  oracleText := "{T}: Add {W}."
+  oracleText := s!"\{T}: Add \{{color.letter}}."
 }
 
-def island : CardDef := {
-  name := "Island"
-  types := #[.land]
-  subtypes := #["Island"]
-  supertypes := #[.basic]
-  oracleText := "{T}: Add {U}."
-}
-
-def swamp : CardDef := {
-  name := "Swamp"
-  types := #[.land]
-  subtypes := #["Swamp"]
-  supertypes := #[.basic]
-  oracleText := "{T}: Add {B}."
-}
-
-def mountain : CardDef := {
-  name := "Mountain"
-  types := #[.land]
-  subtypes := #["Mountain"]
-  supertypes := #[.basic]
-  oracleText := "{T}: Add {R}."
-}
-
-def forest : CardDef := {
-  name := "Forest"
-  types := #[.land]
-  subtypes := #["Forest"]
-  supertypes := #[.basic]
-  oracleText := "{T}: Add {G}."
-}
+def plains : CardDef := basicLand "Plains" .white
+def island : CardDef := basicLand "Island" .blue
+def swamp : CardDef := basicLand "Swamp" .black
+def mountain : CardDef := basicLand "Mountain" .red
+def forest : CardDef := basicLand "Forest" .green
 
 def grizzlyBears : CardDef := {
   name := "Grizzly Bears"
