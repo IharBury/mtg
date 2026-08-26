@@ -46,6 +46,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.putOnBottom ((g.player p).hand.extract 0 n))
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
+    | .mayDiscardDraw _ _ =>
+      match (g.player p).hand.back? with
+      | some id => some (.discard id)
+      | none => some .decline
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
     | .none =>
@@ -102,7 +106,10 @@ where
     let available := g.availableMana p
     let candidate := (g.permanentsOf p).find? (fun o =>
       match o.printed.activatedAbilities[0]? with
-      | some ab => g.canActivate p o ab && available.canPay ab.cost.mana
+      | some ab =>
+        g.canActivate p o ab && available.canPay ab.cost.mana &&
+        -- Don't spend mana re-equipping a creature that is already equipped.
+        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome)
       | none => false)
     match candidate with
     | some o => some (.activate o.id 0)
@@ -122,7 +129,8 @@ where
           o.printed.spellModes.any (· == .destroyCreatureWithFlying)))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
-      o.printed.types.any (· == .artifact) && !o.printed.activatedAbilities.isEmpty)
+      o.printed.types.any (· == .artifact) &&
+        (!o.printed.activatedAbilities.isEmpty || o.printed.isEquipment))
     let pump :=
       if ownCreature.isSome then
         playable.find? (fun o =>

@@ -371,6 +371,24 @@ def mountainLine (g : Game) : String :=
   mentions (header giftScrying) "scry 2" &&
   mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
 
+#guard
+  let g := spearEquipped
+  let bears := namedPermanent g "Grizzly Bears"
+  let spear := namedPermanent g "Ragged Short Spear"
+  objectLine g bears ==
+    s!"{bears.id} Grizzly Bears 4/2 (owned by Chandra, controlled by Chandra)" &&
+  mentions (objectLine g spear) s!"*equipping {bears.id} Grizzly Bears*" &&
+  mentions (header spearMayDiscard) "may discard a card, then draw 2"
+
+#guard
+  let g := spearEquipped
+  let bears := namedPermanent g "Grizzly Bears"
+  let spear := namedPermanent g "Ragged Short Spear"
+  let hostLine := objectLine g bears (some (some ⟨0⟩))
+  let spearLine := objectLine g spear (some (some ⟨0⟩))
+  mentions spearLine "*equipping" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {spearLine}"
+
 -- Attached permanents print next to their host, with two extra spaces.
 #guard
   let g := giftEntered

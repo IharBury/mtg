@@ -83,12 +83,13 @@ The first slice of the engine models the two-player game:
   modes at 601.2b / 700.2, announcing targets at 601.2c, and mana abilities
   at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
-- static abilities that grant trample, pump an enchanted creature, or set
-  power and toughness equal to the number of lands you control; attack
+- static abilities that grant trample, pump an enchanted or equipped creature,
+  or set power and toughness equal to the number of lands you control; attack
   triggers that pump power, becomes-blocked triggers that damage blocking
-  creatures, flash, Aura spells that enchant a creature, enters triggers
-  that scry (any number to the bottom, the rest on top in any order), and
-  landfall triggers that put +1/+1 counters on a target creature you control
+  creatures, flash, Aura spells that enchant a creature, Equipment (including
+  Equip), enters triggers that scry (any number to the bottom, the rest on
+  top in any order) or may discard a card to draw, and landfall triggers that
+  put +1/+1 counters on a target creature you control
 - modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes
