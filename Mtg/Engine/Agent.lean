@@ -73,9 +73,10 @@ where
       match g.defaultMode p spell with
       | some i => some (.chooseMode i)
       | none => some .pass
-  /-- During CR 601.2c, announce a legal target for the proposed spell. -/
+  /-- During CR 601.2c / 603.3d, announce a legal target for the proposed
+  spell, activated ability, or triggered ability. -/
   chooseSpellTarget (g : Game) (p : PlayerId) : Option Action :=
-    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    match g.objectAwaitingTargets with
     | none => some .pass
     | some spell =>
       match g.defaultTarget p spell with
@@ -117,7 +118,7 @@ where
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o && available.canPay o.printed.manaCost)
-    let ownCreature := (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+    let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
     let burn := playable.find? (fun o =>
       match o.printed.spellEffect with
       | some (.dealDamage _) => true

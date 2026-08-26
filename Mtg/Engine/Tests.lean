@@ -250,6 +250,9 @@ def uncontrolledPermanent : Game :=
 #guard raggedShortSpear.staticAbilities.size == 1
 #guard raggedShortSpear.triggeredAbilities.size == 1
 #guard raggedShortSpear.activatedAbilities.size == 1
+#guard mentions galadhrimGuide.summary "scry 2"
+#guard galadhrimGuide.triggeredAbilities.size == 1
+#guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -257,6 +260,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions goblinCratermaker.summary "Choose one"
 #guard mentions goblinCratermaker.summary "colorless nonland"
 #guard goblinCratermaker.activatedAbilities.size == 1
+#guard mentions beornsHospitality.summary "Landfall"
+#guard mentions beornsHospitality.summary "Bear creature"
+#guard beornsHospitality.triggeredAbilities.size == 1
+#guard beornsHospitality.activatedAbilities.size == 1
+#guard mentions mirkwoodPathmaker.summary "lands you control"
+#guard mirkwoodPathmaker.staticAbilities.size == 1
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -326,6 +335,28 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "Attach this Equipment" &&
     mentions c.abilitiesText "activate only as a sorcery"
 
+#guard
+  let c : CardDef := {
+    name := "Silent Hospitality"
+    types := #[.enchantment]
+    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
+      effect := .becomeBearCreatureWithLandsPT
+    }]
+  }
+  mentions c.abilitiesText "land you control enters" &&
+    mentions c.abilitiesText "Bear creature" &&
+    mentions c.abilitiesText "{5}{G}{G}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Pathmaker"
+    types := #[.creature]
+    staticAbilities := #[.powerToughnessEqualLandsYouControl]
+  }
+  mentions c.abilitiesText "lands you control"
+
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
@@ -385,8 +416,8 @@ def applyIdle (g : Game) : Game :=
     | .ok g' => g'
     | .error e => panic! e
   | .chooseTargets _, some p =>
-    match g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
-    | none => panic! "expected a proposed spell while choosing targets"
+    match g.objectAwaitingTargets with
+    | none => panic! "expected a proposed spell or trigger while choosing targets"
     | some spell =>
       match g.defaultTarget p spell with
       | none => panic! "no legal target (CR 601.2c)"
@@ -2007,6 +2038,108 @@ def scryEmpty : Game :=
 #guard scryEmpty.pending == .none
 #guard scryEmpty.log.any (fun s => mentions s "no cards to look at")
 
+/-- Galadhrim Guide in hand with enough mana to cast it (CR 601.2). -/
+def guideSetup : Game :=
+  withGreenMana (addToHand afterDraw galadhrimGuide ⟨0⟩) ⟨0⟩
+
+#guard guideSetup.canCast ⟨0⟩ (handCardNamed guideSetup ⟨0⟩ "Galadhrim Guide")
+#guard guideSetup.asSorcery? ⟨0⟩
+#guard !galadhrimGuide.keywords.flash
+#guard galadhrimGuide.hasSorcerySpeed
+
+-- A creature without flash cannot be cast when it is not a main phase.
+#guard
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
+  !g.asSorcery? ⟨0⟩ && !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Galadhrim Guide")
+
+def proposedGuide : Game :=
+  mustApply guideSetup ⟨0⟩ (.cast (handCardNamed guideSetup ⟨0⟩ "Galadhrim Guide").id)
+
+#guard proposedGuide.pending == .activateManaAbilities ⟨0⟩
+#guard proposedGuide.log.any (fun s => mentions s "begins casting Galadhrim Guide")
+
+def paidGuide : Game := mustApply proposedGuide ⟨0⟩ .pay
+
+#guard paidGuide.stack.size == 1
+#guard paidGuide.hasPriority ⟨0⟩
+#guard paidGuide.log.any (fun s => mentions s "casts Galadhrim Guide")
+
+/-- The creature enters; scry waits on the stack (CR 603.6a). -/
+def guideEntered : Game := passBoth paidGuide
+
+#guard (namedPermanent guideEntered "Galadhrim Guide").printed.power == some 3
+#guard guideEntered.power (namedPermanent guideEntered "Galadhrim Guide") == 3
+#guard guideEntered.toughness (namedPermanent guideEntered "Galadhrim Guide") == 4
+#guard guideEntered.stack.size == 1
+#guard (guideEntered.object! guideEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterScry 2)
+#guard (guideEntered.object! guideEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent guideEntered "Galadhrim Guide").id
+#guard guideEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard guideEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+def guideScrying : Game := passBoth guideEntered
+
+#guard
+  match guideScrying.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+#guard guideScrying.actor == some ⟨0⟩
+#guard !guideScrying.hasPriority ⟨0⟩
+#guard guideScrying.log.any (fun s => mentions s "scries 2")
+#guard guideScrying.stack.isEmpty
+#guard guideScrying.battlefield.any (fun o => o.name == "Galadhrim Guide")
+
+def guideScried : Game := keepScry guideScrying
+
+#guard guideScried.pending == .none
+#guard guideScried.hasPriority ⟨0⟩
+#guard guideScried.battlefield.any (fun o => o.name == "Galadhrim Guide")
+
+-- The agent keeps scried cards on top.
+#guard
+  match Agent.choose guideScrying ⟨0⟩ with
+  | some (.scry top bottom) =>
+    bottom.isEmpty && top == guideScrying.scryLookedIds ⟨0⟩ 2
+  | _ => false
+
+/-- Known library: Forest then Elves on top; scry 2 looks at both. -/
+def guideKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop guideEntered forest ⟨0⟩) llanowarElves ⟨0⟩
+
+def guideKnownScrying : Game := passBoth guideKnownLib
+
+#guard
+  let looked := guideKnownScrying.scryLookedIds ⟨0⟩ 2
+  looked.size == 2 &&
+    (guideKnownScrying.object! looked[0]!).name == "Forest" &&
+    (guideKnownScrying.object! looked.back!).name == "Llanowar Elves"
+
+/-- The trigger still scries if Galadhrim Guide has left the battlefield (CR 113.7a). -/
+def guideLeftBeforeTrigger : Game :=
+  let id := (namedPermanent guideEntered "Galadhrim Guide").id
+  let (g, _) := guideEntered.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard
+  match guideLeftBeforeTrigger.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+#guard !(guideLeftBeforeTrigger.battlefield.any (fun o => o.name == "Galadhrim Guide"))
+#guard (guideLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (guideLeftBeforeTrigger.object! id).name == "Galadhrim Guide")
+
+/-- The agent casts Galadhrim Guide when that is the playable spell. -/
+def agentGuideOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
+
+#guard
+  match Agent.choose agentGuideOnly ⟨0⟩ with
+  | some (.cast id) => (agentGuideOnly.object! id).name == "Galadhrim Guide"
+  | _ => false
+
 /-- Goblin Cratermaker plus an opposing 2/2 and a Mountain; a land drop is already
 used so the agent will activate rather than play another land. -/
 def cratermakerReady : Game :=
@@ -3021,6 +3154,225 @@ def agentSpearOnly : Game :=
 #guard
   match Agent.choose agentSpearOnly ⟨0⟩ with
   | some (.cast id) => (agentSpearOnly.object! id).name == "Ragged Short Spear"
+  | _ => false
+
+/- Beorn's Hospitality: landfall +1/+1 and lasting Bear animation. -/
+
+def addForests (g : Game) (p : PlayerId) : Nat → Game
+  | 0 => g
+  | n + 1 => addPermanent (addForests g p n) forest p p
+
+/-- Hospitality and Grizzly Bears in play; a Forest in hand. -/
+def hospitalityLandfallSetup : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  addToHand g forest ⟨0⟩
+
+#guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
+#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
+#guard beornsHospitality.activatedAbilities[0]!.effect == .becomeBearCreatureWithLandsPT
+
+def hospitalityLandPlayed : Game :=
+  mustApply hospitalityLandfallSetup ⟨0⟩
+    (.playLand (handCardNamed hospitalityLandfallSetup ⟨0⟩ "Forest").id)
+
+#guard hospitalityLandPlayed.pending == .chooseTargets ⟨0⟩
+#guard hospitalityLandPlayed.stack.size == 1
+#guard (hospitalityLandPlayed.object! hospitalityLandPlayed.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersPlusOnePlusOne
+#guard hospitalityLandPlayed.stack.back!.targets.isEmpty
+#guard hospitalityLandPlayed.log.any (fun s => mentions s "landfall trigger is put on the stack")
+#guard hospitalityLandPlayed.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+#guard !hospitalityLandPlayed.hasPriority ⟨0⟩
+#guard hospitalityLandPlayed.actor == some ⟨0⟩
+
+-- The landfall trigger cannot target an opponent's creature or a player.
+#guard
+  let g := addPermanent hospitalityLandPlayed velvetwingButterflies ⟨1⟩ ⟨1⟩
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match hospitalityLandPlayed.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets a creature you control.
+#guard
+  match Agent.choose hospitalityLandPlayed ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (hospitalityLandPlayed.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def hospitalityLandfallTargeted : Game :=
+  mustApply hospitalityLandPlayed ⟨0⟩
+    (.target (Target.permanent (namedPermanent hospitalityLandPlayed "Grizzly Bears").id))
+
+#guard hospitalityLandfallTargeted.pending == .none
+#guard hospitalityLandfallTargeted.hasPriority ⟨0⟩
+#guard hospitalityLandfallTargeted.stack.back!.targets ==
+  #[Target.permanent (namedPermanent hospitalityLandfallTargeted "Grizzly Bears").id]
+#guard hospitalityLandfallTargeted.log.any (fun s =>
+  mentions s "chooses Grizzly Bears as a target")
+
+def hospitalityLandfallResolved : Game := passBoth hospitalityLandfallTargeted
+
+#guard hospitalityLandfallResolved.stack.isEmpty
+#guard (namedPermanent hospitalityLandfallResolved "Grizzly Bears").status.plusOnePlusOne == 1
+#guard hospitalityLandfallResolved.power
+  (namedPermanent hospitalityLandfallResolved "Grizzly Bears") == 3
+#guard hospitalityLandfallResolved.log.any (fun s => mentions s "gets a +1/+1 counter")
+
+/-- No creature you control: the landfall trigger is removed (CR 603.3d). -/
+def hospitalityNoTarget : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addToHand g forest ⟨0⟩
+  mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard hospitalityNoTarget.stack.isEmpty
+#guard hospitalityNoTarget.hasPriority ⟨0⟩
+#guard hospitalityNoTarget.log.any (fun s => mentions s "no legal target")
+
+/-- An opponent's land does not trigger your landfall. -/
+def nissaLandVsHospitality : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .end 80)
+  let g := skipTo g .precombatMain 80
+  let g := addToHand g forest ⟨1⟩
+  mustApply g ⟨1⟩ (.playLand (handCardNamed g ⟨1⟩ "Forest").id)
+
+#guard nissaLandVsHospitality.stack.isEmpty
+#guard !(nissaLandVsHospitality.log.any (fun s => mentions s "landfall"))
+#guard (namedPermanent nissaLandVsHospitality "Grizzly Bears").status.plusOnePlusOne == 0
+
+/-- If the targeted creature leaves before resolution, the trigger does nothing. -/
+def hospitalityTargetGone : Game :=
+  let id := (namedPermanent hospitalityLandfallTargeted "Grizzly Bears").id
+  let (g, _) := hospitalityLandfallTargeted.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard hospitalityTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(hospitalityTargetGone.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- Animate Beorn's Hospitality with three lands in play. -/
+def hospitalityAnimateSetup : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addForests g ⟨0⟩ 3
+  g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with
+      manaPool := pl.manaPool.add (.colored .green) 7
+      landsPlayedThisTurn := 1 })
+
+#guard hospitalityAnimateSetup.canActivate ⟨0⟩
+  (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
+  (beornsHospitality.activatedAbilities[0]!)
+#guard !(namedPermanent hospitalityAnimateSetup "Beorn's Hospitality").isCreature
+#guard hospitalityAnimateSetup.landsYouControl ⟨0⟩ == 3
+
+def proposedHospitalityAnimate : Game :=
+  mustApply hospitalityAnimateSetup ⟨0⟩
+    (.activate (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality").id 0)
+
+#guard proposedHospitalityAnimate.pending == .activateManaAbilities ⟨0⟩
+#guard proposedHospitalityAnimate.log.any (fun s => mentions s "begins activating Beorn's Hospitality")
+
+def paidHospitalityAnimate : Game :=
+  mustApply proposedHospitalityAnimate ⟨0⟩ .pay
+
+#guard paidHospitalityAnimate.hasPriority ⟨0⟩
+#guard paidHospitalityAnimate.stack.size == 1
+#guard paidHospitalityAnimate.log.any (fun s => mentions s "activates Beorn's Hospitality")
+
+def animatedHospitality : Game := passBoth paidHospitalityAnimate
+
+#guard animatedHospitality.stack.isEmpty
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").isCreature
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").hasSubtype "Bear"
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").printed.isEnchantment
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .creature)
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").types.any (· == .enchantment)
+#guard (namedPermanent animatedHospitality "Beorn's Hospitality").status.additionalCreature
+#guard animatedHospitality.power
+  (namedPermanent animatedHospitality "Beorn's Hospitality") == 3
+#guard animatedHospitality.toughness
+  (namedPermanent animatedHospitality "Beorn's Hospitality") == 3
+#guard animatedHospitality.log.any (fun s => mentions s "becomes a Bear creature")
+
+/-- The animation does not wear off in cleanup. -/
+def afterHospitalityCleanup : Game := passBoth (skipTo animatedHospitality .end 80)
+
+#guard (namedPermanent afterHospitalityCleanup "Beorn's Hospitality").isCreature
+#guard afterHospitalityCleanup.power
+  (namedPermanent afterHospitalityCleanup "Beorn's Hospitality") == 3
+
+/-- 0/0 animated Hospitality dies (CR 704.5f). -/
+def hospitalityZeroLands : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := withGreenMana g ⟨0⟩ 7
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Beorn's Hospitality").id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard !(hospitalityZeroLands.battlefield.any (fun o => o.name == "Beorn's Hospitality"))
+#guard hospitalityZeroLands.log.any (fun s => mentions s "dies (toughness 0)")
+
+/-- Pathmaker's printed setting ability uses lands you control. -/
+def pathmakerWithLands : Game :=
+  let g := addForests afterDraw ⟨0⟩ 2
+  addPermanent g mirkwoodPathmaker ⟨0⟩ ⟨0⟩
+
+#guard pathmakerWithLands.power (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
+#guard pathmakerWithLands.toughness
+  (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
+
+/-- Landfall can target the animated Hospitality; P/T is lands plus counters. -/
+def hospitalitySelfLandfall : Game :=
+  let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addForests g ⟨0⟩ 3
+  let o := namedPermanent g "Beorn's Hospitality"
+  let g := g.setObject { o with
+    status := { o.status with
+      additionalCreature := true
+      additionalSubtypes := #["Bear"]
+      grantedStaticAbilities := #[.powerToughnessEqualLandsYouControl] } }
+  let g := addToHand g forest ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Beorn's Hospitality").id))
+  passBoth g
+
+#guard (namedPermanent hospitalitySelfLandfall "Beorn's Hospitality").status.plusOnePlusOne == 1
+#guard hospitalitySelfLandfall.power
+  (namedPermanent hospitalitySelfLandfall "Beorn's Hospitality") ==
+    Int.ofNat (hospitalitySelfLandfall.landsYouControl ⟨0⟩) + 1
+
+/-- Summoning sickness: a Hospitality that entered this turn cannot attack
+after it becomes a creature (CR 302.6). -/
+def hospitalityEnteredThisTurn : Game :=
+  let g := withGreenMana (addToHand afterDraw beornsHospitality ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Beorn's Hospitality").id)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  let g := addForests g ⟨0⟩ 2
+  let g := withGreenMana g ⟨0⟩ 7
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Beorn's Hospitality").id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality").isCreature
+#guard !(hospitalityEnteredThisTurn.canAttack
+  (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality"))
+#guard (namedPermanent hospitalityEnteredThisTurn "Beorn's Hospitality").status.summoningSick
+
+/- The agent begins activating Hospitality when {5}{G}{G} is available. -/
+#guard
+  match Agent.choose hospitalityAnimateSetup ⟨0⟩ with
+  | some (.activate id 0) =>
+    (hospitalityAnimateSetup.object! id).name == "Beorn's Hospitality"
   | _ => false
 
 end Mtg.Engine.Tests

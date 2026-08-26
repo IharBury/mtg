@@ -765,6 +765,7 @@ def galadhrimGuide : CardDef := {
   oracleText := "When this creature enters, scry 2."
   power := some 3
   toughness := some 4
+  triggeredAbilities := #[.onEnterScry 2]
 }
 
 def galionElvenkingsButler : CardDef := {
@@ -801,6 +802,11 @@ def beornsHospitality : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .green
   types := #[.enchantment]
   oracleText := "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)"
+  triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne]
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
+    effect := .becomeBearCreatureWithLandsPT
+  }]
 }
 
 def mirkwoodElk : CardDef := {
@@ -872,6 +878,7 @@ def mirkwoodPathmaker : CardDef := {
   types := #[.creature]
   subtypes := #["Elf", "Ranger"]
   oracleText := "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control."
+  staticAbilities := #[.powerToughnessEqualLandsYouControl]
 }
 
 def beornReluctantHost : CardDef := {
@@ -950,6 +957,10 @@ def attercop : CardDef := {
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
+#guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
+#guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
+#guard galadhrimGuide.power == some 3
+#guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1
 #guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
 #guard goblinCratermaker.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
@@ -967,5 +978,16 @@ def attercop : CardDef := {
   .plusOnePlusOneTrampleHexproof]
 #guard (wargTactics.summary.splitOn "Choose one").length > 1
 #guard (wargTactics.summary.splitOn "hexproof").length > 1
+#guard beornsHospitality.isEnchantment
+#guard !beornsHospitality.isCreature
+#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
+#guard beornsHospitality.activatedAbilities.size == 1
+#guard beornsHospitality.activatedAbilities[0]!.effect == .becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
+  ManaCost.ofGenericAndColors 5 [.green, .green]
+#guard (beornsHospitality.summary.splitOn "Landfall").length > 1
+#guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
+#guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
+#guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
 
 end Mtg.Engine.Catalog

@@ -90,6 +90,10 @@ inductive AbilityEffect where
   | destroyTargetColorlessNonland
   /-- Attach this Equipment to target creature you control (CR 702.6a). -/
   | attachToTargetCreatureYouControl
+  /-- This enchantment becomes a Bear creature in addition to its other types
+  and gains “This creature's power and toughness are each equal to the number
+  of lands you control.” The effect does not end (e.g. Beorn's Hospitality). -/
+  | becomeBearCreatureWithLandsPT
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -105,12 +109,15 @@ def toNotation : AbilityEffect → String
     "Destroy target colorless nonland permanent"
   | .attachToTargetCreatureYouControl =>
     "Attach this Equipment to target creature you control"
+  | .becomeBearCreatureWithLandsPT =>
+    "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : AbilityEffect → Bool
   | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland
   | .attachToTargetCreatureYouControl => true
-  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn => false
+  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
+  | .becomeBearCreatureWithLandsPT => false
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -197,6 +204,9 @@ inductive StaticAbility where
   | enchantedCreatureGets (power toughness : Int)
   /-- Equipped creature gets +P/+T (e.g. Ragged Short Spear). -/
   | equippedCreatureGets (power toughness : Int)
+  /-- This creature's power and toughness are each equal to the number of lands
+  you control (e.g. Mirkwood Pathmaker, animated Beorn's Hospitality). -/
+  | powerToughnessEqualLandsYouControl
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -213,6 +223,8 @@ def toNotation : StaticAbility → String
     s!"Enchanted creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
   | .equippedCreatureGets p t =>
     s!"Equipped creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
+  | .powerToughnessEqualLandsYouControl =>
+    "This creature's power and toughness are each equal to the number of lands you control."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -232,6 +244,9 @@ inductive TriggeredAbility where
   /-- When this permanent enters, you may discard a card. If you do, draw `n`
   cards (e.g. Ragged Short Spear). -/
   | onEnterMayDiscardDraw (n : Nat)
+  /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
+  target creature you control (e.g. Beorn's Hospitality). -/
+  | onLandYouControlEntersPlusOnePlusOne
 deriving Repr, Inhabited, BEq
 
 namespace TriggeredAbility
@@ -246,21 +261,40 @@ def toNotation : TriggeredAbility → String
   | .onEnterMayDiscardDraw n =>
     let cards := if n == 1 then "a card" else s!"{n} cards"
     s!"When this permanent enters, you may discard a card. If you do, draw {cards}."
+  | .onLandYouControlEntersPlusOnePlusOne =>
+    "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower => true
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _ => false
+  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterMayDiscardDraw _
+  | .onLandYouControlEntersPlusOnePlusOne => false
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers => true
-  | .onAttackPumpByGreatestPower | .onEnterScry _ | .onEnterMayDiscardDraw _ => false
+  | .onAttackPumpByGreatestPower | .onEnterScry _ | .onEnterMayDiscardDraw _
+  | .onLandYouControlEntersPlusOnePlusOne => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
   | .onEnterScry _ | .onEnterMayDiscardDraw _ => true
-  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers => false
+  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers
+  | .onLandYouControlEntersPlusOnePlusOne => false
+
+/-- True for abilities that trigger when a land the controller controls enters
+(CR 603.6a, landfall). -/
+def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
+  | .onLandYouControlEntersPlusOnePlusOne => true
+  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onEnterMayDiscardDraw _ => false
+
+/-- True when putting this trigger on the stack requires announcing a target
+(CR 603.3d / 601.2c). -/
+def requiresTarget : TriggeredAbility → Bool
+  | .onLandYouControlEntersPlusOnePlusOne => true
+  | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
+  | .onEnterMayDiscardDraw _ => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -439,10 +473,13 @@ instance : ToString CardDef where
   "Destroy target colorless nonland permanent"
 #guard AbilityEffect.toNotation .attachToTargetCreatureYouControl ==
   "Attach this Equipment to target creature you control"
+#guard (AbilityEffect.toNotation .becomeBearCreatureWithLandsPT).startsWith
+  "This enchantment becomes a Bear creature"
 #guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
+#guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
@@ -465,6 +502,8 @@ instance : ToString CardDef where
   "Enchanted creature gets +3/+3."
 #guard StaticAbility.toNotation (.equippedCreatureGets 2 0) ==
   "Equipped creature gets +2/+0."
+#guard StaticAbility.toNotation .powerToughnessEqualLandsYouControl ==
+  "This creature's power and toughness are each equal to the number of lands you control."
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 #guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
@@ -473,6 +512,8 @@ instance : ToString CardDef where
   "When this permanent enters, scry 2."
 #guard TriggeredAbility.toNotation (.onEnterMayDiscardDraw 2) ==
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
+#guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
+  "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
@@ -486,6 +527,10 @@ instance : ToString CardDef where
   }
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
+#guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
+#guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 
 end CardDef
 

@@ -106,8 +106,10 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     else
       let refs := o.status.blocking.toList.map (objectRef g)
       s!" *blocking {String.intercalate ", " refs}*"
+  let types :=
+    if o.status.additionalCreature then s!" {o.typeLine}" else ""
   let pt :=
-    if o.printed.isCreature then s!" {g.power o}/{g.toughness o}" else ""
+    if o.isCreature then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=
     match o.attachedTo with
     | none => ""
@@ -120,7 +122,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
+  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with

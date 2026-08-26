@@ -520,6 +520,29 @@ def mountainLine (g : Game) : String :=
     (changedZones before after).contains (.library ⟨0⟩) &&
     !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
 
+#guard mentions (stackBlock guideEntered) "Galadhrim Guide's ability"
+#guard mentions (stackBlock guideEntered) "When this creature enters, scry 2"
+#guard !mentions (stackBlock guideEntered) "When this permanent enters"
+#guard
+  let g := guideEntered
+  let guide := namedPermanent g "Galadhrim Guide"
+  mentions (stackBlock g) s!"*source {guide.id} Galadhrim Guide*" &&
+    mentions (zoneBlock g .stack) s!"*source {guide.id} Galadhrim Guide*" &&
+    mentions (objectLine g guide) "3/4"
+#guard mentions (header guideScrying) "scry 2"
+#guard mentions (snapshot guideScrying) "Looking at (scry 2, top last):"
+#guard
+  let g := guideKnownScrying
+  let looked := g.scryLookedIds ⟨0⟩ 2
+  match looked[0]?, looked[1]? with
+  | some forestId, some elvesId =>
+    mentions (zoneBlock g (.library ⟨0⟩)) "looking at (top last)" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Forest" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) "Llanowar Elves" &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString forestId) &&
+      mentions (zoneBlock g (.library ⟨0⟩)) (toString elvesId)
+  | _, _ => false
+
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
 #guard (changedZones cratermakerTargeted paidCratermaker).contains .battlefield
@@ -548,5 +571,29 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g bears) "+1/+1×1" &&
     !mentions (objectLine g bears) "hexproof" &&
     !mentions (objectLine g bears) "trample"
+
+#guard mentions (header hospitalityLandPlayed) "choose targets (CR 601.2c"
+#guard mentions (stackBlock hospitalityLandPlayed) "Beorn's Hospitality's ability"
+#guard mentions (stackBlock hospitalityLandPlayed) "Whenever a land you control enters"
+#guard !mentions (stackBlock hospitalityLandPlayed) "{5}{G}{G}"
+#guard
+  let g := hospitalityLandPlayed
+  let src := namedPermanent g "Beorn's Hospitality"
+  mentions (stackBlock g) s!"*source {src.id} Beorn's Hospitality*"
+#guard
+  let g := animatedHospitality
+  let o := namedPermanent g "Beorn's Hospitality"
+  mentions (objectLine g o) "Enchantment Creature" &&
+    mentions (objectLine g o) "Bear" &&
+    mentions (objectLine g o) "3/3"
+#guard
+  let g := hospitalityLandfallResolved
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (objectLine g bears) "3/3" &&
+    mentions (objectLine g bears) "+1/+1×1"
+#guard
+  let g := pathmakerWithLands
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "2/2"
 
 end Mtg.Demo.RenderTests
