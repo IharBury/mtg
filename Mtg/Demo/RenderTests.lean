@@ -738,4 +738,24 @@ def mountainLine (g : Game) : String :=
   mentions (objectLine g ogre) "2/2" &&
     !mentions (objectLine g ogre) "trample"
 
+#guard mentions (header titanEntered) "choose targets (CR 601.2c"
+#guard mentions (stackBlock titanEntered) "Inferno Titan's ability"
+#guard mentions (stackBlock titanEntered) "divided as you choose"
+#guard mentions (stackBlock titanEntered) "Whenever this creature enters or attacks"
+#guard !mentions (stackBlock titanEntered) "When this permanent enters"
+#guard !mentions (stackBlock titanEntered) "+1/+0"
+#guard
+  let g := titanEntered
+  let src := namedPermanent g "Inferno Titan"
+  mentions (stackBlock g) s!"*source {src.id} Inferno Titan*" &&
+    mentions (objectLine g src) "6/6"
+#guard mentions (header titanAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (stackBlock titanAttackDeclared) "Inferno Titan's ability"
+#guard mentions (stackBlock titanAttackDeclared) "divided as you choose"
+#guard mentions (stackBlock titanAttackDeclared) "Whenever this creature enters or attacks"
+#guard
+  let g := pumpedTitan
+  let o := namedPermanent g "Inferno Titan"
+  mentions (objectLine g o) "7/6"
+
 end Mtg.Demo.RenderTests

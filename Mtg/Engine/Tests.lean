@@ -323,6 +323,11 @@ def uncontrolledPermanent : Game :=
 #guard goblinFireleaper.activatedAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
+#guard mentions infernoTitan.summary "+1/+0"
+#guard mentions infernoTitan.summary "divided as you choose"
+#guard infernoTitan.activatedAbilities.size == 1
+#guard infernoTitan.triggeredAbilities.size == 1
+#guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
@@ -452,6 +457,21 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
     mentions c.abilitiesText "{1}{R}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Titan"
+    types := #[.creature]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofColor .red }
+      effect := .sourceGets 1 0
+    }]
+    triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3]
+  }
+  mentions c.abilitiesText "+1/+0" &&
+    mentions c.abilitiesText "enters or attacks" &&
+    mentions c.abilitiesText "divided as you choose" &&
+    mentions c.abilitiesText "{R}"
 
 #guard
   let c : CardDef := {
@@ -4717,5 +4737,228 @@ def afterCrusherTrample : Game :=
 #guard afterCrusherTrample.log.any (fun s =>
   mentions s "Olog-hai Crusher tramples for 2 to Nissa")
 #guard (afterCrusherTrample.player ⟨1⟩).life == 18
+
+/- Inferno Titan: {R} pump and enters-or-attacks divided damage (CR 601.2d / 508.2). -/
+
+def titanAbility : ActivatedAbility :=
+  infernoTitan.activatedAbilities[0]!
+
+#guard titanAbility.effect == .sourceGets 1 0
+#guard titanAbility.cost.mana == ManaCost.ofColor .red
+#guard !titanAbility.effect.requiresTarget
+#guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
+
+/-- Inferno Titan in hand with enough mana to cast it. -/
+def titanSetup : Game :=
+  withRedMana (addToHand afterDraw infernoTitan ⟨0⟩) ⟨0⟩ 6
+
+#guard titanSetup.canCast ⟨0⟩ (handCardNamed titanSetup ⟨0⟩ "Inferno Titan")
+#guard titanSetup.asSorcery? ⟨0⟩
+#guard infernoTitan.hasSorcerySpeed
+
+def proposedTitan : Game :=
+  mustApply titanSetup ⟨0⟩ (.cast (handCardNamed titanSetup ⟨0⟩ "Inferno Titan").id)
+
+#guard proposedTitan.pending == .activateManaAbilities ⟨0⟩
+#guard proposedTitan.log.any (fun s => mentions s "begins casting Inferno Titan")
+
+def paidTitan : Game := mustApply proposedTitan ⟨0⟩ .pay
+
+#guard paidTitan.stack.size == 1
+#guard paidTitan.hasPriority ⟨0⟩
+#guard paidTitan.log.any (fun s => mentions s "casts Inferno Titan")
+
+/-- The creature enters; the divided-damage trigger waits for a division (CR 601.2d). -/
+def titanEntered : Game := passBoth paidTitan
+
+#guard (namedPermanent titanEntered "Inferno Titan").printed.power == some 6
+#guard titanEntered.power (namedPermanent titanEntered "Inferno Titan") == 6
+#guard titanEntered.toughness (namedPermanent titanEntered "Inferno Titan") == 6
+#guard titanEntered.stack.size == 1
+#guard (titanEntered.object! titanEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterOrAttackDealDividedDamage 3 3)
+#guard (titanEntered.object! titanEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent titanEntered "Inferno Titan").id
+#guard titanEntered.stack.back!.targets.isEmpty
+#guard titanEntered.stack.back!.dividedDamage.isEmpty
+#guard titanEntered.pending == .chooseTargets ⟨0⟩
+#guard titanEntered.actor == some ⟨0⟩
+#guard !titanEntered.hasPriority ⟨0⟩
+#guard titanEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard titanEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+#guard titanEntered.log.any (fun s => mentions s "must divide 3 damage")
+#guard titanEntered.announcingDividedDamage
+
+-- The heuristic puts all 3 damage on the opponent.
+#guard
+  match Agent.choose titanEntered ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+def titanTargetedOpponent : Game :=
+  mustApply titanEntered ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard titanTargetedOpponent.pending == .none
+#guard titanTargetedOpponent.hasPriority ⟨0⟩
+#guard titanTargetedOpponent.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard titanTargetedOpponent.stack.back!.dividedDamage == #[3]
+#guard titanTargetedOpponent.log.any (fun s =>
+  mentions s "chooses Nissa to be dealt 3 damage (CR 601.2d)")
+
+def titanResolvedOpponent : Game := passBoth titanTargetedOpponent
+
+#guard titanResolvedOpponent.stack.isEmpty
+#guard (titanResolvedOpponent.player ⟨1⟩).life == 17
+#guard (titanResolvedOpponent.player ⟨0⟩).life == 20
+#guard titanResolvedOpponent.log.any (fun s => mentions s "Nissa is dealt 3 damage")
+#guard titanResolvedOpponent.battlefield.any (fun o => o.name == "Inferno Titan")
+
+/-- Split 2 to the opponent and 1 to a creature. -/
+def titanSplitAnnounced : Game :=
+  let g := addPermanent titanEntered grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 2)
+  mustApply g ⟨0⟩
+    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
+
+#guard titanSplitAnnounced.stack.back!.dividedDamage == #[2, 1]
+
+def titanSplitResolved : Game := passBoth titanSplitAnnounced
+
+#guard (titanSplitResolved.player ⟨1⟩).life == 18
+#guard (namedPermanent titanSplitResolved "Grizzly Bears").status.damage == 1
+
+/-- Inferno Titan already in play so it can attack (no ETB from `addPermanent`). -/
+def titanOnBattlefield : Game :=
+  addPermanent started infernoTitan ⟨0⟩ ⟨0⟩
+
+def titanAttackDeclared : Game :=
+  let g := passBoth (skipTo titanOnBattlefield .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Inferno Titan").id])
+
+#guard titanAttackDeclared.pending == .chooseTargets ⟨0⟩
+#guard titanAttackDeclared.stack.size == 1
+#guard (titanAttackDeclared.object! titanAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterOrAttackDealDividedDamage 3 3)
+#guard (titanAttackDeclared.object! titanAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent titanAttackDeclared "Inferno Titan").id
+#guard titanAttackDeclared.stack.back!.targets.isEmpty
+#guard titanAttackDeclared.stack.back!.dividedDamage.isEmpty
+#guard titanAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard titanAttackDeclared.log.any (fun s => mentions s "must divide 3 damage")
+#guard titanAttackDeclared.announcingDividedDamage
+#guard !titanAttackDeclared.hasPriority ⟨0⟩
+#guard titanAttackDeclared.actor == some ⟨0⟩
+#guard (namedPermanent titanAttackDeclared "Inferno Titan").status.attacking
+
+-- The heuristic still dumps all 3 on the opponent on attack.
+#guard
+  match Agent.choose titanAttackDeclared ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+def titanAttackResolved : Game :=
+  let g := mustApply titanAttackDeclared ⟨0⟩ (.target (Target.player ⟨1⟩))
+  passBoth g
+
+#guard titanAttackResolved.stack.isEmpty
+#guard (titanAttackResolved.player ⟨1⟩).life == 17
+#guard titanAttackResolved.log.any (fun s => mentions s "Nissa is dealt 3 damage")
+#guard (namedPermanent titanAttackResolved "Inferno Titan").status.attacking
+
+/-- The trigger still deals damage if Inferno Titan has left (CR 113.7a). -/
+def titanLeftBeforeAttackTrigger : Game :=
+  let g := mustApply titanAttackDeclared ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let id := (namedPermanent g "Inferno Titan").id
+  let (g, _) := g.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (titanLeftBeforeAttackTrigger.player ⟨1⟩).life == 17
+#guard !(titanLeftBeforeAttackTrigger.battlefield.any (fun o => o.name == "Inferno Titan"))
+
+/-- Inferno Titan in play with {R} in the pool; a land drop is already used. -/
+def titanPumpReady : Game :=
+  let g := addPermanent afterDraw infernoTitan ⟨0⟩ ⟨0⟩
+  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 1
+
+def titanSource (g : Game) : GameObject :=
+  namedPermanent g "Inferno Titan"
+
+#guard titanPumpReady.canActivate ⟨0⟩ (titanSource titanPumpReady) titanAbility
+#guard !(titanPumpReady.canActivate ⟨1⟩ (titanSource titanPumpReady) titanAbility)
+#guard (titanPumpReady.player ⟨0⟩).manaPool.canPay titanAbility.cost.mana
+#guard titanPumpReady.power (titanSource titanPumpReady) == 6
+
+-- The heuristic pumps Inferno Titan when {R} is available.
+#guard
+  match Agent.choose titanPumpReady ⟨0⟩ with
+  | some (.activate id 0) => id == (titanSource titanPumpReady).id
+  | _ => false
+
+def proposedTitanPump : Game :=
+  mustApply titanPumpReady ⟨0⟩ (.activate (titanSource titanPumpReady).id 0)
+
+#guard proposedTitanPump.pending == .activateManaAbilities ⟨0⟩
+#guard proposedTitanPump.proposedSpell.isSome
+#guard proposedTitanPump.stack.size == 1
+#guard (proposedTitanPump.object! proposedTitanPump.stack.back!.objectId).abilityEffect ==
+  some (.sourceGets 1 0)
+#guard proposedTitanPump.log.any (fun s => mentions s "begins activating Inferno Titan")
+
+def paidTitanPump : Game :=
+  mustApply proposedTitanPump ⟨0⟩ .pay
+
+#guard paidTitanPump.hasPriority ⟨0⟩
+#guard paidTitanPump.stack.size == 1
+#guard paidTitanPump.log.any (fun s => mentions s "activates Inferno Titan")
+#guard (namedPermanent paidTitanPump "Inferno Titan").status.pumpPower == 0
+
+def pumpedTitan : Game := passBoth paidTitanPump
+
+#guard pumpedTitan.stack.isEmpty
+#guard (namedPermanent pumpedTitan "Inferno Titan").status.pumpPower == 1
+#guard pumpedTitan.power (namedPermanent pumpedTitan "Inferno Titan") == 7
+#guard pumpedTitan.log.any (fun s => mentions s "Inferno Titan gets +1/+0 until end of turn")
+
+/-- A second activation stacks. -/
+def titanPumpedTwice : Game :=
+  let g := withRedMana pumpedTitan ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.activate (titanSource g).id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard titanPumpedTwice.power (namedPermanent titanPumpedTwice "Inferno Titan") == 8
+#guard (namedPermanent titanPumpedTwice "Inferno Titan").status.pumpPower == 2
+
+/-- The +1/+0 wears off in cleanup. -/
+def afterTitanCleanup : Game :=
+  passBoth (skipTo pumpedTitan .end 80)
+
+#guard afterTitanCleanup.power (namedPermanent afterTitanCleanup "Inferno Titan") == 6
+#guard (namedPermanent afterTitanCleanup "Inferno Titan").status.pumpPower == 0
+
+/-- If the source leaves before the pump resolves, the pump does not happen. -/
+def titanPumpSourceGone : Game :=
+  let id := (namedPermanent paidTitanPump "Inferno Titan").id
+  let (g, _) := paidTitanPump.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard titanPumpSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard titanPumpSourceGone.stack.isEmpty
+#guard !(titanPumpSourceGone.battlefield.any (fun o => o.name == "Inferno Titan"))
+
+-- Instant-speed: Inferno Titan can activate during the end step.
+def titanAtEndStep : Game := skipTo titanPumpReady .end 80
+
+#guard titanAtEndStep.step == .end
+#guard titanAtEndStep.canActivate ⟨0⟩ (titanSource titanAtEndStep) titanAbility
+
+/-- The agent casts Inferno Titan when that is the playable spell. -/
+def agentTitanOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g infernoTitan ⟨0⟩) ⟨0⟩ 6
+
+#guard
+  match Agent.choose agentTitanOnly ⟨0⟩ with
+  | some (.cast id) => (agentTitanOnly.object! id).name == "Inferno Titan"
+  | _ => false
 
 end Mtg.Engine.Tests

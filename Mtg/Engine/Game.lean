@@ -27,7 +27,7 @@ keyword grants, attack triggers (CR 508.2 / 603), including copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
-you choose (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
+you choose when a creature enters or attacks (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 activated pumps that last until end of turn (CR 602 / 611.2a),
 adventurer cards including casting an Adventure and later the permanent
@@ -984,7 +984,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
     g.legalCreatureTargets p (fun o => o.controlledBy p)
   | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample =>
     g.legalCreatureTargets p (fun o => o.controlledBy p && some o.id != sourceId)
-  | .onEnterDealDividedDamage _ _ =>
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
       g.legalCreatureTargets p (fun _ => true)
   | .onDiesDealDamageEqualToPowerToOppCreature =>
@@ -1000,7 +1000,7 @@ def assignedDividedDamage (e : StackEntry) : Nat :=
 /-- Whether this stacked triggered ability still needs targets or a damage
 division announced (CR 603.3d / 601.2d). -/
 def triggerStillNeedsTargets (e : StackEntry) : TriggeredAbility → Bool
-  | .onEnterDealDividedDamage amount _ =>
+  | .onEnterDealDividedDamage amount _ | .onEnterOrAttackDealDividedDamage amount _ =>
     assignedDividedDamage e < amount
   | .onAttackSetOtherBasePT =>
     !e.targetsAnnounced
@@ -1055,10 +1055,11 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
     if g.pending == .chooseTargets e.controller then g
     else
       let msg :=
-        match (g.findObject? e.objectId).bind (fun o => o.triggeredAbility) with
-        | some (.onEnterDealDividedDamage n maxTargets) =>
+        match (g.findObject? e.objectId).bind (fun o =>
+            o.triggeredAbility.bind TriggeredAbility.dividedDamage?) with
+        | some (n, maxTargets) =>
           s!"{(g.player e.controller).name} must divide {n} damage among one to {maxTargets} targets (CR 603.3d / 601.2d)"
-        | _ =>
+        | none =>
           s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
       { g with pending := .chooseTargets e.controller }.logMsg msg
   | none => g
@@ -1305,8 +1306,8 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
       match o.triggeredAbility with
       | some t => g.legalTriggerTargets p t o.sourceId
       | none => g.legalSpellTargets p o
-  match o.triggeredAbility, g.stackEntry? o.id with
-  | some (.onEnterDealDividedDamage _ _), some e =>
+  match o.triggeredAbility.bind TriggeredAbility.dividedDamage?, g.stackEntry? o.id with
+  | some _, some e =>
     raw.filter (fun t => !e.targets.contains t)
   | _, _ => raw
 
@@ -1315,7 +1316,7 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
   !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
 
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
-and divided-damage enters triggers prefer the opponent; creature-damage abilities
+and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
@@ -1324,7 +1325,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
   let legal := g.legalProposedTargets p obj
   let preferred : Option Target :=
     match obj.triggeredAbility, obj.abilityEffect, g.currentSpellEffect obj with
-    | some (.onEnterDealDividedDamage _ _), _, _ =>
+    | some (.onEnterDealDividedDamage _ _), _, _
+    | some (.onEnterOrAttackDealDividedDamage _ _), _, _ =>
       some (Target.player (g.opponent p))
     | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
@@ -2199,7 +2201,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else
           g.logMsg "The target is no longer in play"
     | _ => g.logMsg "The target is no longer legal"
-  | .onEnterDealDividedDamage _ _ =>
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     Id.run do
       let mut g := g
       for i in [0:targets.size] do
