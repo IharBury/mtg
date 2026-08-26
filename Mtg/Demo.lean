@@ -1293,6 +1293,25 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
     | .error _ => false
 
 #guard
+  let g := Tests.quarrelSetup
+  let qid := (Tests.handCardNamed g ⟨0⟩ "Quarrel").id
+  let src := (Tests.namedPermanent g "Llanowar Elves").id
+  let dest := (Tests.namedPermanent g "Grizzly Bears").id
+  match applyCast g ⟨0⟩ [toString qid] with
+  | .error _ => false
+  | .ok g' =>
+    match applyTarget g' ⟨0⟩ ["Llanowar Elves"] with
+    | .error _ => false
+    | .ok g'' =>
+      g''.pending == .chooseTargets ⟨0⟩ &&
+      g''.stack.back!.targets == #[Target.permanent src] &&
+      match applyTarget g'' ⟨0⟩ [toString dest] with
+      | .ok g''' =>
+        g'''.pending == .activateManaAbilities ⟨0⟩ &&
+        g'''.stack.back!.targets == #[Target.permanent src, Target.permanent dest]
+      | .error _ => false
+
+#guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ [] with
   | .error msg => msg == divideTargetUsage
   | .ok _ => false

@@ -289,6 +289,10 @@ def uncontrolledPermanent : Game :=
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
+#guard mentions quarrel.summary "deals damage equal to its power"
+#guard quarrel.isInstant
+#guard quarrel.requiresTarget
+#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
 #guard mentions woodElves.summary "Forest card"
 #guard woodElves.triggeredAbilities.size == 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -7379,6 +7383,205 @@ def agentPathmaker : Game :=
 #guard
   match Agent.choose agentPathmaker ⟨0⟩ with
   | some (.cast id) => (agentPathmaker.object! id).name == "Mirkwood Pathmaker"
+  | _ => false
+
+/- Quarrel: target creature you control deals damage equal to its power to
+target creature an opponent controls (CR 601.2c / 608.2b / 120.3a). -/
+
+/-- Propose a two-target spell (CR 601.2a / 601.2c). -/
+def proposeTwoTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t1 t2 : Target) : Game :=
+  mustApply (proposeTargeted g p id t1) p (.target t2)
+
+/-- Quarrel in hand, Llanowar Elves you control, Grizzly Bears opposing. -/
+def quarrelSetup : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+#guard quarrel.isInstant
+#guard quarrel.requiresTarget
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
+#guard quarrelSetup.asSorcery? ⟨0⟩
+#guard (quarrelSetup.legalTargets ⟨0⟩ .creatureYouControlDealsPowerToOppCreature).size == 2
+
+-- Cannot cast with no creature you control.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Quarrel").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Cannot cast with no opposing creature.
+#guard
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+
+-- Hexproof makes an opposing creature an illegal dest (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Quarrel")
+
+def proposedQuarrel : Game :=
+  mustApply quarrelSetup ⟨0⟩ (.cast (handCardNamed quarrelSetup ⟨0⟩ "Quarrel").id)
+
+#guard proposedQuarrel.pending == .chooseTargets ⟨0⟩
+#guard proposedQuarrel.stack.back!.targets.isEmpty
+#guard proposedQuarrel.log.any (fun s => mentions s "begins casting Quarrel")
+#guard proposedQuarrel.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- First target must be a creature you control, not a player or an opponent's creature.
+#guard
+  match proposedQuarrel.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match proposedQuarrel.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent proposedQuarrel "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic's first target is the creature you control.
+#guard
+  match Agent.choose proposedQuarrel ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedQuarrel.object! tid).name == "Llanowar Elves"
+  | _ => false
+
+def quarrelSourceChosen : Game :=
+  mustApply proposedQuarrel ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedQuarrel "Llanowar Elves").id))
+
+#guard quarrelSourceChosen.pending == .chooseTargets ⟨0⟩
+#guard quarrelSourceChosen.proposedSpell.isSome
+#guard quarrelSourceChosen.stack.back!.targets ==
+  #[Target.permanent (namedPermanent quarrelSourceChosen "Llanowar Elves").id]
+#guard quarrelSourceChosen.log.any (fun s => mentions s "chooses Llanowar Elves as a target")
+
+-- Second target must be an opposing creature.
+#guard
+  match quarrelSourceChosen.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match quarrelSourceChosen.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent quarrelSourceChosen "Llanowar Elves").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic's second target is the opposing creature.
+#guard
+  match Agent.choose quarrelSourceChosen ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (quarrelSourceChosen.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def targetedQuarrel : Game :=
+  mustApply quarrelSourceChosen ⟨0⟩
+    (.target (Target.permanent (namedPermanent quarrelSourceChosen "Grizzly Bears").id))
+
+#guard targetedQuarrel.pending == .activateManaAbilities ⟨0⟩
+#guard targetedQuarrel.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedQuarrel "Llanowar Elves").id,
+    Target.permanent (namedPermanent targetedQuarrel "Grizzly Bears").id]
+
+def paidQuarrel : Game := mustApply targetedQuarrel ⟨0⟩ .pay
+
+#guard paidQuarrel.hasPriority ⟨0⟩
+#guard paidQuarrel.log.any (fun s => mentions s "casts Quarrel")
+
+def resolvedQuarrel : Game := passBoth paidQuarrel
+
+#guard resolvedQuarrel.stack.isEmpty
+#guard resolvedQuarrel.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent resolvedQuarrel "Grizzly Bears").status.damage == 1
+#guard resolvedQuarrel.log.any (fun s => mentions s "Llanowar Elves deals 1 damage to Grizzly Bears")
+#guard resolvedQuarrel.log.any (fun s => mentions s "goes to the graveyard")
+#guard (resolvedQuarrel.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedQuarrel.object! id).name == "Quarrel")
+
+/-- A 3-power source deals lethal damage to a 2/2. -/
+def quarrelLethalSetup : Game :=
+  let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+def resolvedQuarrelLethal : Game :=
+  let g := proposeTwoTargeted quarrelLethalSetup ⟨0⟩
+    (handCardNamed quarrelLethalSetup ⟨0⟩ "Quarrel").id
+    (Target.permanent (namedPermanent quarrelLethalSetup "Hill Giant").id)
+    (Target.permanent (namedPermanent quarrelLethalSetup "Grizzly Bears").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedQuarrelLethal.stack.isEmpty
+#guard !(resolvedQuarrelLethal.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedQuarrelLethal.log.any (fun s => mentions s "Hill Giant deals 3 damage to Grizzly Bears")
+#guard resolvedQuarrelLethal.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
+
+/-- Pumping the source after targeting uses the new power (CR 608.2g / 611.3a). -/
+def quarrelPumpedSource : Game :=
+  let g := addToHand paidQuarrel giantGrowth ⟨0⟩
+  let g := withGreenMana g ⟨0⟩ 1
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Llanowar Elves").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth (passBoth g)
+
+#guard quarrelPumpedSource.power (namedPermanent quarrelPumpedSource "Llanowar Elves") == 4
+#guard !(quarrelPumpedSource.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard quarrelPumpedSource.log.any (fun s =>
+  mentions s "Llanowar Elves deals 4 damage to Grizzly Bears")
+
+/-- If the dest leaves before resolution, no damage is dealt (CR 608.2b). -/
+def quarrelDestGone : Game :=
+  let dest := namedPermanent paidQuarrel "Grizzly Bears"
+  let (g, _) := paidQuarrel.move dest.id (.graveyard dest.owner) none
+  passBoth g
+
+#guard quarrelDestGone.log.any (fun s => mentions s "The target is no longer in play")
+#guard !quarrelDestGone.log.any (fun s => mentions s "deals")
+#guard !(quarrelDestGone.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- If the source leaves before resolution, no damage is dealt (CR 608.2b). -/
+def quarrelSourceGone : Game :=
+  let src := namedPermanent paidQuarrel "Llanowar Elves"
+  let (g, _) := paidQuarrel.move src.id (.graveyard src.owner) none
+  passBoth g
+
+#guard quarrelSourceGone.log.any (fun s => mentions s "The target is no longer in play")
+#guard !quarrelSourceGone.log.any (fun s => mentions s "deals")
+#guard quarrelSourceGone.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent quarrelSourceGone "Grizzly Bears").status.damage == 0
+
+/-- Hexproof gained after targeting makes the dest illegal (CR 608.2b / 702.11b). -/
+def quarrelDestHexproof : Game :=
+  let dest := namedPermanent paidQuarrel "Grizzly Bears"
+  let g := paidQuarrel.setObject { dest with
+    status := { dest.status with untilEotHexproof := true } }
+  passBoth g
+
+#guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
+#guard !quarrelDestHexproof.log.any (fun s => mentions s "deals")
+#guard (namedPermanent quarrelDestHexproof "Grizzly Bears").status.damage == 0
+
+/-- The heuristic casts Quarrel when it is the playable spell. -/
+def agentQuarrel : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentQuarrel ⟨0⟩ with
+  | some (.cast id) => (agentQuarrel.object! id).name == "Quarrel"
   | _ => false
 
 end Mtg.Engine.Tests

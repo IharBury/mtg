@@ -24,7 +24,8 @@ Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
 plays this turn), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
-artifact or creature, and a few one-shot spell effects);
+artifact or creature, a creature you control dealing damage equal to its power
+to a creature an opponent controls, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -796,6 +797,7 @@ def quarrel : CardDef := {
   manaCost := ManaCost.ofGenericAndColor 1 .green
   types := #[.instant]
   oracleText := "Target creature you control deals damage equal to its power to target creature an opponent controls."
+  spellEffect := some .creatureYouControlDealsPowerToOppCreature
 }
 
 def galadhrimGuide : CardDef := {
@@ -1070,6 +1072,11 @@ def attercop : CardDef := {
   #[.destroyTargetColorlessNonland]
 #guard (goblinCratermaker.summary.splitOn "Choose one").length > 1
 #guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
+#guard quarrel.isInstant
+#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard quarrel.requiresTarget
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget
