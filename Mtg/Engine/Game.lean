@@ -28,8 +28,10 @@ creature's P/T onto another creature you control, becomes-blocked triggers
 you choose (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 activated pumps that last until end of turn (CR 602 / 611.2a),
-combat (CR 506–510, including combat damage assignment under CR 510.1c–d),
-cleanup (CR 514.3), and the state-based actions we implement (CR 704.5).
+adventurer cards including casting an Adventure and later the permanent
+(CR 715), combat (CR 506–510, including combat damage assignment under
+CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
+(CR 704.5).
 -/
 
 namespace Mtg.Engine
@@ -73,14 +75,17 @@ structure Status where
   grantedStaticAbilities : Array StaticAbility := #[]
 deriving Repr, Inhabited, BEq
 
-/-- Permission to play a card from exile (CR 701.14), e.g. Snowslope Hunter. -/
+/-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
 structure PlayPermission where
   /-- The player who may play the card. -/
   player : PlayerId
   /-- Remaining endings of `player`'s turns before the permission expires.
   Granted as 2 during that player's turn so it lasts until the end of their
-  next turn. -/
+  next turn. Ignored when `fromAdventure` is true. -/
   turnEndsRemaining : Nat
+  /-- CR 715.3d permission from resolving an Adventure: lasts while the card
+  remains exiled, and the card cannot be recast as an Adventure this way. -/
+  fromAdventure : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- An object currently in the game (CR 109). -/
@@ -106,6 +111,9 @@ structure GameObject where
   playPermission : Option PlayPermission := none
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
   attachedTo : Option ObjectId := none
+  /-- Normal characteristics of an adventurer card, set while the spell is on
+  the stack as an Adventure (CR 715.3b). -/
+  adventurerCard : Option CardDef := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -160,6 +168,10 @@ def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
   o.printed.isCreature || o.status.additionalCreature
+
+/-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
+def isAdventureSpell (o : GameObject) : Bool :=
+  o.adventurerCard.isSome
 
 def hasSubtype (o : GameObject) (s : String) : Bool :=
   o.subtypes.any (· == s)
@@ -303,6 +315,8 @@ inductive Action where
   | playLand (id : ObjectId)
   | tapForMana (id : ObjectId) (mana : ManaType)
   | cast (id : ObjectId)
+  /-- Cast this adventurer card as its Adventure (CR 715.3). -/
+  | castAdventure (id : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
   /-- Announce a target for the proposed spell (CR 601.2c). For a divided-
@@ -906,11 +920,12 @@ def hasPriority (g : Game) (p : PlayerId) : Bool :=
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && (g.player p).landsPlayedThisTurn == 0
 
-/-- Whether `p` may play `o` from exile under a granted permission (CR 701.14). -/
+/-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
 def mayPlayFromExile (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match o.playPermission with
-  | some perm => perm.player == p && perm.turnEndsRemaining > 0
+  | some perm =>
+    perm.player == p && (perm.fromAdventure || perm.turnEndsRemaining > 0)
   | none => false
 
 /-- Cards in exile that `p` currently may play. -/
@@ -1169,6 +1184,8 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array T
   | .dealDamage _ =>
     let players := g.livingPlayers.map (fun pl => Target.player pl.id)
     players ++ g.legalCreatureTargets caster (fun _ => true)
+  | .dealDamageToCreature _ =>
+    g.legalCreatureTargets caster (fun _ => true)
   | .pump _ _ =>
     g.legalCreatureTargets caster (fun _ => true)
   | .destroyCreatureWithFlying =>
@@ -1307,6 +1324,10 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
       (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
     | _, _, some (.dealDamage _) => some (Target.player (g.opponent p))
+    | _, _, some (.dealDamageToCreature _) =>
+      (g.permanentsOf (g.opponent p)).filter (fun o =>
+        o.isCreature && g.canBeTargetedBy p o)
+      |>.back?.map (fun c => Target.permanent c.id)
     | _, _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.hasFlying o && g.canBeTargetedBy p o)
@@ -1361,6 +1382,34 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
   if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
   else o.printed.isPermanentCard
+
+/-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
+def adventureExileForbidsRecast (_g : Game) (o : GameObject) : Bool :=
+  match o.playPermission with
+  | some perm => perm.fromAdventure
+  | none => false
+
+/-- Legal targets for beginning to cast card `c` (from hand or as an Adventure). -/
+def legalCastTargets (g : Game) (p : PlayerId) (c : CardDef) : Array Target :=
+  if c.isModal then
+    c.spellModes.foldl (fun acc e => acc ++ g.legalTargets p e) #[]
+  else
+    match c.spellEffect with
+    | some e => g.legalTargets p e
+    | none => if c.isAura then g.legalAuraTargets p else #[]
+
+/-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
+def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  match o.printed.adventure with
+  | none => false
+  | some adv =>
+    let face := adv.toCardDef
+    !g.adventureExileForbidsRecast o &&
+    g.mayPlay p o &&
+    g.hasPriority p &&
+    (if face.hasSorcerySpeed then g.asSorcery? p else true) &&
+    if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
+    else true
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost) : Except String Game := do
   let pl := g.player p
@@ -1529,35 +1578,50 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
-def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false) :
+    Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   let some card := g.findObject? id | throw "no such object"
   if !g.mayPlay p card then
     throw (g.playZoneError p card)
+  if asAdventure then
+    if card.printed.adventure.isNone then
+      throw s!"{card.name} has no Adventure"
+    if g.adventureExileForbidsRecast card then
+      throw "You may not cast that card as an Adventure this way (CR 715.3d)"
+  let face :=
+    match asAdventure, card.printed.adventure with
+    | true, some adv => adv.toCardDef
+    | _, _ => card.printed
   let pl := g.player p
-  if card.printed.isLand then
+  if face.isLand then
     throw "Lands are played, not cast (CR 305)"
-  if card.printed.hasSorcerySpeed && !g.asSorcery? p then
-    throw s!"{card.name} has sorcery speed"
-  if (card.printed.requiresTarget || card.printed.isModal) &&
-      (g.legalSpellTargets p card).isEmpty then
-    throw s!"{card.name} requires a target"
+  if face.hasSorcerySpeed && !g.asSorcery? p then
+    throw s!"{face.name} has sorcery speed"
+  if (face.requiresTarget || face.isModal) &&
+      (g.legalCastTargets p face).isEmpty then
+    throw s!"{face.name} requires a target"
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes are
   -- announced at CR 601.2b, targets at CR 601.2c; mana is not required yet
-  -- (CR 601.2g).
-  let cost := card.printed.manaCost
+  -- (CR 601.2g). CR 715.3: an adventurer card may be cast as its Adventure.
+  let cost := face.manaCost
   let original := card
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
   let (g, newId) := g.move id .stack (some p)
+  let g :=
+    if asAdventure then
+      let o := g.object! newId
+      g.setObject { o with printed := face, adventurerCard := some original.printed }
+    else g
   let entry : StackEntry := { objectId := newId, controller := p, targets := #[] }
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
-  let needsMode := original.printed.isModal
-  let needsTarget := original.printed.requiresTarget && !needsMode
+  let needsMode := face.isModal
+  let needsTarget := face.requiresTarget && !needsMode
   if !needsMode && !needsTarget && !cost.includesManaPayment then
-    return g.becomeCast p original.name
+    return g.becomeCast p face.name
   let prop : ProposedSpell := {
     caster := p
     cost := cost
@@ -1567,7 +1631,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := 
     stackBefore := stackBefore
     manaBefore := manaBefore
   }
-  let g := g.logMsg s!"{pl.name} begins casting {original.name}"
+  let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   if needsMode then
     let g := { g with pending := .chooseMode p, proposedSpell := some prop }
     return g.logMsg s!"{pl.name} must choose a mode (CR 601.2b / 700.2)"
@@ -1843,6 +1907,16 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
             untilEotHexproof := true } }
         g.logMsg
           s!"{o.name} gets a +1/+1 counter and gains trample and hexproof until end of turn"
+  | .dealDamageToCreature n, some (Target.permanent oid) =>
+    match g.findObject? oid with
+    | none => g.logMsg "The target is no longer in play"
+    | some o =>
+      if !(g.legalTargets controller (.dealDamageToCreature n)).contains
+          (Target.permanent oid) then
+        illegal
+      else
+        let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
+        g.logMsg s!"{o.name} is dealt {n} damage"
   | _, _ => g
 
 /-- Search `p`'s library for a basic land card, put it onto the battlefield
@@ -2169,6 +2243,22 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
     | none => toGraveyard g
   | _ => toGraveyard g
 
+/-- Resolve an Adventure: apply its effect, then exile the card and grant
+permission to cast the permanent (CR 715.3d). -/
+def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
+  let orig := obj.adventurerCard.getD obj.printed
+  let g := g.setObject { obj with printed := orig, adventurerCard := none }
+  let obj := g.object! obj.id
+  let (g, newId) := g.move obj.id .exile none
+  let o := g.object! newId
+  let g := g.setObject { o with
+    playPermission := some {
+      player := entry.controller
+      turnEndsRemaining := 0
+      fromAdventure := true } }
+  g.logMsg
+    s!"{o.name} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
   else
@@ -2198,7 +2288,9 @@ def resolveTop (g : Game) : Game :=
           match effect? with
           | some e => g.applyEffect entry.controller e entry.targets
           | none => g
-        if obj.printed.isAura then
+        if obj.isAdventureSpell then
+          g.resolveAdventureSpell entry (g.object! obj.id)
+        else if obj.printed.isAura then
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
           let (g, newId) := g.move obj.id .battlefield (some entry.controller)
@@ -2510,7 +2602,9 @@ def expirePlayPermissions (g : Game) (endingPlayer : PlayerId) : Game :=
       match o.playPermission with
       | none => pure ()
       | some perm =>
-        if perm.player == endingPlayer then
+        if perm.fromAdventure then
+          pure ()
+        else if perm.player == endingPlayer then
           if perm.turnEndsRemaining ≤ 1 then
             g := g.setObject { o with playPermission := none }
             if o.zone == .exile then
@@ -2947,6 +3041,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
   | .cast id => g.castSpell p id
+  | .castAdventure id => g.castSpell p id true
   | .chooseMode idx => g.announceMode p idx
   | .target t => g.announceTarget p t
   | .divideDamage t n => g.announceTarget p t (some n)

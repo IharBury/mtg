@@ -97,8 +97,9 @@ The first slice of the engine models the two-player game:
   top in any order), may discard a card to draw, or deal damage divided as
   you choose among one, two, or three targets, landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
-  that last until end of turn, and dies triggers that deal damage equal
-  to last-known power to a creature an opponent controls
+  that last until end of turn, dies triggers that deal damage equal
+  to last-known power to a creature an opponent controls, and adventurer
+  cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes

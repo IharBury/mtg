@@ -123,7 +123,23 @@ where
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o && available.canPay o.printed.manaCost)
+    let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
+      g.canCastAdventure p o &&
+        match o.printed.adventure with
+        | some adv => available.canPay adv.manaCost
+        | none => false)
+    let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
     let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
+    let adventureRemoval :=
+      if oppHasCreature then
+        adventurePlayable.find? (fun o =>
+          match o.printed.adventure with
+          | some adv =>
+            match adv.spellEffect with
+            | some (.dealDamageToCreature _) | some (.dealDamage _) => true
+            | _ => false
+          | none => false)
+      else none
     let burn := playable.find? (fun o =>
       match o.printed.spellEffect with
       | some (.dealDamage _) => true
@@ -154,6 +170,8 @@ where
       else none
     if let some o := burn then
       some (.cast o.id)
+    else if let some o := adventureRemoval then
+      some (.castAdventure o.id)
     else if let some o := removal then
       some (.cast o.id)
     else if let some o := creature then
