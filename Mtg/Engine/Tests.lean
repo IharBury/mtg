@@ -380,6 +380,11 @@ def uncontrolledPermanent : Game :=
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
+#guard mentions beornReluctantHost.summary "trample"
+#guard mentions beornReluctantHost.summary "Till and Tend"
+#guard mentions beornReluctantHost.summary "additional land"
+#guard beornReluctantHost.keywords.trample
+#guard beornReluctantHost.hasAdventure
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -4996,6 +5001,246 @@ def agentSmaugCreatureOnly : Game :=
   | some (.cast id) =>
     (agentSmaugCreatureOnly.object! id).name == "Smaug, the Great Calamity"
   | _ => false
+
+/- Beorn, Reluctant Host // Till and Tend (CR 715, 305.2b). -/
+
+/-- Beorn in hand with enough mana for Till and Tend. -/
+def beornSetup : Game :=
+  withGreenMana (addToHand afterDraw beornReluctantHost ⟨0⟩) ⟨0⟩ 2
+
+#guard beornReluctantHost.hasAdventure
+#guard beornReluctantHost.keywords.trample
+#guard beornSetup.canCast ⟨0⟩ (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host")
+#guard beornSetup.canCastAdventure ⟨0⟩ (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host")
+#guard beornSetup.asSorcery? ⟨0⟩
+#guard
+  match beornReluctantHost.adventure with
+  | some adv => !adv.toCardDef.requiresTarget
+  | none => false
+
+-- Without extra land plays, a second land is illegal (CR 305.2).
+#guard
+  let g := addToHand (addToHand afterDraw forest ⟨0⟩) forest ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+  match g.apply ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id) with
+  | .error msg => mentions msg "Can't play a land now"
+  | .ok _ => false
+
+-- Extra land grants stack (CR 305.2b).
+#guard
+  let g := afterDraw.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  let g := g.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  (g.player ⟨0⟩).additionalLandsThisTurn == 2 && g.landPlaysAllowed ⟨0⟩ == 3
+
+def proposedTillAndTend : Game :=
+  mustApply beornSetup ⟨0⟩
+    (.castAdventure (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host").id)
+
+#guard proposedTillAndTend.pending == .activateManaAbilities ⟨0⟩
+#guard (proposedTillAndTend.object! proposedTillAndTend.stack.back!.objectId).name == "Till and Tend"
+#guard (proposedTillAndTend.object! proposedTillAndTend.stack.back!.objectId).printed.isSorcery
+#guard (proposedTillAndTend.object! proposedTillAndTend.stack.back!.objectId).isAdventureSpell
+#guard proposedTillAndTend.log.any (fun s => mentions s "begins casting Till and Tend")
+#guard proposedTillAndTend.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+
+def paidTillAndTend : Game := mustApply proposedTillAndTend ⟨0⟩ .pay
+
+#guard paidTillAndTend.hasPriority ⟨0⟩
+#guard paidTillAndTend.log.any (fun s => mentions s "casts Till and Tend")
+#guard (paidTillAndTend.object! paidTillAndTend.stack.back!.objectId).name == "Till and Tend"
+
+def resolvedTillAndTend : Game := passBoth paidTillAndTend
+
+#guard resolvedTillAndTend.stack.isEmpty
+#guard resolvedTillAndTend.objects.any (fun o =>
+  o.zone == .exile && o.name == "Beorn, Reluctant Host")
+#guard !((resolvedTillAndTend.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedTillAndTend.object! id).name == "Beorn, Reluctant Host"))
+#guard resolvedTillAndTend.log.any (fun s => mentions s "is exiled")
+#guard resolvedTillAndTend.log.any (fun s => mentions s "may cast it for as long as it remains exiled")
+#guard resolvedTillAndTend.log.any (fun s => mentions s "may play an additional land this turn")
+#guard (resolvedTillAndTend.player ⟨0⟩).additionalLandsThisTurn == 1
+#guard resolvedTillAndTend.landPlaysAllowed ⟨0⟩ == 2
+#guard resolvedTillAndTend.canPlayLand ⟨0⟩
+
+def exiledBeorn (g : Game) : GameObject :=
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Beorn, Reluctant Host") with
+  | some o => o
+  | none => panic! "expected Beorn, Reluctant Host in exile"
+
+#guard resolvedTillAndTend.mayPlayFromExile ⟨0⟩ (exiledBeorn resolvedTillAndTend)
+#guard !resolvedTillAndTend.canCastAdventure ⟨0⟩ (exiledBeorn resolvedTillAndTend)
+#guard resolvedTillAndTend.adventureExileForbidsRecast (exiledBeorn resolvedTillAndTend)
+
+-- The CR 715.3d permission does not allow recasting as an Adventure.
+#guard
+  match resolvedTillAndTend.castSpell ⟨0⟩ (exiledBeorn resolvedTillAndTend).id true with
+  | .error msg => mentions msg "may not cast that card as an Adventure"
+  | .ok _ => false
+
+/-- Play a land, resolve Till and Tend, then play a second land. -/
+def beornTwoLandsSetup : Game :=
+  let g := addToHand afterDraw beornReluctantHost ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  withGreenMana g ⟨0⟩ 2
+
+def afterFirstForestForBeorn : Game :=
+  mustApply beornTwoLandsSetup ⟨0⟩
+    (.playLand (handCardNamed beornTwoLandsSetup ⟨0⟩ "Forest").id)
+
+#guard (afterFirstForestForBeorn.player ⟨0⟩).landsPlayedThisTurn == 1
+#guard !afterFirstForestForBeorn.canPlayLand ⟨0⟩
+
+def resolvedTillAfterLand : Game :=
+  let g := mustApply afterFirstForestForBeorn ⟨0⟩
+    (.castAdventure (handCardNamed afterFirstForestForBeorn ⟨0⟩ "Beorn, Reluctant Host").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedTillAfterLand.canPlayLand ⟨0⟩
+#guard (resolvedTillAfterLand.player ⟨0⟩).additionalLandsThisTurn == 1
+#guard resolvedTillAfterLand.landPlaysAllowed ⟨0⟩ == 2
+
+def afterSecondForestForBeorn : Game :=
+  mustApply resolvedTillAfterLand ⟨0⟩
+    (.playLand (handCardNamed resolvedTillAfterLand ⟨0⟩ "Forest").id)
+
+#guard (afterSecondForestForBeorn.player ⟨0⟩).landsPlayedThisTurn == 2
+#guard !afterSecondForestForBeorn.canPlayLand ⟨0⟩
+#guard (afterSecondForestForBeorn.battlefield.filter (fun o => o.name == "Forest")).size == 2
+#guard
+  match afterSecondForestForBeorn.apply ⟨0⟩
+      (.playLand (handCardNamed afterSecondForestForBeorn ⟨0⟩ "Forest").id) with
+  | .error msg => mentions msg "Can't play a land now"
+  | .ok _ => false
+
+/-- Permission lasts past the end of the caster's next turn (CR 715.3d);
+the extra land play does not. -/
+def beornPermissionLater : Game :=
+  let g := skipTo resolvedTillAndTend .end 80
+  let g := passBoth g
+  let g := skipTo g .end 80
+  let g := passBoth g
+  skipTo g .precombatMain 80
+
+#guard beornPermissionLater.activePlayer == ⟨0⟩
+#guard beornPermissionLater.mayPlayFromExile ⟨0⟩ (exiledBeorn beornPermissionLater)
+#guard (beornPermissionLater.player ⟨0⟩).additionalLandsThisTurn == 0
+#guard (beornPermissionLater.player ⟨0⟩).landsPlayedThisTurn == 0
+#guard beornPermissionLater.landPlaysAllowed ⟨0⟩ == 1
+
+/-- Cast Beorn from exile as the creature (CR 715.3d). -/
+def beornFromExileSetup : Game :=
+  withGreenMana resolvedTillAndTend ⟨0⟩ 5
+
+#guard beornFromExileSetup.canCast ⟨0⟩ (exiledBeorn beornFromExileSetup)
+
+def proposedExiledBeorn : Game :=
+  mustApply beornFromExileSetup ⟨0⟩ (.cast (exiledBeorn beornFromExileSetup).id)
+
+#guard proposedExiledBeorn.pending == .activateManaAbilities ⟨0⟩
+#guard proposedExiledBeorn.log.any (fun s => mentions s "begins casting Beorn, Reluctant Host")
+#guard (proposedExiledBeorn.object! proposedExiledBeorn.stack.back!.objectId).name ==
+  "Beorn, Reluctant Host"
+#guard !(proposedExiledBeorn.object! proposedExiledBeorn.stack.back!.objectId).isAdventureSpell
+
+def resolvedExiledBeorn : Game :=
+  passBoth (mustApply proposedExiledBeorn ⟨0⟩ .pay)
+
+#guard resolvedExiledBeorn.stack.isEmpty
+#guard resolvedExiledBeorn.battlefield.any (fun o => o.name == "Beorn, Reluctant Host")
+#guard (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host").printed.keywords.trample
+#guard resolvedExiledBeorn.power
+  (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host") == 5
+#guard resolvedExiledBeorn.toughness
+  (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host") == 5
+#guard resolvedExiledBeorn.log.any (fun s =>
+  mentions s "Beorn, Reluctant Host enters the battlefield")
+#guard !(resolvedExiledBeorn.objects.any (fun o =>
+  o.zone == .exile && o.name == "Beorn, Reluctant Host"))
+
+/-- Casting the creature from hand still works. -/
+def proposedBeornCreature : Game :=
+  mustApply (withGreenMana beornSetup ⟨0⟩ 5) ⟨0⟩
+    (.cast (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host").id)
+
+#guard proposedBeornCreature.pending == .activateManaAbilities ⟨0⟩
+#guard proposedBeornCreature.log.any (fun s => mentions s "begins casting Beorn, Reluctant Host")
+#guard (proposedBeornCreature.object! proposedBeornCreature.stack.back!.objectId).name ==
+  "Beorn, Reluctant Host"
+
+def resolvedBeornCreature : Game :=
+  passBoth (mustApply proposedBeornCreature ⟨0⟩ .pay)
+
+#guard (namedPermanent resolvedBeornCreature "Beorn, Reluctant Host").printed.keywords.trample
+#guard resolvedBeornCreature.power
+  (namedPermanent resolvedBeornCreature "Beorn, Reluctant Host") == 5
+
+/-- Till and Tend is sorcery speed. -/
+def beornAtEndStep : Game := skipTo beornSetup .end 80
+
+#guard beornAtEndStep.step == .end
+#guard
+  match beornAtEndStep.apply ⟨0⟩
+      (.castAdventure (handCardNamed beornAtEndStep ⟨0⟩ "Beorn, Reluctant Host").id) with
+  | .error msg => mentions msg "has sorcery speed"
+  | .ok _ => false
+
+/-- Reversing an unpaid Adventure returns the creature card to hand. -/
+def unpaidTillAndTend : Game :=
+  let g := addToHand afterDraw beornReluctantHost ⟨0⟩
+  mustApply g ⟨0⟩
+    (.castAdventure (handCardNamed g ⟨0⟩ "Beorn, Reluctant Host").id)
+
+def reversedTillAndTend : Game := mustApply unpaidTillAndTend ⟨0⟩ .pay
+
+#guard reversedTillAndTend.stack.isEmpty
+#guard (reversedTillAndTend.handObjects ⟨0⟩).any (fun o => o.name == "Beorn, Reluctant Host")
+#guard reversedTillAndTend.log.any (fun s => mentions s "the casting is reversed")
+
+/-- The heuristic casts Till and Tend when that is the playable spell. -/
+def agentBeornOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g beornReluctantHost ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentBeornOnly ⟨0⟩ with
+  | some (.castAdventure id) =>
+    (agentBeornOnly.object! id).name == "Beorn, Reluctant Host"
+  | _ => false
+
+/-- With enough mana, the heuristic casts Beorn as a creature. -/
+def agentBeornCreatureOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g beornReluctantHost ⟨0⟩) ⟨0⟩ 5
+
+#guard
+  match Agent.choose agentBeornCreatureOnly ⟨0⟩ with
+  | some (.cast id) =>
+    (agentBeornCreatureOnly.object! id).name == "Beorn, Reluctant Host"
+  | _ => false
+
+/-- A sorcery Adventure is an instant-or-sorcery spell (CR 715.3b / 601.2i). -/
+def paidTillWithGuttersnipe : Game :=
+  let g := addPermanent beornSetup guttersnipe ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.castAdventure (handCardNamed g ⟨0⟩ "Beorn, Reluctant Host").id)
+  mustApply g ⟨0⟩ .pay
+
+#guard paidTillWithGuttersnipe.stack.size == 2
+#guard (paidTillWithGuttersnipe.object! paidTillWithGuttersnipe.stack.back!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard (paidTillWithGuttersnipe.object! paidTillWithGuttersnipe.stack[0]!.objectId).name ==
+  "Till and Tend"
+#guard paidTillWithGuttersnipe.log.any (fun s => mentions s "casts Till and Tend")
+#guard paidTillWithGuttersnipe.log.any (fun s => mentions s "cast trigger is put on the stack")
+
+def tillWithGuttersnipeResolved : Game :=
+  passBoth (passBoth paidTillWithGuttersnipe)
+
+#guard (tillWithGuttersnipeResolved.player ⟨1⟩).life == 18
+#guard (tillWithGuttersnipeResolved.player ⟨0⟩).additionalLandsThisTurn == 1
 
 /-- Chandra's Gray Ogre attacks; Nissa has Olog-hai Crusher with no Goblin or Orc. -/
 def ogreVsCrusher : Game :=

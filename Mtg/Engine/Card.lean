@@ -60,6 +60,8 @@ inductive SpellEffect where
   | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
   | dealDamageToCreature (amount : Nat)
+  /-- You may play an additional land this turn (e.g. Till and Tend). -/
+  | playAdditionalLandThisTurn
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -74,6 +76,13 @@ def toNotation : SpellEffect → String
   | .plusOnePlusOneTrampleHexproof =>
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
   | .dealDamageToCreature n => s!"deals {n} damage to target creature"
+  | .playAdditionalLandThisTurn => "you may play an additional land this turn"
+
+/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
+def requiresTarget : SpellEffect → Bool
+  | .playAdditionalLandThisTurn => false
+  | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => true
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -616,7 +625,10 @@ def modes (c : CardDef) : Array SpellEffect :=
 
 /-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
 def requiresTarget (c : CardDef) : Bool :=
-  c.spellEffect.isSome || !c.spellModes.isEmpty || c.isAura
+  c.isAura ||
+  match c.spellEffect with
+  | some e => e.requiresTarget
+  | none => !c.spellModes.isEmpty
 
 /-- True when this card has an Adventure (CR 715). -/
 def hasAdventure (c : CardDef) : Bool :=
@@ -739,6 +751,11 @@ instance : ToString CardDef where
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
+#guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
+  "you may play an additional land this turn"
+#guard SpellEffect.requiresTarget (.dealDamage 3)
+#guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
 #guard
   let c : CardDef := {
     name := "Silent Club"
@@ -957,6 +974,17 @@ end AdventureFace
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
+    c.subtypes.any (· == "Adventure")
+
+#guard
+  let adv : AdventureFace := {
+    name := "Till and Tend"
+    manaCost := ManaCost.ofGenericAndColor 1 .green
+    oracleText := "You may play an additional land this turn."
+    spellEffect := some .playAdditionalLandThisTurn
+  }
+  let c := adv.toCardDef
+  c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
     c.subtypes.any (· == "Adventure")
 
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/

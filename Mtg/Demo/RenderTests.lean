@@ -861,4 +861,11 @@ def mountainLine (g : Game) : String :=
   mentions (playerBlock g (g.player ⟨0⟩)) "life 21" &&
     mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (0):"
 
+#guard mentions (stackBlock paidTillAndTend) "Till and Tend"
+#guard mentions (stackBlock paidTillAndTend) "additional land"
+#guard mentions (zoneBlock resolvedTillAndTend .exile) "Beorn, Reluctant Host"
+#guard resolvedTillAndTend.log.any (fun s => mentions s "may play an additional land this turn")
+#guard mentions (objectLine resolvedExiledBeorn
+  (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host")) "trample"
+
 end Mtg.Demo.RenderTests

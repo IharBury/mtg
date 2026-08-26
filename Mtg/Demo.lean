@@ -1161,6 +1161,17 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error _ => false
 
 #guard
+  match applyCast Tests.beornSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.beornSetup ⟨0⟩ "Beorn, Reluctant Host").id,
+        "adventure"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    (g'.object! g'.stack.back!.objectId).name == "Till and Tend" &&
+    (g'.object! g'.stack.back!.objectId).isAdventureSpell &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Till and Tend")
+  | .error _ => false
+
+#guard
   match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id, "adventure"] with
   | .error msg => Tests.mentions msg "has no Adventure"
   | .ok _ => false
