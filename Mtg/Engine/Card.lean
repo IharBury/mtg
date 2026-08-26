@@ -60,6 +60,9 @@ inductive SpellEffect where
   | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
   | dealDamageToCreature (amount : Nat)
+  /-- Target creature you control deals damage equal to its power to target
+  creature an opponent controls (e.g. Quarrel). -/
+  | creatureYouControlDealsPowerToOppCreature
   /-- You may play an additional land this turn (e.g. Till and Tend). -/
   | playAdditionalLandThisTurn
 deriving Repr, Inhabited, BEq
@@ -76,13 +79,23 @@ def toNotation : SpellEffect → String
   | .plusOnePlusOneTrampleHexproof =>
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
   | .dealDamageToCreature n => s!"deals {n} damage to target creature"
+  | .creatureYouControlDealsPowerToOppCreature =>
+    "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .playAdditionalLandThisTurn => "you may play an additional land this turn"
+
+/-- How many targets must be announced for this effect (CR 601.2c). -/
+def targetCount : SpellEffect → Nat
+  | .playAdditionalLandThisTurn => 0
+  | .creatureYouControlDealsPowerToOppCreature => 2
+  | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => 1
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : SpellEffect → Bool
   | .playAdditionalLandThisTurn => false
   | .dealDamage _ | .pump _ _ | .destroyCreatureWithFlying
-  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _ => true
+  | .plusOnePlusOneTrampleHexproof | .dealDamageToCreature _
+  | .creatureYouControlDealsPowerToOppCreature => true
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -770,10 +783,16 @@ instance : ToString CardDef where
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
+#guard SpellEffect.toNotation .creatureYouControlDealsPowerToOppCreature ==
+  "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
   "you may play an additional land this turn"
+#guard SpellEffect.targetCount (.dealDamage 3) == 1
+#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
 #guard
   let c : CardDef := {

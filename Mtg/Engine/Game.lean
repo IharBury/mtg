@@ -1028,6 +1028,14 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
     o.isCreature && pred o && g.canBeTargetedBy caster o)
   |>.map (fun o => Target.permanent o.id)
 
+/-- Creatures `caster` controls that they may target (CR 115.1). -/
+def legalCreatureYouControlTargets (g : Game) (caster : PlayerId) : Array Target :=
+  g.legalCreatureTargets caster (fun o => o.controlledBy caster)
+
+/-- Creatures an opponent of `caster` controls that `caster` may target. -/
+def legalOppCreatureTargets (g : Game) (caster : PlayerId) : Array Target :=
+  g.legalCreatureTargets caster (fun o => o.controlledBy (g.opponent caster))
+
 /-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
 not apply off the battlefield (CR 702.11b). -/
 def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → Bool) :
@@ -1052,7 +1060,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onEnterOrAttackReturnElfGainLife =>
     g.legalGraveyardCardTargets p (fun o => o.hasSubtype "Elf")
   | .onDiesDealDamageEqualToPowerToOppCreature =>
-    g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
+    g.legalOppCreatureTargets p
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
   | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
@@ -1370,7 +1378,11 @@ def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array T
   | .destroyCreatureWithFlying =>
     g.legalCreatureTargets caster (fun o => g.hasFlying o)
   | .plusOnePlusOneTrampleHexproof =>
-    g.legalCreatureTargets caster (fun o => o.controlledBy caster)
+    g.legalCreatureYouControlTargets caster
+  | .creatureYouControlDealsPowerToOppCreature =>
+    let own := g.legalCreatureYouControlTargets caster
+    let opp := g.legalOppCreatureTargets caster
+    if own.isEmpty || opp.isEmpty then #[] else own ++ opp
   | .playAdditionalLandThisTurn => #[]
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
@@ -1454,19 +1466,28 @@ def stackEntry? (g : Game) (objectId : ObjectId) : Option StackEntry :=
   g.stack.find? (fun e => e.objectId == objectId)
 
 /-- Legal targets for the object currently being announced (spell or ability).
-Already-chosen targets of a divided-damage trigger are excluded (CR 115.3). -/
+Already-chosen targets are excluded (CR 115.3). A two-target spell such as
+Quarrel offers the next unset target slot. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
+  let already :=
+    match g.stackEntry? o.id with
+    | some e => e.targets
+    | none => #[]
   let raw :=
     match o.abilityEffect with
     | some e => g.legalAbilityTargets p e
     | none =>
       match o.triggeredAbility with
       | some t => g.legalTriggerTargets p t o.sourceId
-      | none => g.legalSpellTargets p o
-  match o.triggeredAbility.bind TriggeredAbility.dividedDamage?, g.stackEntry? o.id with
-  | some _, some e =>
-    raw.filter (fun t => !e.targets.contains t)
-  | _, _ => raw
+      | none =>
+        match g.currentSpellEffect o with
+        | some .creatureYouControlDealsPowerToOppCreature =>
+          if already.isEmpty then
+            g.legalCreatureYouControlTargets p
+          else
+            g.legalOppCreatureTargets p
+        | _ => g.legalSpellTargets p o
+  raw.filter (fun t => !already.contains t)
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
@@ -1476,7 +1497,8 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
-card in the controller's graveyard; pumps, the +1/+1-counter
+card in the controller's graveyard; Quarrel prefers a creature you control, then
+an opposing creature; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1489,18 +1511,14 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | some .onEnterOrAttackReturnElfGainLife, _, _ =>
       (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
     | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
-      (g.permanentsOf (g.opponent p)).filter (fun o =>
-        o.isCreature && g.canBeTargetedBy p o)
-      |>.back?.map (fun c => Target.permanent c.id)
+      (g.legalOppCreatureTargets p).back?
     | some .onAttackSetOtherBasePT, _, _
     | some .onAttackOtherGets2AndTrample, _, _ =>
       (g.permanentsOf p).filter (fun o =>
         o.isCreature && some o.id != obj.sourceId)
       |>.back?.map (fun c => Target.permanent c.id)
     | _, some (.dealDamageToTargetCreature _), _ =>
-      (g.permanentsOf (g.opponent p)).filter (fun o =>
-        o.isCreature && g.canBeTargetedBy p o)
-      |>.back?.map (fun c => Target.permanent c.id)
+      (g.legalOppCreatureTargets p).back?
     | _, some .destroyTargetColorlessNonland, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isColorlessNonland && g.canBeTargetedBy p o)
@@ -1510,13 +1528,19 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
         |>.map (fun c => Target.permanent c.id)
     | _, _, some (.dealDamage _) => some (Target.player (g.opponent p))
     | _, _, some (.dealDamageToCreature _) =>
-      (g.permanentsOf (g.opponent p)).filter (fun o =>
-        o.isCreature && g.canBeTargetedBy p o)
-      |>.back?.map (fun c => Target.permanent c.id)
+      (g.legalOppCreatureTargets p).back?
     | _, _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.hasFlying o && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
+    | _, _, some .creatureYouControlDealsPowerToOppCreature =>
+      match g.stackEntry? obj.id with
+      | some e =>
+        if e.targets.isEmpty then
+          (g.legalCreatureYouControlTargets p).back?
+        else
+          (g.legalOppCreatureTargets p).back?
+      | none => (g.legalCreatureYouControlTargets p).back?
     | _, _, some (.pump _ _) | _, _, some .plusOnePlusOneTrampleHexproof | _, _, none =>
       (g.permanentsOf p).filter (·.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
@@ -1960,9 +1984,16 @@ def announceTarget (g : Game) (p : PlayerId) (t : Target) (amount? : Option Nat 
     | none =>
       if amount?.isSome then
         throw "That spell or ability does not divide damage (CR 601.2d)"
-      let g := g.setStackEntryTargets obj.id #[t]
+      let some e := g.stackEntry? obj.id | throw "The ability left the stack"
+      let g := g.setStackEntryTargets obj.id (e.targets.push t)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
+      let needed :=
+        match g.currentSpellEffect obj with
+        | some effect => effect.targetCount
+        | none => 1
+      if e.targets.size + 1 < needed then
+        return { g with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
@@ -2154,6 +2185,31 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       else
         let g := g.setObject { o with status := { o.status with damage := o.status.damage + n } }
         g.logMsg s!"{o.name} is dealt {n} damage"
+  | .creatureYouControlDealsPowerToOppCreature, _ =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      let srcOk := (g.legalCreatureYouControlTargets controller).contains
+        (Target.permanent srcId)
+      let destOk := (g.legalOppCreatureTargets controller).contains
+        (Target.permanent destId)
+      if srcOk && destOk then
+        let src := g.object! srcId
+        let dest := g.object! destId
+        let n := (g.power src).toNat
+        let g := g.setObject { dest with
+          status := { dest.status with damage := dest.status.damage + (n : Int) } }
+        g.logMsg s!"{src.name} deals {n} damage to {dest.name}"
+      else
+        let stillThere (id : ObjectId) : Bool :=
+          match g.findObject? id with
+          | some o => o.isOnBattlefield
+          | none => false
+        let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
+          if ok then g
+          else if stillThere id then g.logMsg "The target is no longer legal"
+          else g.logMsg "The target is no longer in play"
+        logIllegal (logIllegal g srcOk srcId) destOk destId
+    | _, _ => g.logMsg "The target is no longer legal"
   | .playAdditionalLandThisTurn, _ =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })

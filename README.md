@@ -116,7 +116,8 @@ The first slice of the engine models the two-player game:
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
-  abilities, and lasting type-changing animations (a permanent that becomes
+  abilities, a creature you control dealing damage equal to its power to a
+  creature an opponent controls, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
