@@ -93,8 +93,8 @@ The first slice of the engine models the two-player game:
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
-  set power and toughness equal to the number of lands you control, or
-  restrict blocking unless you control a Goblin or Orc; attack
+  set power and toughness equal to the number of lands you control (in all
+  zones), or restrict blocking unless you control a Goblin or Orc; attack
   triggers that pump power, set another creature's base power and toughness,
   give another creature +2/+0 and trample, scry, or scry when you attack with one
   or more Elves; scry triggers that pump for each card looked at;

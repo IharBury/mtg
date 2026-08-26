@@ -226,7 +226,8 @@ inductive StaticAbility where
   /-- Equipped creature gets +P/+T (e.g. Ragged Short Spear). -/
   | equippedCreatureGets (power toughness : Int)
   /-- This creature's power and toughness are each equal to the number of lands
-  you control (e.g. Mirkwood Pathmaker, animated Beorn's Hospitality). -/
+  you control. A characteristic-defining ability that functions in all zones
+  (CR 208.2a / 604.3), e.g. Mirkwood Pathmaker and animated Beorn's Hospitality. -/
   | powerToughnessEqualLandsYouControl
   /-- This creature can't block unless its controller controls a permanent with
   any of these subtypes (e.g. Olog-hai Crusher). An empty list means it can't
@@ -704,7 +705,9 @@ def typeLine (c : CardDef) : String :=
 def ptString (c : CardDef) : String :=
   match c.power, c.toughness with
   | some p, some t => s!"{p}/{t}"
-  | _, _ => ""
+  | some p, none => s!"{p}/*"
+  | none, some t => s!"*/{t}"
+  | none, none => if c.isCreature then "*/*" else ""
 
 def summary (c : CardDef) : String :=
   let cost := toString c.manaCost
@@ -795,6 +798,18 @@ instance : ToString CardDef where
   "Equipped creature gets +2/+0."
 #guard StaticAbility.toNotation .powerToughnessEqualLandsYouControl ==
   "This creature's power and toughness are each equal to the number of lands you control."
+#guard
+  let c : CardDef := { name := "Silent Path", types := #[.creature] }
+  c.ptString == "*/*"
+#guard
+  let c : CardDef := { name := "Silent Aura", types := #[.enchantment] }
+  c.ptString == ""
+#guard
+  let c : CardDef := { name := "Silent Star", types := #[.creature], power := some 2 }
+  c.ptString == "2/*"
+#guard
+  let c : CardDef := { name := "Silent Star", types := #[.creature], toughness := some 3 }
+  c.ptString == "*/3"
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #["Goblin", "Orc"]) ==
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==

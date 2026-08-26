@@ -747,6 +747,17 @@ def mountainLine (g : Game) : String :=
   let g := pathmakerWithLands
   let o := namedPermanent g "Mirkwood Pathmaker"
   mentions (objectLine g o) "2/2"
+#guard
+  let g := pathmakerGrowsWithLand
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "3/3"
+#guard
+  let g := pathmakerEntered
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  mentions (objectLine g o) "2/2"
+#guard mentions (handLine pathmakerInHand
+  (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").id) "*/*"
+#guard mentions mirkwoodPathmaker.summary "*/*"
 
 #guard mentions (header gandalfEntered) "choose targets (CR 601.2c"
 #guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
