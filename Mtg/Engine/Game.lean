@@ -28,7 +28,9 @@ keyword grants, attack triggers (CR 508.2 / 603), including copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
-you choose when a creature enters or attacks (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
+you choose when a creature enters or attacks (CR 601.2d) and returning an Elf
+card from your graveyard to gain life equal to its power (CR 701.19 / 118.2),
+landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3),
@@ -42,10 +44,13 @@ CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
 
 namespace Mtg.Engine
 
-/-- A target chosen while casting a spell (CR 115). -/
+/-- A target chosen while casting a spell or putting an ability on the stack
+(CR 115). -/
 inductive Target where
   | player (id : PlayerId)
   | permanent (id : ObjectId)
+  /-- A card in a graveyard (CR 404 / 115.1). -/
+  | card (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Permanent status (CR 110.5). Extra fields track combat and EOT pumps. -/
@@ -982,6 +987,15 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
     o.isCreature && pred o && g.canBeTargetedBy caster o)
   |>.map (fun o => Target.permanent o.id)
 
+/-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
+not apply off the battlefield (CR 702.11b). -/
+def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → Bool) :
+    Array Target :=
+  (g.player p).graveyard.filterMap (fun id =>
+    match g.findObject? id with
+    | some o => if pred o then some (Target.card o.id) else none
+    | none => none)
+
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
@@ -994,6 +1008,8 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
     g.livingPlayers.map (fun pl => Target.player pl.id) ++
       g.legalCreatureTargets p (fun _ => true)
+  | .onEnterOrAttackReturnElfGainLife =>
+    g.legalGraveyardCardTargets p (fun o => o.hasSubtype "Elf")
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
@@ -1340,7 +1356,8 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
-destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
+destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
+card in the controller's graveyard; pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1350,6 +1367,8 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
     | some (.onEnterDealDividedDamage _ _), _, _
     | some (.onEnterOrAttackDealDividedDamage _ _), _, _ =>
       some (Target.player (g.opponent p))
+    | some .onEnterOrAttackReturnElfGainLife, _, _ =>
+      (g.legalTriggerTargets p .onEnterOrAttackReturnElfGainLife obj.sourceId).back?
     | some .onDiesDealDamageEqualToPowerToOppCreature, _, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
@@ -1415,7 +1434,7 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) :
 
 def targetLogName (g : Game) : Target → String
   | .player pid => (g.player pid).name
-  | .permanent oid =>
+  | .permanent oid | .card oid =>
     match g.findObject? oid with
     | some o => o.name
     | none => toString oid
@@ -2034,6 +2053,21 @@ def illegalAbilityTarget (g : Game) : Target → Game
       if o.isOnBattlefield then g.logMsg "The target is no longer legal"
       else g.logMsg "The target is no longer in play"
     | none => g.logMsg "The target is no longer in play"
+  | Target.card oid =>
+    match g.findObject? oid with
+    | some o =>
+      match o.zone with
+      | .graveyard _ => g.logMsg "The target is no longer legal"
+      | _ => g.logMsg "The target is no longer in the graveyard"
+    | none => g.logMsg "The target is no longer in the graveyard"
+
+/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setPlayer { pl with life := pl.life + (n : Int) }
+    g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
@@ -2058,7 +2092,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let o := g.object! oid
           let (g, _) := g.move oid (.graveyard o.owner) none
           g.logMsg s!"{o.name} is destroyed"
-        | Target.player _ => g.logMsg "The target is no longer legal"
+        | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .attachToTargetCreatureYouControl =>
@@ -2081,7 +2115,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
               g.logMsg s!"{src.name} attaches to {host.name}"
         | Target.permanent _, none =>
           g.logMsg "The Equipment is no longer in play"
-        | Target.player _, _ => g.logMsg "The target is no longer legal"
+        | Target.player _, _ | Target.card _, _ => g.logMsg "The target is no longer legal"
       else
         g.illegalAbilityTarget t
   | .becomeBearCreatureWithLandsPT =>
@@ -2197,7 +2231,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg "The target is no longer legal"
         else
           g.logMsg "The target is no longer in play"
-    | some (Target.player _) =>
+    | some (Target.player _) | some (Target.card _) =>
       g.logMsg "The target is no longer legal"
   | .onAttackOtherGets2AndTrample =>
     match targets[0]? with
@@ -2281,6 +2315,23 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg "The target is no longer legal"
         else
           g.logMsg "The target is no longer in play"
+    | _ => g.logMsg "The target is no longer legal"
+  | .onEnterOrAttackReturnElfGainLife =>
+    match targets[0]? with
+    | some (Target.card oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer in the graveyard"
+      | some o =>
+        if (g.legalTriggerTargets controller ab sourceId).contains (Target.card oid) then
+          let n := (o.printed.power.getD 0).toNat
+          let name := o.name
+          let (g, _) := g.move oid (.hand controller) none
+          let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+          g.gainLife controller n
+        else
+          match o.zone with
+          | .graveyard _ => g.logMsg "The target is no longer legal"
+          | _ => g.logMsg "The target is no longer in the graveyard"
     | _ => g.logMsg "The target is no longer legal"
   | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
     Id.run do

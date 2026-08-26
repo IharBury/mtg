@@ -244,6 +244,11 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
       if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
     else
       "  (hidden)"
+  let gy := pl.graveyard.toList.map (fun id =>
+    match g.findObject? id with
+    | none => s!"{id} (missing)"
+    | some o => s!"{o.id} {o.name}{faceExtras o.printed}")
+  let gyText := if gy.isEmpty then "  (empty)" else String.intercalate "\n  " gy
   let scryLines : List String :=
     match scryLookSection g pl viewer with
     | some s => [s]
@@ -254,7 +259,9 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
     [s!"  Hand ({pl.hand.size}):",
      "  " ++ handText,
      "  Battlefield:",
-     "  " ++ bfText])
+     "  " ++ bfText,
+     s!"  Graveyard ({pl.graveyard.size}):",
+     "  " ++ gyText])
 
 def stackBlock (g : Game) : String :=
   if g.stack.isEmpty then "Stack: (empty)"
