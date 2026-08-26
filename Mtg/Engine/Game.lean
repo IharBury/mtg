@@ -12,17 +12,18 @@ import Mtg.Engine.Zone
 Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), including choosing modes of modal spells
-and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c) and activating
-mana abilities while paying (CR 601.2g), activating non-mana abilities of
-permanents (CR 602), including destroying permanents (CR 701.7), equip
-(CR 702.6), and lasting type-changing animations (CR 205.1a / 611.2a),
-static abilities that grant trample, pump an enchanted or equipped creature,
-or set power and toughness equal to lands you control (CR 604 / 208.2a / 613.3),
-Aura spells (CR 303.4), Equipment (CR 301.5), flash (CR 702.8), hexproof
-(CR 702.11), scry (CR 701.20), discard (CR 701.9), destroy (CR 701.8), +1/+1
-counters (CR 122), until-end-of-turn keyword grants, attack triggers
-(CR 508.2 / 603), becomes-blocked triggers (CR 509.5c / 603), enters
-triggers (CR 603.6a), landfall triggers that target (CR 603.3d / 601.2c),
+and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
+damage among those targets (CR 601.2d), and activating mana abilities while
+paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
+including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
+type-changing animations (CR 205.1a / 611.2a), static abilities that grant
+trample, pump an enchanted or equipped creature, or set power and toughness
+equal to lands you control (CR 604 / 208.2a / 613.3), Aura spells (CR 303.4),
+Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
+discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
+keyword grants, attack triggers (CR 508.2 / 603), becomes-blocked triggers
+(CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
+you choose (CR 601.2d), landfall triggers that target (CR 603.3d / 601.2c),
 combat (CR 506–510, including combat damage assignment under CR 510.1c–d),
 cleanup (CR 514.3), and the state-based actions we implement (CR 704.5).
 -/
@@ -171,6 +172,9 @@ structure StackEntry where
   objectId : ObjectId
   controller : PlayerId
   targets : Array Target
+  /-- Damage assigned to each target of a “divided as you choose” effect
+  (CR 601.2d). Parallel to `targets`. -/
+  dividedDamage : Array Nat := #[]
   /-- Chosen mode index for a modal spell (CR 700.2). -/
   chosenMode : Option Nat := none
 deriving Repr, Inhabited
@@ -276,8 +280,12 @@ inductive Action where
   | cast (id : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
-  /-- Announce a target for the proposed spell (CR 601.2c). -/
+  /-- Announce a target for the proposed spell (CR 601.2c). For a divided-
+  damage ability, assigns all remaining damage to this target (CR 601.2d). -/
   | target (t : Target)
+  /-- Assign `n` damage to target `t` of a “divided as you choose” effect
+  (CR 601.2d). -/
+  | divideDamage (t : Target) (n : Nat)
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
@@ -805,9 +813,23 @@ def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → B
 def legalTriggerTargets (g : Game) (p : PlayerId) : TriggeredAbility → Array Target
   | .onLandYouControlEntersPlusOnePlusOne =>
     g.legalCreatureTargets p (fun o => o.controlledBy p)
+  | .onEnterDealDividedDamage _ _ =>
+    g.livingPlayers.map (fun pl => Target.player pl.id) ++
+      g.legalCreatureTargets p (fun _ => true)
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterMayDiscardDraw _ =>
     #[]
+
+/-- Damage already assigned on a “divided as you choose” stack entry (CR 601.2d). -/
+def assignedDividedDamage (e : StackEntry) : Nat :=
+  e.dividedDamage.foldl (· + ·) 0
+
+/-- Whether this stacked triggered ability still needs targets or a damage
+division announced (CR 603.3d / 601.2d). -/
+def triggerStillNeedsTargets (e : StackEntry) : TriggeredAbility → Bool
+  | .onEnterDealDividedDamage amount _ =>
+    assignedDividedDamage e < amount
+  | ab => ab.requiresTarget && e.targets.isEmpty
 
 /-- Stack entry for a triggered ability that still needs targets announced
 (CR 603.3d). Oldest first so targets are chosen in the order abilities were
@@ -817,7 +839,7 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
     match g.findObject? e.objectId with
     | some o =>
       match o.triggeredAbility with
-      | some ab => ab.requiresTarget && e.targets.isEmpty
+      | some ab => triggerStillNeedsTargets e ab
       | none => false
     | none => false)
 
@@ -847,7 +869,24 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     consecutivePasses := 0 }
   g.logMsg s!"{source.name}'s {event} is put on the stack"
 
-/-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a). -/
+/-- If a stacked triggered ability still needs targets, prompt its controller
+(CR 603.3d / 601.2c). -/
+def promptTriggerTargetsIfNeeded (g : Game) : Game :=
+  match g.triggerNeedingTargets with
+  | some e =>
+    if g.pending == .chooseTargets e.controller then g
+    else
+      let msg :=
+        match (g.findObject? e.objectId).bind (fun o => o.triggeredAbility) with
+        | some (.onEnterDealDividedDamage n maxTargets) =>
+          s!"{(g.player e.controller).name} must divide {n} damage among one to {maxTargets} targets (CR 603.3d / 601.2d)"
+        | _ =>
+          s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
+      { g with pending := .chooseTargets e.controller }.logMsg msg
+  | none => g
+
+/-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a).
+Abilities that require a target and have none are removed (CR 603.3d). -/
 def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
   match o.controller with
   | none => g
@@ -856,18 +895,12 @@ def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
       let mut g := g
       for ab in o.printed.triggeredAbilities do
         if ab.triggersWhenEntering then
-          g := g.putTriggeredAbilityOnStack p o ab "enters trigger"
-      return g
-
-/-- If a stacked triggered ability still needs targets, prompt its controller
-(CR 603.3d / 601.2c). -/
-def promptTriggerTargetsIfNeeded (g : Game) : Game :=
-  match g.triggerNeedingTargets with
-  | some e =>
-    { g with pending := .chooseTargets e.controller }
-      |>.logMsg
-        s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
-  | none => g
+          if ab.requiresTarget && (g.legalTriggerTargets p ab).isEmpty then
+            g := g.logMsg
+              s!"{o.name}'s enters trigger is removed from the stack (no legal target) (CR 603.3d)"
+          else
+            g := g.putTriggeredAbilityOnStack p o ab "enters trigger"
+      return g.promptTriggerTargetsIfNeeded
 
 /-- Put “whenever a land you control enters” triggers onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
@@ -1044,45 +1077,63 @@ def objectAwaitingTargets (g : Game) : Option GameObject :=
   | some o => some o
   | none => g.triggerNeedingTargets.bind (fun e => g.findObject? e.objectId)
 
-/-- Legal targets for the object currently being announced (spell or ability). -/
+/-- True while announcing a “divided as you choose” damage trigger (CR 601.2d). -/
+def announcingDividedDamage (g : Game) : Bool :=
+  match g.objectAwaitingTargets with
+  | some o => (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome
+  | none => false
+
+/-- The stack entry for `objectId`, if that object is on the stack. -/
+def stackEntry? (g : Game) (objectId : ObjectId) : Option StackEntry :=
+  g.stack.find? (fun e => e.objectId == objectId)
+
+/-- Legal targets for the object currently being announced (spell or ability).
+Already-chosen targets of a divided-damage trigger are excluded (CR 115.3). -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
-  match o.abilityEffect with
-  | some e => g.legalAbilityTargets p e
-  | none =>
-    match o.triggeredAbility with
-    | some t => g.legalTriggerTargets p t
-    | none => g.legalSpellTargets p o
+  let raw :=
+    match o.abilityEffect with
+    | some e => g.legalAbilityTargets p e
+    | none =>
+      match o.triggeredAbility with
+      | some t => g.legalTriggerTargets p t
+      | none => g.legalSpellTargets p o
+  match o.triggeredAbility, g.stackEntry? o.id with
+  | some (.onEnterDealDividedDamage _ _), some e =>
+    raw.filter (fun t => !e.targets.contains t)
+  | _, _ => raw
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
   !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
 
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
-prefer the opponent; creature-damage abilities prefer an opposing creature;
-destroy-flying prefers an opponent's flyer; destroy-colorless prefers an opposing
-colorless nonland; pumps, the +1/+1-counter mode, Equip, and Auras prefer a creature
-the caster controls. -/
+and divided-damage enters triggers prefer the opponent; creature-damage abilities
+prefer an opposing creature; destroy-flying prefers an opponent's flyer;
+destroy-colorless prefers an opposing colorless nonland; pumps, the +1/+1-counter
+mode, Equip, landfall, and Auras prefer a creature the caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
   let legal := g.legalProposedTargets p obj
   let preferred : Option Target :=
-    match obj.abilityEffect, g.currentSpellEffect obj with
-    | some (.dealDamageToTargetCreature _), _ =>
+    match obj.triggeredAbility, obj.abilityEffect, g.currentSpellEffect obj with
+    | some (.onEnterDealDividedDamage _ _), _, _ =>
+      some (Target.player (g.opponent p))
+    | _, some (.dealDamageToTargetCreature _), _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
-    | some .destroyTargetColorlessNonland, _ =>
+    | _, some .destroyTargetColorlessNonland, _ =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isColorlessNonland && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
-    | some .attachToTargetCreatureYouControl, _ =>
+    | _, some .attachToTargetCreatureYouControl, _ =>
       (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
-    | _, some (.dealDamage _) => some (Target.player (g.opponent p))
-    | _, some .destroyCreatureWithFlying =>
+    | _, _, some (.dealDamage _) => some (Target.player (g.opponent p))
+    | _, _, some .destroyCreatureWithFlying =>
       (g.permanentsOf (g.opponent p)).filter (fun o =>
         o.isCreature && g.hasFlying o && g.canBeTargetedBy p o)
       |>.back?.map (fun c => Target.permanent c.id)
-    | _, some (.pump _ _) | _, some .plusOnePlusOneTrampleHexproof | _, none =>
+    | _, _, some (.pump _ _) | _, _, some .plusOnePlusOneTrampleHexproof | _, _, none =>
       (g.permanentsOf p).filter (·.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
   match preferred with
@@ -1187,12 +1238,14 @@ def afterTargetsChosen (g : Game) : Game :=
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
       g.becomeCast prop.caster name
 
-/-- Write `targets` onto the stack entry for `objectId`. -/
-def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target) : Game :=
+/-- Write `targets` (and optional damage division) onto the stack entry. -/
+def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
+    (dividedDamage : Array Nat := #[]) : Game :=
   match g.stack.findIdx? (fun e => e.objectId == objectId) with
   | none => g
   | some i =>
-    { g with stack := g.stack.set! i { g.stack[i]! with targets := targets } }
+    { g with stack := g.stack.set! i { g.stack[i]! with
+        targets := targets, dividedDamage := dividedDamage } }
 
 /-- Write `targets` onto the stack entry for the proposed spell. -/
 def setProposedTargets (g : Game) (targets : Array Target) : Game :=
@@ -1383,9 +1436,20 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
+/-- After a trigger's targets (and any damage division) are fully announced,
+prompt the next trigger that needs targets or give priority. -/
+def afterTriggerTargetsChosen (g : Game) : Game :=
+  match g.triggerNeedingTargets with
+  | some _ =>
+    promptTriggerTargetsIfNeeded { g with pending := .none }
+  | none =>
+    receivePriority { g with pending := .none } g.activePlayer
+
 /-- Announce the chosen target for a proposed spell or a triggered ability
-(CR 601.2c / 603.3d). -/
-def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game := do
+(CR 601.2c / 603.3d). `amount?` is the damage assigned to this target of a
+divided-damage ability; omitted means all remaining damage (CR 601.2d). -/
+def announceTarget (g : Game) (p : PlayerId) (t : Target) (amount? : Option Nat := none) :
+    Except String Game := do
   match g.pending with
   | .chooseTargets caster =>
     if caster != p then
@@ -1393,18 +1457,40 @@ def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game :
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
     if !(g.legalProposedTargets p obj).contains t then
       throw "Illegal target (CR 601.2c)"
-    let g := g.setStackEntryTargets obj.id #[t]
-    let g := g.logMsg
-      s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
-    if g.proposedSpell.isSome then
-      return g.afterTargetsChosen
-    match g.triggerNeedingTargets with
-    | some e =>
-      return { g with pending := .chooseTargets e.controller }.logMsg
-        s!"{(g.player e.controller).name} must choose a target (CR 603.3d / 601.2c)"
+    match obj.triggeredAbility.bind TriggeredAbility.dividedDamage? with
+    | some (total, maxTargets) =>
+      let some e := g.stackEntry? obj.id | throw "The ability left the stack"
+      let already := assignedDividedDamage e
+      let remaining := total - already
+      if remaining == 0 then
+        throw "All damage has already been divided (CR 601.2d)"
+      let n := amount?.getD remaining
+      if n == 0 then
+        throw "Each target must be dealt at least 1 damage (CR 601.2d)"
+      if n > remaining then
+        throw s!"Only {remaining} damage remains to divide (CR 601.2d)"
+      let used := e.targets.size + 1
+      if used > maxTargets then
+        throw s!"Cannot choose more than {maxTargets} targets (CR 601.2d)"
+      let leftover := remaining - n
+      if leftover > 0 && used == maxTargets then
+        throw
+          s!"Must assign all remaining damage among at most {maxTargets} targets (CR 601.2d)"
+      let g := g.setStackEntryTargets obj.id (e.targets.push t) (e.dividedDamage.push n)
+      let g := g.logMsg
+        s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
+      if leftover == 0 then
+        return g.afterTriggerTargetsChosen
+      return { g with pending := .chooseTargets p }
     | none =>
-      let g := { g with pending := .none }
-      return g.receivePriority g.activePlayer
+      if amount?.isSome then
+        throw "That spell or ability does not divide damage (CR 601.2d)"
+      let g := g.setStackEntryTargets obj.id #[t]
+      let g := g.logMsg
+        s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
+      if g.proposedSpell.isSome then
+        return g.afterTargetsChosen
+      return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
 /-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
@@ -1727,7 +1813,8 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
 
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[]) : Game :=
+    (sourceId : Option ObjectId) (targets : Array Target := #[])
+    (dividedDamage : Array Nat := #[]) : Game :=
   match ab with
   | .onAttackPumpByGreatestPower =>
     match sourceId.bind g.findObject? with
@@ -1778,6 +1865,15 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else
           g.logMsg "The target is no longer in play"
     | _ => g.logMsg "The target is no longer legal"
+  | .onEnterDealDividedDamage _ _ =>
+    Id.run do
+      let mut g := g
+      for i in [0:targets.size] do
+        let t := targets[i]!
+        let n := dividedDamage[i]?.getD 0
+        if n > 0 then
+          g := g.applyEffect controller (.dealDamage n) #[t]
+      return g
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2). -/
 def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array ObjectId) : Game :=
@@ -1844,7 +1940,8 @@ def resolveTop (g : Game) : Game :=
         -- CR 608.2m: after resolution the ability ceases to exist.
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else if let some t := obj.triggeredAbility then
-        let g := g.applyTriggeredAbility entry.controller t obj.sourceId entry.targets
+        let g := g.applyTriggeredAbility entry.controller t obj.sourceId
+          entry.targets entry.dividedDamage
         { g with objects := g.objects.filter (fun o => o.id != obj.id) }
       else
         let g :=
@@ -2588,6 +2685,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .cast id => g.castSpell p id
   | .chooseMode idx => g.announceMode p idx
   | .target t => g.announceTarget p t
+  | .divideDamage t n => g.announceTarget p t (some n)
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
