@@ -56,6 +56,8 @@ inductive SpellEffect where
   /-- Put a +1/+1 counter on target creature you control. It gains trample and
   hexproof until end of turn. -/
   | plusOnePlusOneTrampleHexproof
+  /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
+  | dealDamageToCreature (amount : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -69,6 +71,7 @@ def toNotation : SpellEffect → String
   | .destroyCreatureWithFlying => "destroy target creature with flying"
   | .plusOnePlusOneTrampleHexproof =>
     "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
+  | .dealDamageToCreature n => s!"deals {n} damage to target creature"
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -355,6 +358,17 @@ instance : ToString TriggeredAbility where
 
 end TriggeredAbility
 
+/-- Alternative characteristics of an adventurer card while it is a spell
+cast as an Adventure (CR 715.2). -/
+structure AdventureFace where
+  name : String
+  manaCost : ManaCost := ManaCost.empty
+  types : Array CardType := #[.sorcery]
+  subtypes : Array Subtype := #["Adventure"]
+  oracleText : String := ""
+  spellEffect : Option SpellEffect := none
+deriving Repr, Inhabited, BEq
+
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
   name : String
@@ -381,6 +395,9 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
+  /-- Alternative characteristics used when this card is cast as an Adventure
+  (CR 715). -/
+  adventure : Option AdventureFace := none
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -423,6 +440,10 @@ def modes (c : CardDef) : Array SpellEffect :=
 /-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
 def requiresTarget (c : CardDef) : Bool :=
   c.spellEffect.isSome || !c.spellModes.isEmpty || c.isAura
+
+/-- True when this card has an Adventure (CR 715). -/
+def hasAdventure (c : CardDef) : Bool :=
+  c.adventure.isSome
 
 def manaValue (c : CardDef) : Nat := c.manaCost.manaValue
 
@@ -520,6 +541,8 @@ instance : ToString CardDef where
   "destroy target creature with flying"
 #guard SpellEffect.toNotation .plusOnePlusOneTrampleHexproof ==
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
+#guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
+  "deals 5 damage to target creature"
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
@@ -609,6 +632,31 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 
 end CardDef
+
+namespace AdventureFace
+
+/-- Characteristics used while this card is on the stack as an Adventure (CR 715.3b). -/
+def toCardDef (a : AdventureFace) : CardDef := {
+  name := a.name
+  manaCost := a.manaCost
+  types := a.types
+  subtypes := a.subtypes
+  oracleText := a.oracleText
+  spellEffect := a.spellEffect
+}
+
+end AdventureFace
+
+#guard
+  let adv : AdventureFace := {
+    name := "Spew Flame"
+    manaCost := ManaCost.ofGenericAndColor 4 .red
+    oracleText := "Spew Flame deals 5 damage to target creature."
+    spellEffect := some (.dealDamageToCreature 5)
+  }
+  let c := adv.toCardDef
+  c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
+    c.subtypes.any (· == "Adventure")
 
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/
 def isBasicLandCard (c : CardDef) : Bool :=

@@ -11,7 +11,8 @@ Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample o
 or equipped creature, attack triggers that pump or set another creature's base
 power and toughness, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
-divided among targets, Aura and Equipment attachment, modal spells, destroy, +1/+1
+divided among targets, Aura and Equipment attachment, adventurer cards
+(casting an Adventure, then the creature from exile), modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
@@ -596,10 +597,18 @@ def smaugTheGreatCalamity : CardDef := {
   types := #[.creature]
   subtypes := #["Dragon"]
   supertypes := #[.legendary]
-  oracleText := "Flying"
+  oracleText := "Flying\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
   power := some 5
   toughness := some 5
   keywords := { Keywords.none with flying := true }
+  adventure := some {
+    name := "Spew Flame"
+    manaCost := ManaCost.ofGenericAndColor 4 .red
+    types := #[.sorcery]
+    subtypes := #["Adventure"]
+    oracleText := "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
+    spellEffect := some (.dealDamageToCreature 5)
+  }
 }
 
 def ologHaiCrusher : CardDef := {
@@ -1011,5 +1020,21 @@ def attercop : CardDef := {
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
 #guard (goblinFireleaper.summary.splitOn "+1/+0").length > 1
 #guard (goblinFireleaper.summary.splitOn "dies").length > 1
+#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugTheGreatCalamity.hasAdventure
+#guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
+#guard smaugTheGreatCalamity.power == some 5
+#guard smaugTheGreatCalamity.toughness == some 5
+#guard
+  match smaugTheGreatCalamity.adventure with
+  | some adv =>
+    adv.name == "Spew Flame" &&
+      adv.manaCost == ManaCost.ofGenericAndColor 4 .red &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some (.dealDamageToCreature 5)
+  | none => false
+#guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame").length > 1
+#guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
 
 end Mtg.Engine.Catalog

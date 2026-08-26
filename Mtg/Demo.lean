@@ -234,6 +234,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
+  cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
   target <id|name|opponent> [n] ...  Announce a target (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
@@ -262,6 +263,8 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2d").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
+#guard ((helpInteractive false).splitOn "cast <id> adventure").length > 1
+#guard ((helpInteractive false).splitOn "CR 715.3").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
@@ -990,10 +993,10 @@ def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String G
         some .destroyTargetColorlessNonland
     | .error _ => false
 
-def castUsage : String := "usage: cast <id>"
+def castUsage : String := "usage: cast <id> [adventure]"
 
-/-- Begin casting the named spell (CR 601.2a). Targets are announced later
-with `target` (CR 601.2c). -/
+/-- Begin casting the named spell (CR 601.2a), or its Adventure (CR 715.3).
+Targets are announced later with `target` (CR 601.2c). -/
 def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1004,6 +1007,13 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
       match g.findObject? id with
       | none => throw "no such object"
       | some _ => g.apply p (.cast id)
+  | [arg, "adventure"] =>
+    match parseObjectId? arg with
+    | none => throw castUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.castAdventure id)
   | _ => throw castUsage
 
 #guard
@@ -1048,6 +1058,21 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     g'.stack.back!.targets.isEmpty &&
     g'.log.any (fun s => Tests.mentions s "begins casting Gift of Strands")
   | .error _ => false
+
+#guard
+  match applyCast Tests.smaugSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.smaugSetup ⟨0⟩ "Smaug, the Great Calamity").id,
+        "adventure"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    (g'.object! g'.stack.back!.objectId).name == "Spew Flame" &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Spew Flame")
+  | .error _ => false
+
+#guard
+  match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id, "adventure"] with
+  | .error msg => Tests.mentions msg "has no Adventure"
+  | .ok _ => false
 
 def targetUsage : String := "usage: target <id|name|opponent>"
 def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."

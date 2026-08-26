@@ -312,6 +312,10 @@ def uncontrolledPermanent : Game :=
 #guard goblinFireleaper.activatedAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
+#guard mentions smaugTheGreatCalamity.summary "flying"
+#guard mentions smaugTheGreatCalamity.summary "Spew Flame"
+#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugTheGreatCalamity.hasAdventure
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -4175,5 +4179,206 @@ def galionTargetGone : Game :=
 
 #guard galionTargetGone.log.any (fun s => mentions s "no longer in play")
 #guard !(galionTargetGone.battlefield.any (fun o => o.name == "Llanowar Elves"))
+
+/- Smaug, the Great Calamity // Spew Flame (CR 715). -/
+
+/-- Smaug in hand, an opposing creature, and enough mana for either face. -/
+def smaugSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
+
+#guard smaugTheGreatCalamity.hasAdventure
+#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugSetup.canCast ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
+#guard smaugSetup.canCastAdventure ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
+#guard smaugSetup.asSorcery? ⟨0⟩
+
+/-- Spew Flame requires a creature. -/
+def smaugNoTarget : Game :=
+  withRedMana (addToHand afterDraw smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
+
+#guard !smaugNoTarget.canCastAdventure ⟨0⟩
+  (handCardNamed smaugNoTarget ⟨0⟩ "Smaug, the Great Calamity")
+#guard
+  match smaugNoTarget.apply ⟨0⟩
+      (.castAdventure (handCardNamed smaugNoTarget ⟨0⟩ "Smaug, the Great Calamity").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- A card without an Adventure cannot be cast as one.
+#guard
+  match boltSetup.apply ⟨0⟩ (.castAdventure boltInHand.id) with
+  | .error msg => mentions msg "has no Adventure"
+  | .ok _ => false
+
+def proposedSpewFlame : Game :=
+  mustApply smaugSetup ⟨0⟩
+    (.castAdventure (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity").id)
+
+#guard proposedSpewFlame.pending == .chooseTargets ⟨0⟩
+#guard (proposedSpewFlame.object! proposedSpewFlame.stack.back!.objectId).name == "Spew Flame"
+#guard (proposedSpewFlame.object! proposedSpewFlame.stack.back!.objectId).printed.isSorcery
+#guard (proposedSpewFlame.object! proposedSpewFlame.stack.back!.objectId).isAdventureSpell
+#guard proposedSpewFlame.log.any (fun s => mentions s "begins casting Spew Flame")
+#guard proposedSpewFlame.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Spew Flame cannot target a player.
+#guard
+  match proposedSpewFlame.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets an opposing creature.
+#guard
+  match Agent.choose proposedSpewFlame ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedSpewFlame.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def targetedSpewFlame : Game :=
+  mustApply proposedSpewFlame ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedSpewFlame "Grizzly Bears").id))
+
+#guard targetedSpewFlame.pending == .activateManaAbilities ⟨0⟩
+#guard targetedSpewFlame.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedSpewFlame "Grizzly Bears").id]
+
+def paidSpewFlame : Game := mustApply targetedSpewFlame ⟨0⟩ .pay
+
+#guard paidSpewFlame.hasPriority ⟨0⟩
+#guard paidSpewFlame.log.any (fun s => mentions s "casts Spew Flame")
+#guard (paidSpewFlame.object! paidSpewFlame.stack.back!.objectId).name == "Spew Flame"
+
+def resolvedSpewFlame : Game := passBoth paidSpewFlame
+
+#guard resolvedSpewFlame.stack.isEmpty
+#guard !(resolvedSpewFlame.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedSpewFlame.log.any (fun s => mentions s "Grizzly Bears is dealt 5 damage")
+#guard resolvedSpewFlame.objects.any (fun o =>
+  o.zone == .exile && o.name == "Smaug, the Great Calamity")
+#guard !((resolvedSpewFlame.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedSpewFlame.object! id).name == "Smaug, the Great Calamity"))
+#guard resolvedSpewFlame.log.any (fun s => mentions s "is exiled")
+#guard resolvedSpewFlame.log.any (fun s => mentions s "may cast it for as long as it remains exiled")
+
+def exiledSmaug (g : Game) : GameObject :=
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Smaug, the Great Calamity") with
+  | some o => o
+  | none => panic! "expected Smaug, the Great Calamity in exile"
+
+#guard resolvedSpewFlame.mayPlayFromExile ⟨0⟩ (exiledSmaug resolvedSpewFlame)
+#guard !resolvedSpewFlame.canCastAdventure ⟨0⟩ (exiledSmaug resolvedSpewFlame)
+#guard resolvedSpewFlame.adventureExileForbidsRecast (exiledSmaug resolvedSpewFlame)
+
+-- The CR 715.3d permission does not allow recasting as an Adventure.
+#guard
+  match resolvedSpewFlame.castSpell ⟨0⟩ (exiledSmaug resolvedSpewFlame).id true with
+  | .error msg => mentions msg "may not cast that card as an Adventure"
+  | .ok _ => false
+
+/-- Permission lasts past the end of the caster's next turn (CR 715.3d). -/
+def smaugPermissionLater : Game :=
+  let g := skipTo resolvedSpewFlame .end 80
+  let g := passBoth g
+  let g := skipTo g .end 80
+  let g := passBoth g
+  skipTo g .precombatMain 80
+
+#guard smaugPermissionLater.activePlayer == ⟨0⟩
+#guard smaugPermissionLater.mayPlayFromExile ⟨0⟩ (exiledSmaug smaugPermissionLater)
+#guard !smaugPermissionLater.log.any (fun s =>
+  mentions s "can no longer be played from exile")
+
+/-- Cast Smaug from exile as the creature (CR 715.3d). -/
+def smaugFromExileSetup : Game :=
+  withRedMana resolvedSpewFlame ⟨0⟩ 7
+
+#guard smaugFromExileSetup.canCast ⟨0⟩ (exiledSmaug smaugFromExileSetup)
+
+def proposedExiledSmaug : Game :=
+  mustApply smaugFromExileSetup ⟨0⟩ (.cast (exiledSmaug smaugFromExileSetup).id)
+
+#guard proposedExiledSmaug.pending == .activateManaAbilities ⟨0⟩
+#guard proposedExiledSmaug.log.any (fun s => mentions s "begins casting Smaug, the Great Calamity")
+#guard (proposedExiledSmaug.object! proposedExiledSmaug.stack.back!.objectId).name ==
+  "Smaug, the Great Calamity"
+#guard !(proposedExiledSmaug.object! proposedExiledSmaug.stack.back!.objectId).isAdventureSpell
+
+def resolvedExiledSmaug : Game :=
+  passBoth (mustApply proposedExiledSmaug ⟨0⟩ .pay)
+
+#guard resolvedExiledSmaug.stack.isEmpty
+#guard resolvedExiledSmaug.battlefield.any (fun o => o.name == "Smaug, the Great Calamity")
+#guard (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity").printed.keywords.flying
+#guard resolvedExiledSmaug.power
+  (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity") == 5
+#guard resolvedExiledSmaug.toughness
+  (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity") == 5
+#guard resolvedExiledSmaug.log.any (fun s =>
+  mentions s "Smaug, the Great Calamity enters the battlefield")
+#guard !(resolvedExiledSmaug.objects.any (fun o =>
+  o.zone == .exile && o.name == "Smaug, the Great Calamity"))
+
+/-- Casting the creature from hand still works. -/
+def proposedSmaugCreature : Game :=
+  mustApply smaugSetup ⟨0⟩ (.cast (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity").id)
+
+#guard proposedSmaugCreature.pending == .activateManaAbilities ⟨0⟩
+#guard proposedSmaugCreature.log.any (fun s => mentions s "begins casting Smaug, the Great Calamity")
+#guard (proposedSmaugCreature.object! proposedSmaugCreature.stack.back!.objectId).name ==
+  "Smaug, the Great Calamity"
+
+def resolvedSmaugCreature : Game :=
+  passBoth (mustApply proposedSmaugCreature ⟨0⟩ .pay)
+
+#guard (namedPermanent resolvedSmaugCreature "Smaug, the Great Calamity").printed.keywords.flying
+#guard resolvedSmaugCreature.battlefield.any (fun o => o.name == "Grizzly Bears")
+
+/-- Spew Flame is sorcery speed. -/
+def smaugAtEndStep : Game := skipTo smaugSetup .end 80
+
+#guard smaugAtEndStep.step == .end
+#guard
+  match smaugAtEndStep.apply ⟨0⟩
+      (.castAdventure (handCardNamed smaugAtEndStep ⟨0⟩ "Smaug, the Great Calamity").id) with
+  | .error msg => mentions msg "has sorcery speed"
+  | .ok _ => false
+
+/-- Reversing an unpaid Adventure returns the creature card to hand. -/
+def unpaidSpewFlame : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addToHand g smaugTheGreatCalamity ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.castAdventure (handCardNamed g ⟨0⟩ "Smaug, the Great Calamity").id)
+  mustApply g ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+
+def reversedSpewFlame : Game := mustApply unpaidSpewFlame ⟨0⟩ .pay
+
+#guard reversedSpewFlame.stack.isEmpty
+#guard (reversedSpewFlame.handObjects ⟨0⟩).any (fun o => o.name == "Smaug, the Great Calamity")
+#guard reversedSpewFlame.log.any (fun s => mentions s "the casting is reversed")
+
+/-- The heuristic casts Spew Flame when that is the playable spell. -/
+def agentSmaugOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
+
+#guard
+  match Agent.choose agentSmaugOnly ⟨0⟩ with
+  | some (.castAdventure id) =>
+    (agentSmaugOnly.object! id).name == "Smaug, the Great Calamity"
+  | _ => false
+
+/-- With no opposing creature, the heuristic casts Smaug as a creature. -/
+def agentSmaugCreatureOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
+
+#guard
+  match Agent.choose agentSmaugCreatureOnly ⟨0⟩ with
+  | some (.cast id) =>
+    (agentSmaugCreatureOnly.object! id).name == "Smaug, the Great Calamity"
+  | _ => false
 
 end Mtg.Engine.Tests
