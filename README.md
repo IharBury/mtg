@@ -93,7 +93,8 @@ The first slice of the engine models the two-player game:
   set power and toughness equal to the number of lands you control, or
   restrict blocking unless you control a Goblin or Orc; attack
   triggers that pump power, set another creature's base power and toughness,
-  or give another creature +2/+0 and trample,
+  give another creature +2/+0 and trample, or scry when you attack with one or
+  more Elves; scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on

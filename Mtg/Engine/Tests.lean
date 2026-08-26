@@ -294,6 +294,11 @@ def uncontrolledPermanent : Game :=
 #guard mirkwoodElk.keywords.trample
 #guard mirkwoodElk.triggeredAbilities.size == 1
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
+#guard mentions celebornTheWise.summary "one or more Elves"
+#guard mentions celebornTheWise.summary "looked at"
+#guard celebornTheWise.triggeredAbilities.size == 2
+#guard celebornTheWise.triggeredAbilities ==
+  #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
@@ -521,6 +526,18 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "graveyard" &&
     mentions c.abilitiesText "gain life" &&
     mentions c.summary "trample"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Celeborn"
+    types := #[.creature]
+    power := some 3
+    toughness := some 3
+    triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
+  }
+  mentions c.abilitiesText "one or more Elves" &&
+    mentions c.abilitiesText "scry 1" &&
+    mentions c.abilitiesText "looked at"
 
 #guard
   let c : CardDef := {
@@ -5977,4 +5994,194 @@ def agentElkOnly : Game :=
   | some (.cast id) => (agentElkOnly.object! id).name == "Mirkwood Elk"
   | _ => false
 
+/- Celeborn the Wise: attack with Elves to scry 1; whenever you scry, +1/+1
+per card looked at. -/
+
+#guard celebornTheWise.triggeredAbilities ==
+  #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
+#guard celebornTheWise.subtypes.any (· == "Elf")
+
+/-- Celeborn on the battlefield, ready to attack. -/
+def celebornReady : Game :=
+  addPermanent started celebornTheWise ⟨0⟩ ⟨0⟩
+
+def celebornAttackDeclared : Game :=
+  let g := passBoth (skipTo celebornReady .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Celeborn the Wise").id])
+
+#guard celebornAttackDeclared.stack.size == 1
+#guard (celebornAttackDeclared.object! celebornAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onAttackWithElvesScry 1)
+#guard (celebornAttackDeclared.object! celebornAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent celebornAttackDeclared "Celeborn the Wise").id
+#guard celebornAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard celebornAttackDeclared.hasPriority ⟨0⟩
+#guard celebornAttackDeclared.power (namedPermanent celebornAttackDeclared "Celeborn the Wise") == 3
+
+/-- Resolving the attack trigger starts scry 1. -/
+def celebornScrying : Game := passBoth celebornAttackDeclared
+
+#guard
+  match celebornScrying.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+#guard celebornScrying.stack.isEmpty
+#guard celebornScrying.log.any (fun s => mentions s "scries 1")
+#guard !celebornScrying.hasPriority ⟨0⟩
+
+/-- After the scry, the pump trigger uses the number of cards looked at. -/
+def celebornScried : Game := keepScry celebornScrying
+
+#guard celebornScried.pending == .none
+#guard celebornScried.stack.size == 1
+#guard (celebornScried.object! celebornScried.stack.back!.objectId).triggeredAbility ==
+  some .onScryPumpSelfForEachLookedAt
+#guard (celebornScried.object! celebornScried.stack.back!.objectId).lastKnownPower == some 1
+#guard celebornScried.log.any (fun s => mentions s "scry trigger is put on the stack")
+#guard celebornScried.hasPriority ⟨0⟩
+#guard celebornScried.power (namedPermanent celebornScried "Celeborn the Wise") == 3
+
+def celebornPumped : Game := passBoth celebornScried
+
+#guard celebornPumped.stack.isEmpty
+#guard celebornPumped.power (namedPermanent celebornPumped "Celeborn the Wise") == 4
+#guard celebornPumped.toughness (namedPermanent celebornPumped "Celeborn the Wise") == 4
+#guard (namedPermanent celebornPumped "Celeborn the Wise").status.pumpPower == 1
+#guard (namedPermanent celebornPumped "Celeborn the Wise").status.pumpToughness == 1
+#guard celebornPumped.log.any (fun s => mentions s "gets +1/+1 until end of turn")
+
+/-- Two Elves attacking still put only one scry trigger on the stack. -/
+def celebornTwoElvesDeclared : Game :=
+  let g := addPermanent celebornReady llanowarElves ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[
+    (namedPermanent g "Celeborn the Wise").id,
+    (namedPermanent g "Llanowar Elves").id])
+
+#guard celebornTwoElvesDeclared.stack.size == 1
+#guard (celebornTwoElvesDeclared.object! celebornTwoElvesDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onAttackWithElvesScry 1)
+
+/-- An Elf attacking while Celeborn stays back still triggers. -/
+def celebornElvesAttackAlone : Game :=
+  let g := addPermanent celebornReady llanowarElves ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Llanowar Elves").id])
+
+#guard celebornElvesAttackAlone.stack.size == 1
+#guard (celebornElvesAttackAlone.object! celebornElvesAttackAlone.stack.back!.objectId).sourceId ==
+  some (namedPermanent celebornElvesAttackAlone "Celeborn the Wise").id
+
+/-- Attacking with only a non-Elf does not trigger. -/
+def celebornBearsAttack : Game :=
+  let g := addPermanent celebornReady grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+
+#guard celebornBearsAttack.stack.isEmpty
+#guard !celebornBearsAttack.log.any (fun s => mentions s "Celeborn the Wise's attack trigger")
+
+/-- Gift of Strands scries 2; Celeborn gets +2/+2. -/
+def celebornGiftEntered : Game :=
+  addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
+
+def celebornGiftScrying : Game := passBoth celebornGiftEntered
+
+#guard
+  match celebornGiftScrying.pending with
+  | .scry ⟨0⟩ 2 => true
+  | _ => false
+
+def celebornGiftScried : Game := keepScry celebornGiftScrying
+
+#guard celebornGiftScried.stack.size == 1
+#guard (celebornGiftScried.object! celebornGiftScried.stack.back!.objectId).triggeredAbility ==
+  some .onScryPumpSelfForEachLookedAt
+#guard (celebornGiftScried.object! celebornGiftScried.stack.back!.objectId).lastKnownPower == some 2
+
+def celebornGiftPumped : Game := passBoth celebornGiftScried
+
+#guard celebornGiftPumped.power (namedPermanent celebornGiftPumped "Celeborn the Wise") == 5
+#guard celebornGiftPumped.toughness (namedPermanent celebornGiftPumped "Celeborn the Wise") == 5
+#guard celebornGiftPumped.log.any (fun s => mentions s "gets +2/+2 until end of turn")
+
+/-- Scry 2 with one card in the library looks at one card, so +1/+1. -/
+def celebornScryOneOfTwo : Game :=
+  let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with library := pl.library.extract (pl.library.size - 1) pl.library.size })
+  keepScry (passBoth g)
+
+#guard celebornScryOneOfTwo.stack.size == 1
+#guard (celebornScryOneOfTwo.object! celebornScryOneOfTwo.stack.back!.objectId).lastKnownPower ==
+  some 1
+
+def celebornScryOneOfTwoPumped : Game := passBoth celebornScryOneOfTwo
+
+#guard celebornScryOneOfTwoPumped.power
+  (namedPermanent celebornScryOneOfTwoPumped "Celeborn the Wise") == 4
+
+/-- An empty library still scries; Celeborn gets +0/+0. -/
+def celebornEmptyScry : Game :=
+  let g := addPermanent giftEntered celebornTheWise ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  passBoth g
+
+#guard celebornEmptyScry.pending == .none
+#guard celebornEmptyScry.stack.size == 1
+#guard (celebornEmptyScry.object! celebornEmptyScry.stack.back!.objectId).triggeredAbility ==
+  some .onScryPumpSelfForEachLookedAt
+#guard (celebornEmptyScry.object! celebornEmptyScry.stack.back!.objectId).lastKnownPower == some 0
+#guard celebornEmptyScry.log.any (fun s => mentions s "no cards to look at")
+
+def celebornEmptyPumped : Game := passBoth celebornEmptyScry
+
+#guard celebornEmptyPumped.power (namedPermanent celebornEmptyPumped "Celeborn the Wise") == 3
+#guard celebornEmptyPumped.log.any (fun s => mentions s "gets +0/+0 until end of turn")
+
+/-- If Celeborn leaves before the pump resolves, he is not pumped. -/
+def celebornPumpSourceGone : Game :=
+  let id := (namedPermanent celebornScried "Celeborn the Wise").id
+  let (g, _) := celebornScried.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard celebornPumpSourceGone.stack.isEmpty
+#guard !(celebornPumpSourceGone.battlefield.any (fun o => o.name == "Celeborn the Wise"))
+#guard celebornPumpSourceGone.log.any (fun s => mentions s "source is no longer in play")
+
+/-- If Celeborn leaves before the attack trigger resolves, you still scry, but
+he is not on the battlefield to trigger from that scry. -/
+def celebornGoneBeforeScry : Game :=
+  let id := (namedPermanent celebornAttackDeclared "Celeborn the Wise").id
+  let (g, _) := celebornAttackDeclared.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard
+  match celebornGoneBeforeScry.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+#guard celebornGoneBeforeScry.waitingScryTriggers.isEmpty
+
+def celebornGoneAfterScry : Game := keepScry celebornGoneBeforeScry
+
+#guard celebornGoneAfterScry.stack.isEmpty
+#guard celebornGoneAfterScry.pending == .none
+
+/-- An opponent's scry does not pump your Celeborn. -/
+def opponentScriesCeleborn : Game :=
+  let g := addPermanent afterDraw celebornTheWise ⟨0⟩ ⟨0⟩
+  keepScry (g.beginScry ⟨1⟩ 1)
+
+#guard opponentScriesCeleborn.stack.isEmpty
+#guard opponentScriesCeleborn.power (namedPermanent opponentScriesCeleborn "Celeborn the Wise") == 3
+#guard (namedPermanent opponentScriesCeleborn "Celeborn the Wise").status.pumpPower == 0
+
+/-- The +1/+1 wears off in cleanup. -/
+def afterCelebornCleanup : Game := passBoth (skipTo celebornPumped .end 80)
+
+#guard afterCelebornCleanup.power (namedPermanent afterCelebornCleanup "Celeborn the Wise") == 3
+#guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpPower == 0
+#guard (namedPermanent afterCelebornCleanup "Celeborn the Wise").status.pumpToughness == 0
+
 end Mtg.Engine.Tests
+
