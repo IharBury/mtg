@@ -90,7 +90,8 @@ The first slice of the engine models the two-player game:
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample, pump an enchanted or equipped creature,
   or set power and toughness equal to the number of lands you control; attack
-  triggers that pump power, becomes-blocked triggers that damage blocking
+  triggers that pump power or set another creature's base power and toughness,
+  becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), may discard a card to draw, or deal damage divided as

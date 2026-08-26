@@ -286,6 +286,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
+#guard mentions galionElvenkingsButler.summary "base power and toughness"
+#guard galionElvenkingsButler.triggeredAbilities.size == 1
+#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -425,6 +428,17 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "dies" &&
     mentions c.abilitiesText "{1}{R}"
 
+#guard
+  let c : CardDef := {
+    name := "Silent Butler"
+    types := #[.creature]
+    power := some 4
+    toughness := some 4
+    triggeredAbilities := #[.onAttackSetOtherBasePT]
+  }
+  mentions c.abilitiesText "up to one other target" &&
+    mentions c.abilitiesText "base power and toughness"
+
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
@@ -488,11 +502,19 @@ def applyIdle (g : Game) : Game :=
     | none => panic! "expected a proposed spell or trigger while choosing targets"
     | some spell =>
       match g.defaultTarget p spell with
-      | none => panic! "no legal target (CR 601.2c)"
       | some t =>
         match g.apply p (.target t) with
         | .ok g' => g'
         | .error e => panic! e
+      | none =>
+        match spell.triggeredAbility with
+        | some ab =>
+          if ab.allowsZeroTargets then
+            match g.apply p .decline with
+            | .ok g' => g'
+            | .error e => panic! e
+          else panic! "no legal target (CR 601.2c)"
+        | none => panic! "no legal target (CR 601.2c)"
   | _, some p =>
     match g.apply p .pass with
     | .ok g' => g'
@@ -3958,5 +3980,200 @@ def hunterSacrificesFireleaper : Game :=
   some .onDiesDealDamageEqualToPowerToOppCreature
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
 #guard hunterSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
+
+/- Galion, Elvenking's Butler: attack trigger sets another creature's base P/T. -/
+
+def galionAndElves : Game :=
+  addPermanent (addPermanent started galionElvenkingsButler ⟨0⟩ ⟨0⟩) llanowarElves ⟨0⟩ ⟨0⟩
+
+#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard galionAndElves.power (namedPermanent galionAndElves "Galion, Elvenking's Butler") == 4
+#guard galionAndElves.power (namedPermanent galionAndElves "Llanowar Elves") == 1
+
+def galionAttackDeclared : Game :=
+  let g := passBoth (skipTo galionAndElves .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])
+
+#guard galionAttackDeclared.pending == .chooseTargets ⟨0⟩
+#guard galionAttackDeclared.stack.size == 1
+#guard (galionAttackDeclared.object! galionAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some .onAttackSetOtherBasePT
+#guard galionAttackDeclared.stack.back!.targets.isEmpty
+#guard !galionAttackDeclared.stack.back!.targetsAnnounced
+#guard galionAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard galionAttackDeclared.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+#guard !galionAttackDeclared.hasPriority ⟨0⟩
+#guard galionAttackDeclared.actor == some ⟨0⟩
+
+-- Cannot target Galion himself, an opponent's creature, or a player.
+#guard
+  match galionAttackDeclared.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent galionAttackDeclared
+        "Galion, Elvenking's Butler").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  let g := addPermanent galionAttackDeclared grizzlyBears ⟨1⟩ ⟨1⟩
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match galionAttackDeclared.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets the other creature you control.
+#guard
+  match Agent.choose galionAttackDeclared ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (galionAttackDeclared.object! tid).name == "Llanowar Elves"
+  | _ => false
+
+def galionTargeted : Game :=
+  mustApply galionAttackDeclared ⟨0⟩
+    (.target (Target.permanent (namedPermanent galionAttackDeclared "Llanowar Elves").id))
+
+#guard galionTargeted.pending == .none
+#guard galionTargeted.hasPriority ⟨0⟩
+#guard galionTargeted.stack.back!.targets ==
+  #[Target.permanent (namedPermanent galionTargeted "Llanowar Elves").id]
+#guard galionTargeted.stack.back!.targetsAnnounced
+#guard galionTargeted.log.any (fun s => mentions s "chooses Llanowar Elves as a target")
+
+def galionResolved : Game := passBoth galionTargeted
+
+#guard galionResolved.stack.isEmpty
+#guard galionResolved.basePower (namedPermanent galionResolved "Llanowar Elves") == 4
+#guard galionResolved.baseToughness (namedPermanent galionResolved "Llanowar Elves") == 4
+#guard galionResolved.power (namedPermanent galionResolved "Llanowar Elves") == 4
+#guard galionResolved.toughness (namedPermanent galionResolved "Llanowar Elves") == 4
+#guard galionResolved.log.any (fun s =>
+  mentions s "base power and toughness become 4/4 until end of turn")
+
+/-- Counters on the target apply after the new base (CR 613.3c–d). -/
+def galionOnCounteredElves : Game :=
+  let g := galionAndElves
+  let elves := namedPermanent g "Llanowar Elves"
+  let g := g.setObject { elves with
+    status := { elves.status with plusOnePlusOne := 1 } }
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Llanowar Elves").id))
+  passBoth g
+
+#guard galionOnCounteredElves.basePower (namedPermanent galionOnCounteredElves "Llanowar Elves") == 4
+#guard galionOnCounteredElves.power (namedPermanent galionOnCounteredElves "Llanowar Elves") == 5
+#guard (namedPermanent galionOnCounteredElves "Llanowar Elves").status.plusOnePlusOne == 1
+
+/-- Uses Galion's actual P/T at resolution, including pumps (CR 613.3b ruling). -/
+def galionPumpedResolved : Game :=
+  let g := galionAndElves
+  let g := g.applyEffect ⟨0⟩ (.pump 2 2)
+    #[Target.permanent (namedPermanent g "Galion, Elvenking's Butler").id]
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Llanowar Elves").id))
+  passBoth g
+
+#guard galionPumpedResolved.power
+  (namedPermanent galionPumpedResolved "Galion, Elvenking's Butler") == 6
+#guard galionPumpedResolved.power (namedPermanent galionPumpedResolved "Llanowar Elves") == 6
+#guard galionPumpedResolved.log.any (fun s =>
+  mentions s "base power and toughness become 6/6 until end of turn")
+
+/-- Later changes to Galion do not update the other creature. -/
+def galionPumpedAfterResolve : Game :=
+  galionResolved.applyEffect ⟨0⟩ (.pump 3 0)
+    #[Target.permanent (namedPermanent galionResolved "Galion, Elvenking's Butler").id]
+
+#guard galionPumpedAfterResolve.power
+  (namedPermanent galionPumpedAfterResolve "Galion, Elvenking's Butler") == 7
+#guard galionPumpedAfterResolve.power
+  (namedPermanent galionPumpedAfterResolve "Llanowar Elves") == 4
+
+/-- Overwrites a “P/T equal to lands you control” CDA (layer 7b over 7a). -/
+def galionOnPathmaker : Game :=
+  let g := addForests afterDraw ⟨0⟩ 2
+  let g := addPermanent g galionElvenkingsButler ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mirkwoodPathmaker ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Mirkwood Pathmaker").id))
+  passBoth g
+
+#guard galionOnPathmaker.power (namedPermanent galionOnPathmaker "Mirkwood Pathmaker") == 4
+#guard galionOnPathmaker.basePower (namedPermanent galionOnPathmaker "Mirkwood Pathmaker") == 4
+
+/-- The set effect wears off in cleanup; Pathmaker returns to land-count P/T. -/
+def afterGalionCleanup : Game := passBoth (skipTo galionResolved .end 80)
+
+#guard afterGalionCleanup.power (namedPermanent afterGalionCleanup "Llanowar Elves") == 1
+#guard afterGalionCleanup.basePower (namedPermanent afterGalionCleanup "Llanowar Elves") == 1
+#guard (namedPermanent afterGalionCleanup "Llanowar Elves").status.setBasePower.isNone
+
+def afterGalionPathmakerCleanup : Game := passBoth (skipTo galionOnPathmaker .end 80)
+
+#guard afterGalionPathmakerCleanup.power
+  (namedPermanent afterGalionPathmakerCleanup "Mirkwood Pathmaker") == 2
+
+/-- “Up to one”: declining leaves the other creature unchanged. -/
+def galionDeclined : Game :=
+  let g := mustApply galionAttackDeclared ⟨0⟩ .decline
+  passBoth g
+
+#guard galionDeclined.stack.isEmpty
+#guard galionDeclined.power (namedPermanent galionDeclined "Llanowar Elves") == 1
+#guard galionDeclined.log.any (fun s => mentions s "chooses no target")
+#guard galionDeclined.log.any (fun s => mentions s "No target was chosen")
+
+/-- No other creature you control: the trigger still goes on the stack (CR 603.3d). -/
+def galionAloneDeclared : Game :=
+  let g := addPermanent started galionElvenkingsButler ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Galion, Elvenking's Butler").id])
+
+#guard galionAloneDeclared.pending == .chooseTargets ⟨0⟩
+#guard galionAloneDeclared.stack.size == 1
+#guard (galionAloneDeclared.legalProposedTargets ⟨0⟩
+  (galionAloneDeclared.object! galionAloneDeclared.stack.back!.objectId)).isEmpty
+#guard
+  match Agent.choose galionAloneDeclared ⟨0⟩ with
+  | some .decline => true
+  | _ => false
+
+def galionAloneResolved : Game :=
+  let g := mustApply galionAloneDeclared ⟨0⟩ .decline
+  passBoth g
+
+#guard galionAloneResolved.stack.isEmpty
+#guard galionAloneResolved.log.any (fun s => mentions s "chooses no target")
+
+/-- Last known P/T if Galion leaves before resolution (CR 113.7a). -/
+def galionSourceGone : Game :=
+  let g := galionTargeted
+  let id := (namedPermanent g "Galion, Elvenking's Butler").id
+  let (g, _) := g.move id (.graveyard (g.object! id).owner) none
+  passBoth g
+
+#guard galionSourceGone.stack.isEmpty
+#guard !(galionSourceGone.battlefield.any (fun o => o.name == "Galion, Elvenking's Butler"))
+#guard galionSourceGone.power (namedPermanent galionSourceGone "Llanowar Elves") == 4
+#guard galionSourceGone.log.any (fun s =>
+  mentions s "base power and toughness become 4/4 until end of turn")
+
+/-- If the targeted creature leaves before resolution, the trigger does nothing. -/
+def galionTargetGone : Game :=
+  let id := (namedPermanent galionTargeted "Llanowar Elves").id
+  let (g, _) := galionTargeted.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard galionTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(galionTargetGone.battlefield.any (fun o => o.name == "Llanowar Elves"))
 
 end Mtg.Engine.Tests

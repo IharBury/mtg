@@ -8,7 +8,8 @@ The Hobbit Welcome Decks. The engine models a subset of rules text
 (keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, Goblin Fireleaper, and Equip, static abilities that grant trample or pump an enchanted
-or equipped creature, attack triggers that pump, becomes-blocked triggers that
+or equipped creature, attack triggers that pump or set another creature's base
+power and toughness, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, may discard to draw, or deal damage
 divided among targets, Aura and Equipment attachment, modal spells, destroy, +1/+1
 counters, until-end-of-turn keyword grants, and a few one-shot spell effects);
@@ -783,6 +784,7 @@ def galionElvenkingsButler : CardDef := {
   oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn."
   power := some 4
   toughness := some 4
+  triggeredAbilities := #[.onAttackSetOtherBasePT]
 }
 
 def elvishVisionary : CardDef := {
@@ -965,6 +967,10 @@ def attercop : CardDef := {
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
 #guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
+#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
+#guard galionElvenkingsButler.power == some 4
+#guard galionElvenkingsButler.toughness == some 4
 #guard galadhrimGuide.power == some 3
 #guard galadhrimGuide.toughness == some 4
 #guard goblinCratermaker.activatedAbilities.size == 1
