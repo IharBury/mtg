@@ -228,7 +228,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
-  sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating
+  sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating or casting
   play <id>            Play a land
   tap <id> [id...]     Tap listed permanents for their first mana abilities
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
@@ -271,6 +271,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
+#guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "first <name>").length > 1
@@ -853,7 +854,8 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
 
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
-/-- After `pay`, sacrifice the named creature or artifact to finish activating. -/
+/-- After `pay`, sacrifice the named creature or artifact to finish activating
+or casting. -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -960,6 +962,16 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
     g'.log.any (fun s => Tests.mentions s "activates Snowslope Hunter")
+  | .error _ => false
+
+#guard
+  let g := Tests.paidClub
+  let fodder := Tests.clubFodder g
+  match applySacrifice g ⟨0⟩ [toString fodder.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
+    g'.log.any (fun s => Tests.mentions s "casts Improvised Club")
   | .error _ => false
 
 def modeUsage : String := "usage: mode <n>"

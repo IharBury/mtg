@@ -268,12 +268,18 @@ def stackBlock (g : Game) : String :=
 
 /-- Locked-in total cost of a proposed spell or ability (CR 601.2f / 602.2b). -/
 def proposedCostNotation (prop : ProposedSpell) : String :=
-  ActivationCost.toNotation {
-    mana := prop.cost
-    tap := prop.tapSource
-    sacrificeSource := prop.sacrificeSource
-    sacrificeAnotherCreatureOrArtifact := prop.needsSacrificeOther
-  }
+  let sacOther :=
+    if !prop.needsSacrificeOther then none
+    else if prop.kind == .spell then
+      some "Sacrifice an artifact or creature"
+    else
+      some "Sacrifice another creature or artifact"
+  let parts : List String :=
+    (if prop.cost.symbols.isEmpty then [] else [toString prop.cost]) ++
+    (if prop.tapSource then ["{T}"] else []) ++
+    (if prop.sacrificeSource then ["Sacrifice"] else []) ++
+    sacOther.toList
+  String.intercalate ", " parts
 
 /-- Cost notation while the player may still pay (CR 601.2g / 602.2b). -/
 def pendingCostNotation (g : Game) : Option String :=

@@ -13,7 +13,8 @@ Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 casting the spells we model (CR 601), including choosing modes of modal spells
 and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
-damage among those targets (CR 601.2d), and activating mana abilities while
+damage among those targets (CR 601.2d), additional costs such as sacrificing
+an artifact or creature (CR 601.2f / 601.2h), and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
@@ -242,7 +243,8 @@ structure ProposedSpell where
   sourceId : Option ObjectId := none
   tapSource : Bool := false
   sacrificeSource : Bool := false
-  /-- After mana is paid, the player must sacrifice another creature or artifact. -/
+  /-- After mana is paid, the player must sacrifice an artifact or creature
+  (another, when this is an activated ability). -/
   needsSacrificeOther : Bool := false
   /-- Modes of a modal activated ability, announced at CR 601.2b. -/
   abilityModes : Array AbilityEffect := #[]
@@ -259,7 +261,8 @@ inductive Pending where
   | chooseMode (caster : PlayerId)
   /-- The player must announce targets for the proposed spell (CR 601.2c). -/
   | chooseTargets (caster : PlayerId)
-  /-- After `pay`, choose another creature or artifact to sacrifice. -/
+  /-- After `pay`, choose an artifact or creature to sacrifice
+  (another, when paying an activated ability). -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
@@ -333,7 +336,8 @@ inductive Action where
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
-  /-- After `pay`, sacrifice another creature or artifact to finish activating. -/
+  /-- After `pay`, sacrifice an artifact or creature to finish paying
+  (CR 601.2h / 602.2b). -/
   | sacrifice (id : ObjectId)
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
@@ -1415,12 +1419,17 @@ def targetLogName (g : Game) : Target → String
     | none => toString oid
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
-pool is not required; mana abilities are activated at CR 601.2g. -/
+pool is not required; mana abilities are activated at CR 601.2g. Additional
+non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !o.printed.isLand &&
   g.mayPlay p o &&
   g.hasPriority p &&
   (if o.printed.hasSorcerySpeed then g.asSorcery? p else true) &&
+  (if o.printed.additionalCostSacrificeArtifactOrCreature then
+    (g.permanentsOf p).any (fun perm =>
+      perm.id != o.id && (perm.isCreature || perm.printed.isArtifact))
+   else true) &&
   if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
   else o.printed.isPermanentCard
 
@@ -1500,7 +1509,7 @@ def afterTargetsChosen (g : Game) : Game :=
   match g.proposedSpell with
   | none => g
   | some prop =>
-    if prop.cost.includesManaPayment then
+    if prop.cost.includesManaPayment || prop.needsSacrificeOther then
       { g with pending := .activateManaAbilities prop.caster }
         |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
     else
@@ -1589,25 +1598,29 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     g := g'
   return g
 
-/-- Pay the locked-in cost (CR 601.2h / 602.2b). Abilities that still need
-another creature or artifact sacrificed wait for the `sacrifice` action. -/
+/-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
+need an artifact or creature sacrificed wait for the `sacrifice` action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   if !(g.player prop.caster).manaPool.canPay prop.cost || !g.sourceStillPayable prop then
     return g.reverseProposedSpell
   if prop.needsSacrificeOther then
-    match prop.sourceId with
-    | none => return g.reverseProposedSpell
-    | some sid =>
-      if (g.sacrificeCreatureOrArtifactChoices prop.caster sid).isEmpty then
-        return g.reverseProposedSpell
+    let excludeId := prop.sourceId.getD prop.spellId
+    if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
+      return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost
   let g ←
-    match prop.sourceId with
-    | some sid =>
+    match prop.kind, prop.sourceId with
+    | .activatedAbility, some sid =>
       g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
-    | none => pure g
+    | _, _ => pure g
   match prop.kind, prop.needsSacrificeOther, prop.sourceId with
+  | .spell, true, _ =>
+    let g := { g with
+      pending := .sacrificePermanent prop.caster prop.spellId
+      consecutivePasses := 0 }
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
   | .spell, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeCast prop.caster (g.object! prop.spellId)
@@ -1645,6 +1658,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   if (face.requiresTarget || face.isModal) &&
       (g.legalCastTargets p face).isEmpty then
     throw s!"{face.name} requires a target"
+  if face.additionalCostSacrificeArtifactOrCreature &&
+      (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
+    throw s!"{face.name} requires sacrificing an artifact or creature"
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes are
   -- announced at CR 601.2b, targets at CR 601.2c; mana is not required yet
   -- (CR 601.2g). CR 715.3: an adventurer card may be cast as its Adventure.
@@ -1663,7 +1679,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g := { g with stack := g.stack.push entry, consecutivePasses := 0 }
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
-  if !needsMode && !needsTarget && !cost.includesManaPayment then
+  let needsSacrifice := face.additionalCostSacrificeArtifactOrCreature
+  if !needsMode && !needsTarget && !cost.includesManaPayment && !needsSacrifice then
     return g.becomeCast p (g.object! newId)
   let prop : ProposedSpell := {
     caster := p
@@ -1673,6 +1690,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     handBefore := handBefore
     stackBefore := stackBefore
     manaBefore := manaBefore
+    needsSacrificeOther := needsSacrifice
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   if needsMode then
@@ -1875,7 +1893,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let g := { g with pending := .activateManaAbilities p, proposedSpell := some prop }
   return g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
-/-- After mana is paid, sacrifice another creature or artifact (CR 601.2h). -/
+/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .sacrificePermanent caster sourceId =>
@@ -1886,12 +1904,16 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       throw s!"Can't sacrifice {sac.name}"
     let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
     let (g, _) := g.move id (.graveyard sac.owner) none
-    let sourceName :=
-      match g.proposedSpell with
-      | some prop => prop.original.name
-      | none => (g.object! sourceId).name
-    let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
-    return g.becomeActivated p sourceName (some sourceId)
+    match g.proposedSpell with
+    | some prop =>
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      match prop.kind with
+      | .spell => return g.becomeCast prop.caster (g.object! prop.spellId)
+      | .activatedAbility =>
+        return g.becomeActivated p prop.original.name prop.sourceId
+    | none =>
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      return g.becomeActivated p (g.object! sourceId).name (some sourceId)
   | _ => throw "Not time to sacrifice a permanent"
 
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)

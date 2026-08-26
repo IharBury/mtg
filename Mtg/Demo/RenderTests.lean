@@ -316,6 +316,15 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones hunterReady activatedHunter).contains .battlefield
 #guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
 
+#guard mentions (header paidClub) "sacrifice a creature or artifact"
+#guard pendingCostNotation targetedClub == some "{1}{R}, Sacrifice an artifact or creature"
+#guard pendingCostLine targetedClub == some "Cost: {1}{R}, Sacrifice an artifact or creature"
+#guard mentions (header targetedClub) "cost {1}{R}, Sacrifice an artifact or creature"
+#guard pendingCostLine paidClub == none
+#guard (changedZones clubReady castClub).contains .stack
+#guard (changedZones clubReady castClub).contains .battlefield
+#guard (changedZones clubReady castClub).contains (.graveyard ⟨0⟩)
+
 #guard (changedZones activatedHunter resolvedHunter).contains .exile
 #guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
 #guard mentions (snapshot resolvedHunter) "may be played by Chandra"

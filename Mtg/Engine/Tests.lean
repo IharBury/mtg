@@ -332,6 +332,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions guttersnipe.summary "each opponent"
 #guard guttersnipe.triggeredAbilities.size == 1
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
+#guard mentions improvisedClub.summary "additional cost"
+#guard mentions improvisedClub.summary "4 damage"
+#guard improvisedClub.isInstant
+#guard improvisedClub.spellEffect == some (.dealDamage 4)
+#guard improvisedClub.additionalCostSacrificeArtifactOrCreature
+#guard improvisedClub.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
 #guard smaugTheGreatCalamity.keywords.flying
@@ -5130,5 +5136,252 @@ def agentGuttersnipeBoltOnly : Game :=
   match Agent.choose agentGuttersnipeBoltOnly ⟨0⟩ with
   | some (.cast id) => (agentGuttersnipeBoltOnly.object! id).name == "Lightning Bolt"
   | _ => false
+
+/- Improvised Club: additional cost sacrifice an artifact or creature, then 4 damage. -/
+
+def clubReady : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addUntappedLand g mountain
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
+
+def clubFodder (g : Game) : GameObject :=
+  namedPermanent g "Raging Goblin"
+
+def clubNoFodder : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
+
+#guard clubReady.canCast ⟨0⟩ (handCardNamed clubReady ⟨0⟩ "Improvised Club")
+#guard !(clubNoFodder.canCast ⟨0⟩ (handCardNamed clubNoFodder ⟨0⟩ "Improvised Club"))
+#guard (clubReady.player ⟨0⟩).manaPool.canPay improvisedClub.manaCost
+#guard clubReady.hasPriority ⟨0⟩
+
+#guard
+  match clubNoFodder.apply ⟨0⟩
+      (.cast (handCardNamed clubNoFodder ⟨0⟩ "Improvised Club").id) with
+  | .error msg => mentions msg "requires sacrificing an artifact or creature"
+  | .ok _ => false
+
+#guard
+  match Agent.choose clubReady ⟨0⟩ with
+  | some (.cast id) => (clubReady.object! id).name == "Improvised Club"
+  | _ => false
+
+#guard
+  match Agent.choose clubNoFodder ⟨0⟩ with
+  | some .pass => true
+  | _ => false
+
+def proposedClub : Game :=
+  mustApply clubReady ⟨0⟩ (.cast (handCardNamed clubReady ⟨0⟩ "Improvised Club").id)
+
+#guard
+  match proposedClub.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedClub.proposedSpell.isSome
+#guard proposedClub.stack.size == 1
+#guard proposedClub.log.any (fun s => mentions s "begins casting Improvised Club")
+#guard proposedClub.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+#guard (namedPermanent proposedClub "Raging Goblin").isOnBattlefield
+
+#guard
+  match Agent.choose proposedClub ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+def targetedClub : Game :=
+  mustApply proposedClub ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard targetedClub.pending == .activateManaAbilities ⟨0⟩
+#guard targetedClub.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard targetedClub.log.any (fun s => mentions s "chooses Nissa as a target (CR 601.2c)")
+#guard targetedClub.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard
+  match targetedClub.proposedSpell with
+  | some prop => prop.needsSacrificeOther && prop.kind == .spell
+  | none => false
+
+#guard
+  match Agent.choose targetedClub ⟨0⟩ with
+  | some .pay => true
+  | _ => false
+
+def paidClub : Game :=
+  mustApply targetedClub ⟨0⟩ .pay
+
+#guard
+  match paidClub.pending with
+  | .sacrificePermanent p sid =>
+    p == ⟨0⟩ && sid == paidClub.stack[0]!.objectId
+  | _ => false
+#guard paidClub.proposedSpell.isSome
+#guard (namedPermanent paidClub "Raging Goblin").isOnBattlefield
+#guard paidClub.log.any (fun s => mentions s "must sacrifice an artifact or creature")
+#guard !(paidClub.log.any (fun s => mentions s "casts Improvised Club"))
+#guard paidClub.stack.size == 1
+
+#guard
+  match paidClub.apply ⟨0⟩ (.sacrifice (namedPermanent paidClub "Raging Goblin").id) with
+  | .ok _ => true
+  | .error _ => false
+
+-- Cannot sacrifice a land, an opponent's creature, or skip the choice.
+#guard
+  match (paidClub.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
+  | none => false
+  | some land =>
+    match paidClub.apply ⟨0⟩ (.sacrifice land.id) with
+    | .error msg => mentions msg "Can't sacrifice"
+    | .ok _ => false
+
+#guard
+  let g := addPermanent paidClub grizzlyBears ⟨1⟩ ⟨1⟩
+  match g.apply ⟨0⟩ (.sacrifice (namedPermanent g "Grizzly Bears").id) with
+  | .error msg => mentions msg "Can't sacrifice"
+  | .ok _ => false
+
+#guard
+  match Agent.choose paidClub ⟨0⟩ with
+  | some (.sacrifice id) => id == (clubFodder paidClub).id
+  | _ => false
+
+def castClub : Game :=
+  mustApply paidClub ⟨0⟩ (.sacrifice (clubFodder paidClub).id)
+
+#guard castClub.pending == .none
+#guard castClub.proposedSpell.isNone
+#guard castClub.hasPriority ⟨0⟩
+#guard castClub.stack.size == 1
+#guard (castClub.object! castClub.stack.back!.objectId).name == "Improvised Club"
+#guard !(castClub.battlefield.any (fun o => o.name == "Raging Goblin"))
+#guard (castClub.player ⟨0⟩).graveyard.any (fun id =>
+  (castClub.object! id).name == "Raging Goblin")
+#guard castClub.log.any (fun s => mentions s "sacrifices Raging Goblin")
+#guard castClub.log.any (fun s => mentions s "casts Improvised Club")
+#guard (castClub.player ⟨1⟩).life == 20
+
+def resolvedClub : Game := passBoth castClub
+
+#guard resolvedClub.stack.isEmpty
+#guard (resolvedClub.player ⟨1⟩).life == 16
+#guard resolvedClub.log.any (fun s => mentions s "Nissa is dealt 4 damage")
+
+-- An artifact is a legal additional-cost sacrifice.
+def clubArtifactReady : Game :=
+  let g := addPermanent afterDraw wayfarersBauble ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
+
+#guard clubArtifactReady.canCast ⟨0⟩
+  (handCardNamed clubArtifactReady ⟨0⟩ "Improvised Club")
+
+def resolvedClubArtifact : Game :=
+  let g := mustApply clubArtifactReady ⟨0⟩
+    (.cast (handCardNamed clubArtifactReady ⟨0⟩ "Improvised Club").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Wayfarer's Bauble").id)
+  passBoth g
+
+#guard (resolvedClubArtifact.player ⟨1⟩).life == 16
+#guard !(resolvedClubArtifact.battlefield.any (fun o => o.name == "Wayfarer's Bauble"))
+#guard resolvedClubArtifact.log.any (fun s => mentions s "sacrifices Wayfarer's Bauble")
+
+-- Targeting the creature that is then sacrificed makes the target illegal.
+def resolvedClubSacTarget : Game :=
+  let g := mustApply clubReady ⟨0⟩
+    (.cast (handCardNamed clubReady ⟨0⟩ "Improvised Club").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.permanent (clubFodder g).id))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ (.sacrifice (clubFodder g).id)
+  passBoth g
+
+#guard resolvedClubSacTarget.log.any (fun s => mentions s "no longer in play")
+#guard (resolvedClubSacTarget.player ⟨1⟩).life == 20
+#guard !(resolvedClubSacTarget.battlefield.any (fun o => o.name == "Raging Goblin"))
+
+-- Instant speed: legal in the end step.
+def clubAtEnd : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addToHand g improvisedClub ⟨0⟩
+  skipTo g .end 80
+
+#guard clubAtEnd.step == .end
+#guard clubAtEnd.canCast ⟨0⟩ (handCardNamed clubAtEnd ⟨0⟩ "Improvised Club")
+
+-- Paying without enough mana reverses the cast; the fodder stays in play.
+def reversedClub : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addToHand g improvisedClub ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Improvised Club").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard reversedClub.stack.isEmpty
+#guard reversedClub.hasPriority ⟨0⟩
+#guard (reversedClub.handObjects ⟨0⟩).any (fun o => o.name == "Improvised Club")
+#guard reversedClub.battlefield.any (fun o => o.name == "Raging Goblin")
+#guard reversedClub.log.any (fun s => mentions s "the casting is reversed")
+
+-- Guttersnipe waits until the Club is actually cast, after the additional cost.
+def clubGuttersnipeReady : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
+
+def paidClubGuttersnipe : Game :=
+  let g := mustApply clubGuttersnipeReady ⟨0⟩
+    (.cast (handCardNamed clubGuttersnipeReady ⟨0⟩ "Improvised Club").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidClubGuttersnipe.stack.size == 1
+#guard !(paidClubGuttersnipe.log.any (fun s => mentions s "cast trigger"))
+#guard (namedPermanent paidClubGuttersnipe "Raging Goblin").isOnBattlefield
+
+def castClubGuttersnipe : Game :=
+  mustApply paidClubGuttersnipe ⟨0⟩
+    (.sacrifice (namedPermanent paidClubGuttersnipe "Raging Goblin").id)
+
+#guard castClubGuttersnipe.stack.size == 2
+#guard (castClubGuttersnipe.object! castClubGuttersnipe.stack.back!.objectId).triggeredAbility ==
+  some (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+#guard (castClubGuttersnipe.object! castClubGuttersnipe.stack[0]!.objectId).name ==
+  "Improvised Club"
+#guard castClubGuttersnipe.log.any (fun s => mentions s "casts Improvised Club")
+#guard castClubGuttersnipe.log.any (fun s => mentions s "cast trigger is put on the stack")
+
+def resolvedClubGuttersnipe : Game :=
+  passBoth (passBoth castClubGuttersnipe)
+
+#guard resolvedClubGuttersnipe.stack.isEmpty
+#guard (resolvedClubGuttersnipe.player ⟨1⟩).life == 14
+#guard resolvedClubGuttersnipe.log.any (fun s => mentions s "Nissa is dealt 2 damage")
+#guard resolvedClubGuttersnipe.log.any (fun s => mentions s "Nissa is dealt 4 damage")
+
+-- Sacrificing Fireleaper to Club puts the dies trigger above the spell.
+def clubSacrificesFireleaper : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Improvised Club").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Goblin Fireleaper").id)
+
+#guard clubSacrificesFireleaper.pending == .chooseTargets ⟨0⟩
+#guard clubSacrificesFireleaper.stack.size == 2
+#guard (clubSacrificesFireleaper.object! clubSacrificesFireleaper.stack.back!.objectId).triggeredAbility ==
+  some .onDiesDealDamageEqualToPowerToOppCreature
+#guard (clubSacrificesFireleaper.object! clubSacrificesFireleaper.stack[0]!.objectId).name ==
+  "Improvised Club"
+#guard clubSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
+#guard clubSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
+#guard clubSacrificesFireleaper.log.any (fun s => mentions s "casts Improvised Club")
 
 end Mtg.Engine.Tests
