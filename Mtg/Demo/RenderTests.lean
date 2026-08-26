@@ -651,6 +651,19 @@ def mountainLine (g : Game) : String :=
     (changedZones visionaryKnownLib g).contains (.hand ⟨0⟩) &&
     (changedZones visionaryKnownLib g).contains (.library ⟨0⟩)
 
+#guard
+  let g := archAndElves
+  mentions (objectLine g (namedPermanent g "Llanowar Elves")) "2/2" &&
+    mentions (objectLine g (namedPermanent g "Elvish Archdruid")) "2/2" &&
+    mentions (objectFaceExtras g (namedPermanent g "Elvish Archdruid"))
+      "Other Elf creatures you control get +1/+1" &&
+    mentions (objectFaceExtras g (namedPermanent g "Elvish Archdruid"))
+      "{T}: Add {G} for each Elf you control"
+#guard
+  let g := tappedArchAndElves
+  mentions (objectLine g (namedPermanent g "Elvish Archdruid")) "(tapped)" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "{G}×2"
+
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
 #guard pendingCostNotation cratermakerTargeted == some "{1}, Sacrifice"

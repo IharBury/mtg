@@ -289,6 +289,11 @@ def uncontrolledPermanent : Game :=
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
+#guard mentions elvishArchdruid.summary "Other Elf creatures"
+#guard mentions elvishArchdruid.summary "for each Elf"
+#guard elvishArchdruid.staticAbilities.size == 1
+#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
@@ -412,6 +417,21 @@ def uncontrolledPermanent : Game :=
     triggeredAbilities := #[.onEnterDraw 1]
   }
   mentions c.abilitiesText "draw a card"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Archdruid"
+    types := #[.creature]
+    subtypes := #["Elf", "Druid"]
+    power := some 2
+    toughness := some 2
+    staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1]
+    tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }]
+  }
+  mentions c.abilitiesText "Other Elf creatures you control get +1/+1" &&
+    mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
+    !mentions c.abilitiesText "{T}: Add {G};" &&
+    c.manaAbilities == #[.colored .green]
 
 #guard
   let c : CardDef := {
@@ -5668,5 +5688,142 @@ def afterGuardianTrampleCombat : Game :=
   mentions s "Grizzly Bears dies from lethal damage")
 #guard (afterGuardianTrampleCombat.player ⟨1⟩).life == 17
 #guard !(afterGuardianTrampleCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/- Elvish Archdruid: other Elves get +1/+1, and `{T}: Add {G}` per Elf. -/
+
+def archAndElves : Game :=
+  addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) llanowarElves ⟨0⟩ ⟨0⟩
+
+def archAndBears : Game :=
+  addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
+
+def archAndOppElves : Game :=
+  addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def archAlone : Game := addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩
+
+#guard archAndElves.power (namedPermanent archAndElves "Llanowar Elves") == 2
+#guard archAndElves.toughness (namedPermanent archAndElves "Llanowar Elves") == 2
+#guard archAndElves.snapshotPower (namedPermanent archAndElves "Llanowar Elves") == 2
+#guard archAndElves.snapshotToughness (namedPermanent archAndElves "Llanowar Elves") == 2
+#guard archAndElves.power (namedPermanent archAndElves "Elvish Archdruid") == 2
+#guard archAndElves.toughness (namedPermanent archAndElves "Elvish Archdruid") == 2
+#guard (namedPermanent archAndElves "Llanowar Elves").status.pumpPower == 0
+#guard archAndBears.power (namedPermanent archAndBears "Grizzly Bears") == 2
+#guard archAndOppElves.power (namedPermanent archAndOppElves "Llanowar Elves") == 1
+#guard archAlone.power (namedPermanent archAlone "Elvish Archdruid") == 2
+#guard archAndElves.countSubtype ⟨0⟩ "Elf" == 2
+#guard (archAndElves.availableMana ⟨0⟩).green == 3
+#guard (archAlone.availableMana ⟨0⟩).green == 1
+#guard (archAndOppElves.availableMana ⟨0⟩).green == 1
+#guard (archAndBears.availableMana ⟨0⟩).green == 1
+
+/-- Two Archdruids pump each other (CR 604.2). -/
+def twoArchdruids : Game :=
+  addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) elvishArchdruid ⟨0⟩ ⟨0⟩
+
+#guard
+  let elves := twoArchdruids.battlefield.filter (fun o => o.name == "Elvish Archdruid")
+  elves.size == 2 &&
+    elves.all (fun o => twoArchdruids.power o == 3 && twoArchdruids.toughness o == 3)
+#guard (twoArchdruids.availableMana ⟨0⟩).green == 4
+
+/-- The +1/+1 is a continuous effect, so it does not wear off in cleanup. -/
+def afterArchCleanup : Game := passBoth (skipTo archAndElves .end 80)
+
+#guard afterArchCleanup.power (namedPermanent afterArchCleanup "Llanowar Elves") == 2
+#guard (namedPermanent afterArchCleanup "Llanowar Elves").status.pumpPower == 0
+
+/-- A 0/0 Elf survives while Archdruid is in play, and dies when it leaves. -/
+def zeroElf : CardDef := {
+  name := "Zero Elf"
+  types := #[.creature]
+  subtypes := #["Elf"]
+  power := some 0
+  toughness := some 0
+}
+
+def zeroElfWithArch : Game :=
+  addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) zeroElf ⟨0⟩ ⟨0⟩
+
+#guard zeroElfWithArch.power (namedPermanent zeroElfWithArch "Zero Elf") == 1
+#guard zeroElfWithArch.toughness (namedPermanent zeroElfWithArch "Zero Elf") == 1
+#guard (zeroElfWithArch.checkSBA).battlefield.any (fun o => o.name == "Zero Elf")
+
+def zeroElfArchLeaves : Game :=
+  let id := (namedPermanent zeroElfWithArch "Elvish Archdruid").id
+  let (g, _) := zeroElfWithArch.move id (.graveyard ⟨0⟩) none
+  g.checkSBA
+
+#guard !(zeroElfArchLeaves.battlefield.any (fun o => o.name == "Zero Elf"))
+#guard zeroElfArchLeaves.log.any (fun s => mentions s "dies (toughness 0)")
+
+/-- Combat uses the lord's pumped power. -/
+def afterArchdruidCombat : Game :=
+  let g := passBoth (skipTo archAndElves .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Llanowar Elves").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  passBoth g
+
+#guard afterArchdruidCombat.log.any (fun s =>
+  mentions s "Llanowar Elves deals 2 combat damage to Nissa")
+#guard (afterArchdruidCombat.player ⟨1⟩).life == 18
+
+/-- Tapping Archdruid alone adds {G} for itself. -/
+def tappedArchAlone : Game :=
+  mustApply archAlone ⟨0⟩
+    (.tapForMana (namedPermanent archAlone "Elvish Archdruid").id (.colored .green))
+
+#guard (tappedArchAlone.player ⟨0⟩).manaPool.green == 1
+#guard (namedPermanent tappedArchAlone "Elvish Archdruid").status.tapped
+#guard tappedArchAlone.log.any (fun s => mentions s "taps Elvish Archdruid for green")
+#guard !(tappedArchAlone.log.any (fun s => mentions s "green ×"))
+
+/-- Tapping Archdruid with another Elf adds {G}{G}. -/
+def tappedArchAndElves : Game :=
+  mustApply archAndElves ⟨0⟩
+    (.tapForMana (namedPermanent archAndElves "Elvish Archdruid").id (.colored .green))
+
+#guard (tappedArchAndElves.player ⟨0⟩).manaPool.green == 2
+#guard (namedPermanent tappedArchAndElves "Elvish Archdruid").status.tapped
+#guard !(namedPermanent tappedArchAndElves "Llanowar Elves").status.tapped
+#guard tappedArchAndElves.log.any (fun s => mentions s "taps Elvish Archdruid for green ×2")
+#guard (tappedArchAndElves.manaSources ⟨0⟩).size == 1
+#guard (tappedArchAndElves.availableMana ⟨0⟩).green == 3
+
+/-- Opponent Elves do not count toward the mana ability. -/
+def tappedArchAndOppElves : Game :=
+  mustApply archAndOppElves ⟨0⟩
+    (.tapForMana (namedPermanent archAndOppElves "Elvish Archdruid").id (.colored .green))
+
+#guard (tappedArchAndOppElves.player ⟨0⟩).manaPool.green == 1
+
+-- Summoning sickness still stops the mana ability (CR 302.6).
+#guard
+  let o := namedPermanent archAlone "Elvish Archdruid"
+  let g := archAlone.setObject { o with status := { o.status with summoningSick := true } }
+  match g.tapForMana ⟨0⟩ o.id (.colored .green) with
+  | .error msg => mentions msg "summoning sickness"
+  | .ok _ => false
+
+/-- Available mana from Archdruid plus Elves pays {2}{G}; the agent casts it. -/
+def agentArchdruidMana : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g elvishArchdruid ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  addToHand g centaurCourser ⟨0⟩
+
+#guard (agentArchdruidMana.availableMana ⟨0⟩).canPay centaurCourser.manaCost
+#guard
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g elvishMystic ⟨0⟩ ⟨0⟩
+  let g := addToHand g centaurCourser ⟨0⟩
+  !((g.availableMana ⟨0⟩).canPay centaurCourser.manaCost)
+#guard
+  match Agent.choose agentArchdruidMana ⟨0⟩ with
+  | some (.cast id) => (agentArchdruidMana.object! id).name == "Centaur Courser"
+  | _ => false
 
 end Mtg.Engine.Tests

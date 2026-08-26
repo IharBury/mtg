@@ -18,7 +18,8 @@ an artifact or creature (CR 601.2f / 601.2h), and activating mana abilities whil
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
-trample, pump an enchanted or equipped creature, set power and toughness
+trample, pump other creatures of listed types, pump an enchanted or equipped
+creature, set power and toughness
 equal to lands you control, or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
@@ -159,7 +160,8 @@ def typeLine (o : GameObject) : String :=
 
 /-- Printed power/toughness plus until-EOT pumps and +1/+1 counters. Layer-7b
 setting effects such as “equal to the number of lands you control” or an
-until-end-of-turn base P/T set are applied in `Game.power` / `Game.toughness`. -/
+until-end-of-turn base P/T set, attached Aura/Equipment bonuses, and lord
+bonuses are applied in `Game.power` / `Game.toughness`. -/
 def power (o : GameObject) : Int :=
   (o.printed.power.getD 0) + o.status.pumpPower + (o.status.plusOnePlusOne : Int)
 
@@ -485,8 +487,36 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
         g := g.logMsg s!"{o.name} becomes unattached"
     return g
 
+/-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
+def grantsStatBonusTo (src target : GameObject) : Int × Int :=
+  if src.id == target.id || !src.isOnBattlefield || !target.isOnBattlefield then (0, 0)
+  else if src.controller != target.controller || src.controller.isNone then (0, 0)
+  else if !target.isCreature then (0, 0)
+  else
+    src.staticAbilities.foldl
+      (fun acc ab =>
+        match ab with
+        | .otherCreaturesGet subtypes p t =>
+          if subtypes.any target.hasSubtype then (acc.1 + p, acc.2 + t)
+          else acc
+        | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+        | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl
+        | .cantBlockUnlessYouControl _ => acc)
+      (0, 0)
+
+/-- Continuous +P/+T granted to `o` by other permanents you control (CR 613.3c). -/
+def lordStatBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    g.battlefield.foldl
+      (fun acc src =>
+        let b := grantsStatBonusTo src o
+        (acc.1 + b.1, acc.2 + b.2))
+      (0, 0)
+
 /-- Power of `o` as last known information, including pumps, counters, land-count
-setting effects, until-EOT base setting, and attached bonuses (CR 113.7a / 208.2).
+setting effects, until-EOT base setting, attached bonuses, and lord bonuses
+(CR 113.7a / 208.2).
 Computed before `o` leaves the battlefield. -/
 def snapshotPower (g : Game) (o : GameObject) : Int :=
   let attached : Int :=
@@ -500,7 +530,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets p _ | .equippedCreatureGets p _ => n + p
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+                  | .powerToughnessEqualLandsYouControl
                   | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
@@ -509,7 +540,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
     o.staticAbilities.any (fun ab =>
       match ab with
       | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .enchantedCreatureGets _ _
       | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBasePower with
@@ -521,7 +553,8 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
         | none => 0
       else
         o.printed.power.getD 0
-  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached
+  base + o.status.pumpPower + (o.status.plusOnePlusOne : Int) + attached +
+    (g.lordStatBonus o).1
 
 /-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
@@ -536,7 +569,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
                 (fun n ab =>
                   match ab with
                   | .enchantedCreatureGets _ t | .equippedCreatureGets _ t => n + t
-                  | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+                  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+                  | .powerToughnessEqualLandsYouControl
                   | .cantBlockUnlessYouControl _ => n)
                 (0 : Int)
           else acc)
@@ -545,7 +579,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
     o.staticAbilities.any (fun ab =>
       match ab with
       | .powerToughnessEqualLandsYouControl => true
-      | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .enchantedCreatureGets _ _
       | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
   let base :=
     match o.status.setBaseToughness with
@@ -557,7 +592,8 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
         | none => 0
       else
         o.printed.toughness.getD 0
-  base + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) + attached
+  base + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) + attached +
+    (g.lordStatBonus o).2
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
@@ -659,7 +695,8 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
       match blocker.controller with
       | none => false
       | some p => g.controlsAnySubtype p subtypes
-    | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+    | .enchantedCreatureGets _ _
     | .equippedCreatureGets _ _ | .powerToughnessEqualLandsYouControl => true)
 
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
@@ -688,7 +725,7 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
     match ab with
     | .otherCreaturesHaveTrample subtypes =>
       subtypes.any target.hasSubtype
-    | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _
+    | .otherCreaturesGet _ _ _ | .enchantedCreatureGets _ _ | .equippedCreatureGets _ _
     | .powerToughnessEqualLandsYouControl | .cantBlockUnlessYouControl _ => false)
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
@@ -716,7 +753,8 @@ def auraStatBonus (aura : GameObject) : Int × Int :=
     (fun acc ab =>
       match ab with
       | .enchantedCreatureGets p t | .equippedCreatureGets p t => (acc.1 + p, acc.2 + t)
-      | .otherCreaturesHaveTrample _ | .powerToughnessEqualLandsYouControl
+      | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+      | .powerToughnessEqualLandsYouControl
       | .cantBlockUnlessYouControl _ => acc)
     (0, 0)
 
@@ -729,7 +767,8 @@ def hasLandsYouControlPT (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any (fun ab =>
     match ab with
     | .powerToughnessEqualLandsYouControl => true
-    | .otherCreaturesHaveTrample _ | .enchantedCreatureGets _ _
+    | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+    | .enchantedCreatureGets _ _
     | .equippedCreatureGets _ _ | .cantBlockUnlessYouControl _ => false)
 
 /-- Characteristic power before pumps, counters, and attached bonuses: an
@@ -777,16 +816,16 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
       (0, 0)
 
 /-- Current power, including until-end-of-turn pumps, counters, land-count and
-until-EOT base setting effects, and attached bonuses (CR 208.2). -/
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
 def power (g : Game) (o : GameObject) : Int :=
   g.basePower o + o.status.pumpPower + (o.status.plusOnePlusOne : Int) +
-    (g.attachedStatBonus o).1
+    (g.attachedStatBonus o).1 + (g.lordStatBonus o).1
 
 /-- Current toughness, including until-end-of-turn pumps, counters, land-count and
-until-EOT base setting effects, and attached bonuses (CR 208.2). -/
+until-EOT base setting effects, attached bonuses, and lord bonuses (CR 208.2). -/
 def toughness (g : Game) (o : GameObject) : Int :=
   g.baseToughness o + o.status.pumpToughness + (o.status.plusOnePlusOne : Int) +
-    (g.attachedStatBonus o).2
+    (g.attachedStatBonus o).2 + (g.lordStatBonus o).2
 
 /-- Greatest power among creatures `p` controls; `0` if they control none. -/
 def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
@@ -1183,6 +1222,21 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
     else if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then none
     else some (o, types))
 
+/-- Permanents `p` currently controls with this subtype. -/
+def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
+  (g.permanentsOf p).filter (·.hasSubtype subtype) |>.size
+
+/-- Mana added by tapping `o` for `mana` (CR 106.4 / 605.3b). A
+`tapAddManaForEach` ability counts permanents the controller currently
+controls with the listed subtype. -/
+def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
+  match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
+  | some a =>
+    match o.controller with
+    | some p => g.countSubtype p a.subtype
+    | none => 0
+  | none => 1
+
 /-- A player may activate mana abilities with priority, or while paying a
 spell they are casting (CR 605.3a / 601.2g). -/
 def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
@@ -1205,9 +1259,12 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if !o.printed.manaAbilities.contains mana then
     throw s!"{o.name} cannot produce {mana}"
+  let amount := g.manaFromTap o mana
   let g := g.setObject { o with status := { o.status with tapped := true } }
-  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana })
-  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {mana}"
+  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add mana amount })
+  let produced :=
+    if amount == 1 then toString mana else s!"{mana} ×{amount}"
+  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}"
   let g :=
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
@@ -1215,12 +1272,12 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   -- Mana abilities don't use the stack (CR 605.3b).
   return { g with consecutivePasses := 0 }
 
-/-- Mana in `p`'s pool plus one mana from each of their untapped sources. -/
+/-- Mana in `p`'s pool plus mana from each of their untapped sources. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   (g.manaSources p).foldl
-    (fun pool (_, types) =>
+    (fun pool (src, types) =>
       match types[0]? with
-      | some t => pool.add t
+      | some t => pool.add t (g.manaFromTap src t)
       | none => pool)
     (g.player p).manaPool
 

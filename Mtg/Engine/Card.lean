@@ -166,7 +166,8 @@ instance : ToString ActivationCost where
 end ActivationCost
 
 /-- An activated ability printed on a card (CR 602.1). Mana abilities that
-are `{T}: Add` are stored separately on `CardDef.tapAddMana` / basic land types. -/
+are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
+`CardDef.tapAddManaForEach` / basic land types. -/
 structure ActivatedAbility where
   cost : ActivationCost
   /-- First (or only) mode of this ability. -/
@@ -215,6 +216,9 @@ inductive StaticAbility where
   /-- Other creatures you control that have any of these subtypes have trample
   (e.g. Orcish Siegemaster). -/
   | otherCreaturesHaveTrample (subtypes : Array String)
+  /-- Other creatures you control that have any of these subtypes get +P/+T
+  (e.g. Elvish Archdruid). -/
+  | otherCreaturesGet (subtypes : Array String) (power toughness : Int)
   /-- Enchanted creature gets +P/+T (e.g. Gift of Strands). -/
   | enchantedCreatureGets (power toughness : Int)
   /-- Equipped creature gets +P/+T (e.g. Ragged Short Spear). -/
@@ -238,6 +242,9 @@ def toNotation : StaticAbility → String
   | .otherCreaturesHaveTrample subtypes =>
     let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
     s!"Other {who} you control have trample."
+  | .otherCreaturesGet subtypes p t =>
+    let who := String.intercalate " and " subtypes.toList
+    s!"Other {who} creatures you control get {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
   | .enchantedCreatureGets p t =>
     s!"Enchanted creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
   | .equippedCreatureGets p t =>
@@ -254,6 +261,22 @@ instance : ToString StaticAbility where
   toString := toNotation
 
 end StaticAbility
+
+/-- A `{T}: Add {M} for each [subtype] you control` mana ability (CR 106.4 / 605). -/
+structure TapAddForEach where
+  mana : ManaType
+  subtype : String
+deriving Repr, Inhabited, BEq
+
+namespace TapAddForEach
+
+def toNotation (a : TapAddForEach) : String :=
+  s!"\{T}: Add \{{a.mana.letter}} for each {a.subtype} you control"
+
+instance : ToString TapAddForEach where
+  toString := toNotation
+
+end TapAddForEach
 
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
@@ -456,8 +479,11 @@ structure CardDef where
   spellModes : Array SpellEffect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
+  /-- `{T}: Add {M} for each permanent you control with this subtype
+  (e.g. Elvish Archdruid). -/
+  tapAddManaForEach : Array TapAddForEach := #[]
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
-  `tapAddMana` / basic land types instead. -/
+  `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Static abilities other than printed keywords (CR 604). -/
   staticAbilities : Array StaticAbility := #[]
@@ -520,9 +546,14 @@ def manaValue (c : CardDef) : Nat := c.manaCost.manaValue
 def basicLandMana (c : CardDef) : Array Color :=
   c.subtypes.filterMap manaForBasicLandType
 
+/-- `{T}: Add {M}` abilities that produce one mana, from basic land types or
+an explicit `tapAddMana` list. -/
+def simpleTapAddMana (c : CardDef) : Array ManaType :=
+  c.basicLandMana.map ManaType.colored ++ c.tapAddMana
+
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
-  c.basicLandMana.map ManaType.colored ++ c.tapAddMana
+  c.simpleTapAddMana ++ c.tapAddManaForEach.map (·.mana)
 
 /-- Lowercase ASCII for comparing Oracle keyword lines to `Keywords.toList`. -/
 def lowerAscii (s : String) : String :=
@@ -544,7 +575,8 @@ def leftoverOracleLines (c : CardDef) : List String :=
 
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
-  c.manaAbilities.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
   (if c.additionalCostSacrificeArtifactOrCreature then
     ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
    else []) ++
@@ -664,6 +696,10 @@ instance : ToString CardDef where
     ((toString ab).splitOn "colorless nonland").length > 1
 #guard StaticAbility.toNotation (.otherCreaturesHaveTrample #["Orc", "Goblin"]) ==
   "Other Orcs and Goblins you control have trample."
+#guard StaticAbility.toNotation (.otherCreaturesGet #["Elf"] 1 1) ==
+  "Other Elf creatures you control get +1/+1."
+#guard TapAddForEach.toNotation { mana := .colored .green, subtype := "Elf" } ==
+  "{T}: Add {G} for each Elf you control"
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==
   "Enchanted creature gets +3/+3."
 #guard StaticAbility.toNotation (.equippedCreatureGets 2 0) ==
