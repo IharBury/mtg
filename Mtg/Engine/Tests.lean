@@ -301,6 +301,11 @@ def uncontrolledPermanent : Game :=
 #guard quarrel.isInstant
 #guard quarrel.requiresTarget
 #guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard mentions smiteTheDeathless.summary "loses indestructible"
+#guard mentions smiteTheDeathless.summary "exile it instead"
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
 #guard mentions woodElves.summary "Forest card"
 #guard woodElves.triggeredAbilities.size == 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -8020,6 +8025,252 @@ def targetedPassageFromLands : Game :=
   match Agent.choose targetedPassageFromLands ⟨0⟩ with
   | some (.tapForMana id _) =>
     (targetedPassageFromLands.object! id).name != "Rogue's Passage"
+  | _ => false
+
+/- Smite the Deathless: 3 damage, lose indestructible until EOT, exile if it
+would die this turn (CR 702.12 / 614.1 / 700.4). -/
+
+def indestructibleBeast : CardDef := {
+  name := "Indestructible Beast"
+  types := #[.creature]
+  power := some 2
+  toughness := some 2
+  keywords := { Keywords.none with indestructible := true }
+}
+
+def indestructibleFlyer : CardDef := {
+  name := "Indestructible Flyer"
+  types := #[.creature]
+  power := some 4
+  toughness := some 4
+  keywords := { Keywords.none with flying := true, indestructible := true }
+}
+
+def indestructibleZero : CardDef := {
+  name := "Indestructible Zero"
+  types := #[.creature]
+  power := some 0
+  toughness := some 0
+  keywords := { Keywords.none with indestructible := true }
+}
+
+def smiteOn (card : CardDef) : Game :=
+  let g := addPermanent afterDraw card ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+def smiteSetup : Game := smiteOn grizzlyBears
+
+#guard smiteTheDeathless.isInstant
+#guard smiteTheDeathless.requiresTarget
+#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteSetup.canCast ⟨0⟩ (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless")
+#guard smiteSetup.asSorcery? ⟨0⟩
+#guard (smiteSetup.legalTargets ⟨0⟩ (.dealDamageLoseIndestructibleExile 3)).size == 1
+
+-- Cannot cast with no creature on the battlefield.
+#guard
+  let g := withRedMana (addToHand afterDraw smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Smite the Deathless")
+#guard
+  let g := withRedMana (addToHand afterDraw smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+def proposedSmite : Game :=
+  mustApply smiteSetup ⟨0⟩ (.cast (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless").id)
+
+#guard
+  match proposedSmite.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedSmite.log.any (fun s => mentions s "begins casting Smite the Deathless")
+#guard proposedSmite.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Smite cannot target a player.
+#guard
+  match proposedSmite.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets an opposing creature.
+#guard
+  match Agent.choose proposedSmite ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedSmite.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def paidSmite : Game :=
+  let g := mustApply proposedSmite ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedSmite "Grizzly Bears").id))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidSmite.hasPriority ⟨0⟩
+#guard paidSmite.log.any (fun s => mentions s "casts Smite the Deathless")
+
+def resolvedSmiteOnBears : Game := passBoth paidSmite
+
+#guard resolvedSmiteOnBears.stack.isEmpty
+#guard !(resolvedSmiteOnBears.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedSmiteOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard !(resolvedSmiteOnBears.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩))
+#guard resolvedSmiteOnBears.log.any (fun s =>
+  mentions s "is dealt 3 damage, loses indestructible until end of turn")
+#guard resolvedSmiteOnBears.log.any (fun s => mentions s "dies from lethal damage")
+#guard resolvedSmiteOnBears.log.any (fun s => mentions s "is exiled instead of dying")
+#guard (resolvedSmiteOnBears.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedSmiteOnBears.object! id).name == "Smite the Deathless")
+
+/-- 3 damage is not lethal to a 4-toughness creature; the replacement lasts. -/
+def resolvedSmiteOnWurm : Game :=
+  let g := smiteOn crawWurm
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Craw Wurm").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnWurm.battlefield.any (fun o => o.name == "Craw Wurm")
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.damage == 3
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotLosesIndestructible
+#guard (namedPermanent resolvedSmiteOnWurm "Craw Wurm").status.untilEotExileIfDies
+#guard !resolvedSmiteOnWurm.objects.any (fun o =>
+  o.name == "Craw Wurm" && o.zone == .exile)
+
+/-- Later this turn, 0 toughness is replaced by exile. -/
+def smiteWurmThenZeroToughness : Game :=
+  let o := namedPermanent resolvedSmiteOnWurm "Craw Wurm"
+  let g := resolvedSmiteOnWurm.setObject { o with
+    status := { o.status with pumpToughness := -4 } }
+  g.receivePriority ⟨0⟩
+
+#guard !(smiteWurmThenZeroToughness.battlefield.any (fun o => o.name == "Craw Wurm"))
+#guard smiteWurmThenZeroToughness.objects.any (fun o =>
+  o.name == "Craw Wurm" && o.zone == .exile)
+#guard smiteWurmThenZeroToughness.log.any (fun s => mentions s "dies (toughness 0)")
+#guard smiteWurmThenZeroToughness.log.any (fun s => mentions s "is exiled instead of dying")
+
+/-- The until-EOT flags and marked damage wear off in cleanup. -/
+def afterSmiteWurmCleanup : Game :=
+  passBoth (skipTo resolvedSmiteOnWurm .end 80)
+
+#guard (namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.damage == 0
+#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotLosesIndestructible
+#guard !(namedPermanent afterSmiteWurmCleanup "Craw Wurm").status.untilEotExileIfDies
+
+/-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
+def indestructibleSurvivesDamage : Game :=
+  let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ (.dealDamage 3)
+    #[Target.permanent (namedPermanent g "Indestructible Beast").id]
+  g.receivePriority ⟨0⟩
+
+#guard indestructibleSurvivesDamage.battlefield.any (fun o =>
+  o.name == "Indestructible Beast")
+#guard (namedPermanent indestructibleSurvivesDamage "Indestructible Beast").status.damage == 3
+#guard indestructibleSurvivesDamage.hasIndestructible
+  (namedPermanent indestructibleSurvivesDamage "Indestructible Beast")
+#guard !indestructibleSurvivesDamage.log.any (fun s => mentions s "dies from lethal damage")
+
+/-- Indestructible does not save a creature with 0 toughness (CR 704.5f). -/
+def indestructibleZeroDies : Game :=
+  let g := addPermanent afterDraw indestructibleZero ⟨1⟩ ⟨1⟩
+  g.receivePriority ⟨0⟩
+
+#guard !(indestructibleZeroDies.battlefield.any (fun o => o.name == "Indestructible Zero"))
+#guard indestructibleZeroDies.objects.any (fun o =>
+  o.name == "Indestructible Zero" && o.zone == .graveyard ⟨1⟩)
+#guard indestructibleZeroDies.log.any (fun s => mentions s "dies (toughness 0)")
+#guard !indestructibleZeroDies.log.any (fun s => mentions s "exiled instead")
+
+/-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b). -/
+def destroyIndestructibleFlyer : Game :=
+  let g := addPermanent afterDraw indestructibleFlyer ⟨1⟩ ⟨1⟩
+  g.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+    #[Target.permanent (namedPermanent g "Indestructible Flyer").id]
+
+#guard destroyIndestructibleFlyer.battlefield.any (fun o =>
+  o.name == "Indestructible Flyer")
+#guard destroyIndestructibleFlyer.log.any (fun s =>
+  mentions s "is indestructible and isn't destroyed")
+#guard !destroyIndestructibleFlyer.log.any (fun s =>
+  mentions s "Indestructible Flyer is destroyed")
+
+/-- Smite strips indestructible from a 2/2 and exiles it to lethal damage. -/
+def resolvedSmiteOnIndestructibleBeast : Game :=
+  let g := smiteOn indestructibleBeast
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Indestructible Beast").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard !(resolvedSmiteOnIndestructibleBeast.battlefield.any (fun o =>
+  o.name == "Indestructible Beast"))
+#guard resolvedSmiteOnIndestructibleBeast.objects.any (fun o =>
+  o.name == "Indestructible Beast" && o.zone == .exile)
+#guard resolvedSmiteOnIndestructibleBeast.log.any (fun s =>
+  mentions s "is exiled instead of dying")
+
+/-- After Smite, a 4/4 flyer can be destroyed and is exiled instead of dying. -/
+def resolvedSmiteOnIndestructibleFlyer : Game :=
+  let g := smiteOn indestructibleFlyer
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Indestructible Flyer").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnIndestructibleFlyer.battlefield.any (fun o =>
+  o.name == "Indestructible Flyer")
+#guard !resolvedSmiteOnIndestructibleFlyer.hasIndestructible
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")
+#guard (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").status.damage
+  == 3
+#guard (resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).flying
+#guard !(resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).indestructible
+
+def smiteFlyerThenDestroy : Game :=
+  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+    #[Target.permanent
+      (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").id]
+
+#guard !(smiteFlyerThenDestroy.battlefield.any (fun o => o.name == "Indestructible Flyer"))
+#guard smiteFlyerThenDestroy.objects.any (fun o =>
+  o.name == "Indestructible Flyer" && o.zone == .exile)
+#guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is destroyed")
+#guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is exiled instead of dying")
+
+/-- Exile-instead-of-dying means dies triggers do not go on the stack (CR 700.4). -/
+def smiteOnFireleaper : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+def resolvedSmiteOnFireleaper : Game :=
+  let g := mustApply smiteOnFireleaper ⟨0⟩
+    (.cast (handCardNamed smiteOnFireleaper ⟨0⟩ "Smite the Deathless").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Goblin Fireleaper").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedSmiteOnFireleaper.objects.any (fun o =>
+  o.name == "Goblin Fireleaper" && o.zone == .exile)
+#guard resolvedSmiteOnFireleaper.stack.isEmpty
+#guard !resolvedSmiteOnFireleaper.log.any (fun s => mentions s "dies trigger")
+#guard resolvedSmiteOnFireleaper.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent resolvedSmiteOnFireleaper "Grizzly Bears").status.damage == 0
+
+/-- The heuristic casts Smite when it is the playable spell. -/
+def agentSmite : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentSmite ⟨0⟩ with
+  | some (.cast id) => (agentSmite.object! id).name == "Smite the Deathless"
   | _ => false
 
 end Mtg.Engine.Tests

@@ -115,8 +115,9 @@ The first slice of the engine models the two-player game:
   deal damage to each opponent when you cast an instant or sorcery,
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy, +1/+1 counters, hexproof, vigilance, until-end-of-turn
-  keyword grants including can't be blocked, destroying permanents or dealing damage with activated
+- modal instants, destroy, +1/+1 counters, hexproof, indestructible, vigilance, until-end-of-turn
+  keyword grants including can't be blocked, until-end-of-turn loss of
+  indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a
   creature an opponent controls, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)

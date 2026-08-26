@@ -120,9 +120,11 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
         s!" *enchanting {objectRef g hostId}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
+  let exileIfDies :=
+    if o.status.untilEotExileIfDies then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}"
+  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}{exileIfDies}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
