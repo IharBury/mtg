@@ -761,6 +761,16 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
   | .error _ => false
 
 #guard
+  let g := Tests.archAndElves
+  let arch := Tests.namedPermanent g "Elvish Archdruid"
+  match applyTap g ⟨0⟩ [toString arch.id] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Elvish Archdruid").status.tapped &&
+    (g'.player ⟨0⟩).manaPool.green == 2 &&
+    g'.log.any (fun s => Tests.mentions s "green ×2")
+  | .error _ => false
+
+#guard
   let g := Tests.baubleReady
   let lands := (g.permanentsOf ⟨0⟩).filter (·.printed.isLand)
   lands.size == 2 &&
@@ -1757,6 +1767,15 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
       g'.log.any (fun s => Tests.mentions s "draws Forest") &&
       (g'.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
     | .error _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.archAndElves "tap"
+      [toString (Tests.namedPermanent Tests.archAndElves "Elvish Archdruid").id] with
+  | .ok g' =>
+    (g'.player ⟨0⟩).manaPool.green == 2 &&
+      (Tests.namedPermanent g' "Elvish Archdruid").status.tapped &&
+      g'.log.any (fun s => Tests.mentions s "taps Elvish Archdruid for green ×2")
   | .error _ => false
 
 #guard

@@ -5,9 +5,10 @@ import Mtg.Engine.Card
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash and hexproof, simple `{T}: Add` mana abilities, non-mana
+(keywords including flash and hexproof, simple `{T}: Add` mana abilities, `{T}: Add`
+for each permanent of a listed type, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, deal damage
@@ -890,6 +891,8 @@ def elvishArchdruid : CardDef := {
   oracleText := "Other Elf creatures you control get +1/+1.\n{T}: Add {G} for each Elf you control."
   power := some 2
   toughness := some 2
+  staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1]
+  tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }]
 }
 
 def lothlorienLookout : CardDef := {
@@ -1001,6 +1004,11 @@ def attercop : CardDef := {
 #guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
+#guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
+#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
+#guard elvishArchdruid.manaAbilities == #[.colored .green]
+#guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
+#guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1
 #guard mirkwoodElk.keywords.trample
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mirkwoodElk.power == some 6
