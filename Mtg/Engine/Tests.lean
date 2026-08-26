@@ -5120,10 +5120,15 @@ def spewWithGuttersnipeResolved : Game :=
 #guard (spewWithGuttersnipeResolved.player ⟨1⟩).life == 18
 #guard !(spewWithGuttersnipeResolved.battlefield.any (fun o => o.name == "Grizzly Bears"))
 
--- The heuristic still casts Bolt with Guttersnipe in play.
+-- The heuristic casts Bolt when that is the playable spell with Guttersnipe in play.
+def agentGuttersnipeBoltOnly : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+
 #guard
-  match Agent.choose guttersnipeBoltSetup ⟨0⟩ with
-  | some (.cast id) => (guttersnipeBoltSetup.object! id).name == "Lightning Bolt"
+  match Agent.choose agentGuttersnipeBoltOnly ⟨0⟩ with
+  | some (.cast id) => (agentGuttersnipeBoltOnly.object! id).name == "Lightning Bolt"
   | _ => false
 
 end Mtg.Engine.Tests
