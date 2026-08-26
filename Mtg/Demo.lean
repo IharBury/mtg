@@ -1208,6 +1208,24 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.hospitalityLandPlayed "target"
+      [toString (Tests.namedPermanent Tests.hospitalityLandPlayed "Grizzly Bears").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Grizzly Bears").id]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.hospitalityAnimateSetup "activate"
+      [toString (Tests.namedPermanent Tests.hospitalityAnimateSetup "Beorn's Hospitality").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Beorn's Hospitality")
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.readyToDeclareBlockers "block" [] with
   | .ok g' =>
     (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
