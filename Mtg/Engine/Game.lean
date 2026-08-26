@@ -23,6 +23,7 @@ trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
 equal to lands you control in all zones (CR 604.3 / 208.2a), or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
+can't-be-blocked (CR 509.1b / 611.2a), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-turn
@@ -42,8 +43,9 @@ sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
 for each card looked at (CR 508.2 / 701.20 / 603),
 vigilance (CR 702.20), `{T}: Add` mana equal to power of any color with an
 Elf-only spending restriction (CR 106.10 / 605),
-activated pumps that last until end of turn and activated abilities that
-put +1/+1 counters on the source (CR 602 / 611.2a / 122),
+activated pumps that last until end of turn, activated abilities that
+put +1/+1 counters on the source, and making a target creature unblockable
+until end of turn (CR 602 / 611.2a / 122 / 509.1b),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
@@ -81,6 +83,7 @@ structure Status where
   /-- Granted until end of turn (cleared in cleanup, CR 514.3). -/
   untilEotTrample : Bool := false
   untilEotHexproof : Bool := false
+  untilEotCantBeBlocked : Bool := false
   /-- Until-end-of-turn layer-7b setting of base power (e.g. Galion). -/
   setBasePower : Option Int := none
   /-- Until-end-of-turn layer-7b setting of base toughness (e.g. Galion). -/
@@ -742,6 +745,12 @@ def hasVigilance (_g : Game) (o : GameObject) : Bool :=
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
   o.printed.keywords.flying
 
+/-- Whether `o` can't be blocked, printed or granted until end of turn
+(CR 509.1b / 611.2a). -/
+def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
+  o.printed.keywords.cantBeBlocked ||
+  (o.isOnBattlefield && o.status.untilEotCantBeBlocked)
+
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
   blocker.isOnBattlefield && blocker.isCreature &&
@@ -749,6 +758,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   blocker.status.blocking.isEmpty &&
   g.mayDeclareAsBlocker blocker &&
   attacker.status.attacking &&
+  !g.hasCantBeBlocked attacker &&
   (!g.hasFlying attacker ||
     g.hasFlying blocker || blocker.printed.keywords.reach)
 
@@ -783,6 +793,7 @@ def hasTrample (g : Game) (o : GameObject) : Bool :=
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
   { o.printed.keywords with
     flying := g.hasFlying o
+    cantBeBlocked := g.hasCantBeBlocked o
     hexproof := g.hasHexproof o
     trample := g.hasTrample o
     vigilance := g.hasVigilance o }
@@ -1331,6 +1342,10 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw "You don't control that permanent"
   if o.status.tapped then
     throw s!"{o.name} is already tapped"
+  if (match g.proposedSpell with
+      | some prop => prop.tapSource && prop.sourceId == some id
+      | none => false) then
+    throw s!"{o.name} is needed to pay \{T}"
   if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if !o.printed.manaAbilities.contains mana then
@@ -1352,12 +1367,14 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   -- Mana abilities don't use the stack (CR 605.3b).
   return { g with consecutivePasses := 0 }
 
-/-- Mana in `p`'s pool plus mana from each of their untapped sources. Any-color
-power mana is counted as green Elf-restricted mana for the heuristic. -/
-def availableMana (g : Game) (p : PlayerId) : ManaPool :=
+/-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
+`exclude` (used when that source's `{T}` is part of an activation cost).
+Any-color power mana is counted as green Elf-restricted mana for the heuristic. -/
+def availableManaExcept (g : Game) (p : PlayerId) (exclude : Option ObjectId) : ManaPool :=
   (g.manaSources p).foldl
     (fun pool (src, types) =>
-      if src.printed.tapAddAnyColorEqualToPower then
+      if exclude == some src.id then pool
+      else if src.printed.tapAddAnyColorEqualToPower then
         let n := g.manaFromTap src (.colored .green)
         pool.add (.colored .green) n (elfRestricted := true)
       else
@@ -1365,6 +1382,11 @@ def availableMana (g : Game) (p : PlayerId) : ManaPool :=
         | some t => pool.add t (g.manaFromTap src t)
         | none => pool)
     (g.player p).manaPool
+
+/-- Mana in `p`'s pool plus mana from each of their untapped sources. Any-color
+power mana is counted as green Elf-restricted mana for the heuristic. -/
+def availableMana (g : Game) (p : PlayerId) : ManaPool :=
+  g.availableManaExcept p none
 
 def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
   match effect with
@@ -1438,7 +1460,7 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
 
 /-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b). -/
 def legalAbilityTargets (g : Game) (p : PlayerId) : AbilityEffect → Array Target
-  | .dealDamageToTargetCreature _ =>
+  | .dealDamageToTargetCreature _ | .targetCantBeBlockedThisTurn =>
     g.legalCreatureTargets p (fun _ => true)
   | .destroyTargetColorlessNonland =>
     g.battlefield.filter (fun o => o.isColorlessNonland && g.canBeTargetedBy p o)
@@ -1498,7 +1520,7 @@ and divided-damage enters or attack triggers prefer the opponent; creature-damag
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; Mirkwood Elk prefers an Elf
 card in the controller's graveyard; Quarrel prefers a creature you control, then
-an opposing creature; pumps, the +1/+1-counter
+an opposing creature; Rogue's Passage, pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
 def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :=
@@ -1525,6 +1547,9 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
       |>.back?.map (fun c => Target.permanent c.id)
     | _, some .attachToTargetCreatureYouControl, _ =>
       (g.permanentsOf p).filter (·.printed.isCreature) |>.back?
+        |>.map (fun c => Target.permanent c.id)
+    | _, some .targetCantBeBlockedThisTurn, _ =>
+      (g.permanentsOf p).filter (·.isCreature) |>.back?
         |>.map (fun c => Target.permanent c.id)
     | _, _, some (.dealDamage _) => some (Target.player (g.opponent p))
     | _, _, some (.dealDamageToCreature _) =>
@@ -2387,6 +2412,22 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         g.logMsg s!"{o.name} is no longer on the battlefield"
     | none =>
       g.logMsg "The ability's source is no longer in play"
+  | .targetCantBeBlockedThisTurn =>
+    match targets[0]? with
+    | none => g
+    | some t =>
+      if (g.legalAbilityTargets controller effect).contains t then
+        match t with
+        | Target.permanent oid =>
+          match g.findObject? oid with
+          | some o =>
+            let g := g.setObject { o with
+              status := { o.status with untilEotCantBeBlocked := true } }
+            g.logMsg s!"{o.name} can't be blocked this turn"
+          | none => g.logMsg "The target is no longer in play"
+        | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal"
+      else
+        g.illegalAbilityTarget t
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -2996,11 +3037,13 @@ def clearEOT (g : Game) : Game :=
     for o in g.battlefield do
       if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
           o.status.untilEotTrample || o.status.untilEotHexproof ||
+          o.status.untilEotCantBeBlocked ||
           o.status.setBasePower.isSome || o.status.setBaseToughness.isSome then
         g := g.setObject { o with
           status := { o.status with
             damage := 0, pumpPower := 0, pumpToughness := 0
             untilEotTrample := false, untilEotHexproof := false
+            untilEotCantBeBlocked := false
             setBasePower := none, setBaseToughness := none } }
     return g
 

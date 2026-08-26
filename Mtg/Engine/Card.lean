@@ -18,6 +18,8 @@ structure Keywords where
   haste : Bool := false
   vigilance : Bool := false
   flying : Bool := false
+  /-- This creature can't be blocked (printed or granted until end of turn). -/
+  cantBeBlocked : Bool := false
   hexproof : Bool := false
   reach : Bool := false
   trample : Bool := false
@@ -34,6 +36,7 @@ def toList (k : Keywords) : List String :=
   (if k.haste then ["haste"] else []) ++
   (if k.vigilance then ["vigilance"] else []) ++
   (if k.flying then ["flying"] else []) ++
+  (if k.cantBeBlocked then ["can't be blocked"] else []) ++
   (if k.hexproof then ["hexproof"] else []) ++
   (if k.reach then ["reach"] else []) ++
   (if k.trample then ["trample"] else []) ++
@@ -125,6 +128,8 @@ inductive AbilityEffect where
   | sourceGets (power toughness : Int)
   /-- Put `n` +1/+1 counters on this creature (e.g. Guardian of the Halls). -/
   | putPlusOnePlusOneOnSource (n : Nat)
+  /-- Target creature can't be blocked this turn (e.g. Rogue's Passage). -/
+  | targetCantBeBlockedThisTurn
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -150,11 +155,13 @@ def toNotation : AbilityEffect → String
     s!"This creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
   | .putPlusOnePlusOneOnSource n =>
     s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
+  | .targetCantBeBlockedThisTurn =>
+    "Target creature can't be blocked this turn"
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget : AbilityEffect → Bool
   | .dealDamageToTargetCreature _ | .destroyTargetColorlessNonland
-  | .attachToTargetCreatureYouControl => true
+  | .attachToTargetCreatureYouControl | .targetCantBeBlockedThisTurn => true
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
   | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ => false
 
@@ -818,13 +825,19 @@ instance : ToString CardDef where
   "Put 3 +1/+1 counters on this creature"
 #guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 1) ==
   "Put a +1/+1 counter on this creature"
+#guard AbilityEffect.toNotation .targetCantBeBlockedThisTurn ==
+  "Target creature can't be blocked this turn"
 #guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
+#guard AbilityEffect.requiresTarget .targetCantBeBlockedThisTurn
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
+#guard
+  let k : Keywords := { Keywords.none with cantBeBlocked := true }
+  toString k == "can't be blocked"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }

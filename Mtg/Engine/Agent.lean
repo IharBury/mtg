@@ -105,6 +105,7 @@ where
         some .pay
       else
         match (g.manaSources p).find? (fun (src, types) =>
+          !(prop.tapSource && prop.sourceId == some src.id) &&
           !(src.printed.tapAddAnyColorEqualToPower && !allowElf) && !types.isEmpty) with
         | some (src, types) =>
           match g.preferredManaType p types prop.cost allowElf with
@@ -113,14 +114,18 @@ where
         | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let available := g.availableMana p
     let candidate := (g.permanentsOf p).find? (fun o =>
       match o.printed.activatedAbilities[0]? with
       | some ab =>
+        let available :=
+          g.availableManaExcept p (if ab.cost.tap then some o.id else none)
         g.canActivate p o ab &&
         available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
         -- Don't spend mana re-equipping a creature that is already equipped.
-        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome)
+        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
+        -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
+        !(ab.effect == .targetCantBeBlockedThisTurn &&
+          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking))
       | none => false)
     match candidate with
     | some o => some (.activate o.id 0)

@@ -9,7 +9,7 @@ The Hobbit Welcome Decks. The engine models a subset of rules text
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Passage, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 types, attack triggers that pump, set another creature's base
@@ -123,6 +123,10 @@ def roguesPassage : CardDef := {
   types := #[.land]
   oracleText := "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn."
   tapAddMana := #[.colorless]
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGeneric 4, tap := true }
+    effect := .targetCantBeBlockedThisTurn
+  }]
 }
 
 def soldierOfTheGreyHost : CardDef := {
@@ -991,6 +995,11 @@ def attercop : CardDef := {
 
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard roguesPassage.isLand
+#guard roguesPassage.activatedAbilities.size == 1
+#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.cost.tap
+#guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
+#guard roguesPassage.tapAddMana == #[.colorless]
 #guard elvishMystic.tapAddMana == #[.colored .green]
 #guard (attercop.summary.splitOn "Landfall").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1

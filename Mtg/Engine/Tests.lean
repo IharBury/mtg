@@ -270,6 +270,10 @@ def uncontrolledPermanent : Game :=
 #guard mentions soldierOfTheGreyHost.summary "flying"
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
+#guard roguesPassage.activatedAbilities.size == 1
+#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.cost.tap
+#guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
 #guard mentions orcishSiegemaster.summary "trample"
 #guard mentions orcishSiegemaster.summary "Other Orcs and Goblins"
 #guard mentions orcishSiegemaster.summary "greatest power"
@@ -591,6 +595,21 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
     mentions c.abilitiesText "{1}{R}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Passage"
+    types := #[.land]
+    tapAddMana := #[.colorless]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 4, tap := true }
+      effect := .targetCantBeBlockedThisTurn
+    }]
+  }
+  mentions c.abilitiesText "{T}: Add {C}" &&
+    mentions c.abilitiesText "can't be blocked this turn" &&
+    mentions c.abilitiesText "{4}" &&
+    mentions c.abilitiesText "{T}"
 
 #guard
   let c : CardDef := {
@@ -7755,6 +7774,252 @@ def agentAttercopLand : Game :=
 #guard
   match Agent.choose agentAttercopLand ⟨0⟩ with
   | some (.playLand id) => (agentAttercopLand.object! id).name == "Forest"
+  | _ => false
+
+/- Rogue's Passage: {T}: Add {C} and {4}, {T}: target creature can't be blocked. -/
+
+def passageAbility : ActivatedAbility :=
+  roguesPassage.activatedAbilities[0]!
+
+/-- Passage, Gray Ogre, and opposing Bears; {4} in the pool; land drop used. -/
+def passageReady : Game :=
+  let g := addPermanent afterDraw roguesPassage ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 4
+
+def passageSource (g : Game) : GameObject :=
+  namedPermanent g "Rogue's Passage"
+
+#guard passageAbility.effect == .targetCantBeBlockedThisTurn
+#guard passageAbility.cost.tap
+#guard passageAbility.cost.mana == ManaCost.ofGeneric 4
+#guard passageAbility.effect.requiresTarget
+#guard !passageAbility.onlyAsSorcery
+#guard passageReady.canActivate ⟨0⟩ (passageSource passageReady) passageAbility
+#guard !(passageReady.canActivate ⟨1⟩ (passageSource passageReady) passageAbility)
+#guard (passageReady.player ⟨0⟩).manaPool.canPay passageAbility.cost.mana
+#guard roguesPassage.manaAbilities == #[.colorless]
+
+-- Cannot activate with no creature in play.
+#guard
+  let g := addPermanent afterDraw roguesPassage ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 4
+  !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
+
+-- Cannot activate while the land is tapped.
+#guard
+  let o := passageSource passageReady
+  let g := passageReady.setObject { o with status := { o.status with tapped := true } }
+  !g.canActivate ⟨0⟩ (namedPermanent g "Rogue's Passage") passageAbility
+
+-- Instant-speed: Passage can activate during the end step.
+#guard
+  let g := skipTo passageReady .end 80
+  g.step == .end && g.canActivate ⟨0⟩ (passageSource g) passageAbility
+
+-- The {T}: Add {C} mana ability still works when the land is untapped.
+#guard
+  match passageReady.tapForMana ⟨0⟩ (passageSource passageReady).id .colorless with
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.get .colorless >= 1 &&
+      (namedPermanent g "Rogue's Passage").status.tapped
+  | .error _ => false
+
+-- The heuristic does not dump {4} in the main phase.
+#guard
+  match Agent.choose passageReady ⟨0⟩ with
+  | some (.activate id 0) => (passageReady.object! id).name != "Rogue's Passage"
+  | _ => true
+
+def proposedPassage : Game :=
+  mustApply passageReady ⟨0⟩ (.activate (passageSource passageReady).id 0)
+
+#guard
+  match proposedPassage.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedPassage.proposedSpell.isSome
+#guard proposedPassage.stack.size == 1
+#guard (proposedPassage.object! proposedPassage.stack.back!.objectId).abilityEffect ==
+  some .targetCantBeBlockedThisTurn
+#guard (namedPermanent proposedPassage "Rogue's Passage").isOnBattlefield
+#guard !(namedPermanent proposedPassage "Rogue's Passage").status.tapped
+#guard proposedPassage.log.any (fun s => mentions s "begins activating Rogue's Passage")
+#guard proposedPassage.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Opponent cannot choose Chandra's target.
+#guard
+  match proposedPassage.apply ⟨1⟩
+      (.target (Target.permanent (namedPermanent proposedPassage "Gray Ogre").id)) with
+  | .error msg => mentions msg "may choose targets"
+  | .ok _ => false
+
+-- The heuristic targets Chandra's creature, not Nissa's.
+#guard
+  match Agent.choose proposedPassage ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedPassage.object! tid).name == "Gray Ogre"
+  | _ => false
+
+def targetedPassage : Game :=
+  mustApply proposedPassage ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedPassage "Gray Ogre").id))
+
+#guard targetedPassage.pending == .activateManaAbilities ⟨0⟩
+#guard targetedPassage.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedPassage "Gray Ogre").id]
+#guard targetedPassage.log.any (fun s => mentions s "chooses Gray Ogre as a target")
+
+-- Cannot tap Passage for mana while its {T} is part of the activation cost.
+#guard
+  match targetedPassage.tapForMana ⟨0⟩ (passageSource targetedPassage).id .colorless with
+  | .error msg => mentions msg "needed to pay"
+  | .ok _ => false
+
+-- Opponent cannot pay Chandra's activation.
+#guard
+  match targetedPassage.apply ⟨1⟩ .pay with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
+
+#guard paidPassage.hasPriority ⟨0⟩
+#guard paidPassage.stack.size == 1
+#guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
+#guard !(namedPermanent paidPassage "Gray Ogre").status.untilEotCantBeBlocked
+#guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
+
+def passageResolved : Game := passBoth paidPassage
+
+#guard passageResolved.stack.isEmpty
+#guard (namedPermanent passageResolved "Gray Ogre").status.untilEotCantBeBlocked
+#guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
+#guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
+#guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
+
+-- Targeting an opponent's creature is legal.
+#guard
+  let g := mustApply proposedPassage ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedPassage "Grizzly Bears").id))
+  g.stack.back!.targets ==
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+-- Hexproof makes an opposing creature an illegal target (CR 702.11b).
+#guard
+  let bears := namedPermanent proposedPassage "Grizzly Bears"
+  let g := proposedPassage.setObject { bears with
+    status := { bears.status with untilEotHexproof := true } }
+  match g.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+/-- If the target leaves before the ability resolves, it does nothing. -/
+def passageTargetGone : Game :=
+  let id := (namedPermanent paidPassage "Gray Ogre").id
+  let (g, _) := paidPassage.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard passageTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(passageTargetGone.battlefield.any (fun o => o.name == "Gray Ogre"))
+
+/-- The can't-be-blocked grant wears off in cleanup. -/
+def afterPassageCleanup : Game :=
+  passBoth (skipTo passageResolved .end 80)
+
+#guard !(namedPermanent afterPassageCleanup "Gray Ogre").status.untilEotCantBeBlocked
+#guard !afterPassageCleanup.hasCantBeBlocked
+  (namedPermanent afterPassageCleanup "Gray Ogre")
+
+/-- Gray Ogre attacks after becoming unblockable; Bears cannot block. -/
+def passageOgreAttacking : Game :=
+  let g := passBoth (skipTo passageResolved .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+
+def passageReadyToBlock : Game := passBoth passageOgreAttacking
+
+#guard passageReadyToBlock.pending == .declareBlockers
+#guard !passageReadyToBlock.canBlock
+  (namedPermanent passageReadyToBlock "Grizzly Bears")
+  (namedPermanent passageReadyToBlock "Gray Ogre")
+#guard
+  match passageReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent passageReadyToBlock "Grizzly Bears").id,
+    (namedPermanent passageReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+def passageUnblockedDamage : Game :=
+  passBoth (mustApply passageReadyToBlock ⟨1⟩ (.declareBlockers #[]))
+
+#guard (passageUnblockedDamage.player ⟨1⟩).life == 18
+#guard passageUnblockedDamage.log.any (fun s =>
+  mentions s "Gray Ogre deals 2 combat damage to Nissa")
+#guard !passageUnblockedDamage.log.any (fun s =>
+  mentions s "Grizzly Bears blocks Gray Ogre")
+
+/-- After attackers are declared, the heuristic activates Passage with {4} in the pool. -/
+def passageAfterAttack : Game :=
+  let g := passBoth (skipTo passageReady .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  withRedMana g ⟨0⟩ 4
+
+#guard passageAfterAttack.hasPriority ⟨0⟩
+#guard (namedPermanent passageAfterAttack "Gray Ogre").status.attacking
+#guard
+  match Agent.choose passageAfterAttack ⟨0⟩ with
+  | some (.activate id 0) => id == (passageSource passageAfterAttack).id
+  | _ => false
+
+/-- Three Mountains plus Passage is not enough {4} once Passage must stay untapped. -/
+def passageThreeMountainsAttacking : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addUntappedLand g mountain
+  let g := addUntappedLand g mountain
+  let g := addUntappedLand g mountain
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+
+#guard
+  (passageThreeMountainsAttacking.availableMana ⟨0⟩).canPay (ManaCost.ofGeneric 4)
+#guard
+  !(passageThreeMountainsAttacking.availableManaExcept ⟨0⟩
+    (some (passageSource passageThreeMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
+#guard
+  match Agent.choose passageThreeMountainsAttacking ⟨0⟩ with
+  | some (.activate id 0) => (passageThreeMountainsAttacking.object! id).name != "Rogue's Passage"
+  | _ => true
+
+/-- Four Mountains plus Passage: the heuristic activates and taps Mountains, not Passage. -/
+def passageFourMountainsAttacking : Game :=
+  let g := addUntappedLand passageThreeMountainsAttacking mountain
+  g
+
+#guard
+  (passageFourMountainsAttacking.availableManaExcept ⟨0⟩
+    (some (passageSource passageFourMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
+#guard
+  match Agent.choose passageFourMountainsAttacking ⟨0⟩ with
+  | some (.activate id 0) => id == (passageSource passageFourMountainsAttacking).id
+  | _ => false
+
+def targetedPassageFromLands : Game :=
+  let g := mustApply passageFourMountainsAttacking ⟨0⟩
+    (.activate (passageSource passageFourMountainsAttacking).id 0)
+  mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Gray Ogre").id))
+
+#guard targetedPassageFromLands.pending == .activateManaAbilities ⟨0⟩
+#guard
+  match Agent.choose targetedPassageFromLands ⟨0⟩ with
+  | some (.tapForMana id _) =>
+    (targetedPassageFromLands.object! id).name != "Rogue's Passage"
   | _ => false
 
 end Mtg.Engine.Tests
