@@ -201,10 +201,18 @@ def mountainLine (g : Game) : String :=
 
 #guard mentions (header proposedBolt) "choose targets (CR 601.2c"
 #guard mentions (header targetedBolt) "activate mana abilities (CR 601.2g)"
+#guard pendingCostLine proposedBolt == none
+#guard pendingCostNotation targetedBolt == some "{R}"
+#guard pendingCostLine targetedBolt == some "Cost: {R}"
+#guard mentions (header targetedBolt) "cost {R}"
+#guard mentions (snapshot targetedBolt) "Cost: {R}"
+#guard pendingCostLine tappedForBolt == some "Cost: {R}"
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard mentions (stackBlock proposedBolt) "deals 3 damage"
 #guard !mentions (header paidBolt) "activate mana abilities"
+#guard pendingCostLine paidBolt == none
+#guard !mentions (snapshot paidBolt) "Cost: {R}"
 
 -- The demo names the attacker a blocker is assigned to (CR 509.1a).
 #guard
@@ -258,6 +266,12 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones baubleReady proposedBauble).contains .stack
 #guard mentions (stackBlock proposedBauble) "Search your library"
 #guard mentions (zoneBlock proposedBauble .stack) "Search your library"
+#guard pendingCostNotation proposedBauble == some "{2}, {T}, Sacrifice"
+#guard pendingCostLine proposedBauble == some "Cost: {2}, {T}, Sacrifice"
+#guard mentions (header proposedBauble) "cost {2}, {T}, Sacrifice"
+#guard mentions (snapshot proposedBauble) "Cost: {2}, {T}, Sacrifice"
+#guard pendingCostLine tappedTwiceForBauble == some "Cost: {2}, {T}, Sacrifice"
+#guard pendingCostLine paidBauble == none
 
 /- Stacked abilities from a multi-ability card omit sibling Oracle lines. -/
 #guard
@@ -292,6 +306,10 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones paidBauble resolvedBauble).contains (.library ⟨0⟩)
 
 #guard mentions (header paidHunter) "sacrifice a creature or artifact"
+#guard pendingCostNotation proposedHunter == some "Sacrifice another creature or artifact"
+#guard pendingCostLine proposedHunter == some "Cost: Sacrifice another creature or artifact"
+#guard mentions (header proposedHunter) "cost Sacrifice another creature or artifact"
+#guard pendingCostLine paidHunter == none
 #guard (changedZones hunterReady activatedHunter).contains .stack
 #guard (changedZones hunterReady activatedHunter).contains .battlefield
 #guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
@@ -609,6 +627,9 @@ def mountainLine (g : Game) : String :=
 
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
+#guard pendingCostNotation cratermakerTargeted == some "{1}, Sacrifice"
+#guard pendingCostLine cratermakerTargeted == some "Cost: {1}, Sacrifice"
+#guard mentions (header cratermakerTargeted) "cost {1}, Sacrifice"
 #guard (changedZones cratermakerTargeted paidCratermaker).contains .battlefield
 #guard (changedZones cratermakerTargeted paidCratermaker).contains (.graveyard ⟨0⟩)
 #guard (changedZones paidCratermaker resolvedCratermaker).contains (.graveyard ⟨1⟩)
@@ -635,6 +656,12 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g bears) "+1/+1×1" &&
     !mentions (objectLine g bears) "hexproof" &&
     !mentions (objectLine g bears) "trample"
+
+#guard pendingCostNotation proposedHospitalityAnimate == some "{5}{G}{G}"
+#guard pendingCostLine proposedHospitalityAnimate == some "Cost: {5}{G}{G}"
+#guard mentions (header proposedHospitalityAnimate) "cost {5}{G}{G}"
+#guard pendingCostNotation targetedEquip == some "{3}"
+#guard pendingCostLine targetedEquip == some "Cost: {3}"
 
 #guard mentions (header hospitalityLandPlayed) "choose targets (CR 601.2c"
 #guard mentions (stackBlock hospitalityLandPlayed) "Beorn's Hospitality's ability"
