@@ -1917,6 +1917,17 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.attercopLandPlayed "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.power (Tests.namedPermanent g' "Attercop") == 3 &&
+        g'.toughness (Tests.namedPermanent g' "Attercop") == 2 &&
+        g'.log.any (fun s => Tests.mentions s "Attercop gets +1/+1 until end of turn")
+    | .error _ => false
+  | .error _ => false
+
+#guard
   match applyInteractiveAsActor Tests.weavemasterAttackDeclared "pass" [] with
   | .ok g' =>
     !(Tests.namedPermanent g' "Woodland Weavemaster").status.tapped &&

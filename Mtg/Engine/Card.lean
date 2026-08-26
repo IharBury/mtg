@@ -333,6 +333,9 @@ inductive TriggeredAbility where
   /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
   target creature you control (e.g. Beorn's Hospitality). -/
   | onLandYouControlEntersPlusOnePlusOne
+  /-- Landfall — Whenever a land you control enters, this creature gets +1/+1
+  until end of turn (e.g. Attercop). -/
+  | onLandYouControlEntersGets1
   /-- When this permanent enters, it deals `amount` damage divided as you
   choose among one to `maxTargets` targets (e.g. Gandalf, Spark Starter). -/
   | onEnterDealDividedDamage (amount maxTargets : Nat)
@@ -390,6 +393,8 @@ def toNotation : TriggeredAbility → String
     s!"When this permanent enters, you may discard a card. If you do, draw {cards}."
   | .onLandYouControlEntersPlusOnePlusOne =>
     "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
+  | .onLandYouControlEntersGets1 =>
+    "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
   | .onEnterDealDividedDamage amount maxTargets =>
     s!"When this permanent enters, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
@@ -418,7 +423,8 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => none
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
@@ -429,7 +435,8 @@ def triggersWhenAttacking : TriggeredAbility → Bool
   | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked : TriggeredAbility → Bool
@@ -441,7 +448,8 @@ def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
@@ -452,12 +460,13 @@ def triggersWhenEntering : TriggeredAbility → Bool
   | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
 def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
-  | .onLandYouControlEntersPlusOnePlusOne => true
+  | .onLandYouControlEntersPlusOnePlusOne | .onLandYouControlEntersGets1 => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
@@ -475,7 +484,8 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
 def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
@@ -486,7 +496,8 @@ def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger once when you attack with one or more Elves
 (CR 508.2 / 603.2a). Not the same as “whenever this creature attacks”. -/
@@ -498,7 +509,7 @@ def triggersWhenYouAttackWithElves : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onScryPumpSelfForEachLookedAt
-  | .onAnotherElfYouControlEntersGets1 => false
+  | .onAnotherElfYouControlEntersGets1 | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger when you scry (CR 701.20 / 603.2). -/
 def triggersWhenYouScry : TriggeredAbility → Bool
@@ -509,7 +520,7 @@ def triggersWhenYouScry : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onAnotherElfYouControlEntersGets1 => false
+  | .onAnotherElfYouControlEntersGets1 | .onLandYouControlEntersGets1 => false
 
 /-- True for abilities that trigger when another Elf the controller controls
 enters (CR 603.6a). Does not trigger from this permanent entering. -/
@@ -521,7 +532,7 @@ def triggersWhenAnotherElfYouControlEnters : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt => false
+  | .onScryPumpSelfForEachLookedAt | .onLandYouControlEntersGets1 => false
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
@@ -533,7 +544,8 @@ def requiresTarget : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
   | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
@@ -545,7 +557,8 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
   | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1
+  | .onLandYouControlEntersGets1 => false
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -878,6 +891,8 @@ instance : ToString CardDef where
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
+#guard TriggeredAbility.toNotation .onLandYouControlEntersGets1 ==
+  "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation (.onEnterOrAttackDealDividedDamage 3 3) ==
@@ -897,7 +912,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
-#guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
+#guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersPlusOnePlusOne).isNone
+#guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersGets1).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
@@ -949,8 +965,10 @@ instance : ToString CardDef where
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
 #guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersPlusOnePlusOne
+#guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersGets1
 #guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.requiresTarget .onLandYouControlEntersGets1
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
@@ -961,6 +979,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.allowsZeroTargets .onAttackOtherGets2AndTrample
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
+#guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
