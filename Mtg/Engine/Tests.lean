@@ -277,6 +277,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
+#guard mentions raggedShortSpear.summary "Equipped creature"
+#guard mentions raggedShortSpear.summary "Equip"
+#guard raggedShortSpear.isEquipment
+#guard raggedShortSpear.staticAbilities.size == 1
+#guard raggedShortSpear.triggeredAbilities.size == 1
+#guard raggedShortSpear.activatedAbilities.size == 1
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
@@ -346,6 +352,24 @@ def uncontrolledPermanent : Game :=
 
 #guard
   let c : CardDef := {
+    name := "Silent Spear"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[.equippedCreatureGets 2 0]
+    triggeredAbilities := #[.onEnterMayDiscardDraw 2]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 3 }
+      effect := .attachToTargetCreatureYouControl
+      onlyAsSorcery := true
+    }]
+  }
+  mentions c.abilitiesText "Equipped creature gets +2/+0" &&
+    mentions c.abilitiesText "you may discard a card" &&
+    mentions c.abilitiesText "Attach this Equipment" &&
+    mentions c.abilitiesText "activate only as a sorcery"
+
+#guard
+  let c : CardDef := {
     name := "Silent Hospitality"
     types := #[.enchantment]
     triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne]
@@ -392,6 +416,10 @@ def applyIdle (g : Game) : Game :=
     | .error e => panic! e
   | .scry _ n, some p =>
     match g.apply p (.scry (g.scryLookedIds p n) #[]) with
+    | .ok g' => g'
+    | .error e => panic! e
+  | .mayDiscardDraw _ _, some p =>
+    match g.apply p .decline with
     | .ok g' => g'
     | .error e => panic! e
   | .chooseMode _, some p =>
@@ -1776,6 +1804,10 @@ def afterSiegeGoblinElves : Game :=
 def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
   g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .green) n })
 
+/-- Fill `p`'s mana pool with `n` red mana. -/
+def withRedMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
+  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .red) n })
+
 /-- Put `aura` onto the battlefield already attached to `host`. -/
 def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
     (owner controller : PlayerId) : Game :=
@@ -2849,6 +2881,312 @@ def agentWargPumpOnly : Game :=
 #guard
   match Agent.choose agentWargPumpOnly ⟨0⟩ with
   | some (.cast id) => (agentWargPumpOnly.object! id).name == "Warg Tactics"
+  | _ => false
+
+/-- Ragged Short Spear in hand, Grizzly Bears on the battlefield, enough mana. -/
+def spearSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
+
+#guard spearSetup.canCast ⟨0⟩ (handCardNamed spearSetup ⟨0⟩ "Ragged Short Spear")
+#guard spearSetup.asSorcery? ⟨0⟩
+#guard !raggedShortSpear.requiresTarget
+#guard raggedShortSpear.isEquipment
+
+/-- Equipment is cast without announcing a creature (CR 301.5b). -/
+def proposedSpear : Game :=
+  mustApply spearSetup ⟨0⟩ (.cast (handCardNamed spearSetup ⟨0⟩ "Ragged Short Spear").id)
+
+#guard proposedSpear.pending == .activateManaAbilities ⟨0⟩
+#guard proposedSpear.stack.back!.targets.isEmpty
+#guard proposedSpear.log.any (fun s => mentions s "begins casting Ragged Short Spear")
+
+def paidSpear : Game := mustApply proposedSpear ⟨0⟩ .pay
+
+#guard paidSpear.stack.size == 1
+#guard paidSpear.hasPriority ⟨0⟩
+
+/-- The Equipment enters unattached; the discard trigger waits on the stack. -/
+def spearEntered : Game := passBoth paidSpear
+
+#guard (namedPermanent spearEntered "Ragged Short Spear").attachedTo.isNone
+#guard spearEntered.power (namedPermanent spearEntered "Grizzly Bears") == 2
+#guard spearEntered.stack.size == 1
+#guard spearEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard spearEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+def spearMayDiscard : Game := passBoth spearEntered
+
+#guard
+  match spearMayDiscard.pending with
+  | .mayDiscardDraw ⟨0⟩ 2 => true
+  | _ => false
+#guard spearMayDiscard.actor == some ⟨0⟩
+#guard !spearMayDiscard.hasPriority ⟨0⟩
+#guard spearMayDiscard.log.any (fun s => mentions s "may discard a card")
+#guard spearMayDiscard.stack.isEmpty
+
+/-- Declining the optional discard draws nothing. -/
+def spearDeclined : Game := mustApply spearMayDiscard ⟨0⟩ .decline
+
+#guard spearDeclined.pending == .none
+#guard spearDeclined.hasPriority ⟨0⟩
+#guard spearDeclined.log.any (fun s => mentions s "declines to discard")
+#guard (spearDeclined.player ⟨0⟩).hand.size == (spearMayDiscard.player ⟨0⟩).hand.size
+#guard (spearDeclined.player ⟨0⟩).library.size == (spearMayDiscard.player ⟨0⟩).library.size
+
+-- The opponent cannot discard or decline for Chandra.
+#guard
+  match spearMayDiscard.apply ⟨1⟩ .decline with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+#guard
+  match spearMayDiscard.apply ⟨1⟩
+      (.discard (spearMayDiscard.player ⟨0⟩).hand.back!) with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+-- Discarding a card that is not in hand is illegal.
+#guard
+  match spearMayDiscard.apply ⟨0⟩
+      (.discard (namedPermanent spearMayDiscard "Grizzly Bears").id) with
+  | .error msg => mentions msg "not in your hand"
+  | .ok _ => false
+
+/-- Discard a known extra card, then draw the two known library tops. -/
+def spearKnownLib : Game :=
+  let g := addToHand spearEntered forest ⟨0⟩
+  addToLibraryTop (addToLibraryTop g forest ⟨0⟩) llanowarElves ⟨0⟩
+
+def spearKnownMayDiscard : Game := passBoth spearKnownLib
+
+def spearDiscardedForest : Game :=
+  mustApply spearKnownMayDiscard ⟨0⟩
+    (.discard (handCardNamed spearKnownMayDiscard ⟨0⟩ "Forest").id)
+
+#guard spearDiscardedForest.pending == .none
+#guard spearDiscardedForest.hasPriority ⟨0⟩
+#guard spearDiscardedForest.log.any (fun s => mentions s "discards Forest")
+#guard spearDiscardedForest.log.any (fun s => mentions s "draws Llanowar Elves")
+#guard spearDiscardedForest.log.any (fun s => mentions s "draws Forest")
+#guard (spearDiscardedForest.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard (spearDiscardedForest.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+#guard (spearDiscardedForest.player ⟨0⟩).graveyard.any (fun id =>
+  (spearDiscardedForest.object! id).name == "Forest")
+#guard (spearDiscardedForest.player ⟨0⟩).hand.size ==
+  (spearKnownMayDiscard.player ⟨0⟩).hand.size + 1
+
+-- The heuristic discards the last card in hand.
+#guard
+  match Agent.choose spearKnownMayDiscard ⟨0⟩ with
+  | some (.discard id) => id == (spearKnownMayDiscard.player ⟨0⟩).hand.back!
+  | _ => false
+
+/-- An empty hand skips the optional discard; no draw. -/
+def spearEmptyHand : Game :=
+  let g := { spearEntered with pending := .none, stack := #[] }
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[] })
+  g.beginMayDiscardDraw ⟨0⟩ 2
+
+#guard spearEmptyHand.pending == .none
+#guard spearEmptyHand.log.any (fun s => mentions s "has no card to discard")
+
+/-- Equip {3} with a creature you control and enough mana. -/
+def spearReadyToEquip : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withRedMana g ⟨0⟩ 3
+
+def spearEquipAbility : ActivatedAbility :=
+  raggedShortSpear.activatedAbilities[0]!
+
+#guard spearReadyToEquip.canActivate ⟨0⟩
+  (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility
+#guard !(spearReadyToEquip.canActivate ⟨1⟩
+  (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility)
+#guard spearEquipAbility.onlyAsSorcery
+#guard spearEquipAbility.effect.requiresTarget
+
+-- Cannot Equip with no creature you control.
+#guard
+  let g := addPermanent afterDraw raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
+
+-- Cannot Equip an opponent's creature: Equip needs a creature you control.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Ragged Short Spear").id 0)
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Gray Ogre").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- Equip is sorcery-speed only (CR 702.6a).
+#guard
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  !g.asSorcery? ⟨0⟩ &&
+    !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
+
+-- The heuristic Equips when {3} is available and a creature is controlled.
+#guard
+  match Agent.choose spearReadyToEquip ⟨0⟩ with
+  | some (.activate id 0) =>
+    (spearReadyToEquip.object! id).name == "Ragged Short Spear"
+  | _ => false
+
+def proposedEquip : Game :=
+  mustApply spearReadyToEquip ⟨0⟩
+    (.activate (namedPermanent spearReadyToEquip "Ragged Short Spear").id 0)
+
+#guard
+  match proposedEquip.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard proposedEquip.log.any (fun s => mentions s "begins activating Ragged Short Spear")
+#guard proposedEquip.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- The heuristic targets Chandra's creature.
+#guard
+  match Agent.choose proposedEquip ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedEquip.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def targetedEquip : Game :=
+  mustApply proposedEquip ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedEquip "Grizzly Bears").id))
+
+#guard targetedEquip.pending == .activateManaAbilities ⟨0⟩
+#guard targetedEquip.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedEquip "Grizzly Bears").id]
+
+def paidEquip : Game := mustApply targetedEquip ⟨0⟩ .pay
+
+#guard paidEquip.pending == .none
+#guard paidEquip.hasPriority ⟨0⟩
+#guard (namedPermanent paidEquip "Ragged Short Spear").attachedTo.isNone
+#guard paidEquip.log.any (fun s => mentions s "activates Ragged Short Spear")
+
+def spearEquipped : Game := passBoth paidEquip
+
+#guard (namedPermanent spearEquipped "Ragged Short Spear").attachedTo ==
+  some (namedPermanent spearEquipped "Grizzly Bears").id
+#guard spearEquipped.power (namedPermanent spearEquipped "Grizzly Bears") == 4
+#guard spearEquipped.toughness (namedPermanent spearEquipped "Grizzly Bears") == 2
+#guard (namedPermanent spearEquipped "Grizzly Bears").power == 2
+#guard spearEquipped.log.any (fun s => mentions s "attaches to Grizzly Bears")
+
+-- The heuristic does not re-equip a creature that is already equipped.
+#guard
+  let g := withRedMana spearEquipped ⟨0⟩ 3
+  match Agent.choose g ⟨0⟩ with
+  | some (.activate id 0) => (g.object! id).name != "Ragged Short Spear"
+  | some .pass => true
+  | some (.cast _) => true
+  | _ => true
+
+/-- The +2/+0 is a continuous effect, so it does not wear off in cleanup. -/
+def afterSpearCleanup : Game := passBoth (skipTo spearEquipped .end 80)
+
+#guard afterSpearCleanup.power (namedPermanent afterSpearCleanup "Grizzly Bears") == 4
+#guard (namedPermanent afterSpearCleanup "Grizzly Bears").status.pumpPower == 0
+
+/-- If the target leaves before Equip resolves, the ability does nothing. -/
+def equipTargetGone : Game :=
+  let id := (namedPermanent paidEquip "Grizzly Bears").id
+  let (g, _) := paidEquip.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (namedPermanent equipTargetGone "Ragged Short Spear").attachedTo.isNone
+#guard equipTargetGone.log.any (fun s => mentions s "no longer in play")
+
+/-- If the equipped creature leaves, the Equipment becomes unattached and stays
+on the battlefield (CR 301.5c / 704.5n). -/
+def afterEquippedHostLeaves : Game :=
+  let id := (namedPermanent spearEquipped "Grizzly Bears").id
+  let (g, _) := spearEquipped.move id (.graveyard ⟨0⟩) none
+  g.checkSBA
+
+#guard afterEquippedHostLeaves.log.any (fun s => mentions s "becomes unattached")
+#guard afterEquippedHostLeaves.battlefield.any (fun o => o.name == "Ragged Short Spear")
+#guard (namedPermanent afterEquippedHostLeaves "Ragged Short Spear").attachedTo.isNone
+#guard !(afterEquippedHostLeaves.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard !(afterEquippedHostLeaves.log.any (fun s =>
+  mentions s "Ragged Short Spear is put into its owner's graveyard"))
+
+/-- Combat uses the equipped power. -/
+def afterEquippedCombat : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g raggedShortSpear (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  passBoth g
+
+#guard afterEquippedCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 4 combat damage to Nissa")
+#guard (afterEquippedCombat.player ⟨1⟩).life == 16
+
+/-- Move Equip from one creature to another. -/
+def spearTwoCreatures : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  withRedMana g ⟨0⟩ 3
+
+def spearMovedToOgre : Game :=
+  let g := mustApply spearTwoCreatures ⟨0⟩
+    (.activate (namedPermanent spearTwoCreatures "Ragged Short Spear").id 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Ragged Short Spear").id 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Gray Ogre").id))
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard spearMovedToOgre.power (namedPermanent spearMovedToOgre "Grizzly Bears") == 2
+#guard spearMovedToOgre.power (namedPermanent spearMovedToOgre "Gray Ogre") == 4
+#guard (namedPermanent spearMovedToOgre "Ragged Short Spear").attachedTo ==
+  some (namedPermanent spearMovedToOgre "Gray Ogre").id
+
+/-- Illegally attached Equipment becomes unattached and stays (CR 704.5n). -/
+def spearOnMountain : Game :=
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  addAttachedAura g raggedShortSpear (namedPermanent g "Mountain") ⟨0⟩ ⟨0⟩
+
+def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
+
+#guard spearUnattachedFromLand.log.any (fun s => mentions s "704.5n")
+#guard (namedPermanent spearUnattachedFromLand "Ragged Short Spear").attachedTo.isNone
+#guard spearUnattachedFromLand.battlefield.any (fun o => o.name == "Ragged Short Spear")
+
+/-- The agent casts Ragged Short Spear when that is the playable spell. -/
+def agentSpearOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentSpearOnly ⟨0⟩ with
+  | some (.cast id) => (agentSpearOnly.object! id).name == "Ragged Short Spear"
   | _ => false
 
 /- Beorn's Hospitality: landfall +1/+1 and lasting Bear animation. -/

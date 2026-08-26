@@ -113,7 +113,11 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
   let ench :=
     match o.attachedTo with
     | none => ""
-    | some hostId => s!" *enchanting {objectRef g hostId}*"
+    | some hostId =>
+      if o.printed.isEquipment then
+        s!" *equipping {objectRef g hostId}*"
+      else
+        s!" *enchanting {objectRef g hostId}*"
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
   let counters :=
@@ -267,6 +271,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [mulligan: {g.player p |>.name} puts {cards} on the bottom (CR 103.5)]"
     | .scry p n =>
       s!" [scry {n} ({g.player p |>.name})]"
+    | .mayDiscardDraw p n =>
+      s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
     | .assignCombatDamage p true =>
       s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
     | .assignCombatDamage p false =>
