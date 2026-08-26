@@ -272,6 +272,13 @@ def toNotation : StaticAbility → String
 instance : ToString StaticAbility where
   toString := toNotation
 
+/-- Continuous +P/+T this ability grants its enchanted or equipped host
+(CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
+def hostStatBonus : StaticAbility → Int × Int
+  | .enchantedCreatureGets p t | .equippedCreatureGets p t => (p, t)
+  | .otherCreaturesHaveTrample _ | .otherCreaturesGet _ _ _
+  | .powerToughnessEqualLandsYouControl | .cantBlockUnlessYouControl _ => (0, 0)
+
 end StaticAbility
 
 /-- A `{T}: Add {M} for each [subtype] you control` mana ability (CR 106.4 / 605). -/
@@ -394,145 +401,110 @@ def toNotation : TriggeredAbility → String
   | .onAnotherElfYouControlEntersGets1 =>
     "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn."
 
+/-- When a triggered ability fires, whether it needs a target, and optional
+divided-damage parameters (CR 603 / 601.2d). Adding a constructor only requires
+updating `timing` (plus `toNotation`) instead of nine parallel match trees. -/
+structure TriggerTiming where
+  whenAttacking : Bool := false
+  whenBecomesBlocked : Bool := false
+  whenEntering : Bool := false
+  whenLandYouControlEnters : Bool := false
+  whenDying : Bool := false
+  whenYouCastInstantOrSorcery : Bool := false
+  whenYouAttackWithElves : Bool := false
+  whenYouScry : Bool := false
+  whenAnotherElfYouControlEnters : Bool := false
+  requiresTarget : Bool := false
+  /-- Zero targets is a legal announcement (CR 115.1c / 601.2c), e.g. “up to one”. -/
+  allowsZeroTargets : Bool := false
+  /-- Damage amount and maximum number of targets when this ability divides
+  damage as the controller chooses (CR 601.2d). -/
+  dividedDamage : Option (Nat × Nat) := none
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this triggered ability. Exhaustive so a new constructor
+is a compile error here rather than silently matching `false` elsewhere. -/
+def timing : TriggeredAbility → TriggerTiming
+  | .onAttackPumpByGreatestPower => { whenAttacking := true }
+  | .onAttackSetOtherBasePT =>
+    { whenAttacking := true, requiresTarget := true, allowsZeroTargets := true }
+  | .onAttackOtherGets2AndTrample => { whenAttacking := true, requiresTarget := true }
+  | .onAttackScry _ => { whenAttacking := true }
+  | .onBecomesBlockedDeal1ToBlockers => { whenBecomesBlocked := true }
+  | .onEnterScry _ => { whenEntering := true }
+  | .onEnterDraw _ => { whenEntering := true }
+  | .onEnterSearchForest => { whenEntering := true }
+  | .onEnterMayDiscardDraw _ => { whenEntering := true }
+  | .onLandYouControlEntersPlusOnePlusOne =>
+    { whenLandYouControlEnters := true, requiresTarget := true }
+  | .onEnterDealDividedDamage amount maxTargets =>
+    { whenEntering := true, requiresTarget := true, dividedDamage := some (amount, maxTargets) }
+  | .onEnterOrAttackDealDividedDamage amount maxTargets =>
+    { whenAttacking := true, whenEntering := true, requiresTarget := true,
+      dividedDamage := some (amount, maxTargets) }
+  | .onEnterOrAttackReturnElfGainLife =>
+    { whenAttacking := true, whenEntering := true, requiresTarget := true }
+  | .onDiesDealDamageEqualToPowerToOppCreature =>
+    { whenDying := true, requiresTarget := true }
+  | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
+    { whenYouCastInstantOrSorcery := true }
+  | .onAttackWithElvesScry _ => { whenYouAttackWithElves := true }
+  | .onScryPumpSelfForEachLookedAt => { whenYouScry := true }
+  | .onAnotherElfYouControlEntersGets1 => { whenAnotherElfYouControlEnters := true }
+
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
-def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
-  | .onEnterDealDividedDamage amount maxTargets
-  | .onEnterOrAttackDealDividedDamage amount maxTargets => some (amount, maxTargets)
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
-  | .onLandYouControlEntersPlusOnePlusOne | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => none
+def dividedDamage? (ab : TriggeredAbility) : Option (Nat × Nat) :=
+  ab.timing.dividedDamage
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
-def triggersWhenAttacking : TriggeredAbility → Bool
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample | .onAttackScry _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife => true
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenAttacking (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenAttacking
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
-def triggersWhenBecomesBlocked : TriggeredAbility → Bool
-  | .onBecomesBlockedDeal1ToBlockers => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest
-  | .onEnterMayDiscardDraw _
-  | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenBecomesBlocked (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenBecomesBlocked
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
-def triggersWhenEntering : TriggeredAbility → Bool
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
-  | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenEntering (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenEntering
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
-def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
-  | .onLandYouControlEntersPlusOnePlusOne => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenLandYouControlEnters (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenLandYouControlEnters
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
-def triggersWhenDying : TriggeredAbility → Bool
-  | .onDiesDealDamageEqualToPowerToOppCreature => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenDying (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenDying
 
 /-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
-def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenYouCastInstantOrSorcery (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenYouCastInstantOrSorcery
 
 /-- True for abilities that trigger once when you attack with one or more Elves
 (CR 508.2 / 603.2a). Not the same as “whenever this creature attacks”. -/
-def triggersWhenYouAttackWithElves : TriggeredAbility → Bool
-  | .onAttackWithElvesScry _ => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onScryPumpSelfForEachLookedAt
-  | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenYouAttackWithElves (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenYouAttackWithElves
 
 /-- True for abilities that trigger when you scry (CR 701.20 / 603.2). -/
-def triggersWhenYouScry : TriggeredAbility → Bool
-  | .onScryPumpSelfForEachLookedAt => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onAnotherElfYouControlEntersGets1 => false
+def triggersWhenYouScry (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenYouScry
 
 /-- True for abilities that trigger when another Elf the controller controls
 enters (CR 603.6a). Does not trigger from this permanent entering. -/
-def triggersWhenAnotherElfYouControlEnters : TriggeredAbility → Bool
-  | .onAnotherElfYouControlEntersGets1 => true
-  | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
-  | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt => false
+def triggersWhenAnotherElfYouControlEnters (ab : TriggeredAbility) : Bool :=
+  ab.timing.whenAnotherElfYouControlEnters
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
-def requiresTarget : TriggeredAbility → Bool
-  | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
-  | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample => true
-  | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def requiresTarget (ab : TriggeredAbility) : Bool :=
+  ab.timing.requiresTarget
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
-def allowsZeroTargets : TriggeredAbility → Bool
-  | .onAttackSetOtherBasePT => true
-  | .onAttackPumpByGreatestPower | .onAttackOtherGets2AndTrample | .onAttackScry _
-  | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
-  | .onEnterSearchForest | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
-  | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 => false
+def allowsZeroTargets (ab : TriggeredAbility) : Bool :=
+  ab.timing.allowsZeroTargets
 
 instance : ToString TriggeredAbility where
   toString := toNotation

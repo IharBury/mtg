@@ -167,20 +167,26 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 #guard (drawnOnce.player ⟨0⟩).library.size == 52
 #guard (drawnOnce.player ⟨1⟩).hand.size == 7
 
-/-- Put `card` onto the battlefield with explicit owner and controller. -/
-def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
+/-- Put `card` into the game as a new object and optionally update its owner. -/
+def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
+    (controller : Option PlayerId := none) (status : Status := {})
+    (updateOwner : ObjectId → Player → Player := fun _ pl => pl) : Game :=
   let (g, id) := g.allocId
   let (g, ts) := g.bumpTime
   let obj : GameObject := {
     id := id
     printed := card
     owner := owner
-    controller := some controller
-    zone := .battlefield
-    status := { summoningSick := false }
+    controller := controller
+    zone := zone
+    status := status
     timestamp := ts
   }
-  { g with objects := g.objects.push obj }
+  { g with objects := g.objects.push obj }.modifyPlayer owner (updateOwner id)
+
+/-- Put `card` onto the battlefield with explicit owner and controller. -/
+def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
+  insertObject g card owner .battlefield (some controller) { summoningSick := false }
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/
 def addUntappedLand (g : Game) (card : CardDef) : Game :=
@@ -678,33 +684,26 @@ def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
 def withCrusher : Game := addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩
 
+def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
+  match g.apply p a with
+  | .ok g' => g'
+  | .error e => panic! e
+
 /-- Apply the idle action for whoever must act: empty combat declarations or pass. -/
 def applyIdle (g : Game) : Game :=
   match g.pending, g.actor with
   | .declareAttackers, some p =>
-    match g.apply p (.declareAttackers #[]) with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p (.declareAttackers #[])
   | .declareBlockers, some p =>
-    match g.apply p (.declareBlockers #[]) with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p (.declareBlockers #[])
   | .declareMulligan _, some p =>
-    match g.apply p .keep with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p .keep
   | .putOnBottom _ n, some p =>
-    match g.apply p (.putOnBottom ((g.player p).hand.extract 0 n)) with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p (.putOnBottom ((g.player p).hand.extract 0 n))
   | .scry _ n, some p =>
-    match g.apply p (.scry (g.scryLookedIds p n) #[]) with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p (.scry (g.scryLookedIds p n) #[])
   | .mayDiscardDraw _ _, some p =>
-    match g.apply p .decline with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p .decline
   | .chooseMode _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell or ability while choosing a mode"
@@ -713,46 +712,30 @@ def applyIdle (g : Game) : Game :=
       | .activatedAbility =>
         match g.defaultAbilityMode p prop.abilityModes with
         | none => panic! "no legal mode (CR 601.2b)"
-        | some idx =>
-          match g.apply p (.chooseMode idx) with
-          | .ok g' => g'
-          | .error e => panic! e
+        | some idx => mustApply g p (.chooseMode idx)
       | .spell =>
         match g.findObject? prop.spellId with
         | none => panic! "expected a proposed spell while choosing a mode"
         | some spell =>
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
-          | some i =>
-            match g.apply p (.chooseMode i) with
-            | .ok g' => g'
-            | .error e => panic! e
+          | some i => mustApply g p (.chooseMode i)
   | .assignCombatDamage _ _, some p =>
-    match g.apply p (.assignCombatDamage #[]) with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p (.assignCombatDamage #[])
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
     | some spell =>
       match g.defaultTarget p spell with
-      | some t =>
-        match g.apply p (.target t) with
-        | .ok g' => g'
-        | .error e => panic! e
+      | some t => mustApply g p (.target t)
       | none =>
         match spell.triggeredAbility with
         | some ab =>
-          if ab.allowsZeroTargets then
-            match g.apply p .decline with
-            | .ok g' => g'
-            | .error e => panic! e
+          if ab.allowsZeroTargets then mustApply g p .decline
           else panic! "no legal target (CR 601.2c)"
         | none => panic! "no legal target (CR 601.2c)"
   | _, some p =>
-    match g.apply p .pass with
-    | .ok g' => g'
-    | .error e => panic! e
+    mustApply g p .pass
   | _, none => panic! s!"no actor at {g.step}"
 
 /-- Advance by idle actions until `g` is in `st` with no pending choice. -/
@@ -777,18 +760,8 @@ def zeroZero : CardDef := {
 }
 
 def addPumpedCreature (g : Game) (card : CardDef) (pumpP pumpT : Int) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := card
-    owner := g.activePlayer
-    controller := some g.activePlayer
-    zone := .battlefield
-    status := { pumpPower := pumpP, pumpToughness := pumpT, summoningSick := false }
-    timestamp := ts
-  }
-  { g with objects := g.objects.push obj }
+  insertObject g card g.activePlayer .battlefield (some g.activePlayer)
+    { pumpPower := pumpP, pumpToughness := pumpT, summoningSick := false }
 
 /-- CR 514.3: after both players pass in the end step, cleanup does not grant
 priority, so the next player's upkeep begins immediately. -/
@@ -886,50 +859,17 @@ def afterCombatDamage : Game := attackingGoblin.combatDamage
 
 /-- Put `card` into `p`'s hand without drawing. -/
 def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := card
-    owner := p
-    zone := .hand p
-    timestamp := ts
-  }
-  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
-    { pl with hand := pl.hand.push id })
+  insertObject g card p (.hand p) none {} (fun id pl => { pl with hand := pl.hand.push id })
 
 /-- Put `card` into `p`'s graveyard. -/
 def addToGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := card
-    owner := p
-    zone := .graveyard p
-    timestamp := ts
-  }
-  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
+  insertObject g card p (.graveyard p) none {} (fun id pl =>
     { pl with graveyard := pl.graveyard.push id })
 
 /-- Put `card` on top of `p`'s library (the back of the library array). -/
 def addToLibraryTop (g : Game) (card : CardDef) (p : PlayerId) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := card
-    owner := p
-    zone := .library p
-    timestamp := ts
-  }
-  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
+  insertObject g card p (.library p) none {} (fun id pl =>
     { pl with library := pl.library.push id })
-
-def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
-  match g.apply p a with
-  | .ok g' => g'
-  | .error e => panic! e
 
 /-- Propose a spell (CR 601.2a) and announce its target (CR 601.2c). -/
 def proposeTargeted (g : Game) (p : PlayerId) (id : ObjectId) (t : Target) : Game :=
