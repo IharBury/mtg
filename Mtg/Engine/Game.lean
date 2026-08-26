@@ -29,10 +29,12 @@ discard (CR 701.9), destroy (CR 701.8), +1/+1 counters (CR 122), until-end-of-tu
 keyword grants, attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
-(CR 509.5c / 603), enters triggers (CR 603.6a), including damage divided as
-you choose when a creature enters or attacks (CR 601.2d) and returning an Elf
-card from your graveyard to gain life equal to its power (CR 701.19 / 118.2),
-another-Elf-enters pumps (CR 603.6a), landfall triggers that target (CR 603.3d / 601.2c),
+(CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
+for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
+discard-to-draw, damage divided as you choose when a creature enters or
+attacks (CR 601.2d), and returning an Elf card from your graveyard to gain
+life equal to its power (CR 701.19 / 118.2), another-Elf-enters pumps
+(CR 603.6a), landfall triggers that target (CR 603.3d / 601.2c),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a),
 cast triggers that deal damage to each opponent when you cast an instant or
 sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
@@ -1051,7 +1053,7 @@ def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     g.legalCreatureTargets p (fun o => o.controlledBy (g.opponent p))
   | .onAttackPumpByGreatestPower | .onAttackScry _ | .onBecomesBlockedDeal1ToBlockers
-  | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
+  | .onEnterScry _ | .onEnterDraw _ | .onEnterSearchForest | .onEnterMayDiscardDraw _
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ | .onAttackWithElvesScry _
   | .onScryPumpSelfForEachLookedAt | .onAnotherElfYouControlEntersGets1 =>
     #[]
@@ -2156,28 +2158,40 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | _, _ => g
 
-/-- Search `p`'s library for a basic land card, put it onto the battlefield
-tapped, then shuffle (CR 701.19). Picks the first matching card in library
-order (bottom first). -/
-def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
+/-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
+(tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
+in library order (bottom first). -/
+def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
+    (tapped : Bool) (kind : String) : Game :=
   let pl := g.player p
   let found := pl.library.find? (fun id =>
     match g.findObject? id with
-    | some o => isBasicLandCard o.printed
+    | some o => pred o.printed
     | none => false)
   let g :=
     match found with
     | none =>
-      g.logMsg s!"{pl.name} searches their library and finds no basic land card"
+      g.logMsg s!"{pl.name} searches their library and finds no {kind}"
     | some landId =>
       let landName := (g.object! landId).name
       let (g, newId) := g.move landId .battlefield (some p)
       let o := g.object! newId
       let g := g.setObject { o with
-        status := { o.status with tapped := true, summoningSick := false } }
-      let g := g.logMsg s!"{pl.name} puts {landName} onto the battlefield tapped"
+        status := { o.status with tapped := tapped, summoningSick := false } }
+      let suffix := if tapped then " tapped" else ""
+      let g := g.logMsg s!"{pl.name} puts {landName} onto the battlefield{suffix}"
       g.afterLandEnters (g.object! newId)
   g.shuffleLibrary p
+
+/-- Search `p`'s library for a basic land card, put it onto the battlefield
+tapped, then shuffle (CR 701.19). -/
+def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
+  g.resolveSearchLibrary p isBasicLandCard true "basic land card"
+
+/-- Search `p`'s library for a Forest card, put it onto the battlefield, then
+shuffle (CR 701.19 / 305.7). -/
+def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
+  g.resolveSearchLibrary p isForestCard false "Forest card"
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.14). -/
@@ -2443,6 +2457,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.beginScry controller n
   | .onEnterDraw n =>
     g.draw controller n
+  | .onEnterSearchForest =>
+    g.resolveSearchForest controller
   | .onEnterMayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
   | .onLandYouControlEntersPlusOnePlusOne =>

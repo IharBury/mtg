@@ -673,6 +673,21 @@ def mountainLine (g : Game) : String :=
     (changedZones visionaryKnownLib g).contains (.hand ⟨0⟩) &&
     (changedZones visionaryKnownLib g).contains (.library ⟨0⟩)
 
+#guard mentions (stackBlock woodElvesEntered) "Wood Elves's ability"
+#guard mentions (stackBlock woodElvesEntered) "When this creature enters, search your library for a Forest card"
+#guard !mentions (stackBlock woodElvesEntered) "When this permanent enters"
+#guard
+  let g := woodElvesEntered
+  let elves := namedPermanent g "Wood Elves"
+  mentions (stackBlock g) s!"*source {elves.id} Wood Elves*" &&
+    mentions (zoneBlock g .stack) s!"*source {elves.id} Wood Elves*" &&
+    mentions (objectLine g elves) "1/1"
+#guard
+  let g := woodElvesResolved
+  mentions (zoneBlock g .battlefield) "Forest" &&
+    (changedZones woodElvesKnownLib g).contains .battlefield &&
+    (changedZones woodElvesKnownLib g).contains (.library ⟨0⟩)
+
 #guard
   let g := archAndElves
   mentions (objectLine g (namedPermanent g "Llanowar Elves")) "2/2" &&

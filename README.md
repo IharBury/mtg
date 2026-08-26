@@ -101,7 +101,8 @@ The first slice of the engine models the two-player game:
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
-  top in any order), draw a card, may discard a card to draw, or deal damage
+  top in any order), draw a card, search the library for a Forest card, may
+  discard a card to draw, or deal damage
   divided as you choose among one, two, or three targets (including whenever
   a creature enters or attacks), return an Elf card from your graveyard and
   gain life equal to its power, pumps when another Elf you control enters,

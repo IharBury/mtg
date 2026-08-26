@@ -1842,6 +1842,25 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error _ => false
 
 #guard
+  match applyInteractiveAsActor Tests.woodElvesSetup "cast"
+      [toString (Tests.handCardNamed Tests.woodElvesSetup ⟨0⟩ "Wood Elves").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      g'.log.any (fun s => Tests.mentions s "begins casting Wood Elves")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.woodElvesKnownLib "pass" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "pass" [] with
+    | .ok g' =>
+      g'.stack.isEmpty &&
+      g'.log.any (fun s => Tests.mentions s "puts Forest onto the battlefield") &&
+      g'.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped)
+    | .error _ => false
+  | .error _ => false
+
+#guard
   let g := Tests.weavemasterReady
   let w := Tests.namedPermanent g "Woodland Weavemaster"
   match applyTap g ⟨0⟩ [toString w.id] with

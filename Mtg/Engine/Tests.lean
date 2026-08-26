@@ -289,6 +289,9 @@ def uncontrolledPermanent : Game :=
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
+#guard mentions woodElves.summary "Forest card"
+#guard woodElves.triggeredAbilities.size == 1
+#guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard mentions elvishArchdruid.summary "Other Elf creatures"
 #guard mentions elvishArchdruid.summary "for each Elf"
 #guard elvishArchdruid.staticAbilities.size == 1
@@ -445,6 +448,17 @@ def uncontrolledPermanent : Game :=
     triggeredAbilities := #[.onEnterDraw 1]
   }
   mentions c.abilitiesText "draw a card"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Wood Elves"
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+    triggeredAbilities := #[.onEnterSearchForest]
+  }
+  mentions c.abilitiesText "Forest card" &&
+    mentions c.abilitiesText "onto the battlefield"
 
 #guard
   let c : CardDef := {
@@ -2559,6 +2573,157 @@ def agentVisionaryOnly : Game :=
 #guard
   match Agent.choose agentVisionaryOnly ⟨0⟩ with
   | some (.cast id) => (agentVisionaryOnly.object! id).name == "Elvish Visionary"
+  | _ => false
+
+/- Wood Elves: search for a Forest card, put it onto the battlefield, shuffle. -/
+
+#guard isForestCard forest
+#guard isBasicLandCard forest
+#guard !isForestCard mountain
+#guard isBasicLandCard mountain
+
+/-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
+def tropicalIsland : CardDef := {
+  name := "Tropical Island"
+  types := #[.land]
+  subtypes := #["Forest", "Island"]
+}
+
+#guard isForestCard tropicalIsland
+#guard !isBasicLandCard tropicalIsland
+#guard !isForestCard roguesPassage
+
+/-- Wood Elves in hand with enough mana to cast it (CR 601.2). -/
+def woodElvesSetup : Game :=
+  withGreenMana (addToHand afterDraw woodElves ⟨0⟩) ⟨0⟩
+
+#guard woodElvesSetup.canCast ⟨0⟩ (handCardNamed woodElvesSetup ⟨0⟩ "Wood Elves")
+#guard woodElvesSetup.asSorcery? ⟨0⟩
+#guard !woodElves.keywords.flash
+#guard woodElves.hasSorcerySpeed
+#guard woodElves.power == some 1
+#guard woodElves.toughness == some 1
+
+def proposedWoodElves : Game :=
+  mustApply woodElvesSetup ⟨0⟩ (.cast (handCardNamed woodElvesSetup ⟨0⟩ "Wood Elves").id)
+
+#guard proposedWoodElves.pending == .activateManaAbilities ⟨0⟩
+#guard proposedWoodElves.log.any (fun s => mentions s "begins casting Wood Elves")
+
+def paidWoodElves : Game := mustApply proposedWoodElves ⟨0⟩ .pay
+
+#guard paidWoodElves.stack.size == 1
+#guard paidWoodElves.hasPriority ⟨0⟩
+#guard paidWoodElves.log.any (fun s => mentions s "casts Wood Elves")
+
+/-- The creature enters; the search waits on the stack (CR 603.6a). -/
+def woodElvesEntered : Game := passBoth paidWoodElves
+
+#guard (namedPermanent woodElvesEntered "Wood Elves").printed.power == some 1
+#guard woodElvesEntered.power (namedPermanent woodElvesEntered "Wood Elves") == 1
+#guard woodElvesEntered.toughness (namedPermanent woodElvesEntered "Wood Elves") == 1
+#guard woodElvesEntered.stack.size == 1
+#guard (woodElvesEntered.object! woodElvesEntered.stack.back!.objectId).triggeredAbility ==
+  some .onEnterSearchForest
+#guard (woodElvesEntered.object! woodElvesEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent woodElvesEntered "Wood Elves").id
+#guard woodElvesEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard woodElvesEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+
+/-- Mountain on top, Forest below: search finds the Forest (CR 701.19). -/
+def woodElvesKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop woodElvesEntered forest ⟨0⟩) mountain ⟨0⟩
+
+def woodElvesResolved : Game := passBoth woodElvesKnownLib
+
+#guard woodElvesResolved.pending == .none
+#guard woodElvesResolved.hasPriority ⟨0⟩
+#guard woodElvesResolved.stack.isEmpty
+#guard woodElvesResolved.battlefield.any (fun o => o.name == "Wood Elves")
+#guard woodElvesResolved.battlefield.any (fun o => o.name == "Forest")
+#guard !(namedPermanent woodElvesResolved "Forest").status.tapped
+#guard !(namedPermanent woodElvesResolved "Forest").status.summoningSick
+#guard (woodElvesResolved.player ⟨0⟩).landsPlayedThisTurn ==
+  (woodElvesKnownLib.player ⟨0⟩).landsPlayedThisTurn
+#guard woodElvesResolved.log.any (fun s =>
+  mentions s "puts Forest onto the battlefield" && !mentions s "tapped")
+#guard woodElvesResolved.log.any (fun s => mentions s "shuffles their library")
+
+-- A Mountain on top is not chosen; the Forest type is required (CR 305.7).
+#guard !(woodElvesResolved.battlefield.any (fun o =>
+  o.name == "Mountain" &&
+    !(woodElvesKnownLib.battlefield.any (fun p => p.id == o.id))))
+
+-- The fetched Forest can tap for {G} immediately.
+#guard
+  match woodElvesResolved.tapForMana ⟨0⟩
+      (namedPermanent woodElvesResolved "Forest").id (.colored .green) with
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.green ==
+      (woodElvesResolved.player ⟨0⟩).manaPool.green + 1 &&
+      (namedPermanent g "Forest").status.tapped
+  | .error _ => false
+
+-- Direct resolution of an enters-search trigger puts a Forest onto the battlefield.
+#guard
+  let g := addToLibraryTop afterDraw forest ⟨0⟩
+  let beforeLands := (g.player ⟨0⟩).landsPlayedThisTurn
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterSearchForest none
+  g.battlefield.any (fun o => o.name == "Forest" && !o.status.tapped) &&
+    (g.player ⟨0⟩).landsPlayedThisTurn == beforeLands &&
+    g.log.any (fun s => mentions s "puts Forest onto the battlefield") &&
+    g.log.any (fun s => mentions s "shuffles their library")
+
+/-- The trigger still searches if Wood Elves has left the battlefield (CR 113.7a). -/
+def woodElvesLeftBeforeTrigger : Game :=
+  let id := (namedPermanent woodElvesKnownLib "Wood Elves").id
+  let (g, _) := woodElvesKnownLib.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard !(woodElvesLeftBeforeTrigger.battlefield.any (fun o => o.name == "Wood Elves"))
+#guard (woodElvesLeftBeforeTrigger.player ⟨0⟩).graveyard.any (fun id =>
+  (woodElvesLeftBeforeTrigger.object! id).name == "Wood Elves")
+#guard woodElvesLeftBeforeTrigger.battlefield.any (fun o => o.name == "Forest")
+#guard woodElvesLeftBeforeTrigger.log.any (fun s => mentions s "puts Forest onto the battlefield")
+
+/-- No Forest in the library: the search fails and the library is still shuffled. -/
+def woodElvesNoForest : Game := passBoth woodElvesEntered
+
+#guard woodElvesNoForest.stack.isEmpty
+#guard !(woodElvesNoForest.battlefield.any (fun o => o.name == "Forest"))
+#guard woodElvesNoForest.log.any (fun s => mentions s "finds no Forest card")
+#guard woodElvesNoForest.log.any (fun s => mentions s "shuffles their library")
+
+/-- A nonbasic Forest card is a legal find (CR 305.7). -/
+def woodElvesNonbasic : Game :=
+  let g := addToLibraryTop woodElvesEntered tropicalIsland ⟨0⟩
+  passBoth g
+
+#guard woodElvesNonbasic.battlefield.any (fun o => o.name == "Tropical Island")
+#guard !(namedPermanent woodElvesNonbasic "Tropical Island").status.tapped
+#guard woodElvesNonbasic.log.any (fun s =>
+  mentions s "puts Tropical Island onto the battlefield")
+
+/-- Landfall triggers when the fetched Forest enters (CR 603.6a). -/
+def woodElvesLandfallPending : Game :=
+  let g := addPermanent woodElvesKnownLib beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  passBoth g
+
+#guard woodElvesLandfallPending.pending == .chooseTargets ⟨0⟩
+#guard woodElvesLandfallPending.battlefield.any (fun o => o.name == "Forest")
+#guard (woodElvesLandfallPending.object! woodElvesLandfallPending.stack.back!.objectId).triggeredAbility ==
+  some .onLandYouControlEntersPlusOnePlusOne
+#guard woodElvesLandfallPending.log.any (fun s => mentions s "landfall trigger is put on the stack")
+
+/-- The agent casts Wood Elves when that is the playable spell. -/
+def agentWoodElvesOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withGreenMana (addToHand g woodElves ⟨0⟩) ⟨0⟩
+
+#guard
+  match Agent.choose agentWoodElvesOnly ⟨0⟩ with
+  | some (.cast id) => (agentWoodElvesOnly.object! id).name == "Wood Elves"
   | _ => false
 
 /-- Goblin Cratermaker plus an opposing 2/2 and a Mountain; a land drop is already
