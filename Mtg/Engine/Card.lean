@@ -286,6 +286,10 @@ inductive TriggeredAbility where
   /-- Whenever this creature enters or attacks, it deals `amount` damage divided
   as you choose among one to `maxTargets` targets (e.g. Inferno Titan). -/
   | onEnterOrAttackDealDividedDamage (amount maxTargets : Nat)
+  /-- Whenever this creature enters or attacks, return target Elf card from
+  your graveyard to your hand. You gain life equal to that card's power
+  (e.g. Mirkwood Elk). -/
+  | onEnterOrAttackReturnElfGainLife
   /-- When this creature dies, it deals damage equal to its power to target
   creature an opponent controls (e.g. Goblin Fireleaper). -/
   | onDiesDealDamageEqualToPowerToOppCreature
@@ -325,6 +329,8 @@ def toNotation : TriggeredAbility → String
     s!"When this permanent enters, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
     s!"Whenever this creature enters or attacks, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
+  | .onEnterOrAttackReturnElfGainLife =>
+    "Whenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power."
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
   | .onCastInstantOrSorceryDealDamageToEachOpponent amount =>
@@ -338,13 +344,14 @@ def dividedDamage? : TriggeredAbility → Option (Nat × Nat)
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
   | .onEnterDraw _ | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
-  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => none
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT
-  | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _ => true
+  | .onAttackOtherGets2AndTrample | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife => true
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
@@ -356,13 +363,15 @@ def triggersWhenBecomesBlocked : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
+  | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering : TriggeredAbility → Bool
   | .onEnterScry _ | .onEnterDraw _ | .onEnterMayDiscardDraw _
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ => true
+  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife => true
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onLandYouControlEntersPlusOnePlusOne
   | .onDiesDealDamageEqualToPowerToOppCreature
@@ -375,7 +384,8 @@ def triggersWhenLandYouControlEnters : TriggeredAbility → Bool
   | .onAttackPumpByGreatestPower | .onAttackSetOtherBasePT | .onAttackOtherGets2AndTrample
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _ | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
+  | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
@@ -385,6 +395,7 @@ def triggersWhenDying : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 /-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
@@ -394,13 +405,14 @@ def triggersWhenYouCastInstantOrSorcery : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature => false
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget : TriggeredAbility → Bool
   | .onLandYouControlEntersPlusOnePlusOne | .onEnterDealDividedDamage _ _
-  | .onEnterOrAttackDealDividedDamage _ _
+  | .onEnterOrAttackDealDividedDamage _ _ | .onEnterOrAttackReturnElfGainLife
   | .onDiesDealDamageEqualToPowerToOppCreature | .onAttackSetOtherBasePT
   | .onAttackOtherGets2AndTrample => true
   | .onAttackPumpByGreatestPower | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _
@@ -415,7 +427,7 @@ def allowsZeroTargets : TriggeredAbility → Bool
   | .onBecomesBlockedDeal1ToBlockers | .onEnterScry _ | .onEnterDraw _
   | .onEnterMayDiscardDraw _ | .onLandYouControlEntersPlusOnePlusOne
   | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _
-  | .onDiesDealDamageEqualToPowerToOppCreature
+  | .onEnterOrAttackReturnElfGainLife | .onDiesDealDamageEqualToPowerToOppCreature
   | .onCastInstantOrSorceryDealDamageToEachOpponent _ => false
 
 instance : ToString TriggeredAbility where
@@ -696,12 +708,15 @@ instance : ToString CardDef where
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation (.onEnterOrAttackDealDividedDamage 3 3) ==
   "Whenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets."
+#guard TriggeredAbility.toNotation .onEnterOrAttackReturnElfGainLife ==
+  "Whenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power."
 #guard TriggeredAbility.toNotation .onDiesDealDamageEqualToPowerToOppCreature ==
   "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
 #guard TriggeredAbility.toNotation (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
   "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent."
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
-#guard TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3) == some (3, 3)
+#guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
+#guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterScry 2)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
@@ -712,6 +727,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
 #guard TriggeredAbility.triggersWhenAttacking (.onEnterOrAttackDealDividedDamage 3 3)
+#guard TriggeredAbility.triggersWhenAttacking .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.triggersWhenAttacking (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
 #guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
@@ -719,6 +735,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.triggersWhenEntering (.onEnterMayDiscardDraw 2)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
+#guard TriggeredAbility.triggersWhenEntering .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenYouCastInstantOrSorcery
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
@@ -736,11 +753,13 @@ instance : ToString CardDef where
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
+#guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
 #guard TriggeredAbility.requiresTarget .onDiesDealDamageEqualToPowerToOppCreature
 #guard TriggeredAbility.requiresTarget .onAttackSetOtherBasePT
 #guard TriggeredAbility.requiresTarget .onAttackOtherGets2AndTrample
 #guard TriggeredAbility.allowsZeroTargets .onAttackSetOtherBasePT
 #guard !TriggeredAbility.allowsZeroTargets .onAttackOtherGets2AndTrample
+#guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
 #guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)

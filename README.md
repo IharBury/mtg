@@ -99,7 +99,8 @@ The first slice of the engine models the two-player game:
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, may discard a card to draw, or deal damage
   divided as you choose among one, two, or three targets (including whenever
-  a creature enters or attacks), landfall triggers that
+  a creature enters or attacks), return an Elf card from your graveyard and
+  gain life equal to its power, landfall triggers that
   put +1/+1 counters on a target creature you control, activated pumps
   that last until end of turn, activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal

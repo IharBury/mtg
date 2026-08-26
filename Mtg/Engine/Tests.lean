@@ -289,6 +289,11 @@ def uncontrolledPermanent : Game :=
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
+#guard mentions mirkwoodElk.summary "trample"
+#guard mentions mirkwoodElk.summary "Elf card"
+#guard mirkwoodElk.keywords.trample
+#guard mirkwoodElk.triggeredAbilities.size == 1
+#guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mentions galionElvenkingsButler.summary "base power and toughness"
 #guard galionElvenkingsButler.triggeredAbilities.size == 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
@@ -502,6 +507,20 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "enters or attacks" &&
     mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "{R}"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Elk"
+    types := #[.creature]
+    power := some 6
+    toughness := some 6
+    keywords := { Keywords.none with trample := true }
+    triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife]
+  }
+  mentions c.abilitiesText "Elf card" &&
+    mentions c.abilitiesText "graveyard" &&
+    mentions c.abilitiesText "gain life" &&
+    mentions c.summary "trample"
 
 #guard
   let c : CardDef := {
@@ -780,6 +799,20 @@ def addToHand (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
     { pl with hand := pl.hand.push id })
 
+/-- Put `card` into `p`'s graveyard. -/
+def addToGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
+  let (g, id) := g.allocId
+  let (g, ts) := g.bumpTime
+  let obj : GameObject := {
+    id := id
+    printed := card
+    owner := p
+    zone := .graveyard p
+    timestamp := ts
+  }
+  { g with objects := g.objects.push obj }.modifyPlayer p (fun pl =>
+    { pl with graveyard := pl.graveyard.push id })
+
 /-- Put `card` on top of `p`'s library (the back of the library array). -/
 def addToLibraryTop (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   let (g, id) := g.allocId
@@ -992,6 +1025,11 @@ def namedPermanent (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (fun o => o.name == name) with
   | some o => o
   | none => panic! s!"expected {name} on the battlefield"
+
+def namedGraveyardCard (g : Game) (p : PlayerId) (name : String) : GameObject :=
+  match g.objects.find? (fun o => o.name == name && o.zone == .graveyard p) with
+  | some o => o
+  | none => panic! s!"expected {name} in the graveyard"
 
 #guard readyToDeclareAttackers.step == .declareAttackers
 #guard readyToDeclareAttackers.pending == .declareAttackers
@@ -5668,5 +5706,275 @@ def afterGuardianTrampleCombat : Game :=
   mentions s "Grizzly Bears dies from lethal damage")
 #guard (afterGuardianTrampleCombat.player ⟨1⟩).life == 17
 #guard !(afterGuardianTrampleCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/- Mirkwood Elk: trample and enters-or-attacks return an Elf from the graveyard
+(CR 603.6a / 508.2 / 118.2). -/
+
+#guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
+#guard mirkwoodElk.keywords.trample
+#guard mirkwoodElk.power == some 6
+#guard mirkwoodElk.toughness == some 6
+
+/-- Mirkwood Elk in hand, an Elf in the graveyard, and enough mana to cast it. -/
+def elkSetup : Game :=
+  let g := addToGraveyard afterDraw llanowarElves ⟨0⟩
+  withGreenMana (addToHand g mirkwoodElk ⟨0⟩) ⟨0⟩ 6
+
+#guard elkSetup.canCast ⟨0⟩ (handCardNamed elkSetup ⟨0⟩ "Mirkwood Elk")
+#guard elkSetup.asSorcery? ⟨0⟩
+#guard mirkwoodElk.hasSorcerySpeed
+#guard (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").hasSubtype "Elf"
+#guard (elkSetup.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).contains
+  (Target.card (namedGraveyardCard elkSetup ⟨0⟩ "Llanowar Elves").id)
+
+def proposedElk : Game :=
+  mustApply elkSetup ⟨0⟩ (.cast (handCardNamed elkSetup ⟨0⟩ "Mirkwood Elk").id)
+
+#guard proposedElk.pending == .activateManaAbilities ⟨0⟩
+#guard proposedElk.log.any (fun s => mentions s "begins casting Mirkwood Elk")
+
+def paidElk : Game := mustApply proposedElk ⟨0⟩ .pay
+
+#guard paidElk.stack.size == 1
+#guard paidElk.hasPriority ⟨0⟩
+#guard paidElk.log.any (fun s => mentions s "casts Mirkwood Elk")
+
+/-- The creature enters; the trigger waits for a graveyard Elf (CR 603.3d). -/
+def elkEntered : Game := passBoth paidElk
+
+#guard (namedPermanent elkEntered "Mirkwood Elk").printed.power == some 6
+#guard elkEntered.power (namedPermanent elkEntered "Mirkwood Elk") == 6
+#guard elkEntered.toughness (namedPermanent elkEntered "Mirkwood Elk") == 6
+#guard (namedPermanent elkEntered "Mirkwood Elk").printed.keywords.trample
+#guard elkEntered.stack.size == 1
+#guard (elkEntered.object! elkEntered.stack.back!.objectId).triggeredAbility ==
+  some .onEnterOrAttackReturnElfGainLife
+#guard (elkEntered.object! elkEntered.stack.back!.objectId).sourceId ==
+  some (namedPermanent elkEntered "Mirkwood Elk").id
+#guard elkEntered.stack.back!.targets.isEmpty
+#guard elkEntered.pending == .chooseTargets ⟨0⟩
+#guard elkEntered.actor == some ⟨0⟩
+#guard !elkEntered.hasPriority ⟨0⟩
+#guard elkEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard elkEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+#guard elkEntered.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+
+-- The trigger cannot target a player, a battlefield creature, or a permanent id
+-- of the graveyard card.
+#guard
+  match elkEntered.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match elkEntered.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent elkEntered "Mirkwood Elk").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match elkEntered.apply ⟨0⟩
+      (.target (Target.permanent (namedGraveyardCard elkEntered ⟨0⟩ "Llanowar Elves").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic returns the Elf from the graveyard.
+#guard
+  match Agent.choose elkEntered ⟨0⟩ with
+  | some (.target (Target.card tid)) =>
+    (elkEntered.object! tid).name == "Llanowar Elves"
+  | _ => false
+
+def elkTargeted : Game :=
+  mustApply elkEntered ⟨0⟩
+    (.target (Target.card (namedGraveyardCard elkEntered ⟨0⟩ "Llanowar Elves").id))
+
+#guard elkTargeted.pending == .none
+#guard elkTargeted.hasPriority ⟨0⟩
+#guard elkTargeted.stack.back!.targets ==
+  #[Target.card (namedGraveyardCard elkTargeted ⟨0⟩ "Llanowar Elves").id]
+#guard elkTargeted.log.any (fun s =>
+  mentions s "chooses Llanowar Elves as a target (CR 601.2c)")
+
+def elkResolved : Game := passBoth elkTargeted
+
+#guard elkResolved.stack.isEmpty
+#guard (elkResolved.player ⟨0⟩).life == 21
+#guard (elkResolved.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard !(elkResolved.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨0⟩))
+#guard elkResolved.log.any (fun s => mentions s "Llanowar Elves is returned to Chandra's hand")
+#guard elkResolved.log.any (fun s => mentions s "Chandra gains 1 life (21 life)")
+#guard elkResolved.battlefield.any (fun o => o.name == "Mirkwood Elk")
+
+-- The trigger still returns the Elf if Mirkwood Elk has left (CR 113.7a).
+def elkLeftBeforeTrigger : Game :=
+  let id := (namedPermanent elkTargeted "Mirkwood Elk").id
+  let (g, _) := elkTargeted.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (elkLeftBeforeTrigger.player ⟨0⟩).life == 21
+#guard (elkLeftBeforeTrigger.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard !(elkLeftBeforeTrigger.battlefield.any (fun o => o.name == "Mirkwood Elk"))
+
+-- If the targeted card leaves the graveyard, nothing happens (CR 608.2b).
+def elkTargetLeft : Game :=
+  let id := (namedGraveyardCard elkTargeted ⟨0⟩ "Llanowar Elves").id
+  let (g, _) := elkTargeted.move id .exile none
+  passBoth g
+
+#guard (elkTargetLeft.player ⟨0⟩).life == 20
+#guard !(elkTargetLeft.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard elkTargetLeft.log.any (fun s => mentions s "no longer in the graveyard")
+#guard elkTargetLeft.objects.any (fun o => o.name == "Llanowar Elves" && o.zone == .exile)
+
+/-- No Elf in the graveyard: the trigger is removed (CR 603.3d). -/
+def elkNoTargetEntered : Game :=
+  let g := withGreenMana (addToHand afterDraw mirkwoodElk ⟨0⟩) ⟨0⟩ 6
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Mirkwood Elk").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard elkNoTargetEntered.stack.isEmpty
+#guard elkNoTargetEntered.pending == .none
+#guard elkNoTargetEntered.battlefield.any (fun o => o.name == "Mirkwood Elk")
+#guard elkNoTargetEntered.log.any (fun s =>
+  mentions s "enters trigger is removed from the stack (no legal target)")
+#guard (elkNoTargetEntered.player ⟨0⟩).life == 20
+
+-- A non-Elf in the graveyard is not a legal target.
+#guard
+  let g := addToGraveyard afterDraw grizzlyBears ⟨0⟩
+  let g := withGreenMana (addToHand g mirkwoodElk ⟨0⟩) ⟨0⟩ 6
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Mirkwood Elk").id)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  g.stack.isEmpty &&
+    g.log.any (fun s => mentions s "no legal target") &&
+    !(g.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).contains
+      (Target.card (namedGraveyardCard (addToGraveyard afterDraw grizzlyBears ⟨0⟩)
+        ⟨0⟩ "Grizzly Bears").id)
+
+-- An Elf in an opponent's graveyard is not a legal target.
+#guard
+  let g := addToGraveyard afterDraw llanowarElves ⟨1⟩
+  (g.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).isEmpty
+
+/-- Two Elves: life equals the chosen card's power; the heuristic picks the last. -/
+def elkTwoElvesEntered : Game :=
+  let g := addToGraveyard afterDraw llanowarElves ⟨0⟩
+  let g := addToGraveyard g galadhrimGuide ⟨0⟩
+  let g := withGreenMana (addToHand g mirkwoodElk ⟨0⟩) ⟨0⟩ 6
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Mirkwood Elk").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard elkTwoElvesEntered.pending == .chooseTargets ⟨0⟩
+#guard (elkTwoElvesEntered.legalTriggerTargets ⟨0⟩ .onEnterOrAttackReturnElfGainLife).size == 2
+#guard
+  match Agent.choose elkTwoElvesEntered ⟨0⟩ with
+  | some (.target (Target.card tid)) =>
+    (elkTwoElvesEntered.object! tid).name == "Galadhrim Guide"
+  | _ => false
+
+def elkGuideResolved : Game :=
+  let g := mustApply elkTwoElvesEntered ⟨0⟩
+    (.target (Target.card (namedGraveyardCard elkTwoElvesEntered ⟨0⟩ "Galadhrim Guide").id))
+  passBoth g
+
+#guard (elkGuideResolved.player ⟨0⟩).life == 23
+#guard (elkGuideResolved.handObjects ⟨0⟩).any (fun o => o.name == "Galadhrim Guide")
+#guard (elkGuideResolved.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨0⟩))
+#guard elkGuideResolved.log.any (fun s => mentions s "Chandra gains 3 life (23 life)")
+
+def elkElvesResolved : Game :=
+  let g := mustApply elkTwoElvesEntered ⟨0⟩
+    (.target (Target.card (namedGraveyardCard elkTwoElvesEntered ⟨0⟩ "Llanowar Elves").id))
+  passBoth g
+
+#guard (elkElvesResolved.player ⟨0⟩).life == 21
+#guard (elkElvesResolved.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard (elkElvesResolved.objects.any (fun o =>
+  o.name == "Galadhrim Guide" && o.zone == .graveyard ⟨0⟩))
+
+/-- Mirkwood Elk already in play so it can attack (no ETB from `addPermanent`). -/
+def elkOnBattlefield : Game :=
+  addToGraveyard (addPermanent started mirkwoodElk ⟨0⟩ ⟨0⟩) llanowarElves ⟨0⟩
+
+def elkAttackDeclared : Game :=
+  let g := passBoth (skipTo elkOnBattlefield .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Mirkwood Elk").id])
+
+#guard elkAttackDeclared.pending == .chooseTargets ⟨0⟩
+#guard elkAttackDeclared.stack.size == 1
+#guard (elkAttackDeclared.object! elkAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some .onEnterOrAttackReturnElfGainLife
+#guard (elkAttackDeclared.object! elkAttackDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent elkAttackDeclared "Mirkwood Elk").id
+#guard elkAttackDeclared.stack.back!.targets.isEmpty
+#guard elkAttackDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard elkAttackDeclared.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+#guard !elkAttackDeclared.hasPriority ⟨0⟩
+#guard elkAttackDeclared.actor == some ⟨0⟩
+#guard (namedPermanent elkAttackDeclared "Mirkwood Elk").status.attacking
+
+#guard
+  match Agent.choose elkAttackDeclared ⟨0⟩ with
+  | some (.target (Target.card tid)) =>
+    (elkAttackDeclared.object! tid).name == "Llanowar Elves"
+  | _ => false
+
+def elkAttackResolved : Game :=
+  let g := mustApply elkAttackDeclared ⟨0⟩
+    (.target (Target.card (namedGraveyardCard elkAttackDeclared ⟨0⟩ "Llanowar Elves").id))
+  passBoth g
+
+#guard elkAttackResolved.stack.isEmpty
+#guard (elkAttackResolved.player ⟨0⟩).life == 21
+#guard (elkAttackResolved.handObjects ⟨0⟩).any (fun o => o.name == "Llanowar Elves")
+#guard elkAttackResolved.log.any (fun s => mentions s "Chandra gains 1 life")
+#guard (namedPermanent elkAttackResolved "Mirkwood Elk").status.attacking
+
+/-- Attack with no Elf in the graveyard removes the trigger (CR 603.3d). -/
+def elkAttackNoTarget : Game :=
+  let g := addPermanent started mirkwoodElk ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Mirkwood Elk").id])
+
+#guard elkAttackNoTarget.stack.isEmpty
+#guard elkAttackNoTarget.pending == .none
+#guard elkAttackNoTarget.hasPriority ⟨0⟩
+#guard elkAttackNoTarget.log.any (fun s =>
+  mentions s "attack trigger is removed from the stack (no legal target)")
+#guard (namedPermanent elkAttackNoTarget "Mirkwood Elk").status.attacking
+
+/-- Printed trample assigns leftover combat damage (6/6 vs 2/2 Bears). -/
+def afterElkTrampleCombat : Game :=
+  let g := addPermanent (addPermanent started mirkwoodElk ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Mirkwood Elk").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Mirkwood Elk").id)])
+  passBoth g
+
+#guard afterElkTrampleCombat.log.any (fun s =>
+  mentions s "Mirkwood Elk deals 2 combat damage to Grizzly Bears")
+#guard afterElkTrampleCombat.log.any (fun s =>
+  mentions s "Mirkwood Elk tramples for 4 to Nissa")
+#guard (afterElkTrampleCombat.player ⟨1⟩).life == 16
+#guard !(afterElkTrampleCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+-- The agent casts Mirkwood Elk when that is the playable spell.
+def agentElkOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := addToGraveyard g llanowarElves ⟨0⟩
+  withGreenMana (addToHand g mirkwoodElk ⟨0⟩) ⟨0⟩ 6
+
+#guard
+  match Agent.choose agentElkOnly ⟨0⟩ with
+  | some (.cast id) => (agentElkOnly.object! id).name == "Mirkwood Elk"
+  | _ => false
 
 end Mtg.Engine.Tests
