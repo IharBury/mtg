@@ -304,6 +304,11 @@ def uncontrolledPermanent : Game :=
 #guard gandalfSparkStarter.keywords.reach
 #guard gandalfSparkStarter.triggeredAbilities.size == 1
 #guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
+#guard mentions goblinFireleaper.summary "+1/+0"
+#guard mentions goblinFireleaper.summary "dies"
+#guard goblinFireleaper.activatedAbilities.size == 1
+#guard goblinFireleaper.triggeredAbilities.size == 1
+#guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
@@ -405,6 +410,20 @@ def uncontrolledPermanent : Game :=
   mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "one, two, or three" &&
     mentions c.summary "reach"
+
+#guard
+  let c : CardDef := {
+    name := "Silent Fireleaper"
+    types := #[.creature]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGenericAndColor 1 .red }
+      effect := .sourceGets 1 0
+    }]
+    triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature]
+  }
+  mentions c.abilitiesText "+1/+0" &&
+    mentions c.abilitiesText "dies" &&
+    mentions c.abilitiesText "{1}{R}"
 
 def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
@@ -3666,5 +3685,278 @@ def agentGandalfOnly : Game :=
   match Agent.choose agentGandalfOnly ⟨0⟩ with
   | some (.cast id) => (agentGandalfOnly.object! id).name == "Gandalf, Spark Starter"
   | _ => false
+
+/- Goblin Fireleaper: {1}{R} pump and a dies trigger. -/
+
+def fireleaperAbility : ActivatedAbility :=
+  goblinFireleaper.activatedAbilities[0]!
+
+#guard fireleaperAbility.effect == .sourceGets 1 0
+#guard fireleaperAbility.cost.mana == ManaCost.ofGenericAndColor 1 .red
+#guard !fireleaperAbility.effect.requiresTarget
+#guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
+
+/-- Fireleaper in play with {1}{R} in the pool; a land drop is already used. -/
+def fireleaperReady : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  withRedMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 2
+
+def fireleaperSource (g : Game) : GameObject :=
+  namedPermanent g "Goblin Fireleaper"
+
+#guard fireleaperReady.canActivate ⟨0⟩ (fireleaperSource fireleaperReady) fireleaperAbility
+#guard !(fireleaperReady.canActivate ⟨1⟩ (fireleaperSource fireleaperReady) fireleaperAbility)
+#guard (fireleaperReady.player ⟨0⟩).manaPool.canPay fireleaperAbility.cost.mana
+#guard fireleaperReady.power (fireleaperSource fireleaperReady) == 1
+
+-- The heuristic pumps Fireleaper when {1}{R} is available.
+#guard
+  match Agent.choose fireleaperReady ⟨0⟩ with
+  | some (.activate id 0) => id == (fireleaperSource fireleaperReady).id
+  | _ => false
+
+def proposedFireleaper : Game :=
+  mustApply fireleaperReady ⟨0⟩ (.activate (fireleaperSource fireleaperReady).id 0)
+
+#guard proposedFireleaper.pending == .activateManaAbilities ⟨0⟩
+#guard proposedFireleaper.proposedSpell.isSome
+#guard proposedFireleaper.stack.size == 1
+#guard (proposedFireleaper.object! proposedFireleaper.stack.back!.objectId).abilityEffect ==
+  some (.sourceGets 1 0)
+#guard (namedPermanent proposedFireleaper "Goblin Fireleaper").isOnBattlefield
+#guard proposedFireleaper.log.any (fun s => mentions s "begins activating Goblin Fireleaper")
+
+-- Opponent cannot pay Chandra's activation.
+#guard
+  match proposedFireleaper.apply ⟨1⟩ .pay with
+  | .error msg => mentions msg "Only Chandra"
+  | .ok _ => false
+
+def paidFireleaper : Game :=
+  mustApply proposedFireleaper ⟨0⟩ .pay
+
+#guard paidFireleaper.hasPriority ⟨0⟩
+#guard paidFireleaper.stack.size == 1
+#guard paidFireleaper.log.any (fun s => mentions s "activates Goblin Fireleaper")
+#guard (namedPermanent paidFireleaper "Goblin Fireleaper").status.pumpPower == 0
+
+def pumpedFireleaper : Game := passBoth paidFireleaper
+
+#guard pumpedFireleaper.stack.isEmpty
+#guard (namedPermanent pumpedFireleaper "Goblin Fireleaper").status.pumpPower == 1
+#guard pumpedFireleaper.power (namedPermanent pumpedFireleaper "Goblin Fireleaper") == 2
+#guard pumpedFireleaper.log.any (fun s => mentions s "Goblin Fireleaper gets +1/+0 until end of turn")
+
+/-- A second activation stacks. -/
+def fireleaperPumpedTwice : Game :=
+  let g := withRedMana pumpedFireleaper ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.activate (fireleaperSource g).id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard fireleaperPumpedTwice.power (namedPermanent fireleaperPumpedTwice "Goblin Fireleaper") == 3
+#guard (namedPermanent fireleaperPumpedTwice "Goblin Fireleaper").status.pumpPower == 2
+
+/-- The +1/+0 wears off in cleanup. -/
+def afterFireleaperCleanup : Game :=
+  passBoth (skipTo pumpedFireleaper .end 80)
+
+#guard afterFireleaperCleanup.power
+  (namedPermanent afterFireleaperCleanup "Goblin Fireleaper") == 1
+#guard (namedPermanent afterFireleaperCleanup "Goblin Fireleaper").status.pumpPower == 0
+
+/-- If the source leaves before the pump resolves, the pump does not happen;
+the dies trigger waits until after that ability resolves (CR 603.3). -/
+def fireleaperPumpSourceGone : Game :=
+  let id := (namedPermanent paidFireleaper "Goblin Fireleaper").id
+  let (g, _) := paidFireleaper.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard fireleaperPumpSourceGone.log.any (fun s => mentions s "source is no longer in play")
+#guard fireleaperPumpSourceGone.pending == .chooseTargets ⟨0⟩
+#guard fireleaperPumpSourceGone.stack.size == 1
+#guard (fireleaperPumpSourceGone.object! fireleaperPumpSourceGone.stack.back!.objectId).triggeredAbility ==
+  some .onDiesDealDamageEqualToPowerToOppCreature
+
+-- Instant-speed: Fireleaper can activate during the end step.
+def fireleaperAtEndStep : Game := skipTo fireleaperReady .end 80
+
+#guard fireleaperAtEndStep.step == .end
+#guard fireleaperAtEndStep.canActivate ⟨0⟩ (fireleaperSource fireleaperAtEndStep)
+  fireleaperAbility
+
+/-- Lethal damage puts the dies trigger on the stack (CR 700.4 / 603.3d). -/
+def fireleaperDied : Game :=
+  let o := namedPermanent fireleaperReady "Goblin Fireleaper"
+  let g := fireleaperReady.setObject { o with status := { o.status with damage := 1 } }
+  g.receivePriority ⟨0⟩
+
+#guard fireleaperDied.pending == .chooseTargets ⟨0⟩
+#guard fireleaperDied.stack.size == 1
+#guard (fireleaperDied.object! fireleaperDied.stack.back!.objectId).triggeredAbility ==
+  some .onDiesDealDamageEqualToPowerToOppCreature
+#guard (fireleaperDied.object! fireleaperDied.stack.back!.objectId).lastKnownPower == some 1
+#guard fireleaperDied.stack.back!.targets.isEmpty
+#guard fireleaperDied.log.any (fun s => mentions s "dies from lethal damage")
+#guard fireleaperDied.log.any (fun s => mentions s "dies trigger is put on the stack")
+#guard fireleaperDied.log.any (fun s => mentions s "must choose a target (CR 603.3d")
+#guard !(fireleaperDied.battlefield.any (fun o => o.name == "Goblin Fireleaper"))
+#guard !fireleaperDied.hasPriority ⟨0⟩
+#guard fireleaperDied.actor == some ⟨0⟩
+
+-- The dies trigger cannot target a player or a creature you control.
+#guard
+  match fireleaperDied.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  let g := addPermanent fireleaperDied ragingGoblin ⟨0⟩ ⟨0⟩
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Raging Goblin").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- Hexproof on an opponent's creature is not a legal target (CR 702.11b).
+#guard
+  let bears := namedPermanent fireleaperDied "Grizzly Bears"
+  let g := fireleaperDied.setObject { bears with
+    status := { bears.status with untilEotHexproof := true } }
+  match g.apply ⟨0⟩ (.target (Target.permanent bears.id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+-- The heuristic targets an opposing creature.
+#guard
+  match Agent.choose fireleaperDied ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (fireleaperDied.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def fireleaperDeathTargeted : Game :=
+  mustApply fireleaperDied ⟨0⟩
+    (.target (Target.permanent (namedPermanent fireleaperDied "Grizzly Bears").id))
+
+#guard fireleaperDeathTargeted.pending == .none
+#guard fireleaperDeathTargeted.hasPriority ⟨0⟩
+#guard fireleaperDeathTargeted.stack.back!.targets ==
+  #[Target.permanent (namedPermanent fireleaperDeathTargeted "Grizzly Bears").id]
+#guard fireleaperDeathTargeted.log.any (fun s => mentions s "chooses Grizzly Bears as a target")
+
+def fireleaperDeathResolved : Game := passBoth fireleaperDeathTargeted
+
+#guard fireleaperDeathResolved.stack.isEmpty
+#guard fireleaperDeathResolved.log.any (fun s =>
+  mentions s "Goblin Fireleaper deals 1 damage to Grizzly Bears")
+#guard (namedPermanent fireleaperDeathResolved "Grizzly Bears").status.damage == 1
+#guard fireleaperDeathResolved.battlefield.any (fun o => o.name == "Grizzly Bears")
+
+/-- Pumped power is last known information when the Fireleaper dies (CR 113.7a). -/
+def fireleaperPumpedThenDied : Game :=
+  let o := namedPermanent pumpedFireleaper "Goblin Fireleaper"
+  let g := pumpedFireleaper.setObject { o with status := { o.status with
+    pumpPower := o.status.pumpPower, damage := 1 } }
+  let g := g.receivePriority ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  passBoth g
+
+#guard fireleaperPumpedThenDied.log.any (fun s =>
+  mentions s "Goblin Fireleaper deals 2 damage to Grizzly Bears")
+#guard !(fireleaperPumpedThenDied.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard fireleaperPumpedThenDied.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
+
+/-- No opposing creature: the dies trigger is removed (CR 603.3d). -/
+def fireleaperDiedAlone : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Goblin Fireleaper"
+  let g := g.setObject { o with status := { o.status with damage := 1 } }
+  g.receivePriority ⟨0⟩
+
+#guard fireleaperDiedAlone.stack.isEmpty
+#guard fireleaperDiedAlone.hasPriority ⟨0⟩
+#guard fireleaperDiedAlone.log.any (fun s => mentions s "no legal target")
+#guard !(fireleaperDiedAlone.battlefield.any (fun o => o.name == "Goblin Fireleaper"))
+
+/-- If the targeted creature leaves before resolution, the trigger does nothing. -/
+def fireleaperDeathTargetGone : Game :=
+  let id := (namedPermanent fireleaperDeathTargeted "Grizzly Bears").id
+  let (g, _) := fireleaperDeathTargeted.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard fireleaperDeathTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(fireleaperDeathTargetGone.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- Combat: 1/1 Fireleaper into 2/2 Bears. Fireleaper dies; the trigger then
+kills the Bears. -/
+def fireleaperVsBearsCombat : Game :=
+  addPermanent (addPermanent started goblinFireleaper ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def fireleaperBlockedByBears : Game :=
+  let g := passBoth (skipTo fireleaperVsBearsCombat .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Goblin Fireleaper").id])
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Grizzly Bears").id,
+    (namedPermanent g "Goblin Fireleaper").id)])
+
+#guard fireleaperBlockedByBears.stack.isEmpty
+#guard fireleaperBlockedByBears.step == .declareBlockers
+
+def fireleaperAfterCombatDamage : Game := passBoth fireleaperBlockedByBears
+
+#guard fireleaperAfterCombatDamage.step == .combatDamage
+#guard fireleaperAfterCombatDamage.pending == .chooseTargets ⟨0⟩
+#guard !(fireleaperAfterCombatDamage.battlefield.any (fun o => o.name == "Goblin Fireleaper"))
+#guard fireleaperAfterCombatDamage.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard (namedPermanent fireleaperAfterCombatDamage "Grizzly Bears").status.damage == 1
+#guard fireleaperAfterCombatDamage.log.any (fun s => mentions s "dies trigger is put on the stack")
+
+def afterFireleaperBearsCombat : Game :=
+  let g := mustApply fireleaperAfterCombatDamage ⟨0⟩
+    (.target (Target.permanent (namedPermanent fireleaperAfterCombatDamage "Grizzly Bears").id))
+  passBoth g
+
+#guard afterFireleaperBearsCombat.log.any (fun s =>
+  mentions s "Goblin Fireleaper deals 1 damage to Grizzly Bears")
+#guard afterFireleaperBearsCombat.log.any (fun s => mentions s "Grizzly Bears dies from lethal damage")
+#guard !(afterFireleaperBearsCombat.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard !(afterFireleaperBearsCombat.battlefield.any (fun o => o.name == "Goblin Fireleaper"))
+
+/-- Both 1/1s die in combat: no remaining opposing creature, trigger removed. -/
+def fireleaperVsElvesCombat : Game :=
+  addPermanent (addPermanent started goblinFireleaper ⟨0⟩ ⟨0⟩) llanowarElves ⟨1⟩ ⟨1⟩
+
+def afterFireleaperElvesCombat : Game :=
+  let g := passBoth (skipTo fireleaperVsElvesCombat .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Goblin Fireleaper").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Llanowar Elves").id,
+    (namedPermanent g "Goblin Fireleaper").id)])
+  passBoth g
+
+#guard afterFireleaperElvesCombat.stack.isEmpty
+#guard afterFireleaperElvesCombat.pending == .none
+#guard afterFireleaperElvesCombat.log.any (fun s => mentions s "no legal target")
+#guard !(afterFireleaperElvesCombat.battlefield.any (fun o => o.name == "Goblin Fireleaper"))
+#guard !(afterFireleaperElvesCombat.battlefield.any (fun o => o.name == "Llanowar Elves"))
+
+/-- Sacrificing Fireleaper to Snowslope Hunter puts the dies trigger above the
+activated ability. -/
+def hunterSacrificesFireleaper : Game :=
+  let g := addPermanent afterDraw snowslopeHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g goblinFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addUntappedLand g mountain
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Snowslope Hunter").id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Goblin Fireleaper").id)
+
+#guard hunterSacrificesFireleaper.pending == .chooseTargets ⟨0⟩
+#guard hunterSacrificesFireleaper.stack.size == 2
+#guard (hunterSacrificesFireleaper.object! hunterSacrificesFireleaper.stack.back!.objectId).triggeredAbility ==
+  some .onDiesDealDamageEqualToPowerToOppCreature
+#guard hunterSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
+#guard hunterSacrificesFireleaper.log.any (fun s => mentions s "dies trigger is put on the stack")
 
 end Mtg.Engine.Tests

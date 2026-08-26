@@ -94,8 +94,10 @@ The first slice of the engine models the two-player game:
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), may discard a card to draw, or deal damage divided as
-  you choose among one, two, or three targets, and landfall triggers that
-  put +1/+1 counters on a target creature you control
+  you choose among one, two, or three targets, landfall triggers that
+  put +1/+1 counters on a target creature you control, activated pumps
+  that last until end of turn, and dies triggers that deal damage equal
+  to last-known power to a creature an opponent controls
 - modal instants, destroy, +1/+1 counters, hexproof, until-end-of-turn
   keyword grants, destroying permanents or dealing damage with activated
   abilities, and lasting type-changing animations (a permanent that becomes
