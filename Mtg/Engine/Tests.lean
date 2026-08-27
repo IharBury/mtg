@@ -8756,7 +8756,8 @@ def beeScrying : Game := passBoth beeOtherDied
   let g := g.receivePriority ⟨0⟩
   g.stack.size == 1
 
-/-- Stir Up Trouble: additional cost is sacrifice or pay {4}, then destroy. -/
+/-- Stir Up Trouble: additional cost is sacrifice or pay {4}, then destroy.
+Additional costs are announced at CR 601.2b, before targets at 601.2c. -/
 def stirReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -8775,34 +8776,44 @@ def proposedStir : Game :=
 
 #guard
   match proposedStir.pending with
-  | .chooseTargets ⟨0⟩ => true
-  | _ => false
-
-def stirChooseAdditional : Game :=
-  mustApply proposedStir ⟨0⟩
-    (.target (Target.permanent (namedPermanent proposedStir "Grizzly Bears").id))
-
-#guard
-  match stirChooseAdditional.pending with
   | .chooseAdditionalCost ⟨0⟩ => true
   | _ => false
-#guard stirChooseAdditional.log.any (fun s =>
-  mentions s "must choose an additional cost (CR 601.2f)")
+#guard proposedStir.log.any (fun s =>
+  mentions s "must choose an additional cost (CR 601.2b)")
 #guard
-  match Agent.choose stirChooseAdditional ⟨0⟩ with
+  match proposedStir.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent proposedStir "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Not time to choose targets (CR 601.2c)"
+  | .ok _ => false
+#guard
+  match Agent.choose proposedStir ⟨0⟩ with
   | some (.chooseAdditionalCost false) => true
   | _ => false
+
+/-- Alias used by the demo: the 601.2b additional-cost window. -/
+def stirChooseAdditional : Game := proposedStir
 
 def stirSacChosen : Game :=
   mustApply stirChooseAdditional ⟨0⟩ (.chooseAdditionalCost false)
 
-#guard stirSacChosen.pending == .activateManaAbilities ⟨0⟩
+#guard
+  match stirSacChosen.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
 #guard
   match stirSacChosen.proposedSpell with
   | some prop => prop.needsSacrificeOther && prop.cost == ManaCost.ofColor .black
   | none => false
+#guard stirSacChosen.log.any (fun s =>
+  mentions s "chooses to sacrifice an artifact or creature (CR 601.2b)")
 
-def stirPaidSac : Game := mustApply stirSacChosen ⟨0⟩ .pay
+def stirSacTargeted : Game :=
+  mustApply stirSacChosen ⟨0⟩
+    (.target (Target.permanent (namedPermanent stirSacChosen "Grizzly Bears").id))
+
+#guard stirSacTargeted.pending == .activateManaAbilities ⟨0⟩
+
+def stirPaidSac : Game := mustApply stirSacTargeted ⟨0⟩ .pay
 
 #guard
   match stirPaidSac.pending with
@@ -8828,17 +8839,18 @@ def stirPayGenericReady : Game :=
 def stirPayGenericChosen : Game :=
   let g := mustApply stirPayGenericReady ⟨0⟩
     (.cast (handCardNamed stirPayGenericReady ⟨0⟩ "Stir Up Trouble").id)
-  let g := mustApply g ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.chooseAdditionalCost true)
+  mustApply g ⟨0⟩
     (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
-  mustApply g ⟨0⟩ (.chooseAdditionalCost true)
 
 #guard
   match stirPayGenericChosen.proposedSpell with
   | some prop =>
     !prop.needsSacrificeOther && prop.cost.manaValue == 5
   | none => false
+#guard stirPayGenericChosen.pending == .activateManaAbilities ⟨0⟩
 #guard stirPayGenericChosen.log.any (fun s =>
-  mentions s "chooses to pay {4} as an additional cost")
+  mentions s "chooses to pay {4} as an additional cost (CR 601.2b)")
 
 def stirResolvedViaPay : Game :=
   passBoth (mustApply stirPayGenericChosen ⟨0⟩ .pay)

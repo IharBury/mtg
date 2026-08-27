@@ -486,9 +486,9 @@ def helpInteractive (controlAll : Bool := false)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
-  pay-extra            Pay extra generic mana as an additional cost (CR 601.2f)
+  pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
   sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating or casting
-  sacrifice            Choose to sacrifice as an additional cost (CR 601.2f)
+  sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
   activate <id>        Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay)
@@ -535,7 +535,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
-#guard ((helpInteractive false).splitOn "CR 601.2f").length > 1
+#guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "replays that file and appends new commands").length > 1
@@ -1250,7 +1250,7 @@ def sacrificeUsage : String := "usage: sacrifice <id>"
 
 /-- After `pay`, sacrifice the named creature or artifact to finish activating
 or casting. With no id, choose the sacrifice option of an additional cost
-(CR 601.2f). -/
+(CR 601.2b). -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1270,7 +1270,7 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
 def payExtraUsage : String := "usage: pay-extra"
 
 /-- Pay extra generic mana rather than sacrifice, as an additional cost
-(CR 601.2f). -/
+(CR 601.2b). -/
 def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1280,7 +1280,7 @@ def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
 #guard
   match applyPayExtra Tests.stirChooseAdditional ⟨0⟩ [] with
   | .ok g' =>
-    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.pending == .chooseTargets ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "chooses to pay {4} as an additional cost")
   | .error _ => false
 

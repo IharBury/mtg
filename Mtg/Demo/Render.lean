@@ -406,7 +406,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayDiscardDraw p n =>
       s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
     | .chooseAdditionalCost p =>
-      s!" [choose an additional cost (CR 601.2f, {g.player p |>.name})]"
+      s!" [choose an additional cost (CR 601.2b, {g.player p |>.name})]"
     | .chooseSacrificeCreature p _ _ =>
       s!" [sacrifice a creature ({g.player p |>.name})]"
     | .chooseDiscardCard p _ =>

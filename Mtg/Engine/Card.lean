@@ -1429,12 +1429,13 @@ structure CardDef where
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
   spellEffect : Option SpellEffect := none
-  /-- Additional cost: sacrifice an artifact or creature (CR 601.2f), e.g.
+  /-- Additional cost: sacrifice an artifact or creature (CR 601.2b / 601.2h), e.g.
   Improvised Club. When `additionalCostOrPayGeneric` is set, that sacrifice
-  may be replaced by paying that much generic mana (e.g. Stir Up Trouble). -/
+  may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
+  The choice is announced at CR 601.2b, before targets. -/
   additionalCostSacrificeArtifactOrCreature : Bool := false
   /-- Alternative additional cost: pay this much generic mana instead of
-  sacrificing an artifact or creature (CR 601.2f). -/
+  sacrificing an artifact or creature (CR 601.2b). -/
   additionalCostOrPayGeneric : Option Nat := none
   /-- This spell costs this much generic mana less if a creature died this
   turn (e.g. Dreaded Bat-Cloud). -/

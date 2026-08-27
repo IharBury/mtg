@@ -13,9 +13,10 @@ Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 including additional land plays this turn (CR 305.2b),
 casting the spells we model (CR 601), including choosing modes of modal spells
-and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
-damage among those targets (CR 601.2d), additional costs such as sacrificing
-an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
+and abilities (CR 601.2b / 700.2), announcing additional or alternative costs
+(CR 601.2b) before targets (CR 601.2c), dividing
+damage among those targets (CR 601.2d), then determining and paying costs
+including sacrificing an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
 and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents, cards in hand
 (typecycling, CR 702.29), and graveyard cards (CR 602),
@@ -68,7 +69,8 @@ adventurer cards including casting an Adventure and later the permanent
 (CR 715), playing exiled creature cards with mana of any type
 (CR 118.12 / 400.7), cost reductions if a creature died this turn or if the
 target was dealt damage this turn (CR 118.7 / 601.2f), additional costs that
-sacrifice an artifact or creature or pay extra generic mana (CR 601.2f),
+sacrifice an artifact or creature or pay extra generic mana (announced at
+CR 601.2b, determined and paid at 601.2f–h),
 typecycling from hand (CR 702.29: discard this card, search for a land type,
 put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
@@ -430,8 +432,8 @@ inductive Pending where
   | scry (player : PlayerId) (count : Nat)
   /-- This player may discard a card; if they do, they draw `drawCount` (CR 701.9). -/
   | mayDiscardDraw (player : PlayerId) (drawCount : Nat)
-  /-- After targets, choose whether to sacrifice or pay extra generic mana
-  as an additional cost (CR 601.2f). -/
+  /-- The player must announce an additional or alternative additional cost
+  (CR 601.2b), before targets (CR 601.2c). -/
   | chooseAdditionalCost (player : PlayerId)
   /-- This player must sacrifice a creature they control. `chosen` are
   already-selected sacrifices; `remaining` are later players in APNAP order. -/
@@ -509,7 +511,7 @@ inductive Action where
   (CR 601.2h / 602.2b), or sacrifice a creature as a resolving effect. -/
   | sacrifice (id : ObjectId)
   /-- Choose to pay extra generic mana rather than sacrifice, as an additional
-  cost (CR 601.2f). `true` pays the generic alternative; `false` sacrifices. -/
+  cost (CR 601.2b). `true` pays the generic alternative; `false` sacrifices. -/
   | chooseAdditionalCost (payGeneric : Bool)
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
@@ -2003,7 +2005,8 @@ def lockInTargetCostReduction (g : Game) : Game :=
           | none => g
         | _ => g
 
-/-- Continue after CR 601.2c: additional costs (601.2f), then mana abilities (601.2g). -/
+/-- Continue after CR 601.2c: determine the total cost (601.2f), then mana
+abilities (601.2g). Additional-cost *choices* are announced earlier, at 601.2b. -/
 def afterTargetsChosen (g : Game) : Game :=
   match g.proposedSpell with
   | none => g
@@ -2012,24 +2015,40 @@ def afterTargetsChosen (g : Game) : Game :=
     match g.proposedSpell with
     | none => g
     | some prop =>
-      let additional :=
-        match g.findObject? prop.spellId, prop.kind with
-        | some o, .spell =>
-          match o.printed.additionalCostOrPayGeneric with
-          | some _ => true
-          | none => false
-        | _, _ => false
-      if additional then
-        { g with pending := .chooseAdditionalCost prop.caster }
-          |>.logMsg
-            s!"{(g.player prop.caster).name} must choose an additional cost (CR 601.2f)"
-      else if prop.cost.includesManaPayment || prop.needsSacrificeOther then
+      if prop.cost.includesManaPayment || prop.needsSacrificeOther then
         { g with pending := .activateManaAbilities prop.caster }
           |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
       else
         let spell := g.object! prop.spellId
         let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
         g.becomeCast prop.caster spell
+
+/-- Whether the proposed spell or ability still needs targets announced (CR 601.2c). -/
+def proposedNeedsTarget (g : Game) (prop : ProposedSpell) : Bool :=
+  match g.findObject? prop.spellId with
+  | none => false
+  | some o =>
+    match prop.kind with
+    | .spell =>
+      match g.currentSpellEffect o with
+      | some e => e.requiresTarget
+      | none => o.printed.requiresTarget || o.printed.isAura
+    | .activatedAbility =>
+      match o.abilityEffect with
+      | some e => e.requiresTarget
+      | none => false
+
+/-- After CR 601.2b additional-cost announcement, continue to targets (601.2c)
+or cost determination (601.2f). -/
+def afterAdditionalCostAnnounced (g : Game) : Game :=
+  match g.proposedSpell with
+  | none => g
+  | some prop =>
+    if g.proposedNeedsTarget prop then
+      { g with pending := .chooseTargets prop.caster }
+        |>.logMsg s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
+    else
+      g.afterTargetsChosen
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
@@ -2184,13 +2203,17 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
-/-- After proposing a spell or activated ability, ask for a mode, a target, or
-mana abilities (CR 601.2b–g / 700.2). -/
+/-- After proposing a spell or activated ability, announce modes and additional
+costs (CR 601.2b), then targets (CR 601.2c), then mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
-    (needsMode needsTarget : Bool) (modeCitation : String) : Game :=
+    (needsMode needsTarget : Bool) (modeCitation : String)
+    (needsAdditionalCost : Bool := false) : Game :=
   if needsMode then
     let g := { g with pending := .chooseMode p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a mode ({modeCitation})"
+  else if needsAdditionalCost then
+    let g := { g with pending := .chooseAdditionalCost p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} must choose an additional cost (CR 601.2b)"
   else if needsTarget then
     let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
@@ -2226,9 +2249,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       face.additionalCostOrPayGeneric.isNone &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{face.name} requires sacrificing an artifact or creature"
-  -- CR 601.2a: propose the spell by moving it onto the stack. Modes are
-  -- announced at CR 601.2b, targets at CR 601.2c; mana is not required yet
-  -- (CR 601.2g). CR 715.3: an adventurer card may be cast as its Adventure.
+  -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
+  -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
+  -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
+  -- cast as its Adventure.
   let printedCost :=
     if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
       face.manaCost.reduceGeneric face.costReductionIfCreatureDied
@@ -2270,6 +2294,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   }
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
+    (needsAdditionalCost := needsAdditionalCostChoice)
 
 /-- Announce the chosen mode for a modal spell or activated ability
 (CR 601.2b / 700.2). -/
@@ -2304,8 +2329,13 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let g := g.setProposedMode mode
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
-      let g := { g with pending := .chooseTargets p }
-      return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+      if spell.printed.additionalCostOrPayGeneric.isSome then
+        let g := { g with pending := .chooseAdditionalCost p }
+        return g.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
+      if effect.requiresTarget then
+        let g := { g with pending := .chooseTargets p }
+        return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+      return g.afterTargetsChosen
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- After a trigger's targets (and any damage division) are fully announced,
@@ -3735,19 +3765,19 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
   | .chooseTargets _ =>
     throw "Choose a target first (CR 601.2c)"
   | .chooseAdditionalCost _ =>
-    throw "Choose an additional cost first (CR 601.2f)"
+    throw "Choose an additional cost first (CR 601.2b)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
-/-- After targets, choose whether to pay extra generic mana or sacrifice
-an artifact or creature (CR 601.2f). -/
+/-- Announce whether to pay extra generic mana or sacrifice an artifact or
+creature as an additional cost (CR 601.2b), before targets (CR 601.2c). -/
 def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
     Except String Game := do
   match g.pending with
   | .chooseAdditionalCost q =>
     if p != q then
-      throw s!"Only {(g.player q).name} may choose an additional cost (CR 601.2f)"
+      throw s!"Only {(g.player q).name} may choose an additional cost (CR 601.2b)"
     let some prop := g.proposedSpell
-      | throw "No spell is waiting for an additional cost (CR 601.2f)"
+      | throw "No spell is waiting for an additional cost (CR 601.2b)"
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
     match spell.printed.additionalCostOrPayGeneric with
@@ -3759,19 +3789,17 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           needsSacrificeOther := false }
         let g := { g with proposedSpell := some prop }
         let g := g.logMsg
-          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2f)"
-        let g := { g with pending := .activateManaAbilities p }
-        return g.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
+          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
+        return g.afterAdditionalCostAnnounced
       else
         if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
           throw s!"{spell.name} requires sacrificing an artifact or creature"
         let prop := { prop with needsSacrificeOther := true }
         let g := { g with proposedSpell := some prop }
         let g := g.logMsg
-          s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2f)"
-        let g := { g with pending := .activateManaAbilities p }
-        return g.logMsg s!"{(g.player p).name} may activate mana abilities (CR 601.2g)"
-  | _ => throw "Not time to choose an additional cost (CR 601.2f)"
+          s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
+        return g.afterAdditionalCostAnnounced
+  | _ => throw "Not time to choose an additional cost (CR 601.2b)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do
   if g.over then
