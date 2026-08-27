@@ -403,10 +403,19 @@ def printCombatAssignment (g : Game) : IO Unit := do
       IO.println s!"  {line}"
   | none => pure ()
 
-/-- Pending cost or combat-damage assignment the acting player must resolve. -/
+/-- Print which legendary permanents the acting player may keep. -/
+def printLegendRule (g : Game) : IO Unit := do
+  match legendRuleBlock g with
+  | some block =>
+    for line in block.splitOn "\n" do
+      IO.println s!"  {line}"
+  | none => pure ()
+
+/-- Pending cost, combat-damage assignment, or legend-rule choice. -/
 def printPendingPrompt (g : Game) : IO Unit := do
   printPendingCost g
   printCombatAssignment g
+  printLegendRule g
 
 def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
@@ -482,6 +491,7 @@ def helpInteractive (controlAll : Bool := false)
   visible on           Use {viewWho}'s view for state and later updates
   visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
+  keep <id>            Choose which legendary permanent to keep (CR 704.5j)
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
@@ -528,6 +538,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "defending player").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
+#guard ((helpInteractive false).splitOn "keep <id>").length > 1
+#guard ((helpInteractive false).splitOn "CR 704.5j").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
@@ -1941,10 +1953,28 @@ def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
 handled by the console loop. Actions are issued as `p`. -/
+def keepUsage : String := "usage: keep [<id>]"
+
+/-- Keep an opening hand, or choose which legendary permanent to keep
+(CR 103.5 / 704.5j). -/
+def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match g.pending, tokens with
+  | .chooseLegend _ _ _, [arg] =>
+    match parseObjectId? arg with
+    | none => throw keepUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.keepLegend id)
+  | .chooseLegend _ _ _, _ => throw keepUsage
+  | _, [] => g.apply p .keep
+  | _, _ => throw keepUsage
+
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
   match cmd with
-  | "keep" => g.apply p .keep
+  | "keep" => applyKeep g p args
   | "mulligan" => g.apply p .takeMulligan
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
@@ -1976,6 +2006,26 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   match applyInteractiveAsActor Tests.drawnHands "keep" [] with
   | .ok g' => (g'.player ⟨0⟩).keptOpeningHand && g'.actor == some ⟨1⟩
   | .error _ => false
+
+#guard
+  match applyKeep Tests.drawnHands ⟨0⟩ ["1"] with
+  | .error msg => msg == keepUsage
+  | .ok _ => false
+
+#guard
+  match applyKeep Tests.twoBofursSBA ⟨0⟩ [] with
+  | .error msg => msg == keepUsage
+  | .ok _ => false
+
+#guard
+  match Tests.twoBofursSBA.pending with
+  | .chooseLegend _ _ ids =>
+    match applyInteractiveAsActor Tests.twoBofursSBA "keep" [toString ids[0]!] with
+    | .ok g' =>
+      (g'.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1 &&
+      g'.log.any (fun s => Tests.mentions s "704.5j")
+    | .error _ => false
+  | _ => false
 
 #guard
   match applyInteractiveAsActor Tests.afterChandraDeclaresMulligan "keep" [] with

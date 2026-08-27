@@ -99,7 +99,8 @@ The first slice of the engine models the two-player game:
 - cards, types, zones, and turn structure (CR 108–110, 205, 300, 400, 500)
 - starting a game, choosing who takes the first turn, opening hands, London
   mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
-- ending a game via life, empty library, or concession (CR 104, 704.5)
+- ending a game via life, empty library, or concession (CR 104, 704.5), and
+  the legend rule (CR 704.5j)
 - playing lands, including additional land plays this turn (CR 305.2b), activating mana abilities (including `{T}: Add` for each
   permanent of a listed type, and `{T}: Add` X mana of any color equal to
   power that may be spent only on Elf spells and abilities), activating other abilities of

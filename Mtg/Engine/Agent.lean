@@ -56,6 +56,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | none => some .decline
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
+    | .chooseLegend _ _ ids =>
+      some (.keepLegend (defaultLegendToKeep g ids))
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
