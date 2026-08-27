@@ -213,6 +213,10 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
   (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
+#guard lightningBolt.hasType .instant
+#guard !grizzlyBears.hasType .instant
+#guard (lightningBolt.spellEffect.map SpellEffect.castKind) == some .burn
+#guard (giantGrowth.spellEffect.map SpellEffect.castKind) == some .pump
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
 #guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
   (subtypes := #["Equipment"])).isEquipment

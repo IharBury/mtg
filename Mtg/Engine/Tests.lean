@@ -171,18 +171,8 @@ def drawnOnce : Game := Game.draw started ⟨0⟩
 def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
     (controller : Option PlayerId := none) (status : Status := {})
     (updateOwner : ObjectId → Player → Player := fun _ pl => pl) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := card
-    owner := owner
-    controller := controller
-    zone := zone
-    status := status
-    timestamp := ts
-  }
-  { g with objects := g.objects.push obj }.modifyPlayer owner (updateOwner id)
+  let (g, obj) := g.allocObject card owner zone controller status
+  g.modifyPlayer owner (updateOwner obj.id)
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
@@ -1990,18 +1980,9 @@ def withRedMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
 /-- Put `aura` onto the battlefield already attached to `host`. -/
 def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
     (owner controller : PlayerId) : Game :=
-  let (g, id) := g.allocId
-  let (g, ts) := g.bumpTime
-  let obj : GameObject := {
-    id := id
-    printed := aura
-    owner := owner
-    controller := some controller
-    zone := .battlefield
-    timestamp := ts
-    attachedTo := some host.id
-  }
-  { g with objects := g.objects.push obj }
+  let (g, _) := g.allocObject aura owner .battlefield (some controller)
+    (attachedTo := some host.id)
+  g
 
 /-- Keep the looked-at cards on top in their current order (CR 701.20). -/
 def keepScry (g : Game) : Game :=
