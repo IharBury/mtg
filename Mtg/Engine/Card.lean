@@ -259,6 +259,8 @@ inductive SpellEffect where
   | pump (power toughness : Int)
   /-- Destroy target creature with flying (CR 701.8). -/
   | destroyCreatureWithFlying
+  /-- Destroy target creature (CR 701.8). -/
+  | destroyCreature
   /-- Put a +1/+1 counter on target creature you control. It gains trample and
   hexproof until end of turn. -/
   | plusOnePlusOneTrampleHexproof
@@ -293,6 +295,8 @@ inductive SpellCastKind where
   | fight
   /-- Destroy target creature with flying. -/
   | destroyFlying
+  /-- Destroy target creature. -/
+  | destroyCreature
   /-- Destroy target artifact or land. -/
   | destroyArtifactOrLand
   /-- Until-end-of-turn pump or +1/+1 with keyword grants. -/
@@ -401,6 +405,9 @@ def spec : SpellEffect → SpellMeta
   | .destroyCreatureWithFlying =>
     { targeting := .of .creatureWithFlying, castKind := .destroyFlying,
       preferAsDefaultMode := true, resolution := .onPermanent .destroy }
+  | .destroyCreature =>
+    { targeting := .of .creature, castKind := .destroyCreature,
+      resolution := .onPermanent .destroy }
   | .plusOnePlusOneTrampleHexproof =>
     { targeting := .of .creatureYouControl, castKind := .pump,
       resolution := .onPermanent .plusOnePlusOneTrampleHexproof }
@@ -1434,6 +1441,8 @@ instance : ToString CardDef where
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
   "destroy target creature with flying"
+#guard SpellEffect.toNotation .destroyCreature ==
+  "destroy target creature"
 #guard SpellEffect.toNotation .plusOnePlusOneTrampleHexproof ==
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
@@ -1495,6 +1504,7 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
+#guard SpellEffect.targetCount .destroyCreature == 1
 #guard SpellEffect.targetCount (.drawAndLoseLife 2 2) == 0
 #guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
 #guard SpellEffect.targetKind (.pump 3 3) == .creature
@@ -1504,6 +1514,7 @@ instance : ToString CardDef where
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
 #guard EffectTargetKind.defaultPreference .creature == .opponent
 #guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
+#guard SpellEffect.targetKind .destroyCreature == .creature
 #guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
 #guard SpellEffect.targetKind (.dealDamageToCreature 5) == .creature
 #guard SpellEffect.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
@@ -1514,6 +1525,7 @@ instance : ToString CardDef where
 #guard SpellEffect.targetKind (.drawAndLoseLife 2 2) == .none
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .destroyCreature
 #guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
 #guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
@@ -1525,6 +1537,7 @@ instance : ToString CardDef where
 #guard SpellEffect.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
 #guard SpellEffect.castKind .creatureYouControlDealsPowerToOppCreature == .fight
 #guard SpellEffect.castKind .destroyCreatureWithFlying == .destroyFlying
+#guard SpellEffect.castKind .destroyCreature == .destroyCreature
 #guard SpellEffect.castKind .destroyArtifactOrLandNonflyersCantBlock ==
   .destroyArtifactOrLand
 #guard SpellEffect.castKind (.pump 3 3) == .pump
@@ -1532,11 +1545,13 @@ instance : ToString CardDef where
 #guard SpellEffect.castKind .playAdditionalLandThisTurn == .extraLand
 #guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
 #guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
+#guard !SpellEffect.preferAsDefaultMode .destroyCreature
 #guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
 #guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
 #guard SpellEffect.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
 #guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
 #guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
+#guard SpellEffect.resolution .destroyCreature == .onPermanent .destroy
 #guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
 #guard SpellEffect.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
 #guard SpellEffect.resolution .creatureYouControlDealsPowerToOppCreature == .fight

@@ -24,8 +24,8 @@ another Elf you control entering that pumps this creature,
 landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy (including target artifact or land,
-after which creatures without flying can't block this turn), +1/+1
+plays this turn), modal spells, destroy (including target creature, and target
+artifact or land, after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
 to a creature an opponent controls, dealing damage that also makes a creature
@@ -248,6 +248,7 @@ def gollumSilentSlinker : CardDef :=
 def bilbosDeadlySlice : CardDef :=
   instant "Bilbo's Deadly Slice" (ManaCost.ofGenericAndColors 1 [.black, .black])
     "Destroy target creature."
+    (some .destroyCreature)
 
 def dreadedBatCloud : CardDef :=
   creature "Dreaded Bat-Cloud" (ManaCost.ofGenericAndColor 4 .black) #["Bat"] 4 2
@@ -718,6 +719,11 @@ def attercop : CardDef :=
 #guard (raveningWarg.summary.splitOn "Ferocious").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
+#guard bilbosDeadlySlice.isInstant
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard (bilbosDeadlySlice.summary.splitOn "Destroy target creature").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature

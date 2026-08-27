@@ -30,7 +30,7 @@ effects that prevent creatures without flying from blocking, and can't-be-blocke
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
 indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), scry (CR 701.20),
-discard (CR 701.9), destroy (CR 701.8), including a target artifact or land, +1/+1 counters (CR 122), until-end-of-turn
+discard (CR 701.9), destroy (CR 701.8), including a target creature or a target artifact or land, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants and losses, replacement effects that exile a creature instead of
 dying this turn (CR 614.1 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control, giving another creature
@@ -1730,6 +1730,7 @@ def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
+destroy-creature prefers an opposing creature;
 destroy-colorless prefers an opposing colorless nonland; destroy-artifact-or-land prefers
 an opposing artifact or land; Mirkwood Elk prefers an Elf
 card in the controller's graveyard; Crude Bent Blade prefers an opposing player; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then

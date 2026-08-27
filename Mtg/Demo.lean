@@ -1528,6 +1528,17 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error _ => false
 
 #guard
+  match applyCast Tests.bilbosDeadlySliceSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.bilbosDeadlySliceSetup ⟨0⟩
+        "Bilbo's Deadly Slice").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Bilbo's Deadly Slice") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
   match applyCast Tests.boltSetup ⟨0⟩ [toString Tests.boltInHand.id, "adventure"] with
   | .error msg => Tests.mentions msg "has no Adventure"
   | .ok _ => false
