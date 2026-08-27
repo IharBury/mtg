@@ -137,7 +137,8 @@ The first slice of the engine models the two-player game:
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
+  creatures without flying can't block this turn), drawing cards and losing
+  life (Night's Whisper), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a

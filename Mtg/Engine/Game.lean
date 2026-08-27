@@ -16,6 +16,7 @@ casting the spells we model (CR 601), including choosing modes of modal spells
 and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), additional costs such as sacrificing
 an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
+drawing cards and losing life (CR 121 / 118.3a),
 and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
@@ -1785,8 +1786,10 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id && (perm.isCreature || perm.printed.isArtifact))
    else true) &&
+  -- Untargeted permanents, and untargeted instants/sorceries with a modeled
+  -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
   if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
-  else o.printed.isPermanentCard
+  else o.printed.isPermanentCard || o.printed.spellEffect.isSome
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (_g : Game) (o : GameObject) : Bool :=
@@ -2344,6 +2347,15 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
   let g := g.setPlayer { pl with life := pl.life - n }
   g.logMsg s!"{pl.name} is dealt {n} damage ({(g.player pid).life} life)"
 
+/-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
+(CR 118.9). Loss of life is not damage (CR 120.3). -/
+def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setPlayer { pl with life := pl.life - (n : Int) }
+    g.logMsg s!"{pl.name} loses {n} life ({(g.player p).life} life)"
+
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
   match t with
@@ -2569,6 +2581,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
+  | .drawAndLoseLife cards life =>
+    let g := g.draw controller cards
+    g.loseLife controller life
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
 

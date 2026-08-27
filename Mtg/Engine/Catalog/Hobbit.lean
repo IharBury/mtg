@@ -29,7 +29,8 @@ after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
 to a creature an opponent controls, dealing damage that also makes a creature
-lose indestructible and exile it if it would die this turn, and a few one-shot spell effects);
+lose indestructible and exile it if it would die this turn, drawing cards and
+losing life, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -294,6 +295,7 @@ def reverentHowl : CardDef :=
 def nightsWhisper : CardDef :=
   sorcery "Night's Whisper" (ManaCost.ofGenericAndColor 1 .black)
     "You draw two cards and lose 2 life."
+    (some (.drawAndLoseLife 2 2))
 
 def stonyVoicedGoblins : CardDef :=
   creature "Stony-Voiced Goblins" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Bard"] 1 1
@@ -713,6 +715,12 @@ def attercop : CardDef :=
 #guard fireOfOrthanc.requiresTarget
 #guard (fireOfOrthanc.summary.splitOn "artifact or land").length > 1
 #guard (fireOfOrthanc.summary.splitOn "can't block this turn").length > 1
+#guard nightsWhisper.isSorcery
+#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard !nightsWhisper.requiresTarget
+#guard nightsWhisper.hasCastKind .draw
+#guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
+#guard (nightsWhisper.summary.splitOn "lose 2 life").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)

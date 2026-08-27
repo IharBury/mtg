@@ -272,6 +272,9 @@ inductive SpellEffect where
   /-- Destroy target artifact or land. Creatures without flying can't block
   this turn (e.g. Fire of Orthanc). -/
   | destroyArtifactOrLandNonflyersCantBlock
+  /-- You draw `cards` cards and lose `life` life (e.g. Night's Whisper).
+  Loss of life is not damage (CR 118.3a / 120.3). -/
+  | drawAndLoseLife (cards life : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -292,6 +295,8 @@ inductive SpellCastKind where
   | pump
   /-- You may play an additional land this turn. -/
   | extraLand
+  /-- Draw cards, optionally losing life (e.g. Night's Whisper). -/
+  | draw
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Signed power/toughness bonus for Oracle-style reminders (`+1` vs `-1`). -/
@@ -360,6 +365,9 @@ inductive SpellResolution where
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
+  /-- You draw `cards` cards and lose `life` life. Loss of life is not
+  damage (CR 118.3a / 120.3). -/
+  | drawAndLoseLife (cards life : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -406,6 +414,9 @@ def spec : SpellEffect → SpellMeta
   | .destroyArtifactOrLandNonflyersCantBlock =>
     { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
       resolution := .onPermanent .destroyThenNonflyersCantBlock }
+  | .drawAndLoseLife cards life =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .drawAndLoseLife cards life }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -446,6 +457,8 @@ def toNotation (e : SpellEffect) : String :=
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
+  | .drawAndLoseLife cards life =>
+    s!"you draw {cardPhrase cards} and lose {life} life"
   | .onPermanent action => PermanentAction.toNotation action noun
 
 instance : ToString SpellEffect where
@@ -1419,6 +1432,10 @@ instance : ToString CardDef where
   "you may play an additional land this turn"
 #guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
+#guard SpellEffect.toNotation (.drawAndLoseLife 2 2) ==
+  "you draw 2 cards and lose 2 life"
+#guard SpellEffect.toNotation (.drawAndLoseLife 1 0) ==
+  "you draw a card and lose 0 life"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
 #guard EffectTargetKind.noun .colorlessNonland ==
@@ -1461,6 +1478,7 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
+#guard SpellEffect.targetCount (.drawAndLoseLife 2 2) == 0
 #guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
 #guard SpellEffect.targetKind (.pump 3 3) == .creature
 #guard SpellEffect.targeting (.pump 3 3) == EffectTargeting.of .creature .own
@@ -1475,6 +1493,7 @@ instance : ToString CardDef where
   .creatureYouControlThenOppCreature
 #guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
 #guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
+#guard SpellEffect.targetKind (.drawAndLoseLife 2 2) == .none
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
 #guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
@@ -1482,6 +1501,7 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
+#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
 #guard SpellEffect.castKind (.dealDamage 3) == .burn
 #guard SpellEffect.castKind (.dealDamageToCreature 5) == .creatureDamage
 #guard SpellEffect.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
@@ -1492,6 +1512,7 @@ instance : ToString CardDef where
 #guard SpellEffect.castKind (.pump 3 3) == .pump
 #guard SpellEffect.castKind .plusOnePlusOneTrampleHexproof == .pump
 #guard SpellEffect.castKind .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
 #guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
 #guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
 #guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
@@ -1499,6 +1520,7 @@ instance : ToString CardDef where
 #guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
 #guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
 #guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
 #guard SpellEffect.resolution .creatureYouControlDealsPowerToOppCreature == .fight
 #guard SpellEffect.resolution (.dealDamageToCreature 5) ==
   .onPermanent (.dealDamage 5)

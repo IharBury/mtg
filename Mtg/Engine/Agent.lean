@@ -163,6 +163,16 @@ where
         playable.find? (fun o => spellKind o .creatureDamage)
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
+    let draw := playable.find? (fun o =>
+      spellKind o .draw &&
+        match o.printed.spellEffect with
+        | some e =>
+          match e.resolution with
+          | .drawAndLoseLife cards life =>
+            (g.player p).life > (life : Int) &&
+              (g.player p).library.size >= cards
+          | _ => true
+        | none => false)
     let removal := playable.find? (fun o =>
       (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
@@ -193,6 +203,8 @@ where
     else if let some o := removal then
       some (.cast o.id)
     else if let some o := fight then
+      some (.cast o.id)
+    else if let some o := draw then
       some (.cast o.id)
     else if let some o := creature then
       some (.cast o.id)

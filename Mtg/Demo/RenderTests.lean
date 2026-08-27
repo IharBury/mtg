@@ -1192,4 +1192,14 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "2/2"
 #guard mentions (lifeLine (wargFerociousResolved.player ⟨0⟩)) "life 22"
 
+#guard mentions (stackBlock paidNightsWhisper) "Night's Whisper"
+#guard mentions (stackBlock paidNightsWhisper) "draw two cards"
+#guard mentions (stackBlock paidNightsWhisper) "lose 2 life"
+#guard mentions (zoneBlock resolvedNightsWhisper (.hand ⟨0⟩)) "Swamp"
+#guard mentions (zoneBlock resolvedNightsWhisper (.hand ⟨0⟩)) "Forest"
+#guard mentions (lifeLine (resolvedNightsWhisper.player ⟨0⟩)) "life 18"
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Swamp")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Forest")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "loses 2 life (18 life)")
+
 end Mtg.Demo.RenderTests
