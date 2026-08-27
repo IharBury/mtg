@@ -50,6 +50,22 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.player p).hand.back? with
       | some id => some (.discard id)
       | none => some .decline
+    | .chooseAdditionalCost _ =>
+      match g.proposedSpell with
+      | some prop =>
+        if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
+          some (.chooseAdditionalCost true)
+        else
+          some (.chooseAdditionalCost false)
+      | none => some .pass
+    | .chooseSacrificeCreature _ _ _ =>
+      match (g.creaturesControlledBy p)[0]? with
+      | some o => some (.sacrifice o.id)
+      | none => some .pass
+    | .chooseDiscardCard _ _ =>
+      match (g.player p).hand.back? with
+      | some id => some (.discard id)
+      | none => some .decline
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
     | .none =>
@@ -114,7 +130,7 @@ where
         | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let candidate := (g.permanentsOf p).find? (fun o =>
+    let activatable (o : GameObject) : Bool :=
       match o.printed.activatedAbilities[0]? with
       | some ab =>
         let available :=
@@ -128,7 +144,9 @@ where
         -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
         !(ab.effect == .targetCantBeBlockedThisTurn &&
           !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking))
-      | none => false)
+      | none => false
+    let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
+    let candidate := (g.permanentsOf p).find? activatable <|> gy.find? activatable
     match candidate with
     | some o => some (.activate o.id 0)
     | none => chooseCast g p
@@ -164,9 +182,14 @@ where
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
     let removal := playable.find? (fun o =>
+      (oppHasCreature && (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
+    let massPump := playable.find? (fun o =>
+      spellKind o .massPump || modeKind o .massPump)
+    let drawSpell := playable.find? (fun o =>
+      spellKind o .draw || modeKind o .draw)
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.isArtifact &&
@@ -204,6 +227,10 @@ where
       some (.cast o.id)
     else if let some o := extraLandAdventure then
       some (.castAdventure o.id)
+    else if let some o := massPump then
+      some (.cast o.id)
+    else if let some o := drawSpell then
+      some (.cast o.id)
     else
       some .pass
 

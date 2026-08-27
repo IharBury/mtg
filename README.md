@@ -107,9 +107,12 @@ The first slice of the engine models the two-player game:
   granted cards from exile, and casting spells (CR 601.2, including choosing
   modes at 601.2b / 700.2, announcing targets at 601.2c, additional costs
   such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
-  life at 118.3b / 119.4, and mana
+  extra generic mana as an alternative additional cost, or paying
+  life at 118.3b / 119.4, cost reductions if a creature died this turn or the
+  target was dealt damage this turn, graveyard activations, and mana
   abilities at 601.2g)
-- combat declaration and combat damage assignment (CR 510.1c–d)
+- combat declaration and combat damage assignment (CR 510.1c–d), including
+  menace, “can't be blocked except by N or more”, and lifelink
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
@@ -136,12 +139,15 @@ The first slice of the engine models the two-player game:
   deal damage to each opponent when you cast an instant or sorcery,
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
+- modal instants, destroy (including target creature, or a target artifact or land, after which
+  creatures without flying can't block this turn), mass until-end-of-turn P/T
+  changes, drawing and losing life, +1/+1 counters, hexproof, indestructible, deathtouch, lifelink, menace, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a
-  creature an opponent controls, and lasting type-changing animations (a permanent that becomes
+  creature an opponent controls, enters triggers that make each player
+  sacrifice a creature, a target opponent sacrifice a creature, or each
+  opponent discard a card, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,

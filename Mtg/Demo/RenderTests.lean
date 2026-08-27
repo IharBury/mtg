@@ -1192,4 +1192,11 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "2/2"
 #guard mentions (lifeLine (wargFerociousResolved.player ⟨0⟩)) "life 22"
 
+#guard mentions (header stirChooseAdditional) "choose an additional cost (CR 601.2f"
+#guard mentions (header bladeOppSacrificing) "sacrifice a creature"
+#guard mentions (header stonyDiscarding) "discard a card"
+#guard mentions (header gollumDeclareBlockers) "declare blockers"
+#guard mentions (objectLine howlLifelink (namedPermanent howlLifelink "Raging Goblin"))
+  "lifelink"
+
 end Mtg.Demo.RenderTests

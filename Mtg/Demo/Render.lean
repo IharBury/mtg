@@ -405,6 +405,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [scry {n} ({g.player p |>.name})]"
     | .mayDiscardDraw p n =>
       s!" [may discard a card, then draw {n} ({g.player p |>.name})]"
+    | .chooseAdditionalCost p =>
+      s!" [choose an additional cost (CR 601.2f, {g.player p |>.name})]"
+    | .chooseSacrificeCreature p _ _ =>
+      s!" [sacrifice a creature ({g.player p |>.name})]"
+    | .chooseDiscardCard p _ =>
+      s!" [discard a card ({g.player p |>.name})]"
     | .assignCombatDamage p true =>
       s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
     | .assignCombatDamage p false =>

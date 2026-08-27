@@ -113,6 +113,32 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
 def colors (cost : ManaCost) : ColorSet :=
   cost.symbols.foldl (fun acc s => acc.union s.colorContribution) ColorSet.empty
 
+/-- Reduce generic mana in this cost by `n`, dropping a `{0}` generic symbol
+(CR 118.7d). Colored symbols are unchanged. -/
+def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
+  let rec go (syms : List ManaSymbol) (left : Nat) : List ManaSymbol :=
+    match syms with
+    | [] => []
+    | .generic g :: rest =>
+      if left == 0 then .generic g :: go rest 0
+      else if left ≥ g then go rest (left - g)
+      else
+        let g' := g - left
+        (if g' == 0 then [] else [.generic g']) ++ go rest 0
+    | s :: rest => s :: go rest left
+  { symbols := (go cost.symbols.toList n).toArray }
+
+/-- Add `n` generic mana to this cost (CR 601.2f). -/
+def addGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
+  if n == 0 then cost
+  else
+    match cost.symbols.findIdx? (fun s => match s with | .generic _ => true | _ => false) with
+    | some i =>
+      match cost.symbols[i]! with
+      | .generic g => { symbols := cost.symbols.set! i (.generic (g + n)) }
+      | _ => cost
+    | none => { symbols := #[.generic n] ++ cost.symbols }
+
 /-- Printed mana symbols (CR 202.1). An empty cost is not `{0}`: lands and
 other cards with no mana cost have no symbols, and that cost cannot be paid
 (CR 202.1b / 118.6). `{0}` is the generic zero symbol (CR 107.4d). -/
@@ -136,6 +162,11 @@ instance : BEq ManaCost where
 #guard toString ({ symbols := #[.generic 0] } : ManaCost) == "{0}"
 #guard toString (ofGeneric 1) == "{1}"
 #guard toString (ofColor .red) == "{R}"
+#guard (ofGenericAndColor 4 .black).reduceGeneric 3 == ofGenericAndColor 1 .black
+#guard (ofGenericAndColor 3 .black).reduceGeneric 3 == ofColor .black
+#guard (ofGenericAndColor 1 .black).reduceGeneric 3 == ofColor .black
+#guard (ofColor .black).addGeneric 4 == ofGenericAndColor 4 .black
+#guard (ofGenericAndColor 1 .black).addGeneric 4 == ofGenericAndColor 5 .black
 
 end ManaCost
 
