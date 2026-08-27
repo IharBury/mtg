@@ -31,10 +31,14 @@ lake build
 `Mtg.Demo` is a console application that starts a two-player game using the
 [Hobbit Welcome Decks](https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks)
 (40-card limited) and either runs a heuristic demonstration or lets you play
-interactively:
+interactively. `--chandra COLOR` and `--nissa COLOR` choose which of the five
+Welcome Decks each player uses (default red and green). COLOR is white, blue,
+black, red, or green (also W, U, B, R, G):
 
 ```sh
 lake exe mtg-demo
+lake exe mtg-demo -- --chandra white --nissa blue
+lake exe mtg-demo -- --chandra black --nissa red --interactive
 lake exe mtg-demo -- --interactive
 lake exe mtg-demo -- --interactive --visible
 lake exe mtg-demo -- --interactive --input opening.txt

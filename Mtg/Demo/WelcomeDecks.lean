@@ -1,4 +1,5 @@
 import Mtg.Engine.Deck
+import Mtg.Engine.Color
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 
@@ -87,6 +88,14 @@ def hobbitGreen : Array CardDef :=
   copies 2 elvishMystic ++
   #[attercop]
 
+/-- The Welcome Deck for a color, in WUBRG order (CR 105.1). -/
+def hobbitDeck : Color → Array CardDef
+  | .white => hobbitWhite
+  | .blue => hobbitBlue
+  | .black => hobbitBlack
+  | .red => hobbitRed
+  | .green => hobbitGreen
+
 #guard hobbitWhite.size == 40
 #guard hobbitBlue.size == 40
 #guard hobbitBlack.size == 40
@@ -98,5 +107,11 @@ def hobbitGreen : Array CardDef :=
 #guard isLegalDeck .limited hobbitRed
 #guard isLegalDeck .limited hobbitGreen
 #guard !isLegalDeck .constructed hobbitRed
+#guard Color.all.all (fun c => (hobbitDeck c).size == 40 && isLegalDeck .limited (hobbitDeck c))
+#guard (hobbitDeck .white).any (fun c => c.name == "Bofur, Reliable Guardian")
+#guard (hobbitDeck .blue).any (fun c => c.name == "Bilbo Baggins, Burglar")
+#guard (hobbitDeck .black).any (fun c => c.name == "Gollum, Silent Slinker")
+#guard (hobbitDeck .red).any (fun c => c.name == "Smaug, the Great Calamity")
+#guard (hobbitDeck .green).any (fun c => c.name == "Elvish Archdruid")
 
 end Mtg.Demo

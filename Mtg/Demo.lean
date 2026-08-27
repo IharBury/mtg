@@ -7,14 +7,15 @@ import Mtg.Demo.WelcomeDecks
 # Mtg.Demo
 
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted two-player
-game with a heuristic agent using The Hobbit Welcome Decks. Pass `--interactive`
-to play Chandra against the agent-controlled Nissa, or `--multiplayer` to issue
-every player's actions from the console. In either interactive mode, choose who
-takes the first turn with `first <name>` (CR 103.1) before opening hands are
-drawn. `visible` prints only information that player can see; `--visible` starts
-in that view. `--input FILE` runs commands from the file first, then reads from
-the console. `--output FILE` writes every command (from the file or the console)
-to that file.
+game with a heuristic agent using The Hobbit Welcome Decks. `--chandra COLOR`
+and `--nissa COLOR` choose which of the five Welcome Decks each player uses
+(default red and green). Pass `--interactive` to play Chandra against the
+agent-controlled Nissa, or `--multiplayer` to issue every player's actions from
+the console. In either interactive mode, choose who takes the first turn with
+`first <name>` (CR 103.1) before opening hands are drawn. `visible` prints only
+information that player can see; `--visible` starts in that view. `--input FILE`
+runs commands from the file first, then reads from the console. `--output FILE`
+writes every command (from the file or the console) to that file.
 -/
 
 open Mtg.Engine
@@ -28,6 +29,7 @@ def usage : String :=
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
                     [--input FILE] [--output FILE] [--seed N] [--fuel N]
+                    [--chandra COLOR] [--nissa COLOR]
 
 Options:
   --auto          Run a heuristic two-player game (default)
@@ -41,10 +43,12 @@ Options:
                   (from --input and from the console) to this file
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
+  --chandra COLOR Chandra's Hobbit Welcome Deck (default red)
+  --nissa COLOR   Nissa's Hobbit Welcome Deck (default green)
   --help          Show this help
 
-Chandra uses the red Hobbit Welcome Deck and Nissa uses the green one
-(40 cards, limited construction). Decklists:
+COLOR is white, blue, black, red, or green (also W, U, B, R, G). Both
+players use 40-card limited Welcome Decks. Decklists:
 https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 
 The engine follows the Magic: The Gathering Comprehensive Rules
@@ -54,15 +58,20 @@ In --interactive and --multiplayer, choose who takes the first turn
 (CR 103.1) with `first <name>` before opening hands are drawn.
 "
 
-def demoSeats : Array Seat := #[
-  { name := "Chandra", deck := hobbitRed },
-  { name := "Nissa", deck := hobbitGreen }
+/-- Chandra and Nissa sit with the chosen Hobbit Welcome Decks. -/
+def demoSeatsFor (chandra : Color) (nissa : Color) : Array Seat := #[
+  { name := "Chandra", deck := hobbitDeck chandra },
+  { name := "Nissa", deck := hobbitDeck nissa }
 ]
+
+/-- Default seats: Chandra red, Nissa green. -/
+def demoSeats : Array Seat := demoSeatsFor .red .green
 
 /-- Auto mode uses Chandra as the starting player. Interactive modes pass the
 seat chosen at the console (CR 103.1). -/
-def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0) : StartConfig := {
-  seats := demoSeats
+def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (chandra : Color := .red) (nissa : Color := .green) : StartConfig := {
+  seats := demoSeatsFor chandra nissa
   format := .limited
   seed := seed
   startingPlayer := startingPlayer
@@ -132,6 +141,24 @@ def parseFirstPlayer (seats : Array Seat) (tokens : List String) : Except String
     g.pending == .declareMulligan ⟨0⟩
   | .error _ => false
 
+#guard (demoSeatsFor .white .blue)[0]!.name == "Chandra"
+#guard (demoSeatsFor .white .blue)[1]!.name == "Nissa"
+#guard (demoSeatsFor .white .blue)[0]!.deck.any (fun c => c.name == "Bofur, Reliable Guardian")
+#guard (demoSeatsFor .white .blue)[1]!.deck.any (fun c => c.name == "Bilbo Baggins, Burglar")
+#guard (demoSeatsFor .black .red)[0]!.deck.any (fun c => c.name == "Gollum, Silent Slinker")
+#guard (demoSeatsFor .black .red)[1]!.deck.any (fun c => c.name == "Smaug, the Great Calamity")
+#guard (demoSeatsFor .green .white)[0]!.deck.any (fun c => c.name == "Elvish Archdruid")
+#guard demoSeats[0]!.deck.any (fun c => c.name == "Smaug, the Great Calamity")
+#guard demoSeats[1]!.deck.any (fun c => c.name == "Elvish Archdruid")
+
+#guard
+  match Start.start (demoConfig 1 (some 0) .white .black) with
+  | .ok g =>
+    g.objects.any (fun o => o.name == "Bofur, Reliable Guardian") &&
+    g.objects.any (fun o => o.name == "Gollum, Silent Slinker") &&
+    !g.objects.any (fun o => o.name == "Smaug, the Great Calamity")
+  | .error _ => false
+
 def printLog (g : Game) (startIdx : Nat) (viewer : Option PlayerId := none) : IO Nat := do
   for line in newLog g startIdx viewer do
     IO.println s!"  {line}"
@@ -169,9 +196,16 @@ def printEngineBanner : IO Unit := do
   IO.println s!"Rules source: {Rules.sourceUrl}"
   IO.println ""
 
+/-- Announce which Hobbit Welcome Deck each player is using. -/
+def printDeckAssignments (chandra : Color) (nissa : Color) : IO Unit := do
+  IO.println s!"Chandra uses the {chandra.englishName} Hobbit Welcome Deck."
+  IO.println s!"Nissa uses the {nissa.englishName} Hobbit Welcome Deck."
+  IO.println ""
+
 /-- Create the demo game after the starting player is known (CR 103.1). -/
-def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0) : IO Game := do
-  match Start.start (demoConfig seed startingPlayer) with
+def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
+    (chandra : Color := .red) (nissa : Color := .green) : IO Game := do
+  match Start.start (demoConfig seed startingPlayer chandra nissa) with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
@@ -185,9 +219,11 @@ def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
 /-- Start a demo game and print the opening snapshot. Auto mode uses Chandra
 as the starting player. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (viewer : Option PlayerId := none) : IO Game := do
+    (viewer : Option PlayerId := none) (chandra : Color := .red)
+    (nissa : Color := .green) : IO Game := do
   printEngineBanner
-  let g ← startGame seed startingPlayer
+  printDeckAssignments chandra nissa
+  let g ← startGame seed startingPlayer chandra nissa
   printOpening g viewer
   return g
 
@@ -274,6 +310,9 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
+#guard (usage.splitOn "--chandra COLOR").length > 1
+#guard (usage.splitOn "--nissa COLOR").length > 1
+#guard (usage.splitOn "white, blue, black, red, or green").length > 1
 #guard (usage.splitOn "first <name>").length > 1
 #guard (usage.splitOn "CR 103.1").length > 1
 
@@ -2207,6 +2246,31 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
+/-- Parse a Hobbit Welcome Deck color name or letter. -/
+def parseWelcomeDeck (token : String) : Except String Color :=
+  match token.map Char.toLower with
+  | "w" | "white" => .ok .white
+  | "u" | "blue" => .ok .blue
+  | "b" | "black" => .ok .black
+  | "r" | "red" => .ok .red
+  | "g" | "green" => .ok .green
+  | _ => .error s!"Unknown Welcome Deck: {token} (white, blue, black, red, or green)"
+
+#guard
+  match parseWelcomeDeck "white" with
+  | .ok .white => true
+  | _ => false
+
+#guard
+  match parseWelcomeDeck "U" with
+  | .ok .blue => true
+  | _ => false
+
+#guard
+  match parseWelcomeDeck "gold" with
+  | .error msg => msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green)"
+  | .ok _ => false
+
 structure DemoOptions where
   interactive : Bool
   multiplayer : Bool
@@ -2215,6 +2279,8 @@ structure DemoOptions where
   fuel : Nat
   inputFile : Option String
   outputFile : Option String
+  chandra : Color
+  nissa : Color
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   Id.run do
@@ -2225,6 +2291,8 @@ def parseArgs (args : List String) : Except String DemoOptions :=
     let mut fuel : Nat := 800
     let mut inputFile : Option String := none
     let mut outputFile : Option String := none
+    let mut chandra : Color := .red
+    let mut nissa : Color := .green
     let mut rest := args
     while !rest.isEmpty do
       match rest with
@@ -2272,6 +2340,26 @@ def parseArgs (args : List String) : Except String DemoOptions :=
         | some v =>
           fuel := v
           rest := xs
+      | "--chandra" :: color :: xs =>
+        if color.startsWith "--" then
+          return .error "Missing Chandra Welcome Deck color"
+        else
+          match parseWelcomeDeck color with
+          | .error e => return .error e
+          | .ok c =>
+            chandra := c
+            rest := xs
+      | "--chandra" :: [] => return .error "Missing Chandra Welcome Deck color"
+      | "--nissa" :: color :: xs =>
+        if color.startsWith "--" then
+          return .error "Missing Nissa Welcome Deck color"
+        else
+          match parseWelcomeDeck color with
+          | .error e => return .error e
+          | .ok c =>
+            nissa := c
+            rest := xs
+      | "--nissa" :: [] => return .error "Missing Nissa Welcome Deck color"
       | x :: _ => return .error s!"Unknown argument: {x}"
       | [] => break
     if playerView && !interactive then
@@ -2288,6 +2376,8 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       fuel := fuel
       inputFile := inputFile
       outputFile := outputFile
+      chandra := chandra
+      nissa := nissa
     }
 
 #guard
@@ -2400,6 +2490,71 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | .error msg => msg == "Missing output file path"
   | .ok _ => false
 
+#guard
+  match parseArgs [] with
+  | .ok opt => opt.chandra == .red && opt.nissa == .green
+  | _ => false
+
+#guard
+  match parseArgs ["--chandra", "white", "--nissa", "blue"] with
+  | .ok opt => opt.chandra == .white && opt.nissa == .blue
+  | _ => false
+
+#guard
+  match parseArgs ["--chandra", "U", "--nissa", "B"] with
+  | .ok opt => opt.chandra == .blue && opt.nissa == .black
+  | _ => false
+
+#guard
+  match parseArgs ["--chandra", "green"] with
+  | .ok opt => opt.chandra == .green && opt.nissa == .green
+  | _ => false
+
+#guard
+  match parseArgs ["--nissa", "white"] with
+  | .ok opt => opt.chandra == .red && opt.nissa == .white
+  | _ => false
+
+#guard
+  match parseArgs ["--auto", "--chandra", "black", "--nissa", "green"] with
+  | .ok opt => !opt.interactive && opt.chandra == .black && opt.nissa == .green
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--chandra", "W", "--nissa", "r"] with
+  | .ok opt => opt.interactive && opt.chandra == .white && opt.nissa == .red
+  | _ => false
+
+#guard
+  match parseArgs ["--chandra", "gold"] with
+  | .error msg => msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green)"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--nissa", "gold"] with
+  | .error msg => msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green)"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--chandra"] with
+  | .error msg => msg == "Missing Chandra Welcome Deck color"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--nissa"] with
+  | .error msg => msg == "Missing Nissa Welcome Deck color"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--chandra", "--interactive"] with
+  | .error msg => msg == "Missing Chandra Welcome Deck color"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--nissa", "--seed", "1"] with
+  | .error msg => msg == "Missing Nissa Welcome Deck color"
+  | .ok _ => false
+
 def main (args : List String) : IO UInt32 := do
   match parseArgs args with
   | .error "help" =>
@@ -2422,14 +2577,15 @@ def main (args : List String) : IO UInt32 := do
       | .ok output =>
         if opt.interactive then
           printEngineBanner
+          printDeckAssignments opt.chandra opt.nissa
           match (← chooseStartingPlayer pending output) with
           | none => return 0
           | some (startIdx, pending) =>
-            let g ← startGame opt.seed (some startIdx)
+            let g ← startGame opt.seed (some startIdx) opt.chandra opt.nissa
             printOpening g (currentView g opt.playerView opt.multiplayer)
             interactiveLoop g opt.playerView opt.multiplayer pending output
             return 0
         else
-          let g ← startDemo opt.seed
+          let g ← startDemo opt.seed (chandra := opt.chandra) (nissa := opt.nissa)
           runAuto g opt.fuel
           return 0
