@@ -195,7 +195,7 @@ inductive SpellEffect where
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
-Adding a constructor is a compile error in `SpellEffect.castKind` rather than
+Adding a constructor is a compile error in `SpellEffect.spec` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
   /-- Damage to any target (player or creature). -/
@@ -213,6 +213,45 @@ inductive SpellCastKind where
   /-- You may play an additional land this turn. -/
   | extraLand
 deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- What a spell does to a still-legal permanent target (CR 608.2b). -/
+inductive SpellOnPermanent where
+  /-- Until-end-of-turn +P/+T. -/
+  | pump (power toughness : Int)
+  /-- Destroy the permanent (CR 701.7). -/
+  | destroy
+  /-- A +1/+1 counter plus trample and hexproof until end of turn. -/
+  | plusOnePlusOneTrampleHexproof
+  /-- Deal `amount` damage. -/
+  | dealDamage (amount : Nat)
+  /-- Damage plus lose-indestructible and exile-if-dies this turn. -/
+  | dealDamageLoseIndestructibleExile (amount : Nat)
+  /-- Destroy, then creatures without flying can't block this turn. -/
+  | destroyThenNonflyersCantBlock
+deriving Repr, Inhabited, BEq
+
+/-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
+handful of shapes instead of every `SpellEffect` constructor. -/
+inductive SpellResolution where
+  /-- You may play an additional land this turn. -/
+  | extraLand
+  /-- Deal `amount` damage to a player or creature. -/
+  | damageAny (amount : Nat)
+  /-- A creature you control deals its power to an opposing creature. -/
+  | fight
+  /-- Affect a still-legal permanent target. -/
+  | onPermanent (action : SpellOnPermanent)
+deriving Repr, Inhabited, BEq
+
+/-- Targeting, demonstration-agent classification, and resolution of a spell
+effect. Exhaustive so a new constructor is a compile error in `SpellEffect.spec`
+rather than silently skipped in `Game` or the agent. -/
+structure SpellMeta where
+  targeting : EffectTargeting := .of .none
+  castKind : SpellCastKind := .extraLand
+  preferAsDefaultMode : Bool := false
+  resolution : SpellResolution := .extraLand
+deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
 
@@ -234,20 +273,40 @@ def toNotation : SpellEffect → String
   | .destroyArtifactOrLandNonflyersCantBlock =>
     "destroy target artifact or land. Creatures without flying can't block this turn"
 
-/-- Classification of this spell effect's targeting (CR 115.1 / 601.2c).
-Exhaustive so a new constructor is a compile error here rather than silently
-matching no targets in `Game`. -/
-def targeting : SpellEffect → EffectTargeting
-  | .dealDamage _ => .of .playerOrCreature
-  | .pump _ _ => .of .creature .own
-  | .destroyCreatureWithFlying => .of .creatureWithFlying
-  | .plusOnePlusOneTrampleHexproof => .of .creatureYouControl
-  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ =>
-    .of .creature
+/-- Classification of this spell. Exhaustive so a new constructor is a compile
+error here rather than silently matching no targets, skipping the agent, or
+doing nothing on resolution. -/
+def spec : SpellEffect → SpellMeta
+  | .dealDamage n =>
+    { targeting := .of .playerOrCreature, castKind := .burn,
+      resolution := .damageAny n }
+  | .pump p t =>
+    { targeting := .of .creature .own, castKind := .pump,
+      resolution := .onPermanent (.pump p t) }
+  | .destroyCreatureWithFlying =>
+    { targeting := .of .creatureWithFlying, castKind := .destroyFlying,
+      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
+  | .plusOnePlusOneTrampleHexproof =>
+    { targeting := .of .creatureYouControl, castKind := .pump,
+      resolution := .onPermanent .plusOnePlusOneTrampleHexproof }
+  | .dealDamageToCreature n =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .onPermanent (.dealDamage n) }
+  | .dealDamageLoseIndestructibleExile n =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .onPermanent (.dealDamageLoseIndestructibleExile n) }
   | .creatureYouControlDealsPowerToOppCreature =>
-    .of .creatureYouControlThenOppCreature
-  | .playAdditionalLandThisTurn => .of .none
-  | .destroyArtifactOrLandNonflyersCantBlock => .of .artifactOrLand
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      resolution := .fight }
+  | .playAdditionalLandThisTurn =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .extraLand }
+  | .destroyArtifactOrLandNonflyersCantBlock =>
+    { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
+      resolution := .onPermanent .destroyThenNonflyersCantBlock }
+
+/-- Classification of this spell effect's targeting (CR 115.1 / 601.2c). -/
+def targeting (e : SpellEffect) : EffectTargeting :=
+  e.spec.targeting
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : SpellEffect) : EffectTargetKind :=
@@ -261,24 +320,17 @@ def targetCount (e : SpellEffect) : Nat :=
 def requiresTarget (e : SpellEffect) : Bool :=
   e.targetCount != 0
 
-/-- Demonstration-agent category for this effect. Exhaustive so a new
-constructor is a compile error in the agent rather than silently ignored. -/
-def castKind : SpellEffect → SpellCastKind
-  | .dealDamage _ => .burn
-  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ => .creatureDamage
-  | .creatureYouControlDealsPowerToOppCreature => .fight
-  | .destroyCreatureWithFlying => .destroyFlying
-  | .destroyArtifactOrLandNonflyersCantBlock => .destroyArtifactOrLand
-  | .pump _ _ | .plusOnePlusOneTrampleHexproof => .pump
-  | .playAdditionalLandThisTurn => .extraLand
+/-- Demonstration-agent category for this effect. -/
+def castKind (e : SpellEffect) : SpellCastKind :=
+  e.spec.castKind
 
 /-- True when the demonstration agent prefers this mode of a modal spell. -/
-def preferAsDefaultMode : SpellEffect → Bool
-  | .destroyCreatureWithFlying => true
-  | .dealDamage _ | .pump _ _ | .plusOnePlusOneTrampleHexproof
-  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _
-  | .creatureYouControlDealsPowerToOppCreature | .playAdditionalLandThisTurn
-  | .destroyArtifactOrLandNonflyersCantBlock => false
+def preferAsDefaultMode (e : SpellEffect) : Bool :=
+  e.spec.preferAsDefaultMode
+
+/-- How this effect resolves (CR 608). -/
+def resolution (e : SpellEffect) : SpellResolution :=
+  e.spec.resolution
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -312,6 +364,57 @@ inductive AbilityEffect where
   | targetCantBeBlockedThisTurn
 deriving Repr, Inhabited, BEq
 
+/-- How the demonstration agent classifies an activated-ability mode.
+Adding a constructor is a compile error in `AbilityEffect.spec` rather than
+silently skipping the new effect in `Game.defaultAbilityMode`. -/
+inductive AbilityCastKind where
+  /-- Damage to a creature. -/
+  | creatureDamage
+  /-- Destroy a colorless nonland permanent. -/
+  | destroyColorless
+  /-- Any other mode. -/
+  | other
+deriving Repr, Inhabited, BEq, DecidableEq
+
+/-- What an activated ability does to its source on the battlefield. -/
+inductive AbilityOnSource where
+  /-- Become a Bear creature with lands-you-control P/T. -/
+  | becomeBear
+  /-- Until-end-of-turn +P/+T on the source. -/
+  | pump (power toughness : Int)
+  /-- Put `n` +1/+1 counters on the source. -/
+  | plusOne (n : Nat)
+deriving Repr, Inhabited, BEq
+
+/-- How an activated ability resolves (CR 608). Grouped so
+`Game.applyAbilityEffect` matches a handful of shapes instead of every
+constructor. -/
+inductive AbilityResolution where
+  /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
+  | searchBasicLand
+  /-- Exile the top card and grant permission to play it. -/
+  | exileTop
+  /-- Deal `amount` damage to the announced target. -/
+  | damageToTarget (amount : Nat)
+  /-- Destroy a colorless nonland permanent. -/
+  | destroyColorless
+  /-- Attach this Equipment to the announced creature. -/
+  | attach
+  /-- The announced creature can't be blocked this turn. -/
+  | cantBeBlocked
+  /-- Affect the ability's source if it is still on the battlefield. -/
+  | onSource (action : AbilityOnSource)
+deriving Repr, Inhabited, BEq
+
+/-- Targeting, demonstration-agent classification, and resolution of an
+activated ability. Exhaustive so a new constructor is a compile error in
+`AbilityEffect.spec`. -/
+structure AbilityMeta where
+  targeting : EffectTargeting := .of .none
+  castKind : AbilityCastKind := .other
+  resolution : AbilityResolution := .searchBasicLand
+deriving Repr, Inhabited, BEq
+
 namespace AbilityEffect
 
 /-- English for putting `n` +1/+1 counters on a creature. -/
@@ -338,25 +441,54 @@ def toNotation : AbilityEffect → String
   | .targetCantBeBlockedThisTurn =>
     "Target creature can't be blocked this turn"
 
-/-- Classification of this ability effect's targeting (CR 115.1 / 601.2c).
-Exhaustive so a new constructor is a compile error here rather than silently
-matching no targets in `Game`. -/
-def targeting : AbilityEffect → EffectTargeting
-  | .dealDamageToTargetCreature _ => .of .creature
-  | .destroyTargetColorlessNonland => .of .colorlessNonland
-  | .attachToTargetCreatureYouControl => .of .creatureYouControl
-  | .targetCantBeBlockedThisTurn => .of .creature .own
-  | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
-  | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ =>
-    .of .none
+/-- Classification of this ability. Exhaustive so a new constructor is a
+compile error here rather than silently matching no targets or doing nothing
+on resolution. -/
+def spec : AbilityEffect → AbilityMeta
+  | .dealDamageToTargetCreature n =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .damageToTarget n }
+  | .destroyTargetColorlessNonland =>
+    { targeting := .of .colorlessNonland, castKind := .destroyColorless,
+      resolution := .destroyColorless }
+  | .attachToTargetCreatureYouControl =>
+    { targeting := .of .creatureYouControl, resolution := .attach }
+  | .targetCantBeBlockedThisTurn =>
+    { targeting := .of .creature .own, resolution := .cantBeBlocked }
+  | .searchBasicLandTapped =>
+    { resolution := .searchBasicLand }
+  | .exileTopPlayUntilEndOfNextTurn =>
+    { resolution := .exileTop }
+  | .becomeBearCreatureWithLandsPT =>
+    { resolution := .onSource .becomeBear }
+  | .sourceGets p t =>
+    { resolution := .onSource (.pump p t) }
+  | .putPlusOnePlusOneOnSource n =>
+    { resolution := .onSource (.plusOne n) }
+
+/-- Classification of this ability effect's targeting (CR 115.1 / 601.2c). -/
+def targeting (e : AbilityEffect) : EffectTargeting :=
+  e.spec.targeting
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : AbilityEffect) : EffectTargetKind :=
   e.targeting.kind
 
+/-- How many targets must be announced for this effect (CR 601.2c). -/
+def targetCount (e : AbilityEffect) : Nat :=
+  e.targetKind.targetCount
+
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : AbilityEffect) : Bool :=
-  e.targetKind != .none
+  e.targetCount != 0
+
+/-- Demonstration-agent category for this ability mode. -/
+def castKind (e : AbilityEffect) : AbilityCastKind :=
+  e.spec.castKind
+
+/-- How this effect resolves (CR 608). -/
+def resolution (e : AbilityEffect) : AbilityResolution :=
+  e.spec.resolution
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -663,9 +795,47 @@ def toNotation : TriggeredAbility → String
 `EffectTargetKind` constructors. -/
 abbrev TriggerTargetKind := EffectTargetKind
 
-/-- When a triggered ability fires, how it targets, and optional divided-damage
-parameters (CR 603 / 601.2d). Adding a constructor only requires updating
-`timing` (plus `toNotation`) instead of parallel match trees. -/
+/-- What a triggered ability does when it resolves (CR 608). Grouped so
+`Game.applyTriggeredAbility` matches resolution shapes instead of every
+constructor: scry, +1/+1 on the source, and divided damage each cover
+multiple printed abilities. -/
+inductive TriggerResolution where
+  /-- Pump the source by the greatest power among creatures you control. -/
+  | pumpGreatestPower
+  /-- Set another creature's base P/T to this creature's. -/
+  | setOtherBasePT
+  /-- Another creature gets +P/+T and trample until end of turn. -/
+  | pumpAndTrample (power toughness : Int)
+  /-- Deal `amount` damage to each creature blocking the source. -/
+  | damageBlockers (amount : Nat)
+  /-- Scry `n`. -/
+  | scry (n : Nat)
+  /-- Draw `n` cards. -/
+  | draw (n : Nat)
+  /-- Search the library for a Forest card. -/
+  | searchForest
+  /-- You may discard a card. If you do, draw `n`. -/
+  | mayDiscardDraw (n : Nat)
+  /-- Put a +1/+1 counter on the announced creature. -/
+  | plusOnePlusOneOnTarget
+  /-- Deal previously divided damage to the announced targets. -/
+  | dividedDamage
+  /-- Deal last-known power as damage to the announced creature. -/
+  | damageFromLastKnownPower
+  /-- Return an Elf card from the graveyard and gain life equal to its power. -/
+  | returnElfGainLife
+  /-- Deal `amount` damage to each opponent. -/
+  | damageEachOpponent (amount : Nat)
+  /-- Pump the source +1/+1 per card looked at while scrying. -/
+  | pumpByLookedAt
+  /-- The source gets +P/+T until end of turn. -/
+  | pumpSource (power toughness : Int)
+deriving Repr, Inhabited, BEq
+
+/-- When a triggered ability fires, how it targets, optional divided-damage
+parameters, and how it resolves (CR 603 / 601.2d / 608). Adding a constructor
+only requires updating `timing` (plus `toNotation`) instead of parallel match
+trees. -/
 structure TriggerTiming where
   whenAttacking : Bool := false
   whenBecomesBlocked : Bool := false
@@ -682,47 +852,63 @@ structure TriggerTiming where
   /-- Damage amount and maximum number of targets when this ability divides
   damage as the controller chooses (CR 601.2d). -/
   dividedDamage : Option (Nat × Nat) := none
+  /-- What happens when this ability resolves. -/
+  resolution : TriggerResolution := .pumpGreatestPower
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this triggered ability. Exhaustive so a new constructor
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
-  | .onAttackPumpByGreatestPower => { whenAttacking := true }
+  | .onAttackPumpByGreatestPower =>
+    { whenAttacking := true, resolution := .pumpGreatestPower }
   | .onAttackSetOtherBasePT =>
     { whenAttacking := true, targetKind := .anotherCreatureYouControl,
-      allowsZeroTargets := true }
+      allowsZeroTargets := true, resolution := .setOtherBasePT }
   | .onAttackOtherGets2AndTrample =>
-    { whenAttacking := true, targetKind := .anotherCreatureYouControl }
-  | .onAttackScry _ => { whenAttacking := true }
-  | .onBecomesBlockedDeal1ToBlockers => { whenBecomesBlocked := true }
-  | .onEnterScry _ => { whenEntering := true }
-  | .onEnterDraw _ => { whenEntering := true }
-  | .onEnterSearchForest => { whenEntering := true }
-  | .onEnterMayDiscardDraw _ => { whenEntering := true }
+    { whenAttacking := true, targetKind := .anotherCreatureYouControl,
+      resolution := .pumpAndTrample 2 0 }
+  | .onAttackScry n => { whenAttacking := true, resolution := .scry n }
+  | .onBecomesBlockedDeal1ToBlockers =>
+    { whenBecomesBlocked := true, resolution := .damageBlockers 1 }
+  | .onEnterScry n => { whenEntering := true, resolution := .scry n }
+  | .onEnterDraw n => { whenEntering := true, resolution := .draw n }
+  | .onEnterSearchForest => { whenEntering := true, resolution := .searchForest }
+  | .onEnterMayDiscardDraw n =>
+    { whenEntering := true, resolution := .mayDiscardDraw n }
   | .onLandYouControlEntersPlusOnePlusOne =>
-    { whenLandYouControlEnters := true, targetKind := .creatureYouControl }
+    { whenLandYouControlEnters := true, targetKind := .creatureYouControl,
+      resolution := .plusOnePlusOneOnTarget }
   | .onLandYouControlEntersGets1 =>
-    { whenLandYouControlEnters := true }
+    { whenLandYouControlEnters := true, resolution := .pumpSource 1 1 }
   | .onEnterDealDividedDamage amount maxTargets =>
     { whenEntering := true, targetKind := .playerOrCreature,
-      dividedDamage := some (amount, maxTargets) }
+      dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
     { whenAttacking := true, whenEntering := true, targetKind := .playerOrCreature,
-      dividedDamage := some (amount, maxTargets) }
+      dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .onEnterOrAttackReturnElfGainLife =>
-    { whenAttacking := true, whenEntering := true, targetKind := .elfInYourGraveyard }
+    { whenAttacking := true, whenEntering := true, targetKind := .elfInYourGraveyard,
+      resolution := .returnElfGainLife }
   | .onDiesDealDamageEqualToPowerToOppCreature =>
-    { whenDying := true, targetKind := .oppCreature }
-  | .onCastInstantOrSorceryDealDamageToEachOpponent _ =>
-    { whenYouCastInstantOrSorcery := true }
-  | .onAttackWithElvesScry _ => { whenYouAttackWithElves := true }
-  | .onScryPumpSelfForEachLookedAt => { whenYouScry := true }
-  | .onAnotherElfYouControlEntersGets1 => { whenAnotherElfYouControlEnters := true }
+    { whenDying := true, targetKind := .oppCreature,
+      resolution := .damageFromLastKnownPower }
+  | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
+    { whenYouCastInstantOrSorcery := true, resolution := .damageEachOpponent n }
+  | .onAttackWithElvesScry n =>
+    { whenYouAttackWithElves := true, resolution := .scry n }
+  | .onScryPumpSelfForEachLookedAt =>
+    { whenYouScry := true, resolution := .pumpByLookedAt }
+  | .onAnotherElfYouControlEntersGets1 =>
+    { whenAnotherElfYouControlEnters := true, resolution := .pumpSource 1 1 }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
 def dividedDamage? (ab : TriggeredAbility) : Option (Nat × Nat) :=
   ab.timing.dividedDamage
+
+/-- How this ability resolves (CR 608). -/
+def resolution (ab : TriggeredAbility) : TriggerResolution :=
+  ab.timing.resolution
 
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking (ab : TriggeredAbility) : Bool :=
@@ -1052,6 +1238,15 @@ instance : ToString CardDef where
 #guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
 #guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
 #guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
+#guard SpellEffect.resolution (.dealDamage 3) == .damageAny 3
+#guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
+#guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
+#guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.resolution .creatureYouControlDealsPowerToOppCreature == .fight
+#guard SpellEffect.resolution (.dealDamageToCreature 5) ==
+  .onPermanent (.dealDamage 5)
+#guard SpellEffect.resolution .destroyArtifactOrLandNonflyersCantBlock ==
+  .onPermanent .destroyThenNonflyersCantBlock
 #guard
   let c : CardDef := {
     name := "Silent Club"
@@ -1088,6 +1283,18 @@ instance : ToString CardDef where
 #guard AbilityEffect.targeting .targetCantBeBlockedThisTurn ==
   EffectTargeting.of .creature .own
 #guard AbilityEffect.targetKind .searchBasicLandTapped == .none
+#guard AbilityEffect.targetCount (.dealDamageToTargetCreature 2) == 1
+#guard AbilityEffect.targetCount .searchBasicLandTapped == 0
+#guard AbilityEffect.castKind (.dealDamageToTargetCreature 2) == .creatureDamage
+#guard AbilityEffect.castKind .destroyTargetColorlessNonland == .destroyColorless
+#guard AbilityEffect.castKind (.sourceGets 1 0) == .other
+#guard AbilityEffect.resolution (.dealDamageToTargetCreature 2) == .damageToTarget 2
+#guard AbilityEffect.resolution .destroyTargetColorlessNonland == .destroyColorless
+#guard AbilityEffect.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
+#guard AbilityEffect.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
+#guard AbilityEffect.resolution .becomeBearCreatureWithLandsPT ==
+  .onSource .becomeBear
+#guard AbilityEffect.resolution .searchBasicLandTapped == .searchBasicLand
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
@@ -1279,6 +1486,25 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.requiresTarget .onScryPumpSelfForEachLookedAt
 #guard (TriggeredAbility.dividedDamage? (.onAttackWithElvesScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onScryPumpSelfForEachLookedAt).isNone
+#guard TriggeredAbility.resolution .onAttackPumpByGreatestPower == .pumpGreatestPower
+#guard TriggeredAbility.resolution .onAttackSetOtherBasePT == .setOtherBasePT
+#guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
+  .pumpAndTrample 2 0
+#guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
+#guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
+#guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
+#guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
+#guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
+#guard TriggeredAbility.resolution .onLandYouControlEntersGets1 == .pumpSource 1 1
+#guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
+  .pumpSource 1 1
+#guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
+#guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
+  .dividedDamage
+#guard TriggeredAbility.resolution .onDiesDealDamageEqualToPowerToOppCreature ==
+  .damageFromLastKnownPower
+#guard TriggeredAbility.resolution (.onCastInstantOrSorceryDealDamageToEachOpponent 2) ==
+  .damageEachOpponent 2
 #guard
   let instant : CardDef := { name := "Silent Bolt", types := #[.instant] }
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
