@@ -105,6 +105,8 @@ inductive EffectTargetKind where
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
+  /-- Target opponent (a player other than the controller). -/
+  | opponent
   /-- Target creature (any controller). -/
   | creature
   /-- Target creature with flying. -/
@@ -162,6 +164,8 @@ def spec : EffectTargetKind → Spec
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
+  | .opponent =>
+    { noun := "target opponent", prefer := .opponentPlayer }
   | .creature =>
     { noun := "target creature" }
   | .creatureWithFlying =>
@@ -838,6 +842,9 @@ inductive TriggeredAbility where
   /-- When this permanent enters, you may discard a card. If you do, draw `n`
   cards (e.g. Ragged Short Spear). -/
   | onEnterMayDiscardDraw (n : Nat)
+  /-- When this permanent enters, target opponent sacrifices a creature of
+  their choice (e.g. Crude Bent Blade). -/
+  | onEnterTargetOpponentSacrificesCreature
   /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
   target creature you control (e.g. Beorn's Hospitality). -/
   | onLandYouControlEntersPlusOnePlusOne
@@ -986,6 +993,8 @@ inductive TriggerResolution where
   | searchForest
   /-- You may discard a card. If you do, draw `n`. -/
   | mayDiscardDraw (n : Nat)
+  /-- Target opponent sacrifices a creature of their choice. -/
+  | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
   | onPermanent (action : PermanentAction)
   /-- Deal previously divided damage to the announced targets. -/
@@ -1036,6 +1045,9 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterSearchForest => { events := #[.entering], resolution := .searchForest }
   | .onEnterMayDiscardDraw n =>
     { events := #[.entering], resolution := .mayDiscardDraw n }
+  | .onEnterTargetOpponentSacrificesCreature =>
+    { events := #[.entering], targeting := .of .opponent,
+      resolution := .opponentSacrificesCreature }
   | .onLandYouControlEntersPlusOnePlusOne =>
     { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
       resolution := .onPermanent (.plusOne 1) }
@@ -1124,6 +1136,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .opponentSacrificesCreature =>
+    s!"{noun} sacrifices a creature of their choice"
   | .dividedDamage =>
     match t.dividedDamage with
     | some (amount, maxTargets) =>
@@ -1392,11 +1406,14 @@ instance : ToString CardDef where
   "destroy target artifact or land. Creatures without flying can't block this turn"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
+#guard EffectTargetKind.noun .opponent == "target opponent"
 #guard EffectTargetKind.noun .colorlessNonland ==
   "target colorless nonland permanent"
 #guard EffectTargetKind.spec .none == { count := 0, noun := "", prefer := .own }
 #guard EffectTargetKind.spec .playerOrCreature ==
   { count := 1, noun := "any target", prefer := .opponentPlayer }
+#guard EffectTargetKind.spec .opponent ==
+  { count := 1, noun := "target opponent", prefer := .opponentPlayer }
 #guard EffectTargetKind.spec .creatureYouControlThenOppCreature ==
   { count := 2
     noun := "target creature you control and a creature an opponent controls"
@@ -1436,6 +1453,7 @@ instance : ToString CardDef where
 #guard SpellEffect.targetKind (.pump 3 3) == .creature
 #guard SpellEffect.targeting (.pump 3 3) == EffectTargeting.of .creature .own
 #guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
+#guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
 #guard EffectTargetKind.defaultPreference .creature == .opponent
 #guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
@@ -1596,6 +1614,8 @@ instance : ToString CardDef where
   "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
 #guard TriggeredAbility.toNotation (.onEnterMayDiscardDraw 2) ==
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
+#guard TriggeredAbility.toNotation .onEnterTargetOpponentSacrificesCreature ==
+  "When this permanent enters, target opponent sacrifices a creature of their choice."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersGets1 ==
@@ -1623,6 +1643,7 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersGets1).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
+#guard (TriggeredAbility.dividedDamage? .onEnterTargetOpponentSacrificesCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
@@ -1655,6 +1676,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.firesOn (.onEnterDraw 1) .entering
 #guard TriggeredAbility.firesOn .onEnterSearchForest .entering
 #guard TriggeredAbility.firesOn (.onEnterMayDiscardDraw 2) .entering
+#guard TriggeredAbility.firesOn .onEnterTargetOpponentSacrificesCreature .entering
 #guard TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .entering
 #guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .entering
 #guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .entering
@@ -1686,6 +1708,8 @@ instance : ToString CardDef where
   .elfInYourGraveyard
 #guard TriggeredAbility.targetKind .onDiesDealDamageEqualToPowerToOppCreature ==
   .oppCreature
+#guard TriggeredAbility.targetKind .onEnterTargetOpponentSacrificesCreature ==
+  .opponent
 #guard TriggeredAbility.targetKind (.onEnterDraw 1) == .none
 #guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
 #guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
@@ -1712,11 +1736,13 @@ instance : ToString CardDef where
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
 #guard TriggeredAbility.requiresTarget .onDiesDealDamageEqualToPowerToOppCreature
+#guard TriggeredAbility.requiresTarget .onEnterTargetOpponentSacrificesCreature
 #guard TriggeredAbility.requiresTarget .onAttackSetOtherBasePT
 #guard TriggeredAbility.requiresTarget .onAttackOtherGets2AndTrample
 #guard TriggeredAbility.allowsZeroTargets .onAttackSetOtherBasePT
 #guard !TriggeredAbility.allowsZeroTargets .onAttackOtherGets2AndTrample
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
+#guard !TriggeredAbility.allowsZeroTargets .onEnterTargetOpponentSacrificesCreature
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
 #guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .dying
@@ -1740,6 +1766,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
+#guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
+  .opponentSacrificesCreature
 #guard TriggeredAbility.resolution .onLandYouControlEntersGets1 ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==

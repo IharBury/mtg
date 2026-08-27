@@ -396,6 +396,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
+    | .sacrificeCreature p =>
+      s!" [sacrifice a creature ({g.player p |>.name})]"
     | .declareMulligan p =>
       s!" [mulligan: {g.player p |>.name} may keep or mulligan (CR 103.5)]"
     | .putOnBottom p n =>

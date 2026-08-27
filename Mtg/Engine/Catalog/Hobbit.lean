@@ -16,7 +16,7 @@ types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, scry, deal damage
 divided among targets, or scry when you attack with Elves, scry triggers that
 pump for each card looked at, becomes-blocked triggers that
-damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, or deal damage
+damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, make a target opponent sacrifice a creature, or deal damage
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
@@ -253,6 +253,9 @@ def crudeBentBlade : CardDef :=
   artifact "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
     "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
     (subtypes := #["Equipment"])
+    (staticAbilities := #[.equippedCreatureGets 2 1])
+    (triggeredAbilities := #[.onEnterTargetOpponentSacrificesCreature])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def languish : CardDef :=
   sorcery "Languish" (ManaCost.ofGenericAndColors 2 [.black, .black])
@@ -553,6 +556,17 @@ def attercop : CardDef :=
 #guard raggedShortSpear.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
 #guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
+#guard crudeBentBlade.isEquipment
+#guard !crudeBentBlade.isAura
+#guard !crudeBentBlade.requiresTarget
+#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.activatedAbilities[0]!.onlyAsSorcery
+#guard crudeBentBlade.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
+#guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
+#guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
+#guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]

@@ -35,7 +35,8 @@ creature's P/T onto another creature you control or giving another creature
 +2/+0 and trample, becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
 for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
-discard-to-draw, damage divided as you choose when a creature enters or
+discard-to-draw, a target opponent sacrificing a creature of their choice,
+damage divided as you choose when a creature enters or
 attacks (CR 601.2d), and returning an Elf card from your graveyard to gain
 life equal to its power (CR 701.19 / 118.2), another-Elf-enters pumps
 (CR 603.6a), landfall triggers that put +1/+1 counters or pump the source
@@ -386,6 +387,9 @@ inductive Pending where
   /-- After `pay`, choose an artifact or creature to sacrifice
   (another, when paying an activated ability). -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
+  /-- A resolved trigger requires this player to sacrifice a creature
+  of their choice (e.g. Crude Bent Blade). -/
+  | sacrificeCreature (player : PlayerId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
@@ -461,7 +465,7 @@ inductive Action where
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
   /-- After `pay`, sacrifice an artifact or creature to finish paying
-  (CR 601.2h / 602.2b). -/
+  (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires. -/
   | sacrifice (id : ObjectId)
   | declareAttackers (ids : Array ObjectId)
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
@@ -1198,6 +1202,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalGraveyardCardTargets caster (fun o => o.hasSubtype "Elf")
   | .oppCreature =>
     g.legalOppCreatureTargets caster
+  | .opponent =>
+    g.livingPlayers.filter (fun pl => pl.id != caster) |>.map (fun pl => Target.player pl.id)
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
   | .creatureWithFlying =>
@@ -1686,7 +1692,7 @@ and divided-damage enters or attack triggers prefer the opponent; creature-damag
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-colorless prefers an opposing colorless nonland; destroy-artifact-or-land prefers
 an opposing artifact or land; Mirkwood Elk prefers an Elf
-card in the controller's graveyard; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
+card in the controller's graveyard; Crude Bent Blade prefers an opposing player; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
 an opposing creature; Rogue's Passage, pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
@@ -1901,10 +1907,18 @@ def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : Obj
   g.permanentsOf p |>.filter (fun o =>
     o.id != sourceId && (o.isCreature || o.printed.isArtifact))
 
+/-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
+def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  g.permanentsOf p |>.filter (·.isCreature)
+
 /-- Whether `sac` is a legal “another creature or artifact” sacrifice for `sourceId`. -/
 def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (sac : GameObject) : Bool :=
   (g.sacrificeCreatureOrArtifactChoices p sourceId).any (·.id == sac.id)
+
+/-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
+def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
+  (g.sacrificeCreatureChoices p).any (·.id == sac.id)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
@@ -2222,7 +2236,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   }
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 
-/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b). -/
+/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b),
+or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .sacrificePermanent caster sourceId =>
@@ -2243,6 +2258,16 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     | none =>
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
       return g.becomeActivated p (g.object! sourceId).name (some sourceId)
+  | .sacrificeCreature q =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !g.canSacrificeCreature p sac then
+      throw s!"Can't sacrifice {sac.name}"
+    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
+    let (g, _) := g.move id (.graveyard sac.owner) none
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
@@ -2597,6 +2622,14 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
     { g with pending := .mayDiscardDraw p n }.logMsg
       s!"{pl.name} may discard a card. If they do, they draw {n}"
 
+/-- Start “sacrifices a creature of their choice” for `p` (CR 701.17 / 608.2d). -/
+def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
+  if (g.sacrificeCreatureChoices p).isEmpty then
+    g.logMsg s!"{(g.player p).name} has no creature to sacrifice"
+  else
+    { g with pending := .sacrificeCreature p }.logMsg
+      s!"{(g.player p).name} must sacrifice a creature of their choice"
+
 /-- Apply `f` if the trigger's source is still on the battlefield. -/
 def withTriggerSource (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game) : Game :=
@@ -2648,6 +2681,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.resolveSearchForest controller
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
+  | .opponentSacrificesCreature =>
+    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
+      match t with
+      | Target.player pid => g.beginSacrificeCreature pid
+      | _ => g.logMsg "The target is no longer legal")
   | .onPermanent action =>
     g.applyOnPermanent controller ab.targetKind targets action sourceId
       (some "The target is no longer legal")
@@ -3563,6 +3601,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseMode p => some p
     | .chooseTargets p => some p
     | .sacrificePermanent p _ => some p
+    | .sacrificeCreature p => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
     | .scry p _ => some p
