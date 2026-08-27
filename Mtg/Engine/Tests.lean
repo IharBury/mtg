@@ -291,6 +291,14 @@ def uncontrolledPermanent : Game :=
 #guard raggedShortSpear.staticAbilities.size == 1
 #guard raggedShortSpear.triggeredAbilities.size == 1
 #guard raggedShortSpear.activatedAbilities.size == 1
+#guard mentions crudeBentBlade.summary "Equipped creature"
+#guard mentions crudeBentBlade.summary "Equip"
+#guard mentions crudeBentBlade.summary "target opponent"
+#guard crudeBentBlade.isEquipment
+#guard crudeBentBlade.staticAbilities.size == 1
+#guard crudeBentBlade.triggeredAbilities.size == 1
+#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
@@ -391,6 +399,11 @@ def uncontrolledPermanent : Game :=
 #guard gollumSilentSlinker.keywords.menace
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
+#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard bilbosDeadlySlice.isInstant
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -504,6 +517,17 @@ def uncontrolledPermanent : Game :=
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
   mentions c.abilitiesText "Equipped creature gets +2/+0" &&
     mentions c.abilitiesText "you may discard a card" &&
+    mentions c.abilitiesText "Attach this Equipment" &&
+    mentions c.abilitiesText "activate only as a sorcery"
+
+#guard
+  let c := artifact "Silent Blade" ManaCost.empty ""
+    (subtypes := #["Equipment"])
+    (staticAbilities := #[.equippedCreatureGets 2 1])
+    (triggeredAbilities := #[.onEnterTargetOpponentSacrificesCreature])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
+  mentions c.abilitiesText "Equipped creature gets +2/+1" &&
+    mentions c.abilitiesText "target opponent sacrifices a creature" &&
     mentions c.abilitiesText "Attach this Equipment" &&
     mentions c.abilitiesText "activate only as a sorcery"
 
@@ -671,6 +695,10 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.scry (g.scryLookedIds p n) #[])
   | .mayDiscardDraw _ _, some p =>
     mustApply g p .decline
+  | .sacrificeCreature _, some p =>
+    match (g.sacrificeCreatureChoices p)[0]? with
+    | some sac => mustApply g p (.sacrifice sac.id)
+    | none => panic! "expected a creature to sacrifice"
   | .chooseMode _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell or ability while choosing a mode"
@@ -2020,6 +2048,10 @@ def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
 /-- Fill `p`'s mana pool with `n` red mana. -/
 def withRedMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
   g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .red) n })
+
+/-- Fill `p`'s mana pool with `n` black mana. -/
+def withBlackMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
+  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .black) n })
 
 /-- Put `aura` onto the battlefield already attached to `host`. -/
 def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
@@ -3646,6 +3678,292 @@ def agentSpearOnly : Game :=
 #guard
   match Agent.choose agentSpearOnly ⟨0⟩ with
   | some (.cast id) => (agentSpearOnly.object! id).name == "Ragged Short Spear"
+  | _ => false
+
+/- Crude Bent Blade: target opponent sacrifices a creature; Equip +2/+1. -/
+
+/-- Crude Bent Blade in hand, Nissa has a Grizzly Bears, enough mana. -/
+def bladeSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+
+#guard bladeSetup.canCast ⟨0⟩ (handCardNamed bladeSetup ⟨0⟩ "Crude Bent Blade")
+#guard bladeSetup.asSorcery? ⟨0⟩
+#guard !crudeBentBlade.requiresTarget
+#guard crudeBentBlade.isEquipment
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
+
+/-- Equipment is cast without announcing a creature (CR 301.5b). -/
+def proposedBlade : Game :=
+  mustApply bladeSetup ⟨0⟩ (.cast (handCardNamed bladeSetup ⟨0⟩ "Crude Bent Blade").id)
+
+#guard proposedBlade.pending == .activateManaAbilities ⟨0⟩
+#guard proposedBlade.stack.back!.targets.isEmpty
+#guard proposedBlade.log.any (fun s => mentions s "begins casting Crude Bent Blade")
+
+def paidBlade : Game := mustApply proposedBlade ⟨0⟩ .pay
+
+#guard paidBlade.stack.size == 1
+#guard paidBlade.hasPriority ⟨0⟩
+
+/-- The Equipment enters unattached; the edict trigger waits for a target. -/
+def bladeEntered : Game := passBoth paidBlade
+
+#guard (namedPermanent bladeEntered "Crude Bent Blade").attachedTo.isNone
+#guard bladeEntered.power (namedPermanent bladeEntered "Grizzly Bears") == 2
+#guard bladeEntered.stack.size == 1
+#guard bladeEntered.log.any (fun s => mentions s "enters the battlefield")
+#guard bladeEntered.log.any (fun s => mentions s "enters trigger is put on the stack")
+#guard
+  match bladeEntered.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard (bladeEntered.legalTriggerTargets ⟨0⟩ .onEnterTargetOpponentSacrificesCreature).contains
+  (Target.player ⟨1⟩)
+#guard !(bladeEntered.legalTriggerTargets ⟨0⟩ .onEnterTargetOpponentSacrificesCreature).contains
+  (Target.player ⟨0⟩)
+#guard (bladeEntered.object! bladeEntered.stack.back!.objectId).triggeredAbility ==
+  some .onEnterTargetOpponentSacrificesCreature
+
+-- Cannot target yourself or a creature; the trigger targets an opponent.
+#guard
+  match bladeEntered.apply ⟨0⟩ (.target (Target.player ⟨0⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match bladeEntered.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent bladeEntered "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  match bladeEntered.apply ⟨0⟩ .decline with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- The heuristic targets the opposing player.
+#guard
+  match Agent.choose bladeEntered ⟨0⟩ with
+  | some (.target (Target.player q)) => q == ⟨1⟩
+  | _ => false
+
+def bladeTargeted : Game :=
+  mustApply bladeEntered ⟨0⟩ (.target (Target.player ⟨1⟩))
+
+#guard bladeTargeted.pending == .none
+#guard bladeTargeted.stack.back!.targets == #[Target.player ⟨1⟩]
+#guard bladeTargeted.log.any (fun s => mentions s "chooses Nissa")
+
+/-- Resolving the trigger makes Nissa choose a creature to sacrifice. -/
+def bladeMustSac : Game := passBoth bladeTargeted
+
+#guard
+  match bladeMustSac.pending with
+  | .sacrificeCreature ⟨1⟩ => true
+  | _ => false
+#guard bladeMustSac.actor == some ⟨1⟩
+#guard !bladeMustSac.hasPriority ⟨0⟩
+#guard !bladeMustSac.hasPriority ⟨1⟩
+#guard bladeMustSac.log.any (fun s => mentions s "must sacrifice a creature")
+#guard bladeMustSac.stack.isEmpty
+#guard (bladeMustSac.sacrificeCreatureChoices ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
+#guard (bladeMustSac.sacrificeCreatureChoices ⟨0⟩).isEmpty
+
+-- Chandra cannot sacrifice for Nissa, and Nissa cannot sacrifice a land or skip.
+#guard
+  match bladeMustSac.apply ⟨0⟩
+      (.sacrifice (namedPermanent bladeMustSac "Grizzly Bears").id) with
+  | .error msg => mentions msg "Only Nissa"
+  | .ok _ => false
+#guard
+  match bladeMustSac.apply ⟨1⟩ .pass with
+  | .error msg => mentions msg "required choice"
+  | .ok _ => false
+#guard
+  match bladeMustSac.apply ⟨1⟩ .decline with
+  | .error msg => mentions msg "Not time to decline"
+  | .ok _ => false
+#guard
+  let g := addPermanent bladeMustSac mountain ⟨1⟩ ⟨1⟩
+  match g.apply ⟨1⟩ (.sacrifice (namedPermanent g "Mountain").id) with
+  | .error msg => mentions msg "Can't sacrifice"
+  | .ok _ => false
+
+-- The heuristic sacrifices Nissa's creature.
+#guard
+  match Agent.choose bladeMustSac ⟨1⟩ with
+  | some (.sacrifice id) => (bladeMustSac.object! id).name == "Grizzly Bears"
+  | _ => false
+
+def bladeSacrificed : Game :=
+  mustApply bladeMustSac ⟨1⟩
+    (.sacrifice (namedPermanent bladeMustSac "Grizzly Bears").id)
+
+#guard bladeSacrificed.pending == .none
+#guard bladeSacrificed.hasPriority ⟨0⟩
+#guard bladeSacrificed.log.any (fun s => mentions s "sacrifices Grizzly Bears")
+#guard !(bladeSacrificed.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard (bladeSacrificed.player ⟨1⟩).graveyard.any (fun id =>
+  (bladeSacrificed.object! id).name == "Grizzly Bears")
+#guard bladeSacrificed.battlefield.any (fun o => o.name == "Crude Bent Blade")
+
+/-- Idle actions sacrifice the required creature so skipTo can proceed. -/
+def bladeIdleSacrificed : Game := applyIdle bladeMustSac
+
+#guard bladeIdleSacrificed.pending == .none
+#guard bladeIdleSacrificed.log.any (fun s => mentions s "sacrifices Grizzly Bears")
+
+/-- With no opposing creature, the trigger still targets and then does nothing. -/
+def bladeNoCreatureSetup : Game :=
+  withBlackMana (addToHand afterDraw crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+
+def bladeNoCreatureEntered : Game :=
+  let g := mustApply bladeNoCreatureSetup ⟨0⟩
+    (.cast (handCardNamed bladeNoCreatureSetup ⟨0⟩ "Crude Bent Blade").id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard
+  match bladeNoCreatureEntered.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard (bladeNoCreatureEntered.legalTriggerTargets ⟨0⟩
+  .onEnterTargetOpponentSacrificesCreature).contains (Target.player ⟨1⟩)
+
+def bladeNoCreatureResolved : Game :=
+  let g := mustApply bladeNoCreatureEntered ⟨0⟩ (.target (Target.player ⟨1⟩))
+  passBoth g
+
+#guard bladeNoCreatureResolved.pending == .none
+#guard bladeNoCreatureResolved.hasPriority ⟨0⟩
+#guard bladeNoCreatureResolved.log.any (fun s => mentions s "has no creature to sacrifice")
+#guard bladeNoCreatureResolved.battlefield.any (fun o => o.name == "Crude Bent Blade")
+
+-- Direct resolution with no announced target logs that the target is gone.
+#guard
+  (bladeNoCreatureResolved.applyTriggeredAbility ⟨0⟩
+    .onEnterTargetOpponentSacrificesCreature none).log.any
+    (fun s => mentions s "The target is no longer legal")
+
+/-- Sacrificing Goblin Fireleaper still queues its dies trigger. -/
+def bladeFireleaperSetup : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+
+def bladeSacrificesFireleaper : Game :=
+  let g := mustApply bladeFireleaperSetup ⟨0⟩
+    (.cast (handCardNamed bladeFireleaperSetup ⟨0⟩ "Crude Bent Blade").id)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := passBoth g
+  mustApply g ⟨1⟩ (.sacrifice (namedPermanent g "Goblin Fireleaper").id)
+
+#guard bladeSacrificesFireleaper.log.any (fun s => mentions s "sacrifices Goblin Fireleaper")
+#guard
+  match bladeSacrificesFireleaper.pending with
+  | .chooseTargets ⟨1⟩ => true
+  | _ => false
+#guard (bladeSacrificesFireleaper.object!
+  bladeSacrificesFireleaper.stack.back!.objectId).triggeredAbility ==
+  some .onDiesDealDamageEqualToPowerToOppCreature
+
+/-- Equip {2} with a creature you control and enough mana. -/
+def bladeReadyToEquip : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g crudeBentBlade ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withBlackMana g ⟨0⟩ 2
+
+def bladeEquipAbility : ActivatedAbility :=
+  crudeBentBlade.activatedAbilities[0]!
+
+#guard bladeReadyToEquip.canActivate ⟨0⟩
+  (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility
+#guard !(bladeReadyToEquip.canActivate ⟨1⟩
+  (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility)
+#guard bladeEquipAbility.onlyAsSorcery
+#guard bladeEquipAbility.effect.requiresTarget
+#guard bladeEquipAbility.cost.mana == ManaCost.ofGeneric 2
+
+-- Cannot Equip with no creature you control.
+#guard
+  let g := addPermanent afterDraw crudeBentBlade ⟨0⟩ ⟨0⟩
+  let g := withBlackMana g ⟨0⟩ 2
+  !g.canActivate ⟨0⟩ (namedPermanent g "Crude Bent Blade") bladeEquipAbility
+
+-- The heuristic Equips when {2} is available and a creature is controlled.
+#guard
+  match Agent.choose bladeReadyToEquip ⟨0⟩ with
+  | some (.activate id 0) =>
+    (bladeReadyToEquip.object! id).name == "Crude Bent Blade"
+  | _ => false
+
+def proposedBladeEquip : Game :=
+  mustApply bladeReadyToEquip ⟨0⟩
+    (.activate (namedPermanent bladeReadyToEquip "Crude Bent Blade").id 0)
+
+#guard
+  match proposedBladeEquip.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+
+def targetedBladeEquip : Game :=
+  mustApply proposedBladeEquip ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedBladeEquip "Grizzly Bears").id))
+
+def paidBladeEquip : Game := mustApply targetedBladeEquip ⟨0⟩ .pay
+
+def bladeEquipped : Game := passBoth paidBladeEquip
+
+#guard (namedPermanent bladeEquipped "Crude Bent Blade").attachedTo ==
+  some (namedPermanent bladeEquipped "Grizzly Bears").id
+#guard bladeEquipped.power (namedPermanent bladeEquipped "Grizzly Bears") == 4
+#guard bladeEquipped.toughness (namedPermanent bladeEquipped "Grizzly Bears") == 3
+#guard (namedPermanent bladeEquipped "Grizzly Bears").power == 2
+#guard (namedPermanent bladeEquipped "Grizzly Bears").toughness == 2
+#guard bladeEquipped.log.any (fun s => mentions s "attaches to Grizzly Bears")
+
+-- The heuristic does not re-equip a creature that is already equipped.
+#guard
+  let g := withBlackMana bladeEquipped ⟨0⟩ 2
+  match Agent.choose g ⟨0⟩ with
+  | some (.activate id 0) => (g.object! id).name != "Crude Bent Blade"
+  | some .pass => true
+  | some (.cast _) => true
+  | _ => true
+
+/-- The +2/+1 is a continuous effect, so it does not wear off in cleanup. -/
+def afterBladeCleanup : Game := passBoth (skipTo bladeEquipped .end 80)
+
+#guard afterBladeCleanup.power (namedPermanent afterBladeCleanup "Grizzly Bears") == 4
+#guard afterBladeCleanup.toughness (namedPermanent afterBladeCleanup "Grizzly Bears") == 3
+#guard (namedPermanent afterBladeCleanup "Grizzly Bears").status.pumpPower == 0
+
+/-- Combat uses the equipped power and toughness. -/
+def afterEquippedBladeCombat : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g crudeBentBlade (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  passBoth g
+
+#guard afterEquippedBladeCombat.log.any (fun s =>
+  mentions s "Grizzly Bears deals 4 combat damage to Nissa")
+#guard (afterEquippedBladeCombat.player ⟨1⟩).life == 16
+
+/-- The agent casts Crude Bent Blade when that is the playable spell. -/
+def agentBladeOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+
+#guard
+  match Agent.choose agentBladeOnly ⟨0⟩ with
+  | some (.cast id) => (agentBladeOnly.object! id).name == "Crude Bent Blade"
   | _ => false
 
 /- Beorn's Hospitality: landfall +1/+1 and lasting Bear animation. -/
@@ -8660,6 +8978,144 @@ def resolvedQuarrelWarg : Game :=
   mentions s "Ravening Warg deals 2 damage to Hill Giant")
 #guard resolvedQuarrelWarg.log.any (fun s => mentions s "Hill Giant dies from deathtouch")
 
+/- Night's Whisper: you draw two cards and lose 2 life (CR 121 / 118.3a). -/
+
+#guard nightsWhisper.isSorcery
+#guard nightsWhisper.hasSorcerySpeed
+#guard !nightsWhisper.hasInstantSpeed
+#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard nightsWhisper.hasCastKind .draw
+#guard !nightsWhisper.requiresTarget
+#guard mentions nightsWhisper.summary "draw two cards"
+#guard mentions nightsWhisper.summary "lose 2 life"
+
+-- Direct resolution draws that many cards and loses that much life.
+#guard
+  let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) swamp ⟨0⟩
+  let beforeHand := (g.player ⟨0⟩).hand.size
+  let g := g.applyEffect ⟨0⟩ (.drawAndLoseLife 2 2) #[]
+  (g.player ⟨0⟩).hand.size == beforeHand + 2 &&
+    (g.player ⟨0⟩).life == 18 &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Swamp") &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Forest") &&
+    g.log.any (fun s => mentions s "draws Swamp") &&
+    g.log.any (fun s => mentions s "draws Forest") &&
+    g.log.any (fun s => mentions s "loses 2 life (18 life)") &&
+    !g.log.any (fun s => mentions s "is dealt 2 damage")
+
+-- Losing 0 life does nothing (CR 118.9). Drawing 0 cards is a no-op.
+#guard
+  let g := afterDraw.applyEffect ⟨0⟩ (.drawAndLoseLife 0 0) #[]
+  (g.player ⟨0⟩).life == 20 &&
+    (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
+    !g.log.any (fun s => mentions s "loses 0 life")
+
+/-- Night's Whisper in hand with enough black mana. -/
+def nightsWhisperSetup : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+
+#guard nightsWhisperSetup.canCast ⟨0⟩
+  (handCardNamed nightsWhisperSetup ⟨0⟩ "Night's Whisper")
+#guard nightsWhisperSetup.asSorcery? ⟨0⟩
+
+-- Sorcery speed: illegal in the end step.
+#guard
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+  let g := skipTo g .end 80
+  g.step == .end && !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Night's Whisper")
+
+def proposedNightsWhisper : Game :=
+  mustApply nightsWhisperSetup ⟨0⟩
+    (.cast (handCardNamed nightsWhisperSetup ⟨0⟩ "Night's Whisper").id)
+
+#guard proposedNightsWhisper.pending == .activateManaAbilities ⟨0⟩
+#guard proposedNightsWhisper.log.any (fun s => mentions s "begins casting Night's Whisper")
+#guard proposedNightsWhisper.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard !proposedNightsWhisper.log.any (fun s => mentions s "must choose a target")
+
+def paidNightsWhisper : Game := mustApply proposedNightsWhisper ⟨0⟩ .pay
+
+#guard paidNightsWhisper.hasPriority ⟨0⟩
+#guard paidNightsWhisper.stack.size == 1
+#guard (paidNightsWhisper.object! paidNightsWhisper.stack.back!.objectId).name ==
+  "Night's Whisper"
+#guard paidNightsWhisper.log.any (fun s => mentions s "casts Night's Whisper")
+
+/-- Known library: Swamp then Forest are drawn on resolution (CR 121). -/
+def nightsWhisperKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop paidNightsWhisper forest ⟨0⟩) swamp ⟨0⟩
+
+def resolvedNightsWhisper : Game := passBoth nightsWhisperKnownLib
+
+#guard resolvedNightsWhisper.stack.isEmpty
+#guard resolvedNightsWhisper.hasPriority ⟨0⟩
+#guard (resolvedNightsWhisper.player ⟨0⟩).hand.size ==
+  (nightsWhisperKnownLib.player ⟨0⟩).hand.size + 2
+#guard (resolvedNightsWhisper.handObjects ⟨0⟩).any (fun o => o.name == "Swamp")
+#guard (resolvedNightsWhisper.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+#guard (resolvedNightsWhisper.player ⟨0⟩).life == 18
+#guard (resolvedNightsWhisper.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedNightsWhisper.object! id).name == "Night's Whisper")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Swamp")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Forest")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "loses 2 life (18 life)")
+#guard !resolvedNightsWhisper.log.any (fun s => mentions s "is dealt 2 damage")
+
+/-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
+def nightsWhisperEmptyLib : Game :=
+  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  passBoth g
+
+#guard nightsWhisperEmptyLib.over
+#guard nightsWhisperEmptyLib.result == some (.won ⟨1⟩)
+#guard (nightsWhisperEmptyLib.player ⟨0⟩).lost
+#guard nightsWhisperEmptyLib.log.any (fun s => mentions s "tries to draw from an empty library")
+#guard nightsWhisperEmptyLib.log.any (fun s => mentions s "loses the game (drew from empty library)")
+
+/-- Losing the last 2 life ends the game (CR 704.5a). The spell is still legal. -/
+def nightsWhisperPaysLastLife : Game :=
+  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  passBoth g
+
+#guard (nightsWhisperPaysLastLife.player ⟨0⟩).life == 0
+#guard nightsWhisperPaysLastLife.over
+#guard nightsWhisperPaysLastLife.result == some (.won ⟨1⟩)
+#guard nightsWhisperPaysLastLife.log.any (fun s => mentions s "loses 2 life (0 life)")
+#guard nightsWhisperPaysLastLife.log.any (fun s => mentions s "loses the game (life total 0)")
+
+/-- The agent casts Night's Whisper when that is the playable spell. -/
+def agentNightsWhisperOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentNightsWhisperOnly ⟨0⟩ with
+  | some (.cast id) => (agentNightsWhisperOnly.object! id).name == "Night's Whisper"
+  | _ => false
+
+-- The heuristic will not lose the last 2 life.
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast _) => false
+  | _ => true
+
+-- The heuristic will not draw into an empty library.
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast _) => false
+  | _ => true
+
+-- The heuristic still casts at 3 life (survives at 1).
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 3 })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast id) => (g.object! id).name == "Night's Whisper"
+  | _ => false
+
 -- The heuristic still attacks with Ravening Warg.
 #guard
   let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
@@ -8784,6 +9240,153 @@ def ogreGrantedMenaceReadyToBlock : Game :=
     (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre").id)]) with
   | .error msg => mentions msg "can't be blocked except by two or more creatures"
   | .ok _ => false
+
+/- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 701.7b / 608.2b). -/
+
+#guard bilbosDeadlySlice.isInstant
+#guard !bilbosDeadlySlice.hasSorcerySpeed
+#guard bilbosDeadlySlice.hasInstantSpeed
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+
+/-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
+def bilbosDeadlySliceSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+
+#guard bilbosDeadlySliceSetup.canCast ⟨0⟩
+  (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ .destroyCreature).contains
+    (Target.permanent (namedPermanent bilbosDeadlySliceSetup "Grizzly Bears").id)
+
+-- Cannot cast with no creature.
+#guard
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Own creatures and non-flying creatures are legal; hexproof on an opponent's
+-- creature is not (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
+    (g.legalTargets ⟨0⟩ .destroyCreature).contains
+      (Target.permanent (namedPermanent g "Grizzly Bears").id)
+#guard
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  (g.legalTargets ⟨0⟩ .destroyCreature).contains
+    (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
+#guard
+  let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+
+def proposedBilbosDeadlySlice : Game :=
+  mustApply bilbosDeadlySliceSetup ⟨0⟩
+    (.cast (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice").id)
+
+#guard proposedBilbosDeadlySlice.pending == .chooseTargets ⟨0⟩
+#guard proposedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "begins casting Bilbo's Deadly Slice")
+#guard proposedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "must choose a target (CR 601.2c)")
+
+-- Cannot target a player or a land.
+#guard
+  match proposedBilbosDeadlySlice.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  let g := addPermanent bilbosDeadlySliceSetup forest ⟨1⟩ ⟨1⟩
+  let g := mustApply g ⟨0⟩
+    (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id)
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Forest").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def targetedBilbosDeadlySlice : Game :=
+  mustApply proposedBilbosDeadlySlice ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedBilbosDeadlySlice
+      "Grizzly Bears").id))
+
+#guard targetedBilbosDeadlySlice.pending == .activateManaAbilities ⟨0⟩
+#guard targetedBilbosDeadlySlice.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedBilbosDeadlySlice "Grizzly Bears").id]
+
+#guard
+  match Agent.choose proposedBilbosDeadlySlice ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedBilbosDeadlySlice.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+-- Prefer an opposing creature over your own (CR 601.2c heuristic).
+#guard
+  let g := addPermanent bilbosDeadlySliceSetup grayOgre ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (g.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def paidBilbosDeadlySlice : Game := mustApply targetedBilbosDeadlySlice ⟨0⟩ .pay
+
+#guard paidBilbosDeadlySlice.hasPriority ⟨0⟩
+#guard paidBilbosDeadlySlice.stack.size == 1
+#guard paidBilbosDeadlySlice.log.any (fun s => mentions s "casts Bilbo's Deadly Slice")
+
+def resolvedBilbosDeadlySlice : Game := passBoth paidBilbosDeadlySlice
+
+#guard resolvedBilbosDeadlySlice.stack.isEmpty
+#guard !(resolvedBilbosDeadlySlice.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedBilbosDeadlySlice.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩)
+#guard resolvedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "Grizzly Bears is destroyed")
+#guard (resolvedBilbosDeadlySlice.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedBilbosDeadlySlice.object! id).name == "Bilbo's Deadly Slice")
+
+-- If the target leaves before resolution, the spell does nothing (CR 608.2b).
+def bilbosDeadlySliceTargetGone : Game :=
+  let id := (namedPermanent paidBilbosDeadlySlice "Grizzly Bears").id
+  let (g, _) := paidBilbosDeadlySlice.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard bilbosDeadlySliceTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(bilbosDeadlySliceTargetGone.battlefield.any (fun o =>
+  o.name == "Grizzly Bears"))
+
+-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b).
+#guard
+  let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyCreature
+    #[Target.permanent (namedPermanent g "Indestructible Beast").id]
+  g.battlefield.any (fun o => o.name == "Indestructible Beast") &&
+    g.log.any (fun s => mentions s "is indestructible and isn't destroyed")
+
+/-- The agent casts Bilbo's Deadly Slice when that is the playable spell. -/
+def agentBilbosDeadlySliceOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+
+#guard
+  match Agent.choose agentBilbosDeadlySliceOnly ⟨0⟩ with
+  | some (.cast id) =>
+    (agentBilbosDeadlySliceOnly.object! id).name == "Bilbo's Deadly Slice"
+  | _ => false
 
 end Mtg.Engine.Tests
 

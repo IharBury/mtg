@@ -124,8 +124,8 @@ The first slice of the engine models the two-player game:
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, search the library for a Forest card, may
-  discard a card to draw, or deal damage
-  divided as you choose among one, two, or three targets (including whenever
+  discard a card to draw, make a target opponent sacrifice a creature, or deal
+  damage divided as you choose among one, two, or three targets (including whenever
   a creature enters or attacks), return an Elf card from your graveyard and
   gain life equal to its power, pumps when another Elf you control enters,
   landfall triggers that
@@ -137,8 +137,9 @@ The first slice of the engine models the two-player game:
   deal damage to each opponent when you cast an instant or sorcery,
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, menace, vigilance, until-end-of-turn
+- modal instants, destroy (including target creature, and target artifact or land, after which
+  creatures without flying can't block this turn), drawing cards and losing
+  life (Night's Whisper), +1/+1 counters, hexproof, indestructible, deathtouch, menace, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a

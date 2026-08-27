@@ -486,7 +486,7 @@ def helpInteractive (controlAll : Bool := false)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
-  sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating or casting
+  sacrifice <id>       Sacrifice a creature or artifact to pay a cost, or a creature a resolved trigger requires
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
@@ -531,7 +531,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
-#guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
+#guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "replays that file and appends new commands").length > 1
@@ -1256,7 +1256,7 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
 /-- After `pay`, sacrifice the named creature or artifact to finish activating
-or casting. -/
+or casting, or sacrifice a creature a resolved trigger requires. -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1373,6 +1373,15 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
     g'.log.any (fun s => Tests.mentions s "casts Improvised Club")
+  | .error _ => false
+
+#guard
+  let g := Tests.bladeMustSac
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applySacrifice g ⟨1⟩ [toString bears.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "sacrifices Grizzly Bears")
   | .error _ => false
 
 def modeUsage : String := "usage: mode <n>"
@@ -1527,6 +1536,17 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.stack.back!.targets.isEmpty &&
     g'.log.any (fun s => Tests.mentions s "begins casting Fire of Orthanc") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
+  match applyCast Tests.bilbosDeadlySliceSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.bilbosDeadlySliceSetup ⟨0⟩
+        "Bilbo's Deadly Slice").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Bilbo's Deadly Slice") &&
     g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
   | .error _ => false
 

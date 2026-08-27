@@ -40,6 +40,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
       | none => some .pass
+    | .sacrificeCreature _ =>
+      match (g.sacrificeCreatureChoices p)[0]? with
+      | some sac => some (.sacrifice sac.id)
+      | none => some .pass
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
@@ -163,9 +167,21 @@ where
         playable.find? (fun o => spellKind o .creatureDamage)
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
+    let draw := playable.find? (fun o =>
+      spellKind o .draw &&
+        match o.printed.spellEffect with
+        | some e =>
+          match e.resolution with
+          | .drawAndLoseLife cards life =>
+            (g.player p).life > (life : Int) &&
+              (g.player p).library.size >= cards
+          | _ => true
+        | none => false)
     let removal := playable.find? (fun o =>
       (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
+      (hasLegalKind .creature &&
+        (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
@@ -193,6 +209,8 @@ where
     else if let some o := removal then
       some (.cast o.id)
     else if let some o := fight then
+      some (.cast o.id)
+    else if let some o := draw then
       some (.cast o.id)
     else if let some o := creature then
       some (.cast o.id)
