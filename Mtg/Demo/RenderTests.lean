@@ -479,6 +479,30 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
 #guard mentions (snapshot resolvedHunter) "may be played by Chandra"
 #guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
+-- Playable exile cards show the mana cost to play them; unplayable ones do not.
+#guard exilePlayManaCost (exiledBolt resolvedHunter) == "{R}"
+#guard exilePlayManaCost (exiledMountain resolvedHunterLand) == ""
+#guard exilePlayManaCost (exiledSmaug resolvedSpewFlame) == "{5}{R}{R}"
+#guard exilePlayManaCost (exiledBeorn resolvedTillAndTend) == "{4}{G}"
+#guard
+  let o := exiledBolt resolvedHunter
+  zoneLine resolvedHunter .exile o.id ==
+    s!"{o.id} Lightning Bolt \{R} Lightning Bolt deals 3 damage to any target. (may be played by Chandra)"
+#guard
+  let o := exiledMountain resolvedHunterLand
+  mentions (zoneLine resolvedHunterLand .exile o.id) "may be played by Chandra" &&
+    !mentions (zoneLine resolvedHunterLand .exile o.id) "{0}"
+#guard mentions (zoneLine resolvedSpewFlame .exile (exiledSmaug resolvedSpewFlame).id) "{5}{R}{R}"
+#guard mentions (zoneLine resolvedTillAndTend .exile (exiledBeorn resolvedTillAndTend).id) "{4}{G}"
+#guard
+  match resolvedSmiteOnBears.objects.find? (fun o =>
+    o.zone == .exile && o.name == "Grizzly Bears") with
+  | some o =>
+    exilePlayManaCost o == "" &&
+      mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Grizzly Bears" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "may be played"
+  | none => false
 
 -- Granted trample shows on other Orcs and Goblins you control, not on others.
 #guard mentions
