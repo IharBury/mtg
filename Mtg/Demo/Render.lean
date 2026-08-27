@@ -272,10 +272,50 @@ def battlefieldPermanentLines (g : Game) (os : Array GameObject)
         lines := lines ++ battlefieldHostLines g o group
     return lines.toList
 
+/-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
+are omitted. Permanents attached to another battlefield permanent are listed
+with that host rather than in their own controller's group. Within each
+controller, unattached permanents are split into unlabeled subgroups:
+creatures, non-creature non-lands, then non-creature lands. Permanents with
+no controller are listed last. The `Option PlayerId` is the group heading
+(`none` = no controller). -/
+def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=
+  Id.run do
+    let mut groups : Array (String × Option PlayerId × Array GameObject) := #[]
+    for pl in g.players do
+      let ps := (g.permanentsOf pl.id).filter (fun o => !attachedToBattlefield g o)
+      if !ps.isEmpty then
+        groups := groups.push (pl.name, some pl.id, ps)
+    let uncontrolled := g.battlefield.filter (fun o =>
+      o.controller.isNone && !attachedToBattlefield g o)
+    if !uncontrolled.isEmpty then
+      groups := groups.push ("(no controller)", none, uncontrolled)
+    return groups
+
+/-- Shared-zone battlefield lines grouped under each controller's name.
+Owner and controller are omitted on each permanent unless they differ from
+the group heading. Attached permanents are indented under their host. -/
+def battlefieldGroupLines (g : Game) : List String :=
+  Id.run do
+    let mut lines : Array String := #[]
+    for (label, group, os) in battlefieldGroups g do
+      lines := lines.push s!"{label}:"
+      for line in battlefieldPermanentLines g os (some group) do
+        lines := lines.push s!"  {line}"
+    return lines.toList
+
+/-- One shared battlefield for the board snapshot, grouped by controller. -/
+def battlefieldBlock (g : Game) : String :=
+  let n := g.battlefield.size
+  let title := s!"Battlefield ({n})"
+  let lines := battlefieldGroupLines g
+  if lines.isEmpty then s!"{title}: (empty)"
+  else title ++ ":\n  " ++ String.intercalate "\n  " lines
+
+/-- Per-player private and graveyard information. The shared battlefield is
+rendered separately by `battlefieldBlock`. -/
 def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : String :=
   let marker := if pl.id == g.activePlayer then " (active)" else ""
-  let bf := battlefieldPermanentLines g (g.permanentsOf pl.id) (some (some pl.id))
-  let bfText := if bf.isEmpty then "  (none)" else String.intercalate "\n  " bf
   let handText :=
     if canSeeZoneFaces viewer (.hand pl.id) then
       let hand := pl.hand.toList.map (handLine g)
@@ -296,8 +336,6 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
     scryLines ++
     [s!"  Hand ({pl.hand.size}):",
      "  " ++ handText,
-     "  Battlefield:",
-     "  " ++ bfText,
      s!"  Graveyard ({pl.graveyard.size}):",
      "  " ++ gyText])
 
@@ -441,7 +479,8 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
     | some block => [block]
     | none => []
   String.intercalate "\n\n"
-    (header g viewer :: cost ++ assign ++ [stackBlock g] ++ players ++ exileBlock)
+    (header g viewer :: cost ++ assign ++
+      [stackBlock g, battlefieldBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
 (CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/
@@ -522,38 +561,6 @@ def battlefieldView (g : Game) : Array String :=
 /-- Visible stack lines, including announced targets (CR 115 / 601.2c). -/
 def stackView (g : Game) : Array String :=
   g.stack.map (fun e => stackObjectLine g e true)
-
-/-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
-are omitted. Permanents attached to another battlefield permanent are listed
-with that host rather than in their own controller's group. Within each
-controller, unattached permanents are split into unlabeled subgroups:
-creatures, non-creature non-lands, then non-creature lands. Permanents with
-no controller are listed last. The `Option PlayerId` is the group heading
-(`none` = no controller). -/
-def battlefieldGroups (g : Game) : Array (String × Option PlayerId × Array GameObject) :=
-  Id.run do
-    let mut groups : Array (String × Option PlayerId × Array GameObject) := #[]
-    for pl in g.players do
-      let ps := (g.permanentsOf pl.id).filter (fun o => !attachedToBattlefield g o)
-      if !ps.isEmpty then
-        groups := groups.push (pl.name, some pl.id, ps)
-    let uncontrolled := g.battlefield.filter (fun o =>
-      o.controller.isNone && !attachedToBattlefield g o)
-    if !uncontrolled.isEmpty then
-      groups := groups.push ("(no controller)", none, uncontrolled)
-    return groups
-
-/-- Shared-zone battlefield lines grouped under each controller's name.
-Owner and controller are omitted on each permanent unless they differ from
-the group heading. Attached permanents are indented under their host. -/
-def battlefieldGroupLines (g : Game) : List String :=
-  Id.run do
-    let mut lines : Array String := #[]
-    for (label, group, os) in battlefieldGroups g do
-      lines := lines.push s!"{label}:"
-      for line in battlefieldPermanentLines g os (some group) do
-        lines := lines.push s!"  {line}"
-    return lines.toList
 
 /-- Zones whose occupants, order, visible status, or scry look differ between
 two game states. Tapping or untapping a land does not move it, but it does

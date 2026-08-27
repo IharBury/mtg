@@ -42,6 +42,11 @@ open Mtg.Demo.Render
   (firstHandCard started ⟨0⟩).name
 #guard mentions (playerBlock started (started.player ⟨0⟩)) "Graveyard (0):"
 #guard mentions (playerBlock started (started.player ⟨0⟩)) "  (empty)"
+#guard !mentions (playerBlock started (started.player ⟨0⟩)) "Battlefield"
+#guard !mentions (playerBlock started (started.player ⟨1⟩)) "Battlefield"
+#guard battlefieldBlock started == "Battlefield (0): (empty)"
+#guard mentions (snapshot started) (battlefieldBlock started)
+#guard ((snapshot started).splitOn "Battlefield").length == 2
 
 #guard mentions (snapshot started (some ⟨0⟩)) "Chandra's view"
 #guard !mentions (snapshot started) "view"
@@ -127,8 +132,8 @@ def mountainLine (g : Game) : String :=
   let o := lastPermanent g
   o.hasSummoningSickness &&
     mentions (objectLine g o) "(summoning sickness)" &&
-    mentions (playerBlock g (g.player ⟨0⟩)) "(summoning sickness)" &&
     mentions (zoneBlock g .battlefield) "(summoning sickness)" &&
+    mentions (battlefieldBlock g) "(summoning sickness)" &&
     mentions (snapshot g) "(summoning sickness)"
 
 -- A creature that has been under control since the turn began does not print it.
@@ -202,14 +207,14 @@ def mountainLine (g : Game) : String :=
 #guard mountainLine stolenMountain ==
   s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 -- Grouped under Nissa: owner differs, so it is printed; controller matches.
-#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
-  "(owned by Chandra)"
-#guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
-  "controlled by"
-#guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "  (none)"
+-- The shared battlefield is not listed under either player block.
+#guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "Battlefield"
+#guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩)) "Battlefield"
 #guard mentions (zoneBlock stolenMountain .battlefield)
   "(owned by Chandra)"
 #guard !mentions (zoneBlock stolenMountain .battlefield) "controlled by"
+#guard mentions (battlefieldBlock stolenMountain) "(owned by Chandra)"
+#guard !mentions (battlefieldBlock stolenMountain) "controlled by"
 #guard mentions (snapshot stolenMountain)
   "(owned by Chandra)"
 #guard !mentions (snapshot stolenMountain) "controlled by"
@@ -226,28 +231,42 @@ def mountainLine (g : Game) : String :=
 
 /- The shared battlefield listing is grouped by controller (CR 110.2). -/
 #guard zoneBlock started .battlefield == "zone battlefield (0): (empty)"
+#guard battlefieldBlock started == "Battlefield (0): (empty)"
 
 #guard
   let m := lastPermanent withMountain
-  zoneBlock withMountain .battlefield ==
-    s!"zone battlefield (1):\n  Chandra:\n    {objectLine withMountain m (some (some ⟨0⟩))}"
+  let grouped :=
+    s!"Chandra:\n    {objectLine withMountain m (some (some ⟨0⟩))}"
+  zoneBlock withMountain .battlefield == s!"zone battlefield (1):\n  {grouped}" &&
+    battlefieldBlock withMountain == s!"Battlefield (1):\n  {grouped}" &&
+    mentions (snapshot withMountain) (battlefieldBlock withMountain) &&
+    ((snapshot withMountain).splitOn "Battlefield").length == 2 &&
+    !mentions (playerBlock withMountain (withMountain.player ⟨0⟩)) "Battlefield"
 
 #guard
   let m := lastPermanent stolenMountain
-  zoneBlock stolenMountain .battlefield ==
-    s!"zone battlefield (1):\n  Nissa:\n    {objectLine stolenMountain m (some (some ⟨1⟩))}"
+  let grouped :=
+    s!"Nissa:\n    {objectLine stolenMountain m (some (some ⟨1⟩))}"
+  zoneBlock stolenMountain .battlefield == s!"zone battlefield (1):\n  {grouped}" &&
+    battlefieldBlock stolenMountain == s!"Battlefield (1):\n  {grouped}"
 
 #guard
   let forestP := (mixedControllers.permanentsOf ⟨0⟩)[0]!
   let mountainP := (mixedControllers.permanentsOf ⟨1⟩)[0]!
+  let grouped :=
+    s!"Chandra:\n    {objectLine mixedControllers forestP (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine mixedControllers mountainP (some (some ⟨1⟩))}"
   forestP.name == "Forest" && mountainP.name == "Mountain" &&
-    zoneBlock mixedControllers .battlefield ==
-      s!"zone battlefield (2):\n  Chandra:\n    {objectLine mixedControllers forestP (some (some ⟨0⟩))}\n  Nissa:\n    {objectLine mixedControllers mountainP (some (some ⟨1⟩))}"
+    zoneBlock mixedControllers .battlefield == s!"zone battlefield (2):\n  {grouped}" &&
+    battlefieldBlock mixedControllers == s!"Battlefield (2):\n  {grouped}" &&
+    mentions (snapshot mixedControllers) (battlefieldBlock mixedControllers) &&
+    ((snapshot mixedControllers).splitOn "Battlefield").length == 2
 
 #guard
   let m := lastPermanent uncontrolledPermanent
-  zoneBlock uncontrolledPermanent .battlefield ==
-    s!"zone battlefield (1):\n  (no controller):\n    {objectLine uncontrolledPermanent m (some none)}"
+  let grouped :=
+    s!"(no controller):\n    {objectLine uncontrolledPermanent m (some none)}"
+  zoneBlock uncontrolledPermanent .battlefield == s!"zone battlefield (1):\n  {grouped}" &&
+    battlefieldBlock uncontrolledPermanent == s!"Battlefield (1):\n  {grouped}"
 
 -- Owner still prints under the no-controller heading; "no controller" does not
 -- repeat on the permanent line.
@@ -262,7 +281,8 @@ def mountainLine (g : Game) : String :=
   ((mixedControllers.permanentsOf ⟨1⟩)[0]!) (some (some ⟨1⟩))) "(owned by Chandra)"
 
 #guard mentions (objectLine withGoblin (lastPermanent withGoblin)) "haste"
-#guard mentions (playerBlock withGoblin (withGoblin.player ⟨0⟩)) "haste"
+#guard mentions (battlefieldBlock withGoblin) "haste"
+#guard mentions (snapshot withGoblin) "haste"
 #guard mentions (objectLine withElves (lastPermanent withElves)) "{T}: Add {G}"
 #guard mentions (objectLine withSpider (lastPermanent withSpider)) "reach"
 #guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "deathtouch"
@@ -328,8 +348,9 @@ def mountainLine (g : Game) : String :=
   let ogre := namedPermanent g "Gray Ogre"
   objectLine g bears ==
     s!"{bears.id} Grizzly Bears {bears.typeLine} {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
-  mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
+  mentions (battlefieldBlock g) s!"*blocking {ogre.id} Gray Ogre*" &&
+  mentions (snapshot g) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (objectLine g ogre) "*attacking, blocked*"
 #guard !mentions
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
@@ -566,7 +587,8 @@ def mountainLine (g : Game) : String :=
   let hostLine := objectLine g bears (some (some ⟨0⟩))
   let spearLine := objectLine g spear (some (some ⟨0⟩))
   mentions spearLine "*equipping" &&
-    mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {spearLine}"
+    mentions (battlefieldBlock g) s!"    {hostLine}\n      {spearLine}" &&
+    mentions (snapshot g) (battlefieldBlock g)
 
 -- Attached permanents print next to their host, with two extra spaces.
 #guard
@@ -577,7 +599,9 @@ def mountainLine (g : Game) : String :=
   let auraLine := objectLine g aura (some (some ⟨0⟩))
   zoneBlock g .battlefield ==
     s!"zone battlefield (2):\n  Chandra:\n    {hostLine}\n      {auraLine}" &&
-  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}"
+  battlefieldBlock g ==
+    s!"Battlefield (2):\n  Chandra:\n    {hostLine}\n      {auraLine}" &&
+  mentions (snapshot g) (battlefieldBlock g)
 
 -- A later unattached permanent does not sit between a host and its Aura.
 #guard
@@ -592,7 +616,8 @@ def mountainLine (g : Game) : String :=
   let auraLine := objectLine g aura (some (some ⟨0⟩))
   zoneBlock g .battlefield ==
     s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n      {auraLine}\n    {landLine}" &&
-  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n    {auraLine}\n  {landLine}"
+  battlefieldBlock g ==
+    s!"Battlefield (3):\n  Chandra:\n    {hostLine}\n      {auraLine}\n    {landLine}"
 
 -- An Aura you control on an opponent's creature lists with that host.
 #guard
@@ -605,8 +630,10 @@ def mountainLine (g : Game) : String :=
     mentions auraLine "(owned by Chandra, controlled by Chandra)" &&
     zoneBlock g .battlefield ==
       s!"zone battlefield (2):\n  Nissa:\n    {hostLine}\n      {auraLine}" &&
-    mentions (playerBlock g (g.player ⟨0⟩)) "  (none)" &&
-    mentions (playerBlock g (g.player ⟨1⟩)) s!"  {hostLine}\n    {auraLine}"
+    battlefieldBlock g ==
+      s!"Battlefield (2):\n  Nissa:\n    {hostLine}\n      {auraLine}" &&
+    !mentions (playerBlock g (g.player ⟨0⟩)) "Battlefield" &&
+    !mentions (playerBlock g (g.player ⟨1⟩)) "Battlefield"
 
 -- Other permanents stay in their controller's group when an Aura is elsewhere.
 #guard
@@ -644,7 +671,8 @@ def mountainLine (g : Game) : String :=
   let hostLine := objectLine g bears (some (some ⟨0⟩))
   zoneBlock g .battlefield ==
     s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n    {baubleLine}\n    {landLine}" &&
-  mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n  {baubleLine}\n  {landLine}"
+  battlefieldBlock g ==
+    s!"Battlefield (3):\n  Chandra:\n    {hostLine}\n    {baubleLine}\n    {landLine}"
 
 -- Each battlefield permanent prints its current types (CR 205.1a).
 #guard
@@ -668,7 +696,7 @@ def mountainLine (g : Game) : String :=
     mentions (zoneBlock g .battlefield) "Artifact" &&
     mentions (zoneBlock g .battlefield) "Enchantment" &&
     mentions (zoneBlock g .battlefield) "Basic Land — Mountain" &&
-    mentions (playerBlock g (g.player ⟨0⟩)) "Creature — Bear"
+    mentions (battlefieldBlock g) "Creature — Bear"
 
 #guard
   let g := giftEntered
