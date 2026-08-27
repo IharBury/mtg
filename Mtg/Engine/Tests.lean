@@ -3799,11 +3799,11 @@ def bladeNoCreatureResolved : Game :=
 #guard bladeNoCreatureResolved.log.any (fun s => mentions s "has no creature to sacrifice")
 #guard bladeNoCreatureResolved.battlefield.any (fun o => o.name == "Crude Bent Blade")
 
-/-- Direct resolution with no legal player target logs that the target is gone. -/
+-- Direct resolution with no announced target logs that the target is gone.
 #guard
-  let g := bladeNoCreatureResolved.applyTriggeredAbility ⟨0⟩
-    .onEnterTargetOpponentSacrificesCreature none
-  g.log.any (fun s => mentions s "The target is no longer legal")
+  (bladeNoCreatureResolved.applyTriggeredAbility ⟨0⟩
+    .onEnterTargetOpponentSacrificesCreature none).log.any
+    (fun s => mentions s "The target is no longer legal")
 
 /-- Sacrificing Goblin Fireleaper still queues its dies trigger. -/
 def bladeFireleaperSetup : Game :=
