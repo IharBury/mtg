@@ -68,22 +68,29 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
 
+/-- Instant or sorcery with an optional one-shot effect or modal modes. -/
+def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
+    (oracleText : String) (spellEffect : Option SpellEffect := none)
+    (spellModes : Array SpellEffect := #[])
+    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
+  card name #[cardType] manaCost (oracleText := oracleText)
+    (spellEffect := spellEffect) (spellModes := spellModes)
+    (additionalCostSacrificeArtifactOrCreature :=
+      additionalCostSacrificeArtifactOrCreature)
+
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
-  card name #[.instant] manaCost (oracleText := oracleText)
-    (spellEffect := spellEffect) (spellModes := spellModes)
-    (additionalCostSacrificeArtifactOrCreature :=
-      additionalCostSacrificeArtifactOrCreature)
+  spellCard .instant name manaCost oracleText spellEffect spellModes
+    additionalCostSacrificeArtifactOrCreature
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[]) : CardDef :=
-  card name #[.sorcery] manaCost (oracleText := oracleText)
-    (spellEffect := spellEffect) (spellModes := spellModes)
+  spellCard .sorcery name manaCost oracleText spellEffect spellModes
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)

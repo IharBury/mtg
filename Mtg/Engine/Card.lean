@@ -134,37 +134,54 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace EffectTargetKind
 
+/-- Count, Oracle noun, and demonstration-agent preference for a targeting
+shape. Exhaustive so a new constructor is a compile error here rather than
+silently using `targetCount` 1, an empty noun, or `.opponent`. -/
+structure Spec where
+  count : Nat := 1
+  noun : String := ""
+  prefer : TargetPreference := .opponent
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this targeting shape. `targetCount`, `noun`, and
+`defaultPreference` read this table. -/
+def spec : EffectTargetKind → Spec
+  | .none =>
+    { count := 0, prefer := .own }
+  | .creatureYouControl =>
+    { noun := "target creature you control", prefer := .own }
+  | .anotherCreatureYouControl =>
+    { noun := "another target creature you control", prefer := .own }
+  | .playerOrCreature =>
+    { noun := "any target", prefer := .opponentPlayer }
+  | .elfInYourGraveyard =>
+    { noun := "target Elf card from your graveyard", prefer := .last }
+  | .oppCreature =>
+    { noun := "target creature an opponent controls" }
+  | .creature =>
+    { noun := "target creature" }
+  | .creatureWithFlying =>
+    { noun := "target creature with flying" }
+  | .artifactOrLand =>
+    { noun := "target artifact or land" }
+  | .colorlessNonland =>
+    { noun := "target colorless nonland permanent" }
+  | .creatureYouControlThenOppCreature =>
+    { count := 2
+      noun := "target creature you control and a creature an opponent controls"
+      prefer := .ownThenOpponent }
+
 /-- How many targets must be announced for this shape (CR 601.2c). -/
-def targetCount : EffectTargetKind → Nat
-  | .none => 0
-  | .creatureYouControlThenOppCreature => 2
-  | .creatureYouControl | .anotherCreatureYouControl | .playerOrCreature
-  | .elfInYourGraveyard | .oppCreature | .creature | .creatureWithFlying
-  | .artifactOrLand | .colorlessNonland => 1
+def targetCount (k : EffectTargetKind) : Nat :=
+  k.spec.count
 
 /-- Oracle-style noun phrase for this targeting shape. -/
-def noun : EffectTargetKind → String
-  | .none => ""
-  | .creatureYouControl => "target creature you control"
-  | .anotherCreatureYouControl => "another target creature you control"
-  | .playerOrCreature => "any target"
-  | .elfInYourGraveyard => "target Elf card from your graveyard"
-  | .oppCreature => "target creature an opponent controls"
-  | .creature => "target creature"
-  | .creatureWithFlying => "target creature with flying"
-  | .artifactOrLand => "target artifact or land"
-  | .colorlessNonland => "target colorless nonland permanent"
-  | .creatureYouControlThenOppCreature =>
-    "target creature you control and a creature an opponent controls"
+def noun (k : EffectTargetKind) : String :=
+  k.spec.noun
 
 /-- Default demonstration-agent preference for this targeting shape. -/
-def defaultPreference : EffectTargetKind → TargetPreference
-  | .none | .creatureYouControl | .anotherCreatureYouControl => .own
-  | .playerOrCreature => .opponentPlayer
-  | .elfInYourGraveyard => .last
-  | .oppCreature | .creatureWithFlying | .artifactOrLand | .colorlessNonland
-  | .creature => .opponent
-  | .creatureYouControlThenOppCreature => .ownThenOpponent
+def defaultPreference (k : EffectTargetKind) : TargetPreference :=
+  k.spec.prefer
 
 end EffectTargetKind
 
@@ -676,6 +693,24 @@ inductive StaticShape where
   | cantBlockUnless (subtypes : Array String)
 deriving Repr, Inhabited, BEq
 
+/-- Projections Game reads from a static shape. Exhaustive so a new shape is a
+compile error here rather than silently matching `none` / `(0, 0)` / `false`. -/
+structure StaticMeta where
+  lordPump : Option (Array String × Int × Int) := none
+  trampleSubtypes : Option (Array String) := none
+  hostBonus : Int × Int := (0, 0)
+  landsYouControlPT : Bool := false
+  cantBlockUnless : Option (Array String) := none
+deriving Repr, Inhabited, BEq
+
+/-- Classification of a static shape for Game accessors. -/
+def StaticShape.spec : StaticShape → StaticMeta
+  | .lordTrample subtypes => { trampleSubtypes := some subtypes }
+  | .lordPump subtypes p t => { lordPump := some (subtypes, p, t) }
+  | .hostGets _ p t => { hostBonus := (p, t) }
+  | .landsYouControlPT => { landsYouControlPT := true }
+  | .cantBlockUnless subtypes => { cantBlockUnless := some subtypes }
+
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
 def shape : StaticAbility → StaticShape
@@ -708,34 +743,24 @@ instance : ToString StaticAbility where
 
 /-- Lord +P/+T this ability grants other matching creatures, if any. -/
 def lordPump? (ab : StaticAbility) : Option (Array String × Int × Int) :=
-  match ab.shape with
-  | .lordPump subtypes p t => some (subtypes, p, t)
-  | _ => none
+  ab.shape.spec.lordPump
 
 /-- Subtypes this ability grants trample to, if any. -/
 def trampleSubtypes? (ab : StaticAbility) : Option (Array String) :=
-  match ab.shape with
-  | .lordTrample subtypes => some subtypes
-  | _ => none
+  ab.shape.spec.trampleSubtypes
 
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
 (CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
 def hostStatBonus (ab : StaticAbility) : Int × Int :=
-  match ab.shape with
-  | .hostGets _ p t => (p, t)
-  | _ => (0, 0)
+  ab.shape.spec.hostBonus
 
 /-- True for the lands-you-control P/T characteristic-defining ability. -/
 def isLandsYouControlPT (ab : StaticAbility) : Bool :=
-  match ab.shape with
-  | .landsYouControlPT => true
-  | _ => false
+  ab.shape.spec.landsYouControlPT
 
 /-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
 def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
-  match ab.shape with
-  | .cantBlockUnless subtypes => some subtypes
-  | _ => none
+  ab.shape.spec.cantBlockUnless
 
 end StaticAbility
 
@@ -840,22 +865,33 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
 
+/-- Oracle clause and whether the ability uses `Whenever` rather than `When`.
+Exhaustive so a new event is a compile error here rather than silently
+matching `When this occurs` with `Whenever`. -/
+structure Spec where
+  clause : String
+  isWhenever : Bool := true
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this event. `clause` and `isWhenever` read this table. -/
+def spec : TriggerEvent → Spec
+  | .attacking => { clause := "this creature attacks" }
+  | .becomesBlocked => { clause := "this creature becomes blocked" }
+  | .entering => { clause := "this permanent enters", isWhenever := false }
+  | .landYouControlEnters => { clause := "a land you control enters" }
+  | .dying => { clause := "this creature dies", isWhenever := false }
+  | .youCastInstantOrSorcery => { clause := "you cast an instant or sorcery spell" }
+  | .youAttackWithElves => { clause := "you attack with one or more Elves" }
+  | .youScry => { clause := "you scry" }
+  | .anotherElfYouControlEnters => { clause := "another Elf you control enters" }
+
 /-- Oracle “when/whenever” clause after the leading word. -/
-def clause : TriggerEvent → String
-  | .attacking => "this creature attacks"
-  | .becomesBlocked => "this creature becomes blocked"
-  | .entering => "this permanent enters"
-  | .landYouControlEnters => "a land you control enters"
-  | .dying => "this creature dies"
-  | .youCastInstantOrSorcery => "you cast an instant or sorcery spell"
-  | .youAttackWithElves => "you attack with one or more Elves"
-  | .youScry => "you scry"
-  | .anotherElfYouControlEnters => "another Elf you control enters"
+def clause (e : TriggerEvent) : String :=
+  e.spec.clause
 
 /-- `Whenever` rather than one-shot `When` (enters / dies). -/
-def isWhenever : TriggerEvent → Bool
-  | .entering | .dying => false
-  | _ => true
+def isWhenever (e : TriggerEvent) : Bool :=
+  e.spec.isWhenever
 
 end TriggerEvent
 
@@ -1338,6 +1374,20 @@ instance : ToString CardDef where
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
 #guard EffectTargetKind.noun .colorlessNonland ==
   "target colorless nonland permanent"
+#guard EffectTargetKind.spec .none == { count := 0, noun := "", prefer := .own }
+#guard EffectTargetKind.spec .playerOrCreature ==
+  { count := 1, noun := "any target", prefer := .opponentPlayer }
+#guard EffectTargetKind.spec .creatureYouControlThenOppCreature ==
+  { count := 2
+    noun := "target creature you control and a creature an opponent controls"
+    prefer := .ownThenOpponent }
+#guard TriggerEvent.spec .entering ==
+  { clause := "this permanent enters", isWhenever := false }
+#guard TriggerEvent.spec .attacking ==
+  { clause := "this creature attacks", isWhenever := true }
+#guard TriggerEvent.clause .youScry == "you scry"
+#guard !TriggerEvent.isWhenever .dying
+#guard TriggerEvent.isWhenever .youAttackWithElves
 #guard SpellEffect.targetCount (.dealDamage 3) == 1
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
@@ -1604,6 +1654,15 @@ instance : ToString CardDef where
   .hostGets "Enchanted creature" 3 3
 #guard StaticAbility.shape (.equippedCreatureGets 2 0) ==
   .hostGets "Equipped creature" 2 0
+#guard (StaticAbility.StaticShape.spec (.hostGets "Enchanted creature" 3 3)).hostBonus ==
+  (3, 3)
+#guard (StaticAbility.StaticShape.spec (.lordPump #["Elf"] 1 1)).lordPump ==
+  some (#["Elf"], 1, 1)
+#guard (StaticAbility.StaticShape.spec (.lordTrample #["Orc"])).trampleSubtypes ==
+  some #["Orc"]
+#guard (StaticAbility.StaticShape.spec .landsYouControlPT).landsYouControlPT
+#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #["Goblin"])).cantBlockUnless ==
+  some #["Goblin"]
 #guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
 #guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]
 #guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl

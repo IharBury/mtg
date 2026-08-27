@@ -83,10 +83,10 @@ structure Status where
   activationsThisTurn : Nat := 0
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
-  /-- Granted until end of turn (cleared in cleanup, CR 514.3). -/
-  untilEotTrample : Bool := false
-  untilEotHexproof : Bool := false
-  untilEotCantBeBlocked : Bool := false
+  /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
+  Printed keywords stay on `GameObject.printed`; this field is merged in
+  `GameObject.printedOrUntilEot`. -/
+  untilEotKeywords : Keywords := {}
   /-- This creature loses indestructible until end of turn (e.g. Smite). -/
   untilEotLosesIndestructible : Bool := false
   /-- If this creature would die this turn, exile it instead (CR 614.1). -/
@@ -117,6 +117,26 @@ def addPump (s : Status) (p t : Int) : Status :=
 /-- Put `n` +1/+1 counters on this permanent (CR 122.1). -/
 def addPlusOnePlusOne (s : Status) (n : Nat := 1) : Status :=
   { s with plusOnePlusOne := s.plusOnePlusOne + n }
+
+/-- Union printed-style keyword grants that last until end of turn. -/
+def grantUntilEot (s : Status) (k : Keywords) : Status :=
+  { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
+
+/-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
+base P/T setting (CR 514.3). -/
+def clearsAtCleanup (s : Status) : Bool :=
+  s.damage != 0 || s.pumpPower != 0 || s.pumpToughness != 0 ||
+    s.untilEotKeywords != Keywords.none ||
+    s.untilEotLosesIndestructible || s.untilEotExileIfDies ||
+    s.setBasePower.isSome || s.setBaseToughness.isSome
+
+/-- Status after the cleanup step removes until-EOT effects (CR 514.3). -/
+def clearedAtCleanup (s : Status) : Status :=
+  { s with
+    damage := 0, pumpPower := 0, pumpToughness := 0
+    untilEotKeywords := Keywords.none
+    untilEotLosesIndestructible := false, untilEotExileIfDies := false
+    setBasePower := none, setBaseToughness := none }
 
 end Status
 
@@ -233,10 +253,22 @@ def isColorlessNonland (o : GameObject) : Bool :=
 def isArtifactOrLand (o : GameObject) : Bool :=
   o.isOnBattlefield && (o.printed.isArtifact || o.printed.isLand)
 
+/-- Keywords granted until end of turn, if this object is on the battlefield. -/
+def grantedUntilEot (o : GameObject) : Keywords :=
+  if o.isOnBattlefield then o.status.untilEotKeywords else Keywords.none
+
+/-- Printed keywords plus until-end-of-turn grants (CR 611.2a / 514.3). -/
+def printedOrUntilEot (o : GameObject) : Keywords :=
+  Keywords.merge o.printed.keywords o.grantedUntilEot
+
+/-- True when summoning sickness currently prevents tapping or attacking
+(CR 302.6). Haste overrides it. -/
+def hasSummoningSickness (o : GameObject) : Bool :=
+  o.isCreature && o.status.summoningSick && !o.printedOrUntilEot.haste
+
 /-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
 def canPayTapCost (o : GameObject) : Bool :=
-  !o.status.tapped &&
-  !(o.isCreature && o.status.summoningSick && !o.printed.keywords.haste)
+  !o.status.tapped && !o.hasSummoningSickness
 
 end GameObject
 
@@ -781,8 +813,8 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
   o.controlledBy g.activePlayer &&
-  !o.status.tapped && !o.printed.keywords.defender &&
-  (!o.status.summoningSick || o.printed.keywords.haste)
+  !o.status.tapped && !o.printedOrUntilEot.defender &&
+  !o.hasSummoningSickness
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
@@ -801,17 +833,16 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
 
 /-- Whether `o` has vigilance (CR 702.20). Attacking does not cause it to tap. -/
 def hasVigilance (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.vigilance
+  o.printedOrUntilEot.vigilance
 
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.flying
+  o.printedOrUntilEot.flying
 
 /-- Whether `o` can't be blocked, printed or granted until end of turn
 (CR 509.1b / 611.2a). -/
 def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.cantBeBlocked ||
-  (o.isOnBattlefield && o.status.untilEotCantBeBlocked)
+  o.printedOrUntilEot.cantBeBlocked
 
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
@@ -823,7 +854,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   attacker.status.attacking &&
   !g.hasCantBeBlocked attacker &&
   (!g.hasFlying attacker ||
-    g.hasFlying blocker || blocker.printed.keywords.reach)
+    g.hasFlying blocker || blocker.printedOrUntilEot.reach)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (src target : GameObject) : Bool :=
@@ -835,25 +866,23 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.hexproof ||
-  (o.isOnBattlefield && o.status.untilEotHexproof)
+  o.printedOrUntilEot.hexproof
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
 def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.indestructible &&
+  o.printedOrUntilEot.indestructible &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
 
 /-- Whether `o` has trample, printed, granted until end of turn, or granted by
 a static ability (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.trample ||
-  (o.isOnBattlefield && o.status.untilEotTrample) ||
+  o.printedOrUntilEot.trample ||
   (o.isOnBattlefield && g.battlefield.any (fun src => grantsTrampleTo src o))
 
 /-- Keywords including those granted by static abilities and until-EOT effects. -/
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
-  { o.printed.keywords with
+  { o.printedOrUntilEot with
     flying := g.hasFlying o
     cantBeBlocked := g.hasCantBeBlocked o
     hexproof := g.hasHexproof o
@@ -1361,7 +1390,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
   g.permanentsOf p |>.filterMap (fun o =>
     let types := o.printed.manaAbilities
     if types.isEmpty || o.status.tapped then none
-    else if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then none
+    else if o.hasSummoningSickness then none
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
@@ -1407,7 +1436,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       | some prop => prop.tapSource && prop.sourceId == some id
       | none => false) then
     throw s!"{o.name} is needed to pay \{T}"
-  if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
+  if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if !o.printed.manaAbilities.contains mana then
     throw s!"{o.name} cannot produce {mana}"
@@ -2109,7 +2138,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     throw s!"{o.name}'s ability can be activated only once each turn"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
+  if ab.cost.tap && o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
@@ -2215,7 +2244,7 @@ trample until end of turn (e.g. Oliphaunt). -/
 def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : Game :=
   let g := g.mapObjectStatus o (fun s =>
     let s := s.addPump p t
-    if trample then { s with untilEotTrample := true } else s)
+    if trample then s.grantUntilEot Keyword.trample else s)
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
@@ -2227,8 +2256,7 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
   let g := g.mapObjectStatus o (fun s =>
-    let s := s.addPlusOnePlusOne 1
-    { s with untilEotTrample := true, untilEotHexproof := true })
+    (s.addPlusOnePlusOne 1).grantUntilEot (Keyword.trample.merge Keyword.hexproof))
   g.logMsg
     s!"{o.name} gets a +1/+1 counter and gains trample and hexproof until end of turn"
 
@@ -2244,7 +2272,7 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : 
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.mapObjectStatus o (fun s => { s with untilEotCantBeBlocked := true })
+  let g := g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/
@@ -2981,18 +3009,8 @@ def clearEOT (g : Game) : Game :=
   Id.run do
     let mut g := { g with creaturesWithoutFlyingCantBlock := false }
     for o in g.battlefield do
-      if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
-          o.status.untilEotTrample || o.status.untilEotHexproof ||
-          o.status.untilEotCantBeBlocked ||
-          o.status.untilEotLosesIndestructible || o.status.untilEotExileIfDies ||
-          o.status.setBasePower.isSome || o.status.setBaseToughness.isSome then
-        g := g.setObject { o with
-          status := { o.status with
-            damage := 0, pumpPower := 0, pumpToughness := 0
-            untilEotTrample := false, untilEotHexproof := false
-            untilEotCantBeBlocked := false
-            untilEotLosesIndestructible := false, untilEotExileIfDies := false
-            setBasePower := none, setBaseToughness := none } }
+      if o.status.clearsAtCleanup then
+        g := g.mapObjectStatus o Status.clearedAtCleanup
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
