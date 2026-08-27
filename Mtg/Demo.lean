@@ -11,12 +11,14 @@ heuristic agent using The Hobbit Welcome Decks. Repeat `--name NAME` and
 `--deck COLOR` once per player (paired in order; default Chandra red and Nissa
 green). Pass `--interactive` to play as the first named player against
 heuristic-controlled opponents, or `--multiplayer` to issue every player's
-actions from the console. In either interactive mode, choose who takes the first
-turn with `first <name>` (CR 103.1) before opening hands are drawn. `visible`
-prints only information that player can see; `--visible` starts in that view.
-`--input FILE` runs commands from the file first, then reads from the console.
-`--output FILE` writes every command (from the file or the console) to that
-file.
+actions from the console. `--decides NAME` names the player who chooses who
+takes the first turn (CR 103.1); by default one player is chosen at random
+using `--seed`. In interactive modes that player uses `first <name>` before
+opening hands are drawn, unless a heuristic opponent is deciding and chooses
+to go first. `visible` prints only information that player can see; `--visible`
+starts in that view. `--input FILE` runs commands from the file first, then
+reads from the console. `--output FILE` writes every command (from the file or
+the console) to that file.
 -/
 
 open Mtg.Engine
@@ -29,7 +31,8 @@ def usage : String :=
 
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
-                    [--input FILE] [--output FILE] [--seed N] [--fuel N]
+                    [--decides NAME] [--input FILE] [--output FILE]
+                    [--seed N] [--fuel N]
                     [--name NAME --deck COLOR]...
 
 Options:
@@ -38,6 +41,8 @@ Options:
   --multiplayer   Control every player from the console
   --visible       With --interactive or --multiplayer, hide information the
                   acting player cannot see
+  --decides NAME  Player who chooses who takes the first turn (CR 103.1);
+                  default is a random player using --seed
   --input FILE    With --interactive or --multiplayer, run these commands
                   first, then read from the console
   --output FILE   With --interactive or --multiplayer, write every command
@@ -57,8 +62,13 @@ https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 The engine follows the Magic: The Gathering Comprehensive Rules
 effective 7 August 2026.
 
-In --interactive and --multiplayer, choose who takes the first turn
-(CR 103.1) with `first <name>` before opening hands are drawn.
+At the start of a game, one player is chosen to decide who takes the
+first turn (CR 103.1). `--decides NAME` names that player; the default
+is a random player chosen using --seed. In --interactive, the first
+named player chooses with `first <name>` when they are deciding; a
+heuristic opponent otherwise chooses to go first. In --multiplayer,
+the deciding player chooses with `first <name>`. In --auto, the
+deciding player (heuristic) chooses to go first.
 "
 
 /-- A named player and the Hobbit Welcome Deck they sit with. -/
@@ -104,8 +114,7 @@ def playersFromFlags (names : Array String) (decks : Array Color) :
   | some name => throw s!"Duplicate player name: {name}"
   | none => return players
 
-/-- Auto mode uses the first listed player as the starting player. Interactive
-modes pass the seat chosen at the console (CR 103.1). -/
+/-- `startingPlayer` is the seat that takes the first turn after CR 103.1. -/
 def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (players : Array DemoPlayer := defaultDemoPlayers) : StartConfig := {
   seats := seatsFromPlayers players
@@ -119,15 +128,94 @@ def firstUsage (seats : Array Seat) : String :=
   let names := String.intercalate " or " (seats.toList.map (·.name))
   s!"usage: first <name> ({names})"
 
+/-- Seat index of a player name, ignoring case. -/
+def parsePlayerName (seats : Array Seat) (name : String) : Except String Nat :=
+  let lower := name.map Char.toLower
+  match seats.findIdx? (fun s => s.name.map Char.toLower == lower) with
+  | some i => .ok i
+  | none => .error s!"No player named {name}"
+
 /-- Seat index of the player who takes the first turn (CR 103.1). -/
 def parseFirstPlayer (seats : Array Seat) (tokens : List String) : Except String Nat :=
   match tokens.filter (fun t => !t.isEmpty) with
-  | [name] =>
-    let lower := name.map Char.toLower
-    match seats.findIdx? (fun s => s.name.map Char.toLower == lower) with
-    | some i => .ok i
-    | none => .error s!"No player named {name}"
+  | [name] => parsePlayerName seats name
   | _ => .error (firstUsage seats)
+
+/-- Who decides who takes the first turn (CR 103.1). `none` means the RNG
+picks a seat from `players` using `seed`. -/
+def assignDecider (players : Array DemoPlayer) (seed : UInt64) (specified : Option Nat) : Nat :=
+  match specified with
+  | some i => i
+  | none =>
+    match players.size with
+    | 0 => 0
+    | n =>
+      let (_, r) := (Rng.ofSeed seed).next
+      r.toNat % n
+
+/-- True when the console user issues `first <name>` for this decider. -/
+def humanChoosesFirst (interactive : Bool) (multiplayer : Bool) (decider : Nat) : Bool :=
+  interactive && (multiplayer || decider == 0)
+
+/-- Console line naming the player who chooses who takes the first turn. -/
+def describeFirstChooser (players : Array DemoPlayer) (decider : Nat) (atRandom : Bool) : String :=
+  let name := players[decider]!.name
+  if atRandom then
+    s!"{name} is chosen at random to decide who takes the first turn (CR 103.1)."
+  else
+    s!"{name} will choose who takes the first turn (CR 103.1)."
+
+/-- Heuristic deciders always take the first turn themselves. -/
+def heuristicChoseToGoFirst (name : String) : String :=
+  s!"{name} chooses to take the first turn."
+
+/-- Print the CR 103.1 chooser, and either the heuristic's choice or `first` usage. -/
+def printFirstChooser (players : Array DemoPlayer) (decider : Nat)
+    (atRandom : Bool) (agentChooses : Bool) : IO Unit := do
+  IO.println (describeFirstChooser players decider atRandom)
+  if agentChooses then
+    IO.println (heuristicChoseToGoFirst players[decider]!.name)
+  else
+    for p in players do
+      IO.println s!"  first {p.name}"
+  IO.println ""
+
+#guard
+  match parsePlayerName demoSeats "Chandra" with
+  | .ok 0 => true
+  | _ => false
+
+#guard
+  match parsePlayerName demoSeats "nissa" with
+  | .ok 1 => true
+  | _ => false
+
+#guard
+  match parsePlayerName demoSeats "Frodo" with
+  | .error msg => msg == "No player named Frodo"
+  | .ok _ => false
+
+#guard assignDecider defaultDemoPlayers 1 (some 1) == 1
+#guard assignDecider defaultDemoPlayers 1 (some 0) == 0
+#guard assignDecider defaultDemoPlayers 1 none == assignDecider defaultDemoPlayers 1 none
+#guard assignDecider defaultDemoPlayers 1 none < 2
+
+#guard
+  let picks := (List.range 64).map (fun n =>
+    assignDecider defaultDemoPlayers (UInt64.ofNat n) none)
+  picks.all (fun i => i < 2) && picks.any (fun i => i == 0) && picks.any (fun i => i == 1)
+
+#guard humanChoosesFirst true false 0
+#guard !humanChoosesFirst true false 1
+#guard humanChoosesFirst true true 1
+#guard !humanChoosesFirst false false 0
+#guard !humanChoosesFirst false true 0
+
+#guard describeFirstChooser defaultDemoPlayers 0 true ==
+  "Chandra is chosen at random to decide who takes the first turn (CR 103.1)."
+#guard describeFirstChooser defaultDemoPlayers 1 false ==
+  "Nissa will choose who takes the first turn (CR 103.1)."
+#guard heuristicChoseToGoFirst "Nissa" == "Nissa chooses to take the first turn."
 
 #guard firstUsage demoSeats == "usage: first <name> (Chandra or Nissa)"
 
@@ -210,6 +298,15 @@ def elspethJaceLiliana : Array DemoPlayer := #[
   (fun c => c.name == "Elvish Archdruid")
 #guard firstUsage (seatsFromPlayers elspethJaceLiliana) ==
   "usage: first <name> (Elspeth or Jace or Liliana)"
+#guard describeFirstChooser elspethJaceLiliana 2 true ==
+  "Liliana is chosen at random to decide who takes the first turn (CR 103.1)."
+#guard
+  let picks := (List.range 64).map (fun n =>
+    assignDecider elspethJaceLiliana (UInt64.ofNat n) none)
+  picks.all (fun i => i < 3) &&
+    picks.any (fun i => i == 0) &&
+    picks.any (fun i => i == 1) &&
+    picks.any (fun i => i == 2)
 #guard (duplicatePlayerName? defaultDemoPlayers).isNone
 #guard duplicatePlayerName? #[
     { name := "Jace", color := .blue },
@@ -335,13 +432,12 @@ def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   let _ ← printLog g 0 viewer
   printState g viewer
 
-/-- Start a demo game and print the opening snapshot. Auto mode uses the first
-listed player as the starting player. -/
+/-- Start a demo game and print the opening snapshot. The starting player is
+the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
+are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
     (players : Array DemoPlayer := defaultDemoPlayers) : IO Game := do
-  printEngineBanner
-  printDeckAssignments players
   let g ← startGame seed startingPlayer players
   printOpening g viewer
   return g
@@ -434,6 +530,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
 #guard (usage.splitOn "--deck COLOR").length > 1
+#guard (usage.splitOn "--decides NAME").length > 1
+#guard (usage.splitOn "random player").length > 1
 #guard (usage.splitOn "white, blue, black, red, or green").length > 1
 #guard (usage.splitOn "first <name>").length > 1
 #guard (usage.splitOn "CR 103.1").length > 1
@@ -2307,18 +2405,21 @@ def recordCommand (output : Option IO.FS.Handle) (line : String) : IO Unit := do
     h.putStrLn line
     h.flush
 
-/-- CR 103.1: before opening hands, choose who takes the first turn. Returns
-the seat index and remaining `--input` lines, or `none` if the user quits. -/
-partial def chooseStartingPlayer (seats : Array Seat) (pending : List String)
+/-- CR 103.1: the deciding player chooses who takes the first turn. Returns
+the seat index and remaining `--input` lines, or `none` if the user quits.
+The chooser announcement is printed first by `printFirstChooser`. -/
+partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
+    (controlAll : Bool) (pending : List String)
     (output : Option IO.FS.Handle) : IO (Option (Nat × List String)) := do
-  IO.println "At the start of a game, choose who takes the first turn (CR 103.1)."
-  for seat in seats do
-    IO.println s!"  first {seat.name}"
-  IO.println ""
   let mut pending := pending
   let mut chosen : Option Nat := none
+  let prompt :=
+    if controlAll then
+      s!"mtg ({seats[decider]!.name})> "
+    else
+      "mtg> "
   while chosen.isNone do
-    IO.print "mtg> "
+    IO.print prompt
     (← IO.getStdout).flush
     let (line, rest) ← nextCommandLine pending
     pending := rest
@@ -2475,6 +2576,8 @@ structure DemoOptions where
   inputFile : Option String
   outputFile : Option String
   players : Array DemoPlayer
+  /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
+  decides : Option Nat
 
 def parseArgs (args : List String) : Except String DemoOptions :=
   Id.run do
@@ -2487,6 +2590,7 @@ def parseArgs (args : List String) : Except String DemoOptions :=
     let mut outputFile : Option String := none
     let mut names : Array String := #[]
     let mut decks : Array Color := #[]
+    let mut decidesName : Option String := none
     let mut rest := args
     while !rest.isEmpty do
       match rest with
@@ -2508,6 +2612,13 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       | "--visible" :: xs =>
         playerView := true
         rest := xs
+      | "--decides" :: name :: xs =>
+        if name.startsWith "--" then
+          return .error "Missing player name for --decides"
+        else
+          decidesName := some name
+          rest := xs
+      | "--decides" :: [] => return .error "Missing player name for --decides"
       | "--input" :: path :: xs =>
         if path.startsWith "--" then
           return .error "Missing input file path"
@@ -2562,16 +2673,34 @@ def parseArgs (args : List String) : Except String DemoOptions :=
     match playersFromFlags names decks with
     | .error e => return .error e
     | .ok players =>
-      return .ok {
-        interactive := interactive
-        multiplayer := multiplayer
-        playerView := playerView
-        seed := seed
-        fuel := fuel
-        inputFile := inputFile
-        outputFile := outputFile
-        players := players
-      }
+      match decidesName with
+      | none =>
+        return .ok {
+          interactive := interactive
+          multiplayer := multiplayer
+          playerView := playerView
+          seed := seed
+          fuel := fuel
+          inputFile := inputFile
+          outputFile := outputFile
+          players := players
+          decides := none
+        }
+      | some name =>
+        match parsePlayerName (seatsFromPlayers players) name with
+        | .error e => return .error e
+        | .ok i =>
+          return .ok {
+            interactive := interactive
+            multiplayer := multiplayer
+            playerView := playerView
+            seed := seed
+            fuel := fuel
+            inputFile := inputFile
+            outputFile := outputFile
+            players := players
+            decides := some i
+          }
 
 #guard
   match parseArgs ["--interactive", "--visible"] with
@@ -2685,7 +2814,7 @@ def parseArgs (args : List String) : Except String DemoOptions :=
 
 #guard
   match parseArgs [] with
-  | .ok opt => opt.players == defaultDemoPlayers
+  | .ok opt => opt.players == defaultDemoPlayers && opt.decides.isNone
   | _ => false
 
 #guard
@@ -2774,6 +2903,65 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | .error msg => msg == "Unknown argument: --chandra"
   | .ok _ => false
 
+#guard
+  match parseArgs ["--decides", "Nissa"] with
+  | .ok opt => !opt.interactive && opt.decides == some 1 && opt.players == defaultDemoPlayers
+  | _ => false
+
+#guard
+  match parseArgs ["--decides", "chandra"] with
+  | .ok opt => opt.decides == some 0
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--decides", "Nissa"] with
+  | .ok opt => opt.interactive && !opt.multiplayer && opt.decides == some 1
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--decides", "Chandra"] with
+  | .ok opt => opt.interactive && opt.multiplayer && opt.decides == some 0
+  | _ => false
+
+#guard
+  match parseArgs [
+      "--name", "Elspeth", "--deck", "white",
+      "--name", "Jace", "--deck", "blue",
+      "--decides", "Jace"] with
+  | .ok opt => opt.players == elspethJace && opt.decides == some 1
+  | _ => false
+
+#guard
+  match parseArgs [
+      "--decides", "Liliana",
+      "--name", "Elspeth", "--name", "Jace", "--name", "Liliana",
+      "--deck", "W", "--deck", "U", "--deck", "B"] with
+  | .ok opt => opt.players == elspethJaceLiliana && opt.decides == some 2
+  | _ => false
+
+#guard
+  match parseArgs ["--decides", "Frodo"] with
+  | .error msg => msg == "No player named Frodo"
+  | .ok _ => false
+
+#guard
+  match parseArgs [
+      "--name", "Elspeth", "--deck", "white",
+      "--name", "Jace", "--deck", "blue",
+      "--decides", "Nissa"] with
+  | .error msg => msg == "No player named Nissa"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--decides"] with
+  | .error msg => msg == "Missing player name for --decides"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--decides", "--seed", "1"] with
+  | .error msg => msg == "Missing player name for --decides"
+  | .ok _ => false
+
 def main (args : List String) : IO UInt32 := do
   match parseArgs args with
   | .error "help" =>
@@ -2794,10 +2982,18 @@ def main (args : List String) : IO UInt32 := do
         IO.eprintln e
         return 1
       | .ok output =>
+        printEngineBanner
+        printDeckAssignments opt.players
+        let decider := assignDecider opt.players opt.seed opt.decides
+        let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
+        printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
         if opt.interactive then
-          printEngineBanner
-          printDeckAssignments opt.players
-          match (← chooseStartingPlayer (seatsFromPlayers opt.players) pending output) with
+          match (←
+            if humanChooses then
+              chooseStartingPlayer (seatsFromPlayers opt.players) decider
+                opt.multiplayer pending output
+            else
+              pure (some (decider, pending))) with
           | none => return 0
           | some (startIdx, pending) =>
             let g ← startGame opt.seed (some startIdx) opt.players
@@ -2805,6 +3001,6 @@ def main (args : List String) : IO UInt32 := do
             interactiveLoop g opt.playerView opt.multiplayer pending output
             return 0
         else
-          let g ← startDemo opt.seed (players := opt.players)
+          let g ← startDemo opt.seed (some decider) (players := opt.players)
           runAuto g opt.fuel
           return 0
