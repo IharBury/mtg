@@ -48,6 +48,31 @@ def sourceClause (g : Game) (o : GameObject) : String :=
   | none => ""
   | some sid => s!" *source {objectRef g sid}*"
 
+/-- Identity of a target for stack listings (CR 115). Players print by
+seat name; objects use `objectRef`. -/
+def targetRef (g : Game) : Target → String
+  | .player pid => (g.player pid).name
+  | .permanent oid | .card oid => objectRef g oid
+
+/-- One announced target, with divided damage when that was chosen (CR 601.2d). -/
+def describeStackTarget (g : Game) (e : StackEntry) (i : Nat) : String :=
+  let name := targetRef g (e.targets[i]!)
+  match e.dividedDamage[i]? with
+  | some n => s!"{name} for {n}"
+  | none => name
+
+/-- Announced targets of a stack object (CR 115 / 601.2c). Nothing prints
+until a target is chosen; choosing none prints `*no target*` (CR 603.3d). -/
+def targetClause (g : Game) (e : StackEntry) : String :=
+  if e.targets.isEmpty then
+    if e.targetsAnnounced then " *no target*" else ""
+  else
+    Id.run do
+      let mut refs : Array String := #[]
+      for i in [0:e.targets.size] do
+        refs := refs.push (describeStackTarget g e i)
+      return s!" *targeting {String.intercalate ", " refs.toList}*"
+
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
   let s := c.keywordsAndAbilities
@@ -88,6 +113,15 @@ def stackFaceExtras (o : GameObject) : String :=
     | none, some e => textForStackedAbility o.printed (AbilityEffect.toNotation e)
     | none, none => o.printed.keywordsAndAbilities
   if s.isEmpty then "" else s!" {s}"
+
+/-- One object on the stack, including announced targets (CR 115 / 601.2c).
+`withId` prefixes the object id, matching zone listings. -/
+def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := false) : String :=
+  match g.findObject? e.objectId with
+  | none => if withId then s!"{e.objectId} (missing)" else "(missing)"
+  | some o =>
+    let id := if withId then s!"{o.id} " else ""
+    s!"{id}{o.name}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
@@ -270,11 +304,7 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
 def stackBlock (g : Game) : String :=
   if g.stack.isEmpty then "Stack: (empty)"
   else
-    let lines := g.stack.toList.reverse.map (fun e =>
-      match g.findObject? e.objectId with
-      | some o =>
-        s!"  {o.name}{stackFaceExtras o}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
-      | none => "  (missing)")
+    let lines := g.stack.toList.reverse.map (fun e => s!"  {stackObjectLine g e}")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
 /-- Locked-in total cost of a proposed spell or ability (CR 601.2f / 602.2b). -/
@@ -489,6 +519,10 @@ and summoning sickness on creatures (CR 302.6). -/
 def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
+/-- Visible stack lines, including announced targets (CR 115 / 601.2c). -/
+def stackView (g : Game) : Array String :=
+  g.stack.map (fun e => stackObjectLine g e true)
+
 /-- Permanents grouped by controller, in seat order (CR 110.2). Empty groups
 are omitted. Permanents attached to another battlefield permanent are listed
 with that host rather than in their own controller's group. Within each
@@ -524,6 +558,8 @@ def battlefieldGroupLines (g : Game) : List String :=
 /-- Zones whose occupants, order, visible status, or scry look differ between
 two game states. Tapping or untapping a land does not move it, but it does
 change the battlefield (CR 110.5 / 502.2), so the demo reprints that zone.
+Announcing or changing targets does not move a spell or ability, but it does
+change the stack (CR 115 / 601.2c), so the demo reprints that zone.
 Starting or finishing a scry does not move library cards, but the scrying
 player may look at the top cards (CR 701.20), so the demo reprints that
 library. -/
@@ -531,6 +567,7 @@ def changedZones (before after : Game) : Array Zone :=
   (allZones after).filter (fun z =>
     match z with
     | .battlefield => battlefieldView before != battlefieldView after
+    | .stack => stackView before != stackView after
     | .library p =>
       zoneObjectIds before z != zoneObjectIds after z ||
         scryLook before p != scryLook after p
@@ -544,11 +581,9 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
     | .hand _ => handLine g id
     | .battlefield => objectLine g o
     | .stack =>
-      let ctrl :=
-        match o.controller with
-        | some p => s!" (controlled by {g.player p |>.name})"
-        | none => ""
-      s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}{ctrl}"
+      match g.stack.find? (fun e => e.objectId == o.id) with
+      | some e => stackObjectLine g e true
+      | none => s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}"
     | .exile =>
       let extra :=
         match o.playPermission with
