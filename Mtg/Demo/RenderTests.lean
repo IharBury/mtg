@@ -304,6 +304,16 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard mentions (stackBlock proposedBolt) "deals 3 damage"
+#guard !mentions (stackBlock proposedBolt) "*targeting"
+#guard !mentions (stackBlock proposedBolt) "*no target"
+#guard mentions (stackBlock targetedBolt) "*targeting Nissa*"
+#guard mentions (zoneBlock targetedBolt .stack) "*targeting Nissa*"
+#guard mentions (snapshot targetedBolt) "*targeting Nissa*"
+#guard mentions (stackBlock paidBolt) "*targeting Nissa*"
+#guard (zoneObjectIds proposedBolt .stack) == (zoneObjectIds targetedBolt .stack)
+#guard stackView proposedBolt != stackView targetedBolt
+#guard (changedZones proposedBolt targetedBolt).contains .stack
+#guard !(changedZones targetedBolt targetedBolt).contains .stack
 #guard !mentions (header paidBolt) "activate mana abilities"
 #guard pendingCostLine paidBolt == none
 #guard !mentions (snapshot paidBolt) "Cost: {R}"
@@ -517,6 +527,8 @@ def mountainLine (g : Game) : String :=
 #guard !mentions (stackBlock proposedBolt) "*source"
 #guard !mentions (stackBlock targetedBolt) "*source"
 #guard !mentions (zoneBlock targetedBolt .stack) "*source"
+#guard mentions (stackBlock targetedBolt) "*targeting Nissa*"
+#guard mentions (zoneBlock targetedBolt .stack) "*targeting Nissa*"
 -- If the source has left play, print the last-known id (CR 113.7a / 400.7).
 #guard
   let g0 := siegeAttackDeclared
@@ -913,7 +925,14 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := hospitalityLandPlayed
   let src := namedPermanent g "Beorn's Hospitality"
-  mentions (stackBlock g) s!"*source {src.id} Beorn's Hospitality*"
+  mentions (stackBlock g) s!"*source {src.id} Beorn's Hospitality*" &&
+    !mentions (stackBlock g) "*targeting"
+#guard
+  let g := hospitalityLandfallTargeted
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears*" &&
+    mentions (zoneBlock g .stack) s!"*targeting {bears.id} Grizzly Bears*" &&
+    (changedZones hospitalityLandPlayed g).contains .stack
 #guard
   let g := animatedHospitality
   let o := namedPermanent g "Beorn's Hospitality"
@@ -955,6 +974,20 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "4/3"
 #guard mentions (objectLine flyerVsGandalf
   (namedPermanent flyerVsGandalf "Gandalf, Spark Starter")) "reach"
+#guard !mentions (stackBlock gandalfEntered) "*targeting"
+#guard mentions (stackBlock gandalfTargetedOpponent) "*targeting Nissa for 3*"
+#guard mentions (zoneBlock gandalfTargetedOpponent .stack) "*targeting Nissa for 3*"
+#guard (changedZones gandalfEntered gandalfTargetedOpponent).contains .stack
+#guard
+  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 2) with
+  | .ok g' =>
+    mentions (stackBlock g') "*targeting Nissa for 2*" &&
+      (changedZones gandalfEntered g').contains .stack
+  | .error _ => false
+#guard
+  let g := gandalfSplitAnnounced
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting Nissa for 2, {bears.id} Grizzly Bears for 1*"
 
 #guard mentions (header galionAttackDeclared) "choose targets (CR 601.2c"
 #guard mentions (stackBlock galionAttackDeclared) "Galion, Elvenking's Butler's ability"
@@ -963,7 +996,19 @@ def mountainLine (g : Game) : String :=
   let g := galionAttackDeclared
   let src := namedPermanent g "Galion, Elvenking's Butler"
   mentions (stackBlock g) s!"*source {src.id} Galion, Elvenking's Butler*" &&
-    mentions (objectLine g src) "4/4"
+    mentions (objectLine g src) "4/4" &&
+    !mentions (stackBlock g) "*targeting" &&
+    !mentions (stackBlock g) "*no target"
+#guard
+  let g := galionTargeted
+  let elves := namedPermanent g "Llanowar Elves"
+  mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves*" &&
+    (changedZones galionAttackDeclared g).contains .stack
+#guard
+  let g := mustApply galionAttackDeclared ⟨0⟩ .decline
+  mentions (stackBlock g) "*no target*" &&
+    mentions (zoneBlock g .stack) "*no target*" &&
+    (changedZones galionAttackDeclared g).contains .stack
 #guard
   let g := galionResolved
   let elves := namedPermanent g "Llanowar Elves"
@@ -1035,7 +1080,13 @@ def mountainLine (g : Game) : String :=
   mentions (stackBlock g) s!"*source {src.id} Mirkwood Elk*" &&
     mentions (objectLine g src) "6/6" &&
     mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (1):" &&
-    mentions (playerBlock g (g.player ⟨0⟩)) elf.name
+    mentions (playerBlock g (g.player ⟨0⟩)) elf.name &&
+    !mentions (stackBlock g) "*targeting"
+#guard
+  let g := elkTargeted
+  let elf := namedGraveyardCard g ⟨0⟩ "Llanowar Elves"
+  mentions (stackBlock g) s!"*targeting {elf.id} Llanowar Elves*" &&
+    (changedZones elkEntered g).contains .stack
 #guard mentions (header elkAttackDeclared) "choose targets (CR 601.2c"
 #guard mentions (stackBlock elkAttackDeclared) "Mirkwood Elk's ability"
 #guard mentions (stackBlock elkAttackDeclared) "Whenever this creature enters or attacks"
@@ -1083,6 +1134,24 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header proposedPassage) "choose targets (CR 601.2c"
 #guard mentions (stackBlock paidPassage) "can't be blocked"
 #guard mentions (stackBlock paidPassage) "Rogue's Passage's ability"
+#guard
+  let g := paidPassage
+  let ogre := namedPermanent g "Gray Ogre"
+  mentions (stackBlock g) s!"*targeting {ogre.id} Gray Ogre*" &&
+    mentions (zoneBlock g .stack) s!"*targeting {ogre.id} Gray Ogre*"
+#guard !mentions (stackBlock proposedQuarrel) "*targeting"
+#guard
+  let g := quarrelSourceChosen
+  let elves := namedPermanent g "Llanowar Elves"
+  mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves*" &&
+    (changedZones proposedQuarrel g).contains .stack
+#guard
+  let g := targetedQuarrel
+  let elves := namedPermanent g "Llanowar Elves"
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves, {bears.id} Grizzly Bears*" &&
+    mentions (zoneBlock g .stack) s!"*targeting {elves.id} Llanowar Elves, {bears.id} Grizzly Bears*" &&
+    (changedZones quarrelSourceChosen g).contains .stack
 #guard
   let g := passageResolved
   mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"

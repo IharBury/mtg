@@ -137,7 +137,8 @@ def printLog (g : Game) (startIdx : Nat) (viewer : Option PlayerId := none) : IO
     IO.println s!"  {line}"
   return g.log.size
 
-/-- Print each zone whose occupants or battlefield status changed. -/
+/-- Print each zone whose occupants, battlefield status, or stack targets
+changed. -/
 def printChangedZones (before after : Game) (viewer : Option PlayerId := none) : IO Unit := do
   for z in changedZones before after do
     for line in (zoneBlock after z viewer).splitOn "\n" do
