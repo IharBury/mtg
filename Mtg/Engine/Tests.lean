@@ -419,101 +419,60 @@ def uncontrolledPermanent : Game :=
 
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
-  let c : CardDef := {
-    name := "Silent Elves"
-    types := #[.creature]
-    power := some 1
-    toughness := some 1
-    tapAddMana := #[.colored .green]
-  }
+  let c := creature "Silent Elves" ManaCost.empty #[] 1 1
+    (tapAddMana := #[.colored .green])
   mentions c.abilitiesText "{T}: Add {G}" &&
     mentions c.summary "{T}: Add {G}"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Siege"
-    types := #[.creature]
-    power := some 0
-    toughness := some 5
-    keywords := { Keywords.none with trample := true }
-    staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
-    triggeredAbilities := #[.onAttackPumpByGreatestPower]
-  }
+  let c := creature "Silent Siege" ManaCost.empty #[] 0 5
+    (keywords := Keyword.trample)
+    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   mentions c.abilitiesText "Other Orcs and Goblins" &&
     mentions c.abilitiesText "greatest power" &&
     mentions c.summary "trample"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Scar"
-    types := #[.creature]
-    power := some 2
-    toughness := some 2
-    triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers]
-  }
+  let c := creature "Silent Scar" ManaCost.empty #[] 2 2
+    (triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers])
   mentions c.abilitiesText "becomes blocked" &&
     mentions c.abilitiesText "each creature blocking it"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Strands"
-    types := #[.enchantment]
-    subtypes := #["Aura"]
-    keywords := { Keywords.none with flash := true }
-    staticAbilities := #[.enchantedCreatureGets 3 3]
-    triggeredAbilities := #[.onEnterScry 2]
-  }
+  let c := aura "Silent Strands" ManaCost.empty ""
+    (keywords := Keyword.flash)
+    (staticAbilities := #[.enchantedCreatureGets 3 3])
+    (triggeredAbilities := #[.onEnterScry 2])
   mentions c.abilitiesText "Enchanted creature gets +3/+3" &&
     mentions c.abilitiesText "scry 2" &&
     mentions c.summary "flash"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Visionary"
-    types := #[.creature]
-    power := some 1
-    toughness := some 1
-    triggeredAbilities := #[.onEnterDraw 1]
-  }
+  let c := creature "Silent Visionary" ManaCost.empty #[] 1 1
+    (triggeredAbilities := #[.onEnterDraw 1])
   mentions c.abilitiesText "draw a card"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Wood Elves"
-    types := #[.creature]
-    power := some 1
-    toughness := some 1
-    triggeredAbilities := #[.onEnterSearchForest]
-  }
+  let c := creature "Silent Wood Elves" ManaCost.empty #[] 1 1
+    (triggeredAbilities := #[.onEnterSearchForest])
   mentions c.abilitiesText "Forest card" &&
     mentions c.abilitiesText "onto the battlefield"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Archdruid"
-    types := #[.creature]
-    subtypes := #["Elf", "Druid"]
-    power := some 2
-    toughness := some 2
-    staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1]
-    tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }]
-  }
+  let c := creature "Silent Archdruid" ManaCost.empty #["Elf", "Druid"] 2 2
+    (staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1])
+    (tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }])
   mentions c.abilitiesText "Other Elf creatures you control get +1/+1" &&
     mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
     !mentions c.abilitiesText "{T}: Add {G};" &&
     c.manaAbilities == #[.colored .green]
 
 #guard
-  let c : CardDef := {
-    name := "Silent Weavemaster"
-    types := #[.creature]
-    subtypes := #["Elf", "Druid"]
-    power := some 1
-    toughness := some 2
-    keywords := { Keywords.none with vigilance := true }
-    triggeredAbilities := #[.onAnotherElfYouControlEntersGets1]
-    tapAddAnyColorEqualToPower := true
-  }
+  let c := creature "Silent Weavemaster" ManaCost.empty #["Elf", "Druid"] 1 2
+    (keywords := Keyword.vigilance)
+    (triggeredAbilities := #[.onAnotherElfYouControlEntersGets1])
+    (tapAddAnyColorEqualToPower := true)
   mentions c.summary "vigilance" &&
     mentions c.abilitiesText "another Elf you control enters" &&
     mentions c.abilitiesText "any one color" &&
@@ -522,206 +481,132 @@ def uncontrolledPermanent : Game :=
     c.manaAbilities.size == 5
 
 #guard
-  let c : CardDef := {
-    name := "Silent Spear"
-    types := #[.artifact]
-    subtypes := #["Equipment"]
-    staticAbilities := #[.equippedCreatureGets 2 0]
-    triggeredAbilities := #[.onEnterMayDiscardDraw 2]
-    activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)]
-  }
+  let c := artifact "Silent Spear" ManaCost.empty ""
+    (subtypes := #["Equipment"])
+    (staticAbilities := #[.equippedCreatureGets 2 0])
+    (triggeredAbilities := #[.onEnterMayDiscardDraw 2])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
   mentions c.abilitiesText "Equipped creature gets +2/+0" &&
     mentions c.abilitiesText "you may discard a card" &&
     mentions c.abilitiesText "Attach this Equipment" &&
     mentions c.abilitiesText "activate only as a sorcery"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Hospitality"
-    types := #[.enchantment]
-    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne]
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
-      effect := .becomeBearCreatureWithLandsPT
-    }]
-  }
+  let c := enchantment "Silent Hospitality" ManaCost.empty ""
+    (triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne])
+    (activatedAbilities := #[
+      activated .becomeBearCreatureWithLandsPT
+        (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "land you control enters" &&
     mentions c.abilitiesText "Bear creature" &&
     mentions c.abilitiesText "{5}{G}{G}"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Attercop"
-    types := #[.creature]
-    subtypes := #["Spider"]
-    power := some 2
-    toughness := some 1
-    keywords := { Keywords.none with reach := true, deathtouch := true }
-    triggeredAbilities := #[.onLandYouControlEntersGets1]
-  }
+  let c := creature "Silent Attercop" ManaCost.empty #["Spider"] 2 1
+    (keywords := Keyword.reach.merge Keyword.deathtouch)
+    (triggeredAbilities := #[.onLandYouControlEntersGets1])
   mentions c.summary "reach" &&
     mentions c.summary "deathtouch" &&
     mentions c.abilitiesText "land you control enters" &&
     mentions c.abilitiesText "+1/+1 until end of turn"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Pathmaker"
-    types := #[.creature]
-    staticAbilities := #[.powerToughnessEqualLandsYouControl]
-  }
+  let c := card "Silent Pathmaker" #[.creature]
+    (staticAbilities := #[.powerToughnessEqualLandsYouControl])
   mentions c.abilitiesText "lands you control" &&
     mentions c.summary "*/*"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Crusher"
-    types := #[.creature]
-    keywords := { Keywords.none with trample := true }
-    staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
-  }
+  let c := card "Silent Crusher" #[.creature]
+    (keywords := Keyword.trample)
+    (staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]])
   mentions c.abilitiesText "can't block unless you control a Goblin or Orc" &&
     mentions c.summary "trample"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Spark"
-    types := #[.creature]
-    keywords := { Keywords.none with reach := true }
-    triggeredAbilities := #[.onEnterDealDividedDamage 3 3]
-  }
+  let c := card "Silent Spark" #[.creature]
+    (keywords := Keyword.reach)
+    (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
   mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "one, two, or three" &&
     mentions c.summary "reach"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Fireleaper"
-    types := #[.creature]
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGenericAndColor 1 .red }
-      effect := .sourceGets 1 0
-    }]
-    triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature]
-  }
+  let c := card "Silent Fireleaper" #[.creature]
+    (activatedAbilities := #[
+      activated (.sourceGets 1 0) (ManaCost.ofGenericAndColor 1 .red)])
+    (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
     mentions c.abilitiesText "{1}{R}"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Passage"
-    types := #[.land]
-    tapAddMana := #[.colorless]
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 4, tap := true }
-      effect := .targetCantBeBlockedThisTurn
-    }]
-  }
+  let c := land "Silent Passage" ""
+    (tapAddMana := #[.colorless])
+    (activatedAbilities := #[
+      activated .targetCantBeBlockedThisTurn (ManaCost.ofGeneric 4) (tap := true)])
   mentions c.abilitiesText "{T}: Add {C}" &&
     mentions c.abilitiesText "can't be blocked this turn" &&
     mentions c.abilitiesText "{4}" &&
     mentions c.abilitiesText "{T}"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Titan"
-    types := #[.creature]
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofColor .red }
-      effect := .sourceGets 1 0
-    }]
-    triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3]
-  }
+  let c := card "Silent Titan" #[.creature]
+    (activatedAbilities := #[activated (.sourceGets 1 0) (ManaCost.ofColor .red)])
+    (triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "enters or attacks" &&
     mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "{R}"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Elk"
-    types := #[.creature]
-    power := some 6
-    toughness := some 6
-    keywords := { Keywords.none with trample := true }
-    triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife]
-  }
+  let c := creature "Silent Elk" ManaCost.empty #[] 6 6
+    (keywords := Keyword.trample)
+    (triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife])
   mentions c.abilitiesText "Elf card" &&
     mentions c.abilitiesText "graveyard" &&
     mentions c.abilitiesText "gain life" &&
     mentions c.summary "trample"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Celeborn"
-    types := #[.creature]
-    power := some 3
-    toughness := some 3
-    triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
-  }
+  let c := creature "Silent Celeborn" ManaCost.empty #[] 3 3
+    (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
   mentions c.abilitiesText "one or more Elves" &&
     mentions c.abilitiesText "scry 1" &&
     mentions c.abilitiesText "looked at"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Snipe"
-    types := #[.creature]
-    power := some 2
-    toughness := some 2
-    triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
-  }
+  let c := creature "Silent Snipe" ManaCost.empty #[] 2 2
+    (triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2])
   mentions c.abilitiesText "instant or sorcery" &&
     mentions c.abilitiesText "each opponent"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Guardian"
-    types := #[.creature]
-    power := some 2
-    toughness := some 2
-    keywords := { Keywords.none with trample := true }
-    activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGenericAndColors 5 [.green, .green] }
-      effect := .putPlusOnePlusOneOnSource 3
-    }]
-  }
+  let c := creature "Silent Guardian" ManaCost.empty #[] 2 2
+    (keywords := Keyword.trample)
+    (activatedAbilities := #[
+      activated (.putPlusOnePlusOneOnSource 3)
+        (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "Put 3 +1/+1 counters" &&
     mentions c.abilitiesText "{5}{G}{G}" &&
     mentions c.summary "trample"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Butler"
-    types := #[.creature]
-    power := some 4
-    toughness := some 4
-    triggeredAbilities := #[.onAttackSetOtherBasePT]
-  }
+  let c := creature "Silent Butler" ManaCost.empty #[] 4 4
+    (triggeredAbilities := #[.onAttackSetOtherBasePT])
   mentions c.abilitiesText "up to one other target" &&
     mentions c.abilitiesText "base power and toughness"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Lookout"
-    types := #[.creature]
-    power := some 1
-    toughness := some 3
-    triggeredAbilities := #[.onAttackScry 1]
-  }
+  let c := creature "Silent Lookout" ManaCost.empty #[] 1 3
+    (triggeredAbilities := #[.onAttackScry 1])
   mentions c.abilitiesText "Whenever this creature attacks" &&
     mentions c.abilitiesText "scry 1"
 
 #guard
-  let c : CardDef := {
-    name := "Silent Oliphaunt"
-    types := #[.creature]
-    power := some 6
-    toughness := some 4
-    keywords := { Keywords.none with trample := true }
-    triggeredAbilities := #[.onAttackOtherGets2AndTrample]
-  }
+  let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4
+    (keywords := Keyword.trample)
+    (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
   mentions c.abilitiesText "+2/+0" &&
     mentions c.abilitiesText "gains trample" &&
     mentions c.summary "trample"
@@ -800,12 +685,8 @@ def passBoth (g : Game) : Game :=
 def atEndStep : Game := skipTo started .end 80
 
 /-- A 0/0 creature kept alive only by an until-end-of-turn pump. -/
-def zeroZero : CardDef := {
-  name := "Zero/Zero"
-  types := #[.creature]
-  power := some 0
-  toughness := some 0
-}
+def zeroZero : CardDef :=
+  creature "Zero/Zero" ManaCost.empty #[] 0 0
 
 def addPumpedCreature (g : Game) (card : CardDef) (pumpP pumpT : Int) : Game :=
   insertObject g card g.activePlayer .battlefield (some g.activePlayer)
@@ -2571,11 +2452,8 @@ def agentVisionaryOnly : Game :=
 #guard isBasicLandCard mountain
 
 /-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
-def tropicalIsland : CardDef := {
-  name := "Tropical Island"
-  types := #[.land]
-  subtypes := #["Forest", "Island"]
-}
+def tropicalIsland : CardDef :=
+  land "Tropical Island" "" (subtypes := #["Forest", "Island"])
 
 #guard isForestCard tropicalIsland
 #guard !isBasicLandCard tropicalIsland
@@ -3134,13 +3012,9 @@ def bearsAssignsToItself : Bool :=
 def proposeModal (g : Game) (p : PlayerId) (id : ObjectId) (mode : Nat) (t : Target) : Game :=
   mustApply (mustApply (mustApply g p (.cast id)) p (.chooseMode mode)) p (.target t)
 
-def hexproofFlyer : CardDef := {
-  name := "Hexproof Flyer"
-  types := #[.creature]
-  power := some 1
-  toughness := some 1
-  keywords := { Keywords.none with flying := true, hexproof := true }
-}
+def hexproofFlyer : CardDef :=
+  creature "Hexproof Flyer" ManaCost.empty #[] 1 1
+    (keywords := Keyword.flying.merge Keyword.hexproof)
 
 /-- Warg Tactics in hand, Grizzly Bears you control, an opposing flyer, enough mana. -/
 def wargSetup : Game :=
@@ -6353,13 +6227,8 @@ def afterArchCleanup : Game := passBoth (skipTo archAndElves .end 80)
 #guard (namedPermanent afterArchCleanup "Llanowar Elves").status.pumpPower == 0
 
 /-- A 0/0 Elf survives while Archdruid is in play, and dies when it leaves. -/
-def zeroElf : CardDef := {
-  name := "Zero Elf"
-  types := #[.creature]
-  subtypes := #["Elf"]
-  power := some 0
-  toughness := some 0
-}
+def zeroElf : CardDef :=
+  creature "Zero Elf" ManaCost.empty #["Elf"] 0 0
 
 def zeroElfWithArch : Game :=
   addPermanent (addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩) zeroElf ⟨0⟩ ⟨0⟩
@@ -8167,29 +8036,17 @@ def targetedPassageFromLands : Game :=
 /- Smite the Deathless: 3 damage, lose indestructible until EOT, exile if it
 would die this turn (CR 702.12 / 614.1 / 700.4). -/
 
-def indestructibleBeast : CardDef := {
-  name := "Indestructible Beast"
-  types := #[.creature]
-  power := some 2
-  toughness := some 2
-  keywords := { Keywords.none with indestructible := true }
-}
+def indestructibleBeast : CardDef :=
+  creature "Indestructible Beast" ManaCost.empty #[] 2 2
+    (keywords := Keyword.indestructible)
 
-def indestructibleFlyer : CardDef := {
-  name := "Indestructible Flyer"
-  types := #[.creature]
-  power := some 4
-  toughness := some 4
-  keywords := { Keywords.none with flying := true, indestructible := true }
-}
+def indestructibleFlyer : CardDef :=
+  creature "Indestructible Flyer" ManaCost.empty #[] 4 4
+    (keywords := Keyword.flying.merge Keyword.indestructible)
 
-def indestructibleZero : CardDef := {
-  name := "Indestructible Zero"
-  types := #[.creature]
-  power := some 0
-  toughness := some 0
-  keywords := { Keywords.none with indestructible := true }
-}
+def indestructibleZero : CardDef :=
+  creature "Indestructible Zero" ManaCost.empty #[] 0 0
+    (keywords := Keyword.indestructible)
 
 def smiteOn (card : CardDef) : Game :=
   let g := addPermanent afterDraw card ⟨1⟩ ⟨1⟩
