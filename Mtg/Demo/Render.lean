@@ -97,6 +97,7 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
+  let sick := if o.hasSummoningSickness then " (summoning sickness)" else ""
   let atk :=
     if o.status.attacking then
       if o.status.blocked then " *attacking, blocked*" else " *attacking*"
@@ -124,7 +125,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.untilEotExileIfDies then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{atk}{blk}{ench}{dmg}{exileIfDies}"
+  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{dmg}{exileIfDies}"
 
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
@@ -443,7 +444,8 @@ def allZones (g : Game) : Array Zone :=
       zs := zs.push (.graveyard pl.id)
     return zs.push .battlefield |>.push .stack |>.push .exile |>.push .command |>.push .ante
 
-/-- Visible battlefield lines, including tap/combat/damage status (CR 110.5). -/
+/-- Visible battlefield lines, including tap/combat/damage status (CR 110.5)
+and summoning sickness on creatures (CR 302.6). -/
 def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
