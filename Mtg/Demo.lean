@@ -403,10 +403,19 @@ def printCombatAssignment (g : Game) : IO Unit := do
       IO.println s!"  {line}"
   | none => pure ()
 
-/-- Pending cost or combat-damage assignment the acting player must resolve. -/
+/-- Print which legendary permanents the acting player may keep. -/
+def printLegendRule (g : Game) : IO Unit := do
+  match legendRuleBlock g with
+  | some block =>
+    for line in block.splitOn "\n" do
+      IO.println s!"  {line}"
+  | none => pure ()
+
+/-- Pending cost, combat-damage assignment, or legend-rule choice. -/
 def printPendingPrompt (g : Game) : IO Unit := do
   printPendingCost g
   printCombatAssignment g
+  printLegendRule g
 
 def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
@@ -482,11 +491,12 @@ def helpInteractive (controlAll : Bool := false)
   visible on           Use {viewWho}'s view for state and later updates
   visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
+  keep <id>            Choose which legendary permanent to keep (CR 704.5j)
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
-  sacrifice <id>       After pay, sacrifice a creature or artifact to finish activating or casting
+  sacrifice <id>       Sacrifice a creature or artifact to pay a cost, or a creature a resolved trigger requires
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
   activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
@@ -528,10 +538,12 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "defending player").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
+#guard ((helpInteractive false).splitOn "keep <id>").length > 1
+#guard ((helpInteractive false).splitOn "CR 704.5j").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
-#guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
+#guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "replays that file and appends new commands").length > 1
@@ -660,18 +672,30 @@ def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "usage: attack [id ...]"
   | .ok _ => false
 
-/-- Pair each unused legal blocker with the first still-unblocked attacker
-it can block. A bare `block` covers as many attacks as possible. -/
+/-- Pair unused legal blockers with attackers. A creature with menace is
+covered only when two blockers can be assigned (CR 702.111b); leftover
+blockers then cover attackers that do not have menace. A bare `block`
+covers as many attacks as possible. -/
 def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
   Id.run do
     let attackers := g.battlefield.filter (·.status.attacking)
     let defender := g.opponent g.activePlayer
-    let candidates := g.battlefield.filter (fun b =>
+    let mut unused := g.battlefield.filter (fun b =>
       b.isCreature && b.controlledBy defender && !b.status.tapped)
     let mut blocked : Array ObjectId := #[]
     let mut asgn : Array (ObjectId × ObjectId) := #[]
-    for b in candidates do
-      match attackers.find? (fun a => !blocked.contains a.id && g.canBlock b a) with
+    for a in attackers do
+      if g.hasMenace a then
+        let able := unused.filter (fun b => g.canBlock b a)
+        if able.size >= 2 then
+          let b1 := able[0]!
+          let b2 := able[1]!
+          unused := unused.filter (fun b => b.id != b1.id && b.id != b2.id)
+          asgn := asgn.push (b1.id, a.id) |>.push (b2.id, a.id)
+          blocked := blocked.push a.id
+    for b in unused do
+      match attackers.find? (fun a =>
+        !blocked.contains a.id && !g.hasMenace a && g.canBlock b a) with
       | some a =>
         blocked := blocked.push a.id
         asgn := asgn.push (b.id, a.id)
@@ -1244,7 +1268,7 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
 /-- After `pay`, sacrifice the named creature or artifact to finish activating
-or casting. -/
+or casting, or sacrifice a creature a resolved trigger requires. -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1361,6 +1385,15 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "sacrifices Raging Goblin") &&
     g'.log.any (fun s => Tests.mentions s "casts Improvised Club")
+  | .error _ => false
+
+#guard
+  let g := Tests.bladeMustSac
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applySacrifice g ⟨1⟩ [toString bears.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.log.any (fun s => Tests.mentions s "sacrifices Grizzly Bears")
   | .error _ => false
 
 def modeUsage : String := "usage: mode <n>"
@@ -1515,6 +1548,17 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.stack.back!.targets.isEmpty &&
     g'.log.any (fun s => Tests.mentions s "begins casting Fire of Orthanc") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
+  match applyCast Tests.bilbosDeadlySliceSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.bilbosDeadlySliceSetup ⟨0⟩
+        "Bilbo's Deadly Slice").id] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Bilbo's Deadly Slice") &&
     g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
   | .error _ => false
 
@@ -1909,10 +1953,28 @@ def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
 handled by the console loop. Actions are issued as `p`. -/
+def keepUsage : String := "usage: keep [<id>]"
+
+/-- Keep an opening hand, or choose which legendary permanent to keep
+(CR 103.5 / 704.5j). -/
+def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match g.pending, tokens with
+  | .chooseLegend _ _ _, [arg] =>
+    match parseObjectId? arg with
+    | none => throw keepUsage
+    | some id =>
+      match g.findObject? id with
+      | none => throw "no such object"
+      | some _ => g.apply p (.keepLegend id)
+  | .chooseLegend _ _ _, _ => throw keepUsage
+  | _, [] => g.apply p .keep
+  | _, _ => throw keepUsage
+
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
   match cmd with
-  | "keep" => g.apply p .keep
+  | "keep" => applyKeep g p args
   | "mulligan" => g.apply p .takeMulligan
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
@@ -1944,6 +2006,26 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   match applyInteractiveAsActor Tests.drawnHands "keep" [] with
   | .ok g' => (g'.player ⟨0⟩).keptOpeningHand && g'.actor == some ⟨1⟩
   | .error _ => false
+
+#guard
+  match applyKeep Tests.drawnHands ⟨0⟩ ["1"] with
+  | .error msg => msg == keepUsage
+  | .ok _ => false
+
+#guard
+  match applyKeep Tests.twoBofursSBA ⟨0⟩ [] with
+  | .error msg => msg == keepUsage
+  | .ok _ => false
+
+#guard
+  match Tests.twoBofursSBA.pending with
+  | .chooseLegend _ _ ids =>
+    match applyInteractiveAsActor Tests.twoBofursSBA "keep" [toString ids[0]!] with
+    | .ok g' =>
+      (g'.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1 &&
+      g'.log.any (fun s => Tests.mentions s "704.5j")
+    | .error _ => false
+  | _ => false
 
 #guard
   match applyInteractiveAsActor Tests.afterChandraDeclaresMulligan "keep" [] with
@@ -2145,6 +2227,52 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking ==
       #[(Tests.namedPermanent g' "Gray Ogre").id]
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumVsOneBearReadyToBlock [] with
+  | .ok asgn => asgn.isEmpty
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumVsOneBearReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking.isEmpty &&
+      !(Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumVsTwoBearsReadyToBlock [] with
+  | .ok asgn =>
+    let g := Tests.gollumVsTwoBearsReadyToBlock
+    let gollum := Tests.namedPermanent g "Gollum, Silent Slinker"
+    asgn.size == 2 && asgn.all (fun (_, a) => a == gollum.id)
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumVsTwoBearsReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked &&
+      (g'.battlefield.filter (fun o =>
+        o.name == "Grizzly Bears" && o.status.blocking ==
+          #[(Tests.namedPermanent g' "Gollum, Silent Slinker").id])).size == 2
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumAndOgreVsOneBearReadyToBlock [] with
+  | .ok asgn =>
+    let g := Tests.gollumAndOgreVsOneBearReadyToBlock
+    asgn == #[(
+      (Tests.namedPermanent g "Grizzly Bears").id,
+      (Tests.namedPermanent g "Gray Ogre").id)]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumAndOgreVsOneBearReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
+      #[(Tests.namedPermanent g' "Gray Ogre").id] &&
+      !(Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked
   | .error _ => false
 
 #guard

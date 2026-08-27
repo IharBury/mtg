@@ -99,7 +99,8 @@ The first slice of the engine models the two-player game:
 - cards, types, zones, and turn structure (CR 108–110, 205, 300, 400, 500)
 - starting a game, choosing who takes the first turn, opening hands, London
   mulligans, first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
-- ending a game via life, empty library, or concession (CR 104, 704.5)
+- ending a game via life, empty library, or concession (CR 104, 704.5), and
+  the legend rule (CR 704.5j)
 - playing lands, including additional land plays this turn (CR 305.2b), activating mana abilities (including `{T}: Add` for each
   permanent of a listed type, and `{T}: Add` X mana of any color equal to
   power that may be spent only on Elf spells and abilities), activating other abilities of
@@ -109,7 +110,8 @@ The first slice of the engine models the two-player game:
   such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
   life at 118.3b / 119.4, and mana
   abilities at 601.2g)
-- combat declaration and combat damage assignment (CR 510.1c–d)
+- combat declaration and combat damage assignment (CR 510.1c–d), including
+  menace (can't be blocked except by two or more creatures)
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
@@ -123,8 +125,8 @@ The first slice of the engine models the two-player game:
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, search the library for a Forest card, may
-  discard a card to draw, or deal damage
-  divided as you choose among one, two, or three targets (including whenever
+  discard a card to draw, make a target opponent sacrifice a creature, or deal
+  damage divided as you choose among one, two, or three targets (including whenever
   a creature enters or attacks), return an Elf card from your graveyard and
   gain life equal to its power, pumps when another Elf you control enters,
   landfall triggers that
@@ -136,8 +138,9 @@ The first slice of the engine models the two-player game:
   deal damage to each opponent when you cast an instant or sorcery,
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
-- modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
+- modal instants, destroy (including target creature, and target artifact or land, after which
+  creatures without flying can't block this turn), drawing cards and losing
+  life (Night's Whisper), +1/+1 counters, hexproof, indestructible, deathtouch, menace, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a

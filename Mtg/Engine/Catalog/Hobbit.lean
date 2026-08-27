@@ -6,7 +6,7 @@ import Mtg.Engine.Catalog
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash, hexproof, vigilance, and deathtouch, simple `{T}: Add` mana abilities, `{T}: Add`
+(keywords including flash, hexproof, vigilance, deathtouch, and menace, simple `{T}: Add` mana abilities, `{T}: Add`
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
@@ -17,19 +17,20 @@ power and toughness, give another creature +2/+0 and trample, scry, deal damage
 divided among targets, scry when you attack with Elves, or gain life while you
 control a creature with power 4 or greater (Ferocious), scry triggers that
 pump for each card looked at, becomes-blocked triggers that
-damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, or deal damage
+damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, make a target opponent sacrifice a creature, or deal damage
 divided among targets (including whenever the creature enters or attacks),
 returning an Elf from the graveyard and gaining life equal to its power,
 another Elf you control entering that pumps this creature,
 landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy (including target artifact or land,
-after which creatures without flying can't block this turn), +1/+1
+plays this turn), modal spells, destroy (including target creature, and target
+artifact or land, after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
 to a creature an opponent controls, dealing damage that also makes a creature
-lose indestructible and exile it if it would die this turn, and a few one-shot spell effects);
+lose indestructible and exile it if it would die this turn, drawing cards and
+losing life, and a few one-shot spell effects);
 remaining abilities are stored as Oracle text only.
 
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
@@ -243,10 +244,12 @@ def gollumSilentSlinker : CardDef :=
   creature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
     (supertypes := #[.legendary])
+    (keywords := Keyword.menace)
 
 def bilbosDeadlySlice : CardDef :=
   instant "Bilbo's Deadly Slice" (ManaCost.ofGenericAndColors 1 [.black, .black])
     "Destroy target creature."
+    (some .destroyCreature)
 
 def dreadedBatCloud : CardDef :=
   creature "Dreaded Bat-Cloud" (ManaCost.ofGenericAndColor 4 .black) #["Bat"] 4 2
@@ -257,6 +260,9 @@ def crudeBentBlade : CardDef :=
   artifact "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
     "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
     (subtypes := #["Equipment"])
+    (staticAbilities := #[.equippedCreatureGets 2 1])
+    (triggeredAbilities := #[.onEnterTargetOpponentSacrificesCreature])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def languish : CardDef :=
   sorcery "Languish" (ManaCost.ofGenericAndColors 2 [.black, .black])
@@ -294,6 +300,7 @@ def reverentHowl : CardDef :=
 def nightsWhisper : CardDef :=
   sorcery "Night's Whisper" (ManaCost.ofGenericAndColor 1 .black)
     "You draw two cards and lose 2 life."
+    (some (.drawAndLoseLife 2 2))
 
 def stonyVoicedGoblins : CardDef :=
   creature "Stony-Voiced Goblins" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Bard"] 1 1
@@ -557,6 +564,17 @@ def attercop : CardDef :=
 #guard raggedShortSpear.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
 #guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
+#guard crudeBentBlade.isEquipment
+#guard !crudeBentBlade.isAura
+#guard !crudeBentBlade.requiresTarget
+#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.activatedAbilities[0]!.onlyAsSorcery
+#guard crudeBentBlade.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
+#guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
+#guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
+#guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
@@ -702,6 +720,17 @@ def attercop : CardDef :=
 #guard (raveningWarg.summary.splitOn "Ferocious").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinker.supertypes.any (· == .legendary)
+#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
+#guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
+#guard bilbosDeadlySlice.isInstant
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard (bilbosDeadlySlice.summary.splitOn "Destroy target creature").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
@@ -713,6 +742,12 @@ def attercop : CardDef :=
 #guard fireOfOrthanc.requiresTarget
 #guard (fireOfOrthanc.summary.splitOn "artifact or land").length > 1
 #guard (fireOfOrthanc.summary.splitOn "can't block this turn").length > 1
+#guard nightsWhisper.isSorcery
+#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard !nightsWhisper.requiresTarget
+#guard nightsWhisper.hasCastKind .draw
+#guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
+#guard (nightsWhisper.summary.splitOn "lose 2 life").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
