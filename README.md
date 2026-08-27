@@ -66,10 +66,12 @@ In `--multiplayer`, the deciding player is prompted. In `--auto`, the deciding
 player (heuristic) chooses to go first.
 `--input FILE` (one command per line) runs those commands first in either
 interactive mode, then further commands come from the console. `--output FILE`
-writes every command from the input file and from the console (one per line),
-so a session can be replayed with `--input`. When `--input` and `--output` are
-the same file, the existing commands are replayed and new console commands are
-appended. Put `first <name>` at the top of an input file when the first named
+writes accepted game-state commands from the input file and from the console
+(one per line), so a session can be replayed with `--input`. Incorrect commands
+and commands that do not change the game (`state`, `quit`, `help`, `visible`)
+are omitted. When `--input` and `--output` are the same file, the existing
+commands are replayed and new accepted console commands are appended. Put
+`first <name>` at the top of an input file when the first named
 player is the one deciding; pass `--decides NAME` so a replay asks the same
 player.
 
