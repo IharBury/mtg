@@ -71,7 +71,7 @@ instance : ToString Keywords where
 
 end Keywords
 
-/-- Singleton keyword values. Named separately from `Keywords` so they do not
+/- Singleton keyword values. Named separately from `Keywords` so they do not
 clash with the structure fields of the same name. Combine with `Keywords.merge`. -/
 namespace Keyword
 def flash : Keywords := { Keywords.none with flash := true }
