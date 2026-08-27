@@ -20,6 +20,8 @@ structure Keywords where
   flying : Bool := false
   /-- This creature can't be blocked (printed or granted until end of turn). -/
   cantBeBlocked : Bool := false
+  /-- This creature can't be blocked except by two or more creatures (CR 702.111). -/
+  menace : Bool := false
   hexproof : Bool := false
   indestructible : Bool := false
   reach : Bool := false
@@ -28,8 +30,6 @@ structure Keywords where
   defender : Bool := false
   /-- Damage this source deals causes its controller to gain that much life (CR 702.15). -/
   lifelink : Bool := false
-  /-- This creature can't be blocked except by two or more creatures (CR 702.110). -/
-  menace : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -50,14 +50,14 @@ def fields : List Field := [
   ⟨(·.vigilance), fun k b => { k with vigilance := b }, "vigilance"⟩,
   ⟨(·.flying), fun k b => { k with flying := b }, "flying"⟩,
   ⟨(·.cantBeBlocked), fun k b => { k with cantBeBlocked := b }, "can't be blocked"⟩,
+  ⟨(·.menace), fun k b => { k with menace := b }, "menace"⟩,
   ⟨(·.hexproof), fun k b => { k with hexproof := b }, "hexproof"⟩,
   ⟨(·.indestructible), fun k b => { k with indestructible := b }, "indestructible"⟩,
   ⟨(·.reach), fun k b => { k with reach := b }, "reach"⟩,
   ⟨(·.trample), fun k b => { k with trample := b }, "trample"⟩,
   ⟨(·.deathtouch), fun k b => { k with deathtouch := b }, "deathtouch"⟩,
   ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩,
-  ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩,
-  ⟨(·.menace), fun k b => { k with menace := b }, "menace"⟩
+  ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -86,6 +86,7 @@ def haste : Keywords := { Keywords.none with haste := true }
 def vigilance : Keywords := { Keywords.none with vigilance := true }
 def flying : Keywords := { Keywords.none with flying := true }
 def cantBeBlocked : Keywords := { Keywords.none with cantBeBlocked := true }
+def menace : Keywords := { Keywords.none with menace := true }
 def hexproof : Keywords := { Keywords.none with hexproof := true }
 def indestructible : Keywords := { Keywords.none with indestructible := true }
 def reach : Keywords := { Keywords.none with reach := true }
@@ -93,7 +94,6 @@ def trample : Keywords := { Keywords.none with trample := true }
 def deathtouch : Keywords := { Keywords.none with deathtouch := true }
 def defender : Keywords := { Keywords.none with defender := true }
 def lifelink : Keywords := { Keywords.none with lifelink := true }
-def menace : Keywords := { Keywords.none with menace := true }
 end Keyword
 
 /-- Whom a spell, activated ability, or triggered ability may target
@@ -113,6 +113,8 @@ inductive EffectTargetKind where
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
+  /-- Target opponent (a player other than the controller). -/
+  | opponent
   /-- Target creature (any controller). -/
   | creature
   /-- Target creature with flying. -/
@@ -178,6 +180,8 @@ def spec : EffectTargetKind → Spec
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
+  | .opponent =>
+    { noun := "target opponent", prefer := .opponentPlayer }
   | .creature =>
     { noun := "target creature" }
   | .creatureWithFlying =>
@@ -277,6 +281,8 @@ inductive SpellEffect where
   | pump (power toughness : Int)
   /-- Destroy target creature with flying (CR 701.8). -/
   | destroyCreatureWithFlying
+  /-- Destroy target creature (CR 701.8). -/
+  | destroyCreature
   /-- Put a +1/+1 counter on target creature you control. It gains trample and
   hexproof until end of turn. -/
   | plusOnePlusOneTrampleHexproof
@@ -294,15 +300,14 @@ inductive SpellEffect where
   /-- Destroy target artifact or land. Creatures without flying can't block
   this turn (e.g. Fire of Orthanc). -/
   | destroyArtifactOrLandNonflyersCantBlock
-  /-- Destroy target creature (e.g. Bilbo's Deadly Slice, Stir Up Trouble). -/
-  | destroyTargetCreature
   /-- Destroy target creature. Its controller loses `life` life
   (e.g. Bitter Downfall). -/
   | destroyTargetCreatureControllerLosesLife (life : Nat)
   /-- All creatures get +P/+T until end of turn (e.g. Languish). -/
   | allCreaturesGet (power toughness : Int)
-  /-- You draw `cards` cards and lose `life` life (e.g. Night's Whisper). -/
-  | drawLoseLife (cards life : Nat)
+  /-- You draw `cards` cards and lose `life` life (e.g. Night's Whisper).
+  Loss of life is not damage (CR 118.3a / 120.3). -/
+  | drawAndLoseLife (cards life : Nat)
   /-- Target player draws `cards` cards and loses `life` life
   (e.g. Reverent Howl). -/
   | targetPlayerDrawLoseLife (cards life : Nat)
@@ -332,17 +337,17 @@ inductive SpellCastKind where
   | fight
   /-- Destroy target creature with flying. -/
   | destroyFlying
+  /-- Destroy target creature. -/
+  | destroyCreature
   /-- Destroy target artifact or land. -/
   | destroyArtifactOrLand
   /-- Until-end-of-turn pump or +1/+1 with keyword grants. -/
   | pump
   /-- You may play an additional land this turn. -/
   | extraLand
-  /-- Destroy target creature. -/
-  | destroyCreature
   /-- Mass until-end-of-turn P/T change. -/
   | massPump
-  /-- Draw cards, optionally losing life. -/
+  /-- Draw cards, optionally losing life (e.g. Night's Whisper). -/
   | draw
 deriving Repr, Inhabited, BEq, DecidableEq
 
@@ -422,8 +427,9 @@ inductive SpellResolution where
   | onPermanent (action : PermanentAction)
   /-- All creatures get +P/+T until end of turn. -/
   | allCreaturesPump (power toughness : Int)
-  /-- The controller draws `cards` and loses `life` life. -/
-  | selfDrawLoseLife (cards life : Nat)
+  /-- You draw `cards` cards and lose `life` life. Loss of life is not
+  damage (CR 118.3a / 120.3). -/
+  | drawAndLoseLife (cards life : Nat)
   /-- The targeted player draws `cards` and loses `life` life. -/
   | playerDrawLoseLife (cards life : Nat)
   /-- Creatures the targeted player controls get +P/+T until end of turn. -/
@@ -462,6 +468,9 @@ def spec : SpellEffect → SpellMeta
   | .destroyCreatureWithFlying =>
     { targeting := .of .creatureWithFlying, castKind := .destroyFlying,
       preferAsDefaultMode := true, resolution := .onPermanent .destroy }
+  | .destroyCreature =>
+    { targeting := .of .creature, castKind := .destroyCreature,
+      resolution := .onPermanent .destroy }
   | .plusOnePlusOneTrampleHexproof =>
     { targeting := .of .creatureYouControl, castKind := .pump,
       resolution := .onPermanent .plusOnePlusOneTrampleHexproof }
@@ -479,17 +488,15 @@ def spec : SpellEffect → SpellMeta
   | .destroyArtifactOrLandNonflyersCantBlock =>
     { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
       resolution := .onPermanent .destroyThenNonflyersCantBlock }
-  | .destroyTargetCreature =>
-    { targeting := .of .creature, castKind := .destroyCreature,
-      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
   | .destroyTargetCreatureControllerLosesLife n =>
     { targeting := .of .creature, castKind := .destroyCreature,
       preferAsDefaultMode := true, resolution := .destroyAndControllerLosesLife n }
   | .allCreaturesGet p t =>
     { targeting := .of .none, castKind := .massPump,
       resolution := .allCreaturesPump p t }
-  | .drawLoseLife cards life =>
-    { targeting := .of .none, castKind := .draw, resolution := .selfDrawLoseLife cards life }
+  | .drawAndLoseLife cards life =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .drawAndLoseLife cards life }
   | .targetPlayerDrawLoseLife cards life =>
     { targeting := .of .player .selfPlayer, castKind := .draw,
       resolution := .playerDrawLoseLife cards life }
@@ -545,11 +552,11 @@ def toNotation (e : SpellEffect) : String :=
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
+  | .drawAndLoseLife cards life =>
+    s!"you draw {cardPhrase cards} and lose {life} life"
   | .onPermanent action => PermanentAction.toNotation action noun
   | .allCreaturesPump p t =>
     s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
-  | .selfDrawLoseLife cards life =>
-    s!"you draw {cardPhrase cards} and lose {life} life"
   | .playerDrawLoseLife cards life =>
     s!"{noun} draws {cardPhrase cards} and loses {life} life"
   | .creaturesOfPlayerPump p t =>
@@ -1014,6 +1021,9 @@ inductive TriggeredAbility where
   /-- When this permanent enters, you may discard a card. If you do, draw `n`
   cards (e.g. Ragged Short Spear). -/
   | onEnterMayDiscardDraw (n : Nat)
+  /-- When this permanent enters, target opponent sacrifices a creature of
+  their choice (e.g. Crude Bent Blade). -/
+  | onEnterTargetOpponentSacrificesCreature
   /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
   target creature you control (e.g. Beorn's Hospitality). -/
   | onLandYouControlEntersPlusOnePlusOne
@@ -1186,6 +1196,8 @@ inductive TriggerResolution where
   | searchForest
   /-- You may discard a card. If you do, draw `n`. -/
   | mayDiscardDraw (n : Nat)
+  /-- Target opponent sacrifices a creature of their choice. -/
+  | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
   | onPermanent (action : PermanentAction)
   /-- Deal previously divided damage to the announced targets. -/
@@ -1254,6 +1266,9 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterSearchForest => { events := #[.entering], resolution := .searchForest }
   | .onEnterMayDiscardDraw n =>
     { events := #[.entering], resolution := .mayDiscardDraw n }
+  | .onEnterTargetOpponentSacrificesCreature =>
+    { events := #[.entering], targeting := .of .opponent,
+      resolution := .opponentSacrificesCreature }
   | .onLandYouControlEntersPlusOnePlusOne =>
     { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
       resolution := .onPermanent (.plusOne 1) }
@@ -1368,6 +1383,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .opponentSacrificesCreature =>
+    s!"{noun} sacrifices a creature of their choice"
   | .dividedDamage =>
     match t.dividedDamage with
     | some (amount, maxTargets) =>
@@ -1554,10 +1571,16 @@ def manaAbilities (c : CardDef) : Array ManaType :=
 def lowerAscii (s : String) : String :=
   s.map Char.toLower
 
+/-- Drop a trailing Oracle reminder parenthetical, e.g. `Menace (This creature...)`. -/
+def stripReminderParenthetical (s : String) : String :=
+  match s.splitOn "(" with
+  | [] => s
+  | head :: _ => head.trimAscii.copy
+
 /-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`. -/
 def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
   let kw := k.toList
-  let cleaned := (line.replace "." "").trimAscii.copy
+  let cleaned := stripReminderParenthetical ((line.replace "." "").trimAscii.copy)
   if cleaned.isEmpty then true
   else
     let parts := cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
@@ -1648,6 +1671,8 @@ instance : ToString CardDef where
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
   "destroy target creature with flying"
+#guard SpellEffect.toNotation .destroyCreature ==
+  "destroy target creature"
 #guard SpellEffect.toNotation .plusOnePlusOneTrampleHexproof ==
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
 #guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
@@ -1660,13 +1685,14 @@ instance : ToString CardDef where
   "you may play an additional land this turn"
 #guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
-#guard SpellEffect.toNotation .destroyTargetCreature == "destroy target creature"
 #guard SpellEffect.toNotation (.destroyTargetCreatureControllerLosesLife 2) ==
   "destroy target creature. Its controller loses 2 life"
 #guard SpellEffect.toNotation (.allCreaturesGet (-4) (-4)) ==
   "all creatures get -4/-4 until end of turn"
-#guard SpellEffect.toNotation (.drawLoseLife 2 2) ==
+#guard SpellEffect.toNotation (.drawAndLoseLife 2 2) ==
   "you draw 2 cards and lose 2 life"
+#guard SpellEffect.toNotation (.drawAndLoseLife 1 0) ==
+  "you draw a card and lose 0 life"
 #guard SpellEffect.toNotation (.targetPlayerDrawLoseLife 2 2) ==
   "target player draws 2 cards and loses 2 life"
 #guard SpellEffect.toNotation (.creaturesTargetPlayerGet (-1) (-1)) ==
@@ -1679,6 +1705,7 @@ instance : ToString CardDef where
   "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
+#guard EffectTargetKind.noun .opponent == "target opponent"
 #guard EffectTargetKind.noun .colorlessNonland ==
   "target colorless nonland permanent"
 #guard EffectTargetKind.noun .player == "target player"
@@ -1688,6 +1715,8 @@ instance : ToString CardDef where
 #guard EffectTargetKind.spec .none == { count := 0, noun := "", prefer := .own }
 #guard EffectTargetKind.spec .playerOrCreature ==
   { count := 1, noun := "any target", prefer := .opponentPlayer }
+#guard EffectTargetKind.spec .opponent ==
+  { count := 1, noun := "target opponent", prefer := .opponentPlayer }
 #guard EffectTargetKind.spec .creatureYouControlThenOppCreature ==
   { count := 2
     noun := "target creature you control and a creature an opponent controls"
@@ -1723,13 +1752,17 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
 #guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
+#guard SpellEffect.targetCount .destroyCreature == 1
+#guard SpellEffect.targetCount (.drawAndLoseLife 2 2) == 0
 #guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
 #guard SpellEffect.targetKind (.pump 3 3) == .creature
 #guard SpellEffect.targeting (.pump 3 3) == EffectTargeting.of .creature .own
 #guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
+#guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
 #guard EffectTargetKind.defaultPreference .creature == .opponent
 #guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
+#guard SpellEffect.targetKind .destroyCreature == .creature
 #guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
 #guard SpellEffect.targetKind (.dealDamageToCreature 5) == .creature
 #guard SpellEffect.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
@@ -1737,47 +1770,51 @@ instance : ToString CardDef where
   .creatureYouControlThenOppCreature
 #guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
 #guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
-#guard SpellEffect.targetKind .destroyTargetCreature == .creature
 #guard SpellEffect.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature
 #guard SpellEffect.targetKind (.allCreaturesGet (-4) (-4)) == .none
-#guard SpellEffect.targetKind (.drawLoseLife 2 2) == .none
+#guard SpellEffect.targetKind (.drawAndLoseLife 2 2) == .none
 #guard SpellEffect.targetKind (.targetPlayerDrawLoseLife 2 2) == .player
 #guard SpellEffect.targetKind (.creaturesTargetPlayerGet (-1) (-1)) == .player
 #guard SpellEffect.targetKind .exileGraveyardCreaturesGrantCast == .player
 #guard !SpellEffect.requiresTarget (.allCreaturesGet (-4) (-4))
-#guard !SpellEffect.requiresTarget (.drawLoseLife 2 2)
-#guard SpellEffect.requiresTarget .destroyTargetCreature
+#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
+#guard SpellEffect.requiresTarget (.destroyTargetCreatureControllerLosesLife 2)
 #guard SpellEffect.requiresTarget (.targetPlayerDrawLoseLife 2 2)
-#guard SpellEffect.castKind .destroyTargetCreature == .destroyCreature
 #guard SpellEffect.castKind (.allCreaturesGet (-4) (-4)) == .massPump
-#guard SpellEffect.castKind (.drawLoseLife 2 2) == .draw
+#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
 #guard SpellEffect.castKind (.targetPlayerDrawLoseLife 2 2) == .draw
-#guard SpellEffect.preferAsDefaultMode .destroyTargetCreature
 #guard SpellEffect.preferAsDefaultMode (.pumpAndExileIfDies (-5) (-5))
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
+#guard SpellEffect.requiresTarget .destroyCreature
 #guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
 #guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
+#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
 #guard SpellEffect.castKind (.dealDamage 3) == .burn
 #guard SpellEffect.castKind (.dealDamageToCreature 5) == .creatureDamage
 #guard SpellEffect.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
 #guard SpellEffect.castKind .creatureYouControlDealsPowerToOppCreature == .fight
 #guard SpellEffect.castKind .destroyCreatureWithFlying == .destroyFlying
+#guard SpellEffect.castKind .destroyCreature == .destroyCreature
 #guard SpellEffect.castKind .destroyArtifactOrLandNonflyersCantBlock ==
   .destroyArtifactOrLand
 #guard SpellEffect.castKind (.pump 3 3) == .pump
 #guard SpellEffect.castKind .plusOnePlusOneTrampleHexproof == .pump
 #guard SpellEffect.castKind .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
 #guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
+#guard !SpellEffect.preferAsDefaultMode .destroyCreature
 #guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
 #guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
 #guard SpellEffect.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
 #guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
 #guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
+#guard SpellEffect.resolution .destroyCreature == .onPermanent .destroy
 #guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
 #guard SpellEffect.resolution .creatureYouControlDealsPowerToOppCreature == .fight
 #guard SpellEffect.resolution (.dealDamageToCreature 5) ==
   .onPermanent (.dealDamage 5)
@@ -1857,6 +1894,11 @@ instance : ToString CardDef where
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
+#guard toString Keyword.menace == "menace"
+#guard CardDef.isKeywordRestatement Keyword.menace "Menace"
+#guard CardDef.isKeywordRestatement Keyword.menace
+  "Menace (This creature can't be blocked except by two or more creatures.)"
+#guard !CardDef.isKeywordRestatement Keyword.menace "Flying"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
@@ -1944,6 +1986,8 @@ instance : ToString CardDef where
   "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
 #guard TriggeredAbility.toNotation (.onEnterMayDiscardDraw 2) ==
   "When this permanent enters, you may discard a card. If you do, draw 2 cards."
+#guard TriggeredAbility.toNotation .onEnterTargetOpponentSacrificesCreature ==
+  "When this permanent enters, target opponent sacrifices a creature of their choice."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersGets1 ==
@@ -2001,6 +2045,7 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersGets1).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
+#guard (TriggeredAbility.dividedDamage? .onEnterTargetOpponentSacrificesCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onDiesDealDamageEqualToPowerToOppCreature).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
@@ -2035,6 +2080,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.firesOn (.onEnterDraw 1) .entering
 #guard TriggeredAbility.firesOn .onEnterSearchForest .entering
 #guard TriggeredAbility.firesOn (.onEnterMayDiscardDraw 2) .entering
+#guard TriggeredAbility.firesOn .onEnterTargetOpponentSacrificesCreature .entering
 #guard TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .entering
 #guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .entering
 #guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .entering
@@ -2066,6 +2112,8 @@ instance : ToString CardDef where
   .elfInYourGraveyard
 #guard TriggeredAbility.targetKind .onDiesDealDamageEqualToPowerToOppCreature ==
   .oppCreature
+#guard TriggeredAbility.targetKind .onEnterTargetOpponentSacrificesCreature ==
+  .opponent
 #guard TriggeredAbility.targetKind (.onEnterDraw 1) == .none
 #guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
 #guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
@@ -2092,11 +2140,13 @@ instance : ToString CardDef where
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
 #guard TriggeredAbility.requiresTarget .onDiesDealDamageEqualToPowerToOppCreature
+#guard TriggeredAbility.requiresTarget .onEnterTargetOpponentSacrificesCreature
 #guard TriggeredAbility.requiresTarget .onAttackSetOtherBasePT
 #guard TriggeredAbility.requiresTarget .onAttackOtherGets2AndTrample
 #guard TriggeredAbility.allowsZeroTargets .onAttackSetOtherBasePT
 #guard !TriggeredAbility.allowsZeroTargets .onAttackOtherGets2AndTrample
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
+#guard !TriggeredAbility.allowsZeroTargets .onEnterTargetOpponentSacrificesCreature
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
 #guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .dying
@@ -2124,6 +2174,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
+#guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
+  .opponentSacrificesCreature
 #guard TriggeredAbility.resolution .onLandYouControlEntersGets1 ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==

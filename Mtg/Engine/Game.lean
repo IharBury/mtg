@@ -17,6 +17,7 @@ and abilities (CR 601.2b / 700.2), announcing additional or alternative costs
 (CR 601.2b) before targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), then determining and paying costs
 including sacrificing an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
+drawing cards and losing life (CR 121 / 118.3a),
 and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents, cards in hand
 (typecycling, CR 702.29), and graveyard cards (CR 602),
@@ -26,13 +27,13 @@ trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
 equal to lands you control in all zones (CR 604.3 / 208.2a), restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), or prevent blocking except by
-two or more (menace, CR 702.110) or N or more creatures, until-end-of-turn
+two or more (menace, CR 702.111) or N or more creatures, until-end-of-turn
 effects that prevent creatures without flying from blocking, and can't-be-blocked
 (CR 509.1b / 611.2a), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
 indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), lifelink (CR 702.15),
-menace (CR 702.110), scry (CR 701.20),
+menace (CR 702.111), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), including a target artifact or land or
 creature (and its controller losing life), mass until-end-of-turn P/T changes,
 drawing and losing life, +1/+1 counters (CR 122), until-end-of-turn
@@ -46,7 +47,7 @@ for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
 discard-to-draw, damage divided as you choose when a creature enters or
 attacks (CR 601.2d), returning an Elf card from your graveyard to gain
 life equal to its power (CR 701.19 / 118.2), each player sacrificing a creature,
-a target opponent sacrificing a creature, each opponent discarding a card,
+a target opponent sacrificing a creature of their choice, each opponent discarding a card,
 and exiling a card from an opponent's graveyard while opponents lose life,
 another-Elf-enters pumps
 (CR 603.6a), landfall triggers that put +1/+1 counters or pump the source
@@ -76,7 +77,7 @@ put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d, deathtouch as lethal for trample, CR 702.2c / 702.19b, and lifelink,
 CR 702.15b), cleanup (CR 514.3), and the state-based actions we implement
-(CR 704.5, including deathtouch, CR 704.5h).
+(CR 704.5, including deathtouch, CR 704.5h, and the legend rule, CR 704.5j).
 -/
 
 namespace Mtg.Engine
@@ -298,6 +299,10 @@ def you (o : GameObject) : PlayerId :=
 def isCreature (o : GameObject) : Bool :=
   o.printed.isCreature || o.status.additionalCreature
 
+/-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
+def isLegendary (o : GameObject) : Bool :=
+  o.printed.hasSupertype .legendary
+
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
@@ -424,6 +429,9 @@ inductive Pending where
   /-- After `pay`, choose an artifact or creature to sacrifice
   (another, when paying an activated ability). -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
+  /-- A resolved trigger requires this player to sacrifice a creature
+  of their choice (e.g. Crude Bent Blade). -/
+  | sacrificeCreature (player : PlayerId)
   /-- This player declares whether they will take a mulligan (CR 103.5). -/
   | declareMulligan (player : PlayerId)
   /-- This player puts `count` cards on the bottom after a mulligan (CR 103.5). -/
@@ -444,6 +452,9 @@ inductive Pending where
   /-- The player announces how attacking (`forAttackers`) or blocking creatures
   assign combat damage (CR 510.1c–d). -/
   | assignCombatDamage (player : PlayerId) (forAttackers : Bool)
+  /-- This player chooses which of these legendary permanents with the same
+  name to keep; the rest are put into their owners' graveyards (CR 704.5j). -/
+  | chooseLegend (player : PlayerId) (name : String) (ids : Array ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -508,7 +519,8 @@ inductive Action where
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
   | pay
   /-- After `pay`, sacrifice an artifact or creature to finish paying
-  (CR 601.2h / 602.2b), or sacrifice a creature as a resolving effect. -/
+  (CR 601.2h / 602.2b), a creature a resolved trigger requires, or a creature
+  as a resolving effect. -/
   | sacrifice (id : ObjectId)
   /-- Choose to pay extra generic mana rather than sacrifice, as an additional
   cost (CR 601.2b). `true` pays the generic alternative; `false` sacrifices. -/
@@ -521,6 +533,8 @@ inductive Action where
   | assignCombatDamage (assignments : Array CreatureCombatAssignment)
   /-- Keep this hand as the opening hand (CR 103.5). -/
   | keep
+  /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
+  | keepLegend (id : ObjectId)
   /-- Declare a London mulligan; it is taken after every remaining player has
   declared (CR 103.5). -/
   | takeMulligan
@@ -964,7 +978,9 @@ def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
 def hasLifelink (_g : Game) (o : GameObject) : Bool :=
   o.printedOrUntilEot.lifelink
 
-/-- Whether `o` has menace, printed or granted until end of turn (CR 702.110). -/
+/-- Whether `o` has menace, printed or granted until end of turn (CR 702.111).
+Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
+declaration as a whole (CR 509.1c). -/
 def hasMenace (_g : Game) (o : GameObject) : Bool :=
   o.printedOrUntilEot.menace
 
@@ -978,6 +994,14 @@ def minBlockersRequired (g : Game) (o : GameObject) : Nat :=
       | none => acc) 0
   max fromStatic (if g.hasMenace o then 2 else 0)
 
+/-- True when `n` blockers is a legal number for `attacker` (CR 702.111b).
+Zero is always legal (the attacker is unblocked). -/
+def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
+  let need := g.minBlockersRequired attacker
+  n == 0 || need <= 1 || n >= need
+
+/-- Whether `blocker` may be assigned to `attacker` as one creature in a
+declaration (CR 509.1b). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
   blocker.isOnBattlefield && blocker.isCreature &&
@@ -1118,8 +1142,57 @@ def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=
   (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
     (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && max (g.power o) 0 > 0)
 
+/-- Living players in APNAP order (CR 101.4): the active player, then the
+next player in turn order, and so on. -/
+def apnapPlayers (g : Game) : Array PlayerId :=
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+      if !(g.player q).lost then
+        acc := acc.push q
+    return acc
+
+/-- Legendary permanents `p` currently controls. -/
+def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (·.isLegendary)
+
+/-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
+more legendary permanents with the same name controlled by the same player,
+taking players in APNAP order. -/
+def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
+  Id.run do
+    for p in g.apnapPlayers do
+      let legs := g.legendaryPermanentsOf p
+      let mut seen : Array String := #[]
+      for o in legs do
+        if !seen.contains o.name then
+          seen := seen.push o.name
+          let group := legs.filter (fun x => x.name == o.name)
+          if group.size ≥ 2 then
+            return some (p, o.name, group.map (·.id))
+    return none
+
+/-- True while a player must choose which legendary permanent to keep. -/
+def legendChoicePending? (g : Game) : Bool :=
+  match g.pending with
+  | .chooseLegend .. => true
+  | _ => false
+
+/-- Default legend-rule choice: the copy that entered most recently. -/
+def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
+  ids.foldl (fun best id =>
+    match g.findObject? best, g.findObject? id with
+    | some a, some b => if b.timestamp ≥ a.timestamp then id else best
+    | _, some _ => id
+    | _, none => best) (ids[0]!)
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
-any state-based action was performed (used by CR 514.3a). -/
+any state-based action was performed (used by CR 514.3a). If a legend-rule
+choice is required (CR 704.5j), the check pauses: that SBA is not finished,
+so CR 704.3 does not yet repeat, put triggers on the stack, or grant
+priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
@@ -1141,6 +1214,31 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.setPlayer { pl with lost := true }
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
+      let livingAfterLoss := g.livingPlayers
+      if livingAfterLoss.size == 0 then
+        g := { g with result := some .draw }
+        g := g.logMsg "The game is a draw"
+        return (g, true)
+      else if livingAfterLoss.size == 1 then
+        let w := livingAfterLoss[0]!
+        g := { g with result := some (.won w.id) }
+        g := g.logMsg s!"{w.name} wins the game"
+        return (g, true)
+      -- Waiting for a legend-rule choice: do not apply further SBAs until
+      -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
+      -- group is no longer two or more.
+      match g.pending with
+      | .chooseLegend p name ids =>
+        let still := ids.filter (fun id =>
+          match g.findObject? id with
+          | some o =>
+            o.isOnBattlefield && o.controlledBy p && o.isLegendary && o.name == name
+          | none => false)
+        if still.size ≥ 2 then
+          return (g, changed)
+        else
+          g := { g with pending := .none }
+      | _ => pure ()
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       for o in g.battlefield do
         if o.isCreature then
@@ -1166,6 +1264,14 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               changed := true
             else
               g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+      -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
+      match g.firstLegendRuleChoice? with
+      | some (p, name, ids) =>
+        g := { g with pending := .chooseLegend p name ids }
+        g := g.logMsg
+          s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+        return (g, true)
+      | none => pure ()
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -1312,6 +1418,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalGraveyardCardTargets caster (fun o => o.hasSubtype "Elf")
   | .oppCreature =>
     g.legalOppCreatureTargets caster
+  | .opponent =>
+    g.livingPlayers.filter (fun pl => pl.id != caster) |>.map (fun pl => Target.player pl.id)
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
   | .creatureWithFlying =>
@@ -1494,9 +1602,15 @@ def putWaitingDeathTriggers (g : Game) : Game :=
 def putWaitingScryTriggers (g : Game) : Game :=
   g.flushWaitingTriggers .youScry
 
+/-- CR 704.3: check state-based actions, then (if none remain to perform,
+including an unfinished legend-rule choice) put waiting triggers on the
+stack. Repeat until that process is idle, then `p` receives priority. -/
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
   if g.over then g
+  -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
+  -- the SBA. Do not put triggers on the stack or grant priority yet.
+  else if g.legendChoicePending? then g
   else
     let g := g.putWaitingDeathTriggers
     if g.over then g
@@ -1822,9 +1936,10 @@ def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
 /-- Default object or player to announce as a target (CR 601.2c). Damage spells
 and divided-damage enters or attack triggers prefer the opponent; creature-damage abilities
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
+destroy-creature prefers an opposing creature;
 destroy-colorless prefers an opposing colorless nonland; destroy-artifact-or-land prefers
 an opposing artifact or land; Mirkwood Elk prefers an Elf
-card in the controller's graveyard; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
+card in the controller's graveyard; Crude Bent Blade prefers an opposing player; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
 an opposing creature; Rogue's Passage, pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
 caster controls. -/
@@ -1885,8 +2000,10 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     (g.permanentsOf p).any (fun perm =>
       perm.id != o.id && (perm.isCreature || perm.printed.isArtifact))
    else true) &&
+  -- Untargeted permanents, and untargeted instants/sorceries with a modeled
+  -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
   if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
-  else true
+  else o.printed.isPermanentCard || o.printed.spellEffect.isSome
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (_g : Game) (o : GameObject) : Bool :=
@@ -2094,10 +2211,18 @@ def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : Obj
   g.permanentsOf p |>.filter (fun o =>
     o.id != sourceId && (o.isCreature || o.printed.isArtifact))
 
+/-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
+def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  g.permanentsOf p |>.filter (·.isCreature)
+
 /-- Whether `sac` is a legal “another creature or artifact” sacrifice for `sourceId`. -/
 def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (sac : GameObject) : Bool :=
   (g.sacrificeCreatureOrArtifactChoices p sourceId).any (·.id == sac.id)
+
+/-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
+def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
+  (g.sacrificeCreatureChoices p).any (·.id == sac.id)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
@@ -2573,7 +2698,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"
 
-/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b). -/
+/-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .sacrificePermanent caster sourceId =>
@@ -2601,6 +2726,16 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p then
       throw s!"Can't sacrifice {sac.name}"
     return g.beginSacrificeCreatures remaining (chosen.push id)
+  | .sacrificeCreature q =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !g.canSacrificeCreature p sac then
+      throw s!"Can't sacrifice {sac.name}"
+    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
+    let (g, _) := g.move id (.graveyard sac.owner) none
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
@@ -2638,6 +2773,15 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
   let pl := g.player pid
   let g := g.setPlayer { pl with life := pl.life - n }
   g.logMsg s!"{pl.name} is dealt {n} damage ({(g.player pid).life} life)"
+
+/-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
+(CR 118.9). Loss of life is not damage (CR 120.3). -/
+def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setPlayer { pl with life := pl.life - (n : Int) }
+    g.logMsg s!"{pl.name} loses {n} life ({(g.player p).life} life)"
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
@@ -2930,6 +3074,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
+  | .drawAndLoseLife cards life =>
+    let g := g.draw controller cards
+    g.loseLife controller life
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
   | .allCreaturesPump p t =>
@@ -2939,9 +3086,6 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         if o.isCreature then
           g := g.pumpPermanent o p t
       return g
-  | .selfDrawLoseLife cards life =>
-    let g := g.draw controller cards
-    g.loseLife controller life
   | .playerDrawLoseLife cards life =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -3094,6 +3238,14 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
     { g with pending := .mayDiscardDraw p n }.logMsg
       s!"{pl.name} may discard a card. If they do, they draw {n}"
 
+/-- Start “sacrifices a creature of their choice” for `p` (CR 701.17 / 608.2d). -/
+def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
+  if (g.sacrificeCreatureChoices p).isEmpty then
+    g.logMsg s!"{(g.player p).name} has no creature to sacrifice"
+  else
+    { g with pending := .sacrificeCreature p }.logMsg
+      s!"{(g.player p).name} must sacrifice a creature of their choice"
+
 /-- Apply `f` if the trigger's source is still on the battlefield. -/
 def withTriggerSource (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game) : Game :=
@@ -3146,6 +3298,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.resolveSearchForest controller
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
+  | .opponentSacrificesCreature =>
+    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
+      match t with
+      | Target.player pid => g.beginSacrificeCreature pid
+      | _ => g.logMsg "The target is no longer legal")
   | .onPermanent action =>
     g.applyOnPermanent controller ab.targetKind targets action sourceId
       (some "The target is no longer legal")
@@ -3361,7 +3518,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     let aNow := g.object! attackerId
     g := g.setObject { aNow with status := { aNow.status with blocked := true } }
     g := g.logMsg s!"{b.name} blocks {a.name}"
-  -- CR 509.1c / 702.110: a menace (or “except by N or more”) creature that is
+  -- CR 509.1c / 702.111: a menace (or “except by N or more”) creature that is
   -- blocked must be blocked by at least that many creatures.
   for o in g.battlefield do
     if o.status.attacking then
@@ -3369,7 +3526,8 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
       if need > 1 then
         let n := (g.blockersOf o.id).size
         if n > 0 && n < need then
-          throw s!"{o.name} can't be blocked except by {need} or more creatures"
+          let word := if need == 2 then "two" else toString need
+          throw s!"{o.name} can't be blocked except by {word} or more creatures"
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   g := g.putBlockedTriggersOnStack assignments
@@ -4062,6 +4220,36 @@ def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
     return g.afterDeclaration p
   | _ => throw "Not time to keep an opening hand (CR 103.5)"
 
+/-- Choose which legendary permanent to keep; the rest go to their owners'
+graveyards (CR 704.5j). Then resume the CR 704.3 loop: recheck state-based
+actions, put waiting triggers on the stack if none remain, and grant
+priority only once that process is idle. -/
+def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .chooseLegend q name ids =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may choose which {name} to keep (CR 704.5j)"
+    if !ids.contains id then
+      throw s!"Choose one of the legendary permanents named {name} (CR 704.5j)"
+    let some kept := g.findObject? id | throw "no such object"
+    if !kept.isOnBattlefield then
+      throw s!"{kept.name} is not on the battlefield"
+    let mut g := g.logMsg
+      s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)"
+    for other in ids do
+      if other != id then
+        match g.findObject? other with
+        | some o =>
+          if o.isOnBattlefield then
+            g := g.logMsg
+              s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
+            let (g', _) := g.move o.id (.graveyard o.owner) none
+            g := g'
+        | none => pure ()
+    g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to apply the legend rule (CR 704.5j)"
+
 /-- Record that this player will mulligan. The mulligan itself is taken only
 after every remaining player has declared (CR 103.5). -/
 def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
@@ -4132,6 +4320,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
+  | .keepLegend id => g.keepLegend p id
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
@@ -4153,6 +4342,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseMode p => some p
     | .chooseTargets p => some p
     | .sacrificePermanent p _ => some p
+    | .sacrificeCreature p => some p
     | .declareMulligan p => some p
     | .putOnBottom p _ => some p
     | .scry p _ => some p
@@ -4161,6 +4351,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseSacrificeCreature p _ _ => some p
     | .chooseDiscardCard p _ => some p
     | .assignCombatDamage p _ => some p
+    | .chooseLegend p _ _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

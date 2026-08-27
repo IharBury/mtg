@@ -110,6 +110,7 @@ def hobbitDeck : Color → Array CardDef
 #guard Color.all.all (fun c => (hobbitDeck c).size == 40 && isLegalDeck .limited (hobbitDeck c))
 #guard (hobbitDeck .white).any (fun c => c.name == "Bofur, Reliable Guardian")
 #guard (hobbitDeck .blue).any (fun c => c.name == "Bilbo Baggins, Burglar")
+#guard (hobbitDeck .black).any (fun c => c.name == "Bilbo's Deadly Slice")
 #guard (hobbitDeck .black).any (fun c => c.name == "Gollum, Silent Slinker")
 #guard (hobbitDeck .red).any (fun c => c.name == "Smaug, the Great Calamity")
 #guard (hobbitDeck .green).any (fun c => c.name == "Elvish Archdruid")
