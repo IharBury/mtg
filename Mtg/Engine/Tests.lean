@@ -2375,7 +2375,54 @@ def afterLegendKillsEnchanted : Game :=
 #guard (afterLegendKillsEnchanted.player ⟨0⟩).graveyard.any (fun id =>
   (afterLegendKillsEnchanted.object! id).name == "Gift of Strands")
 
-/-- A 0/0 enchanted creature survives while Gift of Strands is attached. -/
+-- CR 704.3: a 0-toughness creature dies in the same check, then the legend
+-- rule still pauses; no player has priority until the choice is made.
+def zeroAndTwoBofursSBA : Game :=
+  (addPermanent twoBofurs zeroZero ⟨0⟩ ⟨0⟩).checkSBA
+
+#guard !(zeroAndTwoBofursSBA.battlefield.any (·.name == "Zero/Zero"))
+#guard
+  match zeroAndTwoBofursSBA.pending with
+  | .chooseLegend _ name ids =>
+    name == "Bofur, Reliable Guardian" && ids.size == 2
+  | _ => false
+#guard !zeroAndTwoBofursSBA.hasPriority ⟨0⟩
+#guard zeroAndTwoBofursSBA.actor == some ⟨0⟩
+
+/-- Legendary creature with a dies trigger, for the CR 704.3 wait. -/
+def legendaryFireleaper : CardDef :=
+  creature "Legendary Fireleaper" ManaCost.empty #["Goblin"] 2 1
+    (supertypes := #[.legendary])
+    (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
+
+def twoFireleapersSBA : Game :=
+  let g := addPermanent started legendaryFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g legendaryFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  g.checkSBA
+
+-- CR 704.3: the dies trigger waits until the legend-rule SBA is finished.
+#guard twoFireleapersSBA.waitingTriggers.isEmpty
+#guard twoFireleapersSBA.stack.isEmpty
+#guard twoFireleapersSBA.legendChoicePending?
+#guard !twoFireleapersSBA.hasPriority ⟨0⟩
+#guard (twoFireleapersSBA.receivePriority ⟨0⟩).legendChoicePending?
+#guard (twoFireleapersSBA.receivePriority ⟨0⟩).stack.isEmpty
+
+def afterKeepFireleaper : Game :=
+  match twoFireleapersSBA.pending with
+  | .chooseLegend p _ ids => mustApply twoFireleapersSBA p (.keepLegend ids[0]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard afterKeepFireleaper.waitingTriggers.isEmpty
+#guard afterKeepFireleaper.pending == .chooseTargets ⟨0⟩
+#guard afterKeepFireleaper.stack.any (fun e =>
+  (afterKeepFireleaper.object! e.objectId).triggeredAbility ==
+    some .onDiesDealDamageEqualToPowerToOppCreature)
+#guard !afterKeepFireleaper.hasPriority ⟨0⟩
+#guard afterKeepFireleaper.actor == some ⟨0⟩
+
+/-- A 0/0 creature survives while Gift of Strands is attached. -/
 def zeroEnchanted : Game :=
   let g := addPermanent started zeroZero ⟨0⟩ ⟨0⟩
   addAttachedAura g giftOfStrands (namedPermanent g "Zero/Zero") ⟨0⟩ ⟨0⟩

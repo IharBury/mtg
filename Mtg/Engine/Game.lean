@@ -1112,7 +1112,10 @@ def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
     | _, none => best) (ids[0]!)
 
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
-any state-based action was performed (used by CR 514.3a). -/
+any state-based action was performed (used by CR 514.3a). If a legend-rule
+choice is required (CR 704.5j), the check pauses: that SBA is not finished,
+so CR 704.3 does not yet repeat, put triggers on the stack, or grant
+priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
@@ -1507,9 +1510,14 @@ def putWaitingDeathTriggers (g : Game) : Game :=
 def putWaitingScryTriggers (g : Game) : Game :=
   g.flushWaitingTriggers .youScry
 
+/-- CR 704.3: check state-based actions, then (if none remain to perform,
+including an unfinished legend-rule choice) put waiting triggers on the
+stack. Repeat until that process is idle, then `p` receives priority. -/
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
   if g.over then g
+  -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
+  -- the SBA. Do not put triggers on the stack or grant priority yet.
   else if g.legendChoicePending? then g
   else
     let g := g.putWaitingDeathTriggers
@@ -3705,7 +3713,9 @@ def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
   | _ => throw "Not time to keep an opening hand (CR 103.5)"
 
 /-- Choose which legendary permanent to keep; the rest go to their owners'
-graveyards (CR 704.5j). -/
+graveyards (CR 704.5j). Then resume the CR 704.3 loop: recheck state-based
+actions, put waiting triggers on the stack if none remain, and grant
+priority only once that process is idle. -/
 def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .chooseLegend q name ids =>
