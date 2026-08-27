@@ -4031,7 +4031,7 @@ def gandalfLeftBeforeTrigger : Game :=
   let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Velvetwing Butterflies"
   let g := g.setObject { o with
-    status := { o.status with untilEotHexproof := true } }
+    status := { o.status with untilEotKeywords := Keyword.hexproof } }
   match g.apply ⟨0⟩
       (.divideDamage (Target.permanent (namedPermanent g "Velvetwing Butterflies").id) 3) with
   | .error msg => mentions msg "Illegal target"
@@ -4180,7 +4180,7 @@ def fireleaperDied : Game :=
 #guard
   let bears := namedPermanent fireleaperDied "Grizzly Bears"
   let g := fireleaperDied.setObject { bears with
-    status := { bears.status with untilEotHexproof := true } }
+    status := { bears.status with untilEotKeywords := Keyword.hexproof } }
   match g.apply ⟨0⟩ (.target (Target.permanent bears.id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
@@ -7270,7 +7270,7 @@ def fireOfOrthancSetup : Game :=
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
   let forest := namedPermanent g "Forest"
   let g := g.setObject { forest with
-    status := { forest.status with untilEotHexproof := true } }
+    status := { forest.status with untilEotKeywords := Keyword.hexproof } }
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
 
@@ -7595,7 +7595,7 @@ def quarrelSourceGone : Game :=
 def quarrelDestHexproof : Game :=
   let dest := namedPermanent paidQuarrel "Grizzly Bears"
   let g := paidQuarrel.setObject { dest with
-    status := { dest.status with untilEotHexproof := true } }
+    status := { dest.status with untilEotKeywords := Keyword.hexproof } }
   passBoth g
 
 #guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
@@ -7880,13 +7880,13 @@ def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
 #guard paidPassage.hasPriority ⟨0⟩
 #guard paidPassage.stack.size == 1
 #guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
-#guard !(namedPermanent paidPassage "Gray Ogre").status.untilEotCantBeBlocked
+#guard !(namedPermanent paidPassage "Gray Ogre").status.untilEotKeywords.cantBeBlocked
 #guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
 
 def passageResolved : Game := passBoth paidPassage
 
 #guard passageResolved.stack.isEmpty
-#guard (namedPermanent passageResolved "Gray Ogre").status.untilEotCantBeBlocked
+#guard (namedPermanent passageResolved "Gray Ogre").status.untilEotKeywords.cantBeBlocked
 #guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
 #guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
 #guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
@@ -7902,7 +7902,7 @@ def passageResolved : Game := passBoth paidPassage
 #guard
   let bears := namedPermanent proposedPassage "Grizzly Bears"
   let g := proposedPassage.setObject { bears with
-    status := { bears.status with untilEotHexproof := true } }
+    status := { bears.status with untilEotKeywords := Keyword.hexproof } }
   match g.apply ⟨0⟩
       (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
   | .error msg => mentions msg "Illegal target"
@@ -7921,7 +7921,7 @@ def passageTargetGone : Game :=
 def afterPassageCleanup : Game :=
   passBoth (skipTo passageResolved .end 80)
 
-#guard !(namedPermanent afterPassageCleanup "Gray Ogre").status.untilEotCantBeBlocked
+#guard !(namedPermanent afterPassageCleanup "Gray Ogre").status.untilEotKeywords.cantBeBlocked
 #guard !afterPassageCleanup.hasCantBeBlocked
   (namedPermanent afterPassageCleanup "Gray Ogre")
 
