@@ -181,12 +181,14 @@ def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   | some perm => s!" (may be played by {g.player perm.player |>.name})"
   | none => ""
 
-/-- One card in exile: id, name, the cost to play it when someone may, printed
-abilities, and the play permission if any. -/
+/-- One card in exile. When someone may play it, print the same summary as a
+card in hand (mana cost, type line, P/T) plus who may play it. -/
 def exileLine (g : Game) (o : GameObject) : String :=
-  let cost := exilePlayManaCost o
-  let costPart := if cost.isEmpty then "" else s!" {cost}"
-  s!"{o.id} {o.name}{costPart}{faceExtras o.printed}{exilePlayPermissionClause g o}"
+  match o.playPermission with
+  | some _ =>
+    s!"{o.id} {o.printed.summary}{exilePlayPermissionClause g o}"
+  | none =>
+    s!"{o.id} {o.name}{faceExtras o.printed}"
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
