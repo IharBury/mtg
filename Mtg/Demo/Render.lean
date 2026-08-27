@@ -311,6 +311,41 @@ def pendingCostLine (g : Game) : Option String :=
 def costBlock (g : Game) : Option String :=
   pendingCostLine g
 
+/-- Names of legal combat-damage recipients for `source`, including the
+defending player when unblocked or trampling (CR 510.1a–d / 702.19). -/
+def combatDamageTargetRefs (g : Game) (source : GameObject) (forAttackers : Bool) :
+    List String :=
+  let creatures :=
+    (g.legalCombatDamageRecipients source forAttackers).toList.map (fun o =>
+      objectRef g o.id)
+  if g.canAssignCombatDamageToDefendingPlayer source forAttackers then
+    creatures ++ [(g.player (g.opponent g.activePlayer)).name]
+  else creatures
+
+/-- One assigning creature: how much damage it must assign and to whom. -/
+def combatDamageSourceLine (g : Game) (source : GameObject) (forAttackers : Bool) :
+    String :=
+  let dmg := g.combatDamageToAssign source forAttackers
+  let targets := combatDamageTargetRefs g source forAttackers
+  if targets.isEmpty then
+    let why :=
+      if forAttackers then "no remaining blockers" else "not blocking any creatures"
+    s!"{objectRef g source.id} assigns no combat damage ({why})"
+  else
+    s!"{objectRef g source.id} assigns {dmg}; legal: {String.intercalate ", " targets}"
+
+/-- Snapshot section listing combat damage each creature must assign and the
+legal recipients, while a player is announcing CR 510.1. -/
+def combatDamageAssignmentBlock (g : Game) : Option String :=
+  match g.pending with
+  | .assignCombatDamage _ forAttackers =>
+    let lines :=
+      (g.creaturesAssigningCombatDamage forAttackers).toList.map (fun o =>
+        s!"  {combatDamageSourceLine g o forAttackers}")
+    if lines.isEmpty then none
+    else some ("Assign combat damage:\n" ++ String.intercalate "\n" lines)
+  | _ => none
+
 def header (g : Game) (viewer : Option PlayerId := none) : String :=
   let viewTag :=
     match viewer with
@@ -371,8 +406,12 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
     match costBlock g with
     | some line => [line]
     | none => []
+  let assign :=
+    match combatDamageAssignmentBlock g with
+    | some block => [block]
+    | none => []
   String.intercalate "\n\n"
-    (header g viewer :: cost ++ [stackBlock g] ++ players ++ exileBlock)
+    (header g viewer :: cost ++ assign ++ [stackBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see
 (CR 401.2, 402.2, 103.5, 701.20). Other log lines are public. -/

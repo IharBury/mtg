@@ -991,6 +991,21 @@ def legalCombatDamageRecipients (g : Game) (source : GameObject) (forAttackers :
     Array GameObject :=
   if forAttackers then g.blockersOf source.id else g.creaturesBlockedBy source
 
+/-- True when leftover combat damage may be assigned to the defending player
+(unblocked, or trample; CR 510.1a / 702.19). -/
+def canAssignCombatDamageToDefendingPlayer (g : Game) (source : GameObject)
+    (forAttackers : Bool) : Bool :=
+  forAttackers && (!source.status.blocked || g.hasTrample source)
+
+/-- Combat damage `source` must assign this step (CR 510.1a), or `0` if it
+assigns none because no recipients remain (CR 510.1c–d). -/
+def combatDamageToAssign (g : Game) (source : GameObject) (forAttackers : Bool) : Int :=
+  if (g.legalCombatDamageRecipients source forAttackers).isEmpty &&
+      !g.canAssignCombatDamageToDefendingPlayer source forAttackers then
+    0
+  else
+    max (g.power source) 0
+
 /-- True when a creature this player controls has two or more creature
 recipients, so the controller must divide combat damage (CR 510.1c–d). -/
 def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=

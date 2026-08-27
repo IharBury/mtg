@@ -159,6 +159,19 @@ def printPendingCost (g : Game) : IO Unit := do
   | some line => IO.println s!"  {line}"
   | none => pure ()
 
+/-- Print how much combat damage each creature must assign and to whom. -/
+def printCombatAssignment (g : Game) : IO Unit := do
+  match combatDamageAssignmentBlock g with
+  | some block =>
+    for line in block.splitOn "\n" do
+      IO.println s!"  {line}"
+  | none => pure ()
+
+/-- Pending cost or combat-damage assignment the acting player must resolve. -/
+def printPendingPrompt (g : Game) : IO Unit := do
+  printPendingCost g
+  printCombatAssignment g
+
 def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
   IO.println (snapshot g viewer)
@@ -206,7 +219,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
       printChangedZones g g'
       printChangedLife g g'
       printChangedMana g g'
-      printPendingCost g'
+      printPendingPrompt g'
       g := g'
   printState g
   match g.result with
@@ -249,7 +262,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
   block <b> <a> [...]  Assign listed blocker/attacker pairs
   noblock              Declare no blockers
   assign               Use the default combat damage assignment (CR 510.1)
-  assign <s> <t> <n> [...]  Divide combat damage: source, creature, amount (CR 510.1c–d)
+  assign <s> <t> <n> [...]  Divide combat damage: source, creature or defending player, amount (CR 510.1c–d)
   concede              Concede
   quit                 Exit
 "
@@ -266,6 +279,7 @@ def helpInteractive (controlAll : Bool := false) : String :=
 #guard ((helpInteractive false).splitOn "cast <id> adventure").length > 1
 #guard ((helpInteractive false).splitOn "CR 715.3").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
+#guard ((helpInteractive false).splitOn "defending player").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
@@ -537,9 +551,27 @@ def pushCombatAmount (acc : Array CreatureCombatAssignment) (src tgt : ObjectId)
     let a := acc[i]!
     acc.set! i { a with toCreatures := a.toCreatures.push (tgt, amt) }
 
+/-- Add `amt` from `src` to the defending player. -/
+def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectId) (amt : Int) :
+    Array CreatureCombatAssignment :=
+  match acc.findIdx? (fun a => a.source == src) with
+  | none => acc.push { source := src, toPlayer := amt }
+  | some i =>
+    let a := acc[i]!
+    acc.set! i { a with toPlayer := a.toPlayer + amt }
+
+/-- True when `token` names the defending player, or `opponent` while the
+attacking player is assigning (CR 510.1a / 702.19). -/
+def isDefendingPlayerToken (g : Game) (p : PlayerId) (token : String) : Bool :=
+  let lower := token.map Char.toLower
+  let defender := g.opponent g.activePlayer
+  lower == (g.player defender).name.map Char.toLower ||
+    (p == g.activePlayer && lower == "opponent")
+
 /-- Parse source/target/amount triples. An empty list means the default legal
-assignment (CR 510.1c–d). -/
-def parseCombatAssignments (tokens : List String) :
+assignment (CR 510.1c–d). `target` may be a creature id or the defending
+player. -/
+def parseCombatAssignments (g : Game) (p : PlayerId) (tokens : List String) :
     Except String (Array CreatureCombatAssignment) :=
   go (tokens.filter (fun t => !t.isEmpty)) #[]
 where
@@ -547,13 +579,19 @@ where
       Except String (Array CreatureCombatAssignment)
     | [], acc => .ok acc
     | srcTok :: tgtTok :: amtTok :: rest, acc =>
-      match parseObjectId? srcTok, parseObjectId? tgtTok, amtTok.toInt? with
-      | some src, some tgt, some amt => go rest (pushCombatAmount acc src tgt amt)
-      | _, _, _ => .error assignUsage
+      match parseObjectId? srcTok, amtTok.toInt? with
+      | some src, some amt =>
+        match parseObjectId? tgtTok with
+        | some tgt => go rest (pushCombatAmount acc src tgt amt)
+        | none =>
+          if isDefendingPlayerToken g p tgtTok then
+            go rest (pushCombatPlayerAmount acc src amt)
+          else .error assignUsage
+      | _, _ => .error assignUsage
     | _, _ => .error assignUsage
 
 def applyAssign (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let asgns ← parseCombatAssignments tokens
+  let asgns ← parseCombatAssignments g p tokens
   for a in asgns do
     if (g.findObject? a.source).isNone then
       throw "no such object"
@@ -563,14 +601,14 @@ def applyAssign (g : Game) (p : PlayerId) (tokens : List String) : Except String
   g.apply p (.assignCombatDamage asgns)
 
 def parsedOneCombatTriple : Bool :=
-  match parseCombatAssignments ["3", "#7", "2"] with
+  match parseCombatAssignments Tests.started ⟨0⟩ ["3", "#7", "2"] with
   | .ok asgns => asgns == #[{ source := ⟨3⟩, toCreatures := #[(⟨7⟩, 2)] }]
   | .error _ => false
 
 #guard parsedOneCombatTriple
 
 def parsedTwoAmountsSameSource : Bool :=
-  match parseCombatAssignments ["1", "2", "3", "1", "4", "0"] with
+  match parseCombatAssignments Tests.started ⟨0⟩ ["1", "2", "3", "1", "4", "0"] with
   | .ok asgns =>
     asgns == #[{ source := ⟨1⟩, toCreatures := #[(⟨2⟩, 3), (⟨4⟩, 0)] }]
   | .error _ => false
@@ -578,14 +616,41 @@ def parsedTwoAmountsSameSource : Bool :=
 #guard parsedTwoAmountsSameSource
 
 #guard
-  match parseCombatAssignments [] with
+  match parseCombatAssignments Tests.started ⟨0⟩ [] with
   | .ok asgns => asgns.isEmpty
   | .error _ => false
 
 #guard
-  match parseCombatAssignments ["1", "2"] with
+  match parseCombatAssignments Tests.started ⟨0⟩ ["1", "2"] with
   | .error msg => msg == assignUsage
   | .ok _ => false
+
+#guard
+  match parseCombatAssignments Tests.giantReadyToAssign ⟨0⟩ ["3", "Nissa", "2"] with
+  | .ok asgns => asgns == #[{ source := ⟨3⟩, toPlayer := 2 }]
+  | .error _ => false
+
+#guard
+  match parseCombatAssignments Tests.giantReadyToAssign ⟨0⟩ ["3", "opponent", "2"] with
+  | .ok asgns => asgns == #[{ source := ⟨3⟩, toPlayer := 2 }]
+  | .error _ => false
+
+#guard
+  match parseCombatAssignments Tests.giantReadyToAssign ⟨0⟩ ["3", "Chandra", "2"] with
+  | .error msg => msg == assignUsage
+  | .ok _ => false
+
+#guard
+  match parseCombatAssignments Tests.bearsBlockingTwoOgresReady ⟨1⟩
+      ["3", "opponent", "2"] with
+  | .error msg => msg == assignUsage
+  | .ok _ => false
+
+#guard
+  match parseCombatAssignments Tests.started ⟨0⟩ ["3", "1", "2", "3", "Nissa", "1"] with
+  | .ok asgns =>
+    asgns == #[{ source := ⟨3⟩, toCreatures := #[(⟨1⟩, 2)], toPlayer := 1 }]
+  | .error _ => false
 
 #guard
   match applyAssign Tests.giantReadyToAssign ⟨0⟩ [] with
@@ -602,6 +667,22 @@ def parsedTwoAmountsSameSource : Bool :=
       [toString giant.id, toString elves[0]!.id, "1",
         toString giant.id, toString elves[1]!.id, "2"] with
   | .ok g' => (g'.battlefield.filter (fun o => o.name == "Llanowar Elves")).isEmpty
+  | .error _ => false
+
+#guard
+  let g := Tests.giantReadyToAssign
+  let giant := Tests.namedPermanent g "Hill Giant"
+  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let giant := Tests.namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  match applyAssign g ⟨0⟩
+      [toString giant.id, toString elves[0]!.id, "1",
+        toString giant.id, toString elves[1]!.id, "1",
+        toString giant.id, "Nissa", "1"] with
+  | .ok g' =>
+    (g'.player ⟨1⟩).life == 19 &&
+    (g'.battlefield.filter (fun o => o.name == "Llanowar Elves")).isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "tramples for 1 to Nissa")
   | .error _ => false
 
 #guard
@@ -2137,7 +2218,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printChangedZones g g' (chandraView playerView)
           printChangedLife g g'
           printChangedMana g g'
-          printPendingCost g'
+          printPendingPrompt g'
           g := g'
     if g.over then break
     if controlAll && g.actor != lastActor then
@@ -2198,7 +2279,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         printChangedZones g g' (currentView g' playerView controlAll)
         printChangedLife g g'
         printChangedMana g g'
-        printPendingCost g'
+        printPendingPrompt g'
         g := g'
         if g.over then
           printState g (currentView g playerView controlAll)
