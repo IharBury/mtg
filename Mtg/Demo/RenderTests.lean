@@ -1264,6 +1264,16 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "2/2"
 #guard mentions (lifeLine (wargFerociousResolved.player ⟨0⟩)) "life 22"
 
+#guard mentions (stackBlock paidBilbosDeadlySlice) "Bilbo's Deadly Slice"
+#guard mentions (stackBlock paidBilbosDeadlySlice) "Destroy target creature"
+#guard
+  let g := paidBilbosDeadlySlice
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears*"
+#guard resolvedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "Grizzly Bears is destroyed")
+#guard mentions (zoneBlock resolvedBilbosDeadlySlice (.graveyard ⟨1⟩)) "Grizzly Bears"
+
 #guard mentions (stackBlock paidNightsWhisper) "Night's Whisper"
 #guard mentions (stackBlock paidNightsWhisper) "draw two cards"
 #guard mentions (stackBlock paidNightsWhisper) "lose 2 life"

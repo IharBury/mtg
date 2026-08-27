@@ -180,6 +180,8 @@ where
     let removal := playable.find? (fun o =>
       (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
+      (hasLegalKind .creature &&
+        (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>

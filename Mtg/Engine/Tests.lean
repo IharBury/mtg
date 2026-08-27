@@ -394,6 +394,11 @@ def uncontrolledPermanent : Game :=
 #guard raveningWarg.keywords.deathtouch
 #guard raveningWarg.triggeredAbilities.size == 1
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard bilbosDeadlySlice.isInstant
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -9103,6 +9108,153 @@ def agentNightsWhisperOnly : Game :=
   match Agent.choose g ⟨0⟩ with
   | some (.declareAttackers ids) =>
     ids.contains (namedPermanent g "Ravening Warg").id
+  | _ => false
+
+/- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 701.7b / 608.2b). -/
+
+#guard bilbosDeadlySlice.isInstant
+#guard !bilbosDeadlySlice.hasSorcerySpeed
+#guard bilbosDeadlySlice.hasInstantSpeed
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+
+/-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
+def bilbosDeadlySliceSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+
+#guard bilbosDeadlySliceSetup.canCast ⟨0⟩
+  (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ .destroyCreature).contains
+    (Target.permanent (namedPermanent bilbosDeadlySliceSetup "Grizzly Bears").id)
+
+-- Cannot cast with no creature.
+#guard
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id) with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+-- Own creatures and non-flying creatures are legal; hexproof on an opponent's
+-- creature is not (CR 702.11b).
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
+    (g.legalTargets ⟨0⟩ .destroyCreature).contains
+      (Target.permanent (namedPermanent g "Grizzly Bears").id)
+#guard
+  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  (g.legalTargets ⟨0⟩ .destroyCreature).contains
+    (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
+#guard
+  let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
+  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
+
+def proposedBilbosDeadlySlice : Game :=
+  mustApply bilbosDeadlySliceSetup ⟨0⟩
+    (.cast (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice").id)
+
+#guard proposedBilbosDeadlySlice.pending == .chooseTargets ⟨0⟩
+#guard proposedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "begins casting Bilbo's Deadly Slice")
+#guard proposedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "must choose a target (CR 601.2c)")
+
+-- Cannot target a player or a land.
+#guard
+  match proposedBilbosDeadlySlice.apply ⟨0⟩ (.target (Target.player ⟨1⟩)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+#guard
+  let g := addPermanent bilbosDeadlySliceSetup forest ⟨1⟩ ⟨1⟩
+  let g := mustApply g ⟨0⟩
+    (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id)
+  match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Forest").id)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
+def targetedBilbosDeadlySlice : Game :=
+  mustApply proposedBilbosDeadlySlice ⟨0⟩
+    (.target (Target.permanent (namedPermanent proposedBilbosDeadlySlice
+      "Grizzly Bears").id))
+
+#guard targetedBilbosDeadlySlice.pending == .activateManaAbilities ⟨0⟩
+#guard targetedBilbosDeadlySlice.stack.back!.targets ==
+  #[Target.permanent (namedPermanent targetedBilbosDeadlySlice "Grizzly Bears").id]
+
+#guard
+  match Agent.choose proposedBilbosDeadlySlice ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (proposedBilbosDeadlySlice.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+-- Prefer an opposing creature over your own (CR 601.2c heuristic).
+#guard
+  let g := addPermanent bilbosDeadlySliceSetup grayOgre ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id)
+  match Agent.choose g ⟨0⟩ with
+  | some (.target (Target.permanent tid)) =>
+    (g.object! tid).name == "Grizzly Bears"
+  | _ => false
+
+def paidBilbosDeadlySlice : Game := mustApply targetedBilbosDeadlySlice ⟨0⟩ .pay
+
+#guard paidBilbosDeadlySlice.hasPriority ⟨0⟩
+#guard paidBilbosDeadlySlice.stack.size == 1
+#guard paidBilbosDeadlySlice.log.any (fun s => mentions s "casts Bilbo's Deadly Slice")
+
+def resolvedBilbosDeadlySlice : Game := passBoth paidBilbosDeadlySlice
+
+#guard resolvedBilbosDeadlySlice.stack.isEmpty
+#guard !(resolvedBilbosDeadlySlice.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard resolvedBilbosDeadlySlice.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨1⟩)
+#guard resolvedBilbosDeadlySlice.log.any (fun s =>
+  mentions s "Grizzly Bears is destroyed")
+#guard (resolvedBilbosDeadlySlice.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedBilbosDeadlySlice.object! id).name == "Bilbo's Deadly Slice")
+
+-- If the target leaves before resolution, the spell does nothing (CR 608.2b).
+def bilbosDeadlySliceTargetGone : Game :=
+  let id := (namedPermanent paidBilbosDeadlySlice "Grizzly Bears").id
+  let (g, _) := paidBilbosDeadlySlice.move id (.graveyard ⟨1⟩) none
+  passBoth g
+
+#guard bilbosDeadlySliceTargetGone.log.any (fun s => mentions s "no longer in play")
+#guard !(bilbosDeadlySliceTargetGone.battlefield.any (fun o =>
+  o.name == "Grizzly Bears"))
+
+-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b).
+#guard
+  let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
+  let g := g.applyEffect ⟨0⟩ .destroyCreature
+    #[Target.permanent (namedPermanent g "Indestructible Beast").id]
+  g.battlefield.any (fun o => o.name == "Indestructible Beast") &&
+    g.log.any (fun s => mentions s "is indestructible and isn't destroyed")
+
+/-- The agent casts Bilbo's Deadly Slice when that is the playable spell. -/
+def agentBilbosDeadlySliceOnly : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+
+#guard
+  match Agent.choose agentBilbosDeadlySliceOnly ⟨0⟩ with
+  | some (.cast id) =>
+    (agentBilbosDeadlySliceOnly.object! id).name == "Bilbo's Deadly Slice"
   | _ => false
 
 end Mtg.Engine.Tests
