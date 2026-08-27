@@ -94,6 +94,8 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
   let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
   if s.isEmpty then "" else s!" {s}"
 
+/-- Battlefield line for one permanent: id, name, current type line (CR 205.1a),
+P/T when it is a creature, then keywords, control, and status. -/
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
@@ -106,8 +108,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     else
       let refs := o.status.blocking.toList.map (objectRef g)
       s!" *blocking {String.intercalate ", " refs}*"
-  let types :=
-    if o.status.additionalCreature then s!" {o.typeLine}" else ""
+  let types := s!" {o.typeLine}"
   let pt :=
     if o.isCreature then s!" {g.power o}/{g.toughness o}" else ""
   let ench :=

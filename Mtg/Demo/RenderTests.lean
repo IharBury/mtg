@@ -91,7 +91,8 @@ def mountainLine (g : Game) : String :=
   objectLine g (lastPermanent g)
 
 #guard mountainLine withMountain ==
-  s!"{(lastPermanent withMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
+  s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
+#guard mentions (mountainLine withMountain) "Land"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
 -- Ungrouped lines still name owner and controller. Grouped battlefield
 -- listings omit them when they match the controller heading.
@@ -110,7 +111,7 @@ def mountainLine (g : Game) : String :=
 #guard !mentions (mountainLine afterUntapStep) "(tapped)"
 
 #guard mountainLine stolenMountain ==
-  s!"{(lastPermanent stolenMountain).id} Mountain \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
+  s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 -- Grouped under Nissa: owner differs, so it is printed; controller matches.
 #guard mentions (playerBlock stolenMountain (stolenMountain.player ⟨1⟩))
   "(owned by Chandra)"
@@ -224,7 +225,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let ogre := namedPermanent g "Gray Ogre"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
+    s!"{bears.id} Grizzly Bears {bears.typeLine} {bears.power}/{bears.toughness} (owned by Nissa, controlled by Nissa) *blocking {ogre.id} Gray Ogre*" &&
   mentions (playerBlock g (g.player ⟨1⟩)) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (objectLine g ogre) "*attacking, blocked*"
@@ -391,7 +392,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let aura := namedPermanent g "Gift of Strands"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears 5/5 (owned by Chandra, controlled by Chandra)" &&
+    s!"{bears.id} Grizzly Bears {bears.typeLine} 5/5 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g aura) s!"*enchanting {bears.id} Grizzly Bears*" &&
   mentions (header giftScrying) "scry 2" &&
   mentions (snapshot giftScrying) "Looking at (scry 2, top last):"
@@ -401,7 +402,7 @@ def mountainLine (g : Game) : String :=
   let bears := namedPermanent g "Grizzly Bears"
   let spear := namedPermanent g "Ragged Short Spear"
   objectLine g bears ==
-    s!"{bears.id} Grizzly Bears 4/2 (owned by Chandra, controlled by Chandra)" &&
+    s!"{bears.id} Grizzly Bears {bears.typeLine} 4/2 (owned by Chandra, controlled by Chandra)" &&
   mentions (objectLine g spear) s!"*equipping {bears.id} Grizzly Bears*" &&
   mentions (header spearMayDiscard) "may discard a card, then draw 2"
 
@@ -491,6 +492,40 @@ def mountainLine (g : Game) : String :=
   zoneBlock g .battlefield ==
     s!"zone battlefield (3):\n  Chandra:\n    {hostLine}\n    {baubleLine}\n    {landLine}" &&
   mentions (playerBlock g (g.player ⟨0⟩)) s!"  {hostLine}\n  {baubleLine}\n  {landLine}"
+
+-- Each battlefield permanent prints its current types (CR 205.1a).
+#guard
+  let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g beornsHospitality ⟨0⟩ ⟨0⟩
+  let land := namedPermanent g "Mountain"
+  let bauble := namedPermanent g "Wayfarer's Bauble"
+  let bears := namedPermanent g "Grizzly Bears"
+  let hosp := namedPermanent g "Beorn's Hospitality"
+  land.typeLine == "Basic Land — Mountain" &&
+    bauble.typeLine == "Artifact" &&
+    bears.typeLine == "Creature — Bear" &&
+    hosp.typeLine == "Enchantment" &&
+    mentions (objectLine g land) land.typeLine &&
+    mentions (objectLine g bauble) bauble.typeLine &&
+    mentions (objectLine g bears) bears.typeLine &&
+    mentions (objectLine g hosp) hosp.typeLine &&
+    mentions (zoneBlock g .battlefield) "Creature — Bear" &&
+    mentions (zoneBlock g .battlefield) "Artifact" &&
+    mentions (zoneBlock g .battlefield) "Enchantment" &&
+    mentions (zoneBlock g .battlefield) "Basic Land — Mountain" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Creature — Bear"
+
+#guard
+  let g := giftEntered
+  let aura := namedPermanent g "Gift of Strands"
+  mentions (objectLine g aura) "Enchantment — Aura"
+
+#guard
+  let g := spearEquipped
+  let spear := namedPermanent g "Ragged Short Spear"
+  mentions (objectLine g spear) "Artifact — Equipment"
 
 -- An Aura stays with its creature host; unattached Equipment sits with other
 -- non-lands, even if it entered before the creature.
