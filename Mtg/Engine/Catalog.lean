@@ -135,8 +135,9 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (sacrificeAnotherCreatureOrArtifact : Bool := false)
     (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
     (onceEachTurn : Bool := false)
-    (otherModes : Array AbilityEffect := #[]) : ActivatedAbility := {
-  cost := { mana, tap, sacrificeSource, sacrificeAnotherCreatureOrArtifact }
+    (otherModes : Array AbilityEffect := #[]) (payLife : Nat := 0) :
+    ActivatedAbility := {
+  cost := { mana, tap, sacrificeSource, sacrificeAnotherCreatureOrArtifact, payLife }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
 }
 
@@ -221,6 +222,8 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
+#guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
+#guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
   (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant

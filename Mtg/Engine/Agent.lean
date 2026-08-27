@@ -121,6 +121,8 @@ where
           g.availableManaExcept p (if ab.cost.tap then some o.id else none)
         g.canActivate p o ab &&
         available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
+        -- Don't pay life that would reduce the player to 0 or less.
+        (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
         -- Don't spend mana re-equipping a creature that is already equipped.
         !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
         -- Spend {4}{T} on Rogue's Passage only after attackers are declared.

@@ -15,7 +15,8 @@ including additional land plays this turn (CR 305.2b),
 casting the spells we model (CR 601), including choosing modes of modal spells
 and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), additional costs such as sacrificing
-an artifact or creature (CR 601.2f / 601.2h), and activating mana abilities while
+an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
+and activating mana abilities while
 paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
@@ -46,9 +47,10 @@ sorcery (CR 601.2i / 603.3), attack-with-Elves scry triggers and scry pumps
 for each card looked at (CR 508.2 / 701.20 / 603),
 vigilance (CR 702.20), `{T}: Add` mana equal to power of any color with an
 Elf-only spending restriction (CR 106.10 / 605),
-activated pumps that last until end of turn, activated abilities that
+activated pumps that last until end of turn (including paying life),
+activated abilities that
 put +1/+1 counters on the source, and making a target creature unblockable
-until end of turn (CR 602 / 611.2a / 122 / 509.1b),
+until end of turn (CR 602 / 611.2a / 122 / 509.1b / 118.3b),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
@@ -368,6 +370,8 @@ structure ProposedSpell where
   /-- After mana is paid, the player must sacrifice an artifact or creature
   (another, when this is an activated ability). -/
   needsSacrificeOther : Bool := false
+  /-- Life paid as part of the activation cost (CR 118.3b / 119.4). -/
+  payLife : Nat := 0
   /-- Modes of a modal activated ability, announced at CR 601.2b. -/
   abilityModes : Array AbilityEffect := #[]
 deriving Repr, Inhabited
@@ -1917,9 +1921,24 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       src.isOnBattlefield && src.controlledBy prop.caster &&
       (!prop.tapSource || !src.status.tapped)
 
-/-- Pay `{T}` and/or sacrifice the source as part of an activation cost (CR 601.2h). -/
+/-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
+def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
+  n == 0 || (g.player p).life ≥ (n : Int)
+
+/-- Pay `n` life as a cost (CR 118.3b / 119.4). Payment of life is not damage. -/
+def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
+  if n == 0 then
+    return g
+  let pl := g.player p
+  if pl.life < (n : Int) then
+    throw s!"{pl.name} cannot pay {n} life"
+  let g := g.setPlayer { pl with life := pl.life - (n : Int) }
+  return g.logMsg s!"{pl.name} pays {n} life ({(g.player p).life} life)"
+
+/-- Pay `{T}`, life, and/or sacrifice the source as part of an activation cost
+(CR 601.2h / 118.3b). -/
 def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
-    (tapSource sacrificeSource : Bool) : Except String Game := do
+    (tapSource sacrificeSource : Bool) (payLife : Nat := 0) : Except String Game := do
   let some src := g.findObject? sourceId | throw "The source is no longer in play"
   if !src.isOnBattlefield then
     throw "The source is no longer on the battlefield"
@@ -1931,6 +1950,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     if src.status.tapped then
       throw s!"{src.name} is already tapped"
     g := g.setObject { src with status := { src.status with tapped := true } }
+  g := (← g.payLifeCost p payLife)
   if sacrificeSource then
     let src := g.object! sourceId
     g := g.logMsg s!"{(g.player p).name} sacrifices {src.name}"
@@ -1943,7 +1963,9 @@ need an artifact or creature sacrificed wait for the `sacrifice` action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   let allowElf := g.proposedAllowsElfRestricted prop
-  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf || !g.sourceStillPayable prop then
+  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf ||
+      !g.sourceStillPayable prop ||
+      !g.canPayLife prop.caster prop.payLife then
     return g.reverseProposedSpell
   if prop.needsSacrificeOther then
     let excludeId := prop.sourceId.getD prop.spellId
@@ -1954,6 +1976,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
       g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
+        prop.payLife
     | _, _ => pure g
   match prop.kind, prop.needsSacrificeOther, prop.sourceId with
   | .spell, true, _ =>
@@ -2164,6 +2187,7 @@ def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbilit
   (if ab.cost.sacrificeAnotherCreatureOrArtifact then
     !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty
    else true) &&
+  g.canPayLife p ab.cost.payLife &&
   (ab.allModes.any (g.modeIsChoosable p))
 
 def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
@@ -2192,6 +2216,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
+  if !g.canPayLife p ab.cost.payLife then
+    throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if !ab.allModes.any (g.modeIsChoosable p) then
     throw s!"{o.name}'s ability requires a target"
   let pl := g.player p
@@ -2204,6 +2230,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if !ab.isModal && !ab.effect.requiresTarget &&
       !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
+      ab.cost.payLife
     return g.becomeActivated p o.name (some id)
   let prop : ProposedSpell := {
     caster := p
@@ -2218,6 +2245,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     tapSource := ab.cost.tap
     sacrificeSource := ab.cost.sacrificeSource
     needsSacrificeOther := ab.cost.sacrificeAnotherCreatureOrArtifact
+    payLife := ab.cost.payLife
     abilityModes := ab.allModes
   }
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"

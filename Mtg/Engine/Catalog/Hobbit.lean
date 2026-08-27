@@ -10,7 +10,7 @@ The Hobbit Welcome Decks. The engine models a subset of rules text
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
-Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Passage, and Equip, static abilities that grant trample, pump other creatures of listed types, pump an enchanted
+Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Passage, Equip, and paying life for an until-end-of-turn pump (Desolation Prowler), static abilities that grant trample, pump other creatures of listed types, pump an enchanted
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, scry, deal damage
@@ -229,6 +229,8 @@ def hauntOfTheDeadMarshes : CardDef :=
 def desolationProwler : CardDef :=
   creature "Desolation Prowler" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
     (oracleText := "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.")
+    (activatedAbilities := #[
+      activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)])
 
 def raveningWarg : CardDef :=
   creature "Ravening Warg" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
@@ -683,6 +685,13 @@ def attercop : CardDef :=
 #guard guardianOfTheHalls.toughness == some 2
 #guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
 #guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
+#guard desolationProwler.activatedAbilities.size == 1
+#guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard desolationProwler.power == some 2
+#guard desolationProwler.toughness == some 2
+#guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
