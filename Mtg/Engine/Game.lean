@@ -576,6 +576,35 @@ def putStackEntry (g : Game) (controller : PlayerId) (objectId : ObjectId) : Gam
     stack := g.stack.push { objectId, controller, targets := #[] }
     consecutivePasses := 0 }
 
+/-- Allocate a stack object representing an activated or triggered ability of
+`source` (CR 602.2a / 603.3). -/
+def allocStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
+    (abilityEffect : Option AbilityEffect := none)
+    (triggeredAbility : Option TriggeredAbility := none)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game × GameObject :=
+  g.allocObject
+    { name := s!"{source.name}'s ability", types := #[],
+      oracleText := source.printed.oracleText }
+    source.owner .stack (some controller)
+    (abilityEffect := abilityEffect) (triggeredAbility := triggeredAbility)
+    (sourceId := some source.id)
+    (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
+
+/-- Allocate a stack ability of `source` and push it onto the stack. -/
+def putStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
+    (abilityEffect : Option AbilityEffect := none)
+    (triggeredAbility : Option TriggeredAbility := none)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game × GameObject :=
+  let (g, obj) := g.allocStackAbility source controller abilityEffect triggeredAbility
+    lastKnownPower lastKnownToughness
+  (g.putStackEntry controller obj.id, obj)
+
+/-- An ability object ceases to exist after it resolves (CR 608.2m). -/
+def ceaseToExist (g : Game) (id : ObjectId) : Game :=
+  { g with objects := g.objects.filter (fun o => o.id != id) }
+
 /-- Remove an id from a zone list. -/
 def stripId (ids : Array ObjectId) (id : ObjectId) : Array ObjectId :=
   ids.filter (fun x => x != id)
@@ -1134,12 +1163,9 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
 def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : String) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game :=
-  let (g, abilityObj) := g.allocObject
-    { name := s!"{source.name}'s ability", types := #[], oracleText := source.printed.oracleText }
-    source.owner .stack (some controller)
-    (triggeredAbility := some ab) (sourceId := some source.id)
+  let (g, _) := g.putStackAbility source controller
+    (triggeredAbility := some ab)
     (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-  let g := g.putStackEntry controller abilityObj.id
   g.logMsg s!"{source.name}'s {event} is put on the stack"
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
@@ -1600,9 +1626,9 @@ def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) :
   let findKind (pred : AbilityEffect → Bool) : Option Nat :=
     (choosable.find? (fun (_, e) => pred e)).map (·.1)
   let damageIdx :=
-    findKind (fun e => e.targetKind == .creature)
+    findKind (fun e => e.castKind == .creatureDamage)
   let destroyIdx :=
-    findKind (fun e => e.targetKind == .colorlessNonland)
+    findKind (fun e => e.castKind == .destroyColorless)
   let oppHasCreature :=
     (g.permanentsOf (g.opponent p)).any (·.isCreature)
   let hasColorless := g.battlefield.any (·.isColorlessNonland)
@@ -2087,12 +2113,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
-  let (g, abilityObj) := g.allocObject
-    { name := s!"{o.name}'s ability", types := #[], oracleText := o.printed.oracleText }
-    o.owner .stack (some p)
+  let (g, abilityObj) := g.putStackAbility o p
     (abilityEffect := if ab.isModal then none else some ab.effect)
-    (sourceId := some id)
-  let g := g.putStackEntry p abilityObj.id
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
@@ -2340,26 +2362,11 @@ def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : Triggered
 
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
-  match effect with
-  | .dealDamage n =>
+  match effect.resolution with
+  | .damageAny n =>
     g.withLegalKindTarget controller effect.targetKind targets fun g t =>
       g.dealDamageToTarget t n
-  | .dealDamageToCreature n =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.dealDamageToPermanent o n
-  | .pump pw tw =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.pumpPermanent o pw tw
-  | .destroyCreatureWithFlying =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.destroyPermanent o
-  | .plusOnePlusOneTrampleHexproof =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.grantPlusOnePlusOneTrampleHexproof o
-  | .dealDamageLoseIndestructibleExile n =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.dealDamageLoseIndestructibleExileTo o n
-  | .creatureYouControlDealsPowerToOppCreature =>
+  | .fight =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
       let srcOk := (g.legalCreatureYouControlTargets controller).contains
@@ -2374,15 +2381,23 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
         logIllegal (logIllegal g srcOk srcId) destOk destId
     | _, _ => g.logMsg "The target is no longer legal"
-  | .playAdditionalLandThisTurn =>
+  | .extraLand =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
-  | .destroyArtifactOrLandNonflyersCantBlock =>
+  | .onPermanent action =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      let g := g.destroyPermanent o
-      let g := { g with creaturesWithoutFlyingCantBlock := true }
-      g.logMsg "Creatures without flying can't block this turn"
+      match action with
+      | .pump pw tw => g.pumpPermanent o pw tw
+      | .destroy => g.destroyPermanent o
+      | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
+      | .dealDamage n => g.dealDamageToPermanent o n
+      | .dealDamageLoseIndestructibleExile n =>
+        g.dealDamageLoseIndestructibleExileTo o n
+      | .destroyThenNonflyersCantBlock =>
+        let g := g.destroyPermanent o
+        let g := { g with creaturesWithoutFlyingCantBlock := true }
+        g.logMsg "Creatures without flying can't block this turn"
 
 /-- Apply `f` if `sourceId` is still on the battlefield. -/
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
@@ -2405,16 +2420,16 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
-  match effect with
-  | .searchBasicLandTapped => g.resolveSearchBasicLandTapped controller
-  | .exileTopPlayUntilEndOfNextTurn => g.resolveExileTopPlayUntilEndOfNextTurn controller
-  | .dealDamageToTargetCreature n =>
+  match effect.resolution with
+  | .searchBasicLand => g.resolveSearchBasicLandTapped controller
+  | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
+  | .damageToTarget n =>
     g.withLegalKindTarget controller effect.targetKind targets fun g t =>
       g.dealDamageToTarget t n
-  | .destroyTargetColorlessNonland =>
+  | .destroyColorless =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
       g.destroyPermanent o
-  | .attachToTargetCreatureYouControl =>
+  | .attach =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src =>
         if src.attachedTo == some host.id then
@@ -2425,30 +2440,28 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
           g.logMsg s!"{src.name} attaches to {host.name}")
         "The Equipment is no longer in play"
-  | .becomeBearCreatureWithLandsPT =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let subtypes :=
-        if o.hasSubtype "Bear" then o.status.additionalSubtypes
-        else o.status.additionalSubtypes.push "Bear"
-      let granted :=
-        if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
-        else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
-      let g := g.mapObjectStatus o (fun s =>
-        { s with
-          additionalCreature := true
-          additionalSubtypes := subtypes
-          grantedStaticAbilities := granted })
-      g.logMsg
-        s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
-  | .sourceGets pw tw =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.pumpPermanent o pw tw
-  | .putPlusOnePlusOneOnSource n =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.addPlusOnePlusOneTo o n
-  | .targetCantBeBlockedThisTurn =>
+  | .cantBeBlocked =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
       g.grantCantBeBlockedThisTurn o
+  | .onSource action =>
+    g.withSourceOnBattlefield sourceId fun g o =>
+      match action with
+      | .becomeBear =>
+        let subtypes :=
+          if o.hasSubtype "Bear" then o.status.additionalSubtypes
+          else o.status.additionalSubtypes.push "Bear"
+        let granted :=
+          if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
+          else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
+        let g := g.mapObjectStatus o (fun s =>
+          { s with
+            additionalCreature := true
+            additionalSubtypes := subtypes
+            grantedStaticAbilities := granted })
+        g.logMsg
+          s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
+      | .pump pw tw => g.pumpPermanent o pw tw
+      | .plusOne n => g.addPlusOnePlusOneTo o n
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -2506,11 +2519,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
     (sourceName : String := "This creature") : Game :=
-  match ab with
-  | .onAttackPumpByGreatestPower =>
+  match ab.resolution with
+  | .pumpGreatestPower =>
     g.withTriggerSource sourceId fun g o =>
       g.pumpPermanent o (g.greatestPowerAmongCreatures controller) 0
-  | .onAttackSetOtherBasePT =>
+  | .setOtherBasePT =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) :=
         match sourceId.bind g.findObject? with
@@ -2525,10 +2538,10 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | .onAttackOtherGets2AndTrample =>
+  | .pumpAndTrample pw tw =>
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.pumpAndGrantTrample o 2 0
-  | .onBecomesBlockedDeal1ToBlockers =>
+      g.pumpAndGrantTrample o pw tw
+  | .damageBlockers n =>
     g.withTriggerSource sourceId fun g o =>
       let blockers := g.blockersOf o.id
       if blockers.isEmpty then
@@ -2537,20 +2550,20 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         Id.run do
           let mut g := g
           for b in blockers do
-            g := g.dealDamageFrom o.name (g.object! b.id) 1
+            g := g.dealDamageFrom o.name (g.object! b.id) n
           return g
-  | .onEnterScry n | .onAttackScry n | .onAttackWithElvesScry n =>
+  | .scry n =>
     g.beginScry controller n
-  | .onEnterDraw n =>
+  | .draw n =>
     g.draw controller n
-  | .onEnterSearchForest =>
+  | .searchForest =>
     g.resolveSearchForest controller
-  | .onEnterMayDiscardDraw n =>
+  | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
-  | .onLandYouControlEntersPlusOnePlusOne =>
+  | .plusOnePlusOneOnTarget =>
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.addPlusOnePlusOneTo o 1
-  | .onEnterDealDividedDamage _ _ | .onEnterOrAttackDealDividedDamage _ _ =>
+  | .dividedDamage =>
     Id.run do
       let mut g := g
       for i in [0:targets.size] do
@@ -2559,11 +2572,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         if n > 0 then
           g := g.applyEffect controller (.dealDamage n) #[t]
       return g
-  | .onDiesDealDamageEqualToPowerToOppCreature =>
+  | .damageFromLastKnownPower =>
     let n := (lastKnownPower.getD 0).toNat
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
       g.dealDamageFrom sourceName o n
-  | .onEnterOrAttackReturnElfGainLife =>
+  | .returnElfGainLife =>
     g.withLegalTriggerTarget controller ab sourceId targets fun g t =>
       match t with
       | Target.card oid =>
@@ -2576,20 +2589,20 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
           g.gainLife controller n
       | _ => g.logMsg "The target is no longer legal"
-  | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
+  | .damageEachOpponent n =>
     Id.run do
       let mut g := g
       for pl in g.livingPlayers do
         if pl.id != controller then
           g := g.dealDamageToPlayer pl.id n
       return g
-  | .onScryPumpSelfForEachLookedAt =>
+  | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
     g.withTriggerSource sourceId fun g o =>
       g.pumpPermanent o (n : Int) (n : Int)
-  | .onAnotherElfYouControlEntersGets1 | .onLandYouControlEntersGets1 =>
+  | .pumpSource pw tw =>
     g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o 1 1
+      g.pumpPermanent o pw tw
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -2673,12 +2686,12 @@ def resolveTop (g : Game) : Game :=
       if let some e := obj.abilityEffect then
         let g := g.applyAbilityEffect entry.controller e entry.targets obj.sourceId
         -- CR 608.2m: after resolution the ability ceases to exist.
-        { g with objects := g.objects.filter (fun o => o.id != obj.id) }
+        g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then
         let srcName := obj.printed.name.replace "'s ability" ""
         let g := g.applyTriggeredAbility entry.controller t obj.sourceId
           entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
-        { g with objects := g.objects.filter (fun o => o.id != obj.id) }
+        g.ceaseToExist obj.id
       else
         let g :=
           match spellEffectOf obj entry.chosenMode with

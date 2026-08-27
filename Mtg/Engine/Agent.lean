@@ -142,16 +142,16 @@ where
         | none => false)
     let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
     let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
+    let effectKind (e? : Option SpellEffect) (k : SpellCastKind) : Bool :=
+      e?.any (fun e => e.castKind == k)
     let spellKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      match o.printed.spellEffect with
-      | some e => e.castKind == k
-      | none => false
+      effectKind o.printed.spellEffect k
     let adventureKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      match o.printed.adventure.bind (·.spellEffect) with
-      | some e => e.castKind == k
-      | none => false
+      effectKind (o.printed.adventure.bind (·.spellEffect)) k
     let modeKind (o : GameObject) (k : SpellCastKind) : Bool :=
       o.printed.spellModes.any (fun e => e.castKind == k)
+    let hasLegalKind (k : EffectTargetKind) : Bool :=
+      !(g.legalTargetsForKind p k).isEmpty
     let adventureRemoval :=
       if oppHasCreature then
         adventurePlayable.find? (fun o =>
@@ -164,10 +164,9 @@ where
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
     let removal := playable.find? (fun o =>
-      (!(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
+      (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
-      (!(g.legalTargets p .destroyArtifactOrLandNonflyersCantBlock).isEmpty &&
-        spellKind o .destroyArtifactOrLand))
+      (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.isArtifact &&
@@ -177,7 +176,7 @@ where
         playable.find? (fun o =>
           spellKind o .pump ||
             o.printed.spellModes.any (fun e =>
-              e.castKind == .pump && !(g.legalTargets p e).isEmpty))
+              e.castKind == .pump && !(g.legalTargetsForKind p e.targetKind).isEmpty))
       else none
     let aura :=
       if ownCreature.isSome then
