@@ -48,20 +48,26 @@ lake exe mtg-demo -- --multiplayer
 lake exe mtg-demo -- --multiplayer --visible
 lake exe mtg-demo -- --multiplayer --input opening.txt
 lake exe mtg-demo -- --multiplayer --output session.txt
+lake exe mtg-demo -- --decides Nissa
+lake exe mtg-demo -- --interactive --decides Chandra
 lake exe mtg-demo -- --seed 42 --fuel 200
 ```
 
 `--interactive` is the first named player against heuristic opponents.
 `--multiplayer` lets you issue every player's actions from the console; the
 prompt names who must act.
-In either interactive mode, `first <name>` chooses who takes the first turn
-(CR 103.1) before libraries are shuffled and opening hands are drawn. Auto
-mode always has the first listed player start.
+`--decides NAME` names the player who chooses who takes the first turn
+(CR 103.1). By default the demo picks one at random using `--seed`.
+In `--interactive`, the first named player is prompted for `first <name>` when
+they are deciding; a heuristic opponent otherwise chooses to go first.
+In `--multiplayer`, the deciding player is prompted. In `--auto`, the deciding
+player (heuristic) chooses to go first.
 `--input FILE` (one command per line) runs those commands first in either
 interactive mode, then further commands come from the console. `--output FILE`
 writes every command from the input file and from the console (one per line),
 so a session can be replayed with `--input`. Put `first <name>` at the top of
-an input file.
+an input file when the first named player is the one deciding; pass
+`--decides NAME` so a replay asks the same player.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
