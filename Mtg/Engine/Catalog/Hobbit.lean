@@ -6,7 +6,7 @@ import Mtg.Engine.Catalog
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash, hexproof, vigilance, and deathtouch, simple `{T}: Add` mana abilities, `{T}: Add`
+(keywords including flash, hexproof, vigilance, deathtouch, and menace, simple `{T}: Add` mana abilities, `{T}: Add`
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
@@ -243,6 +243,7 @@ def gollumSilentSlinker : CardDef :=
   creature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
     (supertypes := #[.legendary])
+    (keywords := Keyword.menace)
 
 def bilbosDeadlySlice : CardDef :=
   instant "Bilbo's Deadly Slice" (ManaCost.ofGenericAndColors 1 [.black, .black])
@@ -702,6 +703,12 @@ def attercop : CardDef :=
 #guard (raveningWarg.summary.splitOn "Ferocious").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinker.supertypes.any (· == .legendary)
+#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
+#guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature

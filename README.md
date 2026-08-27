@@ -109,7 +109,8 @@ The first slice of the engine models the two-player game:
   such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
   life at 118.3b / 119.4, and mana
   abilities at 601.2g)
-- combat declaration and combat damage assignment (CR 510.1c–d)
+- combat declaration and combat damage assignment (CR 510.1c–d), including
+  menace (can't be blocked except by two or more creatures)
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
@@ -137,7 +138,7 @@ The first slice of the engine models the two-player game:
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
+  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, menace, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a

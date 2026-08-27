@@ -24,11 +24,12 @@ trample, pump other creatures of listed types, pump an enchanted or equipped
 creature, set power and toughness
 equal to lands you control in all zones (CR 604.3 / 208.2a), or restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), until-end-of-turn
-effects that prevent creatures without flying from blocking, and can't-be-blocked
-(CR 509.1b / 611.2a), until-end-of-turn
+effects that prevent creatures without flying from blocking, can't-be-blocked
+(CR 509.1b / 611.2a), and menace (CR 702.111 / 509.1c), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
-indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), scry (CR 701.20),
+indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), menace (CR 702.111),
+scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), including a target artifact or land, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants and losses, replacement effects that exile a creature instead of
 dying this turn (CR 614.1 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
@@ -897,6 +898,19 @@ def hasFlying (_g : Game) (o : GameObject) : Bool :=
 def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
   o.printedOrUntilEot.cantBeBlocked
 
+/-- Whether `o` has menace, printed or granted (CR 702.111). Pairwise
+`canBlock` stays true; the two-or-more restriction is checked on the
+declaration as a whole (CR 509.1c). -/
+def hasMenace (_g : Game) (o : GameObject) : Bool :=
+  o.printedOrUntilEot.menace
+
+/-- True when `n` blockers is a legal number for `attacker` (CR 702.111b).
+Zero is always legal (the attacker is unblocked). -/
+def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
+  n == 0 || !g.hasMenace attacker || n >= 2
+
+/-- Whether `blocker` may be assigned to `attacker` as one creature in a
+declaration (CR 509.1b). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
   blocker.isOnBattlefield && blocker.isCreature &&
@@ -2904,6 +2918,9 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     let aNow := g.object! attackerId
     g := g.setObject { aNow with status := { aNow.status with blocked := true } }
     g := g.logMsg s!"{b.name} blocks {a.name}"
+  for a in g.battlefield do
+    if a.status.attacking && !g.legalBlockerCount a (g.blockersOf a.id).size then
+      throw s!"{a.name} can't be blocked except by two or more creatures"
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   g := g.putBlockedTriggersOnStack assignments

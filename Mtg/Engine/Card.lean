@@ -20,6 +20,8 @@ structure Keywords where
   flying : Bool := false
   /-- This creature can't be blocked (printed or granted until end of turn). -/
   cantBeBlocked : Bool := false
+  /-- This creature can't be blocked except by two or more creatures (CR 702.111). -/
+  menace : Bool := false
   hexproof : Bool := false
   indestructible : Bool := false
   reach : Bool := false
@@ -46,6 +48,7 @@ def fields : List Field := [
   ⟨(·.vigilance), fun k b => { k with vigilance := b }, "vigilance"⟩,
   ⟨(·.flying), fun k b => { k with flying := b }, "flying"⟩,
   ⟨(·.cantBeBlocked), fun k b => { k with cantBeBlocked := b }, "can't be blocked"⟩,
+  ⟨(·.menace), fun k b => { k with menace := b }, "menace"⟩,
   ⟨(·.hexproof), fun k b => { k with hexproof := b }, "hexproof"⟩,
   ⟨(·.indestructible), fun k b => { k with indestructible := b }, "indestructible"⟩,
   ⟨(·.reach), fun k b => { k with reach := b }, "reach"⟩,
@@ -80,6 +83,7 @@ def haste : Keywords := { Keywords.none with haste := true }
 def vigilance : Keywords := { Keywords.none with vigilance := true }
 def flying : Keywords := { Keywords.none with flying := true }
 def cantBeBlocked : Keywords := { Keywords.none with cantBeBlocked := true }
+def menace : Keywords := { Keywords.none with menace := true }
 def hexproof : Keywords := { Keywords.none with hexproof := true }
 def indestructible : Keywords := { Keywords.none with indestructible := true }
 def reach : Keywords := { Keywords.none with reach := true }
@@ -1319,10 +1323,16 @@ def manaAbilities (c : CardDef) : Array ManaType :=
 def lowerAscii (s : String) : String :=
   s.map Char.toLower
 
+/-- Drop a trailing Oracle reminder parenthetical, e.g. `Menace (This creature...)`. -/
+def stripReminderParenthetical (s : String) : String :=
+  match s.splitOn "(" with
+  | [] => s
+  | head :: _ => head.trimAscii.copy
+
 /-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`. -/
 def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
   let kw := k.toList
-  let cleaned := (line.replace "." "").trimAscii.copy
+  let cleaned := stripReminderParenthetical ((line.replace "." "").trimAscii.copy)
   if cleaned.isEmpty then true
   else
     let parts := cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
@@ -1561,6 +1571,11 @@ instance : ToString CardDef where
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
+#guard toString Keyword.menace == "menace"
+#guard CardDef.isKeywordRestatement Keyword.menace "Menace"
+#guard CardDef.isKeywordRestatement Keyword.menace
+  "Menace (This creature can't be blocked except by two or more creatures.)"
+#guard !CardDef.isKeywordRestatement Keyword.menace "Flying"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }

@@ -386,6 +386,11 @@ def uncontrolledPermanent : Game :=
 #guard raveningWarg.keywords.deathtouch
 #guard raveningWarg.triggeredAbilities.size == 1
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard mentions gollumSilentSlinker.summary "menace"
+#guard !mentions gollumSilentSlinker.summary "can't be blocked except"
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -623,6 +628,14 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "you gain 2 life"
 
 #guard
+  let c := creature "Silent Slinker" ManaCost.empty #[] 4 3
+    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
+    (keywords := Keyword.menace)
+  mentions c.summary "menace" &&
+    !mentions c.summary "can't be blocked except" &&
+    CardDef.isKeywordRestatement c.keywords c.oracleText
+
+#guard
   let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4
     (keywords := Keyword.trample)
     (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
@@ -635,6 +648,7 @@ def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
 def withWarg : Game := addPermanent started raveningWarg ⟨0⟩ ⟨0⟩
+def withGollum : Game := addPermanent started gollumSilentSlinker ⟨0⟩ ⟨0⟩
 def withCrusher : Game := addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩
 
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
@@ -8653,6 +8667,123 @@ def resolvedQuarrelWarg : Game :=
   | some (.declareAttackers ids) =>
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
+
+/- Gollum, Silent Slinker: menace (CR 702.111 / 509.1c). -/
+
+#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinker.power == some 4
+#guard gollumSilentSlinker.toughness == some 3
+#guard withGollum.hasMenace (namedPermanent withGollum "Gollum, Silent Slinker")
+#guard (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker")).menace
+#guard withGollum.legalBlockerCount
+  (namedPermanent withGollum "Gollum, Silent Slinker") 0
+#guard !withGollum.legalBlockerCount
+  (namedPermanent withGollum "Gollum, Silent Slinker") 1
+#guard withGollum.legalBlockerCount
+  (namedPermanent withGollum "Gollum, Silent Slinker") 2
+#guard withGollum.legalBlockerCount
+  (namedPermanent withGollum "Gollum, Silent Slinker") 3
+
+/-- Chandra's Gollum attacks; Nissa has one Grizzly Bears. Pairwise blocking
+is legal, but a one-blocker declaration is not. -/
+def gollumVsOneBear : Game :=
+  addPermanent (addPermanent started gollumSilentSlinker ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def gollumVsOneBearReadyToBlock : Game :=
+  let g := passBoth (skipTo gollumVsOneBear .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gollum, Silent Slinker").id])
+  passBoth g
+
+#guard gollumVsOneBearReadyToBlock.pending == .declareBlockers
+#guard
+  let g := gollumVsOneBearReadyToBlock
+  g.canBlock (namedPermanent g "Grizzly Bears")
+    (namedPermanent g "Gollum, Silent Slinker")
+#guard
+  match gollumVsOneBearReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent gollumVsOneBearReadyToBlock "Grizzly Bears").id,
+    (namedPermanent gollumVsOneBearReadyToBlock "Gollum, Silent Slinker").id)]) with
+  | .error msg => mentions msg "can't be blocked except by two or more creatures"
+  | .ok _ => false
+
+def gollumUnblockedDamage : Game :=
+  passBoth (mustApply gollumVsOneBearReadyToBlock ⟨1⟩ (.declareBlockers #[]))
+
+#guard (gollumUnblockedDamage.player ⟨1⟩).life == 16
+#guard gollumUnblockedDamage.log.any (fun s =>
+  mentions s "Gollum, Silent Slinker deals 4 combat damage to Nissa")
+#guard !gollumUnblockedDamage.log.any (fun s =>
+  mentions s "Grizzly Bears blocks Gollum, Silent Slinker")
+
+/-- Two Bears can block Gollum. -/
+def gollumVsTwoBears : Game :=
+  addPermanent gollumVsOneBear grizzlyBears ⟨1⟩ ⟨1⟩
+
+def gollumVsTwoBearsReadyToBlock : Game :=
+  let g := passBoth (skipTo gollumVsTwoBears .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gollum, Silent Slinker").id])
+  passBoth g
+
+#guard
+  let g := gollumVsTwoBearsReadyToBlock
+  let bears := g.battlefield.filter (fun o => o.name == "Grizzly Bears")
+  g.canBlock bears[0]! (namedPermanent g "Gollum, Silent Slinker") &&
+    g.canBlock bears[1]! (namedPermanent g "Gollum, Silent Slinker")
+
+def twoBearsBlockGollum : Game :=
+  let g := gollumVsTwoBearsReadyToBlock
+  let gollum := namedPermanent g "Gollum, Silent Slinker"
+  let bears := g.battlefield.filter (fun o => o.name == "Grizzly Bears")
+  mustApply g ⟨1⟩ (.declareBlockers #[(bears[0]!.id, gollum.id), (bears[1]!.id, gollum.id)])
+
+#guard (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker").status.blocked
+#guard (twoBearsBlockGollum.battlefield.filter (fun o =>
+  o.name == "Grizzly Bears" && o.status.blocking ==
+    #[(namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker").id])).size == 2
+#guard twoBearsBlockGollum.log.any (fun s =>
+  mentions s "Grizzly Bears blocks Gollum, Silent Slinker")
+#guard twoBearsBlockGollum.legalBlockerCount
+  (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker")
+  (twoBearsBlockGollum.blockersOf
+    (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker").id).size
+
+/-- Combat damage goes to the blockers, not the defending player. -/
+def afterGollumBlockedDamage : Game :=
+  let g := passBoth twoBearsBlockGollum
+  mustApply g ⟨0⟩ (.assignCombatDamage #[])
+
+#guard (afterGollumBlockedDamage.player ⟨1⟩).life == 20
+#guard afterGollumBlockedDamage.log.any (fun s =>
+  mentions s "Gollum, Silent Slinker deals 4 combat damage to Grizzly Bears")
+#guard !afterGollumBlockedDamage.log.any (fun s =>
+  mentions s "deals 4 combat damage to Nissa")
+
+/-- Gollum and Gray Ogre attack; one Bear blocks the Ogre rather than
+illegally solo-blocking Gollum. -/
+def gollumAndOgreVsOneBear : Game :=
+  addPermanent gollumVsOneBear grayOgre ⟨0⟩ ⟨0⟩
+
+def gollumAndOgreVsOneBearReadyToBlock : Game :=
+  let g := passBoth (skipTo gollumAndOgreVsOneBear .beginningOfCombat 80)
+  let gollum := namedPermanent g "Gollum, Silent Slinker"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[gollum.id, ogre.id])
+  passBoth g
+
+/-- Until-end-of-turn menace uses the same declaration restriction. -/
+def ogreGrantedMenaceReadyToBlock : Game :=
+  let g := readyToDeclareBlockers
+  let ogre := namedPermanent g "Gray Ogre"
+  g.setObject { ogre with status := ogre.status.grantUntilEot Keyword.menace }
+
+#guard ogreGrantedMenaceReadyToBlock.hasMenace
+  (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre")
+#guard
+  match ogreGrantedMenaceReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent ogreGrantedMenaceReadyToBlock "Grizzly Bears").id,
+    (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre").id)]) with
+  | .error msg => mentions msg "can't be blocked except by two or more creatures"
+  | .ok _ => false
 
 end Mtg.Engine.Tests
 

@@ -660,18 +660,30 @@ def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .error msg => msg == "usage: attack [id ...]"
   | .ok _ => false
 
-/-- Pair each unused legal blocker with the first still-unblocked attacker
-it can block. A bare `block` covers as many attacks as possible. -/
+/-- Pair unused legal blockers with attackers. A creature with menace is
+covered only when two blockers can be assigned (CR 702.111b); leftover
+blockers then cover attackers that do not have menace. A bare `block`
+covers as many attacks as possible. -/
 def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
   Id.run do
     let attackers := g.battlefield.filter (·.status.attacking)
     let defender := g.opponent g.activePlayer
-    let candidates := g.battlefield.filter (fun b =>
+    let mut unused := g.battlefield.filter (fun b =>
       b.isCreature && b.controlledBy defender && !b.status.tapped)
     let mut blocked : Array ObjectId := #[]
     let mut asgn : Array (ObjectId × ObjectId) := #[]
-    for b in candidates do
-      match attackers.find? (fun a => !blocked.contains a.id && g.canBlock b a) with
+    for a in attackers do
+      if g.hasMenace a then
+        let able := unused.filter (fun b => g.canBlock b a)
+        if able.size >= 2 then
+          let b1 := able[0]!
+          let b2 := able[1]!
+          unused := unused.filter (fun b => b.id != b1.id && b.id != b2.id)
+          asgn := asgn.push (b1.id, a.id) |>.push (b2.id, a.id)
+          blocked := blocked.push a.id
+    for b in unused do
+      match attackers.find? (fun a =>
+        !blocked.contains a.id && !g.hasMenace a && g.canBlock b a) with
       | some a =>
         blocked := blocked.push a.id
         asgn := asgn.push (b.id, a.id)
@@ -2145,6 +2157,52 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     (Tests.namedPermanent g' "Olog-hai Crusher").status.blocking ==
       #[(Tests.namedPermanent g' "Gray Ogre").id]
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumVsOneBearReadyToBlock [] with
+  | .ok asgn => asgn.isEmpty
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumVsOneBearReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking.isEmpty &&
+      !(Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumVsTwoBearsReadyToBlock [] with
+  | .ok asgn =>
+    let g := Tests.gollumVsTwoBearsReadyToBlock
+    let gollum := Tests.namedPermanent g "Gollum, Silent Slinker"
+    asgn.size == 2 && asgn.all (fun (_, a) => a == gollum.id)
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumVsTwoBearsReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked &&
+      (g'.battlefield.filter (fun o =>
+        o.name == "Grizzly Bears" && o.status.blocking ==
+          #[(Tests.namedPermanent g' "Gollum, Silent Slinker").id])).size == 2
+  | .error _ => false
+
+#guard
+  match blockAssignmentsForCommand Tests.gollumAndOgreVsOneBearReadyToBlock [] with
+  | .ok asgn =>
+    let g := Tests.gollumAndOgreVsOneBearReadyToBlock
+    asgn == #[(
+      (Tests.namedPermanent g "Grizzly Bears").id,
+      (Tests.namedPermanent g "Gray Ogre").id)]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.gollumAndOgreVsOneBearReadyToBlock "block" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Grizzly Bears").status.blocking ==
+      #[(Tests.namedPermanent g' "Gray Ogre").id] &&
+      !(Tests.namedPermanent g' "Gollum, Silent Slinker").status.blocked
   | .error _ => false
 
 #guard
