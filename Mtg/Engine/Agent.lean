@@ -54,6 +54,22 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.player p).hand.back? with
       | some id => some (.discard id)
       | none => some .decline
+    | .chooseAdditionalCost _ =>
+      match g.proposedSpell with
+      | some prop =>
+        if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
+          some (.chooseAdditionalCost true)
+        else
+          some (.chooseAdditionalCost false)
+      | none => some .pass
+    | .chooseSacrificeCreature _ _ _ =>
+      match (g.creaturesControlledBy p)[0]? with
+      | some o => some (.sacrifice o.id)
+      | none => some .pass
+    | .chooseDiscardCard _ _ =>
+      match (g.player p).hand.back? with
+      | some id => some (.discard id)
+      | none => some .decline
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
     | .chooseLegend _ _ ids =>
@@ -120,7 +136,7 @@ where
         | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let candidate := (g.permanentsOf p).find? (fun o =>
+    let activatable (o : GameObject) : Bool :=
       match o.printed.activatedAbilities[0]? with
       | some ab =>
         let available :=
@@ -133,8 +149,17 @@ where
         !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
         -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
         !(ab.effect == .targetCantBeBlockedThisTurn &&
-          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking))
-      | none => false)
+          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
+        -- Don't typecycle a card you can currently afford to cast.
+        !(ab.activateFromHand && g.canCast p o &&
+          (g.availableMana p).canPay o.printed.manaCost
+            (allowElfRestricted := o.hasSubtype "Elf"))
+      | none => false
+    let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
+    let candidate :=
+      (g.permanentsOf p).find? activatable <|>
+        gy.find? activatable <|>
+        (g.handObjects p).find? activatable
     match candidate with
     | some o => some (.activate o.id 0)
     | none => chooseCast g p
@@ -170,7 +195,7 @@ where
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
     let draw := playable.find? (fun o =>
-      spellKind o .draw &&
+      (spellKind o .draw || modeKind o .draw) &&
         match o.printed.spellEffect with
         | some e =>
           match e.resolution with
@@ -178,13 +203,16 @@ where
             (g.player p).life > (life : Int) &&
               (g.player p).library.size >= cards
           | _ => true
-        | none => false)
+        | none => true)
     let removal := playable.find? (fun o =>
+      (oppHasCreature && (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
       (hasLegalKind .creature &&
         (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
+    let massPump := playable.find? (fun o =>
+      spellKind o .massPump || modeKind o .massPump)
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.isArtifact &&
@@ -224,6 +252,8 @@ where
       some (.cast o.id)
     else if let some o := extraLandAdventure then
       some (.castAdventure o.id)
+    else if let some o := massPump then
+      some (.cast o.id)
     else
       some .pass
 

@@ -351,6 +351,8 @@ def uncontrolledPermanent : Game :=
 #guard oliphaunt.keywords.trample
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
+#guard oliphaunt.activatedAbilities.size == 1
+#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -695,6 +697,20 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.scry (g.scryLookedIds p n) #[])
   | .mayDiscardDraw _ _, some p =>
     mustApply g p .decline
+  | .chooseAdditionalCost _, some p =>
+    match g.proposedSpell with
+    | none => panic! "expected a proposed spell while choosing an additional cost"
+    | some prop =>
+      let payGeneric := (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+      mustApply g p (.chooseAdditionalCost payGeneric)
+  | .chooseSacrificeCreature p _ _, some _ =>
+    match (g.creaturesControlledBy p)[0]? with
+    | none => panic! "no creature to sacrifice"
+    | some o => mustApply g p (.sacrifice o.id)
+  | .chooseDiscardCard p _, some _ =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard"
+    | some id => mustApply g p (.discard id)
   | .sacrificeCreature _, some p =>
     match (g.sacrificeCreatureChoices p)[0]? with
     | some sac => mustApply g p (.sacrifice sac.id)
@@ -2722,6 +2738,10 @@ def agentVisionaryOnly : Game :=
 #guard isBasicLandCard forest
 #guard !isForestCard mountain
 #guard isBasicLandCard mountain
+#guard isLandTypeCard mountain "Mountain"
+#guard isLandTypeCard swamp "Swamp"
+#guard !isLandTypeCard mountain "Swamp"
+#guard !isLandTypeCard swamp "Mountain"
 
 /-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
 def tropicalIsland : CardDef :=
@@ -9337,6 +9357,852 @@ def agentNightsWhisperOnly : Game :=
   match Agent.choose g ⟨0⟩ with
   | some (.declareAttackers ids) =>
     ids.contains (namedPermanent g "Ravening Warg").id
+  | _ => false
+
+
+/- Black Hobbit Welcome Deck: structured abilities for each remaining card. -/
+
+/-- Empty `p`'s hand so injected spells are the only playable cards. -/
+def emptyHand (g : Game) (p : PlayerId) : Game :=
+  g.modifyPlayer p (fun pl => { pl with hand := #[] })
+
+def readyMain (g : Game) : Game :=
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+/-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
+def sentriesDied : Game :=
+  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
+  g.receivePriority ⟨0⟩
+
+#guard sentriesDied.pending == .chooseTargets ⟨0⟩
+#guard (sentriesDied.object! sentriesDied.stack.back!.objectId).triggeredAbility ==
+  some (.onDiesOppCreatureGets (-1) (-1))
+#guard sentriesDied.log.any (fun s => mentions s "dies trigger is put on the stack")
+#guard
+  match Agent.choose sentriesDied ⟨0⟩ with
+  | some (.target (Target.permanent id)) =>
+    (sentriesDied.object! id).name == "Grizzly Bears"
+  | _ => false
+
+def sentriesPumpResolved : Game :=
+  let g := mustApply sentriesDied ⟨0⟩
+    (.target (Target.permanent (namedPermanent sentriesDied "Grizzly Bears").id))
+  passBoth g
+
+#guard sentriesPumpResolved.power (namedPermanent sentriesPumpResolved "Grizzly Bears") == 1
+#guard sentriesPumpResolved.toughness (namedPermanent sentriesPumpResolved "Grizzly Bears") == 1
+#guard sentriesPumpResolved.log.any (fun s =>
+  mentions s "Grizzly Bears gets -1/-1 until end of turn")
+
+#guard
+  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
+  let g := g.receivePriority ⟨0⟩
+  g.stack.isEmpty && g.log.any (fun s => mentions s "no legal target")
+
+/-- Great Fierce Bee: another creature dying scries 1. -/
+def beeOtherDied : Game :=
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
+  g.receivePriority ⟨0⟩
+
+#guard beeOtherDied.stack.size == 1
+#guard (beeOtherDied.object! beeOtherDied.stack.back!.objectId).triggeredAbility ==
+  some (.onOneOrMoreOtherCreaturesDieScry 1)
+#guard beeOtherDied.creatureDiedThisTurn
+
+def beeScrying : Game := passBoth beeOtherDied
+
+#guard
+  match beeScrying.pending with
+  | .scry ⟨0⟩ 1 => true
+  | _ => false
+#guard beeScrying.log.any (fun s => mentions s "scries 1")
+
+#guard
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
+  let g := g.receivePriority ⟨0⟩
+  g.stack.isEmpty && g.creatureDiedThisTurn
+
+#guard
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
+  let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none
+  let g := g.receivePriority ⟨0⟩
+  g.stack.size == 1
+
+/-- Stir Up Trouble: additional cost is sacrifice or pay {4}, then destroy.
+Additional costs are announced at CR 601.2b, before targets at 601.2c. -/
+def stirReady : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 1
+
+#guard stirReady.canCast ⟨0⟩ (handCardNamed stirReady ⟨0⟩ "Stir Up Trouble")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  let g := withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
+  g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Stir Up Trouble")
+
+def proposedStir : Game :=
+  mustApply stirReady ⟨0⟩ (.cast (handCardNamed stirReady ⟨0⟩ "Stir Up Trouble").id)
+
+#guard
+  match proposedStir.pending with
+  | .chooseAdditionalCost ⟨0⟩ => true
+  | _ => false
+#guard proposedStir.log.any (fun s =>
+  mentions s "must choose an additional cost (CR 601.2b)")
+#guard
+  match proposedStir.apply ⟨0⟩
+      (.target (Target.permanent (namedPermanent proposedStir "Grizzly Bears").id)) with
+  | .error msg => mentions msg "Not time to choose targets (CR 601.2c)"
+  | .ok _ => false
+#guard
+  match Agent.choose proposedStir ⟨0⟩ with
+  | some (.chooseAdditionalCost false) => true
+  | _ => false
+
+/-- Alias used by the demo: the 601.2b additional-cost window. -/
+def stirChooseAdditional : Game := proposedStir
+
+def stirSacChosen : Game :=
+  mustApply stirChooseAdditional ⟨0⟩ (.chooseAdditionalCost false)
+
+#guard
+  match stirSacChosen.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+#guard
+  match stirSacChosen.proposedSpell with
+  | some prop => prop.needsSacrificeOther && prop.cost == ManaCost.ofColor .black
+  | none => false
+#guard stirSacChosen.log.any (fun s =>
+  mentions s "chooses to sacrifice an artifact or creature (CR 601.2b)")
+
+def stirSacTargeted : Game :=
+  mustApply stirSacChosen ⟨0⟩
+    (.target (Target.permanent (namedPermanent stirSacChosen "Grizzly Bears").id))
+
+#guard stirSacTargeted.pending == .activateManaAbilities ⟨0⟩
+
+def stirPaidSac : Game := mustApply stirSacTargeted ⟨0⟩ .pay
+
+#guard
+  match stirPaidSac.pending with
+  | .sacrificePermanent ⟨0⟩ _ => true
+  | _ => false
+
+def stirCastViaSac : Game :=
+  mustApply stirPaidSac ⟨0⟩ (.sacrifice (namedPermanent stirPaidSac "Raging Goblin").id)
+
+#guard stirCastViaSac.log.any (fun s => mentions s "casts Stir Up Trouble")
+#guard !(stirCastViaSac.battlefield.any (fun o => o.name == "Raging Goblin"))
+
+def stirResolvedViaSac : Game := passBoth stirCastViaSac
+
+#guard !(stirResolvedViaSac.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard stirResolvedViaSac.log.any (fun s => mentions s "Grizzly Bears is destroyed")
+
+def stirPayGenericReady : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
+
+def stirPayGenericChosen : Game :=
+  let g := mustApply stirPayGenericReady ⟨0⟩
+    (.cast (handCardNamed stirPayGenericReady ⟨0⟩ "Stir Up Trouble").id)
+  let g := mustApply g ⟨0⟩ (.chooseAdditionalCost true)
+  mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+
+#guard
+  match stirPayGenericChosen.proposedSpell with
+  | some prop =>
+    !prop.needsSacrificeOther && prop.cost.manaValue == 5
+  | none => false
+#guard stirPayGenericChosen.pending == .activateManaAbilities ⟨0⟩
+#guard stirPayGenericChosen.log.any (fun s =>
+  mentions s "chooses to pay {4} as an additional cost (CR 601.2b)")
+
+def stirResolvedViaPay : Game :=
+  passBoth (mustApply stirPayGenericChosen ⟨0⟩ .pay)
+
+#guard !(stirResolvedViaPay.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/-- Haunt of the Dead Marshes: GY activate only with a legendary creature. -/
+def hauntAbility : ActivatedAbility :=
+  hauntOfTheDeadMarshes.activatedAbilities[0]!
+
+def hauntInGy : Game :=
+  let g := readyMain (addToGraveyard afterDraw hauntOfTheDeadMarshes ⟨0⟩)
+  withBlackMana g ⟨0⟩ 3
+
+#guard !(hauntInGy.canActivate ⟨0⟩
+  (namedGraveyardCard hauntInGy ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility)
+
+def hauntInGyWithLegend : Game :=
+  addPermanent hauntInGy gollumSilentSlinker ⟨0⟩ ⟨0⟩
+
+#guard hauntInGyWithLegend.canActivate ⟨0⟩
+  (namedGraveyardCard hauntInGyWithLegend ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility
+#guard
+  let g := addPermanent hauntInGy hauntOfTheDeadMarshes ⟨0⟩ ⟨0⟩
+  let g := addPermanent g gollumSilentSlinker ⟨0⟩ ⟨0⟩
+  !(g.canActivate ⟨0⟩ (namedPermanent g "Haunt of the Dead Marshes") hauntAbility)
+
+def hauntReturned : Game :=
+  let g := hauntInGyWithLegend
+  let src := namedGraveyardCard g ⟨0⟩ "Haunt of the Dead Marshes"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard hauntReturned.battlefield.any (fun o =>
+  o.name == "Haunt of the Dead Marshes" && o.status.tapped)
+#guard hauntReturned.log.any (fun s =>
+  mentions s "returns to the battlefield tapped")
+#guard hauntReturned.stack.size == 1
+#guard (hauntReturned.object! hauntReturned.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterScry 1)
+
+/-- Gollum, Silent Slinker: menace requires two blockers. -/
+def gollumMenaceField : Game :=
+  let g := addPermanent afterDraw gollumSilentSlinker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+
+#guard (namedPermanent gollumMenaceField "Gollum, Silent Slinker").printed.keywords.menace
+#guard gollumMenaceField.minBlockersRequired
+  (namedPermanent gollumMenaceField "Gollum, Silent Slinker") == 2
+
+def gollumAttacking : Game :=
+  let g := passBoth (skipTo gollumMenaceField .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gollum, Silent Slinker").id])
+
+def gollumDeclareBlockers : Game := passBoth gollumAttacking
+
+#guard gollumDeclareBlockers.pending == .declareBlockers
+#guard
+  match gollumDeclareBlockers.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent gollumDeclareBlockers "Grizzly Bears").id,
+    (namedPermanent gollumDeclareBlockers "Gollum, Silent Slinker").id)]) with
+  | .error msg => mentions msg "two or more creatures"
+  | .ok _ => false
+
+def gollumBlockedByTwo : Game :=
+  mustApply gollumDeclareBlockers ⟨1⟩ (.declareBlockers #[
+    ((namedPermanent gollumDeclareBlockers "Grizzly Bears").id,
+      (namedPermanent gollumDeclareBlockers "Gollum, Silent Slinker").id),
+    ((namedPermanent gollumDeclareBlockers "Llanowar Elves").id,
+      (namedPermanent gollumDeclareBlockers "Gollum, Silent Slinker").id)])
+
+#guard (namedPermanent gollumBlockedByTwo "Gollum, Silent Slinker").status.blocked
+#guard gollumBlockedByTwo.log.any (fun s => mentions s "Grizzly Bears blocks")
+#guard gollumBlockedByTwo.log.any (fun s => mentions s "Llanowar Elves blocks")
+
+/-- Bilbo's Deadly Slice destroys a creature. -/
+def sliceSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+
+#guard sliceSetup.canCast ⟨0⟩ (handCardNamed sliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
+#guard
+  match Agent.choose sliceSetup ⟨0⟩ with
+  | some (.cast id) => (sliceSetup.object! id).name == "Bilbo's Deadly Slice"
+  | _ => false
+
+def sliceResolved : Game :=
+  let g := mustApply sliceSetup ⟨0⟩
+    (.cast (handCardNamed sliceSetup ⟨0⟩ "Bilbo's Deadly Slice").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard !(sliceResolved.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard sliceResolved.log.any (fun s => mentions s "Grizzly Bears is destroyed")
+
+/-- Dreaded Bat-Cloud costs {3} less if a creature died this turn. -/
+def batCloudFull : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
+
+def batCloudReduced : Game :=
+  { batCloudFull with creatureDiedThisTurn := true }
+
+#guard batCloudFull.canCast ⟨0⟩ (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud")
+#guard
+  match batCloudFull.apply ⟨0⟩
+      (.cast (handCardNamed batCloudFull ⟨0⟩ "Dreaded Bat-Cloud").id) with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.cost.manaValue == 5
+    | none => false
+  | .error _ => false
+#guard
+  match batCloudReduced.apply ⟨0⟩
+      (.cast (handCardNamed batCloudReduced ⟨0⟩ "Dreaded Bat-Cloud").id) with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.cost.manaValue == 2
+    | none => false
+  | .error _ => false
+#guard
+  let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
+  g.creatureDiedThisTurn
+#guard
+  let g := addPermanent afterDraw hillGiant ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Hill Giant"
+  let g := g.setObject { o with status := { o.status with untilEotExileIfDies := true } }
+  let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
+  !g.creatureDiedThisTurn
+
+
+/-- Languish: all creatures get -4 / -4. -/
+def languishReady : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g languish ⟨0⟩) ⟨0⟩ 4
+
+#guard languishReady.canCast ⟨0⟩ (handCardNamed languishReady ⟨0⟩ "Languish")
+#guard !languish.requiresTarget
+#guard
+  match Agent.choose languishReady ⟨0⟩ with
+  | some (.cast id) => (languishReady.object! id).name == "Languish"
+  | _ => false
+
+def languishResolved : Game :=
+  let g := mustApply languishReady ⟨0⟩
+    (.cast (handCardNamed languishReady ⟨0⟩ "Languish").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard !(languishResolved.battlefield.any (fun o => o.name == "Raging Goblin"))
+#guard !(languishResolved.battlefield.any (fun o => o.name == "Rumbling Baloth"))
+#guard languishResolved.log.any (fun s =>
+  mentions s "gets -4/-4 until end of turn")
+
+/-- Shadow of the Enemy: exile GY creatures and grant any-mana casts. -/
+def shadowReady : Game :=
+  let g := addToGraveyard afterDraw grayOgre ⟨1⟩
+  let g := addToGraveyard g lightningBolt ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g shadowOfTheEnemy ⟨0⟩) ⟨0⟩ 6
+
+def shadowResolved : Game :=
+  let g := mustApply shadowReady ⟨0⟩
+    (.cast (handCardNamed shadowReady ⟨0⟩ "Shadow of the Enemy").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard shadowResolved.objects.any (fun o =>
+  o.name == "Gray Ogre" && o.zone == .exile)
+#guard shadowResolved.objects.any (fun o =>
+  o.name == "Lightning Bolt" && o.zone == .graveyard ⟨1⟩)
+#guard
+  match (shadowResolved.objects.find? (fun o =>
+      o.name == "Gray Ogre" && o.zone == .exile)) with
+  | some ogre =>
+    match ogre.playPermission with
+    | some perm => perm.whileExiled && perm.anyMana && perm.player == ⟨0⟩
+    | none => false
+  | none => false
+
+#guard
+  match (shadowResolved.objects.find? (fun o =>
+      o.name == "Gray Ogre" && o.zone == .exile)) with
+  | none => false
+  | some ogre =>
+    match shadowResolved.apply ⟨0⟩ (.cast ogre.id) with
+    | .ok g' =>
+      match g'.proposedSpell with
+      | some prop => prop.cost == ManaCost.ofGeneric 3
+      | none => false
+    | .error _ => false
+
+def shadowCastOgre : Game :=
+  let g := readyMain (emptyHand shadowResolved ⟨0⟩)
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with manaPool := {} })
+  let g := withGreenMana g ⟨0⟩ 3
+  match g.objects.find? (fun o => o.name == "Gray Ogre" && o.zone == .exile) with
+  | none => panic! "expected Gray Ogre in exile"
+  | some ogre =>
+    let g := mustApply g ⟨0⟩ (.cast ogre.id)
+    passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard shadowCastOgre.battlefield.any (fun o => o.name == "Gray Ogre")
+
+/-- Gollum the Abandoned: can't block; ETB exile GY + opps lose 2; GY to hand. -/
+def abandonedAbility : ActivatedAbility :=
+  gollumTheAbandoned.activatedAbilities[0]!
+
+#guard
+  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
+  !g.mayDeclareAsBlocker (namedPermanent g "Gollum the Abandoned")
+
+#guard
+  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Raging Goblin").id])
+  let g := passBoth g
+  match g.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Gollum the Abandoned").id,
+    (namedPermanent g "Raging Goblin").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+def abandonedEtbReady : Game :=
+  let g := addToGraveyard afterDraw llanowarElves ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g gollumTheAbandoned ⟨0⟩) ⟨0⟩ 2
+
+def abandonedEntered : Game :=
+  let g := mustApply abandonedEtbReady ⟨0⟩
+    (.cast (handCardNamed abandonedEtbReady ⟨0⟩ "Gollum the Abandoned").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard abandonedEntered.pending == .chooseTargets ⟨0⟩
+#guard (abandonedEntered.object! abandonedEntered.stack.back!.objectId).triggeredAbility ==
+  some (.onEnterExileOppGyCardOppsLoseLife 2)
+
+def abandonedDeclined : Game :=
+  let g := mustApply abandonedEntered ⟨0⟩ .decline
+  passBoth g
+
+#guard (abandonedDeclined.player ⟨1⟩).life == 18
+#guard abandonedDeclined.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .graveyard ⟨1⟩)
+#guard abandonedDeclined.log.any (fun s => mentions s "Nissa loses 2 life")
+
+def abandonedExiled : Game :=
+  let g := mustApply abandonedEntered ⟨0⟩
+    (.target (Target.card (namedGraveyardCard abandonedEntered ⟨1⟩ "Llanowar Elves").id))
+  passBoth g
+
+#guard abandonedExiled.objects.any (fun o =>
+  o.name == "Llanowar Elves" && o.zone == .exile)
+#guard (abandonedExiled.player ⟨1⟩).life == 18
+
+def abandonedInGy : Game :=
+  let g := addToGraveyard afterDraw gollumTheAbandoned ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := readyMain g
+  withBlackMana g ⟨0⟩ 2
+
+#guard abandonedInGy.canActivate ⟨0⟩
+  (namedGraveyardCard abandonedInGy ⟨0⟩ "Gollum the Abandoned") abandonedAbility
+
+def abandonedReturnedToHand : Game :=
+  let g := abandonedInGy
+  let src := namedGraveyardCard g ⟨0⟩ "Gollum the Abandoned"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Raging Goblin").id)
+  passBoth g
+
+#guard (abandonedReturnedToHand.handObjects ⟨0⟩).any (fun o =>
+  o.name == "Gollum the Abandoned")
+#guard !(abandonedReturnedToHand.battlefield.any (fun o => o.name == "Raging Goblin"))
+#guard abandonedReturnedToHand.log.any (fun s =>
+  mentions s "returned to Chandra's hand")
+
+/-- Gnashing of Teeth: -5 / -5 exile-if-dies, or creatures of a player -1 / -1. -/
+def gnashingReady : Game :=
+  let g := addPermanent afterDraw rumblingBaloth ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g gnashingOfTeeth ⟨0⟩) ⟨0⟩ 3
+
+#guard gnashingOfTeeth.isModal
+#guard
+  match Agent.choose gnashingReady ⟨0⟩ with
+  | some (.cast id) => (gnashingReady.object! id).name == "Gnashing of Teeth"
+  | _ => false
+
+def gnashingMinusFive : Game :=
+  let g := mustApply gnashingReady ⟨0⟩
+    (.cast (handCardNamed gnashingReady ⟨0⟩ "Gnashing of Teeth").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Rumbling Baloth").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard !(gnashingMinusFive.battlefield.any (fun o => o.name == "Rumbling Baloth"))
+#guard gnashingMinusFive.objects.any (fun o =>
+  o.name == "Rumbling Baloth" && o.zone == .exile)
+#guard gnashingMinusFive.log.any (fun s =>
+  mentions s "If Rumbling Baloth would die this turn, exile it instead")
+#guard gnashingMinusFive.log.any (fun s => mentions s "exiled instead of dying")
+
+def gnashingPlayerPump : Game :=
+  let g := addPermanent gnashingReady grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.cast (handCardNamed g ⟨0⟩ "Gnashing of Teeth").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨0⟩))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard gnashingPlayerPump.power (namedPermanent gnashingPlayerPump "Grizzly Bears") == 1
+#guard gnashingPlayerPump.toughness (namedPermanent gnashingPlayerPump "Grizzly Bears") == 1
+
+/-- Troll of Khazad-dûm: can't be blocked except by three or more. -/
+def trollField : Game :=
+  let g := addPermanent afterDraw trollOfKhazadDum ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  addPermanent g giantSpider ⟨1⟩ ⟨1⟩
+
+#guard trollField.minBlockersRequired (namedPermanent trollField "Troll of Khazad-dûm") == 3
+
+def trollDeclareBlockers : Game :=
+  let g := passBoth (skipTo trollField .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Troll of Khazad-dûm").id])
+  passBoth g
+
+#guard
+  match trollDeclareBlockers.apply ⟨1⟩ (.declareBlockers #[
+    ((namedPermanent trollDeclareBlockers "Grizzly Bears").id,
+      (namedPermanent trollDeclareBlockers "Troll of Khazad-dûm").id),
+    ((namedPermanent trollDeclareBlockers "Llanowar Elves").id,
+      (namedPermanent trollDeclareBlockers "Troll of Khazad-dûm").id)]) with
+  | .error msg => mentions msg "3 or more creatures"
+  | .ok _ => false
+
+def trollBlockedByThree : Game :=
+  mustApply trollDeclareBlockers ⟨1⟩ (.declareBlockers #[
+    ((namedPermanent trollDeclareBlockers "Grizzly Bears").id,
+      (namedPermanent trollDeclareBlockers "Troll of Khazad-dûm").id),
+    ((namedPermanent trollDeclareBlockers "Llanowar Elves").id,
+      (namedPermanent trollDeclareBlockers "Troll of Khazad-dûm").id),
+    ((namedPermanent trollDeclareBlockers "Giant Spider").id,
+      (namedPermanent trollDeclareBlockers "Troll of Khazad-dûm").id)])
+
+#guard (namedPermanent trollBlockedByThree "Troll of Khazad-dûm").status.blocked
+
+/-- Merciless Executioner: each player sacrifices a creature. -/
+def executionerReady : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g mercilessExecutioner ⟨0⟩) ⟨0⟩ 3
+
+def executionerEntered : Game :=
+  let g := mustApply executionerReady ⟨0⟩
+    (.cast (handCardNamed executionerReady ⟨0⟩ "Merciless Executioner").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard executionerEntered.stack.size == 1
+#guard (executionerEntered.object! executionerEntered.stack.back!.objectId).triggeredAbility ==
+  some .onEnterEachPlayerSacrificesCreature
+
+def executionerSacrificing : Game := passBoth executionerEntered
+
+#guard
+  match executionerSacrificing.pending with
+  | .chooseSacrificeCreature ⟨0⟩ _ _ => true
+  | _ => false
+
+def executionerBothSac : Game :=
+  let g := mustApply executionerSacrificing ⟨0⟩
+    (.sacrifice (namedPermanent executionerSacrificing "Raging Goblin").id)
+  mustApply g ⟨1⟩ (.sacrifice (namedPermanent g "Grizzly Bears").id)
+
+#guard !(executionerBothSac.battlefield.any (fun o => o.name == "Raging Goblin"))
+#guard !(executionerBothSac.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard executionerBothSac.battlefield.any (fun o => o.name == "Merciless Executioner")
+#guard executionerBothSac.pending == .none
+
+/-- Bitter Downfall: destroy and controller loses 2; {3} less if damaged. -/
+def downfallSetup (damaged : Bool) : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g :=
+    if damaged then
+      let o := namedPermanent g "Grizzly Bears"
+      g.setObject { o with status := { o.status with damage := 1 } }
+    else g
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g bitterDownfall ⟨0⟩) ⟨0⟩ 4
+
+def downfallFull : Game := downfallSetup false
+def downfallCheap : Game := downfallSetup true
+
+#guard
+  match downfallFull.apply ⟨0⟩
+      (.cast (handCardNamed downfallFull ⟨0⟩ "Bitter Downfall").id) with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.cost.manaValue == 4
+    | none => false
+  | .error _ => false
+
+def downfallCheapLocked : Game :=
+  let g := mustApply downfallCheap ⟨0⟩
+    (.cast (handCardNamed downfallCheap ⟨0⟩ "Bitter Downfall").id)
+  mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+
+#guard
+  match downfallCheapLocked.proposedSpell with
+  | some prop => prop.cost.manaValue == 1
+  | none => false
+
+def downfallResolved : Game :=
+  passBoth (mustApply downfallCheapLocked ⟨0⟩ .pay)
+
+#guard !(downfallResolved.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard (downfallResolved.player ⟨1⟩).life == 18
+#guard downfallResolved.log.any (fun s => mentions s "Nissa loses 2 life")
+
+/-- Reverent Howl: draw 2 lose 2, or +2/+2 and lifelink. -/
+def howlReady : Game :=
+  let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withBlackMana (addToHand g reverentHowl ⟨0⟩) ⟨0⟩ 3
+
+def howlDraw : Game :=
+  let g := mustApply howlReady ⟨0⟩
+    (.cast (handCardNamed howlReady ⟨0⟩ "Reverent Howl").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨0⟩))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (howlDraw.player ⟨0⟩).life == 18
+#guard (howlDraw.player ⟨0⟩).hand.size == 2
+#guard howlDraw.log.any (fun s => mentions s "Chandra loses 2 life")
+
+def howlLifelink : Game :=
+  let g := mustApply howlReady ⟨0⟩
+    (.cast (handCardNamed howlReady ⟨0⟩ "Reverent Howl").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Raging Goblin").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard howlLifelink.power (namedPermanent howlLifelink "Raging Goblin") == 3
+#guard howlLifelink.toughness (namedPermanent howlLifelink "Raging Goblin") == 3
+#guard howlLifelink.hasLifelink (namedPermanent howlLifelink "Raging Goblin")
+#guard howlLifelink.log.any (fun s => mentions s "gains lifelink until end of turn")
+
+def howlCombat : Game :=
+  let g := passBoth (skipTo howlLifelink .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Raging Goblin").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[])
+  passBoth g
+
+#guard (howlCombat.player ⟨1⟩).life == 17
+#guard (howlCombat.player ⟨0⟩).life == 23
+#guard howlCombat.log.any (fun s => mentions s "gains 3 life")
+
+/-- Night's Whisper: draw 2, lose 2 (no target). -/
+def whisperReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+
+#guard whisperReady.canCast ⟨0⟩ (handCardNamed whisperReady ⟨0⟩ "Night's Whisper")
+#guard !nightsWhisper.requiresTarget
+#guard
+  match Agent.choose whisperReady ⟨0⟩ with
+  | some (.cast id) => (whisperReady.object! id).name == "Night's Whisper"
+  | _ => false
+
+def whisperResolved : Game :=
+  let g := mustApply whisperReady ⟨0⟩
+    (.cast (handCardNamed whisperReady ⟨0⟩ "Night's Whisper").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (whisperResolved.player ⟨0⟩).life == 18
+#guard (whisperResolved.player ⟨0⟩).hand.size == 2
+#guard whisperResolved.log.any (fun s => mentions s "Chandra loses 2 life")
+
+/-- Stony-Voiced Goblins: each opponent discards a card. -/
+def stonyReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withBlackMana (addToHand g stonyVoicedGoblins ⟨0⟩) ⟨0⟩ 2
+
+def stonyEntered : Game :=
+  let g := mustApply stonyReady ⟨0⟩
+    (.cast (handCardNamed stonyReady ⟨0⟩ "Stony-Voiced Goblins").id)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard stonyEntered.stack.size == 1
+#guard (stonyEntered.object! stonyEntered.stack.back!.objectId).triggeredAbility ==
+  some .onEnterEachOpponentDiscards
+
+def stonyDiscarding : Game := passBoth stonyEntered
+
+#guard
+  match stonyDiscarding.pending with
+  | .chooseDiscardCard ⟨1⟩ _ => true
+  | _ => false
+#guard (stonyDiscarding.player ⟨1⟩).hand.size == 7
+#guard
+  match Agent.choose stonyDiscarding ⟨1⟩ with
+  | some (.discard _) => true
+  | _ => false
+
+def stonyAfterDiscard : Game := applyIdle stonyDiscarding
+
+#guard (stonyAfterDiscard.player ⟨1⟩).hand.size == 6
+#guard stonyAfterDiscard.pending == .none
+#guard stonyAfterDiscard.log.any (fun s => mentions s "Nissa discards")
+
+
+/- Typecycling: Oliphaunt Mountaincycling and Troll of Khazad-dûm Swampcycling
+(CR 702.29). -/
+
+def oliphauntCycleAbility : ActivatedAbility :=
+  oliphaunt.activatedAbilities[0]!
+
+def trollCycleAbility : ActivatedAbility :=
+  trollOfKhazadDum.activatedAbilities[0]!
+
+/-- Nonbasic land with the Mountain type; Mountaincycling can find it (CR 305.7). -/
+def stompingGround : CardDef :=
+  land "Stomping Ground" "" (subtypes := #["Mountain", "Forest"])
+
+#guard isLandTypeCard stompingGround "Mountain"
+#guard !isBasicLandCard stompingGround
+
+/-- Isolated library so the search finds a known card. -/
+def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
+  let g := g.modifyPlayer p (fun pl => { pl with library := #[] })
+  cards.foldl (fun g c => addToLibraryTop g c p) g
+
+def oliphauntCycleReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+
+#guard oliphauntCycleReady.canActivate ⟨0⟩
+  (handCardNamed oliphauntCycleReady ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
+#guard !(oliphauntCycleReady.availableMana ⟨0⟩).canPay oliphaunt.manaCost
+#guard
+  let g := addPermanent afterDraw oliphaunt ⟨0⟩ ⟨0⟩
+  !(g.canActivate ⟨0⟩ (namedPermanent g "Oliphaunt") oliphauntCycleAbility)
+#guard
+  let g := readyMain (addToGraveyard afterDraw oliphaunt ⟨0⟩)
+  let g := withRedMana g ⟨0⟩ 1
+  !(g.canActivate ⟨0⟩ (namedGraveyardCard g ⟨0⟩ "Oliphaunt") oliphauntCycleAbility)
+#guard
+  let g := addToHand afterDraw oliphaunt ⟨1⟩
+  !(g.canActivate ⟨0⟩ (handCardNamed g ⟨1⟩ "Oliphaunt") oliphauntCycleAbility)
+
+def oliphauntCycled : Game :=
+  let g := oliphauntCycleReady
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
+#guard (oliphauntCycled.player ⟨0⟩).graveyard.any (fun id =>
+  (oliphauntCycled.object! id).name == "Oliphaunt")
+#guard !(oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Oliphaunt")
+#guard oliphauntCycled.log.any (fun s => mentions s "discards Oliphaunt")
+#guard oliphauntCycled.log.any (fun s =>
+  mentions s "reveals Mountain and puts it into their hand")
+#guard oliphauntCycled.log.any (fun s => mentions s "shuffles their library")
+#guard oliphauntCycled.stack.isEmpty
+
+#guard
+  match Agent.choose oliphauntCycleReady ⟨0⟩ with
+  | some (.activate id 0) =>
+    (oliphauntCycleReady.object! id).name == "Oliphaunt"
+  | _ => false
+
+/-- Enough mana to cast Oliphaunt: the heuristic casts instead of cycling. -/
+def oliphauntCastReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 6
+
+#guard oliphauntCastReady.canCast ⟨0⟩
+  (handCardNamed oliphauntCastReady ⟨0⟩ "Oliphaunt")
+#guard
+  match Agent.choose oliphauntCastReady ⟨0⟩ with
+  | some (.cast id) => (oliphauntCastReady.object! id).name == "Oliphaunt"
+  | _ => false
+
+/-- No Mountain in the library: still discard and shuffle. -/
+def oliphauntCycleMiss : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[forest]
+  let g := withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard oliphauntCycleMiss.log.any (fun s => mentions s "finds no Mountain card")
+#guard oliphauntCycleMiss.log.any (fun s => mentions s "shuffles their library")
+#guard (oliphauntCycleMiss.player ⟨0⟩).graveyard.any (fun id =>
+  (oliphauntCycleMiss.object! id).name == "Oliphaunt")
+#guard !(oliphauntCycleMiss.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
+
+/-- A nonbasic Mountain is a legal find (CR 305.7). -/
+def oliphauntCycleNonbasic : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[stompingGround]
+  let g := withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (oliphauntCycleNonbasic.handObjects ⟨0⟩).any (fun o =>
+  o.name == "Stomping Ground")
+#guard oliphauntCycleNonbasic.log.any (fun s =>
+  mentions s "reveals Stomping Ground and puts it into their hand")
+
+/-- Typecycling is instant-speed (CR 702.29 / 117.1). -/
+def oliphauntCycleAtEnd : Game :=
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := emptyHand g ⟨0⟩
+  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+
+#guard !oliphauntCycleAtEnd.asSorcery? ⟨0⟩
+#guard oliphauntCycleAtEnd.canActivate ⟨0⟩
+  (handCardNamed oliphauntCycleAtEnd ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
+#guard !oliphauntCycleAtEnd.canCast ⟨0⟩
+  (handCardNamed oliphauntCycleAtEnd ⟨0⟩ "Oliphaunt")
+
+def trollCycleReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[swamp]
+  withBlackMana (addToHand g trollOfKhazadDum ⟨0⟩) ⟨0⟩ 1
+
+#guard trollCycleReady.canActivate ⟨0⟩
+  (handCardNamed trollCycleReady ⟨0⟩ "Troll of Khazad-dûm") trollCycleAbility
+#guard !(trollCycleReady.availableMana ⟨0⟩).canPay trollOfKhazadDum.manaCost
+#guard
+  let g := addPermanent afterDraw trollOfKhazadDum ⟨0⟩ ⟨0⟩
+  !(g.canActivate ⟨0⟩ (namedPermanent g "Troll of Khazad-dûm") trollCycleAbility)
+
+def trollCycled : Game :=
+  let g := trollCycleReady
+  let src := handCardNamed g ⟨0⟩ "Troll of Khazad-dûm"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (trollCycled.handObjects ⟨0⟩).any (fun o => o.name == "Swamp")
+#guard (trollCycled.player ⟨0⟩).graveyard.any (fun id =>
+  (trollCycled.object! id).name == "Troll of Khazad-dûm")
+#guard trollCycled.log.any (fun s => mentions s "discards Troll of Khazad-dûm")
+#guard trollCycled.log.any (fun s =>
+  mentions s "reveals Swamp and puts it into their hand")
+#guard trollCycled.log.any (fun s => mentions s "shuffles their library")
+#guard
+  match Agent.choose trollCycleReady ⟨0⟩ with
+  | some (.activate id 0) =>
+    (trollCycleReady.object! id).name == "Troll of Khazad-dûm"
   | _ => false
 
 /- Gollum, Silent Slinker: menace (CR 702.111 / 509.1c). -/

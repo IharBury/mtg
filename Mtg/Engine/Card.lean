@@ -28,6 +28,8 @@ structure Keywords where
   trample : Bool := false
   deathtouch : Bool := false
   defender : Bool := false
+  /-- Damage this source deals causes its controller to gain that much life (CR 702.15). -/
+  lifelink : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -54,7 +56,8 @@ def fields : List Field := [
   ⟨(·.reach), fun k b => { k with reach := b }, "reach"⟩,
   ⟨(·.trample), fun k b => { k with trample := b }, "trample"⟩,
   ⟨(·.deathtouch), fun k b => { k with deathtouch := b }, "deathtouch"⟩,
-  ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩
+  ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩,
+  ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -90,6 +93,7 @@ def reach : Keywords := { Keywords.none with reach := true }
 def trample : Keywords := { Keywords.none with trample := true }
 def deathtouch : Keywords := { Keywords.none with deathtouch := true }
 def defender : Keywords := { Keywords.none with defender := true }
+def lifelink : Keywords := { Keywords.none with lifelink := true }
 end Keyword
 
 /-- Whom a spell, activated ability, or triggered ability may target
@@ -109,8 +113,6 @@ inductive EffectTargetKind where
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
-  /-- Target opponent (a player other than the controller). -/
-  | opponent
   /-- Target creature (any controller). -/
   | creature
   /-- Target creature with flying. -/
@@ -121,6 +123,12 @@ inductive EffectTargetKind where
   | colorlessNonland
   /-- First a creature you control, then a creature an opponent controls. -/
   | creatureYouControlThenOppCreature
+  /-- Target player (any player). -/
+  | player
+  /-- Target opponent. -/
+  | opponent
+  /-- Target card in an opponent's graveyard. -/
+  | oppGraveyardCard
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -137,6 +145,8 @@ inductive TargetPreference where
   | last
   /-- Own permanent if any, otherwise an opponent's. -/
   | ownThenOpponent
+  /-- This player (e.g. a “target player draws” you want to hit yourself with). -/
+  | selfPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace EffectTargetKind
@@ -168,8 +178,6 @@ def spec : EffectTargetKind → Spec
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
-  | .opponent =>
-    { noun := "target opponent", prefer := .opponentPlayer }
   | .creature =>
     { noun := "target creature" }
   | .creatureWithFlying =>
@@ -183,6 +191,12 @@ def spec : EffectTargetKind → Spec
       noun := "target creature you control and a creature an opponent controls"
       prefer := .ownThenOpponent
       slots := #[.creatureYouControl, .oppCreature] }
+  | .player =>
+    { noun := "target player", prefer := .opponentPlayer }
+  | .opponent =>
+    { noun := "target opponent", prefer := .opponentPlayer }
+  | .oppGraveyardCard =>
+    { noun := "target card from an opponent's graveyard", prefer := .last }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -282,9 +296,29 @@ inductive SpellEffect where
   /-- Destroy target artifact or land. Creatures without flying can't block
   this turn (e.g. Fire of Orthanc). -/
   | destroyArtifactOrLandNonflyersCantBlock
+  /-- Destroy target creature. Its controller loses `life` life
+  (e.g. Bitter Downfall). -/
+  | destroyTargetCreatureControllerLosesLife (life : Nat)
+  /-- All creatures get +P/+T until end of turn (e.g. Languish). -/
+  | allCreaturesGet (power toughness : Int)
   /-- You draw `cards` cards and lose `life` life (e.g. Night's Whisper).
   Loss of life is not damage (CR 118.3a / 120.3). -/
   | drawAndLoseLife (cards life : Nat)
+  /-- Target player draws `cards` cards and loses `life` life
+  (e.g. Reverent Howl). -/
+  | targetPlayerDrawLoseLife (cards life : Nat)
+  /-- Creatures target player controls get +P/+T until end of turn
+  (e.g. Gnashing of Teeth). -/
+  | creaturesTargetPlayerGet (power toughness : Int)
+  /-- Target creature gets +P/+T and gains lifelink until end of turn. -/
+  | pumpAndLifelink (power toughness : Int)
+  /-- Target creature gets +P/+T until end of turn. If it would die this turn,
+  exile it instead (e.g. Gnashing of Teeth). -/
+  | pumpAndExileIfDies (power toughness : Int)
+  /-- Exile all creature cards from target player's graveyard. You may cast
+  those cards for as long as they remain exiled, and mana of any type can be
+  spent to cast them (e.g. Shadow of the Enemy). -/
+  | exileGraveyardCreaturesGrantCast
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -307,6 +341,8 @@ inductive SpellCastKind where
   | pump
   /-- You may play an additional land this turn. -/
   | extraLand
+  /-- Mass until-end-of-turn P/T change. -/
+  | massPump
   /-- Draw cards, optionally losing life (e.g. Night's Whisper). -/
   | draw
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -337,6 +373,10 @@ inductive PermanentAction where
   | destroyThenNonflyersCantBlock
   /-- The permanent can't be blocked this turn. -/
   | cantBeBlocked
+  /-- Until-end-of-turn +P/+T and lifelink. -/
+  | pumpAndLifelink (power toughness : Int)
+  /-- Until-end-of-turn +P/+T. If the creature would die this turn, exile it instead. -/
+  | pumpAndExileIfDies (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -361,6 +401,10 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .destroyThenNonflyersCantBlock =>
       s!"destroy {noun}. Creatures without flying can't block this turn"
     | .cantBeBlocked => s!"{noun} can't be blocked this turn"
+    | .pumpAndLifelink p t =>
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains lifelink until end of turn"
+    | .pumpAndExileIfDies p t =>
+      s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction
@@ -377,9 +421,20 @@ inductive SpellResolution where
   /-- Affect a still-legal target. Damage can hit a player or a creature;
   other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
+  /-- All creatures get +P/+T until end of turn. -/
+  | allCreaturesPump (power toughness : Int)
   /-- You draw `cards` cards and lose `life` life. Loss of life is not
   damage (CR 118.3a / 120.3). -/
   | drawAndLoseLife (cards life : Nat)
+  /-- The targeted player draws `cards` and loses `life` life. -/
+  | playerDrawLoseLife (cards life : Nat)
+  /-- Creatures the targeted player controls get +P/+T until end of turn. -/
+  | creaturesOfPlayerPump (power toughness : Int)
+  /-- Destroy the targeted creature; its controller loses `life` life. -/
+  | destroyAndControllerLosesLife (life : Nat)
+  /-- Exile creature cards from the targeted player's graveyard and grant
+  permission to cast them, spending mana as though it were any type. -/
+  | exileGraveyardCreaturesGrantCast
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -429,9 +484,30 @@ def spec : SpellEffect → SpellMeta
   | .destroyArtifactOrLandNonflyersCantBlock =>
     { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
       resolution := .onPermanent .destroyThenNonflyersCantBlock }
+  | .destroyTargetCreatureControllerLosesLife n =>
+    { targeting := .of .creature, castKind := .destroyCreature,
+      preferAsDefaultMode := true, resolution := .destroyAndControllerLosesLife n }
+  | .allCreaturesGet p t =>
+    { targeting := .of .none, castKind := .massPump,
+      resolution := .allCreaturesPump p t }
   | .drawAndLoseLife cards life =>
     { targeting := .of .none, castKind := .draw,
       resolution := .drawAndLoseLife cards life }
+  | .targetPlayerDrawLoseLife cards life =>
+    { targeting := .of .player .selfPlayer, castKind := .draw,
+      resolution := .playerDrawLoseLife cards life }
+  | .creaturesTargetPlayerGet p t =>
+    { targeting := .of .player, castKind := .massPump,
+      resolution := .creaturesOfPlayerPump p t }
+  | .pumpAndLifelink p t =>
+    { targeting := .of .creature .own, castKind := .pump,
+      resolution := .onPermanent (.pumpAndLifelink p t) }
+  | .pumpAndExileIfDies p t =>
+    { targeting := .of .creature, castKind := .pump,
+      preferAsDefaultMode := true, resolution := .onPermanent (.pumpAndExileIfDies p t) }
+  | .exileGraveyardCreaturesGrantCast =>
+    { targeting := .of .player, castKind := .draw,
+      resolution := .exileGraveyardCreaturesGrantCast }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -475,6 +551,16 @@ def toNotation (e : SpellEffect) : String :=
   | .drawAndLoseLife cards life =>
     s!"you draw {cardPhrase cards} and lose {life} life"
   | .onPermanent action => PermanentAction.toNotation action noun
+  | .allCreaturesPump p t =>
+    s!"all creatures get {signedStat p}/{signedStat t} until end of turn"
+  | .playerDrawLoseLife cards life =>
+    s!"{noun} draws {cardPhrase cards} and loses {life} life"
+  | .creaturesOfPlayerPump p t =>
+    s!"creatures {noun} controls get {signedStat p}/{signedStat t} until end of turn"
+  | .destroyAndControllerLosesLife n =>
+    s!"destroy {noun}. Its controller loses {n} life"
+  | .exileGraveyardCreaturesGrantCast =>
+    "exile all creature cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them"
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -486,6 +572,9 @@ inductive AbilityEffect where
   /-- Search your library for a basic land card, put it onto the battlefield
   tapped, then shuffle (e.g. Wayfarer's Bauble). -/
   | searchBasicLandTapped
+  /-- Search your library for a card with the given land type, reveal it, put
+  it into your hand, then shuffle (e.g. Mountaincycling, Swampcycling). -/
+  | searchLandTypeToHand (landType : String)
   /-- Exile the top card of your library. You may play it until the end of
   your next turn (e.g. Snowslope Hunter). -/
   | exileTopPlayUntilEndOfNextTurn
@@ -506,6 +595,12 @@ inductive AbilityEffect where
   | putPlusOnePlusOneOnSource (n : Nat)
   /-- Target creature can't be blocked this turn (e.g. Rogue's Passage). -/
   | targetCantBeBlockedThisTurn
+  /-- Return this card from your graveyard to the battlefield tapped
+  (e.g. Haunt of the Dead Marshes). -/
+  | returnFromGraveyardTapped
+  /-- Return this card from your graveyard to your hand
+  (e.g. Gollum the Abandoned). -/
+  | returnFromGraveyardToHand
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -527,6 +622,8 @@ counters share `PermanentAction` with spells and triggers. -/
 inductive AbilityResolution where
   /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
   | searchBasicLand
+  /-- Search for a card with this land type, put it into your hand, then shuffle. -/
+  | searchLandTypeToHand (landType : String)
   /-- Exile the top card and grant permission to play it. -/
   | exileTop
   /-- Attach this Equipment to the announced creature. -/
@@ -537,6 +634,10 @@ inductive AbilityResolution where
   | onSource (action : PermanentAction)
   /-- Become a Bear creature with lands-you-control P/T. -/
   | becomeBear
+  /-- Return the source from the graveyard to the battlefield tapped. -/
+  | returnFromGraveyardTapped
+  /-- Return the source from the graveyard to its owner's hand. -/
+  | returnFromGraveyardToHand
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -566,6 +667,8 @@ def spec : AbilityEffect → AbilityMeta
     { targeting := .of .creature .own, resolution := .onPermanent .cantBeBlocked }
   | .searchBasicLandTapped =>
     { resolution := .searchBasicLand }
+  | .searchLandTypeToHand t =>
+    { resolution := .searchLandTypeToHand t }
   | .exileTopPlayUntilEndOfNextTurn =>
     { resolution := .exileTop }
   | .becomeBearCreatureWithLandsPT =>
@@ -574,6 +677,10 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .onSource (.pump p t) }
   | .putPlusOnePlusOneOnSource n =>
     { resolution := .onSource (.plusOne n) }
+  | .returnFromGraveyardTapped =>
+    { resolution := .returnFromGraveyardTapped }
+  | .returnFromGraveyardToHand =>
+    { resolution := .returnFromGraveyardToHand }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -610,6 +717,8 @@ def toNotation (e : AbilityEffect) : String :=
   match e.resolution with
   | .searchBasicLand =>
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+  | .searchLandTypeToHand t =>
+    s!"Search your library for a {t} card, reveal it, put it into your hand, then shuffle"
   | .exileTop =>
     "Exile the top card of your library. You may play it until the end of your next turn"
   | .attach =>
@@ -622,6 +731,10 @@ def toNotation (e : AbilityEffect) : String :=
     PermanentAction.toNotation action "this creature" (sentence := true)
   | .becomeBear =>
     "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
+  | .returnFromGraveyardTapped =>
+    "Return this card from your graveyard to the battlefield tapped"
+  | .returnFromGraveyardToHand =>
+    "Return this card from your graveyard to your hand"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -637,6 +750,8 @@ structure ActivationCost where
   sacrificeAnotherCreatureOrArtifact : Bool := false
   /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
   payLife : Nat := 0
+  /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
+  discardSource : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -646,6 +761,7 @@ def toNotation (c : ActivationCost) : String :=
     (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
     (if c.tap then ["{T}"] else []) ++
     (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
+    (if c.discardSource then ["Discard this card"] else []) ++
     (if c.sacrificeSource then ["Sacrifice"] else []) ++
     (if c.sacrificeAnotherCreatureOrArtifact then
       ["Sacrifice another creature or artifact"]
@@ -673,6 +789,14 @@ structure ActivatedAbility where
   onlyDuringYourTurn : Bool := false
   /-- Frequency restriction “Activate only once each turn”. -/
   onceEachTurn : Bool := false
+  /-- This ability can be activated only while the source is in a graveyard
+  (CR 112.6 / 404). -/
+  activateFromGraveyard : Bool := false
+  /-- This ability can be activated only while the source is in your hand
+  (CR 112.6 / 702.29, e.g. cycling). -/
+  activateFromHand : Bool := false
+  /-- Timing restriction “Activate only if you control a legendary creature”. -/
+  onlyIfYouControlLegendary : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -689,7 +813,11 @@ def toNotation (ab : ActivatedAbility) : String :=
   let timing :=
     (if ab.onlyAsSorcery then " (activate only as a sorcery)" else "") ++
     (if ab.onlyDuringYourTurn then " (activate only during your turn)" else "") ++
-    (if ab.onceEachTurn then " (activate only once each turn)" else "")
+    (if ab.onceEachTurn then " (activate only once each turn)" else "") ++
+    (if ab.activateFromGraveyard then " (activate only from the graveyard)" else "") ++
+    (if ab.activateFromHand then " (activate only from your hand)" else "") ++
+    (if ab.onlyIfYouControlLegendary then
+      " (activate only if you control a legendary creature)" else "")
   let body :=
     if ab.isModal then
       let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -723,6 +851,9 @@ inductive StaticAbility where
   any of these subtypes (e.g. Olog-hai Crusher). An empty list means it can't
   block at all. The restriction is checked when declaring blockers (CR 509.1b). -/
   | cantBlockUnlessYouControl (subtypes : Array String)
+  /-- This creature can't be blocked except by `n` or more creatures
+  (e.g. Troll of Khazad-dûm with 3). Menace is the keyword for `n = 2`. -/
+  | cantBeBlockedExceptBy (n : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -753,6 +884,8 @@ inductive StaticShape where
   | landsYouControlPT
   /-- This creature can't block unless you control a listed subtype. -/
   | cantBlockUnless (subtypes : Array String)
+  /-- This creature can't be blocked except by `n` or more creatures. -/
+  | cantBeBlockedExcept (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -763,6 +896,7 @@ structure StaticMeta where
   hostBonus : Int × Int := (0, 0)
   landsYouControlPT : Bool := false
   cantBlockUnless : Option (Array String) := none
+  cantBeBlockedExcept : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -772,6 +906,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .hostGets _ p t => { hostBonus := (p, t) }
   | .landsYouControlPT => { landsYouControlPT := true }
   | .cantBlockUnless subtypes => { cantBlockUnless := some subtypes }
+  | .cantBeBlockedExcept n => { cantBeBlockedExcept := some n }
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -782,6 +917,7 @@ def shape : StaticAbility → StaticShape
   | .equippedCreatureGets p t => .hostGets "Equipped creature" p t
   | .powerToughnessEqualLandsYouControl => .landsYouControlPT
   | .cantBlockUnlessYouControl subtypes => .cantBlockUnless subtypes
+  | .cantBeBlockedExceptBy n => .cantBeBlockedExcept n
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -799,6 +935,9 @@ def toNotation (ab : StaticAbility) : String :=
     | [] => "This creature can't block."
     | xs =>
       s!"This creature can't block unless you control a {String.intercalate " or " xs}."
+  | .cantBeBlockedExcept n =>
+    let nWord := if n == 2 then "two" else if n == 3 then "three" else toString n
+    s!"This creature can't be blocked except by {nWord} or more creatures."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -823,6 +962,10 @@ def isLandsYouControlPT (ab : StaticAbility) : Bool :=
 /-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
 def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
   ab.shape.spec.cantBlockUnless
+
+/-- Minimum number of blockers required, if this ability restricts blocking. -/
+def cantBeBlockedExcept? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.cantBeBlockedExcept
 
 end StaticAbility
 
@@ -907,6 +1050,25 @@ inductive TriggeredAbility where
   /-- Whenever another Elf you control enters, this creature gets +1/+1 until
   end of turn (e.g. Woodland Weavemaster). -/
   | onAnotherElfYouControlEntersGets1
+  /-- When this creature dies, target creature an opponent controls gets
+  +P/+T until end of turn (e.g. Front Porch Sentries). -/
+  | onDiesOppCreatureGets (power toughness : Int)
+  /-- Whenever one or more other creatures die, scry `n`
+  (e.g. Great Fierce Bee). -/
+  | onOneOrMoreOtherCreaturesDieScry (n : Nat)
+  /-- When this permanent enters, target opponent sacrifices a creature of
+  their choice (e.g. Crude Bent Blade). -/
+  | onEnterTargetOpponentSacrifices
+  /-- When this permanent enters, each player sacrifices a creature of their
+  choice (e.g. Merciless Executioner). -/
+  | onEnterEachPlayerSacrificesCreature
+  /-- When this permanent enters, each opponent discards a card
+  (e.g. Stony-Voiced Goblins). -/
+  | onEnterEachOpponentDiscards
+  /-- When this permanent enters, exile up to one target card from an
+  opponent's graveyard. Each opponent loses `life` life
+  (e.g. Gollum the Abandoned). -/
+  | onEnterExileOppGyCardOppsLoseLife (life : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -931,6 +1093,8 @@ inductive TriggerEvent where
   | youScry
   /-- Another Elf you control enters (CR 603.6a). -/
   | anotherElfYouControlEnters
+  /-- One or more other creatures die (CR 700.4 / 603.2a). -/
+  | oneOrMoreOtherCreaturesDie
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -972,6 +1136,9 @@ def spec : TriggerEvent → Spec
     { clause := "you scry", label := "scry trigger", checkTargets := false }
   | .anotherElfYouControlEnters =>
     { clause := "another Elf you control enters", label := "Elf-enters trigger",
+      checkTargets := false }
+  | .oneOrMoreOtherCreaturesDie =>
+    { clause := "one or more other creatures die", label := "other-creatures-die trigger",
       checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
@@ -1043,6 +1210,15 @@ inductive TriggerResolution where
   | onSource (action : PermanentAction)
   /-- You gain `n` life (CR 118.2). -/
   | gainLife (n : Nat)
+  /-- Target opponent sacrifices a creature of their choice. -/
+  | targetOpponentSacrifices
+  /-- Each player sacrifices a creature of their choice. -/
+  | eachPlayerSacrificesCreature
+  /-- Each opponent discards a card. -/
+  | eachOpponentDiscards
+  /-- Exile up to one targeted card from an opponent's graveyard, then each
+  opponent loses `life` life. -/
+  | exileOppGyCardOppsLoseLife (life : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -1114,6 +1290,21 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.youScry], resolution := .pumpByLookedAt }
   | .onAnotherElfYouControlEntersGets1 =>
     { events := #[.anotherElfYouControlEnters], resolution := .onSource (.pump 1 1) }
+  | .onDiesOppCreatureGets p t =>
+    { events := #[.dying], targeting := .of .oppCreature,
+      resolution := .onPermanent (.pump p t) }
+  | .onOneOrMoreOtherCreaturesDieScry n =>
+    { events := #[.oneOrMoreOtherCreaturesDie], resolution := .scry n }
+  | .onEnterTargetOpponentSacrifices =>
+    { events := #[.entering], targeting := .of .opponent,
+      resolution := .targetOpponentSacrifices }
+  | .onEnterEachPlayerSacrificesCreature =>
+    { events := #[.entering], resolution := .eachPlayerSacrificesCreature }
+  | .onEnterEachOpponentDiscards =>
+    { events := #[.entering], resolution := .eachOpponentDiscards }
+  | .onEnterExileOppGyCardOppsLoseLife n =>
+    { events := #[.entering], targeting := .of .oppGraveyardCard,
+      allowsZeroTargets := true, resolution := .exileOppGyCardOppsLoseLife n }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -1205,6 +1396,14 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
   | .onSource action => PermanentAction.toNotation action "this creature"
   | .gainLife n => s!"you gain {n} life"
+  | .targetOpponentSacrifices =>
+    s!"{noun} sacrifices a creature of their choice"
+  | .eachPlayerSacrificesCreature =>
+    "each player sacrifices a creature of their choice"
+  | .eachOpponentDiscards =>
+    "each opponent discards a card"
+  | .exileOppGyCardOppsLoseLife n =>
+    s!"exile up to one {noun}. Each opponent loses {n} life"
 
 /-- Oracle-style reminder from `timing`, so a new constructor only updates that
 table. -/
@@ -1243,9 +1442,20 @@ structure CardDef where
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
   spellEffect : Option SpellEffect := none
-  /-- Additional cost: sacrifice an artifact or creature (CR 601.2f), e.g.
-  Improvised Club. -/
+  /-- Additional cost: sacrifice an artifact or creature (CR 601.2b / 601.2h), e.g.
+  Improvised Club. When `additionalCostOrPayGeneric` is set, that sacrifice
+  may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
+  The choice is announced at CR 601.2b, before targets. -/
   additionalCostSacrificeArtifactOrCreature : Bool := false
+  /-- Alternative additional cost: pay this much generic mana instead of
+  sacrificing an artifact or creature (CR 601.2b). -/
+  additionalCostOrPayGeneric : Option Nat := none
+  /-- This spell costs this much generic mana less if a creature died this
+  turn (e.g. Dreaded Bat-Cloud). -/
+  costReductionIfCreatureDied : Nat := 0
+  /-- This spell costs this much generic mana less if it targets a creature
+  that was dealt damage this turn (e.g. Bitter Downfall). -/
+  costReductionIfTargetDamaged : Nat := 0
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array SpellEffect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
@@ -1385,7 +1595,11 @@ def structuredAbilityLines (c : CardDef) : List String :=
     ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
    else []) ++
   (if c.additionalCostSacrificeArtifactOrCreature then
-    ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
+    match c.additionalCostOrPayGeneric with
+    | some n =>
+      [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
+    | none =>
+      ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
    else []) ++
   c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
@@ -1437,6 +1651,8 @@ instance : ToString CardDef where
 #guard toString Keyword.haste == "haste"
 #guard toString Keyword.flash == "flash"
 #guard toString Keyword.vigilance == "vigilance"
+#guard toString Keyword.lifelink == "lifelink"
+#guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.haste "Haste"
 #guard CardDef.isKeywordRestatement Keyword.flash "Flash"
 #guard CardDef.isKeywordRestatement Keyword.vigilance "Vigilance"
@@ -1465,15 +1681,33 @@ instance : ToString CardDef where
   "you may play an additional land this turn"
 #guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
+#guard SpellEffect.toNotation (.destroyTargetCreatureControllerLosesLife 2) ==
+  "destroy target creature. Its controller loses 2 life"
+#guard SpellEffect.toNotation (.allCreaturesGet (-4) (-4)) ==
+  "all creatures get -4/-4 until end of turn"
 #guard SpellEffect.toNotation (.drawAndLoseLife 2 2) ==
   "you draw 2 cards and lose 2 life"
 #guard SpellEffect.toNotation (.drawAndLoseLife 1 0) ==
   "you draw a card and lose 0 life"
+#guard SpellEffect.toNotation (.targetPlayerDrawLoseLife 2 2) ==
+  "target player draws 2 cards and loses 2 life"
+#guard SpellEffect.toNotation (.creaturesTargetPlayerGet (-1) (-1)) ==
+  "creatures target player controls get -1/-1 until end of turn"
+#guard SpellEffect.toNotation (.pumpAndLifelink 2 2) ==
+  "target creature gets +2/+2 and gains lifelink until end of turn"
+#guard SpellEffect.toNotation (.pumpAndExileIfDies (-5) (-5)) ==
+  "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
+#guard (SpellEffect.toNotation .exileGraveyardCreaturesGrantCast).startsWith
+  "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
 #guard EffectTargetKind.noun .opponent == "target opponent"
 #guard EffectTargetKind.noun .colorlessNonland ==
   "target colorless nonland permanent"
+#guard EffectTargetKind.noun .player == "target player"
+#guard EffectTargetKind.noun .opponent == "target opponent"
+#guard EffectTargetKind.noun .oppGraveyardCard ==
+  "target card from an opponent's graveyard"
 #guard EffectTargetKind.spec .none == { count := 0, noun := "", prefer := .own }
 #guard EffectTargetKind.spec .playerOrCreature ==
   { count := 1, noun := "any target", prefer := .opponentPlayer }
@@ -1532,7 +1766,20 @@ instance : ToString CardDef where
   .creatureYouControlThenOppCreature
 #guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
 #guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
+#guard SpellEffect.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature
+#guard SpellEffect.targetKind (.allCreaturesGet (-4) (-4)) == .none
 #guard SpellEffect.targetKind (.drawAndLoseLife 2 2) == .none
+#guard SpellEffect.targetKind (.targetPlayerDrawLoseLife 2 2) == .player
+#guard SpellEffect.targetKind (.creaturesTargetPlayerGet (-1) (-1)) == .player
+#guard SpellEffect.targetKind .exileGraveyardCreaturesGrantCast == .player
+#guard !SpellEffect.requiresTarget (.allCreaturesGet (-4) (-4))
+#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
+#guard SpellEffect.requiresTarget (.destroyTargetCreatureControllerLosesLife 2)
+#guard SpellEffect.requiresTarget (.targetPlayerDrawLoseLife 2 2)
+#guard SpellEffect.castKind (.allCreaturesGet (-4) (-4)) == .massPump
+#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
+#guard SpellEffect.castKind (.targetPlayerDrawLoseLife 2 2) == .draw
+#guard SpellEffect.preferAsDefaultMode (.pumpAndExileIfDies (-5) (-5))
 #guard SpellEffect.requiresTarget (.dealDamage 3)
 #guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
 #guard SpellEffect.requiresTarget .destroyCreature
@@ -1579,6 +1826,13 @@ instance : ToString CardDef where
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
+#guard AbilityEffect.toNotation (.searchLandTypeToHand "Mountain") ==
+  "Search your library for a Mountain card, reveal it, put it into your hand, then shuffle"
+#guard AbilityEffect.toNotation (.searchLandTypeToHand "Swamp") ==
+  "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
+#guard !AbilityEffect.requiresTarget (.searchLandTypeToHand "Mountain")
+#guard AbilityEffect.resolution (.searchLandTypeToHand "Swamp") ==
+  .searchLandTypeToHand "Swamp"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
 #guard AbilityEffect.toNotation .destroyTargetColorlessNonland ==
@@ -1595,6 +1849,16 @@ instance : ToString CardDef where
   "Put a +1/+1 counter on this creature"
 #guard AbilityEffect.toNotation .targetCantBeBlockedThisTurn ==
   "Target creature can't be blocked this turn"
+#guard AbilityEffect.toNotation .returnFromGraveyardTapped ==
+  "Return this card from your graveyard to the battlefield tapped"
+#guard AbilityEffect.toNotation .returnFromGraveyardToHand ==
+  "Return this card from your graveyard to your hand"
+#guard !AbilityEffect.requiresTarget .returnFromGraveyardTapped
+#guard !AbilityEffect.requiresTarget .returnFromGraveyardToHand
+#guard AbilityEffect.resolution .returnFromGraveyardTapped ==
+  .returnFromGraveyardTapped
+#guard AbilityEffect.resolution .returnFromGraveyardToHand ==
+  .returnFromGraveyardToHand
 #guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
 #guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
 #guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
@@ -1631,6 +1895,14 @@ instance : ToString CardDef where
 #guard CardDef.isKeywordRestatement Keyword.menace
   "Menace (This creature can't be blocked except by two or more creatures.)"
 #guard !CardDef.isKeywordRestatement Keyword.menace "Flying"
+#guard
+  let ab : ActivatedAbility := {
+    cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
+    effect := .searchLandTypeToHand "Mountain"
+    activateFromHand := true
+  }
+  toString ab ==
+    "{1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle (activate only from your hand)"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
@@ -1683,6 +1955,11 @@ instance : ToString CardDef where
   "This creature can't block unless you control a Goblin or Orc."
 #guard StaticAbility.toNotation (.cantBlockUnlessYouControl #[]) ==
   "This creature can't block."
+#guard StaticAbility.toNotation (.cantBeBlockedExceptBy 3) ==
+  "This creature can't be blocked except by three or more creatures."
+#guard StaticAbility.toNotation (.cantBeBlockedExceptBy 2) ==
+  "This creature can't be blocked except by two or more creatures."
+#guard (StaticAbility.cantBeBlockedExcept? (.cantBeBlockedExceptBy 3)) == some 3
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
@@ -1727,6 +2004,36 @@ instance : ToString CardDef where
   "Whenever you scry, this creature gets +1/+1 until end of turn for each card looked at while scrying this way."
 #guard TriggeredAbility.toNotation .onAnotherElfYouControlEntersGets1 ==
   "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn."
+#guard TriggeredAbility.toNotation (.onDiesOppCreatureGets (-1) (-1)) ==
+  "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn."
+#guard TriggeredAbility.toNotation (.onOneOrMoreOtherCreaturesDieScry 1) ==
+  "Whenever one or more other creatures die, scry 1."
+#guard TriggeredAbility.toNotation .onEnterTargetOpponentSacrifices ==
+  "When this permanent enters, target opponent sacrifices a creature of their choice."
+#guard TriggeredAbility.toNotation .onEnterEachPlayerSacrificesCreature ==
+  "When this permanent enters, each player sacrifices a creature of their choice."
+#guard TriggeredAbility.toNotation .onEnterEachOpponentDiscards ==
+  "When this permanent enters, each opponent discards a card."
+#guard TriggeredAbility.toNotation (.onEnterExileOppGyCardOppsLoseLife 2) ==
+  "When this permanent enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life."
+#guard TriggeredAbility.firesOn (.onDiesOppCreatureGets (-1) (-1)) .dying
+#guard TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .oneOrMoreOtherCreaturesDie
+#guard !TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .dying
+#guard TriggeredAbility.firesOn .onEnterEachPlayerSacrificesCreature .entering
+#guard TriggeredAbility.requiresTarget (.onDiesOppCreatureGets (-1) (-1))
+#guard TriggeredAbility.requiresTarget .onEnterTargetOpponentSacrifices
+#guard TriggeredAbility.requiresTarget (.onEnterExileOppGyCardOppsLoseLife 2)
+#guard TriggeredAbility.allowsZeroTargets (.onEnterExileOppGyCardOppsLoseLife 2)
+#guard !TriggeredAbility.requiresTarget .onEnterEachPlayerSacrificesCreature
+#guard !TriggeredAbility.requiresTarget .onEnterEachOpponentDiscards
+#guard TriggeredAbility.targetKind (.onDiesOppCreatureGets (-1) (-1)) == .oppCreature
+#guard TriggeredAbility.targetKind .onEnterTargetOpponentSacrifices == .opponent
+#guard TriggeredAbility.targetKind (.onEnterExileOppGyCardOppsLoseLife 2) ==
+  .oppGraveyardCard
+#guard TriggerEvent.label .oneOrMoreOtherCreaturesDie == "other-creatures-die trigger"
+#guard TriggerEvent.clause .oneOrMoreOtherCreaturesDie ==
+  "one or more other creatures die"
+#guard !TriggerEvent.checkTargets .oneOrMoreOtherCreaturesDie
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
@@ -1930,8 +2237,12 @@ end AdventureFace
 def isBasicLandCard (c : CardDef) : Bool :=
   c.isLand && c.hasSupertype .basic
 
+/-- A land card with the given land type (CR 205.3i / 305.7). -/
+def isLandTypeCard (c : CardDef) (landType : String) : Bool :=
+  c.isLand && c.hasSubtype landType
+
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
-  c.isLand && c.hasSubtype "Forest"
+  isLandTypeCard c "Forest"
 
 end Mtg.Engine

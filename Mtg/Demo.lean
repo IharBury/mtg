@@ -496,10 +496,12 @@ def helpInteractive (controlAll : Bool := false)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
-  sacrifice <id>       Sacrifice a creature or artifact to pay a cost, or a creature a resolved trigger requires
+  pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
+  sacrifice <id>       Sacrifice a creature or artifact to pay a cost, a creature a resolved trigger requires, or a creature as a resolving effect
+  sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
-  activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
+  activate <id>        Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
@@ -543,6 +545,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
+#guard ((helpInteractive false).splitOn "pay-extra").length > 1
+#guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
@@ -1249,7 +1253,8 @@ def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 
 def activateUsage : String := "usage: activate <id>"
 
-/-- Activate the first non-mana activated ability of the named permanent. -/
+/-- Activate the first non-mana activated ability of the named object
+(a permanent, a card in hand, or a card in a graveyard). -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -1268,10 +1273,15 @@ def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
 /-- After `pay`, sacrifice the named creature or artifact to finish activating
-or casting, or sacrifice a creature a resolved trigger requires. -/
+or casting. With no id, choose the sacrifice option of an additional cost
+(CR 601.2b). With an id, also sacrifice a creature a resolved trigger requires. -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
+  | [] =>
+    match g.pending with
+    | .chooseAdditionalCost _ => g.apply p (.chooseAdditionalCost false)
+    | _ => throw sacrificeUsage
   | [arg] =>
     match parseObjectId? arg with
     | none => throw sacrificeUsage
@@ -1280,6 +1290,36 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
       | none => throw "no such object"
       | some _ => g.apply p (.sacrifice id)
   | _ => throw sacrificeUsage
+
+def payExtraUsage : String := "usage: pay-extra"
+
+/-- Pay extra generic mana rather than sacrifice, as an additional cost
+(CR 601.2b). -/
+def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let tokens := tokens.filter (fun t => !t.isEmpty)
+  match tokens with
+  | [] => g.apply p (.chooseAdditionalCost true)
+  | _ => throw payExtraUsage
+
+#guard
+  match applyPayExtra Tests.stirChooseAdditional ⟨0⟩ [] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "chooses to pay {4} as an additional cost")
+  | .error _ => false
+
+#guard
+  match applyPayExtra Tests.stirChooseAdditional ⟨0⟩ ["extra"] with
+  | .error msg => msg == payExtraUsage
+  | .ok _ => false
+
+#guard
+  match applySacrifice Tests.stirChooseAdditional ⟨0⟩ [] with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.needsSacrificeOther
+    | none => false
+  | .error _ => false
 
 #guard
   match applyActivate Tests.baubleReady ⟨0⟩ [] with
@@ -1979,6 +2019,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
   | "pay" => g.apply p .pay
+  | "pay-extra" => applyPayExtra g p args
   | "sacrifice" => applySacrifice g p args
   | "concede" => g.apply p .concede
   | "attack" => applyAttack g p args
@@ -2163,6 +2204,14 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "begins activating Rogue's Passage")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.oliphauntCycleReady "activate"
+      [toString (Tests.handCardNamed Tests.oliphauntCycleReady ⟨0⟩ "Oliphaunt").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Oliphaunt")
   | .error _ => false
 
 #guard

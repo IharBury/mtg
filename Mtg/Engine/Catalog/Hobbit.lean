@@ -11,8 +11,9 @@ for each permanent of a listed type, `{T}: Add` X mana of any color equal to pow
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
 Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Passage, Equip, and paying life for an until-end-of-turn pump (Desolation Prowler), static abilities that grant trample, pump other creatures of listed types, pump an enchanted
-or equipped creature, or restrict blocking unless you control certain creature
-types, attack triggers that pump, set another creature's base
+or equipped creature, restrict blocking unless you control certain creature
+types, or prevent blocking except by two or more (menace) or three or more
+creatures, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, scry, deal damage
 divided among targets, scry when you attack with Elves, or gain life while you
 control a creature with power 4 or greater (Ferocious), scry triggers that
@@ -24,8 +25,8 @@ another Elf you control entering that pumps this creature,
 landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy (including target creature, and target
-artifact or land, after which creatures without flying can't block this turn), +1/+1
+plays this turn), typecycling from hand (Mountaincycling, Swampcycling), modal spells, destroy (including target creature, and target artifact or land,
+after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
 to a creature an opponent controls, dealing damage that also makes a creature
@@ -214,19 +215,28 @@ def sternScolding : CardDef :=
 def frontPorchSentries : CardDef :=
   creature "Front Porch Sentries" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Soldier"] 2 2
     (oracleText := "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn.")
+    (triggeredAbilities := #[.onDiesOppCreatureGets (-1) (-1)])
 
 def greatFierceBee : CardDef :=
   creature "Great Fierce Bee" (ManaCost.ofGenericAndColor 2 .black) #["Insect"] 2 2
     (oracleText := "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)")
     (keywords := Keyword.flying)
+    (triggeredAbilities := #[.onOneOrMoreOtherCreaturesDieScry 1])
 
 def stirUpTrouble : CardDef :=
   sorcery "Stir Up Trouble" (ManaCost.ofColor .black)
     "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature."
+    (some .destroyCreature)
+    (additionalCostSacrificeArtifactOrCreature := true)
+    (additionalCostOrPayGeneric := some 4)
 
 def hauntOfTheDeadMarshes : CardDef :=
   creature "Haunt of the Dead Marshes" (ManaCost.ofColor .black) #["Nightmare", "Elf"] 1 1
     (oracleText := "When this creature enters, scry 1.\n{2}{B}: Return this card from your graveyard to the battlefield tapped. Activate only if you control a legendary creature.")
+    (triggeredAbilities := #[.onEnterScry 1])
+    (activatedAbilities := #[
+      activated .returnFromGraveyardTapped (ManaCost.ofGenericAndColor 2 .black)
+        (activateFromGraveyard := true) (onlyIfYouControlLegendary := true)])
 
 def desolationProwler : CardDef :=
   creature "Desolation Prowler" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
@@ -255,6 +265,7 @@ def dreadedBatCloud : CardDef :=
   creature "Dreaded Bat-Cloud" (ManaCost.ofGenericAndColor 4 .black) #["Bat"] 4 2
     (oracleText := "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch")
     (keywords := Keyword.deathtouch.merge Keyword.flying)
+    (costReductionIfCreatureDied := 3)
 
 def crudeBentBlade : CardDef :=
   artifact "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
@@ -267,35 +278,50 @@ def crudeBentBlade : CardDef :=
 def languish : CardDef :=
   sorcery "Languish" (ManaCost.ofGenericAndColors 2 [.black, .black])
     "All creatures get -4/-4 until end of turn."
+    (some (.allCreaturesGet (-4) (-4)))
 
 def shadowOfTheEnemy : CardDef :=
   sorcery "Shadow of the Enemy" (ManaCost.ofGenericAndColors 3 [.black, .black, .black])
     "Exile all creature cards from target player's graveyard. You may cast spells from among those cards for as long as they remain exiled, and mana of any type can be spent to cast them."
+    (some .exileGraveyardCreaturesGrantCast)
 
 def gollumTheAbandoned : CardDef :=
   creature "Gollum the Abandoned" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 2 2
     (oracleText := "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery.")
     (supertypes := #[.legendary])
+    (staticAbilities := #[.cantBlockUnlessYouControl #[]])
+    (triggeredAbilities := #[.onEnterExileOppGyCardOppsLoseLife 2])
+    (activatedAbilities := #[
+      activated .returnFromGraveyardToHand (ManaCost.ofGeneric 2)
+        (sacrificeAnotherCreatureOrArtifact := true)
+        (onlyAsSorcery := true) (activateFromGraveyard := true)])
 
 def gnashingOfTeeth : CardDef :=
   sorcery "Gnashing of Teeth" (ManaCost.ofGenericAndColors 1 [.black, .black])
     "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn."
+    (spellModes := #[.pumpAndExileIfDies (-5) (-5), .creaturesTargetPlayerGet (-1) (-1)])
 
 def trollOfKhazadDum : CardDef :=
   creature "Troll of Khazad-dûm" (ManaCost.ofGenericAndColor 5 .black) #["Troll"] 6 5
     (oracleText := "This creature can't be blocked except by three or more creatures.\nSwampcycling {1} ({1}, Discard this card: Search your library for a Swamp card, reveal it, put it into your hand, then shuffle.)")
+    (staticAbilities := #[.cantBeBlockedExceptBy 3])
+    (activatedAbilities := #[typecyclingAbility "Swamp"])
 
 def mercilessExecutioner : CardDef :=
   creature "Merciless Executioner" (ManaCost.ofGenericAndColor 2 .black) #["Orc", "Warrior"] 3 1
     (oracleText := "When this creature enters, each player sacrifices a creature of their choice.")
+    (triggeredAbilities := #[.onEnterEachPlayerSacrificesCreature])
 
 def bitterDownfall : CardDef :=
   instant "Bitter Downfall" (ManaCost.ofGenericAndColor 3 .black)
     "This spell costs {3} less to cast if it targets a creature that was dealt damage this turn.\nDestroy target creature. Its controller loses 2 life."
+    (some (.destroyTargetCreatureControllerLosesLife 2))
+    (costReductionIfTargetDamaged := 3)
 
 def reverentHowl : CardDef :=
   instant "Reverent Howl" (ManaCost.ofGenericAndColor 2 .black)
     "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn."
+    (spellModes := #[.targetPlayerDrawLoseLife 2 2, .pumpAndLifelink 2 2])
 
 def nightsWhisper : CardDef :=
   sorcery "Night's Whisper" (ManaCost.ofGenericAndColor 1 .black)
@@ -305,6 +331,7 @@ def nightsWhisper : CardDef :=
 def stonyVoicedGoblins : CardDef :=
   creature "Stony-Voiced Goblins" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Bard"] 1 1
     (oracleText := "When this creature enters, each opponent discards a card.")
+    (triggeredAbilities := #[.onEnterEachOpponentDiscards])
 
 def wayfarersBauble : CardDef :=
   artifact "Wayfarer's Bauble" (ManaCost.ofGeneric 1)
@@ -373,6 +400,7 @@ def oliphaunt : CardDef :=
     (oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)")
     (keywords := Keyword.trample)
     (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
+    (activatedAbilities := #[typecyclingAbility "Mountain"])
 
 def goblinCratermaker : CardDef :=
   creature "Goblin Cratermaker" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
@@ -669,6 +697,11 @@ def attercop : CardDef :=
 #guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
 #guard oliphaunt.keywords.trample
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
+#guard oliphaunt.activatedAbilities.size == 1
+#guard oliphaunt.activatedAbilities[0]!.activateFromHand
+#guard oliphaunt.activatedAbilities[0]!.cost.discardSource
+#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
+#guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard oliphaunt.power == some 6
 #guard oliphaunt.toughness == some 4
 #guard (oliphaunt.summary.splitOn "trample").length > 1
@@ -720,15 +753,61 @@ def attercop : CardDef :=
 #guard (raveningWarg.summary.splitOn "Ferocious").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
+#guard frontPorchSentries.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
+#guard (frontPorchSentries.summary.splitOn "-1/-1").length > 1
+#guard greatFierceBee.keywords.flying
+#guard greatFierceBee.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
+#guard (greatFierceBee.summary.splitOn "other creatures die").length > 1
+#guard stirUpTrouble.spellEffect == some .destroyCreature
+#guard stirUpTrouble.additionalCostSacrificeArtifactOrCreature
+#guard stirUpTrouble.additionalCostOrPayGeneric == some 4
+#guard hauntOfTheDeadMarshes.triggeredAbilities == #[.onEnterScry 1]
+#guard hauntOfTheDeadMarshes.activatedAbilities.size == 1
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.activateFromGraveyard
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.onlyIfYouControlLegendary
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.effect == .returnFromGraveyardTapped
 #guard gollumSilentSlinker.keywords.menace
+#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
+#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.requiresTarget
+#guard dreadedBatCloud.costReductionIfCreatureDied == 3
+#guard dreadedBatCloud.keywords.flying
+#guard dreadedBatCloud.keywords.deathtouch
+#guard crudeBentBlade.isEquipment
+#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBlade.activatedAbilities.size == 1
+#guard languish.spellEffect == some (.allCreaturesGet (-4) (-4))
+#guard !languish.requiresTarget
+#guard shadowOfTheEnemy.spellEffect == some .exileGraveyardCreaturesGrantCast
+#guard shadowOfTheEnemy.requiresTarget
+#guard gollumTheAbandoned.staticAbilities == #[.cantBlockUnlessYouControl #[]]
+#guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
+#guard gollumTheAbandoned.activatedAbilities[0]!.activateFromGraveyard
+#guard gollumTheAbandoned.activatedAbilities[0]!.onlyAsSorcery
+#guard gollumTheAbandoned.activatedAbilities[0]!.effect == .returnFromGraveyardToHand
+#guard gnashingOfTeeth.isModal
+#guard gnashingOfTeeth.spellModes ==
+  #[.pumpAndExileIfDies (-5) (-5), .creaturesTargetPlayerGet (-1) (-1)]
+#guard trollOfKhazadDum.staticAbilities == #[.cantBeBlockedExceptBy 3]
+#guard (trollOfKhazadDum.summary.splitOn "three or more").length > 1
+#guard trollOfKhazadDum.activatedAbilities.size == 1
+#guard trollOfKhazadDum.activatedAbilities[0]!.activateFromHand
+#guard trollOfKhazadDum.activatedAbilities[0]!.cost.discardSource
+#guard trollOfKhazadDum.activatedAbilities[0]!.effect == .searchLandTypeToHand "Swamp"
+#guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
+#guard bitterDownfall.spellEffect == some (.destroyTargetCreatureControllerLosesLife 2)
+#guard bitterDownfall.costReductionIfTargetDamaged == 3
+#guard reverentHowl.isModal
+#guard reverentHowl.spellModes ==
+  #[.targetPlayerDrawLoseLife 2 2, .pumpAndLifelink 2 2]
+#guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
 #guard gollumSilentSlinker.supertypes.any (· == .legendary)
-#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
 #guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
 #guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
-#guard bilbosDeadlySlice.requiresTarget
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard (bilbosDeadlySlice.summary.splitOn "Destroy target creature").length > 1
 #guard improvisedClub.isInstant

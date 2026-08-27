@@ -25,6 +25,9 @@ def card (name : String) (types : Array CardType)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
+    (additionalCostOrPayGeneric : Option Nat := none)
+    (costReductionIfCreatureDied : Nat := 0)
+    (costReductionIfTargetDamaged : Nat := 0)
     (tapAddMana : Array ManaType := #[])
     (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColorEqualToPower : Bool := false)
@@ -34,6 +37,7 @@ def card (name : String) (types : Array CardType)
     (adventure : Option AdventureFace := none) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
   supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
+  additionalCostOrPayGeneric, costReductionIfCreatureDied, costReductionIfTargetDamaged,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower, staticAbilities,
   triggeredAbilities, activatedAbilities, adventure
 }
@@ -60,37 +64,55 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (activatedAbilities : Array ActivatedAbility := #[])
     (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColorEqualToPower : Bool := false)
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option AdventureFace := none)
+    (costReductionIfCreatureDied : Nat := 0) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
     (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
+    (costReductionIfCreatureDied := costReductionIfCreatureDied)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (oracleText : String) (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
-    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
+    (additionalCostSacrificeArtifactOrCreature : Bool := false)
+    (additionalCostOrPayGeneric : Option Nat := none)
+    (costReductionIfCreatureDied : Nat := 0)
+    (costReductionIfTargetDamaged : Nat := 0) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
       additionalCostSacrificeArtifactOrCreature)
+    (additionalCostOrPayGeneric := additionalCostOrPayGeneric)
+    (costReductionIfCreatureDied := costReductionIfCreatureDied)
+    (costReductionIfTargetDamaged := costReductionIfTargetDamaged)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
-    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
+    (additionalCostSacrificeArtifactOrCreature : Bool := false)
+    (additionalCostOrPayGeneric : Option Nat := none)
+    (costReductionIfCreatureDied : Nat := 0)
+    (costReductionIfTargetDamaged : Nat := 0) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect spellModes
-    additionalCostSacrificeArtifactOrCreature
+    additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
+    costReductionIfCreatureDied costReductionIfTargetDamaged
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
-    (spellModes : Array SpellEffect := #[]) : CardDef :=
+    (spellModes : Array SpellEffect := #[])
+    (additionalCostSacrificeArtifactOrCreature : Bool := false)
+    (additionalCostOrPayGeneric : Option Nat := none)
+    (costReductionIfCreatureDied : Nat := 0)
+    (costReductionIfTargetDamaged : Nat := 0) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect spellModes
+    additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
+    costReductionIfCreatureDied costReductionIfTargetDamaged
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -135,15 +157,34 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (sacrificeAnotherCreatureOrArtifact : Bool := false)
     (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
     (onceEachTurn : Bool := false)
-    (otherModes : Array AbilityEffect := #[]) (payLife : Nat := 0) :
+    (otherModes : Array AbilityEffect := #[]) (payLife : Nat := 0)
+    (activateFromGraveyard : Bool := false)
+    (activateFromHand : Bool := false)
+    (onlyIfYouControlLegendary : Bool := false)
+    (discardSource : Bool := false) :
     ActivatedAbility := {
-  cost := { mana, tap, sacrificeSource, sacrificeAnotherCreatureOrArtifact, payLife }
+  cost := {
+    mana := mana
+    tap := tap
+    sacrificeSource := sacrificeSource
+    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
+    payLife := payLife
+    discardSource := discardSource
+  }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery. -/
 def equipAbility (mana : ManaCost) : ActivatedAbility :=
   activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+
+/-- Typecycling `{cost}`: discard this card from hand, search for a `landType`
+card, put it into your hand, then shuffle (CR 702.29). -/
+def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
+    ActivatedAbility :=
+  activated (.searchLandTypeToHand landType) mana
+    (discardSource := true) (activateFromHand := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
