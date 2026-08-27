@@ -865,25 +865,44 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
 
-/-- Oracle clause and whether the ability uses `Whenever` rather than `When`.
-Exhaustive so a new event is a compile error here rather than silently
-matching `When this occurs` with `Whenever`. -/
+/-- Oracle wording plus how Game queues this event. Exhaustive so a new event
+is a compile error here rather than silently matching `When this occurs` with
+`Whenever`, or restating the stack label and CR 603.3d check at every queue
+site. -/
 structure Spec where
   clause : String
   isWhenever : Bool := true
+  /-- Log label when this event is put on the stack. -/
+  label : String
+  /-- Remove the ability when it requires a target and has none (CR 603.3d). -/
+  checkTargets : Bool := true
 deriving Repr, Inhabited, BEq
 
-/-- Classification of this event. `clause` and `isWhenever` read this table. -/
+/-- Classification of this event. `clause`, `isWhenever`, `label`, and
+`checkTargets` read this table. -/
 def spec : TriggerEvent → Spec
-  | .attacking => { clause := "this creature attacks" }
-  | .becomesBlocked => { clause := "this creature becomes blocked" }
-  | .entering => { clause := "this permanent enters", isWhenever := false }
-  | .landYouControlEnters => { clause := "a land you control enters" }
-  | .dying => { clause := "this creature dies", isWhenever := false }
-  | .youCastInstantOrSorcery => { clause := "you cast an instant or sorcery spell" }
-  | .youAttackWithElves => { clause := "you attack with one or more Elves" }
-  | .youScry => { clause := "you scry" }
-  | .anotherElfYouControlEnters => { clause := "another Elf you control enters" }
+  | .attacking =>
+    { clause := "this creature attacks", label := "attack trigger" }
+  | .becomesBlocked =>
+    { clause := "this creature becomes blocked", label := "becomes-blocked trigger",
+      checkTargets := false }
+  | .entering =>
+    { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
+  | .landYouControlEnters =>
+    { clause := "a land you control enters", label := "landfall trigger" }
+  | .dying =>
+    { clause := "this creature dies", isWhenever := false, label := "dies trigger" }
+  | .youCastInstantOrSorcery =>
+    { clause := "you cast an instant or sorcery spell", label := "cast trigger",
+      checkTargets := false }
+  | .youAttackWithElves =>
+    { clause := "you attack with one or more Elves", label := "attack trigger",
+      checkTargets := false }
+  | .youScry =>
+    { clause := "you scry", label := "scry trigger", checkTargets := false }
+  | .anotherElfYouControlEnters =>
+    { clause := "another Elf you control enters", label := "Elf-enters trigger",
+      checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -892,6 +911,14 @@ def clause (e : TriggerEvent) : String :=
 /-- `Whenever` rather than one-shot `When` (enters / dies). -/
 def isWhenever (e : TriggerEvent) : Bool :=
   e.spec.isWhenever
+
+/-- Log label when this event is put on the stack. -/
+def label (e : TriggerEvent) : String :=
+  e.spec.label
+
+/-- True when Game removes this trigger for lack of a legal target (CR 603.3d). -/
+def checkTargets (e : TriggerEvent) : Bool :=
+  e.spec.checkTargets
 
 end TriggerEvent
 
@@ -1382,10 +1409,24 @@ instance : ToString CardDef where
     noun := "target creature you control and a creature an opponent controls"
     prefer := .ownThenOpponent }
 #guard TriggerEvent.spec .entering ==
-  { clause := "this permanent enters", isWhenever := false }
+  { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
 #guard TriggerEvent.spec .attacking ==
-  { clause := "this creature attacks", isWhenever := true }
+  { clause := "this creature attacks", isWhenever := true, label := "attack trigger" }
 #guard TriggerEvent.clause .youScry == "you scry"
+#guard TriggerEvent.label .dying == "dies trigger"
+#guard TriggerEvent.label .youScry == "scry trigger"
+#guard TriggerEvent.label .landYouControlEnters == "landfall trigger"
+#guard TriggerEvent.label .becomesBlocked == "becomes-blocked trigger"
+#guard TriggerEvent.label .youCastInstantOrSorcery == "cast trigger"
+#guard TriggerEvent.label .anotherElfYouControlEnters == "Elf-enters trigger"
+#guard TriggerEvent.label .attacking == "attack trigger"
+#guard TriggerEvent.label .youAttackWithElves == "attack trigger"
+#guard !TriggerEvent.checkTargets .youCastInstantOrSorcery
+#guard !TriggerEvent.checkTargets .youAttackWithElves
+#guard !TriggerEvent.checkTargets .anotherElfYouControlEnters
+#guard TriggerEvent.checkTargets .entering
+#guard TriggerEvent.checkTargets .landYouControlEnters
+#guard TriggerEvent.checkTargets .attacking
 #guard !TriggerEvent.isWhenever .dying
 #guard TriggerEvent.isWhenever .youAttackWithElves
 #guard SpellEffect.targetCount (.dealDamage 3) == 1
