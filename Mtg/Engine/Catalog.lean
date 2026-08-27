@@ -212,7 +212,10 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard (ragingGoblin.summary.splitOn "haste").length > 1
 #guard (llanowarElves.summary.splitOn "{T}: Add {G}").length > 1
 #guard (lightningBolt.summary.splitOn "deals 3 damage").length > 1
+#guard (lightningBolt.summary.splitOn "{R}").length > 1
 #guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
+#guard (mountain.summary.splitOn "{0}").length == 1
+#guard mountain.summary == "Mountain Basic Land — Mountain {T}: Add {R}."
 #guard (giantSpider.summary.splitOn "reach").length > 1
 #guard giantGrowth.spellEffect == some (.pump 3 3)
 #guard giantGrowth.isInstant
