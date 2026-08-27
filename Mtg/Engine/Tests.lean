@@ -680,7 +680,7 @@ def zeroZero : CardDef :=
 
 def addPumpedCreature (g : Game) (card : CardDef) (pumpP pumpT : Int) : Game :=
   insertObject g card g.activePlayer .battlefield (some g.activePlayer)
-    { pumpPower := pumpP, pumpToughness := pumpT, summoningSick := false }
+    { pump := (pumpP, pumpT), summoningSick := false }
 
 /-- CR 514.3: after both players pass in the end step, cleanup does not grant
 priority, so the next player's upkeep begins immediately. -/
@@ -4213,8 +4213,7 @@ def fireleaperDeathResolved : Game := passBoth fireleaperDeathTargeted
 /-- Pumped power is last known information when the Fireleaper dies (CR 113.7a). -/
 def fireleaperPumpedThenDied : Game :=
   let o := namedPermanent pumpedFireleaper "Goblin Fireleaper"
-  let g := pumpedFireleaper.setObject { o with status := { o.status with
-    pumpPower := o.status.pumpPower, damage := 1 } }
+  let g := pumpedFireleaper.setObject { o with status := { o.status with damage := 1 } }
   let g := g.receivePriority ⟨0⟩
   let g := mustApply g ⟨0⟩
     (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
@@ -8117,7 +8116,7 @@ def resolvedSmiteOnWurm : Game :=
 def smiteWurmThenZeroToughness : Game :=
   let o := namedPermanent resolvedSmiteOnWurm "Craw Wurm"
   let g := resolvedSmiteOnWurm.setObject { o with
-    status := { o.status with pumpToughness := -4 } }
+    status := { o.status with pump := (o.status.pump.1, -4) } }
   g.receivePriority ⟨0⟩
 
 #guard !(smiteWurmThenZeroToughness.battlefield.any (fun o => o.name == "Craw Wurm"))

@@ -90,7 +90,8 @@ end Keyword
 
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
-in `Game.legalTargetsForKind` rather than silently offering no targets. -/
+in `EffectTargetKind.spec` and `Game.legalTargetsForAtomicKind` rather than
+silently offering no targets. Sequential shapes list each slot in `spec`. -/
 inductive EffectTargetKind where
   /-- No target. -/
   | none
@@ -134,13 +135,16 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace EffectTargetKind
 
-/-- Count, Oracle noun, and demonstration-agent preference for a targeting
-shape. Exhaustive so a new constructor is a compile error here rather than
-silently using `targetCount` 1, an empty noun, or `.opponent`. -/
+/-- Count, Oracle noun, demonstration-agent preference, and per-announcement
+slots for a targeting shape. Exhaustive so a new constructor is a compile
+error here rather than silently using `targetCount` 1, an empty noun, or
+`.opponent`. Sequential shapes list each slot so Game does not restate them. -/
 structure Spec where
   count : Nat := 1
   noun : String := ""
   prefer : TargetPreference := .opponent
+  /-- Kinds of each announced target. Empty means this kind is itself the slot. -/
+  slots : Array EffectTargetKind := #[]
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this targeting shape. `targetCount`, `noun`, and
@@ -169,7 +173,8 @@ def spec : EffectTargetKind → Spec
   | .creatureYouControlThenOppCreature =>
     { count := 2
       noun := "target creature you control and a creature an opponent controls"
-      prefer := .ownThenOpponent }
+      prefer := .ownThenOpponent
+      slots := #[.creatureYouControl, .oppCreature] }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -182,6 +187,11 @@ def noun (k : EffectTargetKind) : String :=
 /-- Default demonstration-agent preference for this targeting shape. -/
 def defaultPreference (k : EffectTargetKind) : TargetPreference :=
   k.spec.prefer
+
+/-- Kind of the `i`th target to announce (0-based). Atomic shapes return
+themselves for every slot. -/
+def slotKind (k : EffectTargetKind) (i : Nat) : EffectTargetKind :=
+  k.spec.slots[i]?.getD k
 
 end EffectTargetKind
 
@@ -207,6 +217,21 @@ def requiresTarget (t : EffectTargeting) : Bool :=
   t.targetCount != 0
 
 end EffectTargeting
+
+/-- Types that classify targeting through `EffectTargeting`. `targetKind`,
+`targetCount`, and `requiresTarget` are derived here so spell, ability, and
+trigger wrappers do not restate them. -/
+class HasTargeting (α : Type) where
+  targeting : α → EffectTargeting
+
+namespace HasTargeting
+variable {α : Type} [HasTargeting α]
+
+def targetKind (e : α) : EffectTargetKind := targeting e |>.kind
+def targetCount (e : α) : Nat := targeting e |>.targetCount
+def requiresTarget (e : α) : Bool := targeting e |>.requiresTarget
+
+end HasTargeting
 
 /-- First character uppercased (ASCII), for ability sentences. -/
 def capitalizeAscii (s : String) : String :=
@@ -382,21 +407,24 @@ def spec : SpellEffect → SpellMeta
     { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
       resolution := .onPermanent .destroyThenNonflyersCantBlock }
 
+instance : HasTargeting SpellEffect where
+  targeting e := e.spec.targeting
+
 /-- Classification of this spell effect's targeting (CR 115.1 / 601.2c). -/
 def targeting (e : SpellEffect) : EffectTargeting :=
-  e.spec.targeting
+  HasTargeting.targeting e
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : SpellEffect) : EffectTargetKind :=
-  e.targeting.kind
+  HasTargeting.targetKind e
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
 def targetCount (e : SpellEffect) : Nat :=
-  e.targeting.targetCount
+  HasTargeting.targetCount e
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
-  e.targeting.requiresTarget
+  HasTargeting.requiresTarget e
 
 /-- Demonstration-agent category for this effect. -/
 def castKind (e : SpellEffect) : SpellCastKind :=
@@ -519,21 +547,24 @@ def spec : AbilityEffect → AbilityMeta
   | .putPlusOnePlusOneOnSource n =>
     { resolution := .onSource (.plusOne n) }
 
+instance : HasTargeting AbilityEffect where
+  targeting e := e.spec.targeting
+
 /-- Classification of this ability effect's targeting (CR 115.1 / 601.2c). -/
 def targeting (e : AbilityEffect) : EffectTargeting :=
-  e.spec.targeting
+  HasTargeting.targeting e
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : AbilityEffect) : EffectTargetKind :=
-  e.targeting.kind
+  HasTargeting.targetKind e
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
 def targetCount (e : AbilityEffect) : Nat :=
-  e.targeting.targetCount
+  HasTargeting.targetCount e
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : AbilityEffect) : Bool :=
-  e.targeting.requiresTarget
+  HasTargeting.requiresTarget e
 
 /-- Demonstration-agent category for this ability mode. -/
 def castKind (e : AbilityEffect) : AbilityCastKind :=
@@ -865,25 +896,44 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
 
-/-- Oracle clause and whether the ability uses `Whenever` rather than `When`.
-Exhaustive so a new event is a compile error here rather than silently
-matching `When this occurs` with `Whenever`. -/
+/-- Oracle wording plus how Game queues this event. Exhaustive so a new event
+is a compile error here rather than silently matching `When this occurs` with
+`Whenever`, or restating the stack label and CR 603.3d check at every queue
+site. -/
 structure Spec where
   clause : String
   isWhenever : Bool := true
+  /-- Log label when this event is put on the stack. -/
+  label : String
+  /-- Remove the ability when it requires a target and has none (CR 603.3d). -/
+  checkTargets : Bool := true
 deriving Repr, Inhabited, BEq
 
-/-- Classification of this event. `clause` and `isWhenever` read this table. -/
+/-- Classification of this event. `clause`, `isWhenever`, `label`, and
+`checkTargets` read this table. -/
 def spec : TriggerEvent → Spec
-  | .attacking => { clause := "this creature attacks" }
-  | .becomesBlocked => { clause := "this creature becomes blocked" }
-  | .entering => { clause := "this permanent enters", isWhenever := false }
-  | .landYouControlEnters => { clause := "a land you control enters" }
-  | .dying => { clause := "this creature dies", isWhenever := false }
-  | .youCastInstantOrSorcery => { clause := "you cast an instant or sorcery spell" }
-  | .youAttackWithElves => { clause := "you attack with one or more Elves" }
-  | .youScry => { clause := "you scry" }
-  | .anotherElfYouControlEnters => { clause := "another Elf you control enters" }
+  | .attacking =>
+    { clause := "this creature attacks", label := "attack trigger" }
+  | .becomesBlocked =>
+    { clause := "this creature becomes blocked", label := "becomes-blocked trigger",
+      checkTargets := false }
+  | .entering =>
+    { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
+  | .landYouControlEnters =>
+    { clause := "a land you control enters", label := "landfall trigger" }
+  | .dying =>
+    { clause := "this creature dies", isWhenever := false, label := "dies trigger" }
+  | .youCastInstantOrSorcery =>
+    { clause := "you cast an instant or sorcery spell", label := "cast trigger",
+      checkTargets := false }
+  | .youAttackWithElves =>
+    { clause := "you attack with one or more Elves", label := "attack trigger",
+      checkTargets := false }
+  | .youScry =>
+    { clause := "you scry", label := "scry trigger", checkTargets := false }
+  | .anotherElfYouControlEnters =>
+    { clause := "another Elf you control enters", label := "Elf-enters trigger",
+      checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -892,6 +942,14 @@ def clause (e : TriggerEvent) : String :=
 /-- `Whenever` rather than one-shot `When` (enters / dies). -/
 def isWhenever (e : TriggerEvent) : Bool :=
   e.spec.isWhenever
+
+/-- Log label when this event is put on the stack. -/
+def label (e : TriggerEvent) : String :=
+  e.spec.label
+
+/-- True when Game removes this trigger for lack of a legal target (CR 603.3d). -/
+def checkTargets (e : TriggerEvent) : Bool :=
+  e.spec.checkTargets
 
 end TriggerEvent
 
@@ -1013,63 +1071,25 @@ def dividedDamage? (ab : TriggeredAbility) : Option (Nat × Nat) :=
 def resolution (ab : TriggeredAbility) : TriggerResolution :=
   ab.timing.resolution
 
+instance : HasTargeting TriggeredAbility where
+  targeting ab := ab.timing.targeting
+
 /-- Targeting shape when this trigger is put on the stack (CR 603.3d). -/
 def targeting (ab : TriggeredAbility) : EffectTargeting :=
-  ab.timing.targeting
+  HasTargeting.targeting ab
 
-/-- True when this ability fires on `e`. Game queues triggers by `TriggerEvent`;
-the named `triggersWhen*` wrappers below are the same predicates with CR
-citations, used by compile-time tests. -/
+/-- True when this ability fires on `e`. Game queues triggers by `TriggerEvent`. -/
 def firesOn (ab : TriggeredAbility) (e : TriggerEvent) : Bool :=
   ab.timing.events.contains e
 
-/-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
-def triggersWhenAttacking (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .attacking
-
-/-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
-def triggersWhenBecomesBlocked (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .becomesBlocked
-
-/-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
-def triggersWhenEntering (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .entering
-
-/-- True for abilities that trigger when a land the controller controls enters
-(CR 603.6a, landfall). -/
-def triggersWhenLandYouControlEnters (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .landYouControlEnters
-
-/-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
-def triggersWhenDying (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .dying
-
-/-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
-def triggersWhenYouCastInstantOrSorcery (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .youCastInstantOrSorcery
-
-/-- True for abilities that trigger once when you attack with one or more Elves
-(CR 508.2 / 603.2a). Not the same as “whenever this creature attacks”. -/
-def triggersWhenYouAttackWithElves (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .youAttackWithElves
-
-/-- True for abilities that trigger when you scry (CR 701.20 / 603.2). -/
-def triggersWhenYouScry (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .youScry
-
-/-- True for abilities that trigger when another Elf the controller controls
-enters (CR 603.6a). Does not trigger from this permanent entering. -/
-def triggersWhenAnotherElfYouControlEnters (ab : TriggeredAbility) : Bool :=
-  ab.firesOn .anotherElfYouControlEnters
-
 /-- Whom this trigger may target when announced (CR 603.3d / 601.2c). -/
 def targetKind (ab : TriggeredAbility) : TriggerTargetKind :=
-  ab.targeting.kind
+  HasTargeting.targetKind ab
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget (ab : TriggeredAbility) : Bool :=
-  ab.targeting.requiresTarget
+  HasTargeting.requiresTarget ab
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
@@ -1380,12 +1400,32 @@ instance : ToString CardDef where
 #guard EffectTargetKind.spec .creatureYouControlThenOppCreature ==
   { count := 2
     noun := "target creature you control and a creature an opponent controls"
-    prefer := .ownThenOpponent }
+    prefer := .ownThenOpponent
+    slots := #[.creatureYouControl, .oppCreature] }
+#guard EffectTargetKind.slotKind .creatureYouControlThenOppCreature 0 ==
+  .creatureYouControl
+#guard EffectTargetKind.slotKind .creatureYouControlThenOppCreature 1 ==
+  .oppCreature
+#guard EffectTargetKind.slotKind .creature 0 == .creature
 #guard TriggerEvent.spec .entering ==
-  { clause := "this permanent enters", isWhenever := false }
+  { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
 #guard TriggerEvent.spec .attacking ==
-  { clause := "this creature attacks", isWhenever := true }
+  { clause := "this creature attacks", isWhenever := true, label := "attack trigger" }
 #guard TriggerEvent.clause .youScry == "you scry"
+#guard TriggerEvent.label .dying == "dies trigger"
+#guard TriggerEvent.label .youScry == "scry trigger"
+#guard TriggerEvent.label .landYouControlEnters == "landfall trigger"
+#guard TriggerEvent.label .becomesBlocked == "becomes-blocked trigger"
+#guard TriggerEvent.label .youCastInstantOrSorcery == "cast trigger"
+#guard TriggerEvent.label .anotherElfYouControlEnters == "Elf-enters trigger"
+#guard TriggerEvent.label .attacking == "attack trigger"
+#guard TriggerEvent.label .youAttackWithElves == "attack trigger"
+#guard !TriggerEvent.checkTargets .youCastInstantOrSorcery
+#guard !TriggerEvent.checkTargets .youAttackWithElves
+#guard !TriggerEvent.checkTargets .anotherElfYouControlEnters
+#guard TriggerEvent.checkTargets .entering
+#guard TriggerEvent.checkTargets .landYouControlEnters
+#guard TriggerEvent.checkTargets .attacking
 #guard !TriggerEvent.isWhenever .dying
 #guard TriggerEvent.isWhenever .youAttackWithElves
 #guard SpellEffect.targetCount (.dealDamage 3) == 1
@@ -1589,41 +1629,40 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? (.onAttackScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
 #guard TriggeredAbility.firesOn .onAttackPumpByGreatestPower .attacking
-#guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
-#guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
-#guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
-#guard TriggeredAbility.triggersWhenAttacking (.onAttackScry 1)
-#guard TriggeredAbility.triggersWhenAttacking (.onEnterOrAttackDealDividedDamage 3 3)
-#guard TriggeredAbility.triggersWhenAttacking .onEnterOrAttackReturnElfGainLife
-#guard !TriggeredAbility.triggersWhenAttacking (.onEnterDealDividedDamage 3 3)
-#guard !TriggeredAbility.triggersWhenAttacking (.onEnterScry 2)
-#guard !TriggeredAbility.triggersWhenAttacking (.onAttackWithElvesScry 1)
-#guard !TriggeredAbility.triggersWhenAttacking .onScryPumpSelfForEachLookedAt
-#guard TriggeredAbility.triggersWhenYouAttackWithElves (.onAttackWithElvesScry 1)
-#guard !TriggeredAbility.triggersWhenYouAttackWithElves .onAttackPumpByGreatestPower
-#guard !TriggeredAbility.triggersWhenYouAttackWithElves (.onAttackScry 1)
-#guard TriggeredAbility.triggersWhenYouScry .onScryPumpSelfForEachLookedAt
-#guard !TriggeredAbility.triggersWhenYouScry (.onEnterScry 2)
-#guard !TriggeredAbility.triggersWhenYouScry (.onAttackWithElvesScry 1)
-#guard !TriggeredAbility.triggersWhenYouScry (.onAttackScry 1)
-#guard TriggeredAbility.triggersWhenAnotherElfYouControlEnters .onAnotherElfYouControlEntersGets1
-#guard !TriggeredAbility.triggersWhenAnotherElfYouControlEnters (.onEnterDraw 1)
-#guard !TriggeredAbility.triggersWhenEntering .onAnotherElfYouControlEntersGets1
+#guard TriggeredAbility.firesOn .onAttackSetOtherBasePT .attacking
+#guard TriggeredAbility.firesOn .onAttackOtherGets2AndTrample .attacking
+#guard TriggeredAbility.firesOn (.onAttackScry 1) .attacking
+#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .attacking
+#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .attacking
+#guard !TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .attacking
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .attacking
+#guard !TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .attacking
+#guard !TriggeredAbility.firesOn .onScryPumpSelfForEachLookedAt .attacking
+#guard TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .youAttackWithElves
+#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower .youAttackWithElves
+#guard !TriggeredAbility.firesOn (.onAttackScry 1) .youAttackWithElves
+#guard TriggeredAbility.firesOn .onScryPumpSelfForEachLookedAt .youScry
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .youScry
+#guard !TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .youScry
+#guard !TriggeredAbility.firesOn (.onAttackScry 1) .youScry
+#guard TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 .anotherElfYouControlEnters
+#guard !TriggeredAbility.firesOn (.onEnterDraw 1) .anotherElfYouControlEnters
+#guard !TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 .entering
 #guard !TriggeredAbility.requiresTarget .onAnotherElfYouControlEntersGets1
 #guard (TriggeredAbility.dividedDamage? .onAnotherElfYouControlEntersGets1).isNone
-#guard TriggeredAbility.triggersWhenBecomesBlocked .onBecomesBlockedDeal1ToBlockers
-#guard TriggeredAbility.triggersWhenEntering (.onEnterScry 2)
-#guard TriggeredAbility.triggersWhenEntering (.onEnterDraw 1)
-#guard TriggeredAbility.triggersWhenEntering .onEnterSearchForest
-#guard TriggeredAbility.triggersWhenEntering (.onEnterMayDiscardDraw 2)
-#guard TriggeredAbility.triggersWhenEntering (.onEnterDealDividedDamage 3 3)
-#guard TriggeredAbility.triggersWhenEntering (.onEnterOrAttackDealDividedDamage 3 3)
-#guard TriggeredAbility.triggersWhenEntering .onEnterOrAttackReturnElfGainLife
-#guard !TriggeredAbility.triggersWhenEntering .onAttackPumpByGreatestPower
-#guard !TriggeredAbility.triggersWhenEntering (.onAttackScry 1)
-#guard TriggeredAbility.triggersWhenYouCastInstantOrSorcery
-  (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
-#guard !TriggeredAbility.triggersWhenYouCastInstantOrSorcery (.onEnterScry 2)
+#guard TriggeredAbility.firesOn .onBecomesBlockedDeal1ToBlockers .becomesBlocked
+#guard TriggeredAbility.firesOn (.onEnterScry 2) .entering
+#guard TriggeredAbility.firesOn (.onEnterDraw 1) .entering
+#guard TriggeredAbility.firesOn .onEnterSearchForest .entering
+#guard TriggeredAbility.firesOn (.onEnterMayDiscardDraw 2) .entering
+#guard TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .entering
+#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .entering
+#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .entering
+#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower .entering
+#guard !TriggeredAbility.firesOn (.onAttackScry 1) .entering
+#guard TriggeredAbility.firesOn
+  (.onCastInstantOrSorceryDealDamageToEachOpponent 2) .youCastInstantOrSorcery
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .youCastInstantOrSorcery
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 3 }
@@ -1632,9 +1671,9 @@ instance : ToString CardDef where
   }
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
-#guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersPlusOnePlusOne
-#guard TriggeredAbility.triggersWhenLandYouControlEnters .onLandYouControlEntersGets1
-#guard !TriggeredAbility.triggersWhenLandYouControlEnters (.onEnterScry 2)
+#guard TriggeredAbility.firesOn .onLandYouControlEntersPlusOnePlusOne .landYouControlEnters
+#guard TriggeredAbility.firesOn .onLandYouControlEntersGets1 .landYouControlEnters
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .landYouControlEnters
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.requiresTarget .onLandYouControlEntersGets1
 #guard TriggeredAbility.targetKind .onLandYouControlEntersPlusOnePlusOne ==
@@ -1680,8 +1719,8 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
-#guard TriggeredAbility.triggersWhenDying .onDiesDealDamageEqualToPowerToOppCreature
-#guard !TriggeredAbility.triggersWhenDying (.onEnterScry 2)
+#guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .dying
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .dying
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onAttackScry 1)
 #guard !TriggeredAbility.requiresTarget (.onEnterDraw 1)
