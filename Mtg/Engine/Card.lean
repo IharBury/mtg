@@ -32,37 +32,38 @@ namespace Keywords
 
 def none : Keywords := {}
 
+/-- One modeled keyword: how to read it, write it, and print its Oracle name.
+`merge` and `toList` fold this table so a new keyword is one row here plus a
+field on `Keywords` and a `Keyword.*` value. -/
+structure Field where
+  get : Keywords → Bool
+  set : Keywords → Bool → Keywords
+  name : String
+
+def fields : List Field := [
+  ⟨(·.flash), fun k b => { k with flash := b }, "flash"⟩,
+  ⟨(·.haste), fun k b => { k with haste := b }, "haste"⟩,
+  ⟨(·.vigilance), fun k b => { k with vigilance := b }, "vigilance"⟩,
+  ⟨(·.flying), fun k b => { k with flying := b }, "flying"⟩,
+  ⟨(·.cantBeBlocked), fun k b => { k with cantBeBlocked := b }, "can't be blocked"⟩,
+  ⟨(·.hexproof), fun k b => { k with hexproof := b }, "hexproof"⟩,
+  ⟨(·.indestructible), fun k b => { k with indestructible := b }, "indestructible"⟩,
+  ⟨(·.reach), fun k b => { k with reach := b }, "reach"⟩,
+  ⟨(·.trample), fun k b => { k with trample := b }, "trample"⟩,
+  ⟨(·.deathtouch), fun k b => { k with deathtouch := b }, "deathtouch"⟩,
+  ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩
+]
+
 /-- Union of two keyword sets (printed or granted). -/
-def merge (a b : Keywords) : Keywords := {
-  flash := a.flash || b.flash
-  haste := a.haste || b.haste
-  vigilance := a.vigilance || b.vigilance
-  flying := a.flying || b.flying
-  cantBeBlocked := a.cantBeBlocked || b.cantBeBlocked
-  hexproof := a.hexproof || b.hexproof
-  indestructible := a.indestructible || b.indestructible
-  reach := a.reach || b.reach
-  trample := a.trample || b.trample
-  deathtouch := a.deathtouch || b.deathtouch
-  defender := a.defender || b.defender
-}
+def merge (a b : Keywords) : Keywords :=
+  fields.foldl (fun acc f => f.set acc (f.get a || f.get b)) none
 
 /-- `name` when `b` is true, otherwise nothing. -/
 def flag (b : Bool) (name : String) : List String :=
   if b then [name] else []
 
 def toList (k : Keywords) : List String :=
-  flag k.flash "flash" ++
-  flag k.haste "haste" ++
-  flag k.vigilance "vigilance" ++
-  flag k.flying "flying" ++
-  flag k.cantBeBlocked "can't be blocked" ++
-  flag k.hexproof "hexproof" ++
-  flag k.indestructible "indestructible" ++
-  flag k.reach "reach" ++
-  flag k.trample "trample" ++
-  flag k.deathtouch "deathtouch" ++
-  flag k.defender "defender"
+  fields.foldl (fun acc f => acc ++ flag (f.get k) f.name) []
 
 instance : ToString Keywords where
   toString k :=
@@ -306,15 +307,16 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
 end PermanentAction
 
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
-handful of shapes instead of every `SpellEffect` constructor. -/
+handful of shapes instead of every `SpellEffect` constructor. Burn and
+creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
+that action to a player or a creature when the targeting shape allows it. -/
 inductive SpellResolution where
   /-- You may play an additional land this turn. -/
   | extraLand
-  /-- Deal `amount` damage to a player or creature. -/
-  | damageAny (amount : Nat)
   /-- A creature you control deals its power to an opposing creature. -/
   | fight
-  /-- Affect a still-legal permanent target. -/
+  /-- Affect a still-legal target. Damage can hit a player or a creature;
+  other actions require a permanent. -/
   | onPermanent (action : PermanentAction)
 deriving Repr, Inhabited, BEq
 
@@ -338,7 +340,7 @@ doing nothing on resolution. -/
 def spec : SpellEffect → SpellMeta
   | .dealDamage n =>
     { targeting := .of .playerOrCreature, castKind := .burn,
-      resolution := .damageAny n }
+      resolution := .onPermanent (.dealDamage n) }
   | .pump p t =>
     { targeting := .of .creature .own, castKind := .pump,
       resolution := .onPermanent (.pump p t) }
@@ -396,7 +398,6 @@ only updates `spec`. -/
 def toNotation (e : SpellEffect) : String :=
   let noun := e.targetKind.noun
   match e.resolution with
-  | .damageAny n => PermanentAction.toNotation (.dealDamage n) noun
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
@@ -655,6 +656,10 @@ def pluralSubtype (s : String) : String :=
 def hostGetsPhrase (host : String) (p t : Int) : String :=
   s!"{host} gets {signedStat p}/{signedStat t}."
 
+/-- Join subtype names for Oracle-style lord reminders (`Orc` and `Goblin`). -/
+def joinedSubtypes (subtypes : Array String) (each : String → String := fun s => s) : String :=
+  String.intercalate " and " (subtypes.toList.map each)
+
 /-- How a static ability applies (CR 604 / 613). Grouped so Game accessors and
 `toNotation` match a handful of shapes instead of every constructor. Enchanted
 and equipped host pumps share `hostGets`. -/
@@ -686,11 +691,9 @@ table. -/
 def toNotation (ab : StaticAbility) : String :=
   match ab.shape with
   | .lordTrample subtypes =>
-    let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
-    s!"Other {who} you control have trample."
+    s!"Other {joinedSubtypes subtypes pluralSubtype} you control have trample."
   | .lordPump subtypes p t =>
-    let who := String.intercalate " and " subtypes.toList
-    s!"Other {who} creatures you control get {signedStat p}/{signedStat t}."
+    s!"Other {joinedSubtypes subtypes} creatures you control get {signedStat p}/{signedStat t}."
   | .hostGets host p t => hostGetsPhrase host p t
   | .landsYouControlPT =>
     "This creature's power and toughness are each equal to the number of lands you control."
@@ -1373,7 +1376,7 @@ instance : ToString CardDef where
 #guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
 #guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
 #guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
-#guard SpellEffect.resolution (.dealDamage 3) == .damageAny 3
+#guard SpellEffect.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
 #guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
 #guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
 #guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
