@@ -18,7 +18,8 @@ opening hands are drawn, unless a heuristic opponent is deciding and chooses
 to go first. `visible` prints only information that player can see; `--visible`
 starts in that view. `--input FILE` runs commands from the file first, then
 reads from the console. `--output FILE` writes every command (from the file or
-the console) to that file.
+the console) to that file. When `--input` and `--output` are the same file,
+those commands are replayed and new console commands are appended.
 -/
 
 open Mtg.Engine
@@ -46,7 +47,8 @@ Options:
   --input FILE    With --interactive or --multiplayer, run these commands
                   first, then read from the console
   --output FILE   With --interactive or --multiplayer, write every command
-                  (from --input and from the console) to this file
+                  (from --input and from the console) to this file. The same
+                  path as --input replays that file and appends new commands
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
@@ -528,6 +530,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "finish activating or casting").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
+#guard (usage.splitOn "replays that file and appends new commands").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
 #guard (usage.splitOn "--deck COLOR").length > 1
 #guard (usage.splitOn "--decides NAME").length > 1
@@ -2375,6 +2378,28 @@ def pendingCommands (inputFile : Option String) : IO (Except String (List String
     catch e =>
       return .error s!"Failed to read input file {path}: {e}"
 
+/-- True when `--input` and `--output` name the same file. -/
+def sameInputOutput (inputFile outputFile : Option String) : Bool :=
+  match inputFile, outputFile with
+  | some i, some o => i == o
+  | _, _ => false
+
+#guard sameInputOutput (some "session.txt") (some "session.txt")
+#guard !sameInputOutput (some "opening.txt") (some "session.txt")
+#guard !sameInputOutput none (some "session.txt")
+#guard !sameInputOutput (some "session.txt") none
+#guard !sameInputOutput none none
+
+/-- When input and output are the same file, commands already loaded from the
+file stay there; only new console commands are appended. -/
+def shouldRecordCommand (sameFile : Bool) (fromInput : Bool) : Bool :=
+  !(sameFile && fromInput)
+
+#guard shouldRecordCommand false false
+#guard shouldRecordCommand false true
+#guard shouldRecordCommand true false
+#guard !shouldRecordCommand true true
+
 /-- Next console command: remaining file lines first, then stdin. File lines
 are echoed after the prompt so a replay looks like a typed session. -/
 def nextCommandLine (pending : List String) : IO (String × List String) := do
@@ -2386,13 +2411,16 @@ def nextCommandLine (pending : List String) : IO (String × List String) := do
     let stdin ← IO.getStdin
     return ((← stdin.getLine).trimAscii.copy, [])
 
-/-- Open `--output` for writing, or `none` when no file was given. -/
-def openOutputFile (outputFile : Option String) : IO (Except String (Option IO.FS.Handle)) := do
+/-- Open `--output` for writing, or `none` when no file was given. `append`
+keeps existing contents (used when the file is also `--input`). -/
+def openOutputFile (outputFile : Option String) (append : Bool := false) :
+    IO (Except String (Option IO.FS.Handle)) := do
   match outputFile with
   | none => return .ok none
   | some path =>
     try
-      let h ← IO.FS.Handle.mk path .write
+      let mode := if append then IO.FS.Mode.append else IO.FS.Mode.write
+      let h ← IO.FS.Handle.mk path mode
       return .ok (some h)
     catch e =>
       return .error s!"Failed to write output file {path}: {e}"
@@ -2405,12 +2433,23 @@ def recordCommand (output : Option IO.FS.Handle) (line : String) : IO Unit := do
     h.putStrLn line
     h.flush
 
+/-- Next command, written to `--output` unless it is being replayed from the
+same file. -/
+def nextRecordedCommand (pending : List String) (output : Option IO.FS.Handle)
+    (sameFile : Bool) : IO (String × List String) := do
+  let fromInput := !pending.isEmpty
+  let (line, rest) ← nextCommandLine pending
+  if !line.isEmpty && shouldRecordCommand sameFile fromInput then
+    recordCommand output line
+  return (line, rest)
+
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
 The chooser announcement is printed first by `printFirstChooser`. -/
 partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
     (controlAll : Bool) (pending : List String)
-    (output : Option IO.FS.Handle) : IO (Option (Nat × List String)) := do
+    (output : Option IO.FS.Handle) (sameFile : Bool := false) :
+    IO (Option (Nat × List String)) := do
   let mut pending := pending
   let mut chosen : Option Nat := none
   let prompt :=
@@ -2421,11 +2460,10 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
   while chosen.isNone do
     IO.print prompt
     (← IO.getStdout).flush
-    let (line, rest) ← nextCommandLine pending
+    let (line, rest) ← nextRecordedCommand pending output sameFile
     pending := rest
     if line.isEmpty then
       continue
-    recordCommand output line
     let parts := line.splitOn " "
     let cmd := parts.headD ""
     match cmd with
@@ -2446,7 +2484,8 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
 
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     (controlAll : Bool := false) (pending : List String := [])
-    (output : Option IO.FS.Handle := none) : IO Unit := do
+    (output : Option IO.FS.Handle := none) (sameFile : Bool := false) :
+    IO Unit := do
   let mut g := g
   let mut seen := g.log.size
   let mut playerView := startVisible
@@ -2492,11 +2531,10 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         "mtg> "
     IO.print prompt
     (← IO.getStdout).flush
-    let (line, rest) ← nextCommandLine pending
+    let (line, rest) ← nextRecordedCommand pending output sameFile
     pending := rest
     if line.isEmpty then
       continue
-    recordCommand output line
     let parts := line.splitOn " "
     let cmd := parts.headD ""
     match cmd with
@@ -2793,6 +2831,20 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | _ => false
 
 #guard
+  match parseArgs ["--interactive", "--input", "session.txt", "--output", "session.txt"] with
+  | .ok opt =>
+    opt.inputFile == some "session.txt" && opt.outputFile == some "session.txt" &&
+    sameInputOutput opt.inputFile opt.outputFile
+  | _ => false
+
+#guard
+  match parseArgs ["--multiplayer", "--input", "session.txt", "--output", "session.txt"] with
+  | .ok opt =>
+    opt.interactive && opt.multiplayer &&
+    sameInputOutput opt.inputFile opt.outputFile
+  | _ => false
+
+#guard
   match parseArgs ["--output", "session.txt"] with
   | .error msg => msg == "--output requires --interactive or --multiplayer"
   | .ok _ => false
@@ -2977,7 +3029,8 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln e
       return 1
     | .ok pending =>
-      match (← openOutputFile opt.outputFile) with
+      let sameFile := sameInputOutput opt.inputFile opt.outputFile
+      match (← openOutputFile opt.outputFile sameFile) with
       | .error e =>
         IO.eprintln e
         return 1
@@ -2991,14 +3044,14 @@ def main (args : List String) : IO UInt32 := do
           match (←
             if humanChooses then
               chooseStartingPlayer (seatsFromPlayers opt.players) decider
-                opt.multiplayer pending output
+                opt.multiplayer pending output sameFile
             else
               pure (some (decider, pending))) with
           | none => return 0
           | some (startIdx, pending) =>
             let g ← startGame opt.seed (some startIdx) opt.players
             printOpening g (currentView g opt.playerView opt.multiplayer)
-            interactiveLoop g opt.playerView opt.multiplayer pending output
+            interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
             return 0
         else
           let g ← startDemo opt.seed (some decider) (players := opt.players)

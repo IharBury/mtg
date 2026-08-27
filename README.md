@@ -44,10 +44,12 @@ lake exe mtg-demo -- --interactive
 lake exe mtg-demo -- --interactive --visible
 lake exe mtg-demo -- --interactive --input opening.txt
 lake exe mtg-demo -- --interactive --output session.txt
+lake exe mtg-demo -- --interactive --input session.txt --output session.txt
 lake exe mtg-demo -- --multiplayer
 lake exe mtg-demo -- --multiplayer --visible
 lake exe mtg-demo -- --multiplayer --input opening.txt
 lake exe mtg-demo -- --multiplayer --output session.txt
+lake exe mtg-demo -- --multiplayer --input session.txt --output session.txt
 lake exe mtg-demo -- --decides Nissa
 lake exe mtg-demo -- --interactive --decides Chandra
 lake exe mtg-demo -- --seed 42 --fuel 200
@@ -65,9 +67,11 @@ player (heuristic) chooses to go first.
 `--input FILE` (one command per line) runs those commands first in either
 interactive mode, then further commands come from the console. `--output FILE`
 writes every command from the input file and from the console (one per line),
-so a session can be replayed with `--input`. Put `first <name>` at the top of
-an input file when the first named player is the one deciding; pass
-`--decides NAME` so a replay asks the same player.
+so a session can be replayed with `--input`. When `--input` and `--output` are
+the same file, the existing commands are replayed and new console commands are
+appended. Put `first <name>` at the top of an input file when the first named
+player is the one deciding; pass `--decides NAME` so a replay asks the same
+player.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
