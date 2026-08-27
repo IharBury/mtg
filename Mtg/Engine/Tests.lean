@@ -374,6 +374,12 @@ def uncontrolledPermanent : Game :=
 #guard goblinFireleaper.activatedAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
+#guard mentions desolationProwler.summary "Pay 2 life"
+#guard mentions desolationProwler.summary "+2/+2"
+#guard desolationProwler.activatedAbilities.size == 1
+#guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -4173,6 +4179,119 @@ def fireleaperAtEndStep : Game := skipTo fireleaperReady .end 80
 #guard fireleaperAtEndStep.step == .end
 #guard fireleaperAtEndStep.canActivate ⟨0⟩ (fireleaperSource fireleaperAtEndStep)
   fireleaperAbility
+
+/- Desolation Prowler: Pay 2 life for +2/+2, only once each turn. -/
+
+def prowlerAbility : ActivatedAbility :=
+  desolationProwler.activatedAbilities[0]!
+
+#guard prowlerAbility.effect == .sourceGets 2 2
+#guard prowlerAbility.cost.payLife == 2
+#guard prowlerAbility.cost.mana == ManaCost.empty
+#guard !prowlerAbility.cost.tap
+#guard prowlerAbility.onceEachTurn
+#guard !prowlerAbility.effect.requiresTarget
+
+/-- Prowler in play; a land drop is already used so the heuristic can activate. -/
+def prowlerReady : Game :=
+  let g := addPermanent afterDraw desolationProwler ⟨0⟩ ⟨0⟩
+  g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+
+def prowlerSource (g : Game) : GameObject :=
+  namedPermanent g "Desolation Prowler"
+
+#guard prowlerReady.canActivate ⟨0⟩ (prowlerSource prowlerReady) prowlerAbility
+#guard !(prowlerReady.canActivate ⟨1⟩ (prowlerSource prowlerReady) prowlerAbility)
+#guard prowlerReady.power (prowlerSource prowlerReady) == 2
+#guard prowlerReady.toughness (prowlerSource prowlerReady) == 2
+#guard (prowlerReady.player ⟨0⟩).life == 20
+
+-- The heuristic pays 2 life to pump when it would not lose the game.
+#guard
+  match Agent.choose prowlerReady ⟨0⟩ with
+  | some (.activate id 0) => id == (prowlerSource prowlerReady).id
+  | _ => false
+
+-- Life payment is part of activation, so the ability is on the stack immediately.
+def activatedProwler : Game :=
+  mustApply prowlerReady ⟨0⟩ (.activate (prowlerSource prowlerReady).id 0)
+
+#guard activatedProwler.pending == .none
+#guard activatedProwler.hasPriority ⟨0⟩
+#guard activatedProwler.stack.size == 1
+#guard (activatedProwler.object! activatedProwler.stack.back!.objectId).abilityEffect ==
+  some (.sourceGets 2 2)
+#guard (activatedProwler.player ⟨0⟩).life == 18
+#guard activatedProwler.log.any (fun s => mentions s "begins activating Desolation Prowler")
+#guard activatedProwler.log.any (fun s => mentions s "pays 2 life (18 life)")
+#guard activatedProwler.log.any (fun s => mentions s "activates Desolation Prowler")
+#guard (namedPermanent activatedProwler "Desolation Prowler").status.activationsThisTurn == 1
+#guard (namedPermanent activatedProwler "Desolation Prowler").status.pumpPower == 0
+
+-- Payment of life is not damage (CR 118.3b).
+#guard !(activatedProwler.log.any (fun s => mentions s "is dealt"))
+
+def pumpedProwler : Game := passBoth activatedProwler
+
+#guard pumpedProwler.stack.isEmpty
+#guard (namedPermanent pumpedProwler "Desolation Prowler").status.pumpPower == 2
+#guard (namedPermanent pumpedProwler "Desolation Prowler").status.pumpToughness == 2
+#guard pumpedProwler.power (namedPermanent pumpedProwler "Desolation Prowler") == 4
+#guard pumpedProwler.toughness (namedPermanent pumpedProwler "Desolation Prowler") == 4
+#guard (pumpedProwler.player ⟨0⟩).life == 18
+#guard pumpedProwler.log.any (fun s =>
+  mentions s "Desolation Prowler gets +2/+2 until end of turn")
+
+-- Only once each turn (CR 602.2b).
+#guard !(pumpedProwler.canActivate ⟨0⟩ (prowlerSource pumpedProwler) prowlerAbility)
+#guard
+  match pumpedProwler.activateAbility ⟨0⟩ (prowlerSource pumpedProwler).id 0 with
+  | .error msg => mentions msg "only once each turn"
+  | .ok _ => false
+
+/-- The +2/+2 wears off in cleanup, and the once-each-turn count resets. -/
+def afterProwlerCleanup : Game :=
+  passBoth (skipTo pumpedProwler .end 80)
+
+#guard afterProwlerCleanup.power
+  (namedPermanent afterProwlerCleanup "Desolation Prowler") == 2
+#guard (namedPermanent afterProwlerCleanup "Desolation Prowler").status.pumpPower == 0
+#guard (namedPermanent afterProwlerCleanup "Desolation Prowler").status.activationsThisTurn == 0
+
+-- Instant-speed: Prowler can activate during the end step.
+def prowlerAtEndStep : Game := skipTo prowlerReady .end 80
+
+#guard prowlerAtEndStep.step == .end
+#guard prowlerAtEndStep.canActivate ⟨0⟩ (prowlerSource prowlerAtEndStep) prowlerAbility
+
+-- A player with 1 life cannot pay 2 life (CR 119.4).
+#guard
+  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 1 })
+  !g.canActivate ⟨0⟩ (prowlerSource g) prowlerAbility
+#guard
+  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 1 })
+  match g.activateAbility ⟨0⟩ (prowlerSource g).id 0 with
+  | .error msg => mentions msg "cannot pay 2 life"
+  | .ok _ => false
+
+-- Paying 2 life from 2 life is legal, then CR 704.5a ends the game.
+def prowlerPaysLastLife : Game :=
+  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  mustApply g ⟨0⟩ (.activate (prowlerSource g).id 0)
+
+#guard (prowlerPaysLastLife.player ⟨0⟩).life == 0
+#guard prowlerPaysLastLife.over
+#guard prowlerPaysLastLife.result == some (.won ⟨1⟩)
+#guard prowlerPaysLastLife.log.any (fun s => mentions s "pays 2 life (0 life)")
+#guard prowlerPaysLastLife.log.any (fun s => mentions s "loses the game (life total 0)")
+#guard prowlerPaysLastLife.power (namedPermanent prowlerPaysLastLife "Desolation Prowler") == 2
+
+-- The heuristic will not pay the last 2 life.
+#guard
+  let g := prowlerReady.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  match Agent.choose g ⟨0⟩ with
+  | some (.activate _ 0) => false
+  | _ => true
 
 /-- Lethal damage puts the dies trigger on the stack (CR 700.4 / 603.3d). -/
 def fireleaperDied : Game :=

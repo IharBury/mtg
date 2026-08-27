@@ -100,7 +100,8 @@ The first slice of the engine models the two-player game:
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
   modes at 601.2b / 700.2, announcing targets at 601.2c, additional costs
-  such as sacrificing an artifact or creature at 601.2f / 601.2h, and mana
+  such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
+  life at 118.3b / 119.4, and mana
   abilities at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d)
 - static abilities that grant trample, pump other creatures of listed types,
@@ -122,7 +123,7 @@ The first slice of the engine models the two-player game:
   landfall triggers that
   put +1/+1 counters on a target creature you control or give this creature
   +1/+1 until end of turn, activated pumps
-  that last until end of turn, activated abilities that put +1/+1
+  that last until end of turn (including paying life), activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
   deal damage to each opponent when you cast an instant or sorcery,

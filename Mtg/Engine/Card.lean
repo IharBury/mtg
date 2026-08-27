@@ -607,6 +607,8 @@ structure ActivationCost where
   sacrificeSource : Bool := false
   /-- Sacrifice another creature or artifact you control (CR 701.17). -/
   sacrificeAnotherCreatureOrArtifact : Bool := false
+  /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
+  payLife : Nat := 0
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -615,6 +617,7 @@ def toNotation (c : ActivationCost) : String :=
   let parts : List String :=
     (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
     (if c.tap then ["{T}"] else []) ++
+    (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
     (if c.sacrificeSource then ["Sacrifice"] else []) ++
     (if c.sacrificeAnotherCreatureOrArtifact then
       ["Sacrifice another creature or artifact"]
@@ -1538,6 +1541,14 @@ instance : ToString CardDef where
     effect := .searchBasicLandTapped
   }
   (toString ab).startsWith "{2}, {T}, Sacrifice:"
+#guard
+  let ab : ActivatedAbility := {
+    cost := { payLife := 2 }
+    effect := .sourceGets 2 2
+    onceEachTurn := true
+  }
+  toString ab ==
+    "Pay 2 life: This creature gets +2/+2 until end of turn (activate only once each turn)"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
