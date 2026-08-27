@@ -2849,6 +2849,19 @@ def giantReadyToAssign : Game := passBoth giantBlockedByTwoElves
 #guard giantReadyToAssign.actor == some ⟨0⟩
 #guard giantReadyToAssign.needsCombatDamageChoice true
 #guard !giantReadyToAssign.needsCombatDamageChoice false
+#guard
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  g.combatDamageToAssign giant true == 3 &&
+    (g.legalCombatDamageRecipients giant true).size == 2 &&
+    !g.canAssignCombatDamageToDefendingPlayer giant true
+#guard
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let giant := namedPermanent g "Hill Giant"
+  g.hasTrample giant && g.canAssignCombatDamageToDefendingPlayer giant true &&
+    g.combatDamageToAssign giant true == 3
 
 def giantAllDamageOnFirst : Game :=
   let g := giantReadyToAssign
@@ -2968,6 +2981,12 @@ def bearsBlockingTwoOgresReady : Game :=
 #guard bearsBlockingTwoOgresReady.actor == some ⟨1⟩
 #guard bearsBlockingTwoOgresReady.needsCombatDamageChoice false
 #guard bearsBlockingTwoOgresReady.needsCombatDamageChoice true == false
+#guard
+  let g := bearsBlockingTwoOgresReady
+  let bears := namedPermanent g "Grizzly Bears"
+  g.combatDamageToAssign bears false == 2 &&
+    (g.legalCombatDamageRecipients bears false).size == 2 &&
+    !g.canAssignCombatDamageToDefendingPlayer bears false
 
 def bearsAssignAllToFirstOgre : Game :=
   let g := bearsBlockingTwoOgresReady

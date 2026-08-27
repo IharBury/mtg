@@ -245,6 +245,55 @@ def mountainLine (g : Game) : String :=
 
 #guard mentions (header giantReadyToAssign) "assign combat damage (CR 510.1c"
 #guard mentions (header bearsBlockingTwoOgresReady) "assign combat damage (CR 510.1d"
+#guard
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  let line := combatDamageSourceLine g giant true
+  let block := combatDamageAssignmentBlock g
+  line ==
+    s!"{giant.id} Hill Giant assigns 3; legal: {elves[0]!.id} Llanowar Elves, {elves[1]!.id} Llanowar Elves" &&
+    block == some (s!"Assign combat damage:\n  {line}") &&
+    mentions (snapshot g) "Assign combat damage:" &&
+    mentions (snapshot g) "Hill Giant assigns 3" &&
+    mentions (snapshot g) (toString elves[0]!.id) &&
+    mentions (snapshot g) (toString elves[1]!.id)
+#guard
+  let g := giantReadyToAssign
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.setObject { giant with status := giant.status.grantUntilEot Keyword.trample }
+  let giant := namedPermanent g "Hill Giant"
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  combatDamageSourceLine g giant true ==
+    s!"{giant.id} Hill Giant assigns 3; legal: {elves[0]!.id} Llanowar Elves, {elves[1]!.id} Llanowar Elves, Nissa"
+#guard
+  let g := bearsBlockingTwoOgresReady
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogres := g.battlefield.filter (fun o => o.name == "Gray Ogre")
+  let line := combatDamageSourceLine g bears false
+  line ==
+    s!"{bears.id} Grizzly Bears assigns 2; legal: {ogres[0]!.id} Gray Ogre, {ogres[1]!.id} Gray Ogre" &&
+    combatDamageAssignmentBlock g == some (s!"Assign combat damage:\n  {line}") &&
+    mentions (snapshot g) "Grizzly Bears assigns 2"
+#guard (combatDamageAssignmentBlock readyToDeclareBlockers).isNone
+#guard !mentions (snapshot readyToDeclareBlockers) "Assign combat damage:"
+#guard
+  let g := giantReadyToAssign
+  let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
+  let (g, _) := g.move elves[0]!.id (.graveyard ⟨1⟩) none
+  let (g, _) := g.move elves[1]!.id (.graveyard ⟨1⟩) none
+  let giant := namedPermanent g "Hill Giant"
+  combatDamageToAssign g giant true == 0 &&
+    combatDamageSourceLine g giant true ==
+      s!"{giant.id} Hill Giant assigns no combat damage (no remaining blockers)"
+#guard
+  let g := bearsBlockingTwoOgresReady
+  let ogres := g.battlefield.filter (fun o => o.name == "Gray Ogre")
+  let (g, _) := g.move ogres[0]!.id (.graveyard ⟨0⟩) none
+  let (g, _) := g.move ogres[1]!.id (.graveyard ⟨0⟩) none
+  let bears := namedPermanent g "Grizzly Bears"
+  combatDamageSourceLine g bears false ==
+    s!"{bears.id} Grizzly Bears assigns no combat damage (not blocking any creatures)"
 
 #guard
   let g := goblinBlockedByBears
