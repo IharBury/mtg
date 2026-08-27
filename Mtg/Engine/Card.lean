@@ -32,18 +32,37 @@ namespace Keywords
 
 def none : Keywords := {}
 
+/-- Union of two keyword sets (printed or granted). -/
+def merge (a b : Keywords) : Keywords := {
+  flash := a.flash || b.flash
+  haste := a.haste || b.haste
+  vigilance := a.vigilance || b.vigilance
+  flying := a.flying || b.flying
+  cantBeBlocked := a.cantBeBlocked || b.cantBeBlocked
+  hexproof := a.hexproof || b.hexproof
+  indestructible := a.indestructible || b.indestructible
+  reach := a.reach || b.reach
+  trample := a.trample || b.trample
+  deathtouch := a.deathtouch || b.deathtouch
+  defender := a.defender || b.defender
+}
+
+/-- `name` when `b` is true, otherwise nothing. -/
+def flag (b : Bool) (name : String) : List String :=
+  if b then [name] else []
+
 def toList (k : Keywords) : List String :=
-  (if k.flash then ["flash"] else []) ++
-  (if k.haste then ["haste"] else []) ++
-  (if k.vigilance then ["vigilance"] else []) ++
-  (if k.flying then ["flying"] else []) ++
-  (if k.cantBeBlocked then ["can't be blocked"] else []) ++
-  (if k.hexproof then ["hexproof"] else []) ++
-  (if k.indestructible then ["indestructible"] else []) ++
-  (if k.reach then ["reach"] else []) ++
-  (if k.trample then ["trample"] else []) ++
-  (if k.deathtouch then ["deathtouch"] else []) ++
-  (if k.defender then ["defender"] else [])
+  flag k.flash "flash" ++
+  flag k.haste "haste" ++
+  flag k.vigilance "vigilance" ++
+  flag k.flying "flying" ++
+  flag k.cantBeBlocked "can't be blocked" ++
+  flag k.hexproof "hexproof" ++
+  flag k.indestructible "indestructible" ++
+  flag k.reach "reach" ++
+  flag k.trample "trample" ++
+  flag k.deathtouch "deathtouch" ++
+  flag k.defender "defender"
 
 instance : ToString Keywords where
   toString k :=
@@ -51,6 +70,22 @@ instance : ToString Keywords where
     if ks.isEmpty then "" else String.intercalate ", " ks
 
 end Keywords
+
+/- Singleton keyword values. Named separately from `Keywords` so they do not
+clash with the structure fields of the same name. Combine with `Keywords.merge`. -/
+namespace Keyword
+def flash : Keywords := { Keywords.none with flash := true }
+def haste : Keywords := { Keywords.none with haste := true }
+def vigilance : Keywords := { Keywords.none with vigilance := true }
+def flying : Keywords := { Keywords.none with flying := true }
+def cantBeBlocked : Keywords := { Keywords.none with cantBeBlocked := true }
+def hexproof : Keywords := { Keywords.none with hexproof := true }
+def indestructible : Keywords := { Keywords.none with indestructible := true }
+def reach : Keywords := { Keywords.none with reach := true }
+def trample : Keywords := { Keywords.none with trample := true }
+def deathtouch : Keywords := { Keywords.none with deathtouch := true }
+def defender : Keywords := { Keywords.none with defender := true }
+end Keyword
 
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
@@ -80,6 +115,22 @@ inductive EffectTargetKind where
   | creatureYouControlThenOppCreature
 deriving Repr, Inhabited, BEq, DecidableEq
 
+/-- Default demonstration-agent choice among legal targets (CR 601.2c).
+Adding a targeting shape is a compile error here rather than silently
+picking the first legal target in `Game.preferredTarget`. -/
+inductive TargetPreference where
+  /-- A permanent the caster controls. -/
+  | own
+  /-- A permanent an opponent controls. -/
+  | opponent
+  /-- The opposing player, else the first legal target. -/
+  | opponentPlayer
+  /-- The last legal target (e.g. a graveyard card). -/
+  | last
+  /-- Own permanent if any, otherwise an opponent's. -/
+  | ownThenOpponent
+deriving Repr, Inhabited, BEq, DecidableEq
+
 namespace EffectTargetKind
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
@@ -90,14 +141,31 @@ def targetCount : EffectTargetKind → Nat
   | .elfInYourGraveyard | .oppCreature | .creature | .creatureWithFlying
   | .artifactOrLand | .colorlessNonland => 1
 
+/-- Default demonstration-agent preference for this targeting shape. -/
+def defaultPreference : EffectTargetKind → TargetPreference
+  | .none | .creatureYouControl | .anotherCreatureYouControl => .own
+  | .playerOrCreature => .opponentPlayer
+  | .elfInYourGraveyard => .last
+  | .oppCreature | .creatureWithFlying | .artifactOrLand | .colorlessNonland
+  | .creature => .opponent
+  | .creatureYouControlThenOppCreature => .ownThenOpponent
+
 end EffectTargetKind
 
 /-- Targeting shape plus a default-choice hint used by the demonstration agent. -/
 structure EffectTargeting where
   kind : EffectTargetKind := .none
-  /-- When `kind` is `.creature`, prefer a creature the caster controls. -/
-  preferOwn : Bool := false
+  prefer : TargetPreference := .own
 deriving Repr, Inhabited, BEq
+
+namespace EffectTargeting
+
+/-- Targeting shape; `prefer` defaults from `kind` unless overridden. -/
+def of (kind : EffectTargetKind)
+    (prefer : TargetPreference := kind.defaultPreference) : EffectTargeting :=
+  { kind, prefer }
+
+end EffectTargeting
 
 /-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
 inductive SpellEffect where
@@ -150,16 +218,16 @@ def toNotation : SpellEffect → String
 Exhaustive so a new constructor is a compile error here rather than silently
 matching no targets in `Game`. -/
 def targeting : SpellEffect → EffectTargeting
-  | .dealDamage _ => { kind := .playerOrCreature }
-  | .pump _ _ => { kind := .creature, preferOwn := true }
-  | .destroyCreatureWithFlying => { kind := .creatureWithFlying }
-  | .plusOnePlusOneTrampleHexproof => { kind := .creatureYouControl }
+  | .dealDamage _ => .of .playerOrCreature
+  | .pump _ _ => .of .creature .own
+  | .destroyCreatureWithFlying => .of .creatureWithFlying
+  | .plusOnePlusOneTrampleHexproof => .of .creatureYouControl
   | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ =>
-    { kind := .creature }
+    .of .creature
   | .creatureYouControlDealsPowerToOppCreature =>
-    { kind := .creatureYouControlThenOppCreature }
-  | .playAdditionalLandThisTurn => {}
-  | .destroyArtifactOrLandNonflyersCantBlock => { kind := .artifactOrLand }
+    .of .creatureYouControlThenOppCreature
+  | .playAdditionalLandThisTurn => .of .none
+  | .destroyArtifactOrLandNonflyersCantBlock => .of .artifactOrLand
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : SpellEffect) : EffectTargetKind :=
@@ -235,13 +303,13 @@ def toNotation : AbilityEffect → String
 Exhaustive so a new constructor is a compile error here rather than silently
 matching no targets in `Game`. -/
 def targeting : AbilityEffect → EffectTargeting
-  | .dealDamageToTargetCreature _ => { kind := .creature }
-  | .destroyTargetColorlessNonland => { kind := .colorlessNonland }
-  | .attachToTargetCreatureYouControl => { kind := .creatureYouControl }
-  | .targetCantBeBlockedThisTurn => { kind := .creature, preferOwn := true }
+  | .dealDamageToTargetCreature _ => .of .creature
+  | .destroyTargetColorlessNonland => .of .colorlessNonland
+  | .attachToTargetCreatureYouControl => .of .creatureYouControl
+  | .targetCantBeBlockedThisTurn => .of .creature .own
   | .searchBasicLandTapped | .exileTopPlayUntilEndOfNextTurn
   | .becomeBearCreatureWithLandsPT | .sourceGets _ _ | .putPlusOnePlusOneOnSource _ =>
-    {}
+    .of .none
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
 def targetKind (e : AbilityEffect) : EffectTargetKind :=
@@ -867,19 +935,19 @@ def summary (c : CardDef) : String :=
 instance : ToString CardDef where
   toString := summary
 
-#guard toString ({ Keywords.none with haste := true } : Keywords) == "haste"
-#guard toString ({ Keywords.none with flash := true } : Keywords) == "flash"
-#guard toString ({ Keywords.none with vigilance := true } : Keywords) == "vigilance"
-#guard CardDef.isKeywordRestatement { Keywords.none with haste := true } "Haste"
-#guard CardDef.isKeywordRestatement { Keywords.none with flash := true } "Flash"
-#guard CardDef.isKeywordRestatement { Keywords.none with vigilance := true } "Vigilance"
-#guard CardDef.isKeywordRestatement
-  { Keywords.none with reach := true, deathtouch := true } "Reach, deathtouch"
-#guard !CardDef.isKeywordRestatement { Keywords.none with flying := true } "Flash"
-#guard toString ({ Keywords.none with hexproof := true } : Keywords) == "hexproof"
-#guard CardDef.isKeywordRestatement { Keywords.none with hexproof := true } "Hexproof"
-#guard toString ({ Keywords.none with indestructible := true } : Keywords) == "indestructible"
-#guard CardDef.isKeywordRestatement { Keywords.none with indestructible := true } "Indestructible"
+#guard toString Keyword.haste == "haste"
+#guard toString Keyword.flash == "flash"
+#guard toString Keyword.vigilance == "vigilance"
+#guard CardDef.isKeywordRestatement Keyword.haste "Haste"
+#guard CardDef.isKeywordRestatement Keyword.flash "Flash"
+#guard CardDef.isKeywordRestatement Keyword.vigilance "Vigilance"
+#guard CardDef.isKeywordRestatement (Keyword.reach.merge Keyword.deathtouch)
+  "Reach, deathtouch"
+#guard !CardDef.isKeywordRestatement Keyword.flying "Flash"
+#guard toString Keyword.hexproof == "hexproof"
+#guard CardDef.isKeywordRestatement Keyword.hexproof "Hexproof"
+#guard toString Keyword.indestructible == "indestructible"
+#guard CardDef.isKeywordRestatement Keyword.indestructible "Indestructible"
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
@@ -902,7 +970,10 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
 #guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
 #guard SpellEffect.targetKind (.pump 3 3) == .creature
-#guard SpellEffect.targeting (.pump 3 3) == { kind := .creature, preferOwn := true }
+#guard SpellEffect.targeting (.pump 3 3) == EffectTargeting.of .creature .own
+#guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
+#guard EffectTargetKind.defaultPreference .creatureYouControl == .own
+#guard EffectTargetKind.defaultPreference .creature == .opponent
 #guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
 #guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
 #guard SpellEffect.targetKind (.dealDamageToCreature 5) == .creature
@@ -952,15 +1023,13 @@ instance : ToString CardDef where
 #guard AbilityEffect.targetKind .destroyTargetColorlessNonland == .colorlessNonland
 #guard AbilityEffect.targetKind .attachToTargetCreatureYouControl == .creatureYouControl
 #guard AbilityEffect.targeting .targetCantBeBlockedThisTurn ==
-  { kind := .creature, preferOwn := true }
+  EffectTargeting.of .creature .own
 #guard AbilityEffect.targetKind .searchBasicLandTapped == .none
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
-#guard
-  let k : Keywords := { Keywords.none with cantBeBlocked := true }
-  toString k == "can't be blocked"
+#guard toString Keyword.cantBeBlocked == "can't be blocked"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }

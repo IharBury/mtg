@@ -279,25 +279,19 @@ def mountainLine (g : Game) : String :=
 
 /- Stacked abilities from a multi-ability card omit sibling Oracle lines. -/
 #guard
-  let c : CardDef := {
-    name := "Silent Siege"
-    types := #[.creature]
-    oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
-    keywords := { Keywords.none with trample := true }
-    staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]
-    triggeredAbilities := #[.onAttackPumpByGreatestPower]
-  }
+  let c := card "Silent Siege" #[.creature]
+    (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
+    (keywords := Keyword.trample)
+    (staticAbilities := #[.otherCreaturesHaveTrample #["Orc", "Goblin"]])
+    (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower
   textForStackedAbility c t == t &&
     !mentions (textForStackedAbility c t) "Other Orcs and Goblins"
 
 /- A card with a single leftover Oracle ability keeps that printed wording. -/
 #guard
-  let c : CardDef := {
-    name := "Silent Bauble"
-    types := #[.artifact]
-    oracleText := "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-  }
+  let c := artifact "Silent Bauble" ManaCost.empty
+    "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
   textForStackedAbility c (AbilityEffect.toNotation .searchBasicLandTapped) ==
     c.oracleText
 

@@ -14,14 +14,34 @@ namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-/-- A basic land whose name is also its land type (CR 305.6). -/
-def basicLand (landName : String) (color : Color) : CardDef := {
-  name := landName
-  types := #[.land]
-  subtypes := #[landName]
-  supertypes := #[.basic]
-  oracleText := s!"\{T}: Add \{{color.letter}}."
+/-- Fill a `CardDef` with the fields catalogs actually set. Type-specific
+helpers (`creature`, `instant`, …) are thin wrappers so a new card is one
+call instead of repeating `types`, `power := some`, and empty arrays. -/
+def card (name : String) (types : Array CardType)
+    (manaCost : ManaCost := ManaCost.empty) (subtypes : Array Subtype := #[])
+    (oracleText : String := "") (power : Option Int := none)
+    (toughness : Option Int := none) (keywords : Keywords := Keywords.none)
+    (supertypes : Array Supertype := #[])
+    (spellEffect : Option SpellEffect := none)
+    (spellModes : Array SpellEffect := #[])
+    (additionalCostSacrificeArtifactOrCreature : Bool := false)
+    (tapAddMana : Array ManaType := #[])
+    (tapAddManaForEach : Array TapAddForEach := #[])
+    (tapAddAnyColorEqualToPower : Bool := false)
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (adventure : Option AdventureFace := none) : CardDef := {
+  name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
+  supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
+  tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower, staticAbilities,
+  triggeredAbilities, activatedAbilities, adventure
 }
+
+/-- A basic land whose name is also its land type (CR 305.6). -/
+def basicLand (landName : String) (color : Color) : CardDef :=
+  card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
+    (oracleText := s!"\{T}: Add \{{color.letter}}.")
 
 def plains : CardDef := basicLand "Plains" .white
 def island : CardDef := basicLand "Island" .blue
@@ -40,33 +60,88 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (activatedAbilities : Array ActivatedAbility := #[])
     (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColorEqualToPower : Bool := false)
-    (adventure : Option AdventureFace := none) : CardDef := {
-  name, manaCost, types := #[.creature], subtypes, oracleText,
-  power := some power, toughness := some toughness, keywords, tapAddMana,
-  supertypes, staticAbilities, triggeredAbilities, activatedAbilities,
-  tapAddManaForEach, tapAddAnyColorEqualToPower, adventure
-}
+    (adventure : Option AdventureFace := none) : CardDef :=
+  card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
+    keywords supertypes (tapAddMana := tapAddMana)
+    (tapAddManaForEach := tapAddManaForEach)
+    (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
+    (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities := activatedAbilities) (adventure := adventure)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
-    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef := {
-  name, manaCost, types := #[.instant], oracleText, spellEffect, spellModes,
-  additionalCostSacrificeArtifactOrCreature
-}
+    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
+  card name #[.instant] manaCost (oracleText := oracleText)
+    (spellEffect := spellEffect) (spellModes := spellModes)
+    (additionalCostSacrificeArtifactOrCreature :=
+      additionalCostSacrificeArtifactOrCreature)
 
-/-- A sorcery with a one-shot effect. -/
+/-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
-    (spellEffect : SpellEffect) : CardDef := {
-  name, manaCost, types := #[.sorcery], oracleText, spellEffect := some spellEffect
+    (spellEffect : Option SpellEffect := none)
+    (spellModes : Array SpellEffect := #[]) : CardDef :=
+  card name #[.sorcery] manaCost (oracleText := oracleText)
+    (spellEffect := spellEffect) (spellModes := spellModes)
+
+/-- A non-Aura enchantment. -/
+def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
+    (keywords : Keywords := Keywords.none)
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (subtypes : Array Subtype := #[]) : CardDef :=
+  card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
+    (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities := activatedAbilities)
+
+/-- An Aura enchantment (CR 303.4). -/
+def aura (name : String) (manaCost : ManaCost) (oracleText : String)
+    (keywords : Keywords := Keywords.none)
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[]) : CardDef :=
+  enchantment name manaCost oracleText keywords staticAbilities triggeredAbilities
+    (subtypes := #["Aura"])
+
+/-- An artifact, including Equipment. -/
+def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
+    (subtypes : Array Subtype := #[])
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (activatedAbilities : Array ActivatedAbility := #[]) : CardDef :=
+  card name #[.artifact] manaCost subtypes oracleText
+    (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities := activatedAbilities)
+
+/-- A nonbasic land. -/
+def land (name : String) (oracleText : String)
+    (tapAddMana : Array ManaType := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (subtypes : Array Subtype := #[]) : CardDef :=
+  card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
+    (tapAddMana := tapAddMana) (activatedAbilities := activatedAbilities)
+
+/-- An activated ability (CR 602.1). -/
+def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
+    (tap : Bool := false) (sacrificeSource : Bool := false)
+    (sacrificeAnotherCreatureOrArtifact : Bool := false)
+    (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
+    (onceEachTurn : Bool := false)
+    (otherModes : Array AbilityEffect := #[]) : ActivatedAbility := {
+  cost := { mana, tap, sacrificeSource, sacrificeAnotherCreatureOrArtifact }
+  effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery. -/
-def equipAbility (mana : ManaCost) : ActivatedAbility := {
-  cost := { mana := mana }
-  effect := .attachToTargetCreatureYouControl
-  onlyAsSorcery := true
+def equipAbility (mana : ManaCost) : ActivatedAbility :=
+  activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+
+/-- Adventure characteristics used while the card is a spell (CR 715.2). -/
+def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
+    (spellEffect : SpellEffect) : AdventureFace := {
+  name, manaCost, types := #[.sorcery], subtypes := #["Adventure"],
+  oracleText, spellEffect := some spellEffect
 }
 
 /-- A red instant that deals `amount` damage to any target. -/
@@ -89,7 +164,7 @@ def canyonMinotaur : CardDef :=
 
 def ragingGoblin : CardDef :=
   creature "Raging Goblin" (ManaCost.ofColor .red) #["Goblin"] 1 1
-    (oracleText := "Haste") (keywords := { Keywords.none with haste := true })
+    (oracleText := "Haste") (keywords := Keyword.haste)
 
 def llanowarElves : CardDef :=
   creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
@@ -107,7 +182,7 @@ def rumblingBaloth : CardDef :=
 
 def giantSpider : CardDef :=
   creature "Giant Spider" (ManaCost.ofGenericAndColor 3 .green) #["Spider"] 2 4
-    (oracleText := "Reach") (keywords := { Keywords.none with reach := true })
+    (oracleText := "Reach") (keywords := Keyword.reach)
 
 def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
 
@@ -136,5 +211,11 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
+#guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
+  (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
+#guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
+#guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
+  (subtypes := #["Equipment"])).isEquipment
+#guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura
 
 end Mtg.Engine.Catalog
