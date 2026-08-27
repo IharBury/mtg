@@ -215,6 +215,9 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
   (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant
 #guard !grizzlyBears.hasType .instant
+#guard lightningBolt.hasCastKind .burn
+#guard giantGrowth.hasCastKind .pump
+#guard !lightningBolt.hasCastKind .pump
 #guard (lightningBolt.spellEffect.map SpellEffect.castKind) == some .burn
 #guard (giantGrowth.spellEffect.map SpellEffect.castKind) == some .pump
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
