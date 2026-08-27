@@ -114,8 +114,9 @@ The first slice of the engine models the two-player game:
   zones), or restrict blocking unless you control a Goblin or Orc; an until-end-of-turn
   restriction that creatures without flying can't block; attack
   triggers that pump power, set another creature's base power and toughness,
-  give another creature +2/+0 and trample, scry, or scry when you attack with one
-  or more Elves; scry triggers that pump for each card looked at;
+  give another creature +2/+0 and trample, scry, scry when you attack with one
+  or more Elves, or gain life while you control a creature with power 4 or
+  greater (Ferocious); scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
   creatures, flash, Aura spells that enchant a creature, Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
@@ -134,7 +135,7 @@ The first slice of the engine models the two-player game:
   `{4}, {T}` making a target creature unblockable until end of turn, and
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy (including target artifact or land, after which
-  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, vigilance, until-end-of-turn
+  creatures without flying can't block this turn), +1/+1 counters, hexproof, indestructible, deathtouch, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
   indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a
