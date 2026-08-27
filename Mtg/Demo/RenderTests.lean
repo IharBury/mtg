@@ -465,6 +465,8 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones hunterReady activatedHunter).contains (.graveyard ⟨0⟩)
 
 #guard mentions (header paidClub) "sacrifice a creature or artifact"
+#guard mentions (header bladeMustSac) "sacrifice a creature (Nissa)"
+#guard !mentions (header bladeMustSac) "artifact"
 #guard pendingCostNotation targetedClub == some "{1}{R}, Sacrifice an artifact or creature"
 #guard pendingCostLine targetedClub == some "Cost: {1}{R}, Sacrifice an artifact or creature"
 #guard mentions (header targetedClub) "cost {1}{R}, Sacrifice an artifact or creature"
@@ -679,6 +681,11 @@ def mountainLine (g : Game) : String :=
   let g := spearEquipped
   let spear := namedPermanent g "Ragged Short Spear"
   mentions (objectLine g spear) "Artifact — Equipment"
+
+#guard
+  let g := bladeEquipped
+  let blade := namedPermanent g "Crude Bent Blade"
+  mentions (objectLine g blade) "Artifact — Equipment"
 
 -- An Aura stays with its creature host; unattached Equipment sits with other
 -- non-lands, even if it entered before the creature.

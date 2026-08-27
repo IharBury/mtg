@@ -40,6 +40,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
       | none => some .pass
+    | .sacrificeCreature _ =>
+      match (g.sacrificeCreatureChoices p)[0]? with
+      | some sac => some (.sacrifice sac.id)
+      | none => some .pass
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
