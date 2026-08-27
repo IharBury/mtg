@@ -446,14 +446,13 @@ deriving Repr, Inhabited, BEq
 
 /-- How an activated ability resolves (CR 608). Grouped so
 `Game.applyAbilityEffect` matches a handful of shapes instead of every
-constructor. Permanent-target effects share `PermanentAction` with spells. -/
+constructor. Permanent-target effects, including creature damage, share
+`PermanentAction` with spells. -/
 inductive AbilityResolution where
   /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
   | searchBasicLand
   /-- Exile the top card and grant permission to play it. -/
   | exileTop
-  /-- Deal `amount` damage to the announced target. -/
-  | damageToTarget (amount : Nat)
   /-- Attach this Equipment to the announced creature. -/
   | attach
   /-- Affect a still-legal permanent target. -/
@@ -483,7 +482,7 @@ on resolution. -/
 def spec : AbilityEffect → AbilityMeta
   | .dealDamageToTargetCreature n =>
     { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .damageToTarget n }
+      resolution := .onPermanent (.dealDamage n) }
   | .destroyTargetColorlessNonland =>
     { targeting := .of .colorlessNonland, castKind := .destroyColorless,
       resolution := .onPermanent .destroy }
@@ -527,7 +526,8 @@ def resolution (e : AbilityEffect) : AbilityResolution :=
   e.spec.resolution
 
 /-- Oracle-style reminder from targeting and resolution, so a new constructor
-only updates `spec`. -/
+only updates `spec`. Source-deals-damage uses the creature as the subject
+(`This creature deals N…`) rather than the generic `PermanentAction` wording. -/
 def toNotation (e : AbilityEffect) : String :=
   let noun := e.targetKind.noun
   match e.resolution with
@@ -535,16 +535,16 @@ def toNotation (e : AbilityEffect) : String :=
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
   | .exileTop =>
     "Exile the top card of your library. You may play it until the end of your next turn"
-  | .damageToTarget n =>
-    s!"This creature deals {n} damage to {noun}"
   | .attach =>
     s!"Attach this Equipment to {noun}"
+  | .onPermanent (.dealDamage n) =>
+    s!"This creature deals {n} damage to {noun}"
   | .onPermanent action =>
     PermanentAction.toNotation action noun (sentence := true)
   | .onSource .becomeBear =>
     "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
   | .onSource (.pump p t) =>
-    s!"This creature gets {signedStat p}/{signedStat t} until end of turn"
+    PermanentAction.toNotation (.pump p t) "this creature" (sentence := true)
   | .onSource (.plusOne n) =>
     s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
 
@@ -655,20 +655,48 @@ def pluralSubtype (s : String) : String :=
 
 /-- Oracle-style “Enchanted/Equipped creature gets +P/+T.” -/
 def hostGetsPhrase (host : String) (p t : Int) : String :=
-  s!"{host} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
+  s!"{host} gets {signedStat p}/{signedStat t}."
 
-def toNotation : StaticAbility → String
-  | .otherCreaturesHaveTrample subtypes =>
+/-- How a static ability applies (CR 604 / 613). Grouped so Game accessors and
+`toNotation` match a handful of shapes instead of every constructor. Enchanted
+and equipped host pumps share `hostGets`. -/
+inductive StaticShape where
+  /-- Other matching creatures you control have trample. -/
+  | lordTrample (subtypes : Array String)
+  /-- Other matching creatures you control get +P/+T. -/
+  | lordPump (subtypes : Array String) (power toughness : Int)
+  /-- The enchanted or equipped host gets +P/+T. -/
+  | hostGets (host : String) (power toughness : Int)
+  /-- Characteristic-defining P/T equal to lands you control. -/
+  | landsYouControlPT
+  /-- This creature can't block unless you control a listed subtype. -/
+  | cantBlockUnless (subtypes : Array String)
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this static ability. Exhaustive so a new constructor is a
+compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
+def shape : StaticAbility → StaticShape
+  | .otherCreaturesHaveTrample subtypes => .lordTrample subtypes
+  | .otherCreaturesGet subtypes p t => .lordPump subtypes p t
+  | .enchantedCreatureGets p t => .hostGets "Enchanted creature" p t
+  | .equippedCreatureGets p t => .hostGets "Equipped creature" p t
+  | .powerToughnessEqualLandsYouControl => .landsYouControlPT
+  | .cantBlockUnlessYouControl subtypes => .cantBlockUnless subtypes
+
+/-- Oracle-style reminder from `shape`, so a new constructor only updates that
+table. -/
+def toNotation (ab : StaticAbility) : String :=
+  match ab.shape with
+  | .lordTrample subtypes =>
     let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
     s!"Other {who} you control have trample."
-  | .otherCreaturesGet subtypes p t =>
+  | .lordPump subtypes p t =>
     let who := String.intercalate " and " subtypes.toList
-    s!"Other {who} creatures you control get {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
-  | .enchantedCreatureGets p t => hostGetsPhrase "Enchanted creature" p t
-  | .equippedCreatureGets p t => hostGetsPhrase "Equipped creature" p t
-  | .powerToughnessEqualLandsYouControl =>
+    s!"Other {who} creatures you control get {signedStat p}/{signedStat t}."
+  | .hostGets host p t => hostGetsPhrase host p t
+  | .landsYouControlPT =>
     "This creature's power and toughness are each equal to the number of lands you control."
-  | .cantBlockUnlessYouControl subtypes =>
+  | .cantBlockUnless subtypes =>
     match subtypes.toList with
     | [] => "This creature can't block."
     | xs =>
@@ -677,49 +705,36 @@ def toNotation : StaticAbility → String
 instance : ToString StaticAbility where
   toString := toNotation
 
-/-- Classification of a static ability. Exhaustive so a new constructor is a
-compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
-structure StaticTiming where
-  /-- Lord +P/+T granted to other matching creatures you control. -/
-  lordPump : Option (Array String × Int × Int) := none
-  /-- Subtypes of other creatures you control that gain trample. -/
-  trampleSubtypes : Option (Array String) := none
-  /-- Continuous +P/+T granted to the enchanted or equipped host (CR 613.3c). -/
-  hostStatBonus : Int × Int := (0, 0)
-  /-- Characteristic-defining P/T equal to lands you control (CR 208.2a / 604.3). -/
-  landsYouControlPT : Bool := false
-  /-- Subtypes required to declare this creature as a blocker, if any. -/
-  cantBlockUnless : Option (Array String) := none
-deriving Repr, Inhabited, BEq
-
-/-- Classification of this static ability. -/
-def timing : StaticAbility → StaticTiming
-  | .otherCreaturesHaveTrample subtypes => { trampleSubtypes := some subtypes }
-  | .otherCreaturesGet subtypes p t => { lordPump := some (subtypes, p, t) }
-  | .enchantedCreatureGets p t | .equippedCreatureGets p t => { hostStatBonus := (p, t) }
-  | .powerToughnessEqualLandsYouControl => { landsYouControlPT := true }
-  | .cantBlockUnlessYouControl subtypes => { cantBlockUnless := some subtypes }
-
 /-- Lord +P/+T this ability grants other matching creatures, if any. -/
 def lordPump? (ab : StaticAbility) : Option (Array String × Int × Int) :=
-  ab.timing.lordPump
+  match ab.shape with
+  | .lordPump subtypes p t => some (subtypes, p, t)
+  | _ => none
 
 /-- Subtypes this ability grants trample to, if any. -/
 def trampleSubtypes? (ab : StaticAbility) : Option (Array String) :=
-  ab.timing.trampleSubtypes
+  match ab.shape with
+  | .lordTrample subtypes => some subtypes
+  | _ => none
 
 /-- Continuous +P/+T this ability grants its enchanted or equipped host
 (CR 613.3c). Other static abilities contribute `(0, 0)` here. -/
 def hostStatBonus (ab : StaticAbility) : Int × Int :=
-  ab.timing.hostStatBonus
+  match ab.shape with
+  | .hostGets _ p t => (p, t)
+  | _ => (0, 0)
 
 /-- True for the lands-you-control P/T characteristic-defining ability. -/
 def isLandsYouControlPT (ab : StaticAbility) : Bool :=
-  ab.timing.landsYouControlPT
+  match ab.shape with
+  | .landsYouControlPT => true
+  | _ => false
 
 /-- Subtypes required to declare a blocker, if this ability restricts blocking. -/
 def cantBlockUnless? (ab : StaticAbility) : Option (Array String) :=
-  ab.timing.cantBlockUnless
+  match ab.shape with
+  | .cantBlockUnless subtypes => some subtypes
+  | _ => none
 
 end StaticAbility
 
@@ -966,7 +981,9 @@ def resolution (ab : TriggeredAbility) : TriggerResolution :=
 def targeting (ab : TriggeredAbility) : EffectTargeting :=
   ab.timing.targeting
 
-/-- True when this ability fires on `e`. -/
+/-- True when this ability fires on `e`. Game queues triggers by `TriggerEvent`;
+the named `triggersWhen*` wrappers below are the same predicates with CR
+citations, used by compile-time tests. -/
 def firesOn (ab : TriggeredAbility) (e : TriggerEvent) : Bool :=
   ab.timing.events.contains e
 
@@ -1413,7 +1430,8 @@ instance : ToString CardDef where
 #guard AbilityEffect.castKind (.dealDamageToTargetCreature 2) == .creatureDamage
 #guard AbilityEffect.castKind .destroyTargetColorlessNonland == .destroyColorless
 #guard AbilityEffect.castKind (.sourceGets 1 0) == .other
-#guard AbilityEffect.resolution (.dealDamageToTargetCreature 2) == .damageToTarget 2
+#guard AbilityEffect.resolution (.dealDamageToTargetCreature 2) ==
+  .onPermanent (.dealDamage 2)
 #guard AbilityEffect.resolution .destroyTargetColorlessNonland ==
   .onPermanent .destroy
 #guard AbilityEffect.resolution .targetCantBeBlockedThisTurn ==
@@ -1586,6 +1604,10 @@ instance : ToString CardDef where
 #guard TriggeredAbility.targetKind (.onEnterDraw 1) == .none
 #guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
 #guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
+#guard StaticAbility.shape (.enchantedCreatureGets 3 3) ==
+  .hostGets "Enchanted creature" 3 3
+#guard StaticAbility.shape (.equippedCreatureGets 2 0) ==
+  .hostGets "Equipped creature" 2 0
 #guard (StaticAbility.lordPump? (.otherCreaturesGet #["Elf"] 1 1)) == some (#["Elf"], 1, 1)
 #guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #["Orc"])) == some #["Orc"]
 #guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl

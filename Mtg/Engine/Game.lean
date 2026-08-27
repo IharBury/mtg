@@ -691,7 +691,7 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingDea
     match dest, old.controller with
     | .graveyard _, some p =>
       old.printed.triggeredAbilities.filterMap (fun ab =>
-        if ab.triggersWhenDying then
+        if ab.firesOn .dying then
           some {
             controller := p
             source := old
@@ -1184,20 +1184,20 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
 
-/-- Apply `f` to each printed trigger of `source` matching `pred`. -/
+/-- Apply each printed trigger of `source` that fires on `event`. -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
-    (pred : TriggeredAbility → Bool) (event : String)
+    (event : TriggerEvent) (label : String)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (checkTargets : Bool := true) : Game :=
   Id.run do
     let mut g := g
     for ab in source.printed.triggeredAbilities do
-      if pred ab then
+      if ab.firesOn event then
         g :=
           if checkTargets then
-            g.putTriggerOrFizzle controller source ab event lastKnownPower lastKnownToughness
+            g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
           else
-            g.putTriggeredAbilityOnStack controller source ab event
+            g.putTriggeredAbilityOnStack controller source ab label
               lastKnownPower lastKnownToughness
     return g
 
@@ -1211,12 +1211,12 @@ def foldControlledPermanents (g : Game) (p : PlayerId)
         g := f g o
     return g
 
-/-- Apply `pred` to each matching trigger of permanents `p` controls. -/
+/-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
-    (pred : TriggeredAbility → Bool) (event : String)
+    (event : TriggerEvent) (label : String)
     (excludeId : Option ObjectId := none) (checkTargets : Bool := true) : Game :=
   g.foldControlledPermanents p excludeId fun g o =>
-    g.putMatchingSourceTriggers p o pred event (checkTargets := checkTargets)
+    g.putMatchingSourceTriggers p o event label (checkTargets := checkTargets)
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
@@ -1283,8 +1283,7 @@ def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
   | some p =>
     Id.run do
       let mut g := g
-      g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenEntering
-        "enters trigger"
+      g := g.putMatchingSourceTriggers p o .entering "enters trigger"
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put “whenever a land you control enters” triggers onto the stack (CR 603.6a).
@@ -1295,8 +1294,7 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
     match land.controller with
     | none => g
     | some landController =>
-      g.putControlledTriggers landController
-          TriggeredAbility.triggersWhenLandYouControlEnters "landfall trigger"
+      g.putControlledTriggers landController .landYouControlEnters "landfall trigger"
         |>.promptTriggerTargetsIfNeeded
 
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
@@ -1304,8 +1302,7 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
   if !spell.printed.isInstantOrSorcery then g
   else
-    g.putControlledTriggers caster
-      TriggeredAbility.triggersWhenYouCastInstantOrSorcery "cast trigger"
+    g.putControlledTriggers caster .youCastInstantOrSorcery "cast trigger"
       (checkTargets := false)
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
@@ -1316,8 +1313,7 @@ def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : G
     match entering.controller with
     | none => g
     | some p =>
-      g.putControlledTriggers p
-          TriggeredAbility.triggersWhenAnotherElfYouControlEnters "Elf-enters trigger"
+      g.putControlledTriggers p .anotherElfYouControlEnters "Elf-enters trigger"
           (excludeId := some entering.id) (checkTargets := false)
         |>.promptTriggerTargetsIfNeeded
 
@@ -2205,7 +2201,7 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
 /-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). -/
 def pumpPermanent (g : Game) (o : GameObject) (p t : Int) : Game :=
   let g := g.mapObjectStatus o (·.addPump p t)
-  g.logMsg s!"{o.name} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
+  g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t} until end of turn"
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
@@ -2241,7 +2237,7 @@ def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=
     let s := s.addPump p t
     { s with untilEotTrample := true })
   g.logMsg
-    s!"{o.name} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} and gains trample until end of turn"
+    s!"{o.name} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
 
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
 (tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
@@ -2380,6 +2376,13 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.logMsg "Creatures without flying can't block this turn"
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
 
+/-- Apply `action` to a still-legal permanent target of `kind`. -/
+def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) (action : PermanentAction)
+    (sourceId : Option ObjectId := none) : Game :=
+  g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.applyPermanentAction o action) sourceId
+
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   match effect.resolution with
@@ -2405,8 +2408,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | .onPermanent action =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.applyPermanentAction o action
+    g.applyOnPermanent controller effect.targetKind targets action
 
 /-- Apply `f` if `sourceId` is still on the battlefield. -/
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
@@ -2432,8 +2434,6 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
-  | .damageToTarget n =>
-    g.applyDamageToKindTarget controller effect.targetKind targets n
   | .attach =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src =>
@@ -2446,8 +2446,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           g.logMsg s!"{src.name} attaches to {host.name}")
         "The Equipment is no longer in play"
   | .onPermanent action =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.applyPermanentAction o action
+    g.applyOnPermanent controller effect.targetKind targets action
   | .onSource action =>
     g.withSourceOnBattlefield sourceId fun g o =>
       match action with
@@ -2465,7 +2464,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
             grantedStaticAbilities := granted })
         g.logMsg
           s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
-      | .pump pw tw => g.pumpPermanent o pw tw
+      | .pump pw tw => g.applyPermanentAction o (.pump pw tw)
       | .plusOne n => g.addPlusOnePlusOneTo o n
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
@@ -2482,7 +2481,7 @@ def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
       Id.run do
         let mut g := g
         for ab in o.printed.triggeredAbilities do
-          if ab.triggersWhenYouScry then
+          if ab.firesOn .youScry then
             g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
               controller := p
               source := o
@@ -2616,12 +2615,12 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     let mut g := g
     for id in attackerIds do
       let o := g.object! id
-      g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenAttacking
-        "attack trigger" (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      g := g.putMatchingSourceTriggers p o .attacking "attack trigger"
+        (some (g.snapshotPower o)) (some (g.snapshotToughness o))
     let attackedWithElves := attackerIds.any (fun id => (g.object! id).hasSubtype "Elf")
     if attackedWithElves then
-      g := g.putControlledTriggers p TriggeredAbility.triggersWhenYouAttackWithElves
-        "attack trigger" (checkTargets := false)
+      g := g.putControlledTriggers p .youAttackWithElves "attack trigger"
+        (checkTargets := false)
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
@@ -2636,7 +2635,7 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
         match o.controller with
         | none => pure ()
         | some p =>
-          g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenBecomesBlocked
+          g := g.putMatchingSourceTriggers p o .becomesBlocked
             "becomes-blocked trigger" (checkTargets := false)
     return g
 
