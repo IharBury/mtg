@@ -113,8 +113,6 @@ inductive EffectTargetKind where
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
-  /-- Target opponent (a player other than the controller). -/
-  | opponent
   /-- Target creature (any controller). -/
   | creature
   /-- Target creature with flying. -/
@@ -180,8 +178,6 @@ def spec : EffectTargetKind → Spec
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
-  | .opponent =>
-    { noun := "target opponent", prefer := .opponentPlayer }
   | .creature =>
     { noun := "target creature" }
   | .creatureWithFlying =>

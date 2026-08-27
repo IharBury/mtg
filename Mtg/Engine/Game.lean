@@ -1418,8 +1418,6 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalGraveyardCardTargets caster (fun o => o.hasSubtype "Elf")
   | .oppCreature =>
     g.legalOppCreatureTargets caster
-  | .opponent =>
-    g.livingPlayers.filter (fun pl => pl.id != caster) |>.map (fun pl => Target.player pl.id)
   | .creature =>
     g.legalCreatureTargets caster (fun _ => true)
   | .creatureWithFlying =>
@@ -2976,14 +2974,6 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
     (missing : Option String := none) : Game :=
   g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
     sourceId missing
-
-/-- Decrease `p`'s life total. Losing life is not damage (CR 118.3b). -/
-def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if n == 0 then g
-  else
-    let pl := g.player p
-    let g := g.setPlayer { pl with life := pl.life - (n : Int) }
-    g.logMsg s!"{pl.name} loses {n} life ({(g.player p).life} life)"
 
 /-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
 permission to cast them, spending mana as though it were any type. -/

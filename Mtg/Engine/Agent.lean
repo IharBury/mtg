@@ -195,7 +195,7 @@ where
       else none
     let fight := playable.find? (fun o => spellKind o .fight)
     let draw := playable.find? (fun o =>
-      spellKind o .draw &&
+      (spellKind o .draw || modeKind o .draw) &&
         match o.printed.spellEffect with
         | some e =>
           match e.resolution with
@@ -203,7 +203,7 @@ where
             (g.player p).life > (life : Int) &&
               (g.player p).library.size >= cards
           | _ => true
-        | none => false)
+        | none => true)
     let removal := playable.find? (fun o =>
       (oppHasCreature && (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
       (hasLegalKind .creatureWithFlying &&
@@ -213,8 +213,6 @@ where
       (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let massPump := playable.find? (fun o =>
       spellKind o .massPump || modeKind o .massPump)
-    let drawSpell := playable.find? (fun o =>
-      spellKind o .draw || modeKind o .draw)
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
       o.printed.isArtifact &&
@@ -255,8 +253,6 @@ where
     else if let some o := extraLandAdventure then
       some (.castAdventure o.id)
     else if let some o := massPump then
-      some (.cast o.id)
-    else if let some o := drawSpell then
       some (.cast o.id)
     else
       some .pass
