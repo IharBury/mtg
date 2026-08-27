@@ -194,6 +194,26 @@ inductive SpellEffect where
   | destroyArtifactOrLandNonflyersCantBlock
 deriving Repr, Inhabited, BEq
 
+/-- How the demonstration agent classifies a spell when choosing what to cast.
+Adding a constructor is a compile error in `SpellEffect.castKind` rather than
+silently skipping the new effect. -/
+inductive SpellCastKind where
+  /-- Damage to any target (player or creature). -/
+  | burn
+  /-- Damage to a creature only (including Smite-style follow-ups). -/
+  | creatureDamage
+  /-- A creature you control deals its power to an opposing creature. -/
+  | fight
+  /-- Destroy target creature with flying. -/
+  | destroyFlying
+  /-- Destroy target artifact or land. -/
+  | destroyArtifactOrLand
+  /-- Until-end-of-turn pump or +1/+1 with keyword grants. -/
+  | pump
+  /-- You may play an additional land this turn. -/
+  | extraLand
+deriving Repr, Inhabited, BEq, DecidableEq
+
 namespace SpellEffect
 
 def signedStat (n : Int) : String :=
@@ -240,6 +260,25 @@ def targetCount (e : SpellEffect) : Nat :=
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
   e.targetCount != 0
+
+/-- Demonstration-agent category for this effect. Exhaustive so a new
+constructor is a compile error in the agent rather than silently ignored. -/
+def castKind : SpellEffect → SpellCastKind
+  | .dealDamage _ => .burn
+  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _ => .creatureDamage
+  | .creatureYouControlDealsPowerToOppCreature => .fight
+  | .destroyCreatureWithFlying => .destroyFlying
+  | .destroyArtifactOrLandNonflyersCantBlock => .destroyArtifactOrLand
+  | .pump _ _ | .plusOnePlusOneTrampleHexproof => .pump
+  | .playAdditionalLandThisTurn => .extraLand
+
+/-- True when the demonstration agent prefers this mode of a modal spell. -/
+def preferAsDefaultMode : SpellEffect → Bool
+  | .destroyCreatureWithFlying => true
+  | .dealDamage _ | .pump _ _ | .plusOnePlusOneTrampleHexproof
+  | .dealDamageToCreature _ | .dealDamageLoseIndestructibleExile _
+  | .creatureYouControlDealsPowerToOppCreature | .playAdditionalLandThisTurn
+  | .destroyArtifactOrLandNonflyersCantBlock => false
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -424,6 +463,10 @@ namespace StaticAbility
 def pluralSubtype (s : String) : String :=
   if s.endsWith "s" then s else s ++ "s"
 
+/-- Oracle-style “Enchanted/Equipped creature gets +P/+T.” -/
+def hostGetsPhrase (host : String) (p t : Int) : String :=
+  s!"{host} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
+
 def toNotation : StaticAbility → String
   | .otherCreaturesHaveTrample subtypes =>
     let who := String.intercalate " and " (subtypes.toList.map pluralSubtype)
@@ -431,10 +474,8 @@ def toNotation : StaticAbility → String
   | .otherCreaturesGet subtypes p t =>
     let who := String.intercalate " and " subtypes.toList
     s!"Other {who} creatures you control get {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
-  | .enchantedCreatureGets p t =>
-    s!"Enchanted creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
-  | .equippedCreatureGets p t =>
-    s!"Equipped creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t}."
+  | .enchantedCreatureGets p t => hostGetsPhrase "Enchanted creature" p t
+  | .equippedCreatureGets p t => hostGetsPhrase "Equipped creature" p t
   | .powerToughnessEqualLandsYouControl =>
     "This creature's power and toughness are each equal to the number of lands you control."
   | .cantBlockUnlessYouControl subtypes =>
@@ -801,20 +842,29 @@ def colors (c : CardDef) : ColorSet :=
   | some cs => cs
   | none => c.manaCost.colors
 
-def isLand (c : CardDef) : Bool := c.types.any (· == .land)
-def isCreature (c : CardDef) : Bool := c.types.any (· == .creature)
-def isArtifact (c : CardDef) : Bool := c.types.any (· == .artifact)
-def isInstant (c : CardDef) : Bool := c.types.any (· == .instant)
-def isSorcery (c : CardDef) : Bool := c.types.any (· == .sorcery)
+/-- True when `t` is among this card's types. -/
+def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
+
+/-- True when `s` is among this card's subtypes. -/
+def hasSubtype (c : CardDef) (s : Subtype) : Bool := c.subtypes.any (· == s)
+
+/-- True when `s` is among this card's supertypes. -/
+def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
+
+def isLand (c : CardDef) : Bool := c.hasType .land
+def isCreature (c : CardDef) : Bool := c.hasType .creature
+def isArtifact (c : CardDef) : Bool := c.hasType .artifact
+def isInstant (c : CardDef) : Bool := c.hasType .instant
+def isSorcery (c : CardDef) : Bool := c.hasType .sorcery
 def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
-def isEnchantment (c : CardDef) : Bool := c.types.any (· == .enchantment)
+def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
-  c.isEnchantment && c.subtypes.any (· == "Aura")
+  c.isEnchantment && c.hasSubtype "Aura"
 /-- Equipment subtype on an Artifact (CR 301.5). -/
 def isEquipment (c : CardDef) : Bool :=
-  c.isArtifact && c.subtypes.any (· == "Equipment")
+  c.isArtifact && c.hasSubtype "Equipment"
 
 /-- Timing of a sorcery: also the default for permanent spells without flash (CR 302.1, 307.1). -/
 def hasSorcerySpeed (c : CardDef) : Bool :=
@@ -989,6 +1039,19 @@ instance : ToString CardDef where
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
 #guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
+#guard SpellEffect.castKind (.dealDamage 3) == .burn
+#guard SpellEffect.castKind (.dealDamageToCreature 5) == .creatureDamage
+#guard SpellEffect.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
+#guard SpellEffect.castKind .creatureYouControlDealsPowerToOppCreature == .fight
+#guard SpellEffect.castKind .destroyCreatureWithFlying == .destroyFlying
+#guard SpellEffect.castKind .destroyArtifactOrLandNonflyersCantBlock ==
+  .destroyArtifactOrLand
+#guard SpellEffect.castKind (.pump 3 3) == .pump
+#guard SpellEffect.castKind .plusOnePlusOneTrampleHexproof == .pump
+#guard SpellEffect.castKind .playAdditionalLandThisTurn == .extraLand
+#guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
+#guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
+#guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
 #guard
   let c : CardDef := {
     name := "Silent Club"
@@ -1247,7 +1310,7 @@ end AdventureFace
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
-    c.subtypes.any (· == "Adventure")
+    c.hasSubtype "Adventure"
 
 #guard
   let adv : AdventureFace := {
@@ -1258,14 +1321,14 @@ end AdventureFace
   }
   let c := adv.toCardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
-    c.subtypes.any (· == "Adventure")
+    c.hasSubtype "Adventure"
 
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/
 def isBasicLandCard (c : CardDef) : Bool :=
-  c.isLand && c.supertypes.any (· == .basic)
+  c.isLand && c.hasSupertype .basic
 
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
-  c.isLand && c.subtypes.any (· == "Forest")
+  c.isLand && c.hasSubtype "Forest"
 
 end Mtg.Engine

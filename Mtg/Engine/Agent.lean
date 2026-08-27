@@ -142,63 +142,49 @@ where
         | none => false)
     let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
     let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
+    let spellKind (o : GameObject) (k : SpellCastKind) : Bool :=
+      match o.printed.spellEffect with
+      | some e => e.castKind == k
+      | none => false
+    let adventureKind (o : GameObject) (k : SpellCastKind) : Bool :=
+      match o.printed.adventure.bind (·.spellEffect) with
+      | some e => e.castKind == k
+      | none => false
+    let modeKind (o : GameObject) (k : SpellCastKind) : Bool :=
+      o.printed.spellModes.any (fun e => e.castKind == k)
     let adventureRemoval :=
       if oppHasCreature then
         adventurePlayable.find? (fun o =>
-          match o.printed.adventure with
-          | some adv =>
-            match adv.spellEffect with
-            | some (.dealDamageToCreature _) | some (.dealDamage _) => true
-            | _ => false
-          | none => false)
+          adventureKind o .creatureDamage || adventureKind o .burn)
       else none
-    let burn := playable.find? (fun o =>
-      match o.printed.spellEffect with
-      | some (.dealDamage _) => true
-      | _ => false)
+    let burn := playable.find? (fun o => spellKind o .burn)
     let creatureDamage :=
       if oppHasCreature then
-        playable.find? (fun o =>
-          match o.printed.spellEffect with
-          | some (.dealDamageToCreature _) | some (.dealDamageLoseIndestructibleExile _) =>
-            true
-          | _ => false)
+        playable.find? (fun o => spellKind o .creatureDamage)
       else none
-    let fight := playable.find? (fun o =>
-      match o.printed.spellEffect with
-      | some .creatureYouControlDealsPowerToOppCreature => true
-      | _ => false)
+    let fight := playable.find? (fun o => spellKind o .fight)
     let removal := playable.find? (fun o =>
       (!(g.legalTargets p .destroyCreatureWithFlying).isEmpty &&
-        (o.printed.spellEffect == some .destroyCreatureWithFlying ||
-          o.printed.spellModes.any (· == .destroyCreatureWithFlying))) ||
+        (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
       (!(g.legalTargets p .destroyArtifactOrLandNonflyersCantBlock).isEmpty &&
-        o.printed.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock))
+        spellKind o .destroyArtifactOrLand))
     let creature := playable.find? (fun o => o.printed.isCreature)
     let artifact := playable.find? (fun o =>
-      o.printed.types.any (· == .artifact) &&
+      o.printed.isArtifact &&
         (!o.printed.activatedAbilities.isEmpty || o.printed.isEquipment))
     let pump :=
       if ownCreature.isSome then
         playable.find? (fun o =>
-          match o.printed.spellEffect with
-          | some (.pump _ _) | some .plusOnePlusOneTrampleHexproof => true
-          | _ =>
+          spellKind o .pump ||
             o.printed.spellModes.any (fun e =>
-              match e with
-              | .pump _ _ | .plusOnePlusOneTrampleHexproof =>
-                !(g.legalTargets p e).isEmpty
-              | _ => false))
+              e.castKind == .pump && !(g.legalTargets p e).isEmpty))
       else none
     let aura :=
       if ownCreature.isSome then
         playable.find? (fun o => o.printed.isAura)
       else none
     let extraLandAdventure :=
-      adventurePlayable.find? (fun o =>
-        match o.printed.adventure with
-        | some adv => adv.spellEffect == some .playAdditionalLandThisTurn
-        | none => false)
+      adventurePlayable.find? (fun o => adventureKind o .extraLand)
     if let some o := burn then
       some (.cast o.id)
     else if let some o := adventureRemoval then
