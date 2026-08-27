@@ -1160,13 +1160,13 @@ def ptString (c : CardDef) : String :=
   | none, some t => s!"*/{t}"
   | none, none => if c.isCreature then "*/*" else ""
 
+/-- Name, printed mana cost if any, type line, P/T, then keywords and abilities.
+Cards with no mana cost (lands, and other objects whose cost cannot be paid)
+omit the cost rather than printing `{0}` (CR 202.1b / 118.6). -/
 def summary (c : CardDef) : String :=
-  let cost := toString c.manaCost
-  let pt := c.ptString
-  let extras :=
-    [pt, c.keywordsAndAbilities].filter (fun s => !s.isEmpty) |> fun xs =>
-      if xs.isEmpty then "" else " " ++ String.intercalate " " xs
-  s!"{c.name} {cost} {c.typeLine}{extras}"
+  String.intercalate " "
+    ([c.name, toString c.manaCost, c.typeLine, c.ptString, c.keywordsAndAbilities].filter
+      (fun s => !s.isEmpty))
 
 instance : ToString CardDef where
   toString := summary

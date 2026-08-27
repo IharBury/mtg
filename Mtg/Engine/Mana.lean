@@ -113,9 +113,11 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
 def colors (cost : ManaCost) : ColorSet :=
   cost.symbols.foldl (fun acc s => acc.union s.colorContribution) ColorSet.empty
 
+/-- Printed mana symbols (CR 202.1). An empty cost is not `{0}`: lands and
+other cards with no mana cost have no symbols, and that cost cannot be paid
+(CR 202.1b / 118.6). `{0}` is the generic zero symbol (CR 107.4d). -/
 def toNotation (cost : ManaCost) : String :=
-  if cost.symbols.isEmpty then "{0}"
-  else String.join (cost.symbols.toList.map ManaSymbol.toNotation)
+  String.join (cost.symbols.toList.map ManaSymbol.toNotation)
 
 instance : ToString ManaCost where
   toString := toNotation
@@ -129,6 +131,11 @@ instance : BEq ManaCost where
 #guard (ofGenericAndColor 1 .green).colors.isMonocolored
 #guard (ofGeneric 4).colors.isColorless
 #guard (ofColors [.blue, .black]).colors.isColorPair
+#guard toString ManaCost.empty == ""
+#guard toString (ofGeneric 0) == ""
+#guard toString ({ symbols := #[.generic 0] } : ManaCost) == "{0}"
+#guard toString (ofGeneric 1) == "{1}"
+#guard toString (ofColor .red) == "{R}"
 
 end ManaCost
 

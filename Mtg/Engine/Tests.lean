@@ -251,7 +251,11 @@ def uncontrolledPermanent : Game :=
 #guard mentions giantSpider.summary "reach"
 #guard mentions llanowarElves.summary "{T}: Add {G}"
 #guard mentions lightningBolt.summary "deals 3 damage"
+#guard mentions lightningBolt.summary "{R}"
 #guard mentions mountain.summary "{T}: Add {R}"
+#guard !mentions mountain.summary "{0}"
+#guard !mentions forest.summary "{0}"
+#guard !mentions roguesPassage.summary "{0}"
 #guard mentions wayfarersBauble.summary "Search your library"
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
@@ -412,7 +416,12 @@ def uncontrolledPermanent : Game :=
   let c := creature "Silent Elves" ManaCost.empty #[] 1 1
     (tapAddMana := #[.colored .green])
   mentions c.abilitiesText "{T}: Add {G}" &&
-    mentions c.summary "{T}: Add {G}"
+    mentions c.summary "{T}: Add {G}" &&
+    !mentions c.summary "{0}"
+
+#guard
+  let c := creature "Silent Ornithopter" { symbols := #[.generic 0] } #[] 0 2
+  mentions c.summary "{0}"
 
 #guard
   let c := creature "Silent Siege" ManaCost.empty #[] 0 5
