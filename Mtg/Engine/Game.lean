@@ -71,8 +71,8 @@ structure Status where
   tapped : Bool := false
   damage : Int := 0
   summoningSick : Bool := true
-  pumpPower : Int := 0
-  pumpToughness : Int := 0
+  /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
+  pump : Int × Int := (0, 0)
   attacking : Bool := false
   /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
   blocking : Array ObjectId := #[]
@@ -83,18 +83,16 @@ structure Status where
   activationsThisTurn : Nat := 0
   /-- +1/+1 counters (CR 122.1). These do not wear off in cleanup. -/
   plusOnePlusOne : Nat := 0
-  /-- Granted until end of turn (cleared in cleanup, CR 514.3). -/
-  untilEotTrample : Bool := false
-  untilEotHexproof : Bool := false
-  untilEotCantBeBlocked : Bool := false
+  /-- Keywords granted until end of turn (cleared in cleanup, CR 514.3).
+  Printed keywords stay on `GameObject.printed`; this field is merged in
+  `GameObject.printedOrUntilEot`. -/
+  untilEotKeywords : Keywords := {}
   /-- This creature loses indestructible until end of turn (e.g. Smite). -/
   untilEotLosesIndestructible : Bool := false
   /-- If this creature would die this turn, exile it instead (CR 614.1). -/
   untilEotExileIfDies : Bool := false
-  /-- Until-end-of-turn layer-7b setting of base power (e.g. Galion). -/
-  setBasePower : Option Int := none
-  /-- Until-end-of-turn layer-7b setting of base toughness (e.g. Galion). -/
-  setBaseToughness : Option Int := none
+  /-- Until-end-of-turn layer-7b setting of base P/T (e.g. Galion). -/
+  setBasePT : Option (Int × Int) := none
   /-- This permanent is a creature in addition to its other types (CR 205.1a).
   Lasting effects such as Beorn's Hospitality's activation do not end. -/
   additionalCreature : Bool := false
@@ -106,19 +104,71 @@ deriving Repr, Inhabited, BEq
 
 namespace Status
 
+/-- Until-end-of-turn power bonus. -/
+def pumpPower (s : Status) : Int := s.pump.1
+
+/-- Until-end-of-turn toughness bonus. -/
+def pumpToughness (s : Status) : Int := s.pump.2
+
+/-- Until-end-of-turn layer-7b base power, if set. -/
+def setBasePower (s : Status) : Option Int := s.setBasePT.map (·.1)
+
+/-- Until-end-of-turn layer-7b base toughness, if set. -/
+def setBaseToughness (s : Status) : Option Int := s.setBasePT.map (·.2)
+
 /-- Mark `n` damage on this permanent (CR 120). -/
 def addDamage (s : Status) (n : Int) : Status :=
   { s with damage := s.damage + n }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=
-  { s with pumpPower := s.pumpPower + p, pumpToughness := s.pumpToughness + t }
+  { s with pump := (s.pump.1 + p, s.pump.2 + t) }
 
 /-- Put `n` +1/+1 counters on this permanent (CR 122.1). -/
 def addPlusOnePlusOne (s : Status) (n : Nat := 1) : Status :=
   { s with plusOnePlusOne := s.plusOnePlusOne + n }
 
+/-- Union printed-style keyword grants that last until end of turn. -/
+def grantUntilEot (s : Status) (k : Keywords) : Status :=
+  { s with untilEotKeywords := Keywords.merge s.untilEotKeywords k }
+
+/-- One until-EOT status field: how to tell it is set, and how to clear it.
+`clearsAtCleanup` / `clearedAtCleanup` fold this table so a new until-EOT
+field is one row rather than restated in both functions. -/
+structure UntilEotField where
+  isSet : Status → Bool
+  clear : Status → Status
+
+def untilEotFields : List UntilEotField := [
+  ⟨fun s => s.damage != 0, fun s => { s with damage := 0 }⟩,
+  ⟨fun s => s.pump != (0, 0), fun s => { s with pump := (0, 0) }⟩,
+  ⟨fun s => s.untilEotKeywords != Keywords.none,
+    fun s => { s with untilEotKeywords := Keywords.none }⟩,
+  ⟨fun s => s.untilEotLosesIndestructible,
+    fun s => { s with untilEotLosesIndestructible := false }⟩,
+  ⟨fun s => s.untilEotExileIfDies,
+    fun s => { s with untilEotExileIfDies := false }⟩,
+  ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩
+]
+
+/-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
+base P/T setting (CR 514.3). -/
+def clearsAtCleanup (s : Status) : Bool :=
+  untilEotFields.any (·.isSet s)
+
+/-- Status after the cleanup step removes until-EOT effects (CR 514.3). -/
+def clearedAtCleanup (s : Status) : Status :=
+  untilEotFields.foldl (fun acc f => f.clear acc) s
+
 end Status
+
+#guard
+  let s : Status := { pump := (1, 2), damage := 3, setBasePT := some (4, 4) }
+  s.clearsAtCleanup && s.pumpPower == 1 && s.pumpToughness == 2 &&
+    s.setBasePower == some 4 &&
+    s.clearedAtCleanup.pump == (0, 0) && s.clearedAtCleanup.damage == 0 &&
+    s.clearedAtCleanup.setBasePT.isNone
+#guard !({} : Status).clearsAtCleanup
 
 /-- Permission to play a card from exile (CR 701.14 / 715.3d). -/
 structure PlayPermission where
@@ -233,32 +283,50 @@ def isColorlessNonland (o : GameObject) : Bool :=
 def isArtifactOrLand (o : GameObject) : Bool :=
   o.isOnBattlefield && (o.printed.isArtifact || o.printed.isLand)
 
+/-- Keywords granted until end of turn, if this object is on the battlefield. -/
+def grantedUntilEot (o : GameObject) : Keywords :=
+  if o.isOnBattlefield then o.status.untilEotKeywords else Keywords.none
+
+/-- Printed keywords plus until-end-of-turn grants (CR 611.2a / 514.3). -/
+def printedOrUntilEot (o : GameObject) : Keywords :=
+  Keywords.merge o.printed.keywords o.grantedUntilEot
+
+/-- True when summoning sickness currently prevents tapping or attacking
+(CR 302.6). Haste overrides it. -/
+def hasSummoningSickness (o : GameObject) : Bool :=
+  o.isCreature && o.status.summoningSick && !o.printedOrUntilEot.haste
+
 /-- Whether `{T}` in an activation cost is currently payable (CR 302.6). -/
 def canPayTapCost (o : GameObject) : Bool :=
-  !o.status.tapped &&
-  !(o.isCreature && o.status.summoningSick && !o.printed.keywords.haste)
+  !o.status.tapped && !o.hasSummoningSickness
 
 end GameObject
 
-/-- A dies trigger waiting to be put onto the stack after state-based actions
-(CR 603.3, 700.4). `source` is a snapshot of the creature as it last existed
-on the battlefield. -/
-structure WaitingDeathTrigger where
+/-- Printed triggers of `source` that fire on `event`. -/
+def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
+    Array TriggeredAbility :=
+  source.printed.triggeredAbilities.filter (·.firesOn event)
+
+/-- A triggered ability waiting to be put onto the stack after state-based
+actions or a keyword action (CR 603.3). `source` is a snapshot of the permanent
+as it existed when the trigger event occurred. `lastKnownPower` is last-known
+power for dies triggers (CR 113.7a) and the number of cards looked at for
+“whenever you scry” (CR 701.20). Dies and scry share this structure; `event`
+says which flush should put it on the stack. -/
+structure WaitingTrigger where
   controller : PlayerId
   source : GameObject
   ability : TriggeredAbility
-  lastKnownPower : Int
+  /-- Event this ability is waiting to be put on the stack for. -/
+  event : TriggerEvent := .dying
+  lastKnownPower : Option Int := none
 deriving Repr, Inhabited
 
-/-- A “whenever you scry” trigger waiting to be put onto the stack after the
-scry keyword action finishes (CR 603.2 / 701.20). `lookedAt` is how many cards
-were looked at. -/
-structure WaitingScryTrigger where
-  controller : PlayerId
-  source : GameObject
-  ability : TriggeredAbility
-  lookedAt : Nat
-deriving Repr, Inhabited
+/-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
+def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
+    (event : TriggerEvent) (lastKnownPower : Option Int := none) : Array WaitingTrigger :=
+  source.matchingTriggers event |>.map (fun ab =>
+    { controller, source, ability := ab, event, lastKnownPower })
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
 structure StackEntry where
@@ -455,11 +523,11 @@ structure Game where
   mulliganToBottom : Array PlayerId := #[]
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
-  /-- Dies triggers waiting to be put onto the stack (CR 603.3 / 700.4). -/
-  waitingDeathTriggers : Array WaitingDeathTrigger := #[]
-  /-- “Whenever you scry” triggers waiting until the scry action finishes
-  (CR 603.3 / 701.20). -/
-  waitingScryTriggers : Array WaitingScryTrigger := #[]
+  /-- Triggered abilities waiting to be put onto the stack (CR 603.3). Dies
+  triggers wait until a player would receive priority (CR 700.4); “whenever
+  you scry” waits until the scry action finishes (CR 701.20). Distinguished
+  by `WaitingTrigger.event`. -/
+  waitingTriggers : Array WaitingTrigger := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -538,13 +606,21 @@ def characteristicBase (g : Game) (o : GameObject) (printed setBase : Option Int
     if g.hasLandsYouControlPT o then g.landsYouControlPT o else printed.getD 0
   if o.isOnBattlefield then setBase.getD fromCdaOrPrinted else fromCdaOrPrinted
 
+/-- Characteristic power and toughness before pumps, counters, and attached
+bonuses: an until-EOT layer-7b set on the battlefield, else lands you control
+when that CDA applies (in all zones), else the printed values
+(CR 208.2a / 604.3 / 613.3). -/
+def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
+  (g.characteristicBase o o.printed.power o.status.setBasePower,
+   g.characteristicBase o o.printed.toughness o.status.setBaseToughness)
+
 /-- Characteristic power before pumps, counters, and attached bonuses. -/
 def characteristicBasePower (g : Game) (o : GameObject) : Int :=
-  g.characteristicBase o o.printed.power o.status.setBasePower
+  (g.characteristicBasePT o).1
 
 /-- Characteristic toughness before pumps, counters, and attached bonuses. -/
 def characteristicBaseToughness (g : Game) (o : GameObject) : Int :=
-  g.characteristicBase o o.printed.toughness o.status.setBaseToughness
+  (g.characteristicBasePT o).2
 
 def allocId (g : Game) : Game × ObjectId :=
   ({ g with nextObjectId := g.nextObjectId + 1 }, ⟨g.nextObjectId⟩)
@@ -633,11 +709,18 @@ def unattachFrom (g : Game) (hostId : ObjectId) : Game :=
 def addStats (a b : Int × Int) : Int × Int :=
   (a.1 + b.1, a.2 + b.2)
 
+/-- True when `src` is a lord that can grant an ability to `target` (CR 604.2). -/
+def isLordOf (src target : GameObject) : Bool :=
+  src.id != target.id &&
+  src.isOnBattlefield &&
+  target.isOnBattlefield &&
+  src.controller == target.controller &&
+  src.controller.isSome &&
+  target.isCreature
+
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (src target : GameObject) : Int × Int :=
-  if src.id == target.id || !src.isOnBattlefield || !target.isOnBattlefield then (0, 0)
-  else if src.controller != target.controller || src.controller.isNone then (0, 0)
-  else if !target.isCreature then (0, 0)
+  if !isLordOf src target then (0, 0)
   else
     src.staticAbilities.foldl
       (fun acc ab =>
@@ -672,35 +755,31 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
         else acc)
       (0, 0)
 
-/-- Power of `o`, including pumps, counters, land-count setting effects,
-until-EOT base setting, attached bonuses, and lord bonuses (CR 208.2).
+/-- Power and toughness of `o`, including pumps, counters, land-count setting
+effects, until-EOT base setting, attached bonuses, and lord bonuses (CR 208.2).
 Also last-known information before `o` leaves the battlefield (CR 113.7a). -/
+def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
+  let n : Int := o.status.plusOnePlusOne
+  #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
+      g.lordStatBonus o].foldl addStats (0, 0)
+
+/-- Power of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotPower (g : Game) (o : GameObject) : Int :=
-  g.characteristicBasePower o + o.status.pumpPower + (o.status.plusOnePlusOne : Int) +
-    (g.attachedStatBonus o).1 + (g.lordStatBonus o).1
+  (g.snapshotPT o).1
 
 /-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
-  g.characteristicBaseToughness o + o.status.pumpToughness +
-    (o.status.plusOnePlusOne : Int) + (g.attachedStatBonus o).2 + (g.lordStatBonus o).2
+  (g.snapshotPT o).2
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
-def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingDeathTrigger :=
+def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
   if old.zone == .battlefield && old.isCreature then
     match dest, old.controller with
     | .graveyard _, some p =>
-      old.printed.triggeredAbilities.filterMap (fun ab =>
-        if ab.triggersWhenDying then
-          some {
-            controller := p
-            source := old
-            ability := ab
-            lastKnownPower := g.snapshotPower old
-          }
-        else (none : Option WaitingDeathTrigger))
-    | _, _ => (#[] : Array WaitingDeathTrigger)
-  else (#[] : Array WaitingDeathTrigger)
+      old.waitingTriggersFor p .dying (some (g.snapshotPower old))
+    | _, _ => (#[] : Array WaitingTrigger)
+  else (#[] : Array WaitingTrigger)
 
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
@@ -734,7 +813,7 @@ def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId 
     | .hand p => g.modifyPlayer p (fun pl => { pl with hand := pl.hand.push newId })
     | .graveyard p => g.modifyPlayer p (fun pl => { pl with graveyard := pl.graveyard.push newId })
     | _ => g
-  let g := { g with waitingDeathTriggers := g.waitingDeathTriggers ++ dying }
+  let g := { g with waitingTriggers := g.waitingTriggers ++ dying }
   let g :=
     if exileInstead then g.logMsg s!"{old.name} is exiled instead of dying" else g
   (g, newId)
@@ -776,8 +855,8 @@ def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
   o.controlledBy g.activePlayer &&
-  !o.status.tapped && !o.printed.keywords.defender &&
-  (!o.status.summoningSick || o.printed.keywords.haste)
+  !o.status.tapped && !o.printedOrUntilEot.defender &&
+  !o.hasSummoningSickness
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
@@ -796,17 +875,16 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
 
 /-- Whether `o` has vigilance (CR 702.20). Attacking does not cause it to tap. -/
 def hasVigilance (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.vigilance
+  o.printedOrUntilEot.vigilance
 
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.flying
+  o.printedOrUntilEot.flying
 
 /-- Whether `o` can't be blocked, printed or granted until end of turn
 (CR 509.1b / 611.2a). -/
 def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.cantBeBlocked ||
-  (o.isOnBattlefield && o.status.untilEotCantBeBlocked)
+  o.printedOrUntilEot.cantBeBlocked
 
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.opponent g.activePlayer
@@ -818,16 +896,11 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   attacker.status.attacking &&
   !g.hasCantBeBlocked attacker &&
   (!g.hasFlying attacker ||
-    g.hasFlying blocker || blocker.printed.keywords.reach)
+    g.hasFlying blocker || blocker.printedOrUntilEot.reach)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (src target : GameObject) : Bool :=
-  src.id != target.id &&
-  src.isOnBattlefield &&
-  target.isOnBattlefield &&
-  src.controller == target.controller &&
-  src.controller.isSome &&
-  target.isCreature &&
+  isLordOf src target &&
   src.staticAbilities.any (fun ab =>
     match ab.trampleSubtypes? with
     | some subtypes => subtypes.any target.hasSubtype
@@ -835,31 +908,27 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.hexproof ||
-  (o.isOnBattlefield && o.status.untilEotHexproof)
+  o.printedOrUntilEot.hexproof
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
 def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.indestructible &&
+  o.printedOrUntilEot.indestructible &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
 
 /-- Whether `o` has trample, printed, granted until end of turn, or granted by
 a static ability (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
-  o.printed.keywords.trample ||
-  (o.isOnBattlefield && o.status.untilEotTrample) ||
+  o.printedOrUntilEot.trample ||
   (o.isOnBattlefield && g.battlefield.any (fun src => grantsTrampleTo src o))
 
-/-- Keywords including those granted by static abilities and until-EOT effects. -/
+/-- Keywords including those granted by static abilities and until-EOT effects.
+Only trample (lords) and indestructible (until-EOT loss) differ from
+`printedOrUntilEot`; overlaying the other keywords would restate identity. -/
 def effectiveKeywords (g : Game) (o : GameObject) : Keywords :=
-  { o.printed.keywords with
-    flying := g.hasFlying o
-    cantBeBlocked := g.hasCantBeBlocked o
-    hexproof := g.hasHexproof o
+  { o.printedOrUntilEot with
     indestructible := g.hasIndestructible o
-    trample := g.hasTrample o
-    vigilance := g.hasVigilance o }
+    trample := g.hasTrample o }
 
 /-- Characteristic power before pumps, counters, and attached bonuses. -/
 def basePower (g : Game) (o : GameObject) : Int :=
@@ -1015,7 +1084,7 @@ Attack, becomes-blocked, enters, and cast triggers are put on the stack as
 their events happen (CR 508.2, 509.5c, 603.6a, 601.2i). Dies triggers wait
 until a player would receive priority (CR 603.3 / 700.4). -/
 def hasWaitingTriggers (g : Game) : Bool :=
-  !g.waitingDeathTriggers.isEmpty
+  g.waitingTriggers.any (·.event == .dying)
 
 /-- CR 103.8a: in a two-player game the starting player skips the draw step
 of their first turn. -/
@@ -1098,10 +1167,9 @@ def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → B
     | some o => if pred o then some (Target.card o.id) else none
     | none => none)
 
-/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
-`sourceId` excludes the source of an “another” creature. -/
-def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
-    (sourceId : Option ObjectId := none) : Array Target :=
+/-- Legal targets for an atomic targeting shape (no sequential slots). -/
+def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+    (sourceId : Option ObjectId) : Array Target :=
   match kind with
   | .none => #[]
   | .creatureYouControl =>
@@ -1123,10 +1191,18 @@ def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     g.legalPermanentTargets caster (·.isArtifactOrLand)
   | .colorlessNonland =>
     g.legalPermanentTargets caster (·.isColorlessNonland)
-  | .creatureYouControlThenOppCreature =>
-    let own := g.legalCreatureYouControlTargets caster
-    let opp := g.legalOppCreatureTargets caster
-    if own.isEmpty || opp.isEmpty then #[] else own ++ opp
+  | .creatureYouControlThenOppCreature => #[]
+
+/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
+`sourceId` excludes the source of an “another” creature. Sequential shapes
+read `spec.slots` instead of restating each slot. -/
+def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  if kind.spec.slots.isEmpty then
+    g.legalTargetsForAtomicKind caster kind sourceId
+  else
+    let parts := kind.spec.slots.map (fun k => g.legalTargetsForAtomicKind caster k sourceId)
+    if parts.any (·.isEmpty) then #[] else parts.foldl (· ++ ·) #[]
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
@@ -1184,21 +1260,25 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
 
-/-- Apply `f` to each printed trigger of `source` matching `pred`. -/
+/-- Put `ab` on the stack for `event`, using that event's spec for the log label
+and CR 603.3d check so a new event is not restated at every queue site. -/
+def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
+    (ab : TriggeredAbility) (event : TriggerEvent)
+    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
+  if event.checkTargets then
+    g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
+  else
+    g.putTriggeredAbilityOnStack controller source ab event.label
+      lastKnownPower lastKnownToughness
+
+/-- Apply each printed trigger of `source` that fires on `event`. -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
-    (pred : TriggeredAbility → Bool) (event : String)
-    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
-    (checkTargets : Bool := true) : Game :=
+    (event : TriggerEvent)
+    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
   Id.run do
     let mut g := g
-    for ab in source.printed.triggeredAbilities do
-      if pred ab then
-        g :=
-          if checkTargets then
-            g.putTriggerOrFizzle controller source ab event lastKnownPower lastKnownToughness
-          else
-            g.putTriggeredAbilityOnStack controller source ab event
-              lastKnownPower lastKnownToughness
+    for ab in source.matchingTriggers event do
+      g := g.putQueuedTrigger controller source ab event lastKnownPower lastKnownToughness
     return g
 
 /-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
@@ -1211,12 +1291,11 @@ def foldControlledPermanents (g : Game) (p : PlayerId)
         g := f g o
     return g
 
-/-- Apply `pred` to each matching trigger of permanents `p` controls. -/
+/-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
-    (pred : TriggeredAbility → Bool) (event : String)
-    (excludeId : Option ObjectId := none) (checkTargets : Bool := true) : Game :=
+    (event : TriggerEvent) (excludeId : Option ObjectId := none) : Game :=
   g.foldControlledPermanents p excludeId fun g o =>
-    g.putMatchingSourceTriggers p o pred event (checkTargets := checkTargets)
+    g.putMatchingSourceTriggers p o event
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
@@ -1235,31 +1314,35 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
       { g with pending := .chooseTargets e.controller }.logMsg msg
   | none => g
 
-/-- Put queued dies triggers onto the stack (CR 603.3 / 700.4). Abilities that
-require a target and have none are removed (CR 603.3d). -/
-def putWaitingDeathTriggers (g : Game) : Game :=
-  if g.waitingDeathTriggers.isEmpty then g
+/-- Triggers waiting to be put on the stack for `event`. -/
+def waitingFor (g : Game) (event : TriggerEvent) : Array WaitingTrigger :=
+  g.waitingTriggers.filter (·.event == event)
+
+/-- Append waiting-trigger snapshots. -/
+def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
+  if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
+
+/-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
+decides the log label and whether to remove abilities that require a target
+and have none (CR 603.3d). -/
+def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
+  let waiting := g.waitingFor event
+  if waiting.isEmpty then g
   else
     Id.run do
-      let waiting := g.waitingDeathTriggers
-      let mut g := { g with waitingDeathTriggers := #[] }
+      let mut g := { g with waitingTriggers := g.waitingTriggers.filter (·.event != event) }
       for wt in waiting do
-        g := g.putTriggerOrFizzle wt.controller wt.source wt.ability "dies trigger"
-          (some wt.lastKnownPower)
+        g := g.putQueuedTrigger wt.controller wt.source wt.ability event wt.lastKnownPower
       return g.promptTriggerTargetsIfNeeded
+
+/-- Put queued dies triggers onto the stack (CR 603.3 / 700.4). -/
+def putWaitingDeathTriggers (g : Game) : Game :=
+  g.flushWaitingTriggers .dying
 
 /-- Put queued “whenever you scry” triggers onto the stack (CR 603.3 / 701.20).
 `lastKnownPower` stores the number of cards looked at. -/
 def putWaitingScryTriggers (g : Game) : Game :=
-  if g.waitingScryTriggers.isEmpty then g
-  else
-    Id.run do
-      let waiting := g.waitingScryTriggers
-      let mut g := { g with waitingScryTriggers := #[] }
-      for wt in waiting do
-        g := g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability "scry trigger"
-          (some (Int.ofNat wt.lookedAt))
-      return g.promptTriggerTargetsIfNeeded
+  g.flushWaitingTriggers .youScry
 
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
@@ -1283,8 +1366,7 @@ def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
   | some p =>
     Id.run do
       let mut g := g
-      g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenEntering
-        "enters trigger"
+      g := g.putMatchingSourceTriggers p o .entering
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put “whenever a land you control enters” triggers onto the stack (CR 603.6a).
@@ -1295,8 +1377,7 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
     match land.controller with
     | none => g
     | some landController =>
-      g.putControlledTriggers landController
-          TriggeredAbility.triggersWhenLandYouControlEnters "landfall trigger"
+      g.putControlledTriggers landController .landYouControlEnters
         |>.promptTriggerTargetsIfNeeded
 
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
@@ -1304,9 +1385,7 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
   if !spell.printed.isInstantOrSorcery then g
   else
-    g.putControlledTriggers caster
-      TriggeredAbility.triggersWhenYouCastInstantOrSorcery "cast trigger"
-      (checkTargets := false)
+    g.putControlledTriggers caster .youCastInstantOrSorcery
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
@@ -1316,9 +1395,8 @@ def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : G
     match entering.controller with
     | none => g
     | some p =>
-      g.putControlledTriggers p
-          TriggeredAbility.triggersWhenAnotherElfYouControlEnters "Elf-enters trigger"
-          (excludeId := some entering.id) (checkTargets := false)
+      g.putControlledTriggers p .anotherElfYouControlEnters
+          (excludeId := some entering.id)
         |>.promptTriggerTargetsIfNeeded
 
 /-- After a permanent enters, put its enters triggers and “another Elf you
@@ -1355,7 +1433,7 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
   g.permanentsOf p |>.filterMap (fun o =>
     let types := o.printed.manaAbilities
     if types.isEmpty || o.status.tapped then none
-    else if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then none
+    else if o.hasSummoningSickness then none
     else some (o, types))
 
 /-- Permanents `p` currently controls with this subtype. -/
@@ -1401,7 +1479,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
       | some prop => prop.tapSource && prop.sourceId == some id
       | none => false) then
     throw s!"{o.name} is needed to pay \{T}"
-  if o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
+  if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if !o.printed.manaAbilities.contains mana then
     throw s!"{o.name} cannot produce {mana}"
@@ -1537,7 +1615,7 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
   | some e => e.targeting
   | none =>
     match obj.triggeredAbility with
-    | some ab => EffectTargeting.of ab.targetKind
+    | some ab => ab.targeting
     | none =>
       match g.currentSpellEffect obj with
       | some e => e.targeting
@@ -1546,24 +1624,15 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
         else EffectTargeting.of .none
 
 /-- Legal targets for the object currently being announced (spell or ability).
-Already-chosen targets are excluded (CR 115.3). A two-target spell such as
-Quarrel offers the next unset target slot. -/
+Already-chosen targets are excluded (CR 115.3). Sequential shapes offer the
+next unset slot from `EffectTargetKind.slotKind`. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   let already :=
     match g.stackEntry? o.id with
     | some e => e.targets
     | none => #[]
-  let raw :=
-    match o.abilityEffect, o.triggeredAbility, (g.targetingOf o).kind with
-    | _, _, .creatureYouControlThenOppCreature =>
-      if already.isEmpty then
-        g.legalCreatureYouControlTargets p
-      else
-        g.legalOppCreatureTargets p
-    | some _, _, kind => g.legalTargetsForKind p kind
-    | _, some _, kind => g.legalTargetsForKind p kind o.sourceId
-    | _, _, _ => g.legalSpellTargets p o
-  raw.filter (fun t => !already.contains t)
+  let kind := (g.targetingOf o).kind.slotKind already.size
+  (g.legalTargetsForKind p kind o.sourceId).filter (fun t => !already.contains t)
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
@@ -2103,7 +2172,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     throw s!"{o.name}'s ability can be activated only once each turn"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.isCreature && o.status.summoningSick && !o.printed.keywords.haste then
+  if ab.cost.tap && o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
@@ -2176,15 +2245,17 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
 def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
   g.setObject { o with status := f o.status }
 
+/-- Deal `n` damage to a creature and log `msg`. -/
+def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String) : Game :=
+  (g.mapObjectStatus o (·.addDamage n)).logMsg msg
+
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
-  let g := g.mapObjectStatus o (·.addDamage n)
-  g.logMsg s!"{o.name} is dealt {n} damage"
+  g.markDamageOn o n s!"{o.name} is dealt {n} damage"
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int) : Game :=
-  let g := g.mapObjectStatus o (·.addDamage n)
-  g.logMsg s!"{sourceName} deals {n} damage to {o.name}"
+  g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
@@ -2202,21 +2273,24 @@ def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
     | none => g.logMsg "The target is no longer in play"
   | Target.card _ => g.logMsg "The target is no longer legal"
 
-/-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). -/
-def pumpPermanent (g : Game) (o : GameObject) (p t : Int) : Game :=
-  let g := g.mapObjectStatus o (·.addPump p t)
-  g.logMsg s!"{o.name} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
+/-- Until-end-of-turn +P/+T on `o` (CR 613.4c / 611.2a). `trample` also grants
+trample until end of turn (e.g. Oliphaunt). -/
+def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : Game :=
+  let g := g.mapObjectStatus o (fun s =>
+    let s := s.addPump p t
+    if trample then s.grantUntilEot Keyword.trample else s)
+  let gain := if trample then " and gains trample" else ""
+  g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
-  g.logMsg s!"{o.name} gets {AbilityEffect.plusOnePlusOneCountersPhrase n}"
+  g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
 
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
   let g := g.mapObjectStatus o (fun s =>
-    let s := s.addPlusOnePlusOne 1
-    { s with untilEotTrample := true, untilEotHexproof := true })
+    (s.addPlusOnePlusOne 1).grantUntilEot (Keyword.trample.merge Keyword.hexproof))
   g.logMsg
     s!"{o.name} gets a +1/+1 counter and gains trample and hexproof until end of turn"
 
@@ -2232,16 +2306,12 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : 
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.mapObjectStatus o (fun s => { s with untilEotCantBeBlocked := true })
+  let g := g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/
 def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=
-  let g := g.mapObjectStatus o (fun s =>
-    let s := s.addPump p t
-    { s with untilEotTrample := true })
-  g.logMsg
-    s!"{o.name} gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} and gains trample until end of turn"
+  g.pumpPermanent o p t (trample := true)
 
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
 (tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
@@ -2360,12 +2430,44 @@ def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : Triggered
     (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
   g.withLegalKindPermanent controller ab.targetKind targets f sourceId (some noneMsg)
 
+/-- Deal `n` damage to a still-legal target of `kind`. -/
+def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
+    (missing : Option String := none) : Game :=
+  g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
+    sourceId missing
+
+/-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
+def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
+  | .pump pw tw => g.pumpPermanent o pw tw
+  | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
+  | .destroy => g.destroyPermanent o
+  | .plusOne n => g.addPlusOnePlusOneTo o n
+  | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
+  | .dealDamage n => g.dealDamageToPermanent o n
+  | .dealDamageLoseIndestructibleExile n =>
+    g.dealDamageLoseIndestructibleExileTo o n
+  | .destroyThenNonflyersCantBlock =>
+    let g := g.destroyPermanent o
+    let g := { g with creaturesWithoutFlyingCantBlock := true }
+    g.logMsg "Creatures without flying can't block this turn"
+  | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
+
+/-- Apply `action` to a still-legal target of `kind`. Damage can hit a player
+or a creature; other actions require a permanent. -/
+def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) (action : PermanentAction)
+    (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
+  match action with
+  | .dealDamage n =>
+    g.applyDamageToKindTarget controller kind targets n sourceId missing
+  | _ =>
+    g.withLegalKindPermanent controller kind targets (fun g o =>
+      g.applyPermanentAction o action) sourceId missing
+
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   match effect.resolution with
-  | .damageAny n =>
-    g.withLegalKindTarget controller effect.targetKind targets fun g t =>
-      g.dealDamageToTarget t n
   | .fight =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
@@ -2386,18 +2488,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | .onPermanent action =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      match action with
-      | .pump pw tw => g.pumpPermanent o pw tw
-      | .destroy => g.destroyPermanent o
-      | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
-      | .dealDamage n => g.dealDamageToPermanent o n
-      | .dealDamageLoseIndestructibleExile n =>
-        g.dealDamageLoseIndestructibleExileTo o n
-      | .destroyThenNonflyersCantBlock =>
-        let g := g.destroyPermanent o
-        let g := { g with creaturesWithoutFlyingCantBlock := true }
-        g.logMsg "Creatures without flying can't block this turn"
+    g.applyOnPermanent controller effect.targetKind targets action
 
 /-- Apply `f` if `sourceId` is still on the battlefield. -/
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
@@ -2418,17 +2509,16 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let g := g.setPlayer { pl with life := pl.life + (n : Int) }
     g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
 
+/-- Apply `action` if `sourceId` is still on the battlefield. -/
+def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
+    (missing := "The ability's source is no longer in play") : Game :=
+  g.withSourceOnBattlefield sourceId (fun g o => g.applyPermanentAction o action) missing
+
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
   match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
-  | .damageToTarget n =>
-    g.withLegalKindTarget controller effect.targetKind targets fun g t =>
-      g.dealDamageToTarget t n
-  | .destroyColorless =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.destroyPermanent o
   | .attach =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src =>
@@ -2440,28 +2530,25 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
           g.logMsg s!"{src.name} attaches to {host.name}")
         "The Equipment is no longer in play"
-  | .cantBeBlocked =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.grantCantBeBlockedThisTurn o
+  | .onPermanent action =>
+    g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .onSource action =>
+    g.applyOnSource sourceId action
+  | .becomeBear =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      match action with
-      | .becomeBear =>
-        let subtypes :=
-          if o.hasSubtype "Bear" then o.status.additionalSubtypes
-          else o.status.additionalSubtypes.push "Bear"
-        let granted :=
-          if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
-          else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
-        let g := g.mapObjectStatus o (fun s =>
-          { s with
-            additionalCreature := true
-            additionalSubtypes := subtypes
-            grantedStaticAbilities := granted })
-        g.logMsg
-          s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
-      | .pump pw tw => g.pumpPermanent o pw tw
-      | .plusOne n => g.addPlusOnePlusOneTo o n
+      let subtypes :=
+        if o.hasSubtype "Bear" then o.status.additionalSubtypes
+        else o.status.additionalSubtypes.push "Bear"
+      let granted :=
+        if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
+        else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
+      let g := g.mapObjectStatus o (fun s =>
+        { s with
+          additionalCreature := true
+          additionalSubtypes := subtypes
+          grantedStaticAbilities := granted })
+      g.logMsg
+        s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -2471,21 +2558,9 @@ def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
 
 /-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
 def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
-  Id.run do
-    let mut g := g
-    g := g.foldControlledPermanents p none fun g o =>
-      Id.run do
-        let mut g := g
-        for ab in o.printed.triggeredAbilities do
-          if ab.triggersWhenYouScry then
-            g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
-              controller := p
-              source := o
-              ability := ab
-              lookedAt := lookedAt
-            } }
-        return g
-    return g
+  g.foldControlledPermanents p none fun g o =>
+    g.enqueueWaitingTriggers
+      (o.waitingTriggersFor p .youScry (some (Int.ofNat lookedAt)))
 
 /-- Start scrying `n` as a keyword action during resolution (CR 701.20).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
@@ -2513,6 +2588,11 @@ def withTriggerSource (g : Game) (sourceId : Option ObjectId)
   g.withSourceOnBattlefield sourceId f
     "The triggered ability's source is no longer in play"
 
+/-- Apply `action` if the trigger's source is still on the battlefield. -/
+def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction) :
+    Game :=
+  g.applyOnSource sourceId action "The triggered ability's source is no longer in play"
+
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -2521,8 +2601,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     (sourceName : String := "This creature") : Game :=
   match ab.resolution with
   | .pumpGreatestPower =>
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o (g.greatestPowerAmongCreatures controller) 0
+    g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
   | .setOtherBasePT =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) :=
@@ -2531,16 +2610,10 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           if src.isOnBattlefield then (g.power src, g.toughness src)
           else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
         | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
-      let g := g.setObject { o with
-        status := { o.status with
-          setBasePower := some pw
-          setBaseToughness := some tw } }
+      let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | .pumpAndTrample pw tw =>
-    g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.pumpAndGrantTrample o pw tw
   | .damageBlockers n =>
     g.withTriggerSource sourceId fun g o =>
       let blockers := g.blockersOf o.id
@@ -2560,9 +2633,9 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.resolveSearchForest controller
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
-  | .plusOnePlusOneOnTarget =>
-    g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.addPlusOnePlusOneTo o 1
+  | .onPermanent action =>
+    g.applyOnPermanent controller ab.targetKind targets action sourceId
+      (some "The target is no longer legal")
   | .dividedDamage =>
     Id.run do
       let mut g := g
@@ -2598,11 +2671,9 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o (n : Int) (n : Int)
-  | .pumpSource pw tw =>
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o pw tw
+    g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
+  | .onSource action =>
+    g.applyOnTriggerSource sourceId action
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -2611,12 +2682,11 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     let mut g := g
     for id in attackerIds do
       let o := g.object! id
-      g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenAttacking
-        "attack trigger" (some (g.snapshotPower o)) (some (g.snapshotToughness o))
+      g := g.putMatchingSourceTriggers p o .attacking
+        (some (g.snapshotPower o)) (some (g.snapshotToughness o))
     let attackedWithElves := attackerIds.any (fun id => (g.object! id).hasSubtype "Elf")
     if attackedWithElves then
-      g := g.putControlledTriggers p TriggeredAbility.triggersWhenYouAttackWithElves
-        "attack trigger" (checkTargets := false)
+      g := g.putControlledTriggers p .youAttackWithElves
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
@@ -2631,8 +2701,7 @@ def putBlockedTriggersOnStack (g : Game) (assignments : Array (ObjectId × Objec
         match o.controller with
         | none => pure ()
         | some p =>
-          g := g.putMatchingSourceTriggers p o TriggeredAbility.triggersWhenBecomesBlocked
-            "becomes-blocked trigger" (checkTargets := false)
+          g := g.putMatchingSourceTriggers p o .becomesBlocked
     return g
 
 /-- Whether `host` is a legal Enchant-creature attachment (CR 303.4). -/
@@ -2969,18 +3038,8 @@ def clearEOT (g : Game) : Game :=
   Id.run do
     let mut g := { g with creaturesWithoutFlyingCantBlock := false }
     for o in g.battlefield do
-      if o.status.damage != 0 || o.status.pumpPower != 0 || o.status.pumpToughness != 0 ||
-          o.status.untilEotTrample || o.status.untilEotHexproof ||
-          o.status.untilEotCantBeBlocked ||
-          o.status.untilEotLosesIndestructible || o.status.untilEotExileIfDies ||
-          o.status.setBasePower.isSome || o.status.setBaseToughness.isSome then
-        g := g.setObject { o with
-          status := { o.status with
-            damage := 0, pumpPower := 0, pumpToughness := 0
-            untilEotTrample := false, untilEotHexproof := false
-            untilEotCantBeBlocked := false
-            untilEotLosesIndestructible := false, untilEotExileIfDies := false
-            setBasePower := none, setBaseToughness := none } }
+      if o.status.clearsAtCleanup then
+        g := g.mapObjectStatus o Status.clearedAtCleanup
     return g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does

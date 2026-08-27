@@ -68,22 +68,29 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
 
+/-- Instant or sorcery with an optional one-shot effect or modal modes. -/
+def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
+    (oracleText : String) (spellEffect : Option SpellEffect := none)
+    (spellModes : Array SpellEffect := #[])
+    (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
+  card name #[cardType] manaCost (oracleText := oracleText)
+    (spellEffect := spellEffect) (spellModes := spellModes)
+    (additionalCostSacrificeArtifactOrCreature :=
+      additionalCostSacrificeArtifactOrCreature)
+
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false) : CardDef :=
-  card name #[.instant] manaCost (oracleText := oracleText)
-    (spellEffect := spellEffect) (spellModes := spellModes)
-    (additionalCostSacrificeArtifactOrCreature :=
-      additionalCostSacrificeArtifactOrCreature)
+  spellCard .instant name manaCost oracleText spellEffect spellModes
+    additionalCostSacrificeArtifactOrCreature
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option SpellEffect := none)
     (spellModes : Array SpellEffect := #[]) : CardDef :=
-  card name #[.sorcery] manaCost (oracleText := oracleText)
-    (spellEffect := spellEffect) (spellModes := spellModes)
+  spellCard .sorcery name manaCost oracleText spellEffect spellModes
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -205,7 +212,10 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard (ragingGoblin.summary.splitOn "haste").length > 1
 #guard (llanowarElves.summary.splitOn "{T}: Add {G}").length > 1
 #guard (lightningBolt.summary.splitOn "deals 3 damage").length > 1
+#guard (lightningBolt.summary.splitOn "{R}").length > 1
 #guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
+#guard (mountain.summary.splitOn "{0}").length == 1
+#guard mountain.summary == "Mountain Basic Land — Mountain {T}: Add {R}."
 #guard (giantSpider.summary.splitOn "reach").length > 1
 #guard giantGrowth.spellEffect == some (.pump 3 3)
 #guard giantGrowth.isInstant
@@ -215,6 +225,9 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
   (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant
 #guard !grizzlyBears.hasType .instant
+#guard lightningBolt.hasCastKind .burn
+#guard giantGrowth.hasCastKind .pump
+#guard !lightningBolt.hasCastKind .pump
 #guard (lightningBolt.spellEffect.map SpellEffect.castKind) == some .burn
 #guard (giantGrowth.spellEffect.map SpellEffect.castKind) == some .pump
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand

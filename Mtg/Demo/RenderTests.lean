@@ -94,6 +94,17 @@ def mountainLine (g : Game) : String :=
   s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
 #guard mentions (mountainLine withMountain) "Land"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
+-- Hands print the card summary; lands have no mana cost, so not `{0}`.
+#guard
+  match (started.handObjects ⟨0⟩).find? (·.printed.isLand) with
+  | some o =>
+    let line := handLine started o.id
+    mentions line o.name &&
+      mentions line "Basic Land" &&
+      !mentions line "{0}"
+  | none => false
+#guard mentions (handLine boltSetup boltInHand.id) "{R}"
+#guard mentions (handLine boltSetup boltInHand.id) "Lightning Bolt"
 -- Ungrouped lines still name owner and controller. Grouped battlefield
 -- listings omit them when they match the controller heading.
 #guard !mentions (zoneBlock withMountain .battlefield) "owned by"
