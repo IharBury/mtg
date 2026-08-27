@@ -167,6 +167,29 @@ def handLine (g : Game) (id : ObjectId) : String :=
   | none => s!"{id} (missing)"
   | some o => s!"{o.id} {o.printed.summary}"
 
+/-- Printed mana cost to play `o` from exile when someone has permission.
+Lands and other cards with no mana cost omit it rather than printing `{0}`
+(CR 202.1b / 118.6). -/
+def exilePlayManaCost (o : GameObject) : String :=
+  match o.playPermission with
+  | some _ => toString o.printed.manaCost
+  | none => ""
+
+/-- Who may play `o` from exile, if anyone (CR 701.14 / 715.3d). -/
+def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
+  match o.playPermission with
+  | some perm => s!" (may be played by {g.player perm.player |>.name})"
+  | none => ""
+
+/-- One card in exile. When someone may play it, print the same summary as a
+card in hand (mana cost, type line, P/T) plus who may play it. -/
+def exileLine (g : Game) (o : GameObject) : String :=
+  match o.playPermission with
+  | some _ =>
+    s!"{o.id} {o.printed.summary}{exilePlayPermissionClause g o}"
+  | none =>
+    s!"{o.id} {o.name}{faceExtras o.printed}"
+
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
 face-down even to their owner except for cards they are scrying (CR 701.20). -/
@@ -465,12 +488,7 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
   let exileBlock :=
     if exiled.isEmpty then []
     else
-      let lines := exiled.toList.map (fun o =>
-        let extra :=
-          match o.playPermission with
-          | some perm => s!" (may be played by {g.player perm.player |>.name})"
-          | none => ""
-        s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
+      let lines := exiled.toList.map (fun o => s!"  {exileLine g o}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
   let cost :=
     match costBlock g with
@@ -593,12 +611,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
       match g.stack.find? (fun e => e.objectId == o.id) with
       | some e => stackObjectLine g e true
       | none => s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}"
-    | .exile =>
-      let extra :=
-        match o.playPermission with
-        | some perm => s!" (may be played by {g.player perm.player |>.name})"
-        | none => ""
-      s!"{o.id} {o.name}{faceExtras o.printed}{extra}"
+    | .exile => exileLine g o
     | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2),

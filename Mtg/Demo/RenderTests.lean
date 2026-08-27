@@ -500,6 +500,43 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
 #guard mentions (snapshot resolvedHunter) "may be played by Chandra"
 #guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
+-- Playable exile cards show the mana cost, type line, and P/T to play them;
+-- unplayable ones do not.
+#guard exilePlayManaCost (exiledBolt resolvedHunter) == "{R}"
+#guard exilePlayManaCost (exiledMountain resolvedHunterLand) == ""
+#guard exilePlayManaCost (exiledSmaug resolvedSpewFlame) == "{5}{R}{R}"
+#guard exilePlayManaCost (exiledBeorn resolvedTillAndTend) == "{4}{G}"
+#guard
+  let o := exiledBolt resolvedHunter
+  zoneLine resolvedHunter .exile o.id ==
+    s!"{o.id} Lightning Bolt \{R} Instant Lightning Bolt deals 3 damage to any target. (may be played by Chandra)"
+#guard
+  let o := exiledMountain resolvedHunterLand
+  let line := zoneLine resolvedHunterLand .exile o.id
+  mentions line "may be played by Chandra" &&
+    mentions line "Basic Land — Mountain" &&
+    !mentions line "{0}"
+#guard
+  let line := zoneLine resolvedSpewFlame .exile (exiledSmaug resolvedSpewFlame).id
+  mentions line "{5}{R}{R}" &&
+    mentions line "Legendary Creature — Dragon" &&
+    mentions line "5/5"
+#guard
+  let line := zoneLine resolvedTillAndTend .exile (exiledBeorn resolvedTillAndTend).id
+  mentions line "{4}{G}" &&
+    mentions line "Legendary Creature — Human Bear Shapeshifter" &&
+    mentions line "5/5"
+#guard
+  match resolvedSmiteOnBears.objects.find? (fun o =>
+    o.zone == .exile && o.name == "Grizzly Bears") with
+  | some o =>
+    exilePlayManaCost o == "" &&
+      mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Grizzly Bears" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Creature" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "2/2" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "may be played"
+  | none => false
 
 -- Granted trample shows on other Orcs and Goblins you control, not on others.
 #guard mentions
