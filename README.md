@@ -28,13 +28,18 @@ lake build
 
 ## Demo
 
-`Mtg.Demo` is a console application that starts a two-player game using the
+`Mtg.Demo` is a console application that starts a game using the
 [Hobbit Welcome Decks](https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks)
 (40-card limited) and either runs a heuristic demonstration or lets you play
-interactively:
+interactively. Repeat `--name NAME` and `--deck COLOR` once per player (paired
+in order). COLOR is white, blue, black, red, or green (also W, U, B, R, G).
+Default is Chandra (red) and Nissa (green). A game needs at least two players:
 
 ```sh
 lake exe mtg-demo
+lake exe mtg-demo -- --name Elspeth --deck white --name Jace --deck blue
+lake exe mtg-demo -- --name Elspeth --deck white --name Jace --deck blue --name Liliana --deck black
+lake exe mtg-demo -- --name Liliana --deck black --name Chandra --deck red --interactive
 lake exe mtg-demo -- --interactive
 lake exe mtg-demo -- --interactive --visible
 lake exe mtg-demo -- --interactive --input opening.txt
@@ -46,21 +51,22 @@ lake exe mtg-demo -- --multiplayer --output session.txt
 lake exe mtg-demo -- --seed 42 --fuel 200
 ```
 
-`--interactive` is Chandra against a heuristic Nissa. `--multiplayer` lets you
-issue every player's actions from the console; the prompt names who must act.
+`--interactive` is the first named player against heuristic opponents.
+`--multiplayer` lets you issue every player's actions from the console; the
+prompt names who must act.
 In either interactive mode, `first <name>` chooses who takes the first turn
 (CR 103.1) before libraries are shuffled and opening hands are drawn. Auto
-mode always has Chandra start.
+mode always has the first listed player start.
 `--input FILE` (one command per line) runs those commands first in either
 interactive mode, then further commands come from the console. `--output FILE`
 writes every command from the input file and from the console (one per line),
-so a session can be replayed with `--input`. Put `first Chandra` or
-`first Nissa` at the top of an input file.
+so a session can be replayed with `--input`. Put `first <name>` at the top of
+an input file.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
 (or the `--visible` flag) keeps `state` and later log/zone updates in that
-player view. With `--interactive`, that player is always Chandra; with
+player view. With `--interactive`, that player is the first named player; with
 `--multiplayer`, the view follows whoever currently must act.
 
 ## Project layout
