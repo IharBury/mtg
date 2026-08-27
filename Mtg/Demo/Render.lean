@@ -162,10 +162,26 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
   s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{dmg}{exileIfDies}"
 
+/-- Printed face of a card in hand, graveyard, or exile: object id plus Oracle
+summary (mana cost, type line, P/T, keywords and abilities). Lands omit a
+mana cost rather than printing `{0}` (CR 202.1b / 118.6). -/
+def printedCardLine (o : GameObject) : String :=
+  s!"{o.id} {o.printed.summary}"
+
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
   | none => s!"{id} (missing)"
-  | some o => s!"{o.id} {o.printed.summary}"
+  | some o => printedCardLine o
+
+/-- Granted permission to play an exiled card, if any. -/
+def playPermissionClause (g : Game) (o : GameObject) : String :=
+  match o.playPermission with
+  | some perm => s!" (may be played by {g.player perm.player |>.name})"
+  | none => ""
+
+/-- One card in exile: printed face plus a granted play permission. -/
+def exileCardLine (g : Game) (o : GameObject) : String :=
+  s!"{printedCardLine o}{playPermissionClause g o}"
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
@@ -282,10 +298,7 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
       if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
     else
       "  (hidden)"
-  let gy := pl.graveyard.toList.map (fun id =>
-    match g.findObject? id with
-    | none => s!"{id} (missing)"
-    | some o => s!"{o.id} {o.name}{faceExtras o.printed}")
+  let gy := pl.graveyard.toList.map (handLine g)
   let gyText := if gy.isEmpty then "  (empty)" else String.intercalate "\n  " gy
   let scryLines : List String :=
     match scryLookSection g pl viewer with
@@ -425,12 +438,7 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
   let exileBlock :=
     if exiled.isEmpty then []
     else
-      let lines := exiled.toList.map (fun o =>
-        let extra :=
-          match o.playPermission with
-          | some perm => s!" (may be played by {g.player perm.player |>.name})"
-          | none => ""
-        s!"  {o.id} {o.name}{faceExtras o.printed}{extra}")
+      let lines := exiled.toList.map (fun o => s!"  {exileCardLine g o}")
       ["Exile:\n" ++ String.intercalate "\n" lines]
   let cost :=
     match costBlock g with
@@ -578,18 +586,13 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
   | none => s!"{id} (missing)"
   | some o =>
     match z with
-    | .hand _ => handLine g id
+    | .hand _ | .graveyard _ => handLine g id
     | .battlefield => objectLine g o
     | .stack =>
       match g.stack.find? (fun e => e.objectId == o.id) with
       | some e => stackObjectLine g e true
       | none => s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}"
-    | .exile =>
-      let extra :=
-        match o.playPermission with
-        | some perm => s!" (may be played by {g.player perm.player |>.name})"
-        | none => ""
-      s!"{o.id} {o.name}{faceExtras o.printed}{extra}"
+    | .exile => exileCardLine g o
     | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
 /-- Current contents of `z`. Hidden zones show only their size (CR 400.2),
