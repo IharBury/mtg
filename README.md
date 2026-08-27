@@ -137,7 +137,9 @@ The first slice of the engine models the two-player game:
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
   deal damage to each opponent when you cast an instant or sorcery,
-  `{4}, {T}` making a target creature unblockable until end of turn, and
+  `{4}, {T}` making a target creature unblockable until end of turn,
+  typecycling from hand (Mountaincycling, Swampcycling: discard this card,
+  search for a land of that type, put it into your hand, then shuffle), and
   adventurer cards (casting an Adventure, then the creature from exile)
 - modal instants, destroy (including target creature, or a target artifact or land, after which
   creatures without flying can't block this turn), mass until-end-of-turn P/T

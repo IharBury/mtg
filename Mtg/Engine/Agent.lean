@@ -143,10 +143,17 @@ where
         !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
         -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
         !(ab.effect == .targetCantBeBlockedThisTurn &&
-          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking))
+          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
+        -- Don't typecycle a card you can currently afford to cast.
+        !(ab.activateFromHand && g.canCast p o &&
+          (g.availableMana p).canPay o.printed.manaCost
+            (allowElfRestricted := o.hasSubtype "Elf"))
       | none => false
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
-    let candidate := (g.permanentsOf p).find? activatable <|> gy.find? activatable
+    let candidate :=
+      (g.permanentsOf p).find? activatable <|>
+        gy.find? activatable <|>
+        (g.handObjects p).find? activatable
     match candidate with
     | some o => some (.activate o.id 0)
     | none => chooseCast g p

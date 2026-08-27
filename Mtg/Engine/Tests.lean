@@ -343,6 +343,8 @@ def uncontrolledPermanent : Game :=
 #guard oliphaunt.keywords.trample
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
+#guard oliphaunt.activatedAbilities.size == 1
+#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -2479,6 +2481,10 @@ def agentVisionaryOnly : Game :=
 #guard isBasicLandCard forest
 #guard !isForestCard mountain
 #guard isBasicLandCard mountain
+#guard isLandTypeCard mountain "Mountain"
+#guard isLandTypeCard swamp "Swamp"
+#guard !isLandTypeCard mountain "Swamp"
+#guard !isLandTypeCard swamp "Mountain"
 
 /-- Nonbasic land with the Forest type; Wood Elves can find it (CR 305.7). -/
 def tropicalIsland : CardDef :=
@@ -9407,4 +9413,152 @@ def stonyAfterDiscard : Game := applyIdle stonyDiscarding
 #guard stonyAfterDiscard.log.any (fun s => mentions s "Nissa discards")
 
 
+/- Typecycling: Oliphaunt Mountaincycling and Troll of Khazad-dûm Swampcycling
+(CR 702.29). -/
+
+def oliphauntCycleAbility : ActivatedAbility :=
+  oliphaunt.activatedAbilities[0]!
+
+def trollCycleAbility : ActivatedAbility :=
+  trollOfKhazadDum.activatedAbilities[0]!
+
+/-- Nonbasic land with the Mountain type; Mountaincycling can find it (CR 305.7). -/
+def stompingGround : CardDef :=
+  land "Stomping Ground" "" (subtypes := #["Mountain", "Forest"])
+
+#guard isLandTypeCard stompingGround "Mountain"
+#guard !isBasicLandCard stompingGround
+
+/-- Isolated library so the search finds a known card. -/
+def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=
+  let g := g.modifyPlayer p (fun pl => { pl with library := #[] })
+  cards.foldl (fun g c => addToLibraryTop g c p) g
+
+def oliphauntCycleReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+
+#guard oliphauntCycleReady.canActivate ⟨0⟩
+  (handCardNamed oliphauntCycleReady ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
+#guard !(oliphauntCycleReady.availableMana ⟨0⟩).canPay oliphaunt.manaCost
+#guard
+  let g := addPermanent afterDraw oliphaunt ⟨0⟩ ⟨0⟩
+  !(g.canActivate ⟨0⟩ (namedPermanent g "Oliphaunt") oliphauntCycleAbility)
+#guard
+  let g := readyMain (addToGraveyard afterDraw oliphaunt ⟨0⟩)
+  let g := withRedMana g ⟨0⟩ 1
+  !(g.canActivate ⟨0⟩ (namedGraveyardCard g ⟨0⟩ "Oliphaunt") oliphauntCycleAbility)
+#guard
+  let g := addToHand afterDraw oliphaunt ⟨1⟩
+  !(g.canActivate ⟨0⟩ (handCardNamed g ⟨1⟩ "Oliphaunt") oliphauntCycleAbility)
+
+def oliphauntCycled : Game :=
+  let g := oliphauntCycleReady
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
+#guard (oliphauntCycled.player ⟨0⟩).graveyard.any (fun id =>
+  (oliphauntCycled.object! id).name == "Oliphaunt")
+#guard !(oliphauntCycled.handObjects ⟨0⟩).any (fun o => o.name == "Oliphaunt")
+#guard oliphauntCycled.log.any (fun s => mentions s "discards Oliphaunt")
+#guard oliphauntCycled.log.any (fun s =>
+  mentions s "reveals Mountain and puts it into their hand")
+#guard oliphauntCycled.log.any (fun s => mentions s "shuffles their library")
+#guard oliphauntCycled.stack.isEmpty
+
+#guard
+  match Agent.choose oliphauntCycleReady ⟨0⟩ with
+  | some (.activate id 0) =>
+    (oliphauntCycleReady.object! id).name == "Oliphaunt"
+  | _ => false
+
+/-- Enough mana to cast Oliphaunt: the heuristic casts instead of cycling. -/
+def oliphauntCastReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 6
+
+#guard oliphauntCastReady.canCast ⟨0⟩
+  (handCardNamed oliphauntCastReady ⟨0⟩ "Oliphaunt")
+#guard
+  match Agent.choose oliphauntCastReady ⟨0⟩ with
+  | some (.cast id) => (oliphauntCastReady.object! id).name == "Oliphaunt"
+  | _ => false
+
+/-- No Mountain in the library: still discard and shuffle. -/
+def oliphauntCycleMiss : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[forest]
+  let g := withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard oliphauntCycleMiss.log.any (fun s => mentions s "finds no Mountain card")
+#guard oliphauntCycleMiss.log.any (fun s => mentions s "shuffles their library")
+#guard (oliphauntCycleMiss.player ⟨0⟩).graveyard.any (fun id =>
+  (oliphauntCycleMiss.object! id).name == "Oliphaunt")
+#guard !(oliphauntCycleMiss.handObjects ⟨0⟩).any (fun o => o.name == "Mountain")
+
+/-- A nonbasic Mountain is a legal find (CR 305.7). -/
+def oliphauntCycleNonbasic : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[stompingGround]
+  let g := withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+  let src := handCardNamed g ⟨0⟩ "Oliphaunt"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (oliphauntCycleNonbasic.handObjects ⟨0⟩).any (fun o =>
+  o.name == "Stomping Ground")
+#guard oliphauntCycleNonbasic.log.any (fun s =>
+  mentions s "reveals Stomping Ground and puts it into their hand")
+
+/-- Typecycling is instant-speed (CR 702.29 / 117.1). -/
+def oliphauntCycleAtEnd : Game :=
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := emptyHand g ⟨0⟩
+  let g := withOnlyLibrary g ⟨0⟩ #[mountain]
+  withRedMana (addToHand g oliphaunt ⟨0⟩) ⟨0⟩ 1
+
+#guard !oliphauntCycleAtEnd.asSorcery? ⟨0⟩
+#guard oliphauntCycleAtEnd.canActivate ⟨0⟩
+  (handCardNamed oliphauntCycleAtEnd ⟨0⟩ "Oliphaunt") oliphauntCycleAbility
+#guard !oliphauntCycleAtEnd.canCast ⟨0⟩
+  (handCardNamed oliphauntCycleAtEnd ⟨0⟩ "Oliphaunt")
+
+def trollCycleReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := withOnlyLibrary g ⟨0⟩ #[swamp]
+  withBlackMana (addToHand g trollOfKhazadDum ⟨0⟩) ⟨0⟩ 1
+
+#guard trollCycleReady.canActivate ⟨0⟩
+  (handCardNamed trollCycleReady ⟨0⟩ "Troll of Khazad-dûm") trollCycleAbility
+#guard !(trollCycleReady.availableMana ⟨0⟩).canPay trollOfKhazadDum.manaCost
+#guard
+  let g := addPermanent afterDraw trollOfKhazadDum ⟨0⟩ ⟨0⟩
+  !(g.canActivate ⟨0⟩ (namedPermanent g "Troll of Khazad-dûm") trollCycleAbility)
+
+def trollCycled : Game :=
+  let g := trollCycleReady
+  let src := handCardNamed g ⟨0⟩ "Troll of Khazad-dûm"
+  let g := mustApply g ⟨0⟩ (.activate src.id 0)
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (trollCycled.handObjects ⟨0⟩).any (fun o => o.name == "Swamp")
+#guard (trollCycled.player ⟨0⟩).graveyard.any (fun id =>
+  (trollCycled.object! id).name == "Troll of Khazad-dûm")
+#guard trollCycled.log.any (fun s => mentions s "discards Troll of Khazad-dûm")
+#guard trollCycled.log.any (fun s =>
+  mentions s "reveals Swamp and puts it into their hand")
+#guard trollCycled.log.any (fun s => mentions s "shuffles their library")
+#guard
+  match Agent.choose trollCycleReady ⟨0⟩ with
+  | some (.activate id 0) =>
+    (trollCycleReady.object! id).name == "Troll of Khazad-dûm"
+  | _ => false
+
 end Mtg.Engine.Tests
+

@@ -159,16 +159,32 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (onceEachTurn : Bool := false)
     (otherModes : Array AbilityEffect := #[]) (payLife : Nat := 0)
     (activateFromGraveyard : Bool := false)
-    (onlyIfYouControlLegendary : Bool := false) :
+    (activateFromHand : Bool := false)
+    (onlyIfYouControlLegendary : Bool := false)
+    (discardSource : Bool := false) :
     ActivatedAbility := {
-  cost := { mana, tap, sacrificeSource, sacrificeAnotherCreatureOrArtifact, payLife }
+  cost := {
+    mana := mana
+    tap := tap
+    sacrificeSource := sacrificeSource
+    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
+    payLife := payLife
+    discardSource := discardSource
+  }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
-  activateFromGraveyard, onlyIfYouControlLegendary
+  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery. -/
 def equipAbility (mana : ManaCost) : ActivatedAbility :=
   activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+
+/-- Typecycling `{cost}`: discard this card from hand, search for a `landType`
+card, put it into your hand, then shuffle (CR 702.29). -/
+def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
+    ActivatedAbility :=
+  activated (.searchLandTypeToHand landType) mana
+    (discardSource := true) (activateFromHand := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (oracleText : String)

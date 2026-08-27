@@ -25,7 +25,7 @@ another Elf you control entering that pumps this creature,
 landfall that pumps this creature until end of turn,
 Aura and Equipment attachment, adventurer cards
 (casting an Adventure, then the creature from exile, including additional land
-plays this turn), modal spells, destroy (including target artifact or land,
+plays this turn), typecycling from hand (Mountaincycling, Swampcycling), modal spells, destroy (including target artifact or land,
 after which creatures without flying can't block this turn), +1/+1
 counters, until-end-of-turn keyword grants, additional costs that sacrifice an
 artifact or creature, a creature you control dealing damage equal to its power
@@ -304,6 +304,7 @@ def trollOfKhazadDum : CardDef :=
   creature "Troll of Khazad-dûm" (ManaCost.ofGenericAndColor 5 .black) #["Troll"] 6 5
     (oracleText := "This creature can't be blocked except by three or more creatures.\nSwampcycling {1} ({1}, Discard this card: Search your library for a Swamp card, reveal it, put it into your hand, then shuffle.)")
     (staticAbilities := #[.cantBeBlockedExceptBy 3])
+    (activatedAbilities := #[typecyclingAbility "Swamp"])
 
 def mercilessExecutioner : CardDef :=
   creature "Merciless Executioner" (ManaCost.ofGenericAndColor 2 .black) #["Orc", "Warrior"] 3 1
@@ -398,6 +399,7 @@ def oliphaunt : CardDef :=
     (oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)")
     (keywords := Keyword.trample)
     (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
+    (activatedAbilities := #[typecyclingAbility "Mountain"])
 
 def goblinCratermaker : CardDef :=
   creature "Goblin Cratermaker" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
@@ -683,6 +685,11 @@ def attercop : CardDef :=
 #guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
 #guard oliphaunt.keywords.trample
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
+#guard oliphaunt.activatedAbilities.size == 1
+#guard oliphaunt.activatedAbilities[0]!.activateFromHand
+#guard oliphaunt.activatedAbilities[0]!.cost.discardSource
+#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
+#guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard oliphaunt.power == some 6
 #guard oliphaunt.toughness == some 4
 #guard (oliphaunt.summary.splitOn "trample").length > 1
@@ -772,6 +779,11 @@ def attercop : CardDef :=
   #[.pumpAndExileIfDies (-5) (-5), .creaturesTargetPlayerGet (-1) (-1)]
 #guard trollOfKhazadDum.staticAbilities == #[.cantBeBlockedExceptBy 3]
 #guard (trollOfKhazadDum.summary.splitOn "three or more").length > 1
+#guard trollOfKhazadDum.activatedAbilities.size == 1
+#guard trollOfKhazadDum.activatedAbilities[0]!.activateFromHand
+#guard trollOfKhazadDum.activatedAbilities[0]!.cost.discardSource
+#guard trollOfKhazadDum.activatedAbilities[0]!.effect == .searchLandTypeToHand "Swamp"
+#guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
 #guard bitterDownfall.spellEffect == some (.destroyTargetCreatureControllerLosesLife 2)
 #guard bitterDownfall.costReductionIfTargetDamaged == 3

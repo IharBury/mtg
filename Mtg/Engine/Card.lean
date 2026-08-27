@@ -569,6 +569,9 @@ inductive AbilityEffect where
   /-- Search your library for a basic land card, put it onto the battlefield
   tapped, then shuffle (e.g. Wayfarer's Bauble). -/
   | searchBasicLandTapped
+  /-- Search your library for a card with the given land type, reveal it, put
+  it into your hand, then shuffle (e.g. Mountaincycling, Swampcycling). -/
+  | searchLandTypeToHand (landType : String)
   /-- Exile the top card of your library. You may play it until the end of
   your next turn (e.g. Snowslope Hunter). -/
   | exileTopPlayUntilEndOfNextTurn
@@ -616,6 +619,8 @@ counters share `PermanentAction` with spells and triggers. -/
 inductive AbilityResolution where
   /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
   | searchBasicLand
+  /-- Search for a card with this land type, put it into your hand, then shuffle. -/
+  | searchLandTypeToHand (landType : String)
   /-- Exile the top card and grant permission to play it. -/
   | exileTop
   /-- Attach this Equipment to the announced creature. -/
@@ -659,6 +664,8 @@ def spec : AbilityEffect → AbilityMeta
     { targeting := .of .creature .own, resolution := .onPermanent .cantBeBlocked }
   | .searchBasicLandTapped =>
     { resolution := .searchBasicLand }
+  | .searchLandTypeToHand t =>
+    { resolution := .searchLandTypeToHand t }
   | .exileTopPlayUntilEndOfNextTurn =>
     { resolution := .exileTop }
   | .becomeBearCreatureWithLandsPT =>
@@ -707,6 +714,8 @@ def toNotation (e : AbilityEffect) : String :=
   match e.resolution with
   | .searchBasicLand =>
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+  | .searchLandTypeToHand t =>
+    s!"Search your library for a {t} card, reveal it, put it into your hand, then shuffle"
   | .exileTop =>
     "Exile the top card of your library. You may play it until the end of your next turn"
   | .attach =>
@@ -738,6 +747,8 @@ structure ActivationCost where
   sacrificeAnotherCreatureOrArtifact : Bool := false
   /-- Pay this much life (CR 118.3b / 119.4). Payment of life is not damage. -/
   payLife : Nat := 0
+  /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
+  discardSource : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -747,6 +758,7 @@ def toNotation (c : ActivationCost) : String :=
     (if c.mana.symbols.isEmpty then [] else [toString c.mana]) ++
     (if c.tap then ["{T}"] else []) ++
     (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
+    (if c.discardSource then ["Discard this card"] else []) ++
     (if c.sacrificeSource then ["Sacrifice"] else []) ++
     (if c.sacrificeAnotherCreatureOrArtifact then
       ["Sacrifice another creature or artifact"]
@@ -777,6 +789,9 @@ structure ActivatedAbility where
   /-- This ability can be activated only while the source is in a graveyard
   (CR 112.6 / 404). -/
   activateFromGraveyard : Bool := false
+  /-- This ability can be activated only while the source is in your hand
+  (CR 112.6 / 702.29, e.g. cycling). -/
+  activateFromHand : Bool := false
   /-- Timing restriction “Activate only if you control a legendary creature”. -/
   onlyIfYouControlLegendary : Bool := false
 deriving Repr, Inhabited, BEq
@@ -797,6 +812,7 @@ def toNotation (ab : ActivatedAbility) : String :=
     (if ab.onlyDuringYourTurn then " (activate only during your turn)" else "") ++
     (if ab.onceEachTurn then " (activate only once each turn)" else "") ++
     (if ab.activateFromGraveyard then " (activate only from the graveyard)" else "") ++
+    (if ab.activateFromHand then " (activate only from your hand)" else "") ++
     (if ab.onlyIfYouControlLegendary then
       " (activate only if you control a legendary creature)" else "")
   let body :=
@@ -1776,6 +1792,13 @@ instance : ToString CardDef where
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1
 #guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
+#guard AbilityEffect.toNotation (.searchLandTypeToHand "Mountain") ==
+  "Search your library for a Mountain card, reveal it, put it into your hand, then shuffle"
+#guard AbilityEffect.toNotation (.searchLandTypeToHand "Swamp") ==
+  "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
+#guard !AbilityEffect.requiresTarget (.searchLandTypeToHand "Mountain")
+#guard AbilityEffect.resolution (.searchLandTypeToHand "Swamp") ==
+  .searchLandTypeToHand "Swamp"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
 #guard AbilityEffect.toNotation .destroyTargetColorlessNonland ==
@@ -1833,6 +1856,14 @@ instance : ToString CardDef where
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
+#guard
+  let ab : ActivatedAbility := {
+    cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
+    effect := .searchLandTypeToHand "Mountain"
+    activateFromHand := true
+  }
+  toString ab ==
+    "{1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle (activate only from your hand)"
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
@@ -2157,8 +2188,12 @@ end AdventureFace
 def isBasicLandCard (c : CardDef) : Bool :=
   c.isLand && c.hasSupertype .basic
 
+/-- A land card with the given land type (CR 205.3i / 305.7). -/
+def isLandTypeCard (c : CardDef) (landType : String) : Bool :=
+  c.isLand && c.hasSubtype landType
+
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
-  c.isLand && c.hasSubtype "Forest"
+  isLandTypeCard c "Forest"
 
 end Mtg.Engine

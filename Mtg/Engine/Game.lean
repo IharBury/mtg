@@ -17,7 +17,8 @@ and abilities (CR 601.2b / 700.2), announcing targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), additional costs such as sacrificing
 an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
 and activating mana abilities while
-paying (CR 601.2g), activating non-mana abilities of permanents (CR 602),
+paying (CR 601.2g), activating non-mana abilities of permanents, cards in hand
+(typecycling, CR 702.29), and graveyard cards (CR 602),
 including destroying permanents (CR 701.7), equip (CR 702.6), and lasting
 type-changing animations (CR 205.1a / 611.2a), static abilities that grant
 trample, pump other creatures of listed types, pump an enchanted or equipped
@@ -68,6 +69,8 @@ adventurer cards including casting an Adventure and later the permanent
 (CR 118.12 / 400.7), cost reductions if a creature died this turn or if the
 target was dealt damage this turn (CR 118.7 / 601.2f), additional costs that
 sacrifice an artifact or creature or pay extra generic mana (CR 601.2f),
+typecycling from hand (CR 702.29: discard this card, search for a land type,
+put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d, deathtouch as lethal for trample, CR 702.2c / 702.19b, and lifelink,
 CR 702.15b), cleanup (CR 514.3), and the state-based actions we implement
@@ -399,6 +402,8 @@ structure ProposedSpell where
   needsSacrificeOther : Bool := false
   /-- Life paid as part of the activation cost (CR 118.3b / 119.4). -/
   payLife : Nat := 0
+  /-- Discard the source from hand as part of the activation cost (CR 702.29). -/
+  discardSource : Bool := false
   /-- Modes of a modal activated ability, announced at CR 601.2b. -/
   abilityModes : Array AbilityEffect := #[]
 deriving Repr, Inhabited
@@ -2075,7 +2080,7 @@ def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : Objec
     (sac : GameObject) : Bool :=
   (g.sacrificeCreatureOrArtifactChoices p sourceId).any (·.id == sac.id)
 
-/-- Whether the source of a proposed activated ability can still pay tap/sacrifice. -/
+/-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none => true
@@ -2084,9 +2089,11 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     | none => false
     | some src =>
       (src.isOnBattlefield && src.controlledBy prop.caster &&
-        (!prop.tapSource || !src.status.tapped)) ||
+        (!prop.tapSource || !src.status.tapped) && !prop.discardSource) ||
       (src.zone == .graveyard src.owner && src.owner == prop.caster &&
-        !prop.tapSource && !prop.sacrificeSource)
+        !prop.tapSource && !prop.sacrificeSource && !prop.discardSource) ||
+      (src.zone == .hand src.owner && src.owner == prop.caster &&
+        prop.discardSource && !prop.tapSource && !prop.sacrificeSource)
 
 /-- Whether `p` can pay `n` life (CR 119.4). Paying 0 life is always legal. -/
 def canPayLife (g : Game) (p : PlayerId) (n : Nat) : Bool :=
@@ -2102,11 +2109,20 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
   let g := g.setPlayer { pl with life := pl.life - (n : Int) }
   return g.logMsg s!"{pl.name} pays {n} life ({(g.player p).life} life)"
 
-/-- Pay `{T}`, life, and/or sacrifice the source as part of an activation cost
-(CR 601.2h / 118.3b). -/
+/-- Pay `{T}`, life, discard, and/or sacrifice the source as part of an activation cost
+(CR 601.2h / 118.3b / 702.29). -/
 def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
-    (tapSource sacrificeSource : Bool) (payLife : Nat := 0) : Except String Game := do
+    (tapSource sacrificeSource : Bool) (payLife : Nat := 0)
+    (discardSource : Bool := false) : Except String Game := do
   let some src := g.findObject? sourceId | throw "The source is no longer in play"
+  if discardSource then
+    if !(src.zone == .hand src.owner && src.owner == p) then
+      throw s!"{src.name} is not in your hand"
+    let g ← g.payLifeCost p payLife
+    let src := g.object! sourceId
+    let g := g.logMsg s!"{(g.player p).name} discards {src.name}"
+    let (g, _) := g.move sourceId (.graveyard src.owner) none
+    return g
   let fromGraveyard := src.zone == .graveyard src.owner && src.owner == p
   if fromGraveyard && !tapSource && !sacrificeSource then
     return (← g.payLifeCost p payLife)
@@ -2146,7 +2162,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
       g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
-        prop.payLife
+        prop.payLife prop.discardSource
     | _, _ => pure g
   match prop.kind, prop.needsSacrificeOther, prop.sourceId with
   | .spell, true, _ =>
@@ -2356,15 +2372,18 @@ def announceTarget (g : Game) (p : PlayerId) (t : Target) (amount? : Option Nat 
       return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
-/-- Whether `p` may begin activating `ab` of permanent `o` (CR 602.3). Having
+/-- Whether `p` may begin activating `ab` of `o` (CR 602.3). Having
 enough mana in the pool is not required; mana abilities are activated at
-CR 601.2g. -/
+CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29). -/
 def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
   let fromBattlefield :=
-    o.isOnBattlefield && o.controlledBy p && !ab.activateFromGraveyard
+    o.isOnBattlefield && o.controlledBy p &&
+      !ab.activateFromGraveyard && !ab.activateFromHand
   let fromGraveyard :=
     ab.activateFromGraveyard && o.zone == .graveyard o.owner && o.owner == p
-  (fromBattlefield || fromGraveyard) &&
+  let fromHand :=
+    ab.activateFromHand && o.zone == .hand o.owner && o.owner == p
+  (fromBattlefield || fromGraveyard || fromHand) &&
   g.hasPriority p &&
   (if ab.onlyAsSorcery then g.asSorcery? p else true) &&
   (if ab.onlyDuringYourTurn then g.activePlayer == p else true) &&
@@ -2389,6 +2408,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if ab.activateFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{o.name}'s ability can be activated only from the graveyard"
+  else if ab.activateFromHand then
+    if !(o.zone == .hand o.owner && o.owner == p) then
+      throw s!"{o.name}'s ability can be activated only from your hand"
   else
     if !o.isOnBattlefield then
       throw s!"{o.name} is not on the battlefield"
@@ -2423,7 +2445,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if !ab.isModal && !ab.effect.requiresTarget &&
       !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
-      ab.cost.payLife
+      ab.cost.payLife ab.cost.discardSource
     return g.becomeActivated p o.name (some id)
   let prop : ProposedSpell := {
     caster := p
@@ -2439,6 +2461,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     sacrificeSource := ab.cost.sacrificeSource
     needsSacrificeOther := ab.cost.sacrificeAnotherCreatureOrArtifact
     payLife := ab.cost.payLife
+    discardSource := ab.cost.discardSource
     abilityModes := ab.allModes
   }
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
@@ -2670,6 +2693,26 @@ def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
 shuffle (CR 701.19 / 305.7). -/
 def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
   g.resolveSearchLibrary p isForestCard false "Forest card"
+
+/-- Search `p`'s library for a card with land type `landType`, reveal it, put
+it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
+card in library order (bottom first). -/
+def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
+  let pl := g.player p
+  let kind := s!"{landType} card"
+  let found := pl.library.find? (fun id =>
+    match g.findObject? id with
+    | some o => isLandTypeCard o.printed landType
+    | none => false)
+  let g :=
+    match found with
+    | none =>
+      g.logMsg s!"{pl.name} searches their library and finds no {kind}"
+    | some cardId =>
+      let cardName := (g.object! cardId).name
+      let (g, _) := g.move cardId (.hand p) none
+      g.logMsg s!"{pl.name} reveals {cardName} and puts it into their hand"
+  g.shuffleLibrary p
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.14). -/
@@ -2952,6 +2995,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
   match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
+  | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
   | .attach =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g host =>

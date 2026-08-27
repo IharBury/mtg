@@ -491,7 +491,7 @@ def helpInteractive (controlAll : Bool := false)
   sacrifice            Choose to sacrifice as an additional cost (CR 601.2f)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
-  activate <id>        Begin activating a permanent's ability (then tap for mana and pay)
+  activate <id>        Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
@@ -1229,7 +1229,8 @@ def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 
 def activateUsage : String := "usage: activate <id>"
 
-/-- Activate the first non-mana activated ability of the named permanent. -/
+/-- Activate the first non-mana activated ability of the named object
+(a permanent, a card in hand, or a card in a graveyard). -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := tokens.filter (fun t => !t.isEmpty)
   match tokens with
@@ -2121,6 +2122,14 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "begins activating Rogue's Passage")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.oliphauntCycleReady "activate"
+      [toString (Tests.handCardNamed Tests.oliphauntCycleReady ⟨0⟩ "Oliphaunt").id] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Oliphaunt")
   | .error _ => false
 
 #guard
