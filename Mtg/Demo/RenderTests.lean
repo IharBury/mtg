@@ -121,6 +121,84 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones tappedMountain afterUntapStep).contains .battlefield
 #guard !mentions (mountainLine afterUntapStep) "(tapped)"
 
+/- Summoning sickness (CR 302.6) prints on battlefield creatures, like tapped. -/
+#guard
+  let g := insertObject started llanowarElves ⟨0⟩ .battlefield (some ⟨0⟩)
+  let o := lastPermanent g
+  o.hasSummoningSickness &&
+    mentions (objectLine g o) "(summoning sickness)" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "(summoning sickness)" &&
+    mentions (zoneBlock g .battlefield) "(summoning sickness)" &&
+    mentions (snapshot g) "(summoning sickness)"
+
+-- A creature that has been under control since the turn began does not print it.
+#guard !mentions (objectLine withElves (lastPermanent withElves)) "(summoning sickness)"
+#guard !mentions (playerBlock withElves (withElves.player ⟨0⟩)) "(summoning sickness)"
+
+-- Haste overrides the restriction, so a newly entered Goblin does not print it.
+#guard
+  let g := insertObject started ragingGoblin ⟨0⟩ .battlefield (some ⟨0⟩)
+  let o := lastPermanent g
+  o.status.summoningSick &&
+    !o.hasSummoningSickness &&
+    mentions (objectLine g o) "haste" &&
+    !mentions (objectLine g o) "(summoning sickness)"
+
+-- Non-creatures never print it, even if the status flag is set.
+#guard
+  let g := insertObject started mountain ⟨0⟩ .battlefield (some ⟨0⟩)
+  let o := lastPermanent g
+  o.status.summoningSick &&
+    !o.isCreature &&
+    !mentions (objectLine g o) "(summoning sickness)"
+
+-- Tapped and summoning-sick print as adjacent status markers.
+#guard
+  let g := insertObject started llanowarElves ⟨0⟩ .battlefield (some ⟨0⟩)
+    { tapped := true, summoningSick := true }
+  let line := objectLine g (lastPermanent g)
+  mentions line "(tapped)" && mentions line "(summoning sickness)" &&
+    mentions line "(tapped) (summoning sickness)"
+
+-- Untap clears sickness; occupants stay put, but the battlefield reprints.
+#guard
+  let before := insertObject started llanowarElves ⟨0⟩ .battlefield (some ⟨0⟩)
+  let after := before.beginStep .untap
+  let o := lastPermanent after
+  (zoneObjectIds before .battlefield) == (zoneObjectIds after .battlefield) &&
+    battlefieldView before != battlefieldView after &&
+    (changedZones before after).contains .battlefield &&
+    !o.hasSummoningSickness &&
+    !mentions (objectLine after o) "(summoning sickness)"
+
+-- A creature that entered this turn via the stack prints the marker.
+#guard
+  let g := pathmakerEntered
+  let o := namedPermanent g "Mirkwood Pathmaker"
+  o.hasSummoningSickness &&
+    mentions (objectLine g o) "(summoning sickness)" &&
+    mentions (zoneBlock g .battlefield) "(summoning sickness)"
+
+-- An enchantment that became a creature the turn it entered is also sick.
+#guard
+  let g := hospitalityEnteredThisTurn
+  let o := namedPermanent g "Beorn's Hospitality"
+  o.isCreature && o.hasSummoningSickness &&
+    mentions (objectLine g o) "(summoning sickness)"
+
+-- The same animation after the permanent has already been in play is not sick.
+#guard
+  let g := animatedHospitality
+  let o := namedPermanent g "Beorn's Hospitality"
+  o.isCreature && !o.hasSummoningSickness &&
+    !mentions (objectLine g o) "(summoning sickness)"
+
+-- Stack objects are not battlefield creatures; they do not print the marker.
+#guard mentions
+  (objectLine guideEntered (namedPermanent guideEntered "Galadhrim Guide"))
+  "(summoning sickness)"
+#guard !mentions (stackBlock guideEntered) "(summoning sickness)"
+
 #guard mountainLine stolenMountain ==
   s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
 -- Grouped under Nissa: owner differs, so it is printed; controller matches.
@@ -809,7 +887,8 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := pathmakerEntered
   let o := namedPermanent g "Mirkwood Pathmaker"
-  mentions (objectLine g o) "2/2"
+  mentions (objectLine g o) "2/2" &&
+    mentions (objectLine g o) "(summoning sickness)"
 #guard mentions (handLine pathmakerInHand
   (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").id) "*/*"
 #guard mentions mirkwoodPathmaker.summary "*/*"
