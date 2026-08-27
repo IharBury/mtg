@@ -360,6 +360,14 @@ def mountainLine (g : Game) : String :=
 
 #guard mentions (header giantReadyToAssign) "assign combat damage (CR 510.1c"
 #guard mentions (header bearsBlockingTwoOgresReady) "assign combat damage (CR 510.1d"
+#guard mentions (header twoBofursSBA) "legend rule"
+#guard mentions (header twoBofursSBA) "704.5j"
+#guard mentions (header twoBofursSBA) "Bofur, Reliable Guardian"
+#guard
+  match legendRuleBlock twoBofursSBA with
+  | some s => mentions s "Bofur, Reliable Guardian" && mentions s "704.5j"
+  | none => false
+#guard mentions (snapshot twoBofursSBA) "chooses which Bofur, Reliable Guardian to keep"
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"

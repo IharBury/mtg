@@ -58,7 +58,7 @@ until end of turn (CR 602 / 611.2a / 122 / 509.1b / 118.3b),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d and deathtouch as lethal for trample, CR 702.2c / 702.19b), cleanup (CR 514.3), and the state-based actions we implement
-(CR 704.5, including deathtouch, CR 704.5h).
+(CR 704.5, including deathtouch, CR 704.5h, and the legend rule, CR 704.5j).
 -/
 
 namespace Mtg.Engine
@@ -276,6 +276,10 @@ def you (o : GameObject) : PlayerId :=
 def isCreature (o : GameObject) : Bool :=
   o.printed.isCreature || o.status.additionalCreature
 
+/-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
+def isLegendary (o : GameObject) : Bool :=
+  o.printed.hasSupertype .legendary
+
 /-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
@@ -414,6 +418,9 @@ inductive Pending where
   /-- The player announces how attacking (`forAttackers`) or blocking creatures
   assign combat damage (CR 510.1c–d). -/
   | assignCombatDamage (player : PlayerId) (forAttackers : Bool)
+  /-- This player chooses which of these legendary permanents with the same
+  name to keep; the rest are put into their owners' graveyards (CR 704.5j). -/
+  | chooseLegend (player : PlayerId) (name : String) (ids : Array ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -488,6 +495,8 @@ inductive Action where
   | assignCombatDamage (assignments : Array CreatureCombatAssignment)
   /-- Keep this hand as the opening hand (CR 103.5). -/
   | keep
+  /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
+  | keepLegend (id : ObjectId)
   /-- Declare a London mulligan; it is taken after every remaining player has
   declared (CR 103.5). -/
   | takeMulligan
@@ -1056,8 +1065,57 @@ def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=
   (g.creaturesAssigningCombatDamage forAttackers).any (fun o =>
     (g.legalCombatDamageRecipients o forAttackers).size ≥ 2 && max (g.power o) 0 > 0)
 
+/-- Living players in APNAP order (CR 101.4): the active player, then the
+next player in turn order, and so on. -/
+def apnapPlayers (g : Game) : Array PlayerId :=
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+      if !(g.player q).lost then
+        acc := acc.push q
+    return acc
+
+/-- Legendary permanents `p` currently controls. -/
+def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (·.isLegendary)
+
+/-- First legend-rule group that needs a choice (CR 704.5j / 201.2a): two or
+more legendary permanents with the same name controlled by the same player,
+taking players in APNAP order. -/
+def firstLegendRuleChoice? (g : Game) : Option (PlayerId × String × Array ObjectId) :=
+  Id.run do
+    for p in g.apnapPlayers do
+      let legs := g.legendaryPermanentsOf p
+      let mut seen : Array String := #[]
+      for o in legs do
+        if !seen.contains o.name then
+          seen := seen.push o.name
+          let group := legs.filter (fun x => x.name == o.name)
+          if group.size ≥ 2 then
+            return some (p, o.name, group.map (·.id))
+    return none
+
+/-- True while a player must choose which legendary permanent to keep. -/
+def legendChoicePending? (g : Game) : Bool :=
+  match g.pending with
+  | .chooseLegend .. => true
+  | _ => false
+
+/-- Default legend-rule choice: the copy that entered most recently. -/
+def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
+  ids.foldl (fun best id =>
+    match g.findObject? best, g.findObject? id with
+    | some a, some b => if b.timestamp ≥ a.timestamp then id else best
+    | _, some _ => id
+    | _, none => best) (ids[0]!)
+
 /-- Perform applicable state-based actions (CR 704.3). The `Bool` is `true` if
-any state-based action was performed (used by CR 514.3a). -/
+any state-based action was performed (used by CR 514.3a). If a legend-rule
+choice is required (CR 704.5j), the check pauses: that SBA is not finished,
+so CR 704.3 does not yet repeat, put triggers on the stack, or grant
+priority. `keepLegend` resumes the loop. -/
 partial def checkSBACounted (g : Game) : Game × Bool :=
   if g.over then (g, false)
   else
@@ -1079,6 +1137,31 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.setPlayer { pl with lost := true }
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
+      let livingAfterLoss := g.livingPlayers
+      if livingAfterLoss.size == 0 then
+        g := { g with result := some .draw }
+        g := g.logMsg "The game is a draw"
+        return (g, true)
+      else if livingAfterLoss.size == 1 then
+        let w := livingAfterLoss[0]!
+        g := { g with result := some (.won w.id) }
+        g := g.logMsg s!"{w.name} wins the game"
+        return (g, true)
+      -- Waiting for a legend-rule choice: do not apply further SBAs until
+      -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
+      -- group is no longer two or more.
+      match g.pending with
+      | .chooseLegend p name ids =>
+        let still := ids.filter (fun id =>
+          match g.findObject? id with
+          | some o =>
+            o.isOnBattlefield && o.controlledBy p && o.isLegendary && o.name == name
+          | none => false)
+        if still.size ≥ 2 then
+          return (g, changed)
+        else
+          g := { g with pending := .none }
+      | _ => pure ()
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       for o in g.battlefield do
         if o.isCreature then
@@ -1104,6 +1187,14 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
               changed := true
             else
               g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+      -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
+      match g.firstLegendRuleChoice? with
+      | some (p, name, ids) =>
+        g := { g with pending := .chooseLegend p name ids }
+        g := g.logMsg
+          s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
+        return (g, true)
+      | none => pure ()
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -1419,9 +1510,15 @@ def putWaitingDeathTriggers (g : Game) : Game :=
 def putWaitingScryTriggers (g : Game) : Game :=
   g.flushWaitingTriggers .youScry
 
+/-- CR 704.3: check state-based actions, then (if none remain to perform,
+including an unfinished legend-rule choice) put waiting triggers on the
+stack. Repeat until that process is idle, then `p` receives priority. -/
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
   if g.over then g
+  -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
+  -- the SBA. Do not put triggers on the stack or grant priority yet.
+  else if g.legendChoicePending? then g
   else
     let g := g.putWaitingDeathTriggers
     if g.over then g
@@ -3615,6 +3712,36 @@ def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
     return g.afterDeclaration p
   | _ => throw "Not time to keep an opening hand (CR 103.5)"
 
+/-- Choose which legendary permanent to keep; the rest go to their owners'
+graveyards (CR 704.5j). Then resume the CR 704.3 loop: recheck state-based
+actions, put waiting triggers on the stack if none remain, and grant
+priority only once that process is idle. -/
+def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .chooseLegend q name ids =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may choose which {name} to keep (CR 704.5j)"
+    if !ids.contains id then
+      throw s!"Choose one of the legendary permanents named {name} (CR 704.5j)"
+    let some kept := g.findObject? id | throw "no such object"
+    if !kept.isOnBattlefield then
+      throw s!"{kept.name} is not on the battlefield"
+    let mut g := g.logMsg
+      s!"{(g.player p).name} keeps {kept.name} (legend rule, CR 704.5j)"
+    for other in ids do
+      if other != id then
+        match g.findObject? other with
+        | some o =>
+          if o.isOnBattlefield then
+            g := g.logMsg
+              s!"{o.name} is put into its owner's graveyard (legend rule, CR 704.5j)"
+            let (g', _) := g.move o.id (.graveyard o.owner) none
+            g := g'
+        | none => pure ()
+    g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to apply the legend rule (CR 704.5j)"
+
 /-- Record that this player will mulligan. The mulligan itself is taken only
 after every remaining player has declared (CR 103.5). -/
 def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
@@ -3684,6 +3811,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
+  | .keepLegend id => g.keepLegend p id
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
@@ -3711,6 +3839,7 @@ def actor (g : Game) : Option PlayerId :=
     | .scry p _ => some p
     | .mayDiscardDraw p _ => some p
     | .assignCombatDamage p _ => some p
+    | .chooseLegend p _ _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

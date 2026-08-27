@@ -437,6 +437,23 @@ def combatDamageAssignmentBlock (g : Game) : Option String :=
     else some ("Assign combat damage:\n" ++ String.intercalate "\n" lines)
   | _ => none
 
+/-- Snapshot section listing which legendary permanents a player may keep
+under the legend rule (CR 704.5j). -/
+def legendRuleBlock (g : Game) : Option String :=
+  match g.pending with
+  | .chooseLegend p name ids =>
+    let lines :=
+      ids.toList.filterMap (fun id =>
+        match g.findObject? id with
+        | some o => some s!"  {objectRef g o.id}"
+        | none => none)
+    if lines.isEmpty then none
+    else
+      some <|
+        s!"{(g.player p).name} chooses which {name} to keep (CR 704.5j):\n" ++
+          String.intercalate "\n" lines
+  | _ => none
+
 def header (g : Game) (viewer : Option PlayerId := none) : String :=
   let viewTag :=
     match viewer with
@@ -472,6 +489,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [assign combat damage (CR 510.1c, {g.player p |>.name})]"
     | .assignCombatDamage p false =>
       s!" [assign combat damage (CR 510.1d, {g.player p |>.name})]"
+    | .chooseLegend p name _ =>
+      s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
   let result :=
     match g.result with
     | none => ""
@@ -498,8 +517,12 @@ def snapshot (g : Game) (viewer : Option PlayerId := none) : String :=
     match combatDamageAssignmentBlock g with
     | some block => [block]
     | none => []
+  let legend :=
+    match legendRuleBlock g with
+    | some block => [block]
+    | none => []
   String.intercalate "\n\n"
-    (header g viewer :: cost ++ assign ++
+    (header g viewer :: cost ++ assign ++ legend ++
       [stackBlock g, battlefieldBlock g] ++ players ++ exileBlock)
 
 /-- Hide draws and library rearrangements that `viewer` is not allowed to see

@@ -717,6 +717,8 @@ def applyIdle (g : Game) : Game :=
           | some i => mustApply g p (.chooseMode i)
   | .assignCombatDamage _ _, some p =>
     mustApply g p (.assignCombatDamage #[])
+  | .chooseLegend _ _ ids, some p =>
+    mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -2206,6 +2208,219 @@ def afterHostLeaves : Game :=
 #guard afterHostLeaves.log.any (fun s => mentions s "704.5n")
 #guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Gift of Strands"))
 #guard !(afterHostLeaves.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+/- Legend rule (CR 704.5j). -/
+
+def twoBofurs : Game :=
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardian ⟨0⟩ ⟨0⟩
+
+def twoBofursSBA : Game := twoBofurs.checkSBA
+
+#guard (namedPermanent twoBofurs "Bofur, Reliable Guardian").isLegendary
+#guard (twoBofurs.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 2
+#guard twoBofurs.pending == .none
+#guard twoBofurs.firstLegendRuleChoice?.isSome
+#guard
+  match twoBofursSBA.pending with
+  | .chooseLegend p name ids =>
+    p == ⟨0⟩ && name == "Bofur, Reliable Guardian" && ids.size == 2
+  | _ => false
+#guard twoBofursSBA.actor == some ⟨0⟩
+#guard twoBofursSBA.legendChoicePending?
+#guard twoBofursSBA.log.any (fun s => mentions s "704.5j")
+#guard (twoBofursSBA.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 2
+
+def keptOlderBofur : Game :=
+  match twoBofursSBA.pending with
+  | .chooseLegend p _ ids => mustApply twoBofursSBA p (.keepLegend ids[0]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard (keptOlderBofur.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1
+#guard keptOlderBofur.pending == .none
+#guard !keptOlderBofur.legendChoicePending?
+#guard keptOlderBofur.log.any (fun s => mentions s "keeps Bofur, Reliable Guardian")
+#guard keptOlderBofur.log.any (fun s =>
+  mentions s "is put into its owner's graveyard (legend rule, CR 704.5j)")
+#guard (keptOlderBofur.player ⟨0⟩).graveyard.any (fun id =>
+  (keptOlderBofur.object! id).name == "Bofur, Reliable Guardian")
+#guard keptOlderBofur.hasPriority ⟨0⟩
+
+/-- Each player may control a copy of the same legend. -/
+def eachControlsBofur : Game :=
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardian ⟨1⟩ ⟨1⟩
+
+#guard (eachControlsBofur.checkSBA).pending == .none
+#guard (eachControlsBofur.checkSBA.battlefield.filter
+  (·.name == "Bofur, Reliable Guardian")).size == 2
+
+/-- Different legendary names do not conflict. -/
+def twoDifferentLegends : Game :=
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+    landrovalHorizonWitness ⟨0⟩ ⟨0⟩
+
+#guard (twoDifferentLegends.checkSBA).pending == .none
+#guard (twoDifferentLegends.checkSBA.battlefield.filter (·.isLegendary)).size == 2
+
+/-- Three copies: keep one, two go to the graveyard. -/
+def threeBofursSBA : Game :=
+  (addPermanent twoBofurs bofurReliableGuardian ⟨0⟩ ⟨0⟩).checkSBA
+
+def keptOneOfThree : Game :=
+  match threeBofursSBA.pending with
+  | .chooseLegend p _ ids => mustApply threeBofursSBA p (.keepLegend ids[1]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard (keptOneOfThree.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1
+#guard ((keptOneOfThree.player ⟨0⟩).graveyard.filter (fun id =>
+  (keptOneOfThree.object! id).name == "Bofur, Reliable Guardian")).size == 2
+
+/-- Indestructible does not save a legend from CR 704.5j. -/
+def legendaryIndestructible : CardDef :=
+  creature "Unyielding Legend" ManaCost.empty #[] 2 2
+    (supertypes := #[.legendary])
+    (keywords := Keyword.indestructible)
+
+def twoIndestructibleLegends : Game :=
+  let g :=
+    addPermanent (addPermanent started legendaryIndestructible ⟨0⟩ ⟨0⟩)
+      legendaryIndestructible ⟨0⟩ ⟨0⟩
+  let g := g.checkSBA
+  match g.pending with
+  | .chooseLegend p _ ids => mustApply g p (.keepLegend ids[0]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard (twoIndestructibleLegends.battlefield.filter
+  (·.name == "Unyielding Legend")).size == 1
+#guard (namedPermanent twoIndestructibleLegends "Unyielding Legend").printed.keywords.indestructible
+#guard ((twoIndestructibleLegends.player ⟨0⟩).graveyard.filter (fun id =>
+  (twoIndestructibleLegends.object! id).name == "Unyielding Legend")).size == 1
+
+/-- The rest go to their owners' graveyards, not the controller's. -/
+def nissaControlsTwoBofurs : Game :=
+  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨1⟩)
+    bofurReliableGuardian ⟨1⟩ ⟨1⟩
+
+def nissaKeepsOwnBofur : Game :=
+  let g := nissaControlsTwoBofurs.checkSBA
+  match g.pending with
+  | .chooseLegend p _ ids => mustApply g p (.keepLegend ids[1]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard nissaControlsTwoBofurs.checkSBA.actor == some ⟨1⟩
+#guard (nissaKeepsOwnBofur.player ⟨0⟩).graveyard.any (fun id =>
+  (nissaKeepsOwnBofur.object! id).name == "Bofur, Reliable Guardian")
+#guard (nissaKeepsOwnBofur.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1
+#guard (namedPermanent nissaKeepsOwnBofur "Bofur, Reliable Guardian").owner == ⟨1⟩
+
+/-- Two legend pairs: after the first choice, the second pair is prompted. -/
+def twoLegendPairs : Game :=
+  addPermanent (addPermanent twoBofurs landrovalHorizonWitness ⟨0⟩ ⟨0⟩)
+    landrovalHorizonWitness ⟨0⟩ ⟨0⟩
+
+def afterFirstLegendPair : Game :=
+  let g := twoLegendPairs.checkSBA
+  match g.pending with
+  | .chooseLegend p name ids =>
+    if name == "Bofur, Reliable Guardian" then
+      mustApply g p (.keepLegend ids[0]!)
+    else panic! s!"expected Bofur first, got {name}"
+  | _ => panic! "expected a legend-rule choice"
+
+#guard
+  match afterFirstLegendPair.pending with
+  | .chooseLegend _ name ids =>
+    name == "Landroval, Horizon Witness" && ids.size == 2
+  | _ => false
+
+-- The opponent cannot make the legend-rule choice.
+#guard
+  match twoBofursSBA.pending with
+  | .chooseLegend _ _ ids =>
+    match twoBofursSBA.apply ⟨1⟩ (.keepLegend ids[0]!) with
+    | .error msg => mentions msg "Only Chandra"
+    | .ok _ => false
+  | _ => false
+
+/-- The heuristic keeps the newest copy. -/
+def agentKeptLegend : Game :=
+  match Agent.step twoBofursSBA with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard (agentKeptLegend.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1
+#guard agentKeptLegend.pending == .none
+#guard
+  match twoBofursSBA.pending with
+  | .chooseLegend _ _ ids =>
+    (namedPermanent agentKeptLegend "Bofur, Reliable Guardian").id ==
+      twoBofursSBA.defaultLegendToKeep ids
+  | _ => false
+
+/-- An Aura on the discarded legend is put into the graveyard (CR 704.5m). -/
+def twoBofursWithAura : Game :=
+  let host := (twoBofurs.battlefield.filter
+    (·.name == "Bofur, Reliable Guardian"))[0]!
+  addAttachedAura twoBofurs giftOfStrands host ⟨0⟩ ⟨0⟩
+
+def afterLegendKillsEnchanted : Game :=
+  let g := twoBofursWithAura.checkSBA
+  match g.pending with
+  | .chooseLegend p _ ids => mustApply g p (.keepLegend ids[1]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard !(afterLegendKillsEnchanted.battlefield.any (fun o => o.name == "Gift of Strands"))
+#guard afterLegendKillsEnchanted.log.any (fun s => mentions s "704.5n")
+#guard (afterLegendKillsEnchanted.player ⟨0⟩).graveyard.any (fun id =>
+  (afterLegendKillsEnchanted.object! id).name == "Gift of Strands")
+
+-- CR 704.3: a 0-toughness creature dies in the same check, then the legend
+-- rule still pauses; no player has priority until the choice is made.
+def zeroAndTwoBofursSBA : Game :=
+  (addPermanent twoBofurs zeroZero ⟨0⟩ ⟨0⟩).checkSBA
+
+#guard !(zeroAndTwoBofursSBA.battlefield.any (·.name == "Zero/Zero"))
+#guard
+  match zeroAndTwoBofursSBA.pending with
+  | .chooseLegend _ name ids =>
+    name == "Bofur, Reliable Guardian" && ids.size == 2
+  | _ => false
+#guard !zeroAndTwoBofursSBA.hasPriority ⟨0⟩
+#guard zeroAndTwoBofursSBA.actor == some ⟨0⟩
+
+/-- Legendary creature with a dies trigger, for the CR 704.3 wait. -/
+def legendaryFireleaper : CardDef :=
+  creature "Legendary Fireleaper" ManaCost.empty #["Goblin"] 2 1
+    (supertypes := #[.legendary])
+    (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
+
+def twoFireleapersSBA : Game :=
+  let g := addPermanent started legendaryFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g legendaryFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  g.checkSBA
+
+-- CR 704.3: the dies trigger waits until the legend-rule SBA is finished.
+#guard twoFireleapersSBA.waitingTriggers.isEmpty
+#guard twoFireleapersSBA.stack.isEmpty
+#guard twoFireleapersSBA.legendChoicePending?
+#guard !twoFireleapersSBA.hasPriority ⟨0⟩
+#guard (twoFireleapersSBA.receivePriority ⟨0⟩).legendChoicePending?
+#guard (twoFireleapersSBA.receivePriority ⟨0⟩).stack.isEmpty
+
+def afterKeepFireleaper : Game :=
+  match twoFireleapersSBA.pending with
+  | .chooseLegend p _ ids => mustApply twoFireleapersSBA p (.keepLegend ids[0]!)
+  | _ => panic! "expected a legend-rule choice"
+
+#guard afterKeepFireleaper.waitingTriggers.isEmpty
+#guard afterKeepFireleaper.pending == .chooseTargets ⟨0⟩
+#guard afterKeepFireleaper.stack.any (fun e =>
+  (afterKeepFireleaper.object! e.objectId).triggeredAbility ==
+    some .onDiesDealDamageEqualToPowerToOppCreature)
+#guard !afterKeepFireleaper.hasPriority ⟨0⟩
+#guard afterKeepFireleaper.actor == some ⟨0⟩
 
 /-- A 0/0 creature survives while Gift of Strands is attached. -/
 def zeroEnchanted : Game :=
