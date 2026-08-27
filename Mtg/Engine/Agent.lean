@@ -142,14 +142,12 @@ where
         | none => false)
     let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
     let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
-    let effectKind (e? : Option SpellEffect) (k : SpellCastKind) : Bool :=
-      e?.any (fun e => e.castKind == k)
     let spellKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      effectKind o.printed.spellEffect k
+      o.printed.hasCastKind k
     let adventureKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      effectKind (o.printed.adventure.bind (·.spellEffect)) k
+      o.printed.adventure.any (fun a => a.hasCastKind k)
     let modeKind (o : GameObject) (k : SpellCastKind) : Bool :=
-      o.printed.spellModes.any (fun e => e.castKind == k)
+      o.printed.hasModeCastKind k
     let hasLegalKind (k : EffectTargetKind) : Bool :=
       !(g.legalTargetsForKind p k).isEmpty
     let adventureRemoval :=

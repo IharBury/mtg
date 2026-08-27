@@ -1537,7 +1537,7 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
   | some e => e.targeting
   | none =>
     match obj.triggeredAbility with
-    | some ab => EffectTargeting.of ab.targetKind
+    | some ab => ab.targeting
     | none =>
       match g.currentSpellEffect obj with
       | some e => e.targeting
@@ -2360,12 +2360,31 @@ def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : Triggered
     (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
   g.withLegalKindPermanent controller ab.targetKind targets f sourceId (some noneMsg)
 
+/-- Deal `n` damage to a still-legal target of `kind`. -/
+def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none) : Game :=
+  g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
+    sourceId
+
+/-- Apply a shared permanent-target action (spells and activated abilities). -/
+def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
+  | .pump pw tw => g.pumpPermanent o pw tw
+  | .destroy => g.destroyPermanent o
+  | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
+  | .dealDamage n => g.dealDamageToPermanent o n
+  | .dealDamageLoseIndestructibleExile n =>
+    g.dealDamageLoseIndestructibleExileTo o n
+  | .destroyThenNonflyersCantBlock =>
+    let g := g.destroyPermanent o
+    let g := { g with creaturesWithoutFlyingCantBlock := true }
+    g.logMsg "Creatures without flying can't block this turn"
+  | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
+
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) : Game :=
   match effect.resolution with
   | .damageAny n =>
-    g.withLegalKindTarget controller effect.targetKind targets fun g t =>
-      g.dealDamageToTarget t n
+    g.applyDamageToKindTarget controller effect.targetKind targets n
   | .fight =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
@@ -2387,17 +2406,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | .onPermanent action =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      match action with
-      | .pump pw tw => g.pumpPermanent o pw tw
-      | .destroy => g.destroyPermanent o
-      | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
-      | .dealDamage n => g.dealDamageToPermanent o n
-      | .dealDamageLoseIndestructibleExile n =>
-        g.dealDamageLoseIndestructibleExileTo o n
-      | .destroyThenNonflyersCantBlock =>
-        let g := g.destroyPermanent o
-        let g := { g with creaturesWithoutFlyingCantBlock := true }
-        g.logMsg "Creatures without flying can't block this turn"
+      g.applyPermanentAction o action
 
 /-- Apply `f` if `sourceId` is still on the battlefield. -/
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
@@ -2424,11 +2433,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
   | .damageToTarget n =>
-    g.withLegalKindTarget controller effect.targetKind targets fun g t =>
-      g.dealDamageToTarget t n
-  | .destroyColorless =>
-    g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.destroyPermanent o
+    g.applyDamageToKindTarget controller effect.targetKind targets n
   | .attach =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src =>
@@ -2440,9 +2445,9 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
           g.logMsg s!"{src.name} attaches to {host.name}")
         "The Equipment is no longer in play"
-  | .cantBeBlocked =>
+  | .onPermanent action =>
     g.withLegalKindPermanent controller effect.targetKind targets fun g o =>
-      g.grantCantBeBlockedThisTurn o
+      g.applyPermanentAction o action
   | .onSource action =>
     g.withSourceOnBattlefield sourceId fun g o =>
       match action with

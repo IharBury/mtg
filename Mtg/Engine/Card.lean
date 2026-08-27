@@ -141,6 +141,21 @@ def targetCount : EffectTargetKind → Nat
   | .elfInYourGraveyard | .oppCreature | .creature | .creatureWithFlying
   | .artifactOrLand | .colorlessNonland => 1
 
+/-- Oracle-style noun phrase for this targeting shape. -/
+def noun : EffectTargetKind → String
+  | .none => ""
+  | .creatureYouControl => "target creature you control"
+  | .anotherCreatureYouControl => "another target creature you control"
+  | .playerOrCreature => "any target"
+  | .elfInYourGraveyard => "target Elf card from your graveyard"
+  | .oppCreature => "target creature an opponent controls"
+  | .creature => "target creature"
+  | .creatureWithFlying => "target creature with flying"
+  | .artifactOrLand => "target artifact or land"
+  | .colorlessNonland => "target colorless nonland permanent"
+  | .creatureYouControlThenOppCreature =>
+    "target creature you control and a creature an opponent controls"
+
 /-- Default demonstration-agent preference for this targeting shape. -/
 def defaultPreference : EffectTargetKind → TargetPreference
   | .none | .creatureYouControl | .anotherCreatureYouControl => .own
@@ -165,7 +180,25 @@ def of (kind : EffectTargetKind)
     (prefer : TargetPreference := kind.defaultPreference) : EffectTargeting :=
   { kind, prefer }
 
+/-- How many targets must be announced (CR 601.2c). -/
+def targetCount (t : EffectTargeting) : Nat :=
+  t.kind.targetCount
+
+/-- True when announcing this shape requires choosing a target (CR 115.1). -/
+def requiresTarget (t : EffectTargeting) : Bool :=
+  t.targetCount != 0
+
 end EffectTargeting
+
+/-- First character uppercased (ASCII), for ability sentences. -/
+def capitalizeAscii (s : String) : String :=
+  match s.toList with
+  | [] => s
+  | c :: rest => String.ofList (c.toUpper :: rest)
+
+/-- English for `n` cards (`a card` vs `2 cards`). -/
+def cardPhrase (n : Nat) : String :=
+  if n == 1 then "a card" else s!"{n} cards"
 
 /-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
 inductive SpellEffect where
@@ -214,8 +247,13 @@ inductive SpellCastKind where
   | extraLand
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- What a spell does to a still-legal permanent target (CR 608.2b). -/
-inductive SpellOnPermanent where
+/-- Signed power/toughness bonus for Oracle-style reminders (`+1` vs `-1`). -/
+def signedStat (n : Int) : String :=
+  if n < 0 then toString n else s!"+{n}"
+
+/-- What a spell or activated ability does to a still-legal permanent target
+(CR 608.2b). Shared so `Game.applyPermanentAction` is one match. -/
+inductive PermanentAction where
   /-- Until-end-of-turn +P/+T. -/
   | pump (power toughness : Int)
   /-- Destroy the permanent (CR 701.7). -/
@@ -228,7 +266,32 @@ inductive SpellOnPermanent where
   | dealDamageLoseIndestructibleExile (amount : Nat)
   /-- Destroy, then creatures without flying can't block this turn. -/
   | destroyThenNonflyersCantBlock
+  /-- The permanent can't be blocked this turn. -/
+  | cantBeBlocked
 deriving Repr, Inhabited, BEq
+
+namespace PermanentAction
+
+/-- Oracle-style text for this action on `noun` (e.g. `target creature`).
+`sentence` capitalizes the first letter for activated-ability lines. -/
+def toNotation (action : PermanentAction) (noun : String) (sentence := false) : String :=
+  let damage (n : Nat) : String := s!"deals {n} damage to {noun}"
+  let raw :=
+    match action with
+    | .pump p t =>
+      s!"{noun} gets {signedStat p}/{signedStat t} until end of turn"
+    | .destroy => s!"destroy {noun}"
+    | .plusOnePlusOneTrampleHexproof =>
+      s!"put a +1/+1 counter on {noun}. It gains trample and hexproof until end of turn"
+    | .dealDamage n => damage n
+    | .dealDamageLoseIndestructibleExile n =>
+      s!"{damage n}. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
+    | .destroyThenNonflyersCantBlock =>
+      s!"destroy {noun}. Creatures without flying can't block this turn"
+    | .cantBeBlocked => s!"{noun} can't be blocked this turn"
+  if sentence then capitalizeAscii raw else raw
+
+end PermanentAction
 
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
 handful of shapes instead of every `SpellEffect` constructor. -/
@@ -240,7 +303,7 @@ inductive SpellResolution where
   /-- A creature you control deals its power to an opposing creature. -/
   | fight
   /-- Affect a still-legal permanent target. -/
-  | onPermanent (action : SpellOnPermanent)
+  | onPermanent (action : PermanentAction)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -255,23 +318,7 @@ deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
 
-def signedStat (n : Int) : String :=
-  if n < 0 then toString n else s!"+{n}"
-
-def toNotation : SpellEffect → String
-  | .dealDamage n => s!"deals {n} damage to any target"
-  | .pump p t => s!"target creature gets {signedStat p}/{signedStat t} until end of turn"
-  | .destroyCreatureWithFlying => "destroy target creature with flying"
-  | .plusOnePlusOneTrampleHexproof =>
-    "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
-  | .dealDamageToCreature n => s!"deals {n} damage to target creature"
-  | .dealDamageLoseIndestructibleExile n =>
-    s!"deals {n} damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-  | .creatureYouControlDealsPowerToOppCreature =>
-    "target creature you control deals damage equal to its power to target creature an opponent controls"
-  | .playAdditionalLandThisTurn => "you may play an additional land this turn"
-  | .destroyArtifactOrLandNonflyersCantBlock =>
-    "destroy target artifact or land. Creatures without flying can't block this turn"
+def signedStat := Mtg.Engine.signedStat
 
 /-- Classification of this spell. Exhaustive so a new constructor is a compile
 error here rather than silently matching no targets, skipping the agent, or
@@ -314,11 +361,11 @@ def targetKind (e : SpellEffect) : EffectTargetKind :=
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
 def targetCount (e : SpellEffect) : Nat :=
-  e.targetKind.targetCount
+  e.targeting.targetCount
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
-  e.targetCount != 0
+  e.targeting.requiresTarget
 
 /-- Demonstration-agent category for this effect. -/
 def castKind (e : SpellEffect) : SpellCastKind :=
@@ -331,6 +378,17 @@ def preferAsDefaultMode (e : SpellEffect) : Bool :=
 /-- How this effect resolves (CR 608). -/
 def resolution (e : SpellEffect) : SpellResolution :=
   e.spec.resolution
+
+/-- Oracle-style reminder from targeting and resolution, so a new constructor
+only updates `spec`. -/
+def toNotation (e : SpellEffect) : String :=
+  let noun := e.targetKind.noun
+  match e.resolution with
+  | .damageAny n => s!"deals {n} damage to {noun}"
+  | .fight =>
+    "target creature you control deals damage equal to its power to target creature an opponent controls"
+  | .extraLand => "you may play an additional land this turn"
+  | .onPermanent action => PermanentAction.toNotation action noun
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -388,7 +446,7 @@ deriving Repr, Inhabited, BEq
 
 /-- How an activated ability resolves (CR 608). Grouped so
 `Game.applyAbilityEffect` matches a handful of shapes instead of every
-constructor. -/
+constructor. Permanent-target effects share `PermanentAction` with spells. -/
 inductive AbilityResolution where
   /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
   | searchBasicLand
@@ -396,12 +454,10 @@ inductive AbilityResolution where
   | exileTop
   /-- Deal `amount` damage to the announced target. -/
   | damageToTarget (amount : Nat)
-  /-- Destroy a colorless nonland permanent. -/
-  | destroyColorless
   /-- Attach this Equipment to the announced creature. -/
   | attach
-  /-- The announced creature can't be blocked this turn. -/
-  | cantBeBlocked
+  /-- Affect a still-legal permanent target. -/
+  | onPermanent (action : PermanentAction)
   /-- Affect the ability's source if it is still on the battlefield. -/
   | onSource (action : AbilityOnSource)
 deriving Repr, Inhabited, BEq
@@ -421,26 +477,6 @@ namespace AbilityEffect
 def plusOnePlusOneCountersPhrase (n : Nat) : String :=
   if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
-def toNotation : AbilityEffect → String
-  | .searchBasicLandTapped =>
-    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
-  | .exileTopPlayUntilEndOfNextTurn =>
-    "Exile the top card of your library. You may play it until the end of your next turn"
-  | .dealDamageToTargetCreature n =>
-    s!"This creature deals {n} damage to target creature"
-  | .destroyTargetColorlessNonland =>
-    "Destroy target colorless nonland permanent"
-  | .attachToTargetCreatureYouControl =>
-    "Attach this Equipment to target creature you control"
-  | .becomeBearCreatureWithLandsPT =>
-    "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-  | .sourceGets p t =>
-    s!"This creature gets {SpellEffect.signedStat p}/{SpellEffect.signedStat t} until end of turn"
-  | .putPlusOnePlusOneOnSource n =>
-    s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
-  | .targetCantBeBlockedThisTurn =>
-    "Target creature can't be blocked this turn"
-
 /-- Classification of this ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching no targets or doing nothing
 on resolution. -/
@@ -450,11 +486,11 @@ def spec : AbilityEffect → AbilityMeta
       resolution := .damageToTarget n }
   | .destroyTargetColorlessNonland =>
     { targeting := .of .colorlessNonland, castKind := .destroyColorless,
-      resolution := .destroyColorless }
+      resolution := .onPermanent .destroy }
   | .attachToTargetCreatureYouControl =>
     { targeting := .of .creatureYouControl, resolution := .attach }
   | .targetCantBeBlockedThisTurn =>
-    { targeting := .of .creature .own, resolution := .cantBeBlocked }
+    { targeting := .of .creature .own, resolution := .onPermanent .cantBeBlocked }
   | .searchBasicLandTapped =>
     { resolution := .searchBasicLand }
   | .exileTopPlayUntilEndOfNextTurn =>
@@ -476,11 +512,11 @@ def targetKind (e : AbilityEffect) : EffectTargetKind :=
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
 def targetCount (e : AbilityEffect) : Nat :=
-  e.targetKind.targetCount
+  e.targeting.targetCount
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : AbilityEffect) : Bool :=
-  e.targetCount != 0
+  e.targeting.requiresTarget
 
 /-- Demonstration-agent category for this ability mode. -/
 def castKind (e : AbilityEffect) : AbilityCastKind :=
@@ -489,6 +525,28 @@ def castKind (e : AbilityEffect) : AbilityCastKind :=
 /-- How this effect resolves (CR 608). -/
 def resolution (e : AbilityEffect) : AbilityResolution :=
   e.spec.resolution
+
+/-- Oracle-style reminder from targeting and resolution, so a new constructor
+only updates `spec`. -/
+def toNotation (e : AbilityEffect) : String :=
+  let noun := e.targetKind.noun
+  match e.resolution with
+  | .searchBasicLand =>
+    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+  | .exileTop =>
+    "Exile the top card of your library. You may play it until the end of your next turn"
+  | .damageToTarget n =>
+    s!"This creature deals {n} damage to {noun}"
+  | .attach =>
+    s!"Attach this Equipment to {noun}"
+  | .onPermanent action =>
+    PermanentAction.toNotation action noun (sentence := true)
+  | .onSource .becomeBear =>
+    "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
+  | .onSource (.pump p t) =>
+    s!"This creature gets {signedStat p}/{signedStat t} until end of turn"
+  | .onSource (.plusOne n) =>
+    s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -740,6 +798,51 @@ inductive TriggeredAbility where
   | onAnotherElfYouControlEntersGets1
 deriving Repr, Inhabited, BEq
 
+/-- When a triggered ability fires (CR 603). Several printed abilities share
+an event (`scry` on attack, enter, or attack-with-Elves); “enters or attacks”
+is two events. -/
+inductive TriggerEvent where
+  /-- This creature is declared as an attacker (CR 508.2). -/
+  | attacking
+  /-- This creature becomes blocked (CR 509.5c). -/
+  | becomesBlocked
+  /-- This permanent enters the battlefield (CR 603.6a). -/
+  | entering
+  /-- A land the controller controls enters (landfall). -/
+  | landYouControlEnters
+  /-- This creature dies (CR 700.4 / 603.6c). -/
+  | dying
+  /-- You cast an instant or sorcery (CR 601.2i). -/
+  | youCastInstantOrSorcery
+  /-- You attack with one or more Elves (CR 508.2 / 603.2a). -/
+  | youAttackWithElves
+  /-- You scry (CR 701.20 / 603.2). -/
+  | youScry
+  /-- Another Elf you control enters (CR 603.6a). -/
+  | anotherElfYouControlEnters
+deriving Repr, Inhabited, BEq, DecidableEq
+
+namespace TriggerEvent
+
+/-- Oracle “when/whenever” clause after the leading word. -/
+def clause : TriggerEvent → String
+  | .attacking => "this creature attacks"
+  | .becomesBlocked => "this creature becomes blocked"
+  | .entering => "this permanent enters"
+  | .landYouControlEnters => "a land you control enters"
+  | .dying => "this creature dies"
+  | .youCastInstantOrSorcery => "you cast an instant or sorcery spell"
+  | .youAttackWithElves => "you attack with one or more Elves"
+  | .youScry => "you scry"
+  | .anotherElfYouControlEnters => "another Elf you control enters"
+
+/-- `Whenever` rather than one-shot `When` (enters / dies). -/
+def isWhenever : TriggerEvent → Bool
+  | .entering | .dying => false
+  | _ => true
+
+end TriggerEvent
+
 namespace TriggeredAbility
 
 /-- English for “divided as you choose among …” (CR 601.2d). -/
@@ -747,48 +850,6 @@ def dividedAmong (maxTargets : Nat) : String :=
   if maxTargets == 3 then "one, two, or three targets"
   else if maxTargets == 1 then "one target"
   else s!"up to {maxTargets} targets"
-
-def toNotation : TriggeredAbility → String
-  | .onAttackPumpByGreatestPower =>
-    "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
-  | .onAttackSetOtherBasePT =>
-    "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."
-  | .onAttackOtherGets2AndTrample =>
-    "Whenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn."
-  | .onAttackScry n =>
-    s!"Whenever this creature attacks, scry {n}."
-  | .onBecomesBlockedDeal1ToBlockers =>
-    "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
-  | .onEnterScry n =>
-    s!"When this permanent enters, scry {n}."
-  | .onEnterDraw n =>
-    let cards := if n == 1 then "a card" else s!"{n} cards"
-    s!"When this permanent enters, draw {cards}."
-  | .onEnterSearchForest =>
-    "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
-  | .onEnterMayDiscardDraw n =>
-    let cards := if n == 1 then "a card" else s!"{n} cards"
-    s!"When this permanent enters, you may discard a card. If you do, draw {cards}."
-  | .onLandYouControlEntersPlusOnePlusOne =>
-    "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
-  | .onLandYouControlEntersGets1 =>
-    "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
-  | .onEnterDealDividedDamage amount maxTargets =>
-    s!"When this permanent enters, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
-  | .onEnterOrAttackDealDividedDamage amount maxTargets =>
-    s!"Whenever this creature enters or attacks, it deals {amount} damage divided as you choose among {dividedAmong maxTargets}."
-  | .onEnterOrAttackReturnElfGainLife =>
-    "Whenever this creature enters or attacks, return target Elf card from your graveyard to your hand. You gain life equal to that card's power."
-  | .onDiesDealDamageEqualToPowerToOppCreature =>
-    "When this creature dies, it deals damage equal to its power to target creature an opponent controls."
-  | .onCastInstantOrSorceryDealDamageToEachOpponent amount =>
-    s!"Whenever you cast an instant or sorcery spell, this creature deals {amount} damage to each opponent."
-  | .onAttackWithElvesScry n =>
-    s!"Whenever you attack with one or more Elves, scry {n}."
-  | .onScryPumpSelfForEachLookedAt =>
-    "Whenever you scry, this creature gets +1/+1 until end of turn for each card looked at while scrying this way."
-  | .onAnotherElfYouControlEntersGets1 =>
-    "Whenever another Elf you control enters, this creature gets +1/+1 until end of turn."
 
 /-- How a triggered ability selects targets when it is put on the stack
 (CR 603.3d / 601.2c). Spell and activated-ability targeting use the same
@@ -834,19 +895,10 @@ deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
 parameters, and how it resolves (CR 603 / 601.2d / 608). Adding a constructor
-only requires updating `timing` (plus `toNotation`) instead of parallel match
-trees. -/
+only requires updating `timing` instead of parallel match trees. -/
 structure TriggerTiming where
-  whenAttacking : Bool := false
-  whenBecomesBlocked : Bool := false
-  whenEntering : Bool := false
-  whenLandYouControlEnters : Bool := false
-  whenDying : Bool := false
-  whenYouCastInstantOrSorcery : Bool := false
-  whenYouAttackWithElves : Bool := false
-  whenYouScry : Bool := false
-  whenAnotherElfYouControlEnters : Bool := false
-  targetKind : TriggerTargetKind := .none
+  events : Array TriggerEvent := #[]
+  targeting : EffectTargeting := .of .none
   /-- Zero targets is a legal announcement (CR 115.1c / 601.2c), e.g. “up to one”. -/
   allowsZeroTargets : Bool := false
   /-- Damage amount and maximum number of targets when this ability divides
@@ -860,46 +912,46 @@ deriving Repr, Inhabited, BEq
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .onAttackPumpByGreatestPower =>
-    { whenAttacking := true, resolution := .pumpGreatestPower }
+    { events := #[.attacking], resolution := .pumpGreatestPower }
   | .onAttackSetOtherBasePT =>
-    { whenAttacking := true, targetKind := .anotherCreatureYouControl,
+    { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
       allowsZeroTargets := true, resolution := .setOtherBasePT }
   | .onAttackOtherGets2AndTrample =>
-    { whenAttacking := true, targetKind := .anotherCreatureYouControl,
+    { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
       resolution := .pumpAndTrample 2 0 }
-  | .onAttackScry n => { whenAttacking := true, resolution := .scry n }
+  | .onAttackScry n => { events := #[.attacking], resolution := .scry n }
   | .onBecomesBlockedDeal1ToBlockers =>
-    { whenBecomesBlocked := true, resolution := .damageBlockers 1 }
-  | .onEnterScry n => { whenEntering := true, resolution := .scry n }
-  | .onEnterDraw n => { whenEntering := true, resolution := .draw n }
-  | .onEnterSearchForest => { whenEntering := true, resolution := .searchForest }
+    { events := #[.becomesBlocked], resolution := .damageBlockers 1 }
+  | .onEnterScry n => { events := #[.entering], resolution := .scry n }
+  | .onEnterDraw n => { events := #[.entering], resolution := .draw n }
+  | .onEnterSearchForest => { events := #[.entering], resolution := .searchForest }
   | .onEnterMayDiscardDraw n =>
-    { whenEntering := true, resolution := .mayDiscardDraw n }
+    { events := #[.entering], resolution := .mayDiscardDraw n }
   | .onLandYouControlEntersPlusOnePlusOne =>
-    { whenLandYouControlEnters := true, targetKind := .creatureYouControl,
+    { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
       resolution := .plusOnePlusOneOnTarget }
   | .onLandYouControlEntersGets1 =>
-    { whenLandYouControlEnters := true, resolution := .pumpSource 1 1 }
+    { events := #[.landYouControlEnters], resolution := .pumpSource 1 1 }
   | .onEnterDealDividedDamage amount maxTargets =>
-    { whenEntering := true, targetKind := .playerOrCreature,
+    { events := #[.entering], targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .onEnterOrAttackDealDividedDamage amount maxTargets =>
-    { whenAttacking := true, whenEntering := true, targetKind := .playerOrCreature,
+    { events := #[.entering, .attacking], targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .onEnterOrAttackReturnElfGainLife =>
-    { whenAttacking := true, whenEntering := true, targetKind := .elfInYourGraveyard,
+    { events := #[.entering, .attacking], targeting := .of .elfInYourGraveyard,
       resolution := .returnElfGainLife }
   | .onDiesDealDamageEqualToPowerToOppCreature =>
-    { whenDying := true, targetKind := .oppCreature,
+    { events := #[.dying], targeting := .of .oppCreature,
       resolution := .damageFromLastKnownPower }
   | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
-    { whenYouCastInstantOrSorcery := true, resolution := .damageEachOpponent n }
+    { events := #[.youCastInstantOrSorcery], resolution := .damageEachOpponent n }
   | .onAttackWithElvesScry n =>
-    { whenYouAttackWithElves := true, resolution := .scry n }
+    { events := #[.youAttackWithElves], resolution := .scry n }
   | .onScryPumpSelfForEachLookedAt =>
-    { whenYouScry := true, resolution := .pumpByLookedAt }
+    { events := #[.youScry], resolution := .pumpByLookedAt }
   | .onAnotherElfYouControlEntersGets1 =>
-    { whenAnotherElfYouControlEnters := true, resolution := .pumpSource 1 1 }
+    { events := #[.anotherElfYouControlEnters], resolution := .pumpSource 1 1 }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -910,58 +962,119 @@ def dividedDamage? (ab : TriggeredAbility) : Option (Nat × Nat) :=
 def resolution (ab : TriggeredAbility) : TriggerResolution :=
   ab.timing.resolution
 
+/-- Targeting shape when this trigger is put on the stack (CR 603.3d). -/
+def targeting (ab : TriggeredAbility) : EffectTargeting :=
+  ab.timing.targeting
+
+/-- True when this ability fires on `e`. -/
+def firesOn (ab : TriggeredAbility) (e : TriggerEvent) : Bool :=
+  ab.timing.events.contains e
+
 /-- True for abilities that trigger as this creature is declared as an attacker (CR 508.2). -/
 def triggersWhenAttacking (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenAttacking
+  ab.firesOn .attacking
 
 /-- True for abilities that trigger as this creature becomes blocked (CR 509.5c). -/
 def triggersWhenBecomesBlocked (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenBecomesBlocked
+  ab.firesOn .becomesBlocked
 
 /-- True for abilities that trigger as this permanent enters the battlefield (CR 603.6a). -/
 def triggersWhenEntering (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenEntering
+  ab.firesOn .entering
 
 /-- True for abilities that trigger when a land the controller controls enters
 (CR 603.6a, landfall). -/
 def triggersWhenLandYouControlEnters (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenLandYouControlEnters
+  ab.firesOn .landYouControlEnters
 
 /-- True for abilities that trigger when this creature dies (CR 700.4 / 603.6c). -/
 def triggersWhenDying (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenDying
+  ab.firesOn .dying
 
 /-- True for abilities that trigger when you cast an instant or sorcery (CR 601.2i). -/
 def triggersWhenYouCastInstantOrSorcery (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenYouCastInstantOrSorcery
+  ab.firesOn .youCastInstantOrSorcery
 
 /-- True for abilities that trigger once when you attack with one or more Elves
 (CR 508.2 / 603.2a). Not the same as “whenever this creature attacks”. -/
 def triggersWhenYouAttackWithElves (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenYouAttackWithElves
+  ab.firesOn .youAttackWithElves
 
 /-- True for abilities that trigger when you scry (CR 701.20 / 603.2). -/
 def triggersWhenYouScry (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenYouScry
+  ab.firesOn .youScry
 
 /-- True for abilities that trigger when another Elf the controller controls
 enters (CR 603.6a). Does not trigger from this permanent entering. -/
 def triggersWhenAnotherElfYouControlEnters (ab : TriggeredAbility) : Bool :=
-  ab.timing.whenAnotherElfYouControlEnters
+  ab.firesOn .anotherElfYouControlEnters
 
 /-- Whom this trigger may target when announced (CR 603.3d / 601.2c). -/
 def targetKind (ab : TriggeredAbility) : TriggerTargetKind :=
-  ab.timing.targetKind
+  ab.targeting.kind
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
 def requiresTarget (ab : TriggeredAbility) : Bool :=
-  ab.targetKind != .none
+  ab.targeting.requiresTarget
 
 /-- True when zero targets is a legal announcement (CR 115.1c / 601.2c), e.g.
 “choose up to one”. Such a trigger is never removed for lack of targets. -/
 def allowsZeroTargets (ab : TriggeredAbility) : Bool :=
   ab.timing.allowsZeroTargets
+
+/-- Leading “When/Whenever …” from the event list. -/
+def eventPrefix (events : Array TriggerEvent) : String :=
+  if events.contains .entering && events.contains .attacking then
+    "Whenever this creature enters or attacks"
+  else
+    match events[0]? with
+    | none => "When this occurs"
+    | some e =>
+      let word := if e.isWhenever then "Whenever" else "When"
+      s!"{word} {e.clause}"
+
+/-- Effect clause from resolution, targeting, and divided-damage parameters. -/
+def resolutionPhrase (t : TriggerTiming) : String :=
+  let noun := t.targeting.kind.noun
+  match t.resolution with
+  | .pumpGreatestPower =>
+    "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
+  | .setOtherBasePT =>
+    "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
+  | .pumpAndTrample p t =>
+    s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
+  | .damageBlockers n =>
+    s!"it deals {n} damage to each creature blocking it"
+  | .scry n => s!"scry {n}"
+  | .draw n => s!"draw {cardPhrase n}"
+  | .searchForest =>
+    "search your library for a Forest card, put that card onto the battlefield, then shuffle"
+  | .mayDiscardDraw n =>
+    s!"you may discard a card. If you do, draw {cardPhrase n}"
+  | .plusOnePlusOneOnTarget =>
+    s!"put a +1/+1 counter on {noun}"
+  | .dividedDamage =>
+    match t.dividedDamage with
+    | some (amount, maxTargets) =>
+      s!"it deals {amount} damage divided as you choose among {dividedAmong maxTargets}"
+    | none => "it deals damage divided as you choose"
+  | .damageFromLastKnownPower =>
+    s!"it deals damage equal to its power to {noun}"
+  | .returnElfGainLife =>
+    s!"return {noun} to your hand. You gain life equal to that card's power"
+  | .damageEachOpponent n =>
+    s!"this creature deals {n} damage to each opponent"
+  | .pumpByLookedAt =>
+    "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
+  | .pumpSource p t =>
+    s!"this creature gets {signedStat p}/{signedStat t} until end of turn"
+
+/-- Oracle-style reminder from `timing`, so a new constructor only updates that
+table. -/
+def toNotation (ab : TriggeredAbility) : String :=
+  let t := ab.timing
+  s!"{eventPrefix t.events}, {resolutionPhrase t}."
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -1073,6 +1186,14 @@ def requiresTarget (c : CardDef) : Bool :=
   match c.spellEffect with
   | some e => e.requiresTarget
   | none => !c.spellModes.isEmpty
+
+/-- True when the printed effect or a mode is classified as `k`. -/
+def hasCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
+  c.spellEffect.any (fun e => e.castKind == k)
+
+/-- True when a modal mode is classified as `k`. -/
+def hasModeCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
+  c.spellModes.any (fun e => e.castKind == k)
 
 /-- True when this card has an Adventure (CR 715). -/
 def hasAdventure (c : CardDef) : Bool :=
@@ -1200,6 +1321,10 @@ instance : ToString CardDef where
   "you may play an additional land this turn"
 #guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
+#guard EffectTargetKind.noun .playerOrCreature == "any target"
+#guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
+#guard EffectTargetKind.noun .colorlessNonland ==
+  "target colorless nonland permanent"
 #guard SpellEffect.targetCount (.dealDamage 3) == 1
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
@@ -1289,7 +1414,10 @@ instance : ToString CardDef where
 #guard AbilityEffect.castKind .destroyTargetColorlessNonland == .destroyColorless
 #guard AbilityEffect.castKind (.sourceGets 1 0) == .other
 #guard AbilityEffect.resolution (.dealDamageToTargetCreature 2) == .damageToTarget 2
-#guard AbilityEffect.resolution .destroyTargetColorlessNonland == .destroyColorless
+#guard AbilityEffect.resolution .destroyTargetColorlessNonland ==
+  .onPermanent .destroy
+#guard AbilityEffect.resolution .targetCantBeBlockedThisTurn ==
+  .onPermanent .cantBeBlocked
 #guard AbilityEffect.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
 #guard AbilityEffect.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
 #guard AbilityEffect.resolution .becomeBearCreatureWithLandsPT ==
@@ -1396,6 +1524,7 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
 #guard (TriggeredAbility.dividedDamage? (.onAttackScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
+#guard TriggeredAbility.firesOn .onAttackPumpByGreatestPower .attacking
 #guard TriggeredAbility.triggersWhenAttacking .onAttackPumpByGreatestPower
 #guard TriggeredAbility.triggersWhenAttacking .onAttackSetOtherBasePT
 #guard TriggeredAbility.triggersWhenAttacking .onAttackOtherGets2AndTrample
@@ -1524,6 +1653,10 @@ def toCardDef (a : AdventureFace) : CardDef := {
   oracleText := a.oracleText
   spellEffect := a.spellEffect
 }
+
+/-- True when this Adventure's effect is classified as `k`. -/
+def hasCastKind (a : AdventureFace) (k : SpellCastKind) : Bool :=
+  a.spellEffect.any (fun e => e.castKind == k)
 
 end AdventureFace
 
