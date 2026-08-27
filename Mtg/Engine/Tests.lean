@@ -8959,6 +8959,144 @@ def resolvedQuarrelWarg : Game :=
   mentions s "Ravening Warg deals 2 damage to Hill Giant")
 #guard resolvedQuarrelWarg.log.any (fun s => mentions s "Hill Giant dies from deathtouch")
 
+/- Night's Whisper: you draw two cards and lose 2 life (CR 121 / 118.3a). -/
+
+#guard nightsWhisper.isSorcery
+#guard nightsWhisper.hasSorcerySpeed
+#guard !nightsWhisper.hasInstantSpeed
+#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard nightsWhisper.hasCastKind .draw
+#guard !nightsWhisper.requiresTarget
+#guard mentions nightsWhisper.summary "draw two cards"
+#guard mentions nightsWhisper.summary "lose 2 life"
+
+-- Direct resolution draws that many cards and loses that much life.
+#guard
+  let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) swamp ⟨0⟩
+  let beforeHand := (g.player ⟨0⟩).hand.size
+  let g := g.applyEffect ⟨0⟩ (.drawAndLoseLife 2 2) #[]
+  (g.player ⟨0⟩).hand.size == beforeHand + 2 &&
+    (g.player ⟨0⟩).life == 18 &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Swamp") &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Forest") &&
+    g.log.any (fun s => mentions s "draws Swamp") &&
+    g.log.any (fun s => mentions s "draws Forest") &&
+    g.log.any (fun s => mentions s "loses 2 life (18 life)") &&
+    !g.log.any (fun s => mentions s "is dealt 2 damage")
+
+-- Losing 0 life does nothing (CR 118.9). Drawing 0 cards is a no-op.
+#guard
+  let g := afterDraw.applyEffect ⟨0⟩ (.drawAndLoseLife 0 0) #[]
+  (g.player ⟨0⟩).life == 20 &&
+    (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
+    !g.log.any (fun s => mentions s "loses 0 life")
+
+/-- Night's Whisper in hand with enough black mana. -/
+def nightsWhisperSetup : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+
+#guard nightsWhisperSetup.canCast ⟨0⟩
+  (handCardNamed nightsWhisperSetup ⟨0⟩ "Night's Whisper")
+#guard nightsWhisperSetup.asSorcery? ⟨0⟩
+
+-- Sorcery speed: illegal in the end step.
+#guard
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  let g := withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+  let g := skipTo g .end 80
+  g.step == .end && !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Night's Whisper")
+
+def proposedNightsWhisper : Game :=
+  mustApply nightsWhisperSetup ⟨0⟩
+    (.cast (handCardNamed nightsWhisperSetup ⟨0⟩ "Night's Whisper").id)
+
+#guard proposedNightsWhisper.pending == .activateManaAbilities ⟨0⟩
+#guard proposedNightsWhisper.log.any (fun s => mentions s "begins casting Night's Whisper")
+#guard proposedNightsWhisper.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
+#guard !proposedNightsWhisper.log.any (fun s => mentions s "must choose a target")
+
+def paidNightsWhisper : Game := mustApply proposedNightsWhisper ⟨0⟩ .pay
+
+#guard paidNightsWhisper.hasPriority ⟨0⟩
+#guard paidNightsWhisper.stack.size == 1
+#guard (paidNightsWhisper.object! paidNightsWhisper.stack.back!.objectId).name ==
+  "Night's Whisper"
+#guard paidNightsWhisper.log.any (fun s => mentions s "casts Night's Whisper")
+
+/-- Known library: Swamp then Forest are drawn on resolution (CR 121). -/
+def nightsWhisperKnownLib : Game :=
+  addToLibraryTop (addToLibraryTop paidNightsWhisper forest ⟨0⟩) swamp ⟨0⟩
+
+def resolvedNightsWhisper : Game := passBoth nightsWhisperKnownLib
+
+#guard resolvedNightsWhisper.stack.isEmpty
+#guard resolvedNightsWhisper.hasPriority ⟨0⟩
+#guard (resolvedNightsWhisper.player ⟨0⟩).hand.size ==
+  (nightsWhisperKnownLib.player ⟨0⟩).hand.size + 2
+#guard (resolvedNightsWhisper.handObjects ⟨0⟩).any (fun o => o.name == "Swamp")
+#guard (resolvedNightsWhisper.handObjects ⟨0⟩).any (fun o => o.name == "Forest")
+#guard (resolvedNightsWhisper.player ⟨0⟩).life == 18
+#guard (resolvedNightsWhisper.player ⟨0⟩).graveyard.any (fun id =>
+  (resolvedNightsWhisper.object! id).name == "Night's Whisper")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Swamp")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "draws Forest")
+#guard resolvedNightsWhisper.log.any (fun s => mentions s "loses 2 life (18 life)")
+#guard !resolvedNightsWhisper.log.any (fun s => mentions s "is dealt 2 damage")
+
+/-- Drawing from an empty library is a state-based loss (CR 704.5b / 121.4). -/
+def nightsWhisperEmptyLib : Game :=
+  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  passBoth g
+
+#guard nightsWhisperEmptyLib.over
+#guard nightsWhisperEmptyLib.result == some (.won ⟨1⟩)
+#guard (nightsWhisperEmptyLib.player ⟨0⟩).lost
+#guard nightsWhisperEmptyLib.log.any (fun s => mentions s "tries to draw from an empty library")
+#guard nightsWhisperEmptyLib.log.any (fun s => mentions s "loses the game (drew from empty library)")
+
+/-- Losing the last 2 life ends the game (CR 704.5a). The spell is still legal. -/
+def nightsWhisperPaysLastLife : Game :=
+  let g := paidNightsWhisper.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  passBoth g
+
+#guard (nightsWhisperPaysLastLife.player ⟨0⟩).life == 0
+#guard nightsWhisperPaysLastLife.over
+#guard nightsWhisperPaysLastLife.result == some (.won ⟨1⟩)
+#guard nightsWhisperPaysLastLife.log.any (fun s => mentions s "loses 2 life (0 life)")
+#guard nightsWhisperPaysLastLife.log.any (fun s => mentions s "loses the game (life total 0)")
+
+/-- The agent casts Night's Whisper when that is the playable spell. -/
+def agentNightsWhisperOnly : Game :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
+
+#guard
+  match Agent.choose agentNightsWhisperOnly ⟨0⟩ with
+  | some (.cast id) => (agentNightsWhisperOnly.object! id).name == "Night's Whisper"
+  | _ => false
+
+-- The heuristic will not lose the last 2 life.
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 2 })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast _) => false
+  | _ => true
+
+-- The heuristic will not draw into an empty library.
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with library := #[] })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast _) => false
+  | _ => true
+
+-- The heuristic still casts at 3 life (survives at 1).
+#guard
+  let g := agentNightsWhisperOnly.modifyPlayer ⟨0⟩ (fun pl => { pl with life := 3 })
+  match Agent.choose g ⟨0⟩ with
+  | some (.cast id) => (g.object! id).name == "Night's Whisper"
+  | _ => false
+
 -- The heuristic still attacks with Ravening Warg.
 #guard
   let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
