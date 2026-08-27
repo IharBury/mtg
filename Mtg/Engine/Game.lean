@@ -1167,10 +1167,9 @@ def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → B
     | some o => if pred o then some (Target.card o.id) else none
     | none => none)
 
-/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
-`sourceId` excludes the source of an “another” creature. -/
-def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
-    (sourceId : Option ObjectId := none) : Array Target :=
+/-- Legal targets for an atomic targeting shape (no sequential slots). -/
+def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+    (sourceId : Option ObjectId) : Array Target :=
   match kind with
   | .none => #[]
   | .creatureYouControl =>
@@ -1192,10 +1191,18 @@ def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     g.legalPermanentTargets caster (·.isArtifactOrLand)
   | .colorlessNonland =>
     g.legalPermanentTargets caster (·.isColorlessNonland)
-  | .creatureYouControlThenOppCreature =>
-    let own := g.legalCreatureYouControlTargets caster
-    let opp := g.legalOppCreatureTargets caster
-    if own.isEmpty || opp.isEmpty then #[] else own ++ opp
+  | .creatureYouControlThenOppCreature => #[]
+
+/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
+`sourceId` excludes the source of an “another” creature. Sequential shapes
+read `spec.slots` instead of restating each slot. -/
+def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  if kind.spec.slots.isEmpty then
+    g.legalTargetsForAtomicKind caster kind sourceId
+  else
+    let parts := kind.spec.slots.map (fun k => g.legalTargetsForAtomicKind caster k sourceId)
+    if parts.any (·.isEmpty) then #[] else parts.foldl (· ++ ·) #[]
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
@@ -1617,24 +1624,15 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
         else EffectTargeting.of .none
 
 /-- Legal targets for the object currently being announced (spell or ability).
-Already-chosen targets are excluded (CR 115.3). A two-target spell such as
-Quarrel offers the next unset target slot. -/
+Already-chosen targets are excluded (CR 115.3). Sequential shapes offer the
+next unset slot from `EffectTargetKind.slotKind`. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   let already :=
     match g.stackEntry? o.id with
     | some e => e.targets
     | none => #[]
-  let raw :=
-    match o.abilityEffect, o.triggeredAbility, (g.targetingOf o).kind with
-    | _, _, .creatureYouControlThenOppCreature =>
-      if already.isEmpty then
-        g.legalCreatureYouControlTargets p
-      else
-        g.legalOppCreatureTargets p
-    | some _, _, kind => g.legalTargetsForKind p kind
-    | _, some _, kind => g.legalTargetsForKind p kind o.sourceId
-    | _, _, _ => g.legalSpellTargets p o
-  raw.filter (fun t => !already.contains t)
+  let kind := (g.targetingOf o).kind.slotKind already.size
+  (g.legalTargetsForKind p kind o.sourceId).filter (fun t => !already.contains t)
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
