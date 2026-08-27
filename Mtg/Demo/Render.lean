@@ -162,10 +162,16 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
   s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{dmg}{exileIfDies}"
 
+/-- Printed face of a card in hand, graveyard, or exile: object id plus Oracle
+summary (mana cost, type line, P/T, keywords and abilities). Lands omit a
+mana cost rather than printing `{0}` (CR 202.1b / 118.6). -/
+def printedCardLine (o : GameObject) : String :=
+  s!"{o.id} {o.printed.summary}"
+
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
   | none => s!"{id} (missing)"
-  | some o => s!"{o.id} {o.printed.summary}"
+  | some o => printedCardLine o
 
 /-- Printed mana cost to play `o` from exile when someone has permission.
 Lands and other cards with no mana cost omit it rather than printing `{0}`
@@ -181,14 +187,10 @@ def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   | some perm => s!" (may be played by {g.player perm.player |>.name})"
   | none => ""
 
-/-- One card in exile. When someone may play it, print the same summary as a
-card in hand (mana cost, type line, P/T) plus who may play it. -/
+/-- One card in exile: printed face (mana cost, type line, P/T) plus a granted
+play permission, if any. -/
 def exileLine (g : Game) (o : GameObject) : String :=
-  match o.playPermission with
-  | some _ =>
-    s!"{o.id} {o.printed.summary}{exilePlayPermissionClause g o}"
-  | none =>
-    s!"{o.id} {o.name}{faceExtras o.printed}"
+  s!"{printedCardLine o}{exilePlayPermissionClause g o}"
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
@@ -345,10 +347,7 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
       if hand.isEmpty then "  (empty)" else String.intercalate "\n  " hand
     else
       "  (hidden)"
-  let gy := pl.graveyard.toList.map (fun id =>
-    match g.findObject? id with
-    | none => s!"{id} (missing)"
-    | some o => s!"{o.id} {o.name}{faceExtras o.printed}")
+  let gy := pl.graveyard.toList.map (handLine g)
   let gyText := if gy.isEmpty then "  (empty)" else String.intercalate "\n  " gy
   let scryLines : List String :=
     match scryLookSection g pl viewer with
@@ -628,7 +627,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
   | none => s!"{id} (missing)"
   | some o =>
     match z with
-    | .hand _ => handLine g id
+    | .hand _ | .graveyard _ => handLine g id
     | .battlefield => objectLine g o
     | .stack =>
       match g.stack.find? (fun e => e.objectId == o.id) with

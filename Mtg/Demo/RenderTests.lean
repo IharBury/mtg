@@ -110,6 +110,41 @@ def mountainLine (g : Game) : String :=
   | none => false
 #guard mentions (handLine boltSetup boltInHand.id) "{R}"
 #guard mentions (handLine boltSetup boltInHand.id) "Lightning Bolt"
+-- Graveyard and exile print the same Oracle face as hand: mana cost, type
+-- line, and creature P/T (not only name and abilities).
+#guard
+  let g := addToGraveyard started llanowarElves ⟨0⟩
+  let elf := namedGraveyardCard g ⟨0⟩ "Llanowar Elves"
+  let line := printedCardLine elf
+  mentions line "{G}" &&
+    mentions line "Creature — Elf Druid" &&
+    mentions line "1/1" &&
+    zoneLine g (.graveyard ⟨0⟩) elf.id == line &&
+    mentions (playerBlock g (g.player ⟨0⟩)) line &&
+    mentions (zoneBlock g (.graveyard ⟨0⟩)) line
+#guard
+  let g := addToGraveyard started lightningBolt ⟨0⟩
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let line := zoneLine g (.graveyard ⟨0⟩) bolt.id
+  mentions line "{R}" && mentions line "Instant" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) line
+#guard
+  let g := addToGraveyard started mountain ⟨0⟩
+  let land := namedGraveyardCard g ⟨0⟩ "Mountain"
+  let line := zoneLine g (.graveyard ⟨0⟩) land.id
+  mentions line "Basic Land — Mountain" && !mentions line "{0}"
+#guard
+  let g := insertObject started grizzlyBears ⟨0⟩ .exile
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Grizzly Bears") with
+  | none => false
+  | some bears =>
+    let line := exileLine g bears
+    mentions line "{1}{G}" &&
+      mentions line "Creature — Bear" &&
+      mentions line "2/2" &&
+      zoneLine g .exile bears.id == line &&
+      mentions (zoneBlock g .exile) line &&
+      mentions (snapshot g) line
 -- Ungrouped lines still name owner and controller. Grouped battlefield
 -- listings omit them when they match the controller heading.
 #guard !mentions (zoneBlock withMountain .battlefield) "owned by"
@@ -481,7 +516,10 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
 #guard (changedZones tappedTwiceForBauble paidBauble).contains (.graveyard ⟨0⟩)
 #guard (paidBauble.player ⟨0⟩).graveyard.any (fun id =>
-  mentions (zoneLine paidBauble (.graveyard ⟨0⟩) id) "Search your library")
+  let line := zoneLine paidBauble (.graveyard ⟨0⟩) id
+  mentions line "Search your library" &&
+    mentions line "{1}" &&
+    mentions line "Artifact")
 
 #guard (changedZones paidBauble resolvedBauble).contains .battlefield
 #guard (changedZones paidBauble resolvedBauble).contains (.library ⟨0⟩)
@@ -510,8 +548,11 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones activatedHunter resolvedHunter).contains (.library ⟨0⟩)
 #guard mentions (snapshot resolvedHunter) "may be played by Chandra"
 #guard mentions (zoneBlock resolvedHunter .exile) "may be played by Chandra"
--- Playable exile cards show the mana cost, type line, and P/T to play them;
--- unplayable ones do not.
+#guard mentions (zoneBlock resolvedHunter .exile) "{R}"
+#guard mentions (zoneBlock resolvedHunter .exile) "Instant"
+-- Exile listings print the Oracle face (mana cost, type line, P/T) whether or
+-- not someone may play the card. `exilePlayManaCost` is still empty without a
+-- play permission.
 #guard exilePlayManaCost (exiledBolt resolvedHunter) == "{R}"
 #guard exilePlayManaCost (exiledMountain resolvedHunterLand) == ""
 #guard exilePlayManaCost (exiledSmaug resolvedSpewFlame) == "{5}{R}{R}"
@@ -542,9 +583,9 @@ def mountainLine (g : Game) : String :=
   | some o =>
     exilePlayManaCost o == "" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Grizzly Bears" &&
-      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
-      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Creature" &&
-      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "2/2" &&
+      mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
+      mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Creature — Bear" &&
+      mentions (zoneLine resolvedSmiteOnBears .exile o.id) "2/2" &&
       !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "may be played"
   | none => false
 
@@ -1166,6 +1207,9 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "6/6" &&
     mentions (playerBlock g (g.player ⟨0⟩)) "Graveyard (1):" &&
     mentions (playerBlock g (g.player ⟨0⟩)) elf.name &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "{G}" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "Creature — Elf Druid" &&
+    mentions (playerBlock g (g.player ⟨0⟩)) "1/1" &&
     !mentions (stackBlock g) "*targeting"
 #guard
   let g := elkTargeted
@@ -1183,6 +1227,9 @@ def mountainLine (g : Game) : String :=
 #guard mentions (stackBlock paidTillAndTend) "Till and Tend"
 #guard mentions (stackBlock paidTillAndTend) "additional land"
 #guard mentions (zoneBlock resolvedTillAndTend .exile) "Beorn, Reluctant Host"
+#guard mentions (zoneBlock resolvedTillAndTend .exile) "{4}{G}"
+#guard mentions (zoneBlock resolvedTillAndTend .exile) "Legendary Creature"
+#guard mentions (zoneBlock resolvedTillAndTend .exile) "5/5"
 #guard resolvedTillAndTend.log.any (fun s => mentions s "may play an additional land this turn")
 #guard mentions (objectLine resolvedExiledBeorn
   (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host")) "trample"
@@ -1250,6 +1297,9 @@ def mountainLine (g : Game) : String :=
   let g := addPermanent started indestructibleBeast ⟨0⟩ ⟨0⟩
   mentions (objectLine g (lastPermanent g)) "indestructible"
 #guard mentions (zoneBlock resolvedSmiteOnBears .exile) "Grizzly Bears"
+#guard mentions (zoneBlock resolvedSmiteOnBears .exile) "{1}{G}"
+#guard mentions (zoneBlock resolvedSmiteOnBears .exile) "Creature — Bear"
+#guard mentions (zoneBlock resolvedSmiteOnBears .exile) "2/2"
 #guard
   let g := resolvedSmiteOnWurm
   let w := namedPermanent g "Craw Wurm"
