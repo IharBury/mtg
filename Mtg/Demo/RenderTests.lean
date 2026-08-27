@@ -292,6 +292,8 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine withWarg (lastPermanent withWarg)) "deathtouch"
 #guard mentions (objectLine withWarg (lastPermanent withWarg)) "Ferocious"
 #guard mentions (objectLine withWarg (lastPermanent withWarg)) "gain 2 life"
+#guard mentions (objectLine withGollum (lastPermanent withGollum)) "menace"
+#guard !mentions (objectLine withGollum (lastPermanent withGollum)) "can't be blocked except"
 #guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "trample"
 #guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "can't block unless"
 
@@ -1263,6 +1265,10 @@ def mountainLine (g : Game) : String :=
     mentions (objectLine g src) "deathtouch" &&
     mentions (objectLine g src) "2/2"
 #guard mentions (lifeLine (wargFerociousResolved.player ⟨0⟩)) "life 22"
+#guard mentions (objectLine twoBearsBlockGollum
+  (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker")) "menace"
+#guard mentions (objectLine twoBearsBlockGollum
+  (namedPermanent twoBearsBlockGollum "Gollum, Silent Slinker")) "blocked"
 
 #guard mentions (stackBlock paidBilbosDeadlySlice) "Bilbo's Deadly Slice"
 #guard mentions (stackBlock paidBilbosDeadlySlice) "Destroy target creature"
