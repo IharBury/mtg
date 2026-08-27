@@ -240,24 +240,21 @@ def canPayTapCost (o : GameObject) : Bool :=
 
 end GameObject
 
-/-- A dies trigger waiting to be put onto the stack after state-based actions
-(CR 603.3, 700.4). `source` is a snapshot of the creature as it last existed
-on the battlefield. -/
-structure WaitingDeathTrigger where
-  controller : PlayerId
-  source : GameObject
-  ability : TriggeredAbility
-  lastKnownPower : Int
-deriving Repr, Inhabited
+/-- Printed triggers of `source` that fire on `event`. -/
+def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
+    Array TriggeredAbility :=
+  source.printed.triggeredAbilities.filter (·.firesOn event)
 
-/-- A “whenever you scry” trigger waiting to be put onto the stack after the
-scry keyword action finishes (CR 603.2 / 701.20). `lookedAt` is how many cards
-were looked at. -/
-structure WaitingScryTrigger where
+/-- A triggered ability waiting to be put onto the stack after state-based
+actions or a keyword action (CR 603.3). `source` is a snapshot of the permanent
+as it existed when the trigger event occurred. `lastKnownPower` is last-known
+power for dies triggers (CR 113.7a) and the number of cards looked at for
+“whenever you scry” (CR 701.20). -/
+structure WaitingTrigger where
   controller : PlayerId
   source : GameObject
   ability : TriggeredAbility
-  lookedAt : Nat
+  lastKnownPower : Option Int := none
 deriving Repr, Inhabited
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
@@ -456,10 +453,10 @@ structure Game where
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
   /-- Dies triggers waiting to be put onto the stack (CR 603.3 / 700.4). -/
-  waitingDeathTriggers : Array WaitingDeathTrigger := #[]
+  waitingDeathTriggers : Array WaitingTrigger := #[]
   /-- “Whenever you scry” triggers waiting until the scry action finishes
   (CR 603.3 / 701.20). -/
-  waitingScryTriggers : Array WaitingScryTrigger := #[]
+  waitingScryTriggers : Array WaitingTrigger := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -686,21 +683,19 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
-def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingDeathTrigger :=
+def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
   if old.zone == .battlefield && old.isCreature then
     match dest, old.controller with
     | .graveyard _, some p =>
-      old.printed.triggeredAbilities.filterMap (fun ab =>
-        if ab.firesOn .dying then
-          some {
-            controller := p
-            source := old
-            ability := ab
-            lastKnownPower := g.snapshotPower old
-          }
-        else (none : Option WaitingDeathTrigger))
-    | _, _ => (#[] : Array WaitingDeathTrigger)
-  else (#[] : Array WaitingDeathTrigger)
+      (old.matchingTriggers .dying).map (fun ab =>
+        {
+          controller := p
+          source := old
+          ability := ab
+          lastKnownPower := some (g.snapshotPower old)
+        })
+    | _, _ => (#[] : Array WaitingTrigger)
+  else (#[] : Array WaitingTrigger)
 
 def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId := none) :
     Game × ObjectId :=
@@ -1191,14 +1186,13 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     (checkTargets : Bool := true) : Game :=
   Id.run do
     let mut g := g
-    for ab in source.printed.triggeredAbilities do
-      if ab.firesOn event then
-        g :=
-          if checkTargets then
-            g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
-          else
-            g.putTriggeredAbilityOnStack controller source ab label
-              lastKnownPower lastKnownToughness
+    for ab in source.matchingTriggers event do
+      g :=
+        if checkTargets then
+          g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
+        else
+          g.putTriggeredAbilityOnStack controller source ab label
+            lastKnownPower lastKnownToughness
     return g
 
 /-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
@@ -1235,31 +1229,35 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
       { g with pending := .chooseTargets e.controller }.logMsg msg
   | none => g
 
+/-- Put queued triggers onto the stack (CR 603.3). `checkTargets` removes
+abilities that require a target and have none (CR 603.3d). -/
+def flushWaitingTriggers (g : Game) (waiting : Array WaitingTrigger)
+    (clear : Game → Game) (label : String) (checkTargets : Bool) : Game :=
+  if waiting.isEmpty then g
+  else
+    Id.run do
+      let mut g := clear g
+      for wt in waiting do
+        g :=
+          if checkTargets then
+            g.putTriggerOrFizzle wt.controller wt.source wt.ability label
+              wt.lastKnownPower
+          else
+            g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability label
+              wt.lastKnownPower
+      return g.promptTriggerTargetsIfNeeded
+
 /-- Put queued dies triggers onto the stack (CR 603.3 / 700.4). Abilities that
 require a target and have none are removed (CR 603.3d). -/
 def putWaitingDeathTriggers (g : Game) : Game :=
-  if g.waitingDeathTriggers.isEmpty then g
-  else
-    Id.run do
-      let waiting := g.waitingDeathTriggers
-      let mut g := { g with waitingDeathTriggers := #[] }
-      for wt in waiting do
-        g := g.putTriggerOrFizzle wt.controller wt.source wt.ability "dies trigger"
-          (some wt.lastKnownPower)
-      return g.promptTriggerTargetsIfNeeded
+  g.flushWaitingTriggers g.waitingDeathTriggers
+    (fun g => { g with waitingDeathTriggers := #[] }) "dies trigger" true
 
 /-- Put queued “whenever you scry” triggers onto the stack (CR 603.3 / 701.20).
 `lastKnownPower` stores the number of cards looked at. -/
 def putWaitingScryTriggers (g : Game) : Game :=
-  if g.waitingScryTriggers.isEmpty then g
-  else
-    Id.run do
-      let waiting := g.waitingScryTriggers
-      let mut g := { g with waitingScryTriggers := #[] }
-      for wt in waiting do
-        g := g.putTriggeredAbilityOnStack wt.controller wt.source wt.ability "scry trigger"
-          (some (Int.ofNat wt.lookedAt))
-      return g.promptTriggerTargetsIfNeeded
+  g.flushWaitingTriggers g.waitingScryTriggers
+    (fun g => { g with waitingScryTriggers := #[] }) "scry trigger" false
 
 def receivePriority (g : Game) (p : PlayerId) : Game :=
   let g := g.checkSBA
@@ -2206,7 +2204,7 @@ def pumpPermanent (g : Game) (o : GameObject) (p t : Int) : Game :=
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
-  g.logMsg s!"{o.name} gets {AbilityEffect.plusOnePlusOneCountersPhrase n}"
+  g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
 
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
@@ -2362,10 +2360,12 @@ def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTar
   g.withLegalKindTarget controller kind targets (fun g t => g.dealDamageToTarget t n)
     sourceId
 
-/-- Apply a shared permanent-target action (spells and activated abilities). -/
+/-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
 def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .pump pw tw => g.pumpPermanent o pw tw
+  | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
   | .destroy => g.destroyPermanent o
+  | .plusOne n => g.addPlusOnePlusOneTo o n
   | .plusOnePlusOneTrampleHexproof => g.grantPlusOnePlusOneTrampleHexproof o
   | .dealDamage n => g.dealDamageToPermanent o n
   | .dealDamageLoseIndestructibleExile n =>
@@ -2429,6 +2429,11 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let g := g.setPlayer { pl with life := pl.life + (n : Int) }
     g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
 
+/-- Apply `action` if `sourceId` is still on the battlefield. -/
+def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
+    (missing := "The ability's source is no longer in play") : Game :=
+  g.withSourceOnBattlefield sourceId (fun g o => g.applyPermanentAction o action) missing
+
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
   match effect.resolution with
@@ -2448,24 +2453,22 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
   | .onSource action =>
+    g.applyOnSource sourceId action
+  | .becomeBear =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      match action with
-      | .becomeBear =>
-        let subtypes :=
-          if o.hasSubtype "Bear" then o.status.additionalSubtypes
-          else o.status.additionalSubtypes.push "Bear"
-        let granted :=
-          if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
-          else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
-        let g := g.mapObjectStatus o (fun s =>
-          { s with
-            additionalCreature := true
-            additionalSubtypes := subtypes
-            grantedStaticAbilities := granted })
-        g.logMsg
-          s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
-      | .pump pw tw => g.applyPermanentAction o (.pump pw tw)
-      | .plusOne n => g.addPlusOnePlusOneTo o n
+      let subtypes :=
+        if o.hasSubtype "Bear" then o.status.additionalSubtypes
+        else o.status.additionalSubtypes.push "Bear"
+      let granted :=
+        if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
+        else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
+      let g := g.mapObjectStatus o (fun s =>
+        { s with
+          additionalCreature := true
+          additionalSubtypes := subtypes
+          grantedStaticAbilities := granted })
+      g.logMsg
+        s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -2475,21 +2478,17 @@ def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
 
 /-- Queue “whenever you scry” triggers for permanents `p` controls (CR 701.20). -/
 def queueScryTriggers (g : Game) (p : PlayerId) (lookedAt : Nat) : Game :=
-  Id.run do
-    let mut g := g
-    g := g.foldControlledPermanents p none fun g o =>
-      Id.run do
-        let mut g := g
-        for ab in o.printed.triggeredAbilities do
-          if ab.firesOn .youScry then
-            g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
-              controller := p
-              source := o
-              ability := ab
-              lookedAt := lookedAt
-            } }
-        return g
-    return g
+  g.foldControlledPermanents p none fun g o =>
+    Id.run do
+      let mut g := g
+      for ab in o.matchingTriggers .youScry do
+        g := { g with waitingScryTriggers := g.waitingScryTriggers.push {
+          controller := p
+          source := o
+          ability := ab
+          lastKnownPower := some (Int.ofNat lookedAt)
+        } }
+      return g
 
 /-- Start scrying `n` as a keyword action during resolution (CR 701.20).
 Scry 0 is skipped and does not trigger “whenever you scry” (CR 701.20c). -/
@@ -2525,8 +2524,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     (sourceName : String := "This creature") : Game :=
   match ab.resolution with
   | .pumpGreatestPower =>
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o (g.greatestPowerAmongCreatures controller) 0
+    g.applyOnSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
+      "The triggered ability's source is no longer in play"
   | .setOtherBasePT =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
       let (pw, tw) :=
@@ -2542,9 +2541,6 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
       "No target was chosen"
-  | .pumpAndTrample pw tw =>
-    g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.pumpAndGrantTrample o pw tw
   | .damageBlockers n =>
     g.withTriggerSource sourceId fun g o =>
       let blockers := g.blockersOf o.id
@@ -2564,9 +2560,9 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.resolveSearchForest controller
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
-  | .plusOnePlusOneOnTarget =>
+  | .onPermanent action =>
     g.withLegalTriggerPermanent controller ab sourceId targets fun g o =>
-      g.addPlusOnePlusOneTo o 1
+      g.applyPermanentAction o action
   | .dividedDamage =>
     Id.run do
       let mut g := g
@@ -2602,11 +2598,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o (n : Int) (n : Int)
-  | .pumpSource pw tw =>
-    g.withTriggerSource sourceId fun g o =>
-      g.pumpPermanent o pw tw
+    g.applyOnSource sourceId (.pump (n : Int) (n : Int))
+      "The triggered ability's source is no longer in play"
+  | .onSource action =>
+    g.applyOnSource sourceId action
+      "The triggered ability's source is no longer in play"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

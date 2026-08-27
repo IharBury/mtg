@@ -200,6 +200,10 @@ def capitalizeAscii (s : String) : String :=
 def cardPhrase (n : Nat) : String :=
   if n == 1 then "a card" else s!"{n} cards"
 
+/-- English for putting `n` +1/+1 counters on a creature. -/
+def plusOnePlusOneCountersPhrase (n : Nat) : String :=
+  if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
+
 /-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
 inductive SpellEffect where
   /-- Deal `amount` damage to the chosen target (player or creature). -/
@@ -251,13 +255,18 @@ deriving Repr, Inhabited, BEq, DecidableEq
 def signedStat (n : Int) : String :=
   if n < 0 then toString n else s!"+{n}"
 
-/-- What a spell or activated ability does to a still-legal permanent target
-(CR 608.2b). Shared so `Game.applyPermanentAction` is one match. -/
+/-- What a spell, activated ability, or trigger does to a permanent
+(CR 608.2b). Shared so `Game.applyPermanentAction` is one match, whether the
+permanent is an announced target or the ability's source. -/
 inductive PermanentAction where
   /-- Until-end-of-turn +P/+T. -/
   | pump (power toughness : Int)
+  /-- Until-end-of-turn +P/+T and trample. -/
+  | pumpAndTrample (power toughness : Int)
   /-- Destroy the permanent (CR 701.7). -/
   | destroy
+  /-- Put `n` +1/+1 counters on the permanent (CR 122.1). -/
+  | plusOne (n : Nat)
   /-- A +1/+1 counter plus trample and hexproof until end of turn. -/
   | plusOnePlusOneTrampleHexproof
   /-- Deal `amount` damage. -/
@@ -280,7 +289,10 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     match action with
     | .pump p t =>
       s!"{noun} gets {signedStat p}/{signedStat t} until end of turn"
+    | .pumpAndTrample p t =>
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
     | .destroy => s!"destroy {noun}"
+    | .plusOne n => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
     | .plusOnePlusOneTrampleHexproof =>
       s!"put a +1/+1 counter on {noun}. It gains trample and hexproof until end of turn"
     | .dealDamage n => damage n
@@ -384,7 +396,7 @@ only updates `spec`. -/
 def toNotation (e : SpellEffect) : String :=
   let noun := e.targetKind.noun
   match e.resolution with
-  | .damageAny n => s!"deals {n} damage to {noun}"
+  | .damageAny n => PermanentAction.toNotation (.dealDamage n) noun
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
@@ -434,20 +446,10 @@ inductive AbilityCastKind where
   | other
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- What an activated ability does to its source on the battlefield. -/
-inductive AbilityOnSource where
-  /-- Become a Bear creature with lands-you-control P/T. -/
-  | becomeBear
-  /-- Until-end-of-turn +P/+T on the source. -/
-  | pump (power toughness : Int)
-  /-- Put `n` +1/+1 counters on the source. -/
-  | plusOne (n : Nat)
-deriving Repr, Inhabited, BEq
-
 /-- How an activated ability resolves (CR 608). Grouped so
 `Game.applyAbilityEffect` matches a handful of shapes instead of every
-constructor. Permanent-target effects, including creature damage, share
-`PermanentAction` with spells. -/
+constructor. Permanent-target and source pumps, damage, destroy, and +1/+1
+counters share `PermanentAction` with spells and triggers. -/
 inductive AbilityResolution where
   /-- Search for a basic land, put it onto the battlefield tapped, then shuffle. -/
   | searchBasicLand
@@ -458,7 +460,9 @@ inductive AbilityResolution where
   /-- Affect a still-legal permanent target. -/
   | onPermanent (action : PermanentAction)
   /-- Affect the ability's source if it is still on the battlefield. -/
-  | onSource (action : AbilityOnSource)
+  | onSource (action : PermanentAction)
+  /-- Become a Bear creature with lands-you-control P/T. -/
+  | becomeBear
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -471,10 +475,6 @@ structure AbilityMeta where
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
-
-/-- English for putting `n` +1/+1 counters on a creature. -/
-def plusOnePlusOneCountersPhrase (n : Nat) : String :=
-  if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
 /-- Classification of this ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching no targets or doing nothing
@@ -495,7 +495,7 @@ def spec : AbilityEffect → AbilityMeta
   | .exileTopPlayUntilEndOfNextTurn =>
     { resolution := .exileTop }
   | .becomeBearCreatureWithLandsPT =>
-    { resolution := .onSource .becomeBear }
+    { resolution := .becomeBear }
   | .sourceGets p t =>
     { resolution := .onSource (.pump p t) }
   | .putPlusOnePlusOneOnSource n =>
@@ -541,12 +541,10 @@ def toNotation (e : AbilityEffect) : String :=
     s!"This creature deals {n} damage to {noun}"
   | .onPermanent action =>
     PermanentAction.toNotation action noun (sentence := true)
-  | .onSource .becomeBear =>
+  | .onSource action =>
+    PermanentAction.toNotation action "this creature" (sentence := true)
+  | .becomeBear =>
     "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-  | .onSource (.pump p t) =>
-    PermanentAction.toNotation (.pump p t) "this creature" (sentence := true)
-  | .onSource (.plusOne n) =>
-    s!"Put {plusOnePlusOneCountersPhrase n} on this creature"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -874,14 +872,13 @@ abbrev TriggerTargetKind := EffectTargetKind
 /-- What a triggered ability does when it resolves (CR 608). Grouped so
 `Game.applyTriggeredAbility` matches resolution shapes instead of every
 constructor: scry, +1/+1 on the source, and divided damage each cover
-multiple printed abilities. -/
+multiple printed abilities. Permanent-target counters and pumps, and source
+pumps, share `PermanentAction` with spells and activated abilities. -/
 inductive TriggerResolution where
   /-- Pump the source by the greatest power among creatures you control. -/
   | pumpGreatestPower
   /-- Set another creature's base P/T to this creature's. -/
   | setOtherBasePT
-  /-- Another creature gets +P/+T and trample until end of turn. -/
-  | pumpAndTrample (power toughness : Int)
   /-- Deal `amount` damage to each creature blocking the source. -/
   | damageBlockers (amount : Nat)
   /-- Scry `n`. -/
@@ -892,8 +889,8 @@ inductive TriggerResolution where
   | searchForest
   /-- You may discard a card. If you do, draw `n`. -/
   | mayDiscardDraw (n : Nat)
-  /-- Put a +1/+1 counter on the announced creature. -/
-  | plusOnePlusOneOnTarget
+  /-- Affect a still-legal permanent target. -/
+  | onPermanent (action : PermanentAction)
   /-- Deal previously divided damage to the announced targets. -/
   | dividedDamage
   /-- Deal last-known power as damage to the announced creature. -/
@@ -904,8 +901,8 @@ inductive TriggerResolution where
   | damageEachOpponent (amount : Nat)
   /-- Pump the source +1/+1 per card looked at while scrying. -/
   | pumpByLookedAt
-  /-- The source gets +P/+T until end of turn. -/
-  | pumpSource (power toughness : Int)
+  /-- Affect the trigger's source if it is still on the battlefield. -/
+  | onSource (action : PermanentAction)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -933,7 +930,7 @@ def timing : TriggeredAbility → TriggerTiming
       allowsZeroTargets := true, resolution := .setOtherBasePT }
   | .onAttackOtherGets2AndTrample =>
     { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
-      resolution := .pumpAndTrample 2 0 }
+      resolution := .onPermanent (.pumpAndTrample 2 0) }
   | .onAttackScry n => { events := #[.attacking], resolution := .scry n }
   | .onBecomesBlockedDeal1ToBlockers =>
     { events := #[.becomesBlocked], resolution := .damageBlockers 1 }
@@ -944,9 +941,9 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering], resolution := .mayDiscardDraw n }
   | .onLandYouControlEntersPlusOnePlusOne =>
     { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
-      resolution := .plusOnePlusOneOnTarget }
+      resolution := .onPermanent (.plusOne 1) }
   | .onLandYouControlEntersGets1 =>
-    { events := #[.landYouControlEnters], resolution := .pumpSource 1 1 }
+    { events := #[.landYouControlEnters], resolution := .onSource (.pump 1 1) }
   | .onEnterDealDividedDamage amount maxTargets =>
     { events := #[.entering], targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
@@ -966,7 +963,7 @@ def timing : TriggeredAbility → TriggerTiming
   | .onScryPumpSelfForEachLookedAt =>
     { events := #[.youScry], resolution := .pumpByLookedAt }
   | .onAnotherElfYouControlEntersGets1 =>
-    { events := #[.anotherElfYouControlEnters], resolution := .pumpSource 1 1 }
+    { events := #[.anotherElfYouControlEnters], resolution := .onSource (.pump 1 1) }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -1059,8 +1056,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "it gets +X/+0 until end of turn, where X is the greatest power among creatures you control"
   | .setOtherBasePT =>
     "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
-  | .pumpAndTrample p t =>
-    s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
+  | .onPermanent action => PermanentAction.toNotation action noun
   | .damageBlockers n =>
     s!"it deals {n} damage to each creature blocking it"
   | .scry n => s!"scry {n}"
@@ -1069,8 +1065,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "search your library for a Forest card, put that card onto the battlefield, then shuffle"
   | .mayDiscardDraw n =>
     s!"you may discard a card. If you do, draw {cardPhrase n}"
-  | .plusOnePlusOneOnTarget =>
-    s!"put a +1/+1 counter on {noun}"
   | .dividedDamage =>
     match t.dividedDamage with
     | some (amount, maxTargets) =>
@@ -1084,8 +1078,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"this creature deals {n} damage to each opponent"
   | .pumpByLookedAt =>
     "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
-  | .pumpSource p t =>
-    s!"this creature gets {signedStat p}/{signedStat t} until end of turn"
+  | .onSource action => PermanentAction.toNotation action "this creature"
 
 /-- Oracle-style reminder from `timing`, so a new constructor only updates that
 table. -/
@@ -1439,7 +1432,7 @@ instance : ToString CardDef where
 #guard AbilityEffect.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
 #guard AbilityEffect.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
 #guard AbilityEffect.resolution .becomeBearCreatureWithLandsPT ==
-  .onSource .becomeBear
+  .becomeBear
 #guard AbilityEffect.resolution .searchBasicLandTapped == .searchBasicLand
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
@@ -1640,15 +1633,18 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution .onAttackPumpByGreatestPower == .pumpGreatestPower
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT == .setOtherBasePT
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
-  .pumpAndTrample 2 0
+  .onPermanent (.pumpAndTrample 2 0)
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
-#guard TriggeredAbility.resolution .onLandYouControlEntersGets1 == .pumpSource 1 1
+#guard TriggeredAbility.resolution .onLandYouControlEntersGets1 ==
+  .onSource (.pump 1 1)
+#guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
+  .onPermanent (.plusOne 1)
 #guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
-  .pumpSource 1 1
+  .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
   .dividedDamage
