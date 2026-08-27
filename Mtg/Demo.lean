@@ -17,9 +17,11 @@ using `--seed`. In interactive modes that player uses `first <name>` before
 opening hands are drawn, unless a heuristic opponent is deciding and chooses
 to go first. `visible` prints only information that player can see; `--visible`
 starts in that view. `--input FILE` runs commands from the file first, then
-reads from the console. `--output FILE` writes every command (from the file or
-the console) to that file. When `--input` and `--output` are the same file,
-those commands are replayed and new console commands are appended.
+reads from the console. `--output FILE` writes accepted game-state commands
+(from the file or the console) to that file. Incorrect commands and session
+commands such as `state` and `quit` are omitted. When `--input` and
+`--output` are the same file, those commands are replayed and new accepted
+console commands are appended.
 -/
 
 open Mtg.Engine
@@ -46,9 +48,11 @@ Options:
                   default is a random player using --seed
   --input FILE    With --interactive or --multiplayer, run these commands
                   first, then read from the console
-  --output FILE   With --interactive or --multiplayer, write every command
-                  (from --input and from the console) to this file. The same
-                  path as --input replays that file and appends new commands
+  --output FILE   With --interactive or --multiplayer, write accepted
+                  game-state commands (from --input and from the console)
+                  to this file. Incorrect commands and session commands
+                  such as state and quit are omitted. The same path as
+                  --input replays that file and appends new commands
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
@@ -531,6 +535,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "replays that file and appends new commands").length > 1
+#guard (usage.splitOn "Incorrect commands and session commands").length > 1
+#guard (usage.splitOn "such as state and quit").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
 #guard (usage.splitOn "--deck COLOR").length > 1
 #guard (usage.splitOn "--decides NAME").length > 1
@@ -2400,6 +2406,42 @@ def shouldRecordCommand (sameFile : Bool) (fromInput : Bool) : Bool :=
 #guard shouldRecordCommand true false
 #guard !shouldRecordCommand true true
 
+/-- Inspection and session commands never change the game, so they are not
+written to `--output`. -/
+def isNonStateCommand (cmd : String) : Bool :=
+  match cmd with
+  | "help" | "state" | "visible" | "quit" | "exit" => true
+  | _ => false
+
+#guard isNonStateCommand "state"
+#guard isNonStateCommand "quit"
+#guard isNonStateCommand "exit"
+#guard isNonStateCommand "help"
+#guard isNonStateCommand "visible"
+#guard !isNonStateCommand "keep"
+#guard !isNonStateCommand "pass"
+#guard !isNonStateCommand "first"
+#guard !isNonStateCommand "play"
+
+/-- Write a command to `--output` only when it was accepted as a game action
+and is not already stored because `--input` is the same path. Incorrect
+commands and session commands such as `state` and `quit` are omitted. -/
+def shouldWriteOutput (sameFile fromInput accepted : Bool) (cmd : String) : Bool :=
+  accepted && !isNonStateCommand cmd && shouldRecordCommand sameFile fromInput
+
+#guard shouldWriteOutput false false true "keep"
+#guard shouldWriteOutput false false true "first"
+#guard shouldWriteOutput false true true "pass"
+#guard shouldWriteOutput true false true "keep"
+#guard !shouldWriteOutput false false true "state"
+#guard !shouldWriteOutput false false true "quit"
+#guard !shouldWriteOutput false false true "exit"
+#guard !shouldWriteOutput false false true "help"
+#guard !shouldWriteOutput false false true "visible"
+#guard !shouldWriteOutput false false false "keep"
+#guard !shouldWriteOutput false false false "first"
+#guard !shouldWriteOutput true true true "keep"
+
 /-- Next console command: remaining file lines first, then stdin. File lines
 are echoed after the prompt so a replay looks like a typed session. -/
 def nextCommandLine (pending : List String) : IO (String × List String) := do
@@ -2410,6 +2452,14 @@ def nextCommandLine (pending : List String) : IO (String × List String) := do
   | [] =>
     let stdin ← IO.getStdin
     return ((← stdin.getLine).trimAscii.copy, [])
+
+/-- Next command from `--input` or the console. The third result is whether
+the line came from the input file. -/
+def nextSessionCommand (pending : List String) :
+    IO (String × List String × Bool) := do
+  let fromInput := !pending.isEmpty
+  let (line, rest) ← nextCommandLine pending
+  return (line, rest, fromInput)
 
 /-- Open `--output` for writing, or `none` when no file was given. `append`
 keeps existing contents (used when the file is also `--input`). -/
@@ -2433,15 +2483,12 @@ def recordCommand (output : Option IO.FS.Handle) (line : String) : IO Unit := do
     h.putStrLn line
     h.flush
 
-/-- Next command, written to `--output` unless it is being replayed from the
-same file. -/
-def nextRecordedCommand (pending : List String) (output : Option IO.FS.Handle)
-    (sameFile : Bool) : IO (String × List String) := do
-  let fromInput := !pending.isEmpty
-  let (line, rest) ← nextCommandLine pending
-  if !line.isEmpty && shouldRecordCommand sameFile fromInput then
+/-- Append an accepted game-state command to `--output`, unless it is already
+in the file because `--input` is the same path. -/
+def recordAcceptedCommand (output : Option IO.FS.Handle)
+    (sameFile fromInput : Bool) (line : String) : IO Unit := do
+  if shouldWriteOutput sameFile fromInput true ((line.splitOn " ").headD "") then
     recordCommand output line
-  return (line, rest)
 
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
@@ -2460,7 +2507,7 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
   while chosen.isNone do
     IO.print prompt
     (← IO.getStdout).flush
-    let (line, rest) ← nextRecordedCommand pending output sameFile
+    let (line, rest, fromInput) ← nextSessionCommand pending
     pending := rest
     if line.isEmpty then
       continue
@@ -2475,7 +2522,9 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
     | "first" =>
       match parseFirstPlayer seats (parts.drop 1) with
       | .error e => IO.println s!"! {e}"
-      | .ok idx => chosen := some idx
+      | .ok idx =>
+        recordAcceptedCommand output sameFile fromInput line
+        chosen := some idx
     | _ =>
       IO.println "! Choose who takes the first turn (CR 103.1): first <name>"
   match chosen with
@@ -2531,7 +2580,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         "mtg> "
     IO.print prompt
     (← IO.getStdout).flush
-    let (line, rest) ← nextRecordedCommand pending output sameFile
+    let (line, rest, fromInput) ← nextSessionCommand pending
     pending := rest
     if line.isEmpty then
       continue
@@ -2567,6 +2616,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       match applyInteractiveAsActor g cmd (parts.drop 1) with
       | .error e => IO.println s!"! {e}"
       | .ok g' =>
+        recordAcceptedCommand output sameFile fromInput line
         seen ← printLog g' seen (currentView g' playerView controlAll)
         printChangedZones g g' (currentView g' playerView controlAll)
         printChangedLife g g'
