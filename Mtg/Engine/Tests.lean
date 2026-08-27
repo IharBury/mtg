@@ -6730,7 +6730,7 @@ def celebornGoneBeforeScry : Game :=
   match celebornGoneBeforeScry.pending with
   | .scry ⟨0⟩ 1 => true
   | _ => false
-#guard celebornGoneBeforeScry.waitingScryTriggers.isEmpty
+#guard celebornGoneBeforeScry.waitingTriggers.isEmpty
 
 def celebornGoneAfterScry : Game := keepScry celebornGoneBeforeScry
 
