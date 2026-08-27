@@ -28,12 +28,13 @@ effects that prevent creatures without flying from blocking, and can't-be-blocke
 (CR 509.1b / 611.2a), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
-indestructible (CR 702.12), scry (CR 701.20),
+indestructible (CR 702.12), deathtouch (CR 702.2 / 704.5h), scry (CR 701.20),
 discard (CR 701.9), destroy (CR 701.8), including a target artifact or land, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants and losses, replacement effects that exile a creature instead of
 dying this turn (CR 614.1 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
-creature's P/T onto another creature you control or giving another creature
-+2/+0 and trample, becomes-blocked triggers
+creature's P/T onto another creature you control, giving another creature
++2/+0 and trample, or gaining life while you control a creature with power 4
+or greater (Ferocious), becomes-blocked triggers
 (CR 509.5c / 603), enters triggers (CR 603.6a), including searching the library
 for a Forest card (CR 701.19 / 305.7), drawing, scrying, optional
 discard-to-draw, damage divided as you choose when a creature enters or
@@ -53,8 +54,8 @@ put +1/+1 counters on the source, and making a target creature unblockable
 until end of turn (CR 602 / 611.2a / 122 / 509.1b / 118.3b),
 adventurer cards including casting an Adventure and later the permanent
 (CR 715), combat (CR 506–510, including combat damage assignment under
-CR 510.1c–d), cleanup (CR 514.3), and the state-based actions we implement
-(CR 704.5).
+CR 510.1c–d and deathtouch as lethal for trample, CR 702.2c / 702.19b), cleanup (CR 514.3), and the state-based actions we implement
+(CR 704.5, including deathtouch, CR 704.5h).
 -/
 
 namespace Mtg.Engine
@@ -102,6 +103,9 @@ structure Status where
   additionalSubtypes : Array String := #[]
   /-- Static abilities granted by a lasting effect (CR 611.2a). -/
   grantedStaticAbilities : Array StaticAbility := #[]
+  /-- Dealt damage by a source with deathtouch since the last time
+  state-based actions were checked (CR 704.5h). Cleared after that check. -/
+  dealtDeathtouch : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -118,9 +122,12 @@ def setBasePower (s : Status) : Option Int := s.setBasePT.map (·.1)
 /-- Until-end-of-turn layer-7b base toughness, if set. -/
 def setBaseToughness (s : Status) : Option Int := s.setBasePT.map (·.2)
 
-/-- Mark `n` damage on this permanent (CR 120). -/
-def addDamage (s : Status) (n : Int) : Status :=
-  { s with damage := s.damage + n }
+/-- Mark `n` damage on this permanent (CR 120). `deathtouch` records that a
+source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
+def addDamage (s : Status) (n : Int) (deathtouch := false) : Status :=
+  { s with
+    damage := s.damage + n
+    dealtDeathtouch := s.dealtDeathtouch || (deathtouch && n > 0) }
 
 /-- Until-end-of-turn +P/+T (CR 613.4c / 611.2a). -/
 def addPump (s : Status) (p t : Int) : Status :=
@@ -914,6 +921,10 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
   o.printedOrUntilEot.hexproof
 
+/-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
+def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
+  o.printedOrUntilEot.deathtouch
+
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
 def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
@@ -978,10 +989,20 @@ def damageAssignedTo (asgns : Array CreatureCombatAssignment) (id : ObjectId) : 
     0
 
 /-- Remaining lethal for trample (CR 702.19b): toughness minus marked damage
-and damage already assigned this step. -/
-def lethalRemaining (g : Game) (o : GameObject) (already : Array CreatureCombatAssignment) :
-    Int :=
-  max (g.toughness o - o.status.damage - damageAssignedTo already o.id) 0
+and damage already assigned this step. Any positive assignment from a
+deathtouch source is lethal (CR 702.2c). `fromDeathtouch` is the source
+currently assigning, so that source needs only 1 more if lethal remains. -/
+def lethalRemaining (g : Game) (o : GameObject) (already : Array CreatureCombatAssignment)
+    (fromDeathtouch := false) : Int :=
+  let remaining := max (g.toughness o - o.status.damage - damageAssignedTo already o.id) 0
+  let alreadyDeathtouch := already.any (fun a =>
+    a.toCreatures.any (fun (tid, amt) => tid == o.id && amt > 0) &&
+      match g.findObject? a.source with
+      | some src => g.hasDeathtouch src
+      | none => false)
+  if remaining == 0 || alreadyDeathtouch then 0
+  else if fromDeathtouch then 1
+  else remaining
 
 /-- Creatures that assign combat damage in the current half of CR 510.1. -/
 def creaturesAssigningCombatDamage (g : Game) (forAttackers : Bool) : Array GameObject :=
@@ -1053,10 +1074,17 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             let (g', _) := g.move o.id (.graveyard o.owner) none
             g := g'
             changed := true
-          else if o.printed.keywords.deathtouch && o.status.damage > 0 then
-            -- Simplified: any damage from a deathtouch source is tracked as
-            -- ordinary damage; full 704.5h tracking is future work.
-            pure ()
+          else if o.status.dealtDeathtouch then
+            -- CR 704.5h: any damage from a deathtouch source since the last
+            -- SBA check is lethal. The flag is then cleared even if the
+            -- creature survives (e.g. indestructible).
+            if !g.hasIndestructible o then
+              g := g.logMsg s!"{o.name} dies from deathtouch"
+              let (g', _) := g.move o.id (.graveyard o.owner) none
+              g := g'
+              changed := true
+            else
+              g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -1279,12 +1307,19 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
   else
     g.putTriggeredAbilityOnStack controller source ab event lastKnownPower lastKnownToughness
 
+/-- True when any intervening trigger condition holds (e.g. Ferocious). -/
+def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility) : Bool :=
+  match ab.youControlCreatureWithPower? with
+  | none => true
+  | some n => g.greatestPowerAmongCreatures controller ≥ n
+
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
 def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (ab : TriggeredAbility) (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
-  if event.checkTargets then
+  if !g.triggerConditionHolds controller ab then g
+  else if event.checkTargets then
     g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
   else
     g.putTriggeredAbilityOnStack controller source ab event.label
@@ -2288,17 +2323,20 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
 def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
   g.setObject { o with status := f o.status }
 
-/-- Deal `n` damage to a creature and log `msg`. -/
-def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String) : Game :=
-  (g.mapObjectStatus o (·.addDamage n)).logMsg msg
+/-- Deal `n` damage to a creature and log `msg`. `deathtouch` records that a
+source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
+def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
+    (deathtouch := false) : Game :=
+  (g.mapObjectStatus o (fun s => s.addDamage n deathtouch)).logMsg msg
 
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
-def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int) : Game :=
-  g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}"
+def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
+    (deathtouch := false) : Game :=
+  g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
@@ -2521,6 +2559,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       if srcOk && destOk then
         let src := g.object! srcId
         g.dealDamageFrom src.name (g.object! destId) (g.power src).toNat
+          (deathtouch := g.hasDeathtouch src)
       else
         let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
@@ -2667,6 +2706,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           let mut g := g
           for b in blockers do
             g := g.dealDamageFrom o.name (g.object! b.id) n
+              (deathtouch := g.hasDeathtouch o)
           return g
   | .scry n =>
     g.beginScry controller n
@@ -2717,6 +2757,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
   | .onSource action =>
     g.applyOnTriggerSource sourceId action
+  | .gainLife n =>
+    g.gainLife controller n
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -2891,7 +2933,7 @@ def defaultCombatAssignment (g : Game) (source : GameObject) (forAttackers : Boo
         let mut toCreatures : Array (ObjectId × Int) := #[]
         let mut already := already
         for b in blockers do
-          let need := g.lethalRemaining b already
+          let need := g.lethalRemaining b already (fromDeathtouch := g.hasDeathtouch source)
           let amt := min remaining need
           toCreatures := toCreatures.push (b.id, amt)
           already := already.push { source := source.id, toCreatures := #[(b.id, amt)] }
@@ -3006,8 +3048,9 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       for (tid, amt) in asgn.toCreatures do
         if amt > 0 then
           let t := g.object! tid
-          g := g.setObject { t with status := { t.status with damage := t.status.damage + amt } }
-          g := g.logMsg s!"{src.name} deals {amt} combat damage to {t.name}"
+          g := g.markDamageOn t amt
+            s!"{src.name} deals {amt} combat damage to {t.name}"
+            (deathtouch := g.hasDeathtouch src)
       if asgn.toPlayer > 0 then
         let pl := g.player defn
         g := g.setPlayer { pl with life := pl.life - asgn.toPlayer }

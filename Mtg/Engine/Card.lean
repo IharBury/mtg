@@ -828,6 +828,11 @@ inductive TriggeredAbility where
   | onAttackOtherGets2AndTrample
   /-- Whenever this creature attacks, scry `n` (e.g. Lothlórien Lookout). -/
   | onAttackScry (n : Nat)
+  /-- Ferocious — Whenever this creature attacks while you control a creature
+  with power 4 or greater, you gain `n` life (e.g. Ravening Warg). The power
+  check is an intervening condition (CR 603.2 / 603.4): it is checked when
+  the creature attacks and not again on resolution. -/
+  | onAttackFerociousGainLife (n : Nat)
   /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
   blocking it (e.g. Battle-Scarred Goblin). -/
   | onBecomesBlockedDeal1ToBlockers
@@ -1003,6 +1008,8 @@ inductive TriggerResolution where
   | pumpByLookedAt
   /-- Affect the trigger's source if it is still on the battlefield. -/
   | onSource (action : PermanentAction)
+  /-- You gain `n` life (CR 118.2). -/
+  | gainLife (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -1018,6 +1025,10 @@ structure TriggerTiming where
   dividedDamage : Option (Nat × Nat) := none
   /-- What happens when this ability resolves. -/
   resolution : TriggerResolution := .pumpGreatestPower
+  /-- Intervening “while you control a creature with power ≥ n” (e.g. Ferocious).
+  Checked when the trigger event occurs (CR 603.2 / 603.4); not rechecked on
+  resolution. -/
+  youControlCreatureWithPower : Option Int := none
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this triggered ability. Exhaustive so a new constructor
@@ -1032,6 +1043,9 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
       resolution := .onPermanent (.pumpAndTrample 2 0) }
   | .onAttackScry n => { events := #[.attacking], resolution := .scry n }
+  | .onAttackFerociousGainLife n =>
+    { events := #[.attacking], resolution := .gainLife n,
+      youControlCreatureWithPower := some 4 }
   | .onBecomesBlockedDeal1ToBlockers =>
     { events := #[.becomesBlocked], resolution := .damageBlockers 1 }
   | .onEnterScry n => { events := #[.entering], resolution := .scry n }
@@ -1099,6 +1113,11 @@ def requiresTarget (ab : TriggeredAbility) : Bool :=
 def allowsZeroTargets (ab : TriggeredAbility) : Bool :=
   ab.timing.allowsZeroTargets
 
+/-- Intervening power threshold, if this ability requires you to control a
+creature with at least that power (e.g. Ferocious). -/
+def youControlCreatureWithPower? (ab : TriggeredAbility) : Option Int :=
+  ab.timing.youControlCreatureWithPower
+
 /-- Leading “When/Whenever …” from the event list. -/
 def eventPrefix (events : Array TriggerEvent) : String :=
   if events.contains .entering && events.contains .attacking then
@@ -1109,6 +1128,12 @@ def eventPrefix (events : Array TriggerEvent) : String :=
     | some e =>
       let word := if e.isWhenever then "Whenever" else "When"
       s!"{word} {e.clause}"
+
+/-- Intervening “while you control a creature with power ≥ n”, or empty. -/
+def interveningClause (t : TriggerTiming) : String :=
+  match t.youControlCreatureWithPower with
+  | some n => s!" while you control a creature with power {n} or greater"
+  | none => ""
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
@@ -1141,12 +1166,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .pumpByLookedAt =>
     "this creature gets +1/+1 until end of turn for each card looked at while scrying this way"
   | .onSource action => PermanentAction.toNotation action "this creature"
+  | .gainLife n => s!"you gain {n} life"
 
 /-- Oracle-style reminder from `timing`, so a new constructor only updates that
 table. -/
 def toNotation (ab : TriggeredAbility) : String :=
   let t := ab.timing
-  s!"{eventPrefix t.events}, {resolutionPhrase t}."
+  s!"{eventPrefix t.events}{interveningClause t}, {resolutionPhrase t}."
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -1595,6 +1621,8 @@ instance : ToString CardDef where
   "Whenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn."
 #guard TriggeredAbility.toNotation (.onAttackScry 1) ==
   "Whenever this creature attacks, scry 1."
+#guard TriggeredAbility.toNotation (.onAttackFerociousGainLife 2) ==
+  "Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life."
 #guard TriggeredAbility.toNotation .onBecomesBlockedDeal1ToBlockers ==
   "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it."
 #guard TriggeredAbility.toNotation (.onEnterScry 2) ==
@@ -1638,11 +1666,13 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? .onAttackSetOtherBasePT).isNone
 #guard (TriggeredAbility.dividedDamage? .onAttackOtherGets2AndTrample).isNone
 #guard (TriggeredAbility.dividedDamage? (.onAttackScry 1)).isNone
+#guard (TriggeredAbility.dividedDamage? (.onAttackFerociousGainLife 2)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
 #guard TriggeredAbility.firesOn .onAttackPumpByGreatestPower .attacking
 #guard TriggeredAbility.firesOn .onAttackSetOtherBasePT .attacking
 #guard TriggeredAbility.firesOn .onAttackOtherGets2AndTrample .attacking
 #guard TriggeredAbility.firesOn (.onAttackScry 1) .attacking
+#guard TriggeredAbility.firesOn (.onAttackFerociousGainLife 2) .attacking
 #guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .attacking
 #guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .attacking
 #guard !TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .attacking
@@ -1734,6 +1764,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .dying
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onAttackScry 1)
+#guard !TriggeredAbility.requiresTarget (.onAttackFerociousGainLife 2)
 #guard !TriggeredAbility.requiresTarget (.onEnterDraw 1)
 #guard !TriggeredAbility.requiresTarget .onEnterSearchForest
 #guard !TriggeredAbility.requiresTarget .onAnotherElfYouControlEntersGets1
@@ -1748,6 +1779,9 @@ instance : ToString CardDef where
   .onPermanent (.pumpAndTrample 2 0)
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
+#guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
+#guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
+#guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw 1
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest

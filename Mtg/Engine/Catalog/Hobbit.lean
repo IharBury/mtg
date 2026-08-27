@@ -6,7 +6,7 @@ import Mtg.Engine.Catalog
 
 Oracle characteristics for cards that appear in the Magic: The Gathering |
 The Hobbit Welcome Decks. The engine models a subset of rules text
-(keywords including flash, hexproof, and vigilance, simple `{T}: Add` mana abilities, `{T}: Add`
+(keywords including flash, hexproof, vigilance, and deathtouch, simple `{T}: Add` mana abilities, `{T}: Add`
 for each permanent of a listed type, `{T}: Add` X mana of any color equal to power
 with an Elf-only spending restriction, non-mana
 activated abilities such as Wayfarer's Bauble, Snowslope Hunter, Goblin
@@ -14,7 +14,8 @@ Cratermaker, Goblin Fireleaper, Inferno Titan, Guardian of the Halls, Rogue's Pa
 or equipped creature, or restrict blocking unless you control certain creature
 types, attack triggers that pump, set another creature's base
 power and toughness, give another creature +2/+0 and trample, scry, deal damage
-divided among targets, or scry when you attack with Elves, scry triggers that
+divided among targets, scry when you attack with Elves, or gain life while you
+control a creature with power 4 or greater (Ferocious), scry triggers that
 pump for each card looked at, becomes-blocked triggers that
 damage blockers, dies triggers that deal last-known power, enters triggers that scry, draw a card, search for a Forest card, may discard to draw, or deal damage
 divided among targets (including whenever the creature enters or attacks),
@@ -236,6 +237,7 @@ def raveningWarg : CardDef :=
   creature "Ravening Warg" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
     (oracleText := "Deathtouch\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life.")
     (keywords := Keyword.deathtouch)
+    (triggeredAbilities := #[.onAttackFerociousGainLife 2])
 
 def gollumSilentSlinker : CardDef :=
   creature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
@@ -692,6 +694,14 @@ def attercop : CardDef :=
 #guard desolationProwler.power == some 2
 #guard desolationProwler.toughness == some 2
 #guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
+#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard raveningWarg.power == some 2
+#guard raveningWarg.toughness == some 2
+#guard (raveningWarg.summary.splitOn "deathtouch").length > 1
+#guard (raveningWarg.summary.splitOn "Ferocious").length > 1
+#guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
+#guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature

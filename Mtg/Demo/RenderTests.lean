@@ -269,6 +269,9 @@ def mountainLine (g : Game) : String :=
 #guard mentions (objectLine withAttercop (lastPermanent withAttercop)) "Landfall"
 #guard mentions (zoneLine withAttercop .battlefield (lastPermanent withAttercop).id)
   "Landfall"
+#guard mentions (objectLine withWarg (lastPermanent withWarg)) "deathtouch"
+#guard mentions (objectLine withWarg (lastPermanent withWarg)) "Ferocious"
+#guard mentions (objectLine withWarg (lastPermanent withWarg)) "gain 2 life"
 #guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "trample"
 #guard mentions (objectLine withCrusher (lastPermanent withCrusher)) "can't block unless"
 
@@ -1177,5 +1180,16 @@ def mountainLine (g : Game) : String :=
     !mentions (objectLine g o) "indestructible" &&
     mentions (objectLine g o) "exile if dies" &&
     mentions (objectLine g o) "dmg:3"
+
+#guard mentions (stackBlock wargFerociousDeclared) "Ravening Warg's ability"
+#guard mentions (stackBlock wargFerociousDeclared) "power 4 or greater"
+#guard mentions (stackBlock wargFerociousDeclared) "you gain 2 life"
+#guard
+  let g := wargFerociousDeclared
+  let src := namedPermanent g "Ravening Warg"
+  mentions (stackBlock g) s!"*source {src.id} Ravening Warg*" &&
+    mentions (objectLine g src) "deathtouch" &&
+    mentions (objectLine g src) "2/2"
+#guard mentions (lifeLine (wargFerociousResolved.player ⟨0⟩)) "life 22"
 
 end Mtg.Demo.RenderTests

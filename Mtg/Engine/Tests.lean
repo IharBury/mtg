@@ -380,6 +380,12 @@ def uncontrolledPermanent : Game :=
 #guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard mentions raveningWarg.summary "deathtouch"
+#guard mentions raveningWarg.summary "Ferocious"
+#guard mentions raveningWarg.summary "power 4 or greater"
+#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.triggeredAbilities.size == 1
+#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1
@@ -609,6 +615,14 @@ def uncontrolledPermanent : Game :=
     mentions c.abilitiesText "scry 1"
 
 #guard
+  let c := creature "Silent Warg" ManaCost.empty #["Wolf"] 2 2
+    (keywords := Keyword.deathtouch)
+    (triggeredAbilities := #[.onAttackFerociousGainLife 2])
+  mentions c.summary "deathtouch" &&
+    mentions c.abilitiesText "power 4 or greater" &&
+    mentions c.abilitiesText "you gain 2 life"
+
+#guard
   let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4
     (keywords := Keyword.trample)
     (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
@@ -620,6 +634,7 @@ def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
+def withWarg : Game := addPermanent started raveningWarg ⟨0⟩ ⟨0⟩
 def withCrusher : Game := addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩
 
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
@@ -8392,6 +8407,251 @@ def agentSmite : Game :=
 #guard
   match Agent.choose agentSmite ⟨0⟩ with
   | some (.cast id) => (agentSmite.object! id).name == "Smite the Deathless"
+  | _ => false
+
+/- Ravening Warg: deathtouch (CR 702.2 / 704.5h) and Ferocious attack-gain-life. -/
+
+#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard raveningWarg.power == some 2
+#guard raveningWarg.toughness == some 2
+#guard withWarg.hasDeathtouch (namedPermanent withWarg "Ravening Warg")
+#guard (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg")).deathtouch
+#guard withWarg.power (namedPermanent withWarg "Ravening Warg") == 2
+
+/-- Alone, Ravening Warg is 2/2, so Ferocious does not trigger. -/
+def wargAloneAttackDeclared : Game :=
+  let g := passBoth (skipTo withWarg .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+
+#guard wargAloneAttackDeclared.stack.isEmpty
+#guard !wargAloneAttackDeclared.log.any (fun s => mentions s "attack trigger")
+#guard (namedPermanent wargAloneAttackDeclared "Ravening Warg").status.attacking
+#guard (wargAloneAttackDeclared.player ⟨0⟩).life == 20
+
+/-- A 3-power creature you control is not enough for Ferocious. -/
+def wargAndGiant : Game :=
+  addPermanent withWarg hillGiant ⟨0⟩ ⟨0⟩
+
+def wargAttackWithGiant : Game :=
+  let g := passBoth (skipTo wargAndGiant .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+
+#guard wargAttackWithGiant.stack.isEmpty
+#guard !wargAttackWithGiant.log.any (fun s => mentions s "attack trigger")
+#guard wargAndGiant.greatestPowerAmongCreatures ⟨0⟩ == 3
+
+/-- An opponent's 4-power creature does not enable Ferocious. -/
+def wargVsOppBaloth : Game :=
+  addPermanent withWarg rumblingBaloth ⟨1⟩ ⟨1⟩
+
+def wargAttackVsOppBaloth : Game :=
+  let g := passBoth (skipTo wargVsOppBaloth .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+
+#guard wargAttackVsOppBaloth.stack.isEmpty
+#guard !wargAttackVsOppBaloth.log.any (fun s => mentions s "attack trigger")
+#guard wargVsOppBaloth.greatestPowerAmongCreatures ⟨0⟩ == 2
+#guard wargVsOppBaloth.greatestPowerAmongCreatures ⟨1⟩ == 4
+
+/-- A 4-power creature you control makes Ferocious trigger. -/
+def wargAndBaloth : Game :=
+  addPermanent withWarg rumblingBaloth ⟨0⟩ ⟨0⟩
+
+#guard wargAndBaloth.greatestPowerAmongCreatures ⟨0⟩ == 4
+#guard wargAndBaloth.triggerConditionHolds ⟨0⟩ (.onAttackFerociousGainLife 2)
+#guard !withWarg.triggerConditionHolds ⟨0⟩ (.onAttackFerociousGainLife 2)
+#guard withWarg.triggerConditionHolds ⟨0⟩ (.onAttackScry 1)
+
+def wargFerociousDeclared : Game :=
+  let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+
+#guard wargFerociousDeclared.stack.size == 1
+#guard (wargFerociousDeclared.object! wargFerociousDeclared.stack.back!.objectId).name ==
+  "Ravening Warg's ability"
+#guard (wargFerociousDeclared.object! wargFerociousDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onAttackFerociousGainLife 2)
+#guard (wargFerociousDeclared.object! wargFerociousDeclared.stack.back!.objectId).sourceId ==
+  some (namedPermanent wargFerociousDeclared "Ravening Warg").id
+#guard wargFerociousDeclared.log.any (fun s => mentions s "attack trigger is put on the stack")
+#guard wargFerociousDeclared.hasPriority ⟨0⟩
+#guard (namedPermanent wargFerociousDeclared "Ravening Warg").status.attacking
+#guard !(namedPermanent wargFerociousDeclared "Rumbling Baloth").status.attacking
+
+def wargFerociousResolved : Game := passBoth wargFerociousDeclared
+
+#guard wargFerociousResolved.stack.isEmpty
+#guard (wargFerociousResolved.player ⟨0⟩).life == 22
+#guard wargFerociousResolved.log.any (fun s => mentions s "Chandra gains 2 life (22 life)")
+#guard wargFerociousResolved.battlefield.any (fun o => o.name == "Ravening Warg")
+
+/-- The 4-power creature need not attack; another creature attacking without the
+Warg does not trigger Ferocious. -/
+def balothAttacksWhileWargIdle : Game :=
+  let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Rumbling Baloth").id])
+
+#guard balothAttacksWhileWargIdle.stack.isEmpty
+#guard !balothAttacksWhileWargIdle.log.any (fun s => mentions s "attack trigger")
+#guard (namedPermanent balothAttacksWhileWargIdle "Rumbling Baloth").status.attacking
+#guard !(namedPermanent balothAttacksWhileWargIdle "Ravening Warg").status.attacking
+
+/-- Ferocious is not rechecked on resolution (CR 603.4). -/
+def wargFerociousBalothGone : Game :=
+  let id := (namedPermanent wargFerociousDeclared "Rumbling Baloth").id
+  let (g, _) := wargFerociousDeclared.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (wargFerociousBalothGone.player ⟨0⟩).life == 22
+#guard !(wargFerociousBalothGone.battlefield.any (fun o => o.name == "Rumbling Baloth"))
+#guard wargFerociousBalothGone.log.any (fun s => mentions s "Chandra gains 2 life (22 life)")
+
+/-- The trigger still gains life if Ravening Warg has left (CR 113.7a). -/
+def wargFerociousSourceGone : Game :=
+  let id := (namedPermanent wargFerociousDeclared "Ravening Warg").id
+  let (g, _) := wargFerociousDeclared.move id (.graveyard ⟨0⟩) none
+  passBoth g
+
+#guard (wargFerociousSourceGone.player ⟨0⟩).life == 22
+#guard !(wargFerociousSourceGone.battlefield.any (fun o => o.name == "Ravening Warg"))
+#guard wargFerociousSourceGone.log.any (fun s => mentions s "Chandra gains 2 life (22 life)")
+
+/-- Ravening Warg itself at power 4 or greater also enables Ferocious. -/
+def wargPumpedToFive : Game :=
+  let o := namedPermanent withWarg "Ravening Warg"
+  withWarg.setObject { o with status := { o.status with pump := (3, 3) } }
+
+#guard wargPumpedToFive.power (namedPermanent wargPumpedToFive "Ravening Warg") == 5
+#guard wargPumpedToFive.triggerConditionHolds ⟨0⟩ (.onAttackFerociousGainLife 2)
+
+def wargPumpedAttackDeclared : Game :=
+  let g := passBoth (skipTo wargPumpedToFive .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+
+#guard wargPumpedAttackDeclared.stack.size == 1
+#guard (wargPumpedAttackDeclared.object! wargPumpedAttackDeclared.stack.back!.objectId).triggeredAbility ==
+  some (.onAttackFerociousGainLife 2)
+
+def wargPumpedAttackResolved : Game := passBoth wargPumpedAttackDeclared
+
+#guard (wargPumpedAttackResolved.player ⟨0⟩).life == 22
+
+/-- 2 deathtouch combat damage destroys a 3/3 (CR 704.5h); the Warg dies to 3. -/
+def wargVsGiant : Game :=
+  addPermanent withWarg hillGiant ⟨1⟩ ⟨1⟩
+
+def wargVsGiantAfterDamage : Game :=
+  let g := passBoth (skipTo wargVsGiant .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Hill Giant").id,
+    (namedPermanent g "Ravening Warg").id)])
+  passBoth g
+
+#guard !(wargVsGiantAfterDamage.battlefield.any (fun o => o.name == "Hill Giant"))
+#guard !(wargVsGiantAfterDamage.battlefield.any (fun o => o.name == "Ravening Warg"))
+#guard wargVsGiantAfterDamage.objects.any (fun o =>
+  o.name == "Hill Giant" && o.zone == .graveyard ⟨1⟩)
+#guard wargVsGiantAfterDamage.objects.any (fun o =>
+  o.name == "Ravening Warg" && o.zone == .graveyard ⟨0⟩)
+#guard wargVsGiantAfterDamage.log.any (fun s =>
+  mentions s "Ravening Warg deals 2 combat damage to Hill Giant")
+#guard wargVsGiantAfterDamage.log.any (fun s => mentions s "Hill Giant dies from deathtouch")
+#guard wargVsGiantAfterDamage.log.any (fun s =>
+  mentions s "Ravening Warg dies from lethal damage")
+
+/-- Without deathtouch, 2 damage does not kill a 3/3. -/
+def ogreVsGiantAfterDamage : Game :=
+  let g := addPermanent (addPermanent started grayOgre ⟨0⟩ ⟨0⟩) hillGiant ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Hill Giant").id,
+    (namedPermanent g "Gray Ogre").id)])
+  passBoth g
+
+#guard ogreVsGiantAfterDamage.battlefield.any (fun o => o.name == "Hill Giant")
+#guard !(ogreVsGiantAfterDamage.battlefield.any (fun o => o.name == "Gray Ogre"))
+#guard (namedPermanent ogreVsGiantAfterDamage "Hill Giant").status.damage == 2
+#guard !ogreVsGiantAfterDamage.log.any (fun s => mentions s "dies from deathtouch")
+
+/-- Indestructible ignores deathtouch (CR 702.12b / 704.5h); the flag clears. -/
+def wargVsIndestructibleFlyer : Game :=
+  addPermanent withWarg indestructibleFlyer ⟨1⟩ ⟨1⟩
+
+def wargVsIndestructibleAfterDamage : Game :=
+  let g := passBoth (skipTo wargVsIndestructibleFlyer .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Ravening Warg").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Indestructible Flyer").id,
+    (namedPermanent g "Ravening Warg").id)])
+  passBoth g
+
+#guard wargVsIndestructibleAfterDamage.battlefield.any (fun o =>
+  o.name == "Indestructible Flyer")
+#guard !(wargVsIndestructibleAfterDamage.battlefield.any (fun o =>
+  o.name == "Ravening Warg"))
+#guard (namedPermanent wargVsIndestructibleAfterDamage "Indestructible Flyer").status.damage == 2
+#guard !(namedPermanent wargVsIndestructibleAfterDamage "Indestructible Flyer").status.dealtDeathtouch
+#guard !wargVsIndestructibleAfterDamage.log.any (fun s =>
+  mentions s "Indestructible Flyer dies from deathtouch")
+
+/-- Deathtouch plus trample: 1 damage is lethal, so leftover tramples (CR 702.2c). -/
+def deathtouchTrampler : CardDef :=
+  creature "Deathtouch Trampler" ManaCost.empty #[] 2 2
+    (keywords := Keyword.deathtouch.merge Keyword.trample)
+
+def tramplerVsBalothAfterDamage : Game :=
+  let g := addPermanent started deathtouchTrampler ⟨0⟩ ⟨0⟩
+  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Deathtouch Trampler").id])
+  let g := passBoth g
+  let g := mustApply g ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent g "Rumbling Baloth").id,
+    (namedPermanent g "Deathtouch Trampler").id)])
+  passBoth g
+
+#guard tramplerVsBalothAfterDamage.log.any (fun s =>
+  mentions s "Deathtouch Trampler deals 1 combat damage to Rumbling Baloth")
+#guard tramplerVsBalothAfterDamage.log.any (fun s =>
+  mentions s "Deathtouch Trampler tramples for 1 to Nissa")
+#guard (tramplerVsBalothAfterDamage.player ⟨1⟩).life == 19
+#guard !(tramplerVsBalothAfterDamage.battlefield.any (fun o => o.name == "Rumbling Baloth"))
+#guard tramplerVsBalothAfterDamage.log.any (fun s =>
+  mentions s "Rumbling Baloth dies from deathtouch")
+
+/-- Quarrel from Ravening Warg applies deathtouch to the damage it deals. -/
+def quarrelWargVsGiant : Game :=
+  let g := addPermanent afterDraw raveningWarg ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
+
+def resolvedQuarrelWarg : Game :=
+  let g := mustApply quarrelWargVsGiant ⟨0⟩
+    (.cast (handCardNamed quarrelWargVsGiant ⟨0⟩ "Quarrel").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Ravening Warg").id))
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Hill Giant").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard resolvedQuarrelWarg.battlefield.any (fun o => o.name == "Ravening Warg")
+#guard !(resolvedQuarrelWarg.battlefield.any (fun o => o.name == "Hill Giant"))
+#guard resolvedQuarrelWarg.log.any (fun s =>
+  mentions s "Ravening Warg deals 2 damage to Hill Giant")
+#guard resolvedQuarrelWarg.log.any (fun s => mentions s "Hill Giant dies from deathtouch")
+
+-- The heuristic still attacks with Ravening Warg.
+#guard
+  let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
+  match Agent.choose g ⟨0⟩ with
+  | some (.declareAttackers ids) =>
+    ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
 
 end Mtg.Engine.Tests
