@@ -2126,7 +2126,7 @@ def proposedDecree : Game :=
       g'.log.any (fun s => mentions s "chooses Lightning Bolt as a target")
   | .error _ => false
 
-/-- A stack spell is a card target, not a permanent (CR 115.1). -/
+-- A stack spell is a card target, not a permanent (CR 115.1).
 #guard
   match proposedDecree.apply ⟨1⟩
       (.target (Target.permanent paidBolt.stack.back!.objectId)) with
