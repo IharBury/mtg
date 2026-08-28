@@ -165,6 +165,10 @@ inductive EffectTargetKind where
   | defendingPlayerCreature
   /-- Two target nonland permanents that share a card type. -/
   | twoNonlandsSharingType
+  /-- Target creature with power `n` or greater. -/
+  | creaturePowerAtLeast (n : Int)
+  /-- Target permanent. -/
+  | permanent
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -262,6 +266,10 @@ def spec : EffectTargetKind → Spec
       noun := "two target nonland permanents that share a card type"
       prefer := .ownThenOpponent
       slots := #[.nonland, .nonland] }
+  | .creaturePowerAtLeast n =>
+    { noun := s!"target creature with power {n} or greater" }
+  | .permanent =>
+    { noun := "target permanent", prefer := .ownThenOpponent }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -417,6 +425,19 @@ inductive SpellEffect where
   | untapPumpMaybeAttach (power toughness : Int)
   /-- Exchange control of two target nonland permanents that share a card type. -/
   | exchangeControlSharingType
+  /-- Return target spell to its owner's hand, then draw a card (e.g. Reprieve). -/
+  | returnSpellDraw
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- Destroy target artifact or enchantment. You gain `life` life. -/
+  | destroyArtifactOrEnchantmentGainLife (life : Nat)
+  /-- Destroy target creature with power `n` or greater. -/
+  | destroyCreaturePowerAtLeast (n : Int)
+  /-- Until end of turn, target creature becomes an artifact in addition to
+  its other types and gains indestructible. -/
+  | becomeArtifactGainIndestructible
+  /-- Target creature gets +P/+T and gains these keywords until end of turn. -/
+  | pumpAndGrantKeywords (power toughness : Int) (k : Keywords)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -483,6 +504,11 @@ inductive PermanentAction where
   | tap
   /-- Untap the permanent. -/
   | untap
+  /-- Until end of turn, this becomes an artifact in addition to its other
+  types and gains indestructible. -/
+  | becomeArtifactIndestructible
+  /-- Until-end-of-turn +P/+T and these keywords. -/
+  | pumpAndGrant (power toughness : Int) (k : Keywords)
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -519,6 +545,14 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"{noun} gains {joined} until end of turn"
     | .tap => s!"tap {noun}"
     | .untap => s!"untap {noun}"
+    | .becomeArtifactIndestructible =>
+      s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+    | .pumpAndGrant p t k =>
+      let joined :=
+        match k.toList with
+        | [a, b] => s!"{a} and {b}"
+        | ks => String.intercalate ", " ks
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains {joined} until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction
@@ -573,6 +607,12 @@ inductive SpellResolution where
   | exchangeControl
   /-- Put a +1/+1 counter on an optional creature target; a player gains life. -/
   | plusOneAndPlayerGainsLife (life : Nat)
+  /-- Return the targeted spell to its owner's hand, then draw a card. -/
+  | returnSpellDraw
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlPump (power toughness : Int)
+  /-- Destroy the targeted artifact or enchantment; you gain life. -/
+  | destroyArtifactOrEnchantmentGainLife (life : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -687,6 +727,23 @@ def spec : SpellEffect → SpellMeta
   | .exchangeControlSharingType =>
     { targeting := .of .twoNonlandsSharingType, castKind := .counter,
       resolution := .exchangeControl }
+  | .returnSpellDraw =>
+    { targeting := .of .spell, castKind := .counter, resolution := .returnSpellDraw }
+  | .creaturesYouControlGet p t =>
+    { targeting := .of .none, castKind := .massPump,
+      resolution := .creaturesYouControlPump p t }
+  | .destroyArtifactOrEnchantmentGainLife n =>
+    { targeting := .of .artifactOrEnchantment, castKind := .destroyArtifactOrLand,
+      resolution := .destroyArtifactOrEnchantmentGainLife n }
+  | .destroyCreaturePowerAtLeast n =>
+    { targeting := .of (.creaturePowerAtLeast n), castKind := .destroyCreature,
+      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
+  | .becomeArtifactGainIndestructible =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .onPermanent .becomeArtifactIndestructible }
+  | .pumpAndGrantKeywords p t k =>
+    { targeting := .of .creature .own, castKind := .pump,
+      resolution := .onPermanent (.pumpAndGrant p t k) }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -764,6 +821,12 @@ def toNotation (e : SpellEffect) : String :=
     "exchange control of two target nonland permanents that share a card type"
   | .plusOneAndPlayerGainsLife n =>
     s!"put a +1/+1 counter on up to one target creature. {capitalizeAscii noun} gains {n} life"
+  | .returnSpellDraw =>
+    s!"return {noun} to its owner's hand. Draw a card"
+  | .creaturesYouControlPump p t =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .destroyArtifactOrEnchantmentGainLife n =>
+    s!"destroy {noun}. You gain {n} life"
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -812,6 +875,22 @@ inductive AbilityEffect where
   | millPlayer (n : Nat)
   /-- Draw a card, then discard a card. -/
   | drawThenDiscard
+  /-- Add one mana of any color (e.g. Treasure). -/
+  | addAnyColor
+  /-- Destroy target permanent. -/
+  | destroyTargetPermanent
+  /-- Put `n` +1/+1 counters on target creature you control. -/
+  | plusOneOnTarget (n : Nat)
+  /-- Put `n` +1/+1 counters on target creature you control of this subtype. -/
+  | plusOneOnTargetSubtype (n : Nat) (subtype : String)
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscardN (n : Nat)
+  /-- Create `n` Treasure tokens. -/
+  | createTreasure (n : Nat)
+  /-- Recruit (draw, discard; if nonland, create a Human Soldier). -/
+  | recruit
+  /-- Scry `n`. -/
+  | scry (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -855,6 +934,16 @@ inductive AbilityResolution where
   | mill (n : Nat)
   /-- Draw a card, then discard a card. -/
   | drawThenDiscard
+  /-- Add one mana of any color. -/
+  | addAnyColor
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscardN (n : Nat)
+  /-- Create `n` Treasure tokens. -/
+  | createTreasure (n : Nat)
+  /-- Recruit. -/
+  | recruit
+  /-- Scry `n`. -/
+  | scry (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -907,6 +996,24 @@ def spec : AbilityEffect → AbilityMeta
     { targeting := .of .player, resolution := .mill n }
   | .drawThenDiscard =>
     { resolution := .drawThenDiscard }
+  | .addAnyColor =>
+    { resolution := .addAnyColor }
+  | .destroyTargetPermanent =>
+    { targeting := .of .permanent, castKind := .destroyColorless,
+      resolution := .onPermanent .destroy }
+  | .plusOneOnTarget n =>
+    { targeting := .of .creatureYouControl, resolution := .onPermanent (.plusOne n) }
+  | .plusOneOnTargetSubtype n subtype =>
+    { targeting := .of (.creatureYouControlSubtype subtype),
+      resolution := .onPermanent (.plusOne n) }
+  | .drawThenDiscardN n =>
+    { resolution := .drawThenDiscardN n }
+  | .createTreasure n =>
+    { resolution := .createTreasure n }
+  | .recruit =>
+    { resolution := .recruit }
+  | .scry n =>
+    { resolution := .scry n }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -967,6 +1074,17 @@ def toNotation (e : AbilityEffect) : String :=
     s!"{noun} mills {n} cards"
   | .drawThenDiscard =>
     "Draw a card, then discard a card"
+  | .addAnyColor =>
+    "Add one mana of any color"
+  | .drawThenDiscardN n =>
+    s!"Draw {cardPhrase n}, then discard a card"
+  | .createTreasure n =>
+    if n == 1 then "Create a Treasure token"
+    else s!"Create {n} Treasure tokens"
+  | .recruit =>
+    "Recruit"
+  | .scry n =>
+    s!"Scry {n}"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -1097,6 +1215,14 @@ inductive StaticAbility where
   /-- This creature's power is equal to the number of cards in your hand
   (e.g. Minas Tirith Garrison). -/
   | powerEqualCardsInHand
+  /-- Equipped creature has these keywords. -/
+  | equippedCreatureHasKeywords (k : Keywords)
+  /-- Enchanted creature gets +P/+T and has these keywords. -/
+  | enchantedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  /-- This creature can't be blocked by tokens. -/
+  | cantBeBlockedByTokens
+  /-- This creature's power is equal to the number of creatures you control. -/
+  | powerEqualCreaturesYouControl
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1133,6 +1259,12 @@ inductive StaticShape where
   | enchantedOnlySubtypeCantAttackOrBlock (subtype : String)
   /-- Characteristic-defining power equal to cards in your hand. -/
   | cardsInHandPower
+  /-- Equipped or enchanted host has these keywords, and optionally +P/+T. -/
+  | hostKeywords (host : String) (k : Keywords) (power toughness : Int)
+  /-- This creature can't be blocked by tokens. -/
+  | cantBeBlockedByTokens
+  /-- Characteristic-defining power equal to creatures you control. -/
+  | creaturesYouControlPower
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1146,6 +1278,9 @@ structure StaticMeta where
   cantBeBlockedExcept : Option Nat := none
   enchantedOnlySubtype : Option String := none
   cardsInHandPower : Bool := false
+  hostKeywords : Keywords := Keywords.none
+  cantBeBlockedByTokens : Bool := false
+  creaturesYouControlPower : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -1159,6 +1294,9 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
     { enchantedOnlySubtype := some subtype }
   | .cardsInHandPower => { cardsInHandPower := true }
+  | .hostKeywords _ k p t => { hostKeywords := k, hostBonus := (p, t) }
+  | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
+  | .creaturesYouControlPower => { creaturesYouControlPower := true }
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1173,6 +1311,10 @@ def shape : StaticAbility → StaticShape
   | .enchantedIsOnlySubtypeCantAttackOrBlock subtype =>
     .enchantedOnlySubtypeCantAttackOrBlock subtype
   | .powerEqualCardsInHand => .cardsInHandPower
+  | .equippedCreatureHasKeywords k => .hostKeywords "Equipped creature" k 0 0
+  | .enchantedCreatureGetsAndHas p t k => .hostKeywords "Enchanted creature" k p t
+  | .cantBeBlockedByTokens => .cantBeBlockedByTokens
+  | .powerEqualCreaturesYouControl => .creaturesYouControlPower
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -1181,7 +1323,10 @@ def toNotation (ab : StaticAbility) : String :=
   | .lordTrample subtypes =>
     s!"Other {joinedSubtypes subtypes pluralSubtype} you control have trample."
   | .lordPump subtypes p t =>
-    s!"Other {joinedSubtypes subtypes} creatures you control get {signedStat p}/{signedStat t}."
+    if subtypes.isEmpty then
+      s!"Other creatures you control get {signedStat p}/{signedStat t}."
+    else
+      s!"Other {joinedSubtypes subtypes} creatures you control get {signedStat p}/{signedStat t}."
   | .hostGets host p t => hostGetsPhrase host p t
   | .landsYouControlPT =>
     "This creature's power and toughness are each equal to the number of lands you control."
@@ -1197,6 +1342,19 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Enchanted creature is a {subtype} and can't attack or block."
   | .cardsInHandPower =>
     "This power is equal to the number of cards in your hand."
+  | .hostKeywords host k p t =>
+    let kw :=
+      match k.toList with
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    if p == 0 && t == 0 then
+      s!"{host} has {kw}."
+    else
+      s!"{host} gets {signedStat p}/{signedStat t} and has {kw}."
+  | .cantBeBlockedByTokens =>
+    "This creature can't be blocked by tokens."
+  | .creaturesYouControlPower =>
+    "This power is equal to the number of creatures you control."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -1233,6 +1391,18 @@ def enchantedOnlySubtype? (ab : StaticAbility) : Option String :=
 /-- True for the cards-in-hand power characteristic-defining ability. -/
 def isCardsInHandPower (ab : StaticAbility) : Bool :=
   ab.shape.spec.cardsInHandPower
+
+/-- Keywords this ability grants its enchanted or equipped host. -/
+def hostKeywords (ab : StaticAbility) : Keywords :=
+  ab.shape.spec.hostKeywords
+
+/-- True when this creature can't be blocked by tokens. -/
+def blocksTokens (ab : StaticAbility) : Bool :=
+  ab.shape.spec.cantBeBlockedByTokens
+
+/-- True for the creatures-you-control power characteristic-defining ability. -/
+def isCreaturesYouControlPower (ab : StaticAbility) : Bool :=
+  ab.shape.spec.creaturesYouControlPower
 
 end StaticAbility
 
@@ -1378,6 +1548,40 @@ inductive TriggeredAbility where
   /-- Whenever this attacks, you may tap any number of untapped Humans you
   control. Draw a card for each Human tapped this way. -/
   | onAttackTapHumansDraw
+  /-- When this permanent enters, you gain `n` life. -/
+  | onEnterGainLife (n : Nat)
+  /-- When this permanent enters, untap another target creature you control.
+  If it has this subtype, put a +1/+1 counter on it. -/
+  | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
+  /-- When this permanent enters, put a +1/+1 counter on target creature. -/
+  | onEnterPlusOneOnCreature
+  /-- When this permanent enters, create a tapped Treasure token. -/
+  | onEnterCreateTreasureTapped
+  /-- When this permanent enters, create a Treasure token. -/
+  | onEnterCreateTreasure
+  /-- When this permanent enters, exile the top card; you may play it. -/
+  | onEnterExileTop
+  /-- When this permanent enters, recruit. -/
+  | onEnterRecruit
+  /-- When this creature dies, recruit. -/
+  | onDiesRecruit
+  /-- Ferocious — Whenever this creature attacks, it gets +P/+T. -/
+  | onAttackFerociousSourceGets (power toughness : Int)
+  /-- Ferocious — Whenever this creature attacks, put a +1/+1 counter on each
+  creature you control. -/
+  | onAttackFerociousPlusOneEach
+  /-- Ferocious — Whenever this creature attacks, it gets +P/+0 and creatures
+  you control gain trample. -/
+  | onAttackFerociousSourceGetsAndTeamTrample (power : Int)
+  /-- Ferocious — Whenever you attack, you draw a card and lose 1 life. -/
+  | onYouAttackFerociousDrawLoseLife
+  /-- Ferocious — At the beginning of combat on your turn, put a +1/+1
+  counter on this creature. -/
+  | onYourBeginCombatFerociousPlusOne
+  /-- Whenever you attack, draw a card. -/
+  | onYouAttackDraw
+  /-- Landfall — this creature gets +P/+T until end of turn. -/
+  | onLandYouControlEntersGets (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -1418,6 +1622,10 @@ inductive TriggerEvent where
   | yourEndStep
   /-- Another creature you control enters (CR 603.6a). -/
   | anotherCreatureYouControlEnters
+  /-- The beginning of combat on your turn (CR 507.1 / 603.1). -/
+  | yourBeginCombat
+  /-- You attack with one or more creatures (CR 508.2). -/
+  | youAttack
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -1485,6 +1693,11 @@ def spec : TriggerEvent → Spec
   | .anotherCreatureYouControlEnters =>
     { clause := "another creature you control enters", label := "creature-enters trigger",
       checkTargets := false }
+  | .yourBeginCombat =>
+    { clause := "the beginning of combat on your turn", isWhenever := false,
+      label := "begin-combat trigger", checkTargets := false }
+  | .youAttack =>
+    { clause := "you attack", label := "attack trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -1590,6 +1803,22 @@ inductive TriggerResolution where
   | tapHumansDraw
   /-- Pump the source +1/+0 and grant can't be blocked this turn. -/
   | pumpAndUnblockable
+  /-- Recruit. -/
+  | recruit
+  /-- Create a tapped Treasure token. -/
+  | createTreasureTapped
+  /-- Create a Treasure token. -/
+  | createTreasure
+  /-- Exile the top card; you may play it until the end of your next turn. -/
+  | exileTop
+  /-- Untap the target; if it has this subtype, put a +1/+1 counter on it. -/
+  | untapPlusOneIfSubtype (subtype : String)
+  /-- Put a +1/+1 counter on each creature you control. -/
+  | plusOneEachYouControl
+  /-- Pump the source +P/+0 and grant trample to creatures you control. -/
+  | sourceGetsAndTeamTrample (power : Int)
+  /-- Draw a card and lose 1 life. -/
+  | drawAndLoseLife
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -1720,6 +1949,43 @@ def timing : TriggeredAbility → TriggerTiming
       allowsZeroTargets := true, resolution := .exileUntilLeaves }
   | .onAttackTapHumansDraw =>
     { events := #[.attacking], resolution := .tapHumansDraw }
+  | .onEnterGainLife n =>
+    { events := #[.entering], resolution := .gainLife n }
+  | .onEnterUntapOtherPlusOneIfSubtype subtype =>
+    { events := #[.entering], targeting := .of .anotherCreatureYouControl,
+      resolution := .untapPlusOneIfSubtype subtype }
+  | .onEnterPlusOneOnCreature =>
+    { events := #[.entering], targeting := .of .creature,
+      resolution := .onPermanent (.plusOne 1) }
+  | .onEnterCreateTreasureTapped =>
+    { events := #[.entering], resolution := .createTreasureTapped }
+  | .onEnterCreateTreasure =>
+    { events := #[.entering], resolution := .createTreasure }
+  | .onEnterExileTop =>
+    { events := #[.entering], resolution := .exileTop }
+  | .onEnterRecruit =>
+    { events := #[.entering], resolution := .recruit }
+  | .onDiesRecruit =>
+    { events := #[.dying], resolution := .recruit }
+  | .onAttackFerociousSourceGets p t =>
+    { events := #[.attacking], resolution := .onSource (.pump p t),
+      youControlCreatureWithPower := some 4 }
+  | .onAttackFerociousPlusOneEach =>
+    { events := #[.attacking], resolution := .plusOneEachYouControl,
+      youControlCreatureWithPower := some 4 }
+  | .onAttackFerociousSourceGetsAndTeamTrample p =>
+    { events := #[.attacking], resolution := .sourceGetsAndTeamTrample p,
+      youControlCreatureWithPower := some 4 }
+  | .onYouAttackFerociousDrawLoseLife =>
+    { events := #[.youAttack], resolution := .drawAndLoseLife,
+      youControlCreatureWithPower := some 4 }
+  | .onYourBeginCombatFerociousPlusOne =>
+    { events := #[.yourBeginCombat], resolution := .onSource (.plusOne 1),
+      youControlCreatureWithPower := some 4 }
+  | .onYouAttackDraw =>
+    { events := #[.youAttack], resolution := .draw 1 }
+  | .onLandYouControlEntersGets p t =>
+    { events := #[.landYouControlEnters], resolution := .onSource (.pump p t) }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -1766,6 +2032,8 @@ def eventPrefix (t : TriggerTiming) : String :=
     "Whenever this creature enters or attacks"
   else if t.events.contains .yourEndStep then
     "At the beginning of your end step"
+  else if t.events.contains .yourBeginCombat then
+    "At the beginning of combat on your turn"
   else if t.events.contains .anotherCreatureYouControlEnters then
     match t.anotherCreaturePowerAtMost with
     | some n =>
@@ -1854,6 +2122,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .pumpAndUnblockable =>
     "this gets +1/+0 until end of turn and can't be blocked this turn"
+  | .recruit =>
+    "recruit"
+  | .createTreasureTapped =>
+    "create a tapped Treasure token"
+  | .createTreasure =>
+    "create a Treasure token"
+  | .exileTop =>
+    "exile the top card of your library. Until the end of your next turn, you may play that card"
+  | .sourceGetsAndTeamTrample p =>
+    s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
+  | .untapPlusOneIfSubtype subtype =>
+    s!"untap {noun}. If that creature is a {subtype}, put a +1/+1 counter on it"
+  | .plusOneEachYouControl =>
+    "put a +1/+1 counter on each creature you control"
+  | .drawAndLoseLife =>
+    "you draw a card and lose 1 life"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -1937,6 +2221,17 @@ structure CardDef where
   /-- This enchantment enters with a hope counter for each creature you control
   (e.g. Dawn of a New Age). -/
   entersWithHopePerCreature : Bool := false
+  /-- This permanent enters tapped (CR 110.5b exception). -/
+  entersTapped : Bool := false
+  /-- `{T}: Add one of these mana types` as a single choice ability
+  (e.g. `{T}: Add {G} or {U}`). -/
+  tapAddOneOf : Array ManaType := #[]
+  /-- `{T}: Add one mana of any color` with no spending restriction. -/
+  tapAddAnyColor : Bool := false
+  /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
+  tapSacrificeAddAnyColor : Bool := false
+  /-- This object is a token (CR 111). -/
+  isToken : Bool := false
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
@@ -2028,8 +2323,9 @@ def simpleTapAddMana (c : CardDef) : Array ManaType :=
 
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
-  c.simpleTapAddMana ++ c.tapAddManaForEach.map (·.mana) ++
-    (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery then
+  c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
+    (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
+        c.tapAddAnyColor || c.tapSacrificeAddAnyColor then
       (Color.all.map ManaType.colored).toArray
      else #[])
 

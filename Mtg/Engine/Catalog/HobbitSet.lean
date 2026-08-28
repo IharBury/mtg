@@ -1,0 +1,217 @@
+import Mtg.Engine.Catalog
+import Mtg.Engine.Card
+import Mtg.Engine.Mana
+
+/-!
+# The Hobbit (HOB / HOC) catalog beyond Welcome Decks
+
+Cards from The Hobbit and The Hobbit Eternal that are not in the five
+Welcome Decks. Oracle text is stored verbatim from Scryfall; modeled
+fields must reconstruct it.
+-/
+
+namespace Mtg.Engine.Catalog.HobbitSet
+
+open Mtg.Engine
+open Mtg.Engine.Catalog
+
+def ordinaryBear : CardDef :=
+  creature "Ordinary Bear" (ManaCost.ofGenericAndColor 3 .green) #["Bear"] 4 5
+
+def largeBear : CardDef :=
+  creature "Large Bear" (ManaCost.ofGenericAndHybrids 3 .black .green 2) #["Bear"] 5 5
+    (oracleText := "Reach, trample, haste")
+    (keywords := Keyword.reach.merge Keyword.trample |>.merge Keyword.haste)
+
+def littleBear : CardDef :=
+  creature "Little Bear" (ManaCost.ofGenericAndColor 2 .green) #["Bear"] 3 2
+    (oracleText := "Flash\nWhen this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it.")
+    (keywords := Keyword.flash)
+    (triggeredAbilities := #[.onEnterUntapOtherPlusOneIfSubtype "Bear"])
+
+def elvenkingsHarper : CardDef :=
+  creature "Elvenking's Harper" (ManaCost.ofGenericAndColor 1 .blue) #["Elf", "Bard"] 2 2
+    (oracleText := "{4}{U}: Target creature can't be blocked this turn.")
+    (activatedAbilities := #[
+      activated .targetCantBeBlockedThisTurn (ManaCost.ofGenericAndColor 4 .blue)])
+
+def smaugsFury : CardDef :=
+  instant "Smaug's Fury" (ManaCost.ofGenericAndColor 1 .red)
+    "Target creature gets +3/+0 and gains reach and first strike until end of turn."
+    (some (.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike)))
+
+def wellWornSpatula : CardDef :=
+  artifact "Well-Worn Spatula" (ManaCost.ofGeneric 1)
+    "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+    (subtypes := #["Equipment"])
+    (triggeredAbilities := #[.onEnterGainLife 2])
+    (staticAbilities := #[.equippedCreatureGets 1 1])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1)])
+
+/-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
+for two +1/+1 counters on a typed creature you control. -/
+def hobbitDualLand (name : String) (a b : Color) (creatureType : String)
+    (oracleText : String) : CardDef :=
+  land name oracleText
+    (entersTapped := true)
+    (tapAddOneOf := #[.colored a, .colored b])
+    (activatedAbilities := #[
+      activated (.plusOneOnTargetSubtype 2 creatureType)
+        (ManaCost.ofGenericAndColors 2 [a, b])
+        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
+
+def elvenkingsHalls : CardDef :=
+  hobbitDualLand "Elvenking's Halls" .green .blue "Elf"
+    "This land enters tapped.\n{T}: Add {G} or {U}.\n{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery."
+
+def ironHills : CardDef :=
+  hobbitDualLand "Iron Hills" .red .white "Dwarf"
+    "This land enters tapped.\n{T}: Add {R} or {W}.\n{2}{R}{W}, {T}, Sacrifice this land: Put two +1/+1 counters on target Dwarf you control. Activate only as a sorcery."
+
+def lakeTown : CardDef :=
+  hobbitDualLand "Lake-town" .white .blue "Human"
+    "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery."
+
+def nighthowlPursuer : CardDef :=
+  creature "Nighthowl Pursuer" (ManaCost.ofColor .black) #["Wolf"] 1 1
+    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
+    (keywords := Keyword.menace)
+    (triggeredAbilities := #[.onAttackFerociousSourceGets 2 2])
+
+def wargling : CardDef :=
+  creature "Wargling" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 2 2
+    (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample.")
+    (triggeredAbilities := #[.onAttackFerociousSourceGetsAndTeamTrample 1])
+
+def wilderlandScrounger : CardDef :=
+  creature "Wilderland Scrounger" (ManaCost.ofGenericAndColor 4 .green) #["Wolf"] 3 6
+    (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.")
+    (triggeredAbilities := #[.onAttackFerociousPlusOneEach])
+
+def nastyLittleRabbit : CardDef :=
+  creature "Nasty Little Rabbit" (ManaCost.ofColor .green) #["Rabbit"] 1 2
+    (oracleText := "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature.")
+    (triggeredAbilities := #[.onYourBeginCombatFerociousPlusOne])
+
+def theChiefWarg : CardDef :=
+  legendaryCreature "The Chief Warg" (ManaCost.ofGenericAndColors 2 [.black, .green])
+    #["Wolf"] 3 3
+    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life.")
+    (keywords := Keyword.menace)
+    (triggeredAbilities := #[.onYouAttackFerociousDrawLoseLife])
+
+def bardHeirOfGirion : CardDef :=
+  legendaryCreature "Bard, Heir of Girion" (ManaCost.ofGenericAndColors 2 [.white, .blue])
+    #["Human", "Archer"] 4 4
+    (oracleText := "Reach, vigilance\nOther creatures you control get +1/+1.\nWhenever you attack, draw a card.")
+    (keywords := Keyword.reach.merge Keyword.vigilance)
+    (staticAbilities := #[.otherCreaturesGet #[] 1 1])
+    (triggeredAbilities := #[.onYouAttackDraw])
+
+def reprieve : CardDef :=
+  instant "Reprieve" (ManaCost.ofGenericAndColor 1 .white)
+    "Return target spell to its owner's hand.\nDraw a card."
+    (some .returnSpellDraw)
+
+def thorinsLastStand : CardDef :=
+  instant "Thorin's Last Stand" (ManaCost.ofGenericAndColors 2 [.white, .white])
+    "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life."
+    (spellModes := #[.creaturesYouControlGet 2 1, .destroyArtifactOrEnchantmentGainLife 2])
+
+def stoneBySunlight : CardDef :=
+  instant "Stone by Sunlight" (ManaCost.ofGenericAndColor 1 .white)
+    "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)"
+    (spellModes := #[.destroyCreaturePowerAtLeast 4, .becomeArtifactGainIndestructible])
+
+def duskwatchHunter : CardDef :=
+  creature "Duskwatch Hunter" (ManaCost.ofGenericAndHybrids 2 .black .green 1)
+    #["Wolf"] 3 1
+    (oracleText := "This creature can't be blocked by tokens.\nWhen this creature enters, put a +1/+1 counter on target creature.")
+    (staticAbilities := #[.cantBeBlockedByTokens])
+    (triggeredAbilities := #[.onEnterPlusOneOnCreature])
+
+def patientInstructor : CardDef :=
+  creature "Patient Instructor" (ManaCost.ofGenericAndHybrids 2 .white .blue 1)
+    #["Human", "Citizen"] 2 2
+    (oracleText := "Vigilance\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    (keywords := Keyword.vigilance)
+    (triggeredAbilities := #[.onEnterRecruit])
+
+def longLakeNuisance : CardDef :=
+  creature "Long Lake Nuisance" (ManaCost.ofGenericAndColor 3 .blue) #["Bird"] 3 1
+    (oracleText := "Flying\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    (keywords := Keyword.flying)
+    (triggeredAbilities := #[.onEnterRecruit])
+
+def laketownLookout : CardDef :=
+  creature "Lake-town Lookout" (ManaCost.ofColor .white) #["Human", "Scout"] 1 1
+    (oracleText := "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    (triggeredAbilities := #[.onDiesRecruit])
+
+def giantsBoulder : CardDef :=
+  artifact "Giant's Boulder" (ManaCost.ofGeneric 1)
+    "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent."
+    (triggeredAbilities := #[.onEnterScry 2])
+    (activatedAbilities := #[
+      activated .addAnyColor (ManaCost.ofGeneric 1) (tap := true),
+      activated .destroyTargetPermanent (ManaCost.ofGeneric 7) (tap := true)
+        (sacrificeSource := true)])
+
+def longBodiedGreyDog : CardDef :=
+  creature "Long-Bodied Grey Dog" (ManaCost.ofGeneric 3) #["Dog"] 2 2
+    (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    (keywords := Keyword.flash.merge Keyword.reach)
+    (triggeredAbilities := #[.onEnterCreateTreasureTapped])
+
+def doriBearerOfFriends : CardDef :=
+  legendaryCreature "Dori, Bearer of Friends" (ManaCost.ofGenericAndColor 2 .red)
+    #["Dwarf", "Warrior"] 3 2
+    (oracleText := "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    (keywords := Keyword.trample)
+    (triggeredAbilities := #[.onEnterCreateTreasure])
+
+def esgarothGarrison : CardDef :=
+  card "Esgaroth Garrison" #[.creature] (ManaCost.ofGenericAndColor 4 .white)
+    #["Human", "Soldier"]
+    "Esgaroth Garrison's power is equal to the number of creatures you control.\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+    (toughness := some 5)
+    (staticAbilities := #[.powerEqualCreaturesYouControl])
+    (triggeredAbilities := #[.onEnterRecruit])
+
+def gundabadOpportunist : CardDef :=
+  creature "Gundabad Opportunist" (ManaCost.ofGenericAndColor 3 .red)
+    #["Goblin", "Rogue"] 4 2
+    (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
+    (triggeredAbilities := #[.onEnterExileTop])
+
+def allCards : Array CardDef := #[
+  ordinaryBear,
+  largeBear,
+  littleBear,
+  elvenkingsHarper,
+  smaugsFury,
+  wellWornSpatula,
+  elvenkingsHalls,
+  ironHills,
+  lakeTown,
+  nighthowlPursuer,
+  wargling,
+  wilderlandScrounger,
+  nastyLittleRabbit,
+  theChiefWarg,
+  bardHeirOfGirion,
+  reprieve,
+  thorinsLastStand,
+  stoneBySunlight,
+  duskwatchHunter,
+  patientInstructor,
+  longLakeNuisance,
+  laketownLookout,
+  giantsBoulder,
+  longBodiedGreyDog,
+  doriBearerOfFriends,
+  esgarothGarrison,
+  gundabadOpportunist
+]
+
+end Mtg.Engine.Catalog.HobbitSet

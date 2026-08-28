@@ -625,6 +625,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
     | .mayPlusOneCreature p =>
       s!" [may put a +1/+1 counter ({g.player p |>.name})]"
+    | .recruitDiscard p =>
+      s!" [recruit: discard a card ({g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""

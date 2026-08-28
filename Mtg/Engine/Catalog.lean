@@ -35,6 +35,12 @@ def card (name : String) (types : Array CardType)
     (tapAddAnyColorEqualToPower : Bool := false)
     (tapAddAnyColorForInstantOrSorcery : Bool := false)
     (entersWithHopePerCreature : Bool := false)
+    (entersTapped : Bool := false)
+    (tapAddOneOf : Array ManaType := #[])
+    (tapAddAnyColor : Bool := false)
+    (tapSacrificeAddAnyColor : Bool := false)
+    (isToken : Bool := false)
+    (colorIndicator : Option ColorSet := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -44,8 +50,9 @@ def card (name : String) (types : Array CardType)
   additionalCostOrPayGeneric, costReductionIfCreatureDied, costReductionIfTargetDamaged,
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
-  tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, staticAbilities,
-  triggeredAbilities, activatedAbilities, adventure
+  tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
+  tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, colorIndicator,
+  staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
 /-- A basic land whose name is also its land type (CR 305.6). -/
@@ -71,16 +78,21 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColorEqualToPower : Bool := false)
     (tapAddAnyColorForInstantOrSorcery : Bool := false)
+    (tapAddAnyColor : Bool := false)
     (adventure : Option AdventureFace := none)
-    (costReductionIfCreatureDied : Nat := 0) : CardDef :=
+    (costReductionIfCreatureDied : Nat := 0)
+    (colorIndicator : Option ColorSet := none)
+    (isToken : Bool := false) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
     (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
     (tapAddAnyColorForInstantOrSorcery := tapAddAnyColorForInstantOrSorcery)
+    (tapAddAnyColor := tapAddAnyColor)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
+    (colorIndicator := colorIndicator) (isToken := isToken)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -170,11 +182,13 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
-    (entersWithHopePerCreature : Bool := false) : CardDef :=
+    (entersWithHopePerCreature : Bool := false)
+    (entersTapped : Bool := false) : CardDef :=
   card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
     (entersWithHopePerCreature := entersWithHopePerCreature)
+    (entersTapped := entersTapped)
 
 /-- An Aura enchantment (CR 303.4). -/
 def aura (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -189,18 +203,60 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (subtypes : Array Subtype := #[])
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
-    (activatedAbilities : Array ActivatedAbility := #[]) : CardDef :=
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (tapAddMana : Array ManaType := #[])
+    (tapAddAnyColor : Bool := false)
+    (tapSacrificeAddAnyColor : Bool := false)
+    (isToken : Bool := false)
+    (keywords : Keywords := Keywords.none)
+    (supertypes : Array Supertype := #[]) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
+    (keywords := keywords) (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
-    (activatedAbilities := activatedAbilities)
+    (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
+    (tapAddAnyColor := tapAddAnyColor)
+    (tapSacrificeAddAnyColor := tapSacrificeAddAnyColor)
+    (isToken := isToken)
 
 /-- A nonbasic land. -/
 def land (name : String) (oracleText : String)
     (tapAddMana : Array ManaType := #[])
+    (tapAddOneOf : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (subtypes : Array Subtype := #[]) : CardDef :=
+    (subtypes : Array Subtype := #[])
+    (supertypes : Array Supertype := #[])
+    (entersTapped : Bool := false)
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
-    (tapAddMana := tapAddMana) (activatedAbilities := activatedAbilities)
+    (supertypes := supertypes) (tapAddMana := tapAddMana)
+    (tapAddOneOf := tapAddOneOf) (activatedAbilities := activatedAbilities)
+    (entersTapped := entersTapped) (triggeredAbilities := triggeredAbilities)
+    (staticAbilities := staticAbilities)
+
+/-- A legendary land. -/
+def legendaryLand (name : String) (oracleText : String)
+    (tapAddMana : Array ManaType := #[])
+    (tapAddOneOf : Array ManaType := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (subtypes : Array Subtype := #[])
+    (entersTapped : Bool := false) : CardDef :=
+  land name oracleText tapAddMana tapAddOneOf activatedAbilities subtypes
+    (supertypes := #[.legendary]) (entersTapped := entersTapped)
+
+/-- A Treasure token (CR 111 / 701.42). -/
+def treasureToken : CardDef :=
+  artifact "Treasure" ManaCost.empty
+    "{T}, Sacrifice this artifact: Add one mana of any color."
+    (subtypes := #["Treasure"])
+    (tapSacrificeAddAnyColor := true)
+    (isToken := true)
+
+/-- A 1/1 white Human Soldier creature token. -/
+def humanSoldierToken : CardDef :=
+  creature "Human Soldier" ManaCost.empty #["Human", "Soldier"] 1 1
+    (colorIndicator := some (ColorSet.singleton .white))
+    (isToken := true)
 
 /-- An activated ability (CR 602.1). -/
 def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)

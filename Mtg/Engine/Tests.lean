@@ -1,6 +1,7 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitSet
 import Mtg.Engine.Game
 import Mtg.Engine.Oracle
 
@@ -754,6 +755,10 @@ def applyIdle (g : Game) : Game :=
     mustApply g p .decline
   | .mayPlusOneCreature _, some p =>
     mustApply g p .decline
+  | .recruitDiscard _, some p =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard for recruit"
+    | some id => mustApply g p (.discard id)
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -11062,6 +11067,122 @@ def gazeResolvedOne : Game :=
 #guard lorienRevealed.matchesOracleText
 #guard sternScolding.matchesOracleText
 #guard dunedainBlade.matchesOracleText
+
+open Catalog.HobbitSet
+
+#guard ordinaryBear.matchesOracleText
+#guard largeBear.matchesOracleText
+#guard littleBear.matchesOracleText
+#guard elvenkingsHarper.matchesOracleText
+#guard smaugsFury.matchesOracleText
+#guard wellWornSpatula.matchesOracleText
+#guard elvenkingsHalls.matchesOracleText
+#guard ironHills.matchesOracleText
+#guard lakeTown.matchesOracleText
+#guard nighthowlPursuer.matchesOracleText
+#guard wargling.matchesOracleText
+#guard wilderlandScrounger.matchesOracleText
+#guard nastyLittleRabbit.matchesOracleText
+#guard theChiefWarg.matchesOracleText
+#guard bardHeirOfGirion.matchesOracleText
+#guard reprieve.matchesOracleText
+#guard thorinsLastStand.matchesOracleText
+#guard stoneBySunlight.matchesOracleText
+#guard duskwatchHunter.matchesOracleText
+#guard patientInstructor.matchesOracleText
+#guard longLakeNuisance.matchesOracleText
+#guard laketownLookout.matchesOracleText
+#guard giantsBoulder.matchesOracleText
+#guard longBodiedGreyDog.matchesOracleText
+#guard doriBearerOfFriends.matchesOracleText
+#guard esgarothGarrison.matchesOracleText
+#guard gundabadOpportunist.matchesOracleText
+#guard largeBear.manaCost.manaValue == 5
+#guard
+  let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .green) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .red) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isNone
+
+/-- Dual lands enter tapped when played (CR 110.5b exception). -/
+def hallsInHand : Game :=
+  addToHand started elvenkingsHalls ⟨0⟩
+
+def hallsReady : Game := skipTo hallsInHand .precombatMain 40
+
+def hallsPlayed : Game :=
+  mustApply hallsReady ⟨0⟩ (.playLand (handCardNamed hallsReady ⟨0⟩ "Elvenking's Halls").id)
+
+#guard (namedPermanent hallsPlayed "Elvenking's Halls").status.tapped
+#guard (namedPermanent hallsPlayed "Elvenking's Halls").printed.tapAddOneOf ==
+  #[.colored .green, .colored .blue]
+
+/-- Recruit draws, then a nonland discard creates a Human Soldier token. -/
+def instructorEntered : Game :=
+  (addToHand started lightningBolt ⟨0⟩).beginRecruit ⟨0⟩
+
+#guard instructorEntered.pending == .recruitDiscard ⟨0⟩
+#guard (instructorEntered.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 2
+
+def instructorRecruited : Game :=
+  mustApply instructorEntered ⟨0⟩
+    (.discard (handCardNamed instructorEntered ⟨0⟩ "Lightning Bolt").id)
+
+#guard instructorRecruited.pending == .none
+#guard instructorRecruited.battlefield.any (fun o =>
+  o.name == "Human Soldier" && o.printed.isToken)
+
+/-- Ferocious on The Chief Warg fires when you attack with a 4-power creature. -/
+def chiefAndBaloth : Game :=
+  addPermanent (addPermanent started theChiefWarg ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
+
+#guard chiefAndBaloth.triggerConditionHolds ⟨0⟩ .onYouAttackFerociousDrawLoseLife
+
+def chiefReady : Game :=
+  passBoth (skipTo chiefAndBaloth .beginningOfCombat 80)
+
+def chiefAttackDeclared : Game :=
+  mustApply chiefReady ⟨0⟩ (.declareAttackers #[(namedPermanent chiefReady "Rumbling Baloth").id])
+
+#guard chiefAttackDeclared.stack.any (fun e =>
+  (chiefAttackDeclared.object! e.objectId).triggeredAbility ==
+    some .onYouAttackFerociousDrawLoseLife)
+
+def chiefAttackResolved : Game := passBoth chiefAttackDeclared
+
+#guard (chiefAttackResolved.player ⟨0⟩).life == 19
+#guard (chiefAttackResolved.player ⟨0⟩).hand.size ==
+  (chiefAttackDeclared.player ⟨0⟩).hand.size + 1
+
+/-- Dori creates an untapped Treasure; Long-Bodied Grey Dog creates a tapped one. -/
+def doriTreasure : Game :=
+  (addPermanent started doriBearerOfFriends ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ .onEnterCreateTreasure none
+
+#guard doriTreasure.battlefield.any (fun o =>
+  o.name == "Treasure" && o.printed.isToken && !o.status.tapped)
+
+def dogTreasure : Game :=
+  (addPermanent started longBodiedGreyDog ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ .onEnterCreateTreasureTapped none
+
+#guard dogTreasure.battlefield.any (fun o =>
+  o.name == "Treasure" && o.printed.isToken && o.status.tapped)
+
+/-- Tokens cannot block Duskwatch Hunter. -/
+def hunterVsToken : Game :=
+  let g := addPermanent started duskwatchHunter ⟨0⟩ ⟨0⟩
+  let (g, _) := g.createToken ⟨1⟩ Catalog.humanSoldierToken
+  let o := namedPermanent g "Duskwatch Hunter"
+  g.setObject { o with status := { o.status with attacking := true } }
+
+#guard
+  !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
+    (namedPermanent hunterVsToken "Duskwatch Hunter")
 
 end Mtg.Engine.Tests
 

@@ -1,6 +1,7 @@
 import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitSet
 
 /-!
 # Oracle verification
@@ -143,6 +144,7 @@ def normalizePhrases (s : String) : String :=
     ("put that card", "put it"),
     ("sacrifice this artifact", "sacrifice"),
     ("sacrifice this creature", "sacrifice"),
+    ("sacrifice this land", "sacrifice"),
     ("sacrifice this", "sacrifice"),
     ("sacrifice another creature or artifact", "sacrifice an artifact or creature"),
     ("sacrifice another artifact or creature", "sacrifice an artifact or creature"),
@@ -151,7 +153,8 @@ def normalizePhrases (s : String) : String :=
     ("it deals", "this deals"),
     ("and only once each turn", "activate only once each turn"),
     ("activate only from the graveyard", ""),
-    ("activate only from your hand", "")
+    ("activate only from your hand", ""),
+    ("if you control a creature with power", "while you control a creature with power")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -283,12 +286,26 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    else []) ++
   (if c.isAura then ["Enchant creature"] else []) ++
   c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  (if c.tapAddOneOf.size >= 2 then
+    [s!"\{T}: Add {String.intercalate " or " (c.tapAddOneOf.toList.map (fun t => s!"\{{t.letter}}"))}"]
+   else
+    c.tapAddOneOf.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")) ++
   c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
   (if c.tapAddAnyColorEqualToPower then
     ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
    else []) ++
   (if c.tapAddAnyColorForInstantOrSorcery then
     ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
+   else []) ++
+  (if c.tapAddAnyColor then
+    ["{T}: Add one mana of any color."]
+   else []) ++
+  (if c.tapSacrificeAddAnyColor then
+    ["{T}, Sacrifice this artifact: Add one mana of any color."]
+   else []) ++
+  (if c.entersTapped then
+    [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
+     else "This land enters tapped."]
    else []) ++
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
@@ -303,6 +320,8 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.tapScryDraw scryN drawN) =>
       [s!"Tap target creature. Scry {scryN}.",
         if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
+    | some .returnSpellDraw =>
+      ["Return target spell to its owner's hand.", "Draw a card."]
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -389,6 +408,7 @@ def supportedCatalogCards : Array CardDef :=
     wargTactics, beornsHospitality, mirkwoodElk, celebornTheWise, giftOfStrands,
     elvishArchdruid, lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
     beornReluctantHost, woodElves, elvishMystic, attercop]
+    ++ Catalog.HobbitSet.allCards
 
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
