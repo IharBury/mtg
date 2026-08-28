@@ -2667,6 +2667,51 @@ def recordAcceptedCommand (output : Option IO.FS.Handle)
   if shouldWriteOutput sameFile fromInput true ((line.splitOn " ").headD "") then
     recordCommand output line
 
+/-- Whether a player with priority has a legal action that affects the game
+other than passing or conceding. Mana abilities count even when their mana
+would not currently be useful, since tapping their source changes the game. -/
+def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
+  if !g.hasPriority p then false
+  else
+    let available := g.availableMana p
+    let playable := g.handObjects p ++ g.exiledPlayable p
+    let canPlayLand :=
+      g.canPlayLand p && playable.any (fun o => o.printed.isLand)
+    let canCast := playable.any (fun o =>
+      g.canCast p o &&
+        available.canPay o.printed.manaCost
+          (allowElfRestricted := o.hasSubtype "Elf") &&
+        match o.printed.additionalCostOrPayGeneric with
+        | none => true
+        | some n =>
+          !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty ||
+            available.canPay (o.printed.manaCost.addGeneric n)
+              (allowElfRestricted := o.hasSubtype "Elf"))
+    let canCastAdventure := playable.any (fun o =>
+      g.canCastAdventure p o &&
+        match o.printed.adventure with
+        | some adv => available.canPay adv.manaCost
+        | none => false)
+    let canActivate := g.objects.any (fun o =>
+      o.printed.activatedAbilities.any (fun ab =>
+        g.canActivate p o ab &&
+          (g.availableManaExcept p (if ab.cost.tap then some o.id else none)).canPay
+            ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf")))
+    canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
+
+/-- Automatically pass only after scripted input is exhausted and priority
+offers no other legal game-state action. -/
+def shouldAutoPass (g : Game) (pending : List String) : Bool :=
+  pending.isEmpty &&
+    match g.actor with
+    | some p => g.hasPriority p && !hasGameStatePriorityAction g p
+    | none => false
+
+#guard shouldAutoPass Tests.started []
+#guard !shouldAutoPass Tests.started ["pass"]
+#guard !shouldAutoPass { Tests.started with step := .precombatMain } []
+#guard !shouldAutoPass Tests.drawnHands []
+
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
 The chooser announcement is printed first by `printFirstChooser`. -/
@@ -2748,6 +2793,20 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printState g (some p)
       | none => pure ()
       lastActor := g.actor
+    if shouldAutoPass g pending then
+      let some p := g.actor | continue
+      match g.apply p .pass with
+      | .error e =>
+        IO.println s!"{(g.player p).name} could not automatically pass: {e}"
+      | .ok g' =>
+        recordAcceptedCommand output sameFile false "pass"
+        seen ← printLog g' seen (currentView g' playerView controlAll)
+        printChangedZones g g' (currentView g' playerView controlAll)
+        printChangedLife g g'
+        printChangedMana g g'
+        printPendingPrompt g'
+        g := g'
+      continue
     let prompt :=
       if controlAll then
         match g.actor with
