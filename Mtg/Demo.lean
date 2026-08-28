@@ -418,11 +418,20 @@ def printLegendRule (g : Game) : IO Unit := do
       IO.println s!"  {line}"
   | none => pure ()
 
-/-- Pending cost, combat-damage assignment, or legend-rule choice. -/
+/-- Print which triggered abilities the acting player must put on the stack. -/
+def printTriggerOrder (g : Game) : IO Unit := do
+  match triggerOrderBlock g with
+  | some block =>
+    for line in block.splitOn "\n" do
+      IO.println s!"  {line}"
+  | none => pure ()
+
+/-- Pending cost, combat-damage assignment, legend-rule, or trigger order. -/
 def printPendingPrompt (g : Game) : IO Unit := do
   printPendingCost g
   printCombatAssignment g
   printLegendRule g
+  printTriggerOrder g
 
 /-- Print log, zone, life, mana, and pending-prompt updates after a step. -/
 def refreshAfterStep (before after : Game) (seen : Nat)

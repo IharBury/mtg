@@ -406,11 +406,25 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header twoAttercopsLandPending) "choose trigger order (CR 603.3b"
 #guard mentions (header twoAttercopsLandPending) "Chandra"
 #guard
+  let wts := twoAttercopsLandPending.waitingTriggersOf ⟨0⟩
+  wts.size == 2 &&
+    waitingTriggerLine wts[0]! ==
+      s!"{wts[0]!.source.id} Attercop Landfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn."
+#guard
   match triggerOrderBlock twoAttercopsLandPending with
-  | some s => mentions s "Attercop" && mentions s "CR 603.3b" && mentions s "landfall"
+  | some s =>
+    let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+    mentions s "Attercop" && mentions s "CR 603.3b" && mentions s "Landfall" &&
+      mentions s "Whenever a land you control enters" &&
+      mentions s "+1/+1 until end of turn" &&
+      mentions s (toString ids[0]!) && mentions s (toString ids[1]!)
   | none => false
 #guard mentions (snapshot twoAttercopsLandPending)
   "chooses the order of triggered abilities (CR 603.3b)"
+#guard
+  let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+  mentions (snapshot twoAttercopsLandPending) (toString ids[0]!) &&
+    mentions (snapshot twoAttercopsLandPending) "Whenever a land you control enters"
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
