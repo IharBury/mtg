@@ -42,9 +42,8 @@ namespace Mtg.Engine.Catalog
 open Mtg.Engine
 
 def bofurReliableGuardian : CardDef :=
-  creature "Bofur, Reliable Guardian" (ManaCost.ofColor .white) #["Dwarf", "Scout"] 1 1
+  legendaryCreature "Bofur, Reliable Guardian" (ManaCost.ofColor .white) #["Dwarf", "Scout"] 1 1
     (oracleText := "Lifelink")
-    (supertypes := #[.legendary])
 
 def dwarvenProvisioner : CardDef :=
   creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
@@ -73,9 +72,8 @@ def errandRiderOfGondor : CardDef :=
     (oracleText := "When this creature enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library.")
 
 def landrovalHorizonWitness : CardDef :=
-  creature "Landroval, Horizon Witness" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Noble"] 3 4
+  legendaryCreature "Landroval, Horizon Witness" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Noble"] 3 4
     (oracleText := "Flying\nWhenever two or more creatures you control attack a player, target attacking creature without flying gains flying until end of turn.")
-    (supertypes := #[.legendary])
     (keywords := Keyword.flying)
 
 def roguesPassage : CardDef :=
@@ -131,9 +129,8 @@ def esquireOfTheKing : CardDef :=
     (oracleText := "{4}{W}, {T}: Creatures you control get +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
 
 def bilboBagginsBurglar : CardDef :=
-  creature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
+  legendaryCreature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
     (oracleText := "When Bilbo Baggins enters, draw a card.")
-    (supertypes := #[.legendary])
 
 def pelargirSurvivor : CardDef :=
   creature "Pelargir Survivor" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Peasant"] 1 3
@@ -196,9 +193,8 @@ def willowWind : CardDef :=
     (keywords := Keyword.flying)
 
 def bilboLuckwearer : CardDef :=
-  creature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
+  legendaryCreature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
     (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.")
-    (supertypes := #[.legendary])
 
 def uneasyPartings : CardDef :=
   instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
@@ -251,9 +247,8 @@ def raveningWarg : CardDef :=
     (triggeredAbilities := #[.onAttackFerociousGainLife 2])
 
 def gollumSilentSlinker : CardDef :=
-  creature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
+  legendaryCreature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
-    (supertypes := #[.legendary])
     (keywords := Keyword.menace)
 
 def bilbosDeadlySlice : CardDef :=
@@ -286,9 +281,8 @@ def shadowOfTheEnemy : CardDef :=
     (some .exileGraveyardCreaturesGrantCast)
 
 def gollumTheAbandoned : CardDef :=
-  creature "Gollum the Abandoned" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 2 2
+  legendaryCreature "Gollum the Abandoned" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 2 2
     (oracleText := "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery.")
-    (supertypes := #[.legendary])
     (staticAbilities := #[.cantBlockUnlessYouControl #[]])
     (triggeredAbilities := #[.onEnterExileOppGyCardOppsLoseLife 2])
     (activatedAbilities := #[
@@ -352,10 +346,9 @@ def improvisedClub : CardDef :=
     (additionalCostSacrificeArtifactOrCreature := true)
 
 def smaugTheGreatCalamity : CardDef :=
-  creature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
+  legendaryCreature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
     #["Dragon"] 5 5
     (oracleText := "Flying\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
-    (supertypes := #[.legendary])
     (keywords := Keyword.flying)
     (adventure := some (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red)
       "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
@@ -368,10 +361,9 @@ def ologHaiCrusher : CardDef :=
     (staticAbilities := #[.cantBlockUnlessYouControl #["Goblin", "Orc"]])
 
 def gandalfSparkStarter : CardDef :=
-  creature "Gandalf, Spark Starter" (ManaCost.ofGenericAndColors 4 [.red, .red])
+  legendaryCreature "Gandalf, Spark Starter" (ManaCost.ofGenericAndColors 4 [.red, .red])
     #["Avatar", "Wizard"] 4 3
     (oracleText := "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets.")
-    (supertypes := #[.legendary])
     (keywords := Keyword.reach)
     (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
 
@@ -460,10 +452,9 @@ def galadhrimGuide : CardDef :=
     (triggeredAbilities := #[.onEnterScry 2])
 
 def galionElvenkingsButler : CardDef :=
-  creature "Galion, Elvenking's Butler" (ManaCost.ofGenericAndColors 2 [.green, .green])
+  legendaryCreature "Galion, Elvenking's Butler" (ManaCost.ofGenericAndColors 2 [.green, .green])
     #["Elf", "Advisor"] 4 4
     (oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn.")
-    (supertypes := #[.legendary])
     (triggeredAbilities := #[.onAttackSetOtherBasePT])
 
 def elvishVisionary : CardDef :=
@@ -491,9 +482,8 @@ def mirkwoodElk : CardDef :=
     (triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife])
 
 def celebornTheWise : CardDef :=
-  creature "Celeborn the Wise" (ManaCost.ofGenericAndColor 3 .green) #["Elf", "Noble"] 3 3
+  legendaryCreature "Celeborn the Wise" (ManaCost.ofGenericAndColor 3 .green) #["Elf", "Noble"] 3 3
     (oracleText := "Whenever you attack with one or more Elves, scry 1.\nWhenever you scry, Celeborn gets +1/+1 until end of turn for each card looked at while scrying this way.")
-    (supertypes := #[.legendary])
     (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
 
 def giftOfStrands : CardDef :=
@@ -529,10 +519,9 @@ def mirkwoodPathmaker : CardDef :=
     (staticAbilities := #[.powerToughnessEqualLandsYouControl])
 
 def beornReluctantHost : CardDef :=
-  creature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
+  legendaryCreature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
     #["Human", "Bear", "Shapeshifter"] 5 5
     (oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
-    (supertypes := #[.legendary])
     (keywords := Keyword.trample)
     (adventure := some (adventure "Till and Tend" (ManaCost.ofGenericAndColor 1 .green)
       "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"

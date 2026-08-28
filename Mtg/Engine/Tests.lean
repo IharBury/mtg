@@ -155,6 +155,10 @@ def played : Game :=
 def mentions (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1
 
+/-- `true` iff some log line contains `needle`. -/
+def logContains (g : Game) (needle : String) : Bool :=
+  g.log.any (fun s => mentions s needle)
+
 /-- First card of `p`'s hand; tests assume opening hands are non-empty. -/
 def firstHandCard (g : Game) (p : PlayerId) : GameObject :=
   match (g.handObjects p)[0]? with
@@ -2059,17 +2063,35 @@ def afterSiegeGoblinElves : Game :=
 #guard (afterSiegeGoblinElves.player ⟨1⟩).life == 18
 #guard afterSiegeGoblinElves.battlefield.any (fun o => o.name == "Battle-Scarred Goblin")
 
+/-- Fill `p`'s mana pool with `n` mana of color `c`. -/
+def withMana (g : Game) (p : PlayerId) (c : Color) (n : Nat := 4) : Game :=
+  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored c) n })
+
 /-- Fill `p`'s mana pool with `n` green mana. -/
 def withGreenMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
-  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .green) n })
+  withMana g p .green n
 
 /-- Fill `p`'s mana pool with `n` red mana. -/
 def withRedMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
-  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .red) n })
+  withMana g p .red n
 
 /-- Fill `p`'s mana pool with `n` black mana. -/
 def withBlackMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
-  g.modifyPlayer p (fun pl => { pl with manaPool := pl.manaPool.add (.colored .black) n })
+  withMana g p .black n
+
+/-- Empty `p`'s hand and mark a land already played this turn. -/
+def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
+  g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+
+/-- Pay the proposed spell or ability, then both players pass (resolve). -/
+def payAndResolve (g : Game) (p : PlayerId) : Game :=
+  passBoth (mustApply g p .pay)
+
+/-- Keep the first listed legendary permanent in a CR 704.5j choice. -/
+def keepFirstLegend (g : Game) : Game :=
+  match g.pending with
+  | .chooseLegend p _ ids => mustApply g p (.keepLegend ids[0]!)
+  | _ => panic! "expected a legend-rule choice"
 
 /-- Put `aura` onto the battlefield already attached to `host`. -/
 def addAttachedAura (g : Game) (aura : CardDef) (host : GameObject)
@@ -2248,9 +2270,7 @@ def twoBofursSBA : Game := twoBofurs.checkSBA
 #guard (twoBofursSBA.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 2
 
 def keptOlderBofur : Game :=
-  match twoBofursSBA.pending with
-  | .chooseLegend p _ ids => mustApply twoBofursSBA p (.keepLegend ids[0]!)
-  | _ => panic! "expected a legend-rule choice"
+  keepFirstLegend twoBofursSBA
 
 #guard (keptOlderBofur.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1
 #guard keptOlderBofur.pending == .none
@@ -2294,18 +2314,14 @@ def keptOneOfThree : Game :=
 
 /-- Indestructible does not save a legend from CR 704.5j. -/
 def legendaryIndestructible : CardDef :=
-  creature "Unyielding Legend" ManaCost.empty #[] 2 2
-    (supertypes := #[.legendary])
+  legendaryCreature "Unyielding Legend" ManaCost.empty #[] 2 2
     (keywords := Keyword.indestructible)
 
 def twoIndestructibleLegends : Game :=
   let g :=
     addPermanent (addPermanent started legendaryIndestructible ⟨0⟩ ⟨0⟩)
       legendaryIndestructible ⟨0⟩ ⟨0⟩
-  let g := g.checkSBA
-  match g.pending with
-  | .chooseLegend p _ ids => mustApply g p (.keepLegend ids[0]!)
-  | _ => panic! "expected a legend-rule choice"
+  keepFirstLegend (g.checkSBA)
 
 #guard (twoIndestructibleLegends.battlefield.filter
   (·.name == "Unyielding Legend")).size == 1
@@ -2407,8 +2423,7 @@ def zeroAndTwoBofursSBA : Game :=
 
 /-- Legendary creature with a dies trigger, for the CR 704.3 wait. -/
 def legendaryFireleaper : CardDef :=
-  creature "Legendary Fireleaper" ManaCost.empty #["Goblin"] 2 1
-    (supertypes := #[.legendary])
+  legendaryCreature "Legendary Fireleaper" ManaCost.empty #["Goblin"] 2 1
     (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
 
 def twoFireleapersSBA : Game :=
@@ -2426,9 +2441,7 @@ def twoFireleapersSBA : Game :=
 #guard (twoFireleapersSBA.receivePriority ⟨0⟩).stack.isEmpty
 
 def afterKeepFireleaper : Game :=
-  match twoFireleapersSBA.pending with
-  | .chooseLegend p _ ids => mustApply twoFireleapersSBA p (.keepLegend ids[0]!)
-  | _ => panic! "expected a legend-rule choice"
+  keepFirstLegend twoFireleapersSBA
 
 #guard afterKeepFireleaper.waitingTriggers.isEmpty
 #guard afterKeepFireleaper.pending == .chooseTargets ⟨0⟩
@@ -2504,7 +2517,7 @@ def giftOnNissa : Game :=
 playable spell. -/
 def agentGiftOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withGreenMana (addToHand g giftOfStrands ⟨0⟩) ⟨0⟩
 
 #guard
@@ -2632,7 +2645,7 @@ def guideLeftBeforeTrigger : Game :=
 
 /-- The agent casts Galadhrim Guide when that is the playable spell. -/
 def agentGuideOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withGreenMana (addToHand g galadhrimGuide ⟨0⟩) ⟨0⟩
 
 #guard
@@ -2724,7 +2737,7 @@ def visionaryEmptyLib : Game :=
 
 /-- The agent casts Elvish Visionary when that is the playable spell. -/
 def agentVisionaryOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withGreenMana (addToHand g elvishVisionary ⟨0⟩) ⟨0⟩
 
 #guard
@@ -2876,7 +2889,7 @@ def woodElvesLandfallPending : Game :=
 
 /-- The agent casts Wood Elves when that is the playable spell. -/
 def agentWoodElvesOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withGreenMana (addToHand g woodElves ⟨0⟩) ⟨0⟩
 
 #guard
@@ -3590,7 +3603,7 @@ def resolvedNissaBoltPlayer : Game := passBoth paidNissaBoltPlayer
 /-- The agent casts Warg Tactics to destroy a flyer when that is the playable spell. -/
 def agentWargDestroyOnly : Game :=
   let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
 
 #guard
@@ -3601,7 +3614,7 @@ def agentWargDestroyOnly : Game :=
 /-- The agent casts Warg Tactics as a pump when no flyer is available. -/
 def agentWargPumpOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
 
 #guard
@@ -3907,7 +3920,7 @@ def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
 /-- The agent casts Ragged Short Spear when that is the playable spell. -/
 def agentSpearOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
 
 #guard
@@ -4193,7 +4206,7 @@ def afterEquippedBladeCombat : Game :=
 /-- The agent casts Crude Bent Blade when that is the playable spell. -/
 def agentBladeOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
 
 #guard
@@ -4655,7 +4668,7 @@ def gandalfLeftBeforeTrigger : Game :=
 
 /-- The agent casts Gandalf when that is the playable spell. -/
 def agentGandalfOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withRedMana (addToHand g gandalfSparkStarter ⟨0⟩) ⟨0⟩ 6
 
 #guard
@@ -5718,7 +5731,7 @@ def reversedSpewFlame : Game := mustApply unpaidSpewFlame ⟨0⟩ .pay
 /-- The heuristic casts Spew Flame when that is the playable spell. -/
 def agentSmaugOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
 
 #guard
@@ -5729,7 +5742,7 @@ def agentSmaugOnly : Game :=
 
 /-- With no opposing creature, the heuristic casts Smaug as a creature. -/
 def agentSmaugCreatureOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
 
 #guard
@@ -5937,7 +5950,7 @@ def reversedTillAndTend : Game := mustApply unpaidTillAndTend ⟨0⟩ .pay
 
 /-- The heuristic casts Till and Tend when that is the playable spell. -/
 def agentBeornOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withGreenMana (addToHand g beornReluctantHost ⟨0⟩) ⟨0⟩ 2
 
 #guard
@@ -5948,7 +5961,7 @@ def agentBeornOnly : Game :=
 
 /-- With enough mana, the heuristic casts Beorn as a creature. -/
 def agentBeornCreatureOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withGreenMana (addToHand g beornReluctantHost ⟨0⟩) ⟨0⟩ 5
 
 #guard
@@ -6323,7 +6336,7 @@ def titanAtEndStep : Game := skipTo titanPumpReady .end 80
 
 /-- The agent casts Inferno Titan when that is the playable spell. -/
 def agentTitanOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withRedMana (addToHand g infernoTitan ⟨0⟩) ⟨0⟩ 6
 
 #guard
@@ -6478,7 +6491,7 @@ def spewWithGuttersnipeResolved : Game :=
 -- The heuristic casts Bolt when that is the playable spell with Guttersnipe in play.
 def agentGuttersnipeBoltOnly : Game :=
   let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
 
 #guard
@@ -6491,14 +6504,14 @@ def agentGuttersnipeBoltOnly : Game :=
 def clubReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addUntappedLand g mountain
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
 
 def clubFodder (g : Game) : GameObject :=
   namedPermanent g "Raging Goblin"
 
 def clubNoFodder : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
 
 #guard clubReady.canCast ⟨0⟩ (handCardNamed clubReady ⟨0⟩ "Improvised Club")
@@ -6620,7 +6633,7 @@ def resolvedClub : Game := passBoth castClub
 -- An artifact is a legal additional-cost sacrifice.
 def clubArtifactReady : Game :=
   let g := addPermanent afterDraw wayfarersBauble ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
 
 #guard clubArtifactReady.canCast ⟨0⟩
@@ -6654,7 +6667,7 @@ def resolvedClubSacTarget : Game :=
 -- Instant speed: legal in the end step.
 def clubAtEnd : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   let g := addToHand g improvisedClub ⟨0⟩
   skipTo g .end 80
 
@@ -6679,7 +6692,7 @@ def reversedClub : Game :=
 def clubGuttersnipeReady : Game :=
   let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
 
 def paidClubGuttersnipe : Game :=
@@ -6716,7 +6729,7 @@ def resolvedClubGuttersnipe : Game :=
 def clubSacrificesFireleaper : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   let g := withRedMana (addToHand g improvisedClub ⟨0⟩) ⟨0⟩ 2
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Improvised Club").id)
   let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
@@ -7005,14 +7018,14 @@ def tappedArchAndOppElves : Game :=
 
 /-- Available mana from Archdruid plus Elves pays {2}{G}; the agent casts it. -/
 def agentArchdruidMana : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g elvishArchdruid ⟨0⟩ ⟨0⟩
   let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
   addToHand g centaurCourser ⟨0⟩
 
 #guard (agentArchdruidMana.availableMana ⟨0⟩).canPay centaurCourser.manaCost
 #guard
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
   let g := addPermanent g elvishMystic ⟨0⟩ ⟨0⟩
   let g := addToHand g centaurCourser ⟨0⟩
@@ -7283,7 +7296,7 @@ def afterElkTrampleCombat : Game :=
 
 -- The agent casts Mirkwood Elk when that is the playable spell.
 def agentElkOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addToGraveyard g llanowarElves ⟨0⟩
   withGreenMana (addToHand g mirkwoodElk ⟨0⟩) ⟨0⟩ 6
 
@@ -7721,7 +7734,7 @@ def weavemasterBlocksAfterAttack : Game :=
 
 /-- The agent casts an Elf using Weavemaster's restricted mana. -/
 def agentWeavemasterElf : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g woodlandWeavemaster ⟨0⟩ ⟨0⟩
   addToHand g llanowarElves ⟨0⟩
 
@@ -7742,7 +7755,7 @@ def agentWeavemasterPaying : Game :=
 
 /-- The agent will not try to cast a non-Elf with only restricted mana. -/
 def agentWeavemasterGrowth : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g woodlandWeavemaster ⟨0⟩ ⟨0⟩
   addToHand g giantGrowth ⟨0⟩
 
@@ -7938,7 +7951,7 @@ def elkReturnsPathmaker : Game :=
 
 /-- The heuristic casts Pathmaker when it is the playable creature. -/
 def agentPathmaker : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addForests g ⟨0⟩ 2
   withGreenMana (addToHand g mirkwoodPathmaker ⟨0⟩) ⟨0⟩ 3
 
@@ -8135,7 +8148,7 @@ def afterFireOfOrthancCleanup : Game :=
 /-- The agent casts Fire of Orthanc when that is the playable spell. -/
 def agentFireOfOrthancOnly : Game :=
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
 
 #guard
@@ -8332,7 +8345,7 @@ def quarrelDestHexproof : Game :=
 
 /-- The heuristic casts Quarrel when it is the playable spell. -/
 def agentQuarrel : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
@@ -8695,8 +8708,7 @@ def passageAfterAttack : Game :=
 
 /-- Three Mountains plus Passage is not enough {4} once Passage must stay untapped. -/
 def passageThreeMountainsAttacking : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl =>
-    { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -8967,7 +8979,7 @@ def resolvedSmiteOnFireleaper : Game :=
 
 /-- The heuristic casts Smite when it is the playable spell. -/
 def agentSmite : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   withRedMana (addToHand g smiteTheDeathless ⟨0⟩) ⟨0⟩ 2
 
@@ -9322,7 +9334,7 @@ def nightsWhisperPaysLastLife : Game :=
 
 /-- The agent casts Night's Whisper when that is the playable spell. -/
 def agentNightsWhisperOnly : Game :=
-  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand afterDraw ⟨0⟩
   withBlackMana (addToHand g nightsWhisper ⟨0⟩) ⟨0⟩ 2
 
 #guard
@@ -10460,7 +10472,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 /-- The agent casts Bilbo's Deadly Slice when that is the playable spell. -/
 def agentBilbosDeadlySliceOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+  let g := clearHandPlayedLand g ⟨0⟩
   withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
 
 #guard

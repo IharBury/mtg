@@ -74,6 +74,29 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
 
+/-- A legendary creature (CR 205.4 / 704.5j). -/
+def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+    (power toughness : Int) (oracleText : String := "")
+    (keywords : Keywords := Keywords.none)
+    (tapAddMana : Array ManaType := #[])
+    (supertypes : Array Supertype := #[])
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (tapAddManaForEach : Array TapAddForEach := #[])
+    (tapAddAnyColorEqualToPower : Bool := false)
+    (adventure : Option AdventureFace := none)
+    (costReductionIfCreatureDied : Nat := 0) : CardDef :=
+  creature name manaCost subtypes power toughness oracleText
+    (keywords := keywords) (tapAddMana := tapAddMana)
+    (supertypes := #[.legendary] ++ supertypes)
+    (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities := activatedAbilities)
+    (tapAddManaForEach := tapAddManaForEach)
+    (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
+    (adventure := adventure)
+    (costReductionIfCreatureDied := costReductionIfCreatureDied)
+
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (oracleText : String) (spellEffect : Option SpellEffect := none)
@@ -246,6 +269,7 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
+#guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
 #guard grizzlyBears.hasSorcerySpeed

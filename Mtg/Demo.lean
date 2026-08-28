@@ -134,6 +134,10 @@ def firstUsage (seats : Array Seat) : String :=
   let names := String.intercalate " or " (seats.toList.map (·.name))
   s!"usage: first <name> ({names})"
 
+/-- Drop empty tokens from a command line. -/
+def commandTokens (tokens : List String) : List String :=
+  tokens.filter (fun t => !t.isEmpty)
+
 /-- Seat index of a player name, ignoring case. -/
 def parsePlayerName (seats : Array Seat) (name : String) : Except String Nat :=
   let lower := name.map Char.toLower
@@ -143,7 +147,7 @@ def parsePlayerName (seats : Array Seat) (name : String) : Except String Nat :=
 
 /-- Seat index of the player who takes the first turn (CR 103.1). -/
 def parseFirstPlayer (seats : Array Seat) (tokens : List String) : Except String Nat :=
-  match tokens.filter (fun t => !t.isEmpty) with
+  match commandTokens tokens with
   | [name] => parsePlayerName seats name
   | _ => .error (firstUsage seats)
 
@@ -417,6 +421,16 @@ def printPendingPrompt (g : Game) : IO Unit := do
   printCombatAssignment g
   printLegendRule g
 
+/-- Print log, zone, life, mana, and pending-prompt updates after a step. -/
+def refreshAfterStep (before after : Game) (seen : Nat)
+    (viewer : Option PlayerId := none) : IO Nat := do
+  let seen ← printLog after seen viewer
+  printChangedZones before after viewer
+  printChangedLife before after
+  printChangedMana before after
+  printPendingPrompt after
+  return seen
+
 def printState (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   IO.println ""
   IO.println (snapshot g viewer)
@@ -468,11 +482,7 @@ partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
       IO.println s!"Agent stopped: {e}"
       break
     | .ok g' =>
-      seen ← printLog g' seen
-      printChangedZones g g'
-      printChangedLife g g'
-      printChangedMana g g'
-      printPendingPrompt g'
+      seen ← refreshAfterStep g g' seen
       g := g'
   printState g
   match g.result with
@@ -597,7 +607,7 @@ def parseManaType? (token : String) : Option ManaType :=
 
 /-- Parse one or more object identifiers from command tokens. -/
 def parseObjectIds (tokens : List String) (usage : String) : Except String (Array ObjectId) :=
-  go (tokens.filter (fun t => !t.isEmpty)) #[]
+  go (commandTokens tokens) #[]
 where
   go : List String → Array ObjectId → Except String (Array ObjectId)
     | [], acc => if acc.isEmpty then .error usage else .ok acc
@@ -605,6 +615,28 @@ where
       match parseObjectId? t with
       | none => .error usage
       | some id => go rest (acc.push id)
+
+/-- Parse a single object id, or `usage` if the tokens are not exactly one id. -/
+def parseRequiredObjectId (tokens : List String) (usage : String) : Except String ObjectId :=
+  match commandTokens tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw usage
+    | some id => return id
+  | _ => throw usage
+
+/-- The object `id`, or `"no such object"`. -/
+def requireObject (g : Game) (id : ObjectId) : Except String GameObject :=
+  match g.findObject? id with
+  | none => throw "no such object"
+  | some o => return o
+
+/-- Parse a single existing object id and apply `action`. -/
+def applyObjectCommand (g : Game) (p : PlayerId) (tokens : List String)
+    (usage : String) (action : ObjectId → Action) : Except String Game := do
+  let id ← parseRequiredObjectId tokens usage
+  let _ ← requireObject g id
+  g.apply p (action id)
 
 /-- Split `tokens` at the first `kw`. `none` means the keyword was absent. -/
 def splitAtKeyword (kw : String) (tokens : List String) : List String × Option (List String) :=
@@ -623,7 +655,7 @@ where
 /-- Attackers for an interactive `attack` command. Omitted ids mean every
 creature that currently can attack. -/
 def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Array ObjectId) :=
-  let tokens := tokens.filter (fun t => !t.isEmpty)
+  let tokens := commandTokens tokens
   if tokens.isEmpty then
     .ok (g.battlefield.filter (g.canAttack) |>.map (·.id))
   else
@@ -722,7 +754,7 @@ def parseBlockAssignments (tokens : List String) : Except String (Array (ObjectI
 covering of unblocked attackers. -/
 def blockAssignmentsForCommand (g : Game) (tokens : List String) :
     Except String (Array (ObjectId × ObjectId)) :=
-  let tokens := tokens.filter (fun t => !t.isEmpty)
+  let tokens := commandTokens tokens
   if tokens.isEmpty then
     .ok (greedyBlockAssignments g)
   else
@@ -855,7 +887,7 @@ assignment (CR 510.1c–d). `target` may be a creature id or the defending
 player. -/
 def parseCombatAssignments (g : Game) (p : PlayerId) (tokens : List String) :
     Except String (Array CreatureCombatAssignment) :=
-  go (tokens.filter (fun t => !t.isEmpty)) #[]
+  go (commandTokens tokens) #[]
 where
   go : List String → Array CreatureCombatAssignment →
       Except String (Array CreatureCombatAssignment)
@@ -1014,7 +1046,7 @@ def visibleUsage : String := "usage: visible [on|off]"
 /-- `none` prints the first listed player's view once; `some true/false` turns
 follow mode on or off. -/
 def applyVisible (tokens : List String) : Except String (Option Bool) :=
-  match tokens.filter (fun t => !t.isEmpty) with
+  match commandTokens tokens with
   | [] => .ok none
   | ["on"] => .ok (some true)
   | ["off"] => .ok (some false)
@@ -1108,7 +1140,7 @@ def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType 
 
 /-- Tap each listed permanent for mana. A trailing color letter applies to all. -/
 def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
+  let tokens := commandTokens tokens
   let (idTokens, chosen) :=
     match tokens.reverse with
     | t :: rest =>
@@ -1208,17 +1240,8 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
 def playUsage : String := "usage: play <id>"
 
 /-- Play the named land from a zone the player is allowed to play from. -/
-def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw playUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.playLand id)
-  | _ => throw playUsage
+def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String Game :=
+  applyObjectCommand g p tokens playUsage .playLand
 
 #guard
   match applyPlay Tests.afterDraw ⟨0⟩ [] with
@@ -1256,19 +1279,11 @@ def activateUsage : String := "usage: activate <id>"
 /-- Activate the first non-mana activated ability of the named object
 (a permanent, a card in hand, or a card in a graveyard). -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw activateUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some o =>
-        match o.printed.activatedAbilities[0]? with
-        | none => throw s!"{o.name} has no activated ability"
-        | some _ => g.apply p (.activate id 0)
-  | _ => throw activateUsage
+  let id ← parseRequiredObjectId tokens activateUsage
+  let o ← requireObject g id
+  match o.printed.activatedAbilities[0]? with
+  | none => throw s!"{o.name} has no activated ability"
+  | some _ => g.apply p (.activate id 0)
 
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
@@ -1276,19 +1291,12 @@ def sacrificeUsage : String := "usage: sacrifice <id>"
 or casting. With no id, choose the sacrifice option of an additional cost
 (CR 601.2b). With an id, also sacrifice a creature a resolved trigger requires. -/
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
+  match commandTokens tokens with
   | [] =>
     match g.pending with
     | .chooseAdditionalCost _ => g.apply p (.chooseAdditionalCost false)
     | _ => throw sacrificeUsage
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw sacrificeUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.sacrifice id)
+  | [_] => applyObjectCommand g p tokens sacrificeUsage .sacrifice
   | _ => throw sacrificeUsage
 
 def payExtraUsage : String := "usage: pay-extra"
@@ -1296,8 +1304,7 @@ def payExtraUsage : String := "usage: pay-extra"
 /-- Pay extra generic mana rather than sacrifice, as an additional cost
 (CR 601.2b). -/
 def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
+  match commandTokens tokens with
   | [] => g.apply p (.chooseAdditionalCost true)
   | _ => throw payExtraUsage
 
@@ -1440,8 +1447,7 @@ def modeUsage : String := "usage: mode <n>"
 
 /-- Choose a mode of a modal spell or ability (CR 601.2b). Modes are 1-indexed. -/
 def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
+  match commandTokens tokens with
   | [arg] =>
     match arg.toNat? with
     | none => throw modeUsage
@@ -1499,22 +1505,14 @@ def castUsage : String := "usage: cast <id> [adventure]"
 /-- Begin casting the named spell (CR 601.2a), or its Adventure (CR 715.3).
 Targets are announced later with `target` (CR 601.2c). -/
 def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw castUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.cast id)
+  match commandTokens tokens with
+  | [_] => applyObjectCommand g p tokens castUsage .cast
   | [arg, "adventure"] =>
     match parseObjectId? arg with
     | none => throw castUsage
     | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.castAdventure id)
+      let _ ← requireObject g id
+      g.apply p (.castAdventure id)
   | _ => throw castUsage
 
 #guard
@@ -1661,7 +1659,7 @@ where
 /-- Announce the chosen target for a proposed spell, or divide damage among
 targets of a triggered ability (CR 601.2c / 601.2d). -/
 def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
+  let tokens := commandTokens tokens
   if g.announcingDividedDamage then
     match tokens with
     | [arg] =>
@@ -1840,7 +1838,7 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
     if p != q then
       throw s!"Only {(g.player q).name} may scry"
     let looked := g.scryLookedIds p n
-    let tokens := tokens.filter (fun t => !t.isEmpty)
+    let tokens := commandTokens tokens
     match tokens with
     | [] => g.apply p (.scry looked #[])
     | "bottom" :: rest =>
@@ -1929,24 +1927,14 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 def discardUsage : String := "usage: discard <id>"
 
 /-- Discard the named card from hand for a pending “may discard, then draw”. -/
-def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
-  | [arg] =>
-    match parseObjectId? arg with
-    | none => throw discardUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.discard id)
-  | _ => throw discardUsage
+def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except String Game :=
+  applyObjectCommand g p tokens discardUsage .discard
 
 def declineUsage : String := "usage: decline"
 
 /-- Decline an optional discard or choose no target for an “up to one” trigger. -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match tokens with
+  match commandTokens tokens with
   | [] => g.apply p .decline
   | _ => throw declineUsage
 
@@ -1998,15 +1986,9 @@ def keepUsage : String := "usage: keep [<id>]"
 /-- Keep an opening hand, or choose which legendary permanent to keep
 (CR 103.5 / 704.5j). -/
 def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let tokens := tokens.filter (fun t => !t.isEmpty)
-  match g.pending, tokens with
-  | .chooseLegend _ _ _, [arg] =>
-    match parseObjectId? arg with
-    | none => throw keepUsage
-    | some id =>
-      match g.findObject? id with
-      | none => throw "no such object"
-      | some _ => g.apply p (.keepLegend id)
+  match g.pending, commandTokens tokens with
+  | .chooseLegend _ _ _, [_] =>
+    applyObjectCommand g p tokens keepUsage .keepLegend
   | .chooseLegend _ _ _, _ => throw keepUsage
   | _, [] => g.apply p .keep
   | _, _ => throw keepUsage
@@ -2827,11 +2809,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           IO.println s!"{actorName} could not act: {e}"
           break
         | .ok g' =>
-          seen ← printLog g' seen (humanView playerView)
-          printChangedZones g g' (humanView playerView)
-          printChangedLife g g'
-          printChangedMana g g'
-          printPendingPrompt g'
+          seen ← refreshAfterStep g g' seen (humanView playerView)
           g := g'
     if g.over then break
     if controlAll && g.actor != lastActor then
@@ -2849,11 +2827,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         IO.println s!"{(g.player p).name} could not automatically declare no attackers: {e}"
       | .ok g' =>
         recordAcceptedCommand output sameFile false "noattack"
-        seen ← printLog g' seen (currentView g' playerView controlAll)
-        printChangedZones g g' (currentView g' playerView controlAll)
-        printChangedLife g g'
-        printChangedMana g g'
-        printPendingPrompt g'
+        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
       continue
     if shouldAutoNoBlock g pending then
@@ -2863,11 +2837,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         IO.println s!"{(g.player p).name} could not automatically declare no blockers: {e}"
       | .ok g' =>
         recordAcceptedCommand output sameFile false "noblock"
-        seen ← printLog g' seen (currentView g' playerView controlAll)
-        printChangedZones g g' (currentView g' playerView controlAll)
-        printChangedLife g g'
-        printChangedMana g g'
-        printPendingPrompt g'
+        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
       continue
     if shouldAutoPass g pending then
@@ -2877,11 +2847,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         IO.println s!"{(g.player p).name} could not automatically pass: {e}"
       | .ok g' =>
         recordAcceptedCommand output sameFile false "pass"
-        seen ← printLog g' seen (currentView g' playerView controlAll)
-        printChangedZones g g' (currentView g' playerView controlAll)
-        printChangedLife g g'
-        printChangedMana g g'
-        printPendingPrompt g'
+        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
       continue
     let prompt :=
@@ -2930,11 +2896,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
       | .error e => IO.println s!"! {e}"
       | .ok g' =>
         recordAcceptedCommand output sameFile fromInput line
-        seen ← printLog g' seen (currentView g' playerView controlAll)
-        printChangedZones g g' (currentView g' playerView controlAll)
-        printChangedLife g g'
-        printChangedMana g g'
-        printPendingPrompt g'
+        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
         if g.over then
           printState g (currentView g playerView controlAll)
