@@ -76,6 +76,43 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.keepLegend (defaultLegendToKeep g ids))
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
+    | .mayPayGeneric _ n =>
+      if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+        some .payGeneric
+      else
+        match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
+        | some (src, types) =>
+          match types[0]? with
+          | some t => some (.tapForMana src.id t)
+          | none => some .decline
+        | none => some .decline
+    | .chooseLibraryPlacement _ _ =>
+      some .chooseBottom
+    | .mayAttachEquipment _ hostId =>
+      match (g.permanentsOf p).find? (fun o =>
+        o.printed.isEquipment && o.attachedTo != some hostId) with
+      | some eq => some (.choosePermanents #[eq.id])
+      | none => some .decline
+    | .tapHumans _ =>
+      let humans :=
+        (g.permanentsOf p).filter (fun o =>
+          g.hasSubtype o "Human" && !o.status.tapped)
+      if humans.isEmpty then some .decline
+      else some (.choosePermanents (humans.map (·.id)))
+    | .payOrLetCounter _ n _ =>
+      if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+        some .payGeneric
+      else
+        match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
+        | some (src, types) =>
+          match types[0]? with
+          | some t => some (.tapForMana src.id t)
+          | none => some .decline
+        | none => some .decline
+    | .mayPlusOneCreature _ =>
+      match (g.permanentsOf p).find? (·.isCreature) with
+      | some o => some (.choosePermanents #[o.id])
+      | none => some .decline
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
@@ -107,10 +144,12 @@ where
       match g.defaultTarget p spell with
       | some t => some (.target t)
       | none =>
-        match spell.triggeredAbility with
-        | some ab =>
-          if ab.allowsZeroTargets then some .decline else some .pass
-        | none => some .pass
+        if g.canFinishOptionalTargets spell then some .decline
+        else
+          match spell.triggeredAbility with
+          | some ab =>
+            if ab.allowsZeroTargets then some .decline else some .pass
+          | none => some .pass
   /-- During CR 601.2b, announce a mode of a modal activated ability. -/
   chooseAbilityMode (g : Game) (p : PlayerId) : Option Action :=
     match g.proposedSpell with
@@ -125,12 +164,15 @@ where
     | none => some .pay
     | some prop =>
       let allowElf := g.proposedAllowsElfRestricted prop
-      if (g.player p).manaPool.canPay prop.cost allowElf then
+      let allowInst := g.proposedAllowsInstRestricted prop
+      if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
         some .pay
       else
         match (g.manaSources p).find? (fun (src, types) =>
           !(prop.tapSource && prop.sourceId == some src.id) &&
-          !(src.printed.tapAddAnyColorEqualToPower && !allowElf) && !types.isEmpty) with
+          !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
+          !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
+          !types.isEmpty) with
         | some (src, types) =>
           match g.preferredManaType p types prop.cost allowElf with
           | some t => some (.tapForMana src.id t)
@@ -169,11 +211,16 @@ where
     let available := g.availableMana p
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCast p o &&
-        available.canPay o.printed.manaCost (allowElfRestricted := o.hasSubtype "Elf"))
+        (o.playPermission.any (·.withoutManaCost) ||
+          available.canPay o.printed.manaCost
+            (allowElfRestricted := o.hasSubtype "Elf")
+            (allowInstRestricted := o.printed.isInstantOrSorcery)))
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
         match o.printed.adventure with
-        | some adv => available.canPay adv.manaCost
+        | some adv =>
+          available.canPay adv.manaCost
+            (allowInstRestricted := adv.types.any CardType.isInstantOrSorcery)
         | none => false)
     let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
     let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
@@ -232,7 +279,13 @@ where
       else none
     let extraLandAdventure :=
       adventurePlayable.find? (fun o => adventureKind o .extraLand)
-    if let some o := burn then
+    let counter :=
+      if !(g.stackSpells (fun _ => true)).isEmpty then
+        playable.find? (fun o => spellKind o .counter || modeKind o .counter)
+      else none
+    if let some o := counter then
+      some (.cast o.id)
+    else if let some o := burn then
       some (.cast o.id)
     else if let some o := adventureRemoval then
       some (.castAdventure o.id)

@@ -111,10 +111,12 @@ The first slice of the engine models the two-player game:
   costs such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
   extra generic mana as an alternative additional cost, or paying
   life at 118.3b / 119.4, cost reductions if a creature died this turn or the
-  target was dealt damage this turn, graveyard activations, and mana
+  target was dealt damage this turn, the target is tapped, or the target is
+  an attacking nontoken creature, graveyard activations, and mana
   abilities at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d), including
-  menace, “can't be blocked except by N or more”, and lifelink
+  first strike (CR 702.7b), islandwalk (CR 702.14), menace, “can't be blocked
+  except by N or more”, and lifelink
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all
@@ -125,7 +127,8 @@ The first slice of the engine models the two-player game:
   or more Elves, or gain life while you control a creature with power 4 or
   greater (Ferocious); scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
-  creatures, flash, Aura spells that enchant a creature, Equipment (including
+  creatures, flash, Aura spells that enchant a creature (including overwriting
+  its creature types), Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, search the library for a Forest card, may
   discard a card to draw, make a target opponent sacrifice a creature, or deal
@@ -144,7 +147,13 @@ The first slice of the engine models the two-player game:
   `{4}, {T}` making a target creature unblockable until end of turn,
   typecycling from hand (Mountaincycling, Swampcycling: discard this card,
   search for a land of that type, put it into your hand, then shuffle), and
-  adventurer cards (casting an Adventure, then the creature from exile)
+  adventurer cards (casting an Adventure, then the creature from exile),
+  countering spells (including unless the controller pays, and exiling a
+  permanent spell with a free recast), scry-then-draw, tapping one or two
+  creatures,
+  exchanging control, putting a creature on top or bottom of its owner's
+  library, hope counters, linked exile until a source leaves, draw and
+  second-card triggers, Equip Human, and instant/sorcery-restricted mana
 - modal instants, destroy (including target creature, or a target artifact or land, after which
   creatures without flying can't block this turn), mass until-end-of-turn P/T
   changes, drawing and losing life (Night's Whisper), +1/+1 counters, hexproof, indestructible, deathtouch, lifelink, menace, vigilance, until-end-of-turn

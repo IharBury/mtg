@@ -228,7 +228,9 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
 sentences, not parentheticals, so they survive reminder-text stripping. -/
 def activatedOracleLine (ab : ActivatedAbility) : String :=
   if isEquipAbility ab then
-    s!"Equip {ab.cost.mana}"
+    match ab.equipSubtype with
+    | some t => s!"Equip {t} {ab.cost.mana}"
+    | none => s!"Equip {ab.cost.mana}"
   else
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
@@ -241,7 +243,10 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
           (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
         (if ab.onlyIfYouControlLegendary then
-          " Activate only if you control a legendary creature." else "")
+          " Activate only if you control a legendary creature." else "") ++
+        (if ab.costReductionIfYouControlLegendary != 0 then
+          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
+         else "")
       let body :=
         if ab.isModal then
           let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -263,6 +268,12 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionIfTargetDamaged != 0 then
     [s!"This spell costs \{{c.costReductionIfTargetDamaged}} less to cast if it targets a creature that was dealt damage this turn."]
    else []) ++
+  (if c.costReductionIfTargetTapped != 0 then
+    [s!"This spell costs \{{c.costReductionIfTargetTapped}} less to cast if it targets a tapped creature."]
+   else []) ++
+  (if c.costReductionIfTargetAttackingNontoken != 0 then
+    [s!"This spell costs \{{c.costReductionIfTargetAttackingNontoken}} less to cast if it targets an attacking nontoken creature."]
+   else []) ++
   (if c.additionalCostSacrificeArtifactOrCreature then
     match c.additionalCostOrPayGeneric with
     | some n =>
@@ -276,6 +287,12 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.tapAddAnyColorEqualToPower then
     ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
    else []) ++
+  (if c.tapAddAnyColorForInstantOrSorcery then
+    ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
+   else []) ++
+  (if c.entersWithHopePerCreature then
+    ["This enchantment enters with a hope counter on it for each creature you control."]
+   else []) ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.activatedAbilities.toList.map activatedOracleLine ++
@@ -283,6 +300,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map SpellEffect.toNotation)}"]
    else
     match c.spellEffect with
+    | some (.tapScryDraw scryN drawN) =>
+      [s!"Tap target creature. Scry {scryN}.",
+        if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -339,15 +359,26 @@ end CardDef
 
 open Catalog
 
-/-- Catalog cards whose Oracle text is fully represented by modeled fields. -/
+/-- Every card in the engine catalog. Oracle text is fully represented by
+modeled fields; `supportedCardsMatchOracle` checks that mechanically. -/
 def supportedCatalogCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest,
     grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
     llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
     lightningBolt, shock, giantGrowth,
-    roguesPassage, frontPorchSentries, greatFierceBee, stirUpTrouble,
-    hauntOfTheDeadMarshes, desolationProwler, raveningWarg, bilbosDeadlySlice,
-    dreadedBatCloud, crudeBentBlade, languish, shadowOfTheEnemy,
+    bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
+    magnificentEnd, mentorOfTheMeek, fiendHunter, errandRiderOfGondor,
+    landrovalHorizonWitness, roguesPassage, soldierOfTheGreyHost,
+    eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
+    banishingLight, dawnOfANewAge, vowToErebor, westfoldRider, esquireOfTheKing,
+    bilboBagginsBurglar, pelargirSurvivor, lakeshoreApothecary,
+    confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
+    knightsOfDolAmroth, greyHavensNavigator, ithilienKingfisher, hithlainKnots,
+    captainOfUmbar, minasTirithGarrison, colossalWhale, willowWind,
+    bilboLuckwearer, uneasyPartings, nimrodelWatcher, sternScolding,
+    frontPorchSentries, greatFierceBee, stirUpTrouble,
+    hauntOfTheDeadMarshes, desolationProwler, raveningWarg, gollumSilentSlinker,
+    bilbosDeadlySlice, dreadedBatCloud, crudeBentBlade, languish, shadowOfTheEnemy,
     gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
     bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins,
     wayfarersBauble, battleScarredGoblin, improvisedClub, smaugTheGreatCalamity,
@@ -393,9 +424,9 @@ def supportedOracleFailures : List String :=
 #guard beornReluctantHost.matchesOracleText
 #guard gollumTheAbandoned.matchesOracleText
 #guard gollumSilentSlinker.keywords.menace
-#guard !bofurReliableGuardian.matchesOracleText
-#guard !magnificentEnd.matchesOracleText
-#guard !gollumSilentSlinker.matchesOracleText
+#guard bofurReliableGuardian.matchesOracleText
+#guard magnificentEnd.matchesOracleText
+#guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
 
 end Mtg.Engine
