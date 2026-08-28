@@ -4254,7 +4254,7 @@ def vowMayAttach : Game :=
 #guard vowMayAttach.power (namedPermanent vowMayAttach "Bofur, Reliable Guardian") == 3
 #guard (namedPermanent vowMayAttach "Ragged Short Spear").attachedTo.isNone
 
-/-- The heuristic attaches an Equipment it controls that is not already on the host. -/
+-- The heuristic attaches an Equipment it controls that is not already on the host.
 #guard
   match Agent.choose vowMayAttach ⟨0⟩ with
   | some (.choosePermanents ids) =>
