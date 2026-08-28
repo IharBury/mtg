@@ -1095,8 +1095,7 @@ def mountainLine (g : Game) : String :=
   (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").id) "*/*"
 #guard mentions mirkwoodPathmaker.summary "*/*"
 
-#guard mentions (header gandalfEntered) "choose targets (CR 601.2c"
-#guard mentions (header gandalfEntered) "together"
+#guard mentions (header gandalfEntered) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
 #guard mentions (stackBlock gandalfEntered) "divided as you choose"
 #guard mentions (stackBlock gandalfEntered) "When Gandalf enters"
@@ -1167,8 +1166,7 @@ def mountainLine (g : Game) : String :=
   mentions (objectLine g ogre) "2/2" &&
     !mentions (objectLine g ogre) "trample"
 
-#guard mentions (header titanEntered) "choose targets (CR 601.2c"
-#guard mentions (header titanEntered) "together"
+#guard mentions (header titanEntered) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock titanEntered) "Inferno Titan's ability"
 #guard mentions (stackBlock titanEntered) "divided as you choose"
 #guard mentions (stackBlock titanEntered) "Whenever this creature enters or attacks"
@@ -1179,7 +1177,7 @@ def mountainLine (g : Game) : String :=
   let src := namedPermanent g "Inferno Titan"
   mentions (stackBlock g) s!"*source {src.id} Inferno Titan*" &&
     mentions (objectLine g src) "6/6"
-#guard mentions (header titanAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (header titanAttackDeclared) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock titanAttackDeclared) "Inferno Titan's ability"
 #guard mentions (stackBlock titanAttackDeclared) "divided as you choose"
 #guard mentions (stackBlock titanAttackDeclared) "Whenever this creature enters or attacks"

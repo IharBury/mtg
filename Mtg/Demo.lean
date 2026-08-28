@@ -516,7 +516,7 @@ def helpInteractive (controlAll : Bool := false)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
-  target <id|name|opponent> [n] ...  Announce every target of one "target" word together (CR 601.2c); n is damage when dividing (CR 601.2d)
+  target <id|name|opponent> [n] ...  Announce every target of one “target” word together (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
@@ -543,6 +543,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "scry bottom").length > 1
 #guard ((helpInteractive false).splitOn "scry top").length > 1
 #guard ((helpInteractive false).splitOn "target <id|name|opponent>").length > 1
+#guard ((helpInteractive false).splitOn "together").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2d").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "cast <id> adventure").length > 1
