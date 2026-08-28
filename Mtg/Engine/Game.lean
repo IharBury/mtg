@@ -2293,19 +2293,21 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
   else legal
 
 /-- Required and maximum announced targets for `obj` (CR 601.2c). Spells
-such as Gaze in Wonder require one target and allow a second. -/
+such as Gaze in Wonder require one target and allow a second; every target
+of that one instance of the word “target” is announced together. -/
 def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   match g.currentSpellEffect obj with
   | some e => (e.targetCount, e.maxTargetCount)
   | none =>
-    let n :=
-      match obj.abilityEffect with
-      | some e => e.targetCount
-      | none =>
-        match obj.triggeredAbility with
-        | some ab => if ab.allowsZeroTargets then 0 else ab.targeting.targetCount
-        | none => 1
-    (n, n)
+    match obj.abilityEffect with
+    | some e => (e.targetCount, e.targetCount)
+    | none =>
+      match obj.triggeredAbility with
+      | some ab =>
+        let n := ab.targeting.targetCount
+        -- “Up to one” is min 0, max the printed count (usually 1).
+        if ab.allowsZeroTargets then (0, n) else (n, n)
+      | none => (1, 1)
 
 /-- True when at least the required targets are announced and another
 optional target may still be chosen. Unused for one-word variable counts
