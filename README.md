@@ -69,7 +69,8 @@ interactive mode, then further commands come from the console. `--output FILE`
 writes accepted game-state commands from the input file and from the console
 (one per line), so a session can be replayed with `--input`. Incorrect commands
 and commands that do not change the game (`state`, `quit`, `help`, `visible`)
-are omitted. When `--input` and `--output` are the same file, the existing
+are omitted. `autopay` is written as the individual `tap` and `pay` commands
+it performs. When `--input` and `--output` are the same file, the existing
 commands are replayed and new accepted console commands are appended. Put
 `first <name>` at the top of an input file when the first named
 player is the one deciding; pass `--decides NAME` so a replay asks the same
@@ -166,4 +167,5 @@ The first slice of the engine models the two-player game:
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
-  including choosing the starting player (CR 103.1)
+  including choosing the starting player (CR 103.1) and `autopay` to activate
+  mana abilities and pay a locked-in cost (recorded as `tap` and `pay`)
