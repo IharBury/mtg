@@ -1679,11 +1679,11 @@ instance : ToString CardDef where
     name := "Silent Adventurer"
     types := #[.creature]
     oracleText :=
-      "Flying\n//ADV//\nSpew Flame\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
+      "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
     keywords := Keyword.flying
   }
   leftoverOracleLines c ==
-    ["Spew Flame", "Sorcery — Adventure",
+    ["Spew Flame {4}{R}", "Sorcery — Adventure",
       "Spew Flame deals 5 damage to target creature."] &&
     (c.oracleText.splitOn "//ADV//").length > 1
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
