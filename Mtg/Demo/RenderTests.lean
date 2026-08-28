@@ -1292,6 +1292,18 @@ def mountainLine (g : Game) : String :=
     !mentions (stackBlock g)
       s!"*targeting {elves.id} Llanowar Elves and {bears.id} Grizzly Bears*" &&
     (changedZones quarrelSourceChosen g).contains .stack
+#guard mentions (header gazeProposed) "choose targets of this \"target\" word together (CR 601.2c"
+#guard
+  let g := gazeOneTarget
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears*" &&
+    !mentions (stackBlock g) "; then"
+#guard
+  let g := gazeTwoTargets
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears and {ogre.id} Gray Ogre*" &&
+    !mentions (stackBlock g) "; then"
 #guard
   let g := passageResolved
   mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"

@@ -491,8 +491,9 @@ def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
   | none => s!" [choose targets (CR 601.2c, {name})]"
   | some o =>
     let kind := (g.targetingOf o).kind
+    let maxN := (g.announcedTargetBounds o).2
     if (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome ||
-        (kind.spec.slots.isEmpty && kind.targetCount > 1) then
+        (kind.spec.slots.isEmpty && maxN > 1) then
       s!" [choose targets of this \"target\" word together (CR 601.2c, {name})]"
     else if !kind.spec.slots.isEmpty then
       let already :=
@@ -551,6 +552,18 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
     | .chooseTriggerToStack p =>
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
+    | .mayPayGeneric p n =>
+      s!" [may pay \{{n}} ({g.player p |>.name})]"
+    | .chooseLibraryPlacement p _ =>
+      s!" [choose top or bottom ({g.player p |>.name})]"
+    | .mayAttachEquipment p _ =>
+      s!" [may attach Equipment ({g.player p |>.name})]"
+    | .tapHumans p =>
+      s!" [tap Humans ({g.player p |>.name})]"
+    | .payOrLetCounter p n _ =>
+      s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
+    | .mayPlusOneCreature p =>
+      s!" [may put a +1/+1 counter ({g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""
