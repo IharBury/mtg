@@ -2620,6 +2620,7 @@ def shouldWriteOutput (sameFile fromInput accepted : Bool) (cmd : String) : Bool
 
 #guard shouldWriteOutput false false true "keep"
 #guard shouldWriteOutput false false true "first"
+#guard shouldWriteOutput false false true "target"
 #guard shouldWriteOutput false true true "pass"
 #guard shouldWriteOutput true false true "keep"
 #guard !shouldWriteOutput false false true "state"
@@ -2826,6 +2827,43 @@ def shouldAutoTarget (g : Game) (pending : List String) : Bool :=
       #[Target.permanent (Tests.namedPermanent Tests.proposedSmite "Grizzly Bears").id]
   | .error _ => false
 
+/-- Apply the unique legal target and the `--output` line that records it. -/
+def autoTargetStep? (g : Game) (pending : List String) :
+    Option (Except String (Game × String)) :=
+  if !shouldAutoTarget g pending then none
+  else
+    match g.actor, soleLegalTarget? g with
+    | some p, some t =>
+      some (g.apply p (.target t) |>.map (fun g' => (g', targetCommand g p t)))
+    | _, _ => some (.error "no actor or unique legal target")
+
+#guard (autoTargetStep? Tests.proposedBolt []).isNone
+#guard (autoTargetStep? Tests.proposedSmite ["target opponent"]).isNone
+#guard
+  let tid := (Tests.namedPermanent Tests.proposedSmite "Grizzly Bears").id
+  match autoTargetStep? Tests.proposedSmite [] with
+  | some (.ok (g', cmd)) =>
+    cmd == s!"target {tid}" &&
+      g'.stack.back!.targets == #[Target.permanent tid] &&
+      g'.log.any (fun s => Tests.mentions s "chooses Grizzly Bears as a target (CR 601.2c)")
+  | _ => false
+#guard
+  let tid := (Tests.namedPermanent Tests.hospitalityLandPlayed "Grizzly Bears").id
+  match autoTargetStep? Tests.hospitalityLandPlayed [] with
+  | some (.ok (g', cmd)) =>
+    cmd == s!"target {tid}" &&
+      g'.stack.back!.targets == #[Target.permanent tid]
+  | _ => false
+#guard
+  let tid := (Tests.namedPermanent Tests.proposedSmite "Grizzly Bears").id
+  match autoTargetStep? Tests.proposedSmite [] with
+  | some (.ok (_, cmd)) =>
+    let parts := cmd.splitOn " "
+    match applyInteractiveAsActor Tests.proposedSmite (parts.headD "") (parts.drop 1) with
+    | .ok g' => g'.stack.back!.targets == #[Target.permanent tid]
+    | .error _ => false
+  | _ => false
+
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
 The chooser announcement is printed first by `printFirstChooser`. -/
@@ -2903,14 +2941,13 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printState g (some p)
       | none => pure ()
       lastActor := g.actor
-    if shouldAutoTarget g pending then
-      let some p := g.actor | continue
-      let some t := soleLegalTarget? g | continue
-      match g.apply p (.target t) with
+    if let some step := autoTargetStep? g pending then
+      match step with
       | .error e =>
-        IO.println s!"{(g.player p).name} could not automatically target: {e}"
-      | .ok g' =>
-        recordAcceptedCommand output sameFile false (targetCommand g p t)
+        let who := match g.actor with | some p => (g.player p).name | none => "Player"
+        IO.println s!"{who} could not automatically target: {e}"
+      | .ok (g', line) =>
+        recordAcceptedCommand output sameFile false line
         seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
       continue
