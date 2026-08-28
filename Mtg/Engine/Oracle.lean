@@ -1,0 +1,401 @@
+import Mtg.Engine.Card
+import Mtg.Engine.Catalog
+import Mtg.Engine.Catalog.Hobbit
+
+/-!
+# Oracle verification
+
+Check that a `CardDef`'s modeled fields reconstruct its stored Oracle text.
+Reminder text, ability words, card-name wording, Gatherer `//ADV//` markers,
+and equivalent phrasing (`this creature` vs the printed name) are normalized
+away so currently supported cards can be checked mechanically.
+-/
+
+namespace Mtg.Engine
+
+namespace CardDef
+
+/-- Unique strings, first occurrence kept. -/
+def uniqueStrings (xs : List String) : List String :=
+  xs.foldl (fun acc x => if acc.any (· == x) then acc else acc ++ [x]) []
+
+/-- Lexicographic sort for comparing ability-unit lists. -/
+def sortStrings (xs : List String) : List String :=
+  xs.toArray.qsort (fun a b => decide (a < b)) |>.toList
+
+/-- Collapse runs of whitespace. -/
+def collapseWs (s : String) : String :=
+  let rec go (cs : List Char) (inSpace : Bool) (acc : List Char) : List Char :=
+    match cs with
+    | [] => acc.reverse
+    | c :: rest =>
+      if c == ' ' || c == '\n' || c == '\t' then
+        go rest true acc
+      else
+        let acc := if inSpace && !acc.isEmpty then ' ' :: acc else acc
+        go rest false (c :: acc)
+  String.ofList (go s.toList false [])
+
+/-- Drop balanced parentheticals, including nested reminder text. -/
+def stripParentheticals (s : String) : String :=
+  Id.run do
+    let mut acc : Array Char := #[]
+    let mut depth : Nat := 0
+    for c in s.toList do
+      if c == '(' then
+        depth := depth + 1
+      else if c == ')' then
+        depth := if depth == 0 then 0 else depth - 1
+      else if depth == 0 then
+        acc := acc.push c
+    return String.ofList acc.toList
+
+/-- If the whole line is a parenthetical (basic-land reminder), unwrap it. -/
+def unwrapOuterParens (s : String) : String :=
+  let t := s.trimAscii.copy
+  if t.startsWith "(" && t.endsWith ")" && t.length >= 2 then
+    (t.drop 1 |>.dropEnd 1).trimAscii.copy
+  else t
+
+/-- Drop a leading ability word (`Landfall —`, `Ferocious —`). Leaves
+`Choose one —` intact because that phrase contains a space. -/
+def stripAbilityWord (s : String) : String :=
+  match s.splitOn "—" with
+  | head :: rest =>
+    if rest.isEmpty then s
+    else
+      let h := head.trimAscii.copy
+      if h.isEmpty || h.contains ' ' then s
+      else (String.intercalate "—" rest).trimAscii.copy
+  | [] => s
+
+/-- Printed-name variants used in Oracle (`Gandalf, Spark Starter` → `Gandalf`). -/
+def nameAliases (name : String) : List String :=
+  let trimmed := name.trimAscii.copy
+  let beforeComma := (trimmed.splitOn ",").headD trimmed |>.trimAscii.copy
+  let first := (beforeComma.splitOn " ").headD beforeComma
+  uniqueStrings ([trimmed, beforeComma, first].filter (fun s => s.length > 2))
+
+/-- Replace each `old` with `new` in order. -/
+def applyReplacements (s : String) (pairs : List (String × String)) : String :=
+  pairs.foldl (fun acc p => acc.replace p.fst p.snd) s
+
+/-- Lowercase, drop reminders, and replace the card's name with `this`. -/
+def prepareLine (cardName : String) (s : String) : String :=
+  let s := unwrapOuterParens s
+  let s := stripParentheticals s
+  let s := stripAbilityWord s
+  let s := (lowerAscii s).trimAscii.copy
+  let aliases := nameAliases cardName |>.map lowerAscii
+  let namePairs :=
+    aliases.map (fun a => (s!"{a}'s", "this")) ++
+    aliases.map (fun a => (a, "this"))
+  let s := applyReplacements s namePairs
+  applyReplacements s [
+    ("this creature's", "this"),
+    ("this permanent's", "this"),
+    ("this card's", "this"),
+    ("this enchantment's", "this"),
+    ("this equipment's", "this"),
+    ("this artifact's", "this"),
+    ("this aura's", "this"),
+    ("this spell's", "this"),
+    ("this creature", "this"),
+    ("this permanent", "this"),
+    ("this enchantment", "this"),
+    ("this equipment", "this"),
+    ("this artifact", "this"),
+    ("this aura", "this"),
+    ("this card", "this"),
+    ("this spell", "this")
+  ]
+
+/-- Replace an isolated word. -/
+def replaceWord (s old new : String) : String :=
+  ((" " ++ s ++ " ").replace s!" {old} " s!" {new} ").drop 1 |>.dropEnd 1 |>.copy
+
+/-- English number words that appear in Oracle (`two cards`, `three or more`). -/
+def replaceNumberWords (s : String) : String :=
+  let words : List (String × String) := [
+    ("ten", "10"), ("nine", "9"), ("eight", "8"), ("seven", "7"),
+    ("six", "6"), ("five", "5"), ("four", "4"), ("three", "3"),
+    ("two", "2"), ("one", "1")
+  ]
+  words.foldl (fun acc p => replaceWord acc p.fst p.snd) s
+
+/-- Drop a leading `this ` left over from name replacement. -/
+def dropLeadingThis (s : String) : String :=
+  let s := s.trimAscii.copy
+  if s.startsWith "this " then (s.drop "this ".length).trimAscii.copy else s
+
+/-- Keep letters, digits, mana braces, and P/T signs; other punctuation
+becomes a space. Apostrophes are dropped so `can't` is `cant`. -/
+def keepSignificant (s : String) : String :=
+  String.ofList (s.toList.filterMap (fun c =>
+    if c == '\'' then none
+    else if c.isAlphanum || c == '{' || c == '}' || c == '/' || c == '+' || c == '-' then
+      some c
+    else some ' '))
+
+/-- Phrase-level Oracle equivalences after `prepareLine`. -/
+def normalizePhrases (s : String) : String :=
+  applyReplacements s [
+    ("put that card", "put it"),
+    ("sacrifice this artifact", "sacrifice"),
+    ("sacrifice this creature", "sacrifice"),
+    ("sacrifice this", "sacrifice"),
+    ("sacrifice another creature or artifact", "sacrifice an artifact or creature"),
+    ("sacrifice another artifact or creature", "sacrifice an artifact or creature"),
+    ("he deals", "this deals"),
+    ("she deals", "this deals"),
+    ("it deals", "this deals"),
+    ("and only once each turn", "activate only once each turn"),
+    ("activate only from the graveyard", ""),
+    ("activate only from your hand", "")
+  ]
+
+/-- Comparable form of one ability unit. -/
+def normalizeUnit (cardName : String) (s : String) : String :=
+  let s := prepareLine cardName s
+  let s := replaceNumberWords s
+  let s := normalizePhrases s
+  let s := keepSignificant s
+  let s := collapseWs s
+  dropLeadingThis s
+
+/-- True when `line` is a Gatherer Adventure type line. -/
+def isAdventureTypeLine (s : String) : Bool :=
+  let t := s.trimAscii.copy
+  (t.startsWith "Sorcery" || t.startsWith "Instant") &&
+    (t.endsWith "Adventure" || (t.splitOn "Adventure").length > 1)
+
+/-- Attach `•` mode lines to the preceding `Choose one` line. -/
+def mergeBulletLines (lines : List String) : List String :=
+  lines.foldl (fun acc line =>
+    if line.startsWith "•" then
+      match acc.reverse with
+      | [] => [line]
+      | last :: rev => ((last ++ " " ++ line) :: rev).reverse
+    else
+      acc ++ [line]) []
+
+/-- Join `Name {cost}` / `Sorcery — Adventure` / effect into one unit. -/
+def mergeAdventureBlocks : List String → List String
+  | a :: b :: c :: rest =>
+    if isAdventureTypeLine b then
+      s!"{a} {b} {c}" :: mergeAdventureBlocks rest
+    else
+      a :: mergeAdventureBlocks (b :: c :: rest)
+  | xs => xs
+
+/-- Printed Oracle lines, without the Gatherer `//ADV//` marker. -/
+def rawOracleLines (text : String) : List String :=
+  text.splitOn "\n" |>.filterMap (fun line =>
+    match stripAdventureDelimiter (line.trimAscii.copy) with
+    | none => none
+    | some rest => if rest.isEmpty then none else some rest)
+
+/-- Ability units in stored Oracle text. -/
+def oracleAbilityUnits (text : String) : List String :=
+  mergeAdventureBlocks (mergeBulletLines (rawOracleLines text))
+
+/-- Keyword names the engine models, in lowercase. -/
+def modeledKeywordNames : List String :=
+  Keywords.fields.map (·.name)
+
+/-- If `prepared` is only modeled keywords, those names; otherwise none. -/
+def keywordTokens (prepared : String) : Option (List String) :=
+  let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
+  let parts :=
+    cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
+  if parts.isEmpty then none
+  else if parts.all (fun p => modeledKeywordNames.any (· == p)) then some parts
+  else none
+
+/-- Equip `{cost}` printed as the keyword rather than the reminder. -/
+def isEquipAbility (ab : ActivatedAbility) : Bool :=
+  ab.effect == .attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
+
+/-- Typecycling land type when this is a cycling activation from hand. -/
+def typecyclingLand? (ab : ActivatedAbility) : Option String :=
+  if ab.activateFromHand && ab.cost.discardSource then
+    match ab.effect with
+    | .searchLandTypeToHand t => some t
+    | _ => none
+  else none
+
+/-- Oracle-style line for a modeled activated ability. Timing restrictions are
+sentences, not parentheticals, so they survive reminder-text stripping. -/
+def activatedOracleLine (ab : ActivatedAbility) : String :=
+  if isEquipAbility ab then
+    s!"Equip {ab.cost.mana}"
+  else
+    match typecyclingLand? ab with
+    | some t => s!"{t}cycling {ab.cost.mana}"
+    | none =>
+      let timing :=
+        (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
+        (if ab.onlyDuringYourTurn && ab.onceEachTurn then
+          " Activate only during your turn and only once each turn."
+         else
+          (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
+          (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
+        (if ab.onlyIfYouControlLegendary then
+          " Activate only if you control a legendary creature." else "")
+      let body :=
+        if ab.isModal then
+          let modes := ab.allModes.toList.map AbilityEffect.toNotation
+          s!"Choose one — {String.intercalate "; " modes}"
+        else
+          ab.effect.toNotation
+      s!"{ab.cost.toNotation}: {body}.{timing}"
+
+/-- Oracle-style line for a one-shot spell effect. -/
+def spellEffectLine (cardName : String) (e : SpellEffect) : String :=
+  let body := SpellEffect.toNotation e
+  if body.startsWith "deals" then s!"{cardName} {body}" else body
+
+/-- Lines reconstructed from modeled `CardDef` fields (not keywords). -/
+def reconstructedAbilityLines (c : CardDef) : List String :=
+  (if c.costReductionIfCreatureDied != 0 then
+    [s!"This spell costs \{{c.costReductionIfCreatureDied}} less to cast if a creature died this turn."]
+   else []) ++
+  (if c.costReductionIfTargetDamaged != 0 then
+    [s!"This spell costs \{{c.costReductionIfTargetDamaged}} less to cast if it targets a creature that was dealt damage this turn."]
+   else []) ++
+  (if c.additionalCostSacrificeArtifactOrCreature then
+    match c.additionalCostOrPayGeneric with
+    | some n =>
+      [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
+    | none =>
+      ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
+   else []) ++
+  (if c.isAura then ["Enchant creature"] else []) ++
+  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
+  (if c.tapAddAnyColorEqualToPower then
+    ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
+   else []) ++
+  c.staticAbilities.toList.map StaticAbility.toNotation ++
+  c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
+  c.activatedAbilities.toList.map activatedOracleLine ++
+  (if !c.spellModes.isEmpty then
+    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map SpellEffect.toNotation)}"]
+   else
+    match c.spellEffect with
+    | some e => [spellEffectLine c.name e]
+    | none => []) ++
+  match c.adventure with
+  | none => []
+  | some adv =>
+    let effect :=
+      match adv.spellEffect with
+      | some e => spellEffectLine adv.name e
+      | none => adv.oracleText
+    [s!"{adv.name} {adv.manaCost} {formatTypeLine #[] adv.types adv.subtypes} {effect}"]
+
+/-- Split a unit into modeled keywords or a normalized leftover line. -/
+def classifyUnit (cardName : String) (unit : String) : Sum (List String) String :=
+  match keywordTokens (prepareLine cardName unit) with
+  | some kws => .inl kws
+  | none => .inr (normalizeUnit cardName unit)
+
+/-- Keywords and remaining normalized units from a list of ability units. -/
+def partitionUnits (cardName : String) (units : List String) : List String × List String :=
+  let classified := units.map (classifyUnit cardName)
+  let kws :=
+    uniqueStrings (classified.foldl (fun acc u =>
+      match u with
+      | .inl ks => acc ++ ks
+      | .inr _ => acc) [])
+  let rest :=
+    classified.filterMap (fun u =>
+      match u with
+      | .inl _ => none
+      | .inr s => if s.isEmpty then none else some s)
+  (sortStrings kws, sortStrings rest)
+
+/-- Keywords and remaining units implied by stored Oracle text. -/
+def oraclePartition (c : CardDef) : List String × List String :=
+  partitionUnits c.name (oracleAbilityUnits c.oracleText)
+
+/-- Keywords and remaining units implied by modeled fields. -/
+def reconstructedPartition (c : CardDef) : List String × List String :=
+  let fromLines := partitionUnits c.name (reconstructedAbilityLines c)
+  let printed := sortStrings c.keywords.toList
+  (sortStrings (uniqueStrings (printed ++ fromLines.fst)), fromLines.snd)
+
+/-- True when modeled fields reconstruct this card's Oracle text. -/
+def matchesOracleText (c : CardDef) : Bool :=
+  c.oraclePartition == c.reconstructedPartition
+
+/-- Debug report: Oracle vs reconstructed keyword and ability units. -/
+def oracleMismatch (c : CardDef) : String :=
+  let (ok, oa) := c.oraclePartition
+  let (rk, ra) := c.reconstructedPartition
+  s!"{c.name}\n  oracle keywords: {ok}\n  modeled keywords: {rk}\n  oracle units: {oa}\n  modeled units: {ra}"
+
+end CardDef
+
+open Catalog
+
+/-- Catalog cards whose Oracle text is fully represented by modeled fields. -/
+def supportedCatalogCards : Array CardDef :=
+  #[plains, island, swamp, mountain, forest,
+    grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
+    llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
+    lightningBolt, shock, giantGrowth,
+    roguesPassage, frontPorchSentries, greatFierceBee, stirUpTrouble,
+    hauntOfTheDeadMarshes, desolationProwler, raveningWarg, bilbosDeadlySlice,
+    dreadedBatCloud, crudeBentBlade, languish, shadowOfTheEnemy,
+    gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
+    bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins,
+    wayfarersBauble, battleScarredGoblin, improvisedClub, smaugTheGreatCalamity,
+    ologHaiCrusher, gandalfSparkStarter, raggedShortSpear, smiteTheDeathless,
+    goblinFireleaper, oliphaunt, goblinCratermaker, infernoTitan, guttersnipe,
+    orcishSiegemaster, snowslopeHunter, fireOfOrthanc, guardianOfTheHalls,
+    quarrel, galadhrimGuide, galionElvenkingsButler, elvishVisionary,
+    wargTactics, beornsHospitality, mirkwoodElk, celebornTheWise, giftOfStrands,
+    elvishArchdruid, lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
+    beornReluctantHost, woodElves, elvishMystic, attercop]
+
+/-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
+def supportedCardsMatchOracle : Bool :=
+  supportedCatalogCards.all (·.matchesOracleText)
+
+/-- Names of supported catalog cards whose `CardDef` does not match Oracle. -/
+def supportedOracleFailures : List String :=
+  supportedCatalogCards.toList.filterMap (fun c =>
+    if c.matchesOracleText then none else some c.oracleMismatch)
+
+#guard CardDef.normalizeUnit "Lightning Bolt" "Lightning Bolt deals 3 damage to any target." ==
+  CardDef.normalizeUnit "Lightning Bolt" "deals 3 damage to any target"
+#guard CardDef.keywordTokens (CardDef.prepareLine "Silent" "Reach, deathtouch") ==
+  some ["reach", "deathtouch"]
+#guard CardDef.keywordTokens (CardDef.prepareLine "Silent"
+  "Menace (This creature can't be blocked except by two or more creatures.)") ==
+  some ["menace"]
+#guard CardDef.isAdventureTypeLine "Sorcery — Adventure"
+#guard CardDef.isAdventureTypeLine "Instant — Adventure"
+#guard !CardDef.isAdventureTypeLine "Choose one —"
+#guard plains.matchesOracleText
+#guard mountain.matchesOracleText
+#guard grizzlyBears.matchesOracleText
+#guard ragingGoblin.matchesOracleText
+#guard llanowarElves.matchesOracleText
+#guard giantSpider.matchesOracleText
+#guard lightningBolt.matchesOracleText
+#guard giantGrowth.matchesOracleText
+#guard roguesPassage.matchesOracleText
+#guard nightsWhisper.matchesOracleText
+#guard giftOfStrands.matchesOracleText
+#guard smaugTheGreatCalamity.matchesOracleText
+#guard beornReluctantHost.matchesOracleText
+#guard gollumTheAbandoned.matchesOracleText
+#guard gollumSilentSlinker.keywords.menace
+#guard !bofurReliableGuardian.matchesOracleText
+#guard !magnificentEnd.matchesOracleText
+#guard !gollumSilentSlinker.matchesOracleText
+#guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
+
+end Mtg.Engine
