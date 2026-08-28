@@ -1113,15 +1113,10 @@ def mountainLine (g : Game) : String :=
 #guard mentions (zoneBlock gandalfTargetedOpponent .stack) "*targeting Nissa for 3*"
 #guard (changedZones gandalfEntered gandalfTargetedOpponent).contains .stack
 #guard
-  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 2) with
-  | .ok g' =>
-    mentions (stackBlock g') "*targeting Nissa for 2*" &&
-      (changedZones gandalfEntered g').contains .stack
-  | .error _ => false
-#guard
   let g := gandalfSplitAnnounced
   let bears := namedPermanent g "Grizzly Bears"
-  mentions (stackBlock g) s!"*targeting Nissa for 2, {bears.id} Grizzly Bears for 1*"
+  mentions (stackBlock g) s!"*targeting Nissa for 2, {bears.id} Grizzly Bears for 1*" &&
+    (changedZones gandalfSplitSetup g).contains .stack
 
 #guard mentions (header galionAttackDeclared) "choose targets (CR 601.2c"
 #guard mentions (stackBlock galionAttackDeclared) "Galion, Elvenking's Butler's ability"

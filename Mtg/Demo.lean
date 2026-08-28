@@ -516,7 +516,7 @@ def helpInteractive (controlAll : Bool := false)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
-  target <id|name|opponent> [n] ...  Announce a target (CR 601.2c); n is damage when dividing (CR 601.2d)
+  target <id|name|opponent> [n] ...  Announce every target of one "target" word together (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
@@ -1617,6 +1617,8 @@ def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .ok _ => false
 
 def targetUsage : String := "usage: target <id|name|opponent>"
+def sequentialTargetUsage : String :=
+  "Choose each instance of the word \"target\" in a separate target command (CR 601.2c)"
 def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."
 
 /-- Parse a CR 601.2c target: a permanent or graveyard-card id, a player name,
@@ -1667,8 +1669,9 @@ where
         go rest (acc.push (tgt, amt))
     | _ :: [], _ => .error divideTargetUsage
 
-/-- Announce the chosen target for a proposed spell, or divide damage among
-targets of a triggered ability (CR 601.2c / 601.2d). -/
+/-- Announce every target of the current instance of the word “target”
+(CR 601.2c), or every target of a divided-damage ability (CR 601.2d).
+Further instances of the word use a later `target` command. -/
 def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   let tokens := commandTokens tokens
   if g.announcingDividedDamage then
@@ -1678,12 +1681,13 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
       g.apply p (.target t)
     | _ =>
       let pairs ← parseTargetAmountPairs g p tokens
-      pairs.foldlM (fun acc (t, n) => acc.apply p (.divideDamage t n)) g
+      g.apply p (.divideDamage pairs)
   else
     match tokens with
     | [arg] =>
       let t ← parseTarget g p arg
       g.apply p (.target t)
+    | _ :: _ :: _ => throw sequentialTargetUsage
     | _ => throw targetUsage
 
 #guard
@@ -1698,7 +1702,7 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
 
 #guard
   match applyTarget Tests.proposedBolt ⟨0⟩ ["1", "2"] with
-  | .error msg => msg == targetUsage
+  | .error msg => msg == sequentialTargetUsage
   | .ok _ => false
 
 #guard
@@ -1785,10 +1789,13 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
 
 #guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent", "2"] with
-  | .ok g' =>
-    g'.pending == .chooseTargets ⟨0⟩ &&
-    g'.stack.back!.dividedDamage == #[2]
-  | .error _ => false
+  | .error msg => Tests.mentions msg "Must assign all remaining damage"
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedQuarrel ⟨0⟩ ["Llanowar Elves", "Grizzly Bears"] with
+  | .error msg => msg == sequentialTargetUsage
+  | .ok _ => false
 
 #guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent", "x"] with

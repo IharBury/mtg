@@ -107,7 +107,8 @@ The first slice of the engine models the two-player game:
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
   modes at 601.2b / 700.2, announcing additional or alternative costs at 601.2b
-  before targets, announcing targets at 601.2c, then determining and paying
+  before targets, announcing targets at 601.2c (every target of one instance
+  of the word “target” together; each instance sequentially), then determining and paying
   costs such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
   extra generic mana as an alternative additional cost, or paying
   life at 118.3b / 119.4, cost reductions if a creature died this turn or the

@@ -4526,19 +4526,19 @@ def gandalfResolvedOpponent : Game := passBoth gandalfTargetedOpponent
 
 -- Zero damage to a target is illegal.
 #guard
-  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 0) with
+  match gandalfEntered.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 0)]) with
   | .error msg => mentions msg "at least 1 damage"
   | .ok _ => false
 
 -- More than the remaining damage is illegal.
 #guard
-  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 4) with
+  match gandalfEntered.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 4)]) with
   | .error msg => mentions msg "remains to divide"
   | .ok _ => false
 
 -- `divideDamage` is not used for ordinary targeted spells.
 #guard
-  match proposedBolt.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 3) with
+  match proposedBolt.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 3)]) with
   | .error msg => mentions msg "does not divide damage"
   | .ok _ => false
 
@@ -4546,41 +4546,34 @@ def gandalfResolvedOpponent : Game := passBoth gandalfTargetedOpponent
 def gandalfSplitSetup : Game :=
   addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
 
+-- Multiple targets of one instance of the word “target” are chosen together
+-- (CR 601.2c); leftover damage after that announcement is illegal.
 #guard
   match gandalfSplitSetup.apply ⟨0⟩
-      (.divideDamage (Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id) 2) with
-  | .ok g' =>
-    g'.pending == .chooseTargets ⟨0⟩ &&
-      g'.stack.back!.targets.size == 1 &&
-      g'.stack.back!.dividedDamage == #[2] &&
-      g'.announcingDividedDamage
-  | .error _ => false
+      (.divideDamage #[(Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id, 2)]) with
+  | .error msg => mentions msg "Must assign all remaining damage"
+  | .ok _ => false
 
--- Duplicate targets are illegal (CR 115.3).
+-- Duplicate targets of one instance are illegal (CR 115.3).
 #guard
-  let g := mustApply gandalfSplitSetup ⟨0⟩
-    (.divideDamage (Target.player ⟨1⟩) 2)
-  match g.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1) with
+  match gandalfSplitSetup.apply ⟨0⟩
+      (.divideDamage #[(Target.player ⟨1⟩, 2), (Target.player ⟨1⟩, 1)]) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
 
--- Leaving leftover damage on the last of three target slots is illegal.
+-- Leaving leftover damage when more targets could still be chosen is illegal;
+-- every target of this instance must be announced together.
 #guard
-  let g := mustApply gandalfSplitSetup ⟨0⟩
-    (.divideDamage (Target.player ⟨0⟩) 1)
-  let g := mustApply g ⟨0⟩
-    (.divideDamage (Target.player ⟨1⟩) 1)
-  -- two targets announced, 1 damage left, one slot left: assigning 0 already rejected;
-  -- assigning 1 completes. Using a third target is fine; the illegal case is
-  -- choosing a 1-damage assignment that wouldn't fill when already at max.
-  -- With maxTargets 3 and 1 remaining after two 1s, leftover after a third 1 is 0.
-  g.pending == .chooseTargets ⟨0⟩ && g.stack.back!.dividedDamage == #[1, 1]
+  match gandalfSplitSetup.apply ⟨0⟩
+      (.divideDamage #[(Target.player ⟨0⟩, 1), (Target.player ⟨1⟩, 1)]) with
+  | .error msg => mentions msg "Must assign all remaining damage"
+  | .ok _ => false
 
 def gandalfSplitAnnounced : Game :=
-  let g := mustApply gandalfSplitSetup ⟨0⟩
-    (.divideDamage (Target.player ⟨1⟩) 2)
-  mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id) 1)
+  mustApply gandalfSplitSetup ⟨0⟩
+    (.divideDamage #[
+      (Target.player ⟨1⟩, 2),
+      (Target.permanent (namedPermanent gandalfSplitSetup "Grizzly Bears").id, 1)])
 
 #guard gandalfSplitAnnounced.pending == .none
 #guard gandalfSplitAnnounced.hasPriority ⟨0⟩
@@ -4603,11 +4596,11 @@ def gandalfSplitResolved : Game := passBoth gandalfSplitAnnounced
 def gandalfThreeAnnounced : Game :=
   let g := addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
-  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1)
-  let g := mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
   mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent g "Gray Ogre").id) 1)
+    (.divideDamage #[
+      (Target.player ⟨1⟩, 1),
+      (Target.permanent (namedPermanent g "Grizzly Bears").id, 1),
+      (Target.permanent (namedPermanent g "Gray Ogre").id, 1)])
 
 #guard gandalfThreeAnnounced.stack.back!.dividedDamage == #[1, 1, 1]
 #guard gandalfThreeAnnounced.pending == .none
@@ -4618,19 +4611,25 @@ def gandalfThreeResolved : Game := passBoth gandalfThreeAnnounced
 #guard (namedPermanent gandalfThreeResolved "Grizzly Bears").status.damage == 1
 #guard (namedPermanent gandalfThreeResolved "Gray Ogre").status.damage == 1
 
--- A fourth target is illegal once three have been chosen; leftover must be assigned
--- before filling the last slot. With 1+1 already, a 1 to a third target completes.
+-- A fourth target of the same instance is illegal (CR 601.2d).
 #guard
   let g := addPermanent gandalfEntered grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
-  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 1)
-  let g := mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
-  let g := mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent g "Raging Goblin").id) 1)
   match g.apply ⟨0⟩
-      (.divideDamage (Target.permanent (namedPermanent g "Gray Ogre").id) 1) with
+      (.divideDamage #[
+        (Target.player ⟨1⟩, 1),
+        (Target.permanent (namedPermanent g "Grizzly Bears").id, 1),
+        (Target.permanent (namedPermanent g "Raging Goblin").id, 1),
+        (Target.permanent (namedPermanent g "Gray Ogre").id, 1)]) with
+  | .error msg => mentions msg "Cannot choose more than 3 targets"
+  | .ok _ => false
+
+-- After every target of that instance is announced, a further announcement
+-- is not a targeting step.
+#guard
+  match gandalfThreeAnnounced.apply ⟨0⟩
+      (.divideDamage #[(Target.permanent (namedPermanent gandalfThreeAnnounced "Gray Ogre").id, 1)]) with
   | .error msg => mentions msg "Not time to choose targets"
   | .ok _ => false
 
@@ -4664,7 +4663,7 @@ def gandalfLeftBeforeTrigger : Game :=
   let g := g.setObject { o with
     status := { o.status with untilEotKeywords := Keyword.hexproof } }
   match g.apply ⟨0⟩
-      (.divideDamage (Target.permanent (namedPermanent g "Velvetwing Butterflies").id) 3) with
+      (.divideDamage #[(Target.permanent (namedPermanent g "Velvetwing Butterflies").id, 3)]) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
 
@@ -6201,9 +6200,10 @@ def titanResolvedOpponent : Game := passBoth titanTargetedOpponent
 /-- Split 2 to the opponent and 1 to a creature. -/
 def titanSplitAnnounced : Game :=
   let g := addPermanent titanEntered grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := mustApply g ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 2)
   mustApply g ⟨0⟩
-    (.divideDamage (Target.permanent (namedPermanent g "Grizzly Bears").id) 1)
+    (.divideDamage #[
+      (Target.player ⟨1⟩, 2),
+      (Target.permanent (namedPermanent g "Grizzly Bears").id, 1)])
 
 #guard titanSplitAnnounced.stack.back!.dividedDamage == #[2, 1]
 
@@ -8217,6 +8217,14 @@ def proposedQuarrel : Game :=
 #guard proposedQuarrel.stack.back!.targets.isEmpty
 #guard proposedQuarrel.log.any (fun s => mentions s "begins casting Quarrel")
 #guard proposedQuarrel.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
+
+-- Distinct instances of the word “target” are announced sequentially (CR 601.2c).
+#guard
+  match proposedQuarrel.announceTargetChoices ⟨0⟩
+      #[(Target.permanent (namedPermanent proposedQuarrel "Llanowar Elves").id, none),
+        (Target.permanent (namedPermanent proposedQuarrel "Grizzly Bears").id, none)] with
+  | .error msg => mentions msg "separately"
+  | .ok _ => false
 
 -- First target must be a creature you control, not a player or an opponent's creature.
 #guard

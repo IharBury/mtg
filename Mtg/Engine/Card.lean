@@ -99,7 +99,9 @@ end Keyword
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
 in `EffectTargetKind.spec` and `Game.legalTargetsForAtomicKind` rather than
-silently offering no targets. Sequential shapes list each slot in `spec`. -/
+silently offering no targets. Multiple instances of the word “target” list
+each slot in `spec` and are announced sequentially. Multiple targets of one
+instance are chosen together. -/
 inductive EffectTargetKind where
   /-- No target. -/
   | none
@@ -151,15 +153,17 @@ deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace EffectTargetKind
 
-/-- Count, Oracle noun, demonstration-agent preference, and per-announcement
+/-- Count, Oracle noun, demonstration-agent preference, and per-instance
 slots for a targeting shape. Exhaustive so a new constructor is a compile
 error here rather than silently using `targetCount` 1, an empty noun, or
-`.opponent`. Sequential shapes list each slot so Game does not restate them. -/
+`.opponent`. Multiple instances of the word “target” list each slot so Game
+does not restate them; those slots are announced sequentially. -/
 structure Spec where
   count : Nat := 1
   noun : String := ""
   prefer : TargetPreference := .opponent
-  /-- Kinds of each announced target. Empty means this kind is itself the slot. -/
+  /-- Kind of each instance of the word “target”. Empty means this kind is
+  itself the (one) instance. -/
   slots : Array EffectTargetKind := #[]
 deriving Repr, Inhabited, BEq
 
@@ -210,8 +214,8 @@ def noun (k : EffectTargetKind) : String :=
 def defaultPreference (k : EffectTargetKind) : TargetPreference :=
   k.spec.prefer
 
-/-- Kind of the `i`th target to announce (0-based). Atomic shapes return
-themselves for every slot. -/
+/-- Kind of the `i`th instance of the word “target” (0-based). Atomic shapes
+return themselves for every slot. -/
 def slotKind (k : EffectTargetKind) (i : Nat) : EffectTargetKind :=
   k.spec.slots[i]?.getD k
 

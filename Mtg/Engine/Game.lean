@@ -515,12 +515,14 @@ inductive Action where
   | castAdventure (id : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
-  /-- Announce a target for the proposed spell (CR 601.2c). For a divided-
-  damage ability, assigns all remaining damage to this target (CR 601.2d). -/
+  /-- Announce a target for the current instance of the word “target”
+  (CR 601.2c). For a divided-damage ability, assigns all remaining damage
+  to this one target (CR 601.2d). -/
   | target (t : Target)
-  /-- Assign `n` damage to target `t` of a “divided as you choose” effect
-  (CR 601.2d). -/
-  | divideDamage (t : Target) (n : Nat)
+  /-- Announce every target of one instance of the word “target” on a
+  “divided as you choose” effect, together with the damage assigned to each
+  (CR 601.2c / 601.2d). -/
+  | divideDamage (assignments : Array (Target × Nat))
   /-- Activate a non-mana activated ability of a permanent (CR 602). -/
   | activate (id : ObjectId) (abilityIdx : Nat)
   /-- Pay the locked-in cost of a proposed spell or ability (CR 601.2h / 602.2b). -/
@@ -1483,8 +1485,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       |>.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id (fun _ => true)) #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
-`sourceId` excludes the source of an “another” creature. Sequential shapes
-read `spec.slots` instead of restating each slot. -/
+`sourceId` excludes the source of an “another” creature. Shapes with
+multiple instances of the word “target” read `spec.slots` instead of
+restating each slot. -/
 def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId := none) : Array Target :=
   if kind.spec.slots.isEmpty then
@@ -2011,8 +2014,9 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
         else EffectTargeting.of .none
 
 /-- Legal targets for the object currently being announced (spell or ability).
-Already-chosen targets are excluded (CR 115.3). Sequential shapes offer the
-next unset slot from `EffectTargetKind.slotKind`. -/
+Already-chosen targets are excluded (CR 115.3). Multiple instances of the
+word “target” offer the next unset slot from `EffectTargetKind.slotKind`.
+Multiple targets of one instance are announced together. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   let already :=
     match g.stackEntry? o.id with
@@ -2596,60 +2600,90 @@ def afterTriggerTargetsChosen (g : Game) : Game :=
   | none =>
     receivePriority { g with pending := .none } g.activePlayer false
 
-/-- Announce the chosen target for a proposed spell or a triggered ability
-(CR 601.2c / 603.3d). `amount?` is the damage assigned to this target of a
-divided-damage ability; omitted means all remaining damage (CR 601.2d). -/
-def announceTarget (g : Game) (p : PlayerId) (t : Target) (amount? : Option Nat := none) :
-    Except String Game := do
+/-- Announce targets for the current instance of the word “target”
+(CR 601.2c / 603.3d). Multiple targets of one instance (including a
+“divided as you choose” division, CR 601.2d) are chosen together. Each
+further instance is a later announcement. An omitted amount on a
+divided-damage ability assigns all remaining damage to that one target. -/
+def announceTargetChoices (g : Game) (p : PlayerId)
+    (choices : Array (Target × Option Nat)) : Except String Game := do
   match g.pending with
   | .chooseTargets caster =>
     if caster != p then
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
-    if !(g.legalProposedTargets p obj).contains t then
-      throw "Illegal target (CR 601.2c)"
+    if choices.isEmpty then
+      throw "Choose a target (CR 601.2c)"
     match obj.triggeredAbility.bind TriggeredAbility.dividedDamage? with
     | some (total, maxTargets) =>
       let some e := g.stackEntry? obj.id | throw "The ability left the stack"
-      let already := assignedDividedDamage e
-      let remaining := total - already
-      if remaining == 0 then
+      if !e.targets.isEmpty || assignedDividedDamage e != 0 then
+        throw "Those targets must be chosen at the same time (CR 601.2c)"
+      if total == 0 then
         throw "All damage has already been divided (CR 601.2d)"
-      let n := amount?.getD remaining
-      if n == 0 then
-        throw "Each target must be dealt at least 1 damage (CR 601.2d)"
-      if n > remaining then
-        throw s!"Only {remaining} damage remains to divide (CR 601.2d)"
-      let used := e.targets.size + 1
-      if used > maxTargets then
+      let assignments : Array (Target × Nat) ←
+        if choices.size == 1 && choices[0]!.2.isNone then
+          pure #[(choices[0]!.1, total)]
+        else if choices.any (fun c => c.2.isNone) then
+          throw "Each target must be assigned a damage amount (CR 601.2d)"
+        else
+          pure (choices.map (fun c => (c.1, c.2.getD 0)))
+      if assignments.size > maxTargets then
         throw s!"Cannot choose more than {maxTargets} targets (CR 601.2d)"
-      let leftover := remaining - n
-      if leftover > 0 && used == maxTargets then
-        throw
-          s!"Must assign all remaining damage among at most {maxTargets} targets (CR 601.2d)"
-      let g := g.setStackEntryTargets obj.id (e.targets.push t) (e.dividedDamage.push n)
-      let g := g.logMsg
-        s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
-      if leftover == 0 then
-        return g.afterTriggerTargetsChosen
-      return { g with pending := .chooseTargets p }
+      let legal := g.legalProposedTargets p obj
+      let mut assigned : Nat := 0
+      let mut targets : Array Target := #[]
+      let mut amounts : Array Nat := #[]
+      for (t, n) in assignments do
+        if !legal.contains t then
+          throw "Illegal target (CR 601.2c)"
+        if targets.contains t then
+          throw "Illegal target (CR 601.2c)"
+        if n == 0 then
+          throw "Each target must be dealt at least 1 damage (CR 601.2d)"
+        assigned := assigned + n
+        targets := targets.push t
+        amounts := amounts.push n
+      if assigned > total then
+        throw s!"Only {total} damage remains to divide (CR 601.2d)"
+      if assigned < total then
+        throw "Must assign all remaining damage among the chosen targets (CR 601.2d)"
+      let mut g := g.setStackEntryTargets obj.id targets amounts
+      for (t, n) in assignments do
+        g := g.logMsg
+          s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
+      return g.afterTriggerTargetsChosen
     | none =>
-      if amount?.isSome then
+      if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
+      if choices.size != 1 then
+        throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
+      let t := choices[0]!.1
+      if !(g.legalProposedTargets p obj).contains t then
+        throw "Illegal target (CR 601.2c)"
       let some e := g.stackEntry? obj.id | throw "The ability left the stack"
       let g := g.setStackEntryTargets obj.id (e.targets.push t)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
-      let needed :=
-        match g.currentSpellEffect obj with
-        | some effect => effect.targetCount
-        | none => 1
+      let needed := (g.targetingOf obj).targetCount
       if e.targets.size + 1 < needed then
         return { g with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
+
+/-- Announce one target of the current instance of the word “target”
+(CR 601.2c / 603.3d). On a divided-damage ability this assigns all remaining
+damage to that target (CR 601.2d). -/
+def announceTarget (g : Game) (p : PlayerId) (t : Target) : Except String Game :=
+  g.announceTargetChoices p #[(t, none)]
+
+/-- Announce every target of one instance of the word “target” on a
+“divided as you choose” effect (CR 601.2c / 601.2d). -/
+def announceDividedDamage (g : Game) (p : PlayerId)
+    (assignments : Array (Target × Nat)) : Except String Game :=
+  g.announceTargetChoices p (assignments.map (fun (t, n) => (t, some n)))
 
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
@@ -4406,7 +4440,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx => g.announceMode p idx
   | .target t => g.announceTarget p t
-  | .divideDamage t n => g.announceTarget p t (some n)
+  | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
