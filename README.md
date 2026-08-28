@@ -70,7 +70,10 @@ writes accepted game-state commands from the input file and from the console
 (one per line), so a session can be replayed with `--input`. Incorrect commands
 and commands that do not change the game (`state`, `quit`, `help`, `visible`)
 are omitted. When `--input` and `--output` are the same file, the existing
-commands are replayed and new accepted console commands are appended. Put
+commands are replayed and new accepted console commands are appended. After
+those commands are exhausted (or when no input file is given), a cost with
+only one legal payment is paid automatically; the demo writes the individual
+commands (`tap`, `pay`, `sacrifice`) to `--output`. Put
 `first <name>` at the top of an input file when the first named
 player is the one deciding; pass `--decides NAME` so a replay asks the same
 player.

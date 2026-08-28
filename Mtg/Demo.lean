@@ -21,7 +21,9 @@ reads from the console. `--output FILE` writes accepted game-state commands
 (from the file or the console) to that file. Incorrect commands and session
 commands such as `state` and `quit` are omitted. When `--input` and
 `--output` are the same file, those commands are replayed and new accepted
-console commands are appended.
+console commands are appended. After scripted input is exhausted, a cost
+with only one legal payment is paid automatically; those `tap`, `pay`, and
+`sacrifice` commands are written to `--output` as if they had been typed.
 -/
 
 open Mtg.Engine
@@ -52,7 +54,9 @@ Options:
                   game-state commands (from --input and from the console)
                   to this file. Incorrect commands and session commands
                   such as state and quit are omitted. The same path as
-                  --input replays that file and appends new commands
+                  --input replays that file and appends new commands.
+                  Unique automatic cost payments are written as tap, pay,
+                  and sacrifice commands
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
@@ -564,6 +568,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
 #guard (usage.splitOn "replays that file and appends new commands").length > 1
+#guard (usage.splitOn "Unique automatic cost payments").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
@@ -2710,6 +2715,266 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
             ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf")))
     canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
 
+/-- Whether bit `i` of `mask` is set. -/
+def maskBit (mask i : Nat) : Bool :=
+  ((mask >>> i) &&& 1) == 1
+
+/-- Elements of `xs` whose index bit is set in `mask`. -/
+def subsetFromMask {α : Type} (xs : Array α) (mask : Nat) : Array α :=
+  Id.run do
+    let mut acc : Array α := #[]
+    for i in [0:xs.size] do
+      if maskBit mask i then
+        match xs[i]? with
+        | some x => acc := acc.push x
+        | none => pure ()
+    return acc
+
+/-- True when every source in `a` also appears (by id) in `b`. -/
+def payingSourceSubset (a b : Array (GameObject × Array ManaType)) : Bool :=
+  a.all (fun (oa, _) => b.any (fun (ob, _) => oa.id == ob.id))
+
+/-- Mana type to try first from `types` given the mana already in `pool`. -/
+def preferredTypeForPool (pool : ManaPool) (types : Array ManaType)
+    (cost : ManaCost) (allowElf : Bool) : Option ManaType :=
+  match types[0]? with
+  | none => none
+  | some first =>
+    match Color.all.find? (fun c =>
+      let req := cost.coloredCount c
+      let held :=
+        if allowElf then pool.get (.colored c)
+        else pool.unrestricted (.colored c)
+      held < req && types.contains (.colored c)) with
+    | some c => some (.colored c)
+    | none => some first
+
+/-- Whether tapping every source in `sources` can pay `cost` for some
+type assignment. -/
+def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf : Bool) : List (GameObject × Array ManaType) → Bool
+  | [] => pool.canPay cost allowElf
+  | (src, types) :: rest =>
+    types.any (fun t =>
+      let amount := g.manaFromTap src t
+      let elfRestricted := src.printed.tapAddAnyColorEqualToPower
+      canPayTappingAll g (pool.add t amount (elfRestricted := elfRestricted))
+        cost allowElf rest)
+
+/-- One legal type for each source so the taps pay `cost`, preferring
+unmet colored requirements. -/
+def assignTapTypes (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf : Bool) :
+    List (GameObject × Array ManaType) → Option (List (ObjectId × ManaType))
+  | [] => if pool.canPay cost allowElf then some [] else none
+  | (src, types) :: rest =>
+    let ordered : Array ManaType :=
+      match preferredTypeForPool pool types cost allowElf with
+      | some pref =>
+        if types.contains pref then
+          #[pref] ++ types.filter (fun t => t != pref)
+        else types
+      | none => types
+    Id.run do
+      for t in ordered do
+        let amount := g.manaFromTap src t
+        let elfRestricted := src.printed.tapAddAnyColorEqualToPower
+        match assignTapTypes g (pool.add t amount (elfRestricted := elfRestricted))
+            cost allowElf rest with
+        | some taps => return some ((src.id, t) :: taps)
+        | none => pure ()
+      return none
+
+/-- Unique source set that can pay when there are too many sources to
+enumerate every subset. Recognizes a single sufficient source, or that
+every source is required. -/
+def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf : Bool) (sources : Array (GameObject × Array ManaType)) :
+    Option (Array (GameObject × Array ManaType)) :=
+  Id.run do
+    let mut singles : Array (GameObject × Array ManaType) := #[]
+    for src in sources do
+      if canPayTappingAll g pool cost allowElf [src] then
+        singles := singles.push src
+    if singles.size == 1 then
+      return some singles
+    if singles.size > 1 then
+      return none
+    if !canPayTappingAll g pool cost allowElf sources.toList then
+      return none
+    for i in [0:sources.size] do
+      let rest := sources.extract 0 i ++ sources.extract (i + 1) sources.size
+      if canPayTappingAll g pool cost allowElf rest.toList then
+        return none
+    return some sources
+
+/-- The unique inclusion-minimal set of sources that can pay `cost`, if any. -/
+def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf : Bool) (sources : Array (GameObject × Array ManaType)) :
+    Option (Array (GameObject × Array ManaType)) :=
+  let n := sources.size
+  if n > 20 then
+    uniquePayingSourceSetLarge g pool cost allowElf sources
+  else
+    let limit := 1 <<< n
+    Id.run do
+      let mut best : Option (Array (GameObject × Array ManaType)) := none
+      for mask in [1:limit] do
+        let sub := subsetFromMask sources mask
+        if canPayTappingAll g pool cost allowElf sub.toList then
+          match best with
+          | none => best := some sub
+          | some prev =>
+            if payingSourceSubset sub prev then
+              best := some sub
+            else if payingSourceSubset prev sub then
+              pure ()
+            else
+              return none
+      return best
+
+/-- Sources `p` may tap in this CR 601.2g window. -/
+def payableManaSources (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Array (GameObject × Array ManaType) :=
+  (g.manaSources p).filter (fun (src, types) =>
+    !(prop.tapSource && prop.sourceId == some src.id) && !types.isEmpty)
+
+/-- Unique taps that produce enough mana to pay the locked-in cost. -/
+def uniquePayingTaps (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Option (Array (ObjectId × ManaType)) :=
+  let pool := (g.player p).manaPool
+  let allowElf := g.proposedAllowsElfRestricted prop
+  if pool.canPay prop.cost allowElf then
+    some #[]
+  else
+    match uniquePayingSourceSet g pool prop.cost allowElf (payableManaSources g p prop) with
+    | none => none
+    | some subset =>
+      match assignTapTypes g pool prop.cost allowElf subset.toList with
+      | none => none
+      | some taps => some taps.toArray
+
+/-- Console `tap` line for one source. Multi-type sources name the color. -/
+def tapCommandFor (g : Game) (id : ObjectId) (m : ManaType) : String :=
+  match g.findObject? id with
+  | some o =>
+    if o.printed.manaAbilities.size <= 1 then s!"tap {id}"
+    else s!"tap {id} {m.letter}"
+  | none => s!"tap {id} {m.letter}"
+
+/-- `tap`/`pay` commands that pay the locked-in mana cost when that payment
+is unique. Does not reverse an unpaid spell or ability. -/
+def uniqueManaPaymentCommands (g : Game) : Option (List String) :=
+  match g.pending, g.proposedSpell with
+  | .activateManaAbilities p, some prop =>
+    if !g.canPayLife p prop.payLife then none
+    else if !g.sourceStillPayable prop then none
+    else if prop.needsSacrificeOther &&
+        (g.sacrificeCreatureOrArtifactChoices p
+          (prop.sourceId.getD prop.spellId)).isEmpty then
+      none
+    else
+      match uniquePayingTaps g p prop with
+      | none => none
+      | some taps =>
+        some (taps.toList.map (fun (id, m) => tapCommandFor g id m) ++ ["pay"])
+  | _, _ => none
+
+/-- `sacrifice <id>` when exactly one permanent can pay that cost. -/
+def uniqueSacrificeCommand (g : Game) : Option String :=
+  match g.pending with
+  | .sacrificePermanent p sourceId =>
+    let choices := g.sacrificeCreatureOrArtifactChoices p sourceId
+    match choices[0]? with
+    | some o => if choices.size == 1 then some s!"sacrifice {o.id}" else none
+    | none => none
+  | _ => none
+
+/-- Console commands that pay the pending cost when that payment is unique. -/
+def uniqueCostPaymentCommands (g : Game) : Option (List String) :=
+  match uniqueManaPaymentCommands g with
+  | some cmds => some cmds
+  | none => (uniqueSacrificeCommand g).map (fun c => [c])
+
+/-- Apply each console command as the acting player. -/
+def applyInteractiveLines (g : Game) : List String → Except String Game
+  | [] => .ok g
+  | line :: rest =>
+    let parts := line.splitOn " "
+    match applyInteractiveAsActor g (parts.headD "") (parts.drop 1) with
+    | .error e => .error e
+    | .ok g' => applyInteractiveLines g' rest
+
+/-- Automatically pay a cost only after scripted input is exhausted and
+there is only one legal way to pay it. -/
+def shouldAutoPay (g : Game) (pending : List String) : Bool :=
+  pending.isEmpty && (uniqueCostPaymentCommands g).isSome
+
+#guard shouldAutoPay Tests.targetedBolt []
+#guard !shouldAutoPay Tests.targetedBolt ["pay"]
+#guard !shouldAutoPay Tests.started []
+#guard !shouldAutoPay Tests.proposedOgre []
+#guard !shouldAutoPay Tests.paidHunter []
+
+#guard
+  match uniqueCostPaymentCommands Tests.targetedBolt with
+  | some cmds =>
+    cmds == [s!"tap {(Tests.namedPermanent Tests.targetedBolt "Mountain").id}", "pay"] &&
+    match applyInteractiveLines Tests.targetedBolt cmds with
+    | .ok g' =>
+      g'.pending == .none &&
+      g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+    | .error _ => false
+  | none => false
+
+#guard
+  match uniqueCostPaymentCommands Tests.tappedForBolt with
+  | some ["pay"] => true
+  | _ => false
+
+#guard
+  let g := Tests.addUntappedLand Tests.targetedBolt Catalog.mountain
+  (uniqueCostPaymentCommands g).isNone
+
+#guard
+  let g := Tests.addUntappedLand Tests.targetedBolt Catalog.forest
+  match uniqueCostPaymentCommands g with
+  | some cmds =>
+    cmds == [s!"tap {(Tests.namedPermanent g "Mountain").id}", "pay"]
+  | none => false
+
+#guard
+  match uniqueCostPaymentCommands Tests.proposedBauble with
+  | some cmds =>
+    cmds.length == 3 && cmds.getLast? == some "pay" &&
+    match applyInteractiveLines Tests.proposedBauble cmds with
+    | .ok g' =>
+      g'.pending == .none &&
+      g'.log.any (fun s => Tests.mentions s "activates Wayfarer's Bauble")
+    | .error _ => false
+  | none => false
+
+#guard
+  match uniqueCostPaymentCommands Tests.proposedHunter with
+  | some ["pay"] => true
+  | _ => false
+
+#guard
+  match uniqueCostPaymentCommands Tests.targetedClub with
+  | some ["pay"] => true
+  | _ => false
+
+#guard
+  match uniqueCostPaymentCommands Tests.paidClub with
+  | some [s] =>
+    s == s!"sacrifice {(Tests.clubFodder Tests.paidClub).id}" &&
+    match applyInteractiveLines Tests.paidClub [s] with
+    | .ok g' =>
+      g'.pending == .none &&
+      g'.log.any (fun s => Tests.mentions s "casts Improvised Club")
+    | .error _ => false
+  | _ => false
+
 /-- Automatically pass only after scripted input is exhausted and priority
 offers no other legal game-state action. -/
 def shouldAutoPass (g : Game) (pending : List String) : Bool :=
@@ -2849,6 +3114,32 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printState g (some p)
       | none => pure ()
       lastActor := g.actor
+    if shouldAutoPay g pending then
+      match uniqueCostPaymentCommands g with
+      | none => pure ()
+      | some cmds =>
+        let mut autoFailed := false
+        let mut autoPaid := false
+        for line in cmds do
+          if autoFailed then
+            pure ()
+          else
+            let parts := line.splitOn " "
+            match applyInteractiveAsActor g (parts.headD "") (parts.drop 1) with
+            | .error e =>
+              let who :=
+                match g.actor with
+                | some p => (g.player p).name
+                | none => "Player"
+              IO.println s!"{who} could not automatically pay: {e}"
+              autoFailed := true
+            | .ok g' =>
+              recordAcceptedCommand output sameFile false line
+              seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+              g := g'
+              autoPaid := true
+        if autoPaid && !autoFailed then
+          continue
     if shouldAutoNoAttack g pending then
       let some p := g.actor | continue
       match g.apply p (.declareAttackers #[]) with
