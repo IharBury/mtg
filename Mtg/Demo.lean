@@ -2712,6 +2712,20 @@ def shouldAutoPass (g : Game) (pending : List String) : Bool :=
 #guard !shouldAutoPass { Tests.started with step := .precombatMain } []
 #guard !shouldAutoPass Tests.drawnHands []
 
+/-- Automatically declare no attackers after scripted input is exhausted when
+no permanent can legally attack. -/
+def shouldAutoNoAttack (g : Game) (pending : List String) : Bool :=
+  pending.isEmpty && g.pending == .declareAttackers &&
+    !(g.battlefield.any g.canAttack)
+
+#guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
+#guard !shouldAutoNoAttack Tests.readyToDeclareAttackers ["noattack"]
+#guard
+  let g := { Tests.readyToDeclareAttackers with
+    battlefield := Tests.readyToDeclareAttackers.battlefield.map (fun o =>
+      { o with status := { o.status with tapped := true } }) }
+  shouldAutoNoAttack g []
+
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
 The chooser announcement is printed first by `printFirstChooser`. -/
@@ -2793,6 +2807,20 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           printState g (some p)
       | none => pure ()
       lastActor := g.actor
+    if shouldAutoNoAttack g pending then
+      let some p := g.actor | continue
+      match g.apply p (.declareAttackers #[]) with
+      | .error e =>
+        IO.println s!"{(g.player p).name} could not automatically declare no attackers: {e}"
+      | .ok g' =>
+        recordAcceptedCommand output sameFile false "noattack"
+        seen ← printLog g' seen (currentView g' playerView controlAll)
+        printChangedZones g g' (currentView g' playerView controlAll)
+        printChangedLife g g'
+        printChangedMana g g'
+        printPendingPrompt g'
+        g := g'
+      continue
     if shouldAutoPass g pending then
       let some p := g.actor | continue
       match g.apply p .pass with
