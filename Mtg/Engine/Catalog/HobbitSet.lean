@@ -72,6 +72,33 @@ def lakeTown : CardDef :=
   hobbitDualLand "Lake-town" .white .blue "Human"
     "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery."
 
+def goblinTown : CardDef :=
+  land "Goblin-town"
+    "This land enters tapped.\n{T}: Add {B} or {R}.\n{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery."
+    (entersTapped := true)
+    (tapAddOneOf := #[.colored .black, .colored .red])
+    (activatedAbilities := #[
+      activated (.plusOneOnTargetAnySubtype 2 #["Goblin", "Orc"])
+        (ManaCost.ofGenericAndColors 2 [.black, .red])
+        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
+
+def mirkwood : CardDef :=
+  land "Mirkwood"
+    "This land enters tapped.\n{T}: Add {B} or {G}.\n{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counters on target Bear, Spider, or Wolf you control. Activate only as a sorcery."
+    (entersTapped := true)
+    (tapAddOneOf := #[.colored .black, .colored .green])
+    (activatedAbilities := #[
+      activated (.plusOneOnTargetAnySubtype 2 #["Bear", "Spider", "Wolf"])
+        (ManaCost.ofGenericAndColors 2 [.black, .green])
+        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
+
+def hobbitHole : CardDef :=
+  land "Hobbit Hole"
+    "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)"
+    (activatedAbilities := #[
+      activated .searchBasicLandTapped (tap := true) (sacrificeSource := true),
+      typecyclingAbility "Halfling" (ManaCost.ofGeneric 4)])
+
 def nighthowlPursuer : CardDef :=
   creature "Nighthowl Pursuer" (ManaCost.ofColor .black) #["Wolf"] 1 1
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
@@ -184,6 +211,60 @@ def gundabadOpportunist : CardDef :=
     (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
     (triggeredAbilities := #[.onEnterExileTop])
 
+def giganticBigBear : CardDef :=
+  creature "Gigantic Big Bear" (ManaCost.ofGenericAndColors 5 [.green, .green])
+    #["Bear"] 10 7
+    (oracleText := "This spell can't be countered.\nHexproof, haste")
+    (keywords := Keyword.hexproof.merge Keyword.haste)
+    (cantBeCountered := true)
+
+def bothersomeNoisemaker : CardDef :=
+  creature "Bothersome Noisemaker" (ManaCost.ofGenericAndColor 1 .red)
+    #["Goblin", "Bard"] 2 2
+    (oracleText := "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.onCastNoncreatureAmassGoblins 1])
+
+def fearsomeGoblinPair : CardDef :=
+  creature "Fearsome Goblin Pair" (ManaCost.ofGenericAndHybrids 2 .black .red 1)
+    #["Goblin", "Soldier"] 1 1
+    (oracleText := "When this creature dies, amass Goblins 4. (Put four +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.onDiesAmassGoblins 4])
+
+def goblinTownFlunkies : CardDef :=
+  creature "Goblin-town Flunkies" (ManaCost.ofGenericAndColor 1 .red)
+    #["Goblin", "Soldier"] 1 1
+    (oracleText := "Haste\nWhen this creature enters, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (keywords := Keyword.haste)
+    (triggeredAbilities := #[.onEnterAmassGoblins 1])
+
+def mistyMountainsRaider : CardDef :=
+  creature "Misty Mountains Raider" (ManaCost.ofGenericAndColor 4 .red)
+    #["Goblin", "Soldier"] 4 4
+    (oracleText := "Whenever you attack, amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.onYouAttackAmassGoblins 2])
+
+def greatGoblinFoulHearted : CardDef :=
+  legendaryCreature "Great Goblin, Foul-Hearted"
+    (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Noble"] 3 3
+    (oracleText := "Whenever Great Goblin enters or attacks, amass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nArmies you control have trample.")
+    (staticAbilities := #[.armiesYouControlHaveTrample])
+    (triggeredAbilities := #[.onEnterOrAttackAmassGoblins 3])
+
+def bardsCompany : CardDef :=
+  creature "Bard's Company" (ManaCost.ofGenericAndColors 2 [.white, .blue])
+    #["Human", "Citizen"] 2 3
+    (oracleText := "You may cast this spell as though it had flash if you control a Human.\nOther creatures you control get +1/+1.\nWhenever this creature enters or attacks, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
+    (flashIfYouControlSubtype := some "Human")
+    (staticAbilities := #[.otherCreaturesGet #[] 1 1])
+    (triggeredAbilities := #[.onEnterOrAttackRecruit])
+
+def dwarvenWarriors : CardDef :=
+  creature "Dwarven Warriors" (ManaCost.ofGenericAndColor 2 .red)
+    #["Dwarf", "Warrior"] 1 1
+    (oracleText := "{T}: Target creature with power 2 or less can't be blocked this turn.")
+    (activatedAbilities := #[
+      activated (.targetCantBeBlockedPowerAtMost 2) (tap := true)])
+
 def allCards : Array CardDef := #[
   ordinaryBear,
   largeBear,
@@ -194,6 +275,9 @@ def allCards : Array CardDef := #[
   elvenkingsHalls,
   ironHills,
   lakeTown,
+  goblinTown,
+  mirkwood,
+  hobbitHole,
   nighthowlPursuer,
   wargling,
   wilderlandScrounger,
@@ -211,7 +295,15 @@ def allCards : Array CardDef := #[
   longBodiedGreyDog,
   doriBearerOfFriends,
   esgarothGarrison,
-  gundabadOpportunist
+  gundabadOpportunist,
+  giganticBigBear,
+  bothersomeNoisemaker,
+  fearsomeGoblinPair,
+  goblinTownFlunkies,
+  mistyMountainsRaider,
+  greatGoblinFoulHearted,
+  bardsCompany,
+  dwarvenWarriors
 ]
 
 end Mtg.Engine.Catalog.HobbitSet

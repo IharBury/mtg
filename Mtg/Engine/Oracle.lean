@@ -303,6 +303,13 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.tapSacrificeAddAnyColor then
     ["{T}, Sacrifice this artifact: Add one mana of any color."]
    else []) ++
+  (if c.cantBeCountered then
+    ["This spell can't be countered."]
+   else []) ++
+  (match c.flashIfYouControlSubtype with
+   | some t =>
+     [s!"You may cast this spell as though it had flash if you control a {t}."]
+   | none => []) ++
   (if c.entersTapped then
     [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
      else "This land enters tapped."]

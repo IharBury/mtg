@@ -896,6 +896,17 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
       g := g'
     return g
 
+/-- A 0/0 black Goblin Army creature token (amass Goblins). -/
+def goblinArmyToken : CardDef := {
+  name := "Goblin Army"
+  types := #[.creature]
+  subtypes := #["Goblin", "Army"]
+  power := some 0
+  toughness := some 0
+  colorIndicator := some (ColorSet.singleton .black)
+  isToken := true
+}
+
 /-- An ability object ceases to exist after it resolves (CR 608.2m). -/
 def ceaseToExist (g : Game) (id : ObjectId) : Game :=
   { g with objects := g.objects.filter (fun o => o.id != id) }
@@ -1776,6 +1787,11 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .twoNonlandsSharingType => #[]
   | .creaturePowerAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.power o >= n)
+  | .creaturePowerAtMost n =>
+    g.legalCreatureTargets caster (fun o => g.power o <= n)
+  | .creatureYouControlAnySubtype subtypes =>
+    g.legalCreatureTargets caster (fun o =>
+      o.controlledBy caster && subtypes.any (g.hasSubtype o))
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
 
@@ -2091,9 +2107,12 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
 def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) : Game :=
-  if !spell.printed.isInstantOrSorcery then g
-  else
-    g.putControlledTriggers caster .youCastInstantOrSorcery
+  let g :=
+    if spell.printed.isInstantOrSorcery then
+      g.putControlledTriggers caster .youCastInstantOrSorcery
+    else g
+  if spell.printed.isCreature then g
+  else g.putControlledTriggers caster .youCastNoncreature
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
@@ -2540,8 +2559,12 @@ def targetLogName (g : Game) : Target → String
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
+  let hasConditionalFlash :=
+    match face.flashIfYouControlSubtype with
+    | some t => g.controlsAnySubtype p #[t]
+    | none => false
   g.hasPriority p &&
-  (if face.hasSorcerySpeed then g.asSorcery? p else true)
+  (if face.hasSorcerySpeed && !hasConditionalFlash then g.asSorcery? p else true)
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
@@ -3468,6 +3491,22 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
   g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
 
+/-- Amass Goblins `n` (CR 701.43). -/
+def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  let (g, army) :=
+    match armies[0]? with
+    | some o => (g, o)
+    | none => g.createToken controller goblinArmyToken
+  let g :=
+    if g.hasSubtype army "Goblin" then g
+    else
+      g.mapObjectStatus army (fun s =>
+        { s with additionalSubtypes := s.additionalSubtypes.push "Goblin" })
+  let army := g.object! army.id
+  let g := g.addPlusOnePlusOneTo army n
+  g.logMsg s!"{(g.player controller).name} amasses Goblins {n}"
+
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
   let g := g.mapObjectStatus o (fun s =>
@@ -3542,7 +3581,7 @@ def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
 it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
 card in library order (bottom first). -/
 def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
-  g.resolveLibrarySearch p (fun c => isLandTypeCard c landType) s!"{landType} card"
+  g.resolveLibrarySearch p (fun c => c.hasSubtype landType) s!"{landType} card"
     fun g cardId =>
       let cardName := (g.object! cardId).name
       let (g, _) := g.move cardId (.hand p) none
@@ -3768,6 +3807,8 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
   | some o =>
     if o.zone != .stack then
       g.logMsg s!"{o.name} is no longer on the stack"
+    else if o.printed.cantBeCountered then
+      g.logMsg s!"{o.name} can't be countered"
     else
       let dest :=
         if exilePermanent && o.printed.isPermanentCard then Zone.exile
@@ -3994,6 +4035,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         if o.isCreature && o.controlledBy controller then
           g := g.pumpPermanent o pw tw
       return g
+  | .amassGoblins n =>
+    g.amassGoblins controller n
   | .destroyArtifactOrEnchantmentGainLife n =>
     let g := g.applyOnPermanent controller effect.targetKind targets .destroy
     if n == 0 then g
@@ -4347,6 +4390,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .drawAndLoseLife =>
     let g := g.draw controller 1
     g.loseLife controller 1
+  | .amassGoblins n =>
+    g.amassGoblins controller n
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

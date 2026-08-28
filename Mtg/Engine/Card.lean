@@ -167,6 +167,10 @@ inductive EffectTargetKind where
   | twoNonlandsSharingType
   /-- Target creature with power `n` or greater. -/
   | creaturePowerAtLeast (n : Int)
+  /-- Target creature with power `n` or less. -/
+  | creaturePowerAtMost (n : Int)
+  /-- Target creature you control with any of these subtypes. -/
+  | creatureYouControlAnySubtype (subtypes : Array String)
   /-- Target permanent. -/
   | permanent
 deriving Repr, Inhabited, BEq, DecidableEq
@@ -268,6 +272,19 @@ def spec : EffectTargetKind → Spec
       slots := #[.nonland, .nonland] }
   | .creaturePowerAtLeast n =>
     { noun := s!"target creature with power {n} or greater" }
+  | .creaturePowerAtMost n =>
+    { noun := s!"target creature with power {n} or less", prefer := .own }
+  | .creatureYouControlAnySubtype subtypes =>
+    { noun :=
+        match subtypes.toList with
+        | [] => "target creature you control"
+        | [a] => s!"target {a} you control"
+        | [a, b] => s!"target {a} or {b} you control"
+        | xs =>
+          let last := xs.getLast!
+          let init := String.intercalate ", " xs.dropLast
+          s!"target {init}, or {last} you control"
+      prefer := .own }
   | .permanent =>
     { noun := "target permanent", prefer := .ownThenOpponent }
 
@@ -438,6 +455,8 @@ inductive SpellEffect where
   | becomeArtifactGainIndestructible
   /-- Target creature gets +P/+T and gains these keywords until end of turn. -/
   | pumpAndGrantKeywords (power toughness : Int) (k : Keywords)
+  /-- Amass Goblins `n` (CR 701.43). -/
+  | amassGoblins (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -613,6 +632,8 @@ inductive SpellResolution where
   | creaturesYouControlPump (power toughness : Int)
   /-- Destroy the targeted artifact or enchantment; you gain life. -/
   | destroyArtifactOrEnchantmentGainLife (life : Nat)
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -744,6 +765,8 @@ def spec : SpellEffect → SpellMeta
   | .pumpAndGrantKeywords p t k =>
     { targeting := .of .creature .own, castKind := .pump,
       resolution := .onPermanent (.pumpAndGrant p t k) }
+  | .amassGoblins n =>
+    { targeting := .of .none, castKind := .pump, resolution := .amassGoblins n }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -827,6 +850,8 @@ def toNotation (e : SpellEffect) : String :=
     s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .destroyArtifactOrEnchantmentGainLife n =>
     s!"destroy {noun}. You gain {n} life"
+  | .amassGoblins n =>
+    s!"amass Goblins {n}"
 
 instance : ToString SpellEffect where
   toString := toNotation
@@ -883,6 +908,10 @@ inductive AbilityEffect where
   | plusOneOnTarget (n : Nat)
   /-- Put `n` +1/+1 counters on target creature you control of this subtype. -/
   | plusOneOnTargetSubtype (n : Nat) (subtype : String)
+  /-- Put `n` +1/+1 counters on target creature you control of any listed subtype. -/
+  | plusOneOnTargetAnySubtype (n : Nat) (subtypes : Array String)
+  /-- Target creature with power `n` or less can't be blocked this turn. -/
+  | targetCantBeBlockedPowerAtMost (n : Int)
   /-- Draw `n` cards, then discard a card. -/
   | drawThenDiscardN (n : Nat)
   /-- Create `n` Treasure tokens. -/
@@ -1006,6 +1035,12 @@ def spec : AbilityEffect → AbilityMeta
   | .plusOneOnTargetSubtype n subtype =>
     { targeting := .of (.creatureYouControlSubtype subtype),
       resolution := .onPermanent (.plusOne n) }
+  | .plusOneOnTargetAnySubtype n subtypes =>
+    { targeting := .of (.creatureYouControlAnySubtype subtypes),
+      resolution := .onPermanent (.plusOne n) }
+  | .targetCantBeBlockedPowerAtMost n =>
+    { targeting := .of (.creaturePowerAtMost n),
+      resolution := .onPermanent .cantBeBlocked }
   | .drawThenDiscardN n =>
     { resolution := .drawThenDiscardN n }
   | .createTreasure n =>
@@ -1223,6 +1258,8 @@ inductive StaticAbility where
   | cantBeBlockedByTokens
   /-- This creature's power is equal to the number of creatures you control. -/
   | powerEqualCreaturesYouControl
+  /-- Armies you control have trample. -/
+  | armiesYouControlHaveTrample
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1265,6 +1302,8 @@ inductive StaticShape where
   | cantBeBlockedByTokens
   /-- Characteristic-defining power equal to creatures you control. -/
   | creaturesYouControlPower
+  /-- Creatures you control of this subtype have trample. -/
+  | youControlSubtypeTrample (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1297,6 +1336,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .hostKeywords _ k p t => { hostKeywords := k, hostBonus := (p, t) }
   | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
   | .creaturesYouControlPower => { creaturesYouControlPower := true }
+  | .youControlSubtypeTrample subtype => { trampleSubtypes := some #[subtype] }
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1315,6 +1355,7 @@ def shape : StaticAbility → StaticShape
   | .enchantedCreatureGetsAndHas p t k => .hostKeywords "Enchanted creature" k p t
   | .cantBeBlockedByTokens => .cantBeBlockedByTokens
   | .powerEqualCreaturesYouControl => .creaturesYouControlPower
+  | .armiesYouControlHaveTrample => .youControlSubtypeTrample "Army"
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -1355,6 +1396,9 @@ def toNotation (ab : StaticAbility) : String :=
     "This creature can't be blocked by tokens."
   | .creaturesYouControlPower =>
     "This power is equal to the number of creatures you control."
+  | .youControlSubtypeTrample subtype =>
+    let plural := if subtype == "Army" then "Armies" else pluralSubtype subtype
+    s!"{plural} you control have trample."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -1582,6 +1626,18 @@ inductive TriggeredAbility where
   | onYouAttackDraw
   /-- Landfall — this creature gets +P/+T until end of turn. -/
   | onLandYouControlEntersGets (power toughness : Int)
+  /-- When this permanent enters, amass Goblins `n`. -/
+  | onEnterAmassGoblins (n : Nat)
+  /-- When this creature dies, amass Goblins `n`. -/
+  | onDiesAmassGoblins (n : Nat)
+  /-- Whenever you attack, amass Goblins `n`. -/
+  | onYouAttackAmassGoblins (n : Nat)
+  /-- Whenever you cast a noncreature spell, amass Goblins `n`. -/
+  | onCastNoncreatureAmassGoblins (n : Nat)
+  /-- Whenever this creature enters or attacks, amass Goblins `n`. -/
+  | onEnterOrAttackAmassGoblins (n : Nat)
+  /-- Whenever this creature enters or attacks, recruit. -/
+  | onEnterOrAttackRecruit
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -1626,6 +1682,8 @@ inductive TriggerEvent where
   | yourBeginCombat
   /-- You attack with one or more creatures (CR 508.2). -/
   | youAttack
+  /-- You cast a noncreature spell (CR 601.2i / 603.3). -/
+  | youCastNoncreature
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -1698,6 +1756,9 @@ def spec : TriggerEvent → Spec
       label := "begin-combat trigger", checkTargets := false }
   | .youAttack =>
     { clause := "you attack", label := "attack trigger", checkTargets := false }
+  | .youCastNoncreature =>
+    { clause := "you cast a noncreature spell", label := "cast trigger",
+      checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -1819,6 +1880,8 @@ inductive TriggerResolution where
   | sourceGetsAndTeamTrample (power : Int)
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -1986,6 +2049,18 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.youAttack], resolution := .draw 1 }
   | .onLandYouControlEntersGets p t =>
     { events := #[.landYouControlEnters], resolution := .onSource (.pump p t) }
+  | .onEnterAmassGoblins n =>
+    { events := #[.entering], resolution := .amassGoblins n }
+  | .onDiesAmassGoblins n =>
+    { events := #[.dying], resolution := .amassGoblins n }
+  | .onYouAttackAmassGoblins n =>
+    { events := #[.youAttack], resolution := .amassGoblins n }
+  | .onCastNoncreatureAmassGoblins n =>
+    { events := #[.youCastNoncreature], resolution := .amassGoblins n }
+  | .onEnterOrAttackAmassGoblins n =>
+    { events := #[.entering, .attacking], resolution := .amassGoblins n }
+  | .onEnterOrAttackRecruit =>
+    { events := #[.entering, .attacking], resolution := .recruit }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -2138,6 +2213,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a +1/+1 counter on each creature you control"
   | .drawAndLoseLife =>
     "you draw a card and lose 1 life"
+  | .amassGoblins n =>
+    s!"amass Goblins {n}"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -2232,6 +2309,10 @@ structure CardDef where
   tapSacrificeAddAnyColor : Bool := false
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
+  /-- This spell can't be countered. -/
+  cantBeCountered : Bool := false
+  /-- You may cast this as though it had flash if you control this subtype. -/
+  flashIfYouControlSubtype : Option String := none
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]

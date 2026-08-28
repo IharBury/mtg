@@ -40,6 +40,8 @@ def card (name : String) (types : Array CardType)
     (tapAddAnyColor : Bool := false)
     (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
+    (cantBeCountered : Bool := false)
+    (flashIfYouControlSubtype : Option String := none)
     (colorIndicator : Option ColorSet := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -51,7 +53,8 @@ def card (name : String) (types : Array CardType)
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
-  tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, colorIndicator,
+  tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
+  flashIfYouControlSubtype, colorIndicator,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -82,7 +85,9 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (adventure : Option AdventureFace := none)
     (costReductionIfCreatureDied : Nat := 0)
     (colorIndicator : Option ColorSet := none)
-    (isToken : Bool := false) : CardDef :=
+    (isToken : Bool := false)
+    (cantBeCountered : Bool := false)
+    (flashIfYouControlSubtype : Option String := none) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -93,6 +98,8 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
     (colorIndicator := colorIndicator) (isToken := isToken)
+    (cantBeCountered := cantBeCountered)
+    (flashIfYouControlSubtype := flashIfYouControlSubtype)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)

@@ -11097,6 +11097,17 @@ open Catalog.HobbitSet
 #guard doriBearerOfFriends.matchesOracleText
 #guard esgarothGarrison.matchesOracleText
 #guard gundabadOpportunist.matchesOracleText
+#guard giganticBigBear.matchesOracleText
+#guard bothersomeNoisemaker.matchesOracleText
+#guard fearsomeGoblinPair.matchesOracleText
+#guard goblinTownFlunkies.matchesOracleText
+#guard mistyMountainsRaider.matchesOracleText
+#guard greatGoblinFoulHearted.matchesOracleText
+#guard bardsCompany.matchesOracleText
+#guard dwarvenWarriors.matchesOracleText
+#guard goblinTown.matchesOracleText
+#guard mirkwood.matchesOracleText
+#guard hobbitHole.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
@@ -11183,6 +11194,37 @@ def hunterVsToken : Game :=
 #guard
   !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
     (namedPermanent hunterVsToken "Duskwatch Hunter")
+
+/-- Amass Goblins creates a 0/0 Goblin Army and puts +1/+1 counters on it. -/
+def flunkiesAmass : Game :=
+  (addPermanent started goblinTownFlunkies ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ (.onEnterAmassGoblins 1) none
+
+#guard
+  let army := namedPermanent flunkiesAmass "Goblin Army"
+  army.printed.isToken && flunkiesAmass.hasSubtype army "Goblin" &&
+    flunkiesAmass.hasSubtype army "Army" &&
+    army.status.plusOnePlusOne == 1
+
+/-- A second amass puts counters on the existing Army. -/
+def secondAmass : Game :=
+  flunkiesAmass.applyTriggeredAbility ⟨0⟩ (.onEnterAmassGoblins 1) none
+
+#guard
+  (secondAmass.battlefield.filter (fun o => o.name == "Goblin Army")).size == 1 &&
+    (namedPermanent secondAmass "Goblin Army").status.plusOnePlusOne == 2
+
+/-- Gigantic Big Bear cannot be countered. -/
+def giganticBigBearUncounterable : Game :=
+  let g := addToHand (skipTo started .precombatMain 40) giganticBigBear ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gigantic Big Bear").id)
+  g.counterStackSpell g.stack.back!.objectId
+
+#guard
+  (giganticBigBearUncounterable.object!
+    giganticBigBearUncounterable.stack.back!.objectId).name ==
+    "Gigantic Big Bear" &&
+    giganticBigBearUncounterable.log.any (fun s => mentions s "can't be countered")
 
 end Mtg.Engine.Tests
 
