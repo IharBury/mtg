@@ -1680,8 +1680,8 @@ def sequentialTargetUsage : String :=
   "Choose each instance of the word \"target\" in a separate target command (CR 601.2c)"
 def divideTargetUsage : String := "usage: target <id|name|opponent> [amount] ..."
 
-/-- Parse a CR 601.2c target: a permanent or graveyard-card id, a player name,
-or `opponent`. Card names match a current legal target. -/
+/-- Parse a CR 601.2c target: a permanent, graveyard-card, or stack-spell id,
+a player name, or `opponent`. Card names match a current legal target. -/
 def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Target := do
   let key := token.trimAscii.copy
   let lower := key.map Char.toLower
@@ -1696,7 +1696,7 @@ def parseTarget (g : Game) (p : PlayerId) (token : String) : Except String Targe
       | none => throw "no such object"
       | some o =>
         match o.zone with
-        | .graveyard _ => return Target.card id
+        | .graveyard _ | .stack => return Target.card id
         | _ => return Target.permanent id
     | none =>
       match g.objectAwaitingTargets with
@@ -2401,6 +2401,34 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok g' =>
     g'.pending == .none &&
     g'.stack.back!.dividedDamage == #[3]
+  | .error _ => false
+
+#guard
+  let sid := Tests.paidBolt.stack.back!.objectId
+  match parseTarget Tests.paidBolt ⟨0⟩ (toString sid) with
+  | .ok (Target.card id) => id == sid
+  | _ => false
+
+#guard
+  match applyTarget Tests.proposedDecree ⟨1⟩
+      [toString Tests.paidBolt.stack.back!.objectId] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨1⟩ &&
+    g'.stack.back!.targets == #[Target.card Tests.paidBolt.stack.back!.objectId] &&
+    g'.log.any (fun s => Tests.mentions s "chooses Lightning Bolt as a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.proposedDecree ⟨1⟩ ["Lightning Bolt"] with
+  | .ok g' =>
+    g'.stack.back!.targets == #[Target.card Tests.paidBolt.stack.back!.objectId]
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedDecree "target"
+      [toString Tests.paidBolt.stack.back!.objectId] with
+  | .ok g' =>
+    g'.stack.back!.targets == #[Target.card Tests.paidBolt.stack.back!.objectId]
   | .error _ => false
 
 #guard

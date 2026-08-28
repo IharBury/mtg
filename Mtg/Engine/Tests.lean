@@ -2104,6 +2104,35 @@ def withWhiteMana (g : Game) (p : PlayerId) (n : Nat := 5) : Game :=
 def withBlueMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
   withMana g p .blue n
 
+/-- Nissa proposes Thranduil's Decree with Lightning Bolt on the stack. -/
+def proposedDecree : Game :=
+  let g := mustApply paidBolt ⟨0⟩ .pass
+  let g := withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
+  mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Thranduil's Decree").id)
+
+#guard proposedDecree.pending == .chooseTargets ⟨1⟩
+#guard proposedDecree.stack.size == 2
+#guard (proposedDecree.object! proposedDecree.stack.back!.objectId).name ==
+  "Thranduil's Decree"
+#guard
+  (proposedDecree.legalProposedTargets ⟨1⟩
+    (proposedDecree.object! proposedDecree.stack.back!.objectId)).contains
+    (Target.card paidBolt.stack.back!.objectId)
+
+#guard
+  match proposedDecree.apply ⟨1⟩ (.target (Target.card paidBolt.stack.back!.objectId)) with
+  | .ok g' =>
+    g'.stack.back!.targets == #[Target.card paidBolt.stack.back!.objectId] &&
+      g'.log.any (fun s => mentions s "chooses Lightning Bolt as a target")
+  | .error _ => false
+
+-- A stack spell is a card target, not a permanent (CR 115.1).
+#guard
+  match proposedDecree.apply ⟨1⟩
+      (.target (Target.permanent paidBolt.stack.back!.objectId)) with
+  | .error msg => mentions msg "Illegal target"
+  | .ok _ => false
+
 /-- Empty `p`'s hand and mark a land already played this turn. -/
 def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
   g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })

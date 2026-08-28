@@ -89,7 +89,7 @@ namespace Mtg.Engine
 inductive Target where
   | player (id : PlayerId)
   | permanent (id : ObjectId)
-  /-- A card in a graveyard (CR 404 / 115.1). -/
+  /-- A card in a graveyard or a spell on the stack (CR 404 / 115.1). -/
   | card (id : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 

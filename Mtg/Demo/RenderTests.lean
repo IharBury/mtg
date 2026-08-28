@@ -364,6 +364,8 @@ def mountainLine (g : Game) : String :=
 #guard (changedZones boltSetup proposedBolt).contains (.hand ⟨0⟩)
 #guard (changedZones boltSetup proposedBolt).contains .stack
 #guard mentions (stackBlock proposedBolt) "deals 3 damage"
+#guard mentions (stackBlock proposedBolt) (toString proposedBolt.stack.back!.objectId)
+#guard mentions (snapshot proposedBolt) (toString proposedBolt.stack.back!.objectId)
 #guard !mentions (stackBlock proposedBolt) "*targeting"
 #guard !mentions (stackBlock proposedBolt) "*no target"
 #guard mentions (stackBlock targetedBolt) "*targeting Nissa*"
