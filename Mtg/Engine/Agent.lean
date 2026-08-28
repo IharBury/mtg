@@ -12,6 +12,28 @@ namespace Mtg.Engine.Agent
 open Mtg.Engine
 open Mtg.Engine.Game
 
+/-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay.
+Colors are chosen to meet unmet colored requirements, else the source's first type. -/
+def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
+  match g.proposedSpell with
+  | none => some .pay
+  | some prop =>
+    let allowElf := g.proposedAllowsElfRestricted prop
+    let allowInst := g.proposedAllowsInstRestricted prop
+    if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
+      some .pay
+    else
+      match (g.manaSources p).find? (fun (src, types) =>
+        !(prop.tapSource && prop.sourceId == some src.id) &&
+        !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
+        !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
+        !types.isEmpty) with
+      | some (src, types) =>
+        match g.preferredManaType p types prop.cost allowElf with
+        | some t => some (.tapForMana src.id t)
+        | none => some .pay
+      | none => some .pay
+
 /-- Choose a single legal action for `p`, or `none` if that player is not to act. -/
 def choose (g : Game) (p : PlayerId) : Option Action :=
   if g.over then none
@@ -158,26 +180,6 @@ where
       match g.defaultAbilityMode p prop.abilityModes with
       | some idx => some (.chooseMode idx)
       | none => some .pass
-  /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay. -/
-  chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
-    match g.proposedSpell with
-    | none => some .pay
-    | some prop =>
-      let allowElf := g.proposedAllowsElfRestricted prop
-      let allowInst := g.proposedAllowsInstRestricted prop
-      if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
-        some .pay
-      else
-        match (g.manaSources p).find? (fun (src, types) =>
-          !(prop.tapSource && prop.sourceId == some src.id) &&
-          !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
-          !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
-          !types.isEmpty) with
-        | some (src, types) =>
-          match g.preferredManaType p types prop.cost allowElf with
-          | some t => some (.tapForMana src.id t)
-          | none => some .pay
-        | none => some .pay
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let activatable (o : GameObject) : Bool :=

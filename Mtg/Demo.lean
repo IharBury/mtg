@@ -21,8 +21,10 @@ reads from the console. `--output FILE` writes accepted game-state commands
 (from the file or the console) to that file. Incorrect commands and session
 commands such as `state` and `quit` are omitted. When `--input` and
 `--output` are the same file, those commands are replayed and new accepted
-console commands are appended. After scripted input is exhausted, a unique
-legal target is announced automatically and recorded as a `target` command.
+console commands are appended. `autopay` is recorded as the individual
+`tap` and `pay` commands it performs. After scripted input is exhausted, a
+unique legal target is announced automatically and recorded as a `target`
+command.
 -/
 
 open Mtg.Engine
@@ -508,6 +510,7 @@ def helpInteractive (controlAll : Bool := false)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
+  autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
   sacrifice <id>       Sacrifice a creature or artifact to pay a cost, a creature a resolved trigger requires, or a creature as a resolving effect
   sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
@@ -560,6 +563,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
+#guard ((helpInteractive false).splitOn "autopay").length > 1
+#guard ((helpInteractive false).splitOn "CR 601.2g").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
@@ -2005,6 +2010,143 @@ def applyKeep (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | _, [] => g.apply p .keep
   | _, _ => throw keepUsage
 
+/-- Game after `autopay`, and the `tap`/`pay` lines that produced it. -/
+structure AutopayResult where
+  game : Game
+  commands : Array String
+
+/-- Accepted `tap` line for one mana ability so `--output` can replay it. -/
+def tapCommand (id : ObjectId) (m : ManaType) : String :=
+  s!"tap {id} {m.letter}"
+
+#guard tapCommand ⟨12⟩ (.colored .red) == "tap #12 R"
+#guard tapCommand ⟨3⟩ .colorless == "tap #3 C"
+
+def autopayUsage : String := "usage: autopay"
+
+/-- Whether the locked-in cost is payable from the current pool. -/
+def canPayProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) : Bool :=
+  (g.player p).manaPool.canPay prop.cost
+    (g.proposedAllowsElfRestricted prop)
+    (g.proposedAllowsInstRestricted prop)
+
+/-- Activate mana abilities chosen by the heuristic, then pay (CR 601.2g–h).
+Fails without changing the game if the cost cannot be paid. -/
+def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array String) :
+    Except String AutopayResult := do
+  match fuel with
+  | 0 => throw "Could not finish paying the cost"
+  | n + 1 =>
+    match g.pending with
+    | .activateManaAbilities caster =>
+      if caster != p then
+        throw s!"Only {(g.player caster).name} may pay (CR 601.2h)"
+      match Agent.chooseManaPayment g p with
+      | some (.tapForMana id m) =>
+        let g ← applyTap g p [toString id, m.letter]
+        applyAutopaySteps g p n (cmds.push (tapCommand id m))
+      | some .pay =>
+        match g.proposedSpell with
+        | some prop =>
+          if !canPayProposed g p prop then
+            throw s!"{(g.player p).name} cannot pay {prop.cost}"
+          let g ← g.apply p .pay
+          return { game := g, commands := cmds.push "pay" }
+        | none =>
+          let g ← g.apply p .pay
+          return { game := g, commands := cmds.push "pay" }
+      | _ =>
+        match g.proposedSpell with
+        | some prop => throw s!"{(g.player p).name} cannot pay {prop.cost}"
+        | none => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
+    | .chooseMode _ => throw "Choose a mode first (CR 601.2b)"
+    | .chooseTargets _ => throw "Choose a target first (CR 601.2c)"
+    | .chooseAdditionalCost _ => throw "Choose an additional cost first (CR 601.2b)"
+    | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
+
+/-- Tap necessary mana sources (heuristic colors) and pay the current cost. -/
+def applyAutopay (g : Game) (p : PlayerId) (tokens : List String) :
+    Except String AutopayResult :=
+  match commandTokens tokens with
+  | [] => applyAutopaySteps g p ((g.manaSources p).size + 1) #[]
+  | _ => .error autopayUsage
+
+/-- Issue `autopay` as the player who currently must act. -/
+def applyAutopayAsActor (g : Game) (tokens : List String) : Except String AutopayResult := do
+  let p ← actingPlayer g
+  applyAutopay g p tokens
+
+#guard
+  match applyAutopay Tests.targetedBolt ⟨0⟩ ["extra"] with
+  | .error msg => msg == autopayUsage
+  | .ok _ => false
+
+#guard
+  match applyAutopay Tests.drawnHands ⟨0⟩ [] with
+  | .error msg => msg == "No spell or ability is waiting to be paid for (CR 601.2h)"
+  | .ok _ => false
+
+#guard
+  match applyAutopay Tests.proposedBolt ⟨0⟩ [] with
+  | .error msg => Tests.mentions msg "Choose a target first"
+  | .ok _ => false
+
+#guard
+  match applyAutopay Tests.proposedOgre ⟨0⟩ [] with
+  | .error msg => Tests.mentions msg "cannot pay"
+  | .ok _ => false
+
+#guard
+  match applyAutopay Tests.targetedBolt ⟨0⟩ [] with
+  | .ok r =>
+    r.commands == #[tapCommand Tests.boltMountain.id (.colored .red), "pay"] &&
+      r.game.pending == .none &&
+      r.game.proposedSpell.isNone &&
+      (r.game.player ⟨0⟩).manaPool.isEmpty &&
+      r.game.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.tappedForBolt ⟨0⟩ [] with
+  | .ok r =>
+    r.commands == #["pay"] &&
+      r.game.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.proposedVisionary ⟨0⟩ [] with
+  | .ok r =>
+    r.commands == #["pay"] &&
+      r.game.log.any (fun s => Tests.mentions s "casts Elvish Visionary")
+  | .error _ => false
+
+#guard
+  let g := Tests.proposedBauble
+  let lands := (g.permanentsOf ⟨0⟩).filter (·.printed.isLand)
+  lands.size == 2 &&
+  match applyAutopay g ⟨0⟩ [] with
+  | .ok r =>
+    r.commands ==
+      #[tapCommand lands[0]!.id (.colored .red),
+        tapCommand lands[1]!.id (.colored .red), "pay"] &&
+      r.game.pending == .none &&
+      r.game.log.any (fun s => Tests.mentions s "activates Wayfarer's Bauble")
+  | .error _ => false
+
+#guard
+  let g0 := Tests.weavemasterElfSetup.emptyManaPools
+  let elves := Tests.handCardNamed g0 ⟨0⟩ "Llanowar Elves"
+  match g0.apply ⟨0⟩ (.cast elves.id) with
+  | .error _ => false
+  | .ok proposed =>
+    let w := Tests.namedPermanent proposed "Woodland Weavemaster"
+    match applyAutopay proposed ⟨0⟩ [] with
+    | .ok r =>
+      r.commands == #[tapCommand w.id (.colored .green), "pay"] &&
+        (Tests.namedPermanent r.game "Woodland Weavemaster").status.tapped &&
+        r.game.log.any (fun s => Tests.mentions s "casts Llanowar Elves")
+    | .error _ => false
+
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
   match cmd with
@@ -2014,6 +2156,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
   | "pay" => g.apply p .pay
+  | "autopay" => applyAutopay g p args |>.map (·.game)
   | "pay-extra" => applyPayExtra g p args
   | "sacrifice" => applySacrifice g p args
   | "concede" => g.apply p .concede
@@ -2037,6 +2180,17 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
 def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Except String Game := do
   let p ← actingPlayer g
   applyInteractiveAction g p cmd args
+
+/-- Apply a game-state command. `autopay` expands to the `tap`/`pay` lines
+that `--output` should record. -/
+def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : String) :
+    Except String (Game × Array String) := do
+  if cmd == "autopay" then
+    let r ← applyAutopayAsActor g args
+    return (r.game, r.commands)
+  else
+    let g' ← applyInteractiveAsActor g cmd args
+    return (g', #[line])
 
 #guard
   match applyInteractiveAsActor Tests.drawnHands "keep" [] with
@@ -2553,6 +2707,30 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   | .error msg => msg == "Unknown command: xyzzy"
   | .ok _ => false
 
+#guard
+  match applyInteractiveAsActor Tests.targetedBolt "autopay" [] with
+  | .ok g' =>
+    g'.pending == .none &&
+      g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.targetedBolt "autopay" [] "autopay" with
+  | .ok (g', cmds) =>
+    cmds == #[tapCommand Tests.boltMountain.id (.colored .red), "pay"] &&
+      g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.drawnHands "keep" [] "keep" with
+  | .ok (_, cmds) => cmds == #["keep"]
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.proposedOgre "autopay" [] "autopay" with
+  | .error msg => Tests.mentions msg "cannot pay"
+  | .ok _ => false
+
 /-- Non-empty trimmed commands from an input file (one command per line). -/
 def commandsFromLines (lines : Array String) : List String :=
   lines.toList.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
@@ -3023,10 +3201,11 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         else
           IO.println "Showing full game information."
     | _ =>
-      match applyInteractiveAsActor g cmd (parts.drop 1) with
+      match applyLoggedAction g cmd (parts.drop 1) line with
       | .error e => IO.println s!"! {e}"
-      | .ok g' =>
-        recordAcceptedCommand output sameFile fromInput line
+      | .ok (g', recorded) =>
+        for rec in recorded do
+          recordAcceptedCommand output sameFile fromInput rec
         seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
         if g.over then
