@@ -1573,11 +1573,13 @@ def stripReminderParenthetical (s : String) : String :=
   | [] => s
   | head :: _ => head.trimAscii.copy
 
-/-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`. -/
+/-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`.
+A line that is only a parenthetical (e.g. basic-land `{T}: Add` reminder text)
+is not a keyword restatement. -/
 def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
   let kw := k.toList
   let cleaned := stripReminderParenthetical ((line.replace "." "").trimAscii.copy)
-  if cleaned.isEmpty then true
+  if cleaned.isEmpty then false
   else
     let parts := cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
     !parts.isEmpty && parts.all (fun p => kw.any (fun w => w == lowerAscii p))
@@ -1659,6 +1661,7 @@ instance : ToString CardDef where
 #guard toString Keyword.lifelink == "lifelink"
 #guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.haste "Haste"
+#guard !CardDef.isKeywordRestatement Keywords.none "({T}: Add {R}.)"
 #guard CardDef.isKeywordRestatement Keyword.flash "Flash"
 #guard CardDef.isKeywordRestatement Keyword.vigilance "Vigilance"
 #guard CardDef.isKeywordRestatement (Keyword.reach.merge Keyword.deathtouch)

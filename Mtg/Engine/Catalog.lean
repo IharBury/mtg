@@ -283,7 +283,7 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard (lightningBolt.summary.splitOn "{R}").length > 1
 #guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
 #guard (mountain.summary.splitOn "{0}").length == 1
-#guard mountain.summary == "Mountain Basic Land — Mountain {T}: Add {R}."
+#guard mountain.summary == "Mountain Basic Land — Mountain ({T}: Add {R}.)"
 #guard plains.oracleText == "({T}: Add {W}.)"
 #guard island.oracleText == "({T}: Add {U}.)"
 #guard swamp.oracleText == "({T}: Add {B}.)"
