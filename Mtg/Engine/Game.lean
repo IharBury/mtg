@@ -2295,7 +2295,7 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       | some e => e.targetCount
       | none =>
         match obj.triggeredAbility with
-        | some ab => if ab.allowsZeroTargets then 0 else ab.targetCount
+        | some ab => if ab.allowsZeroTargets then 0 else ab.targeting.targetCount
         | none => 1
     (n, n)
 

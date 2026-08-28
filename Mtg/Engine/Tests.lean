@@ -10737,7 +10737,7 @@ def fogCantAttack : Bool :=
 
 #guard fogCantAttack
 
-/-- Fog overwrites creature types (CR 205.3m): only a Spirit, not a Bear. -/
+-- Fog overwrites creature types (CR 205.3m): only a Spirit, not a Bear.
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
@@ -10747,7 +10747,7 @@ def fogCantAttack : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   g.hasSubtype host "Spirit" && !g.hasSubtype host "Bear"
 
-/-- Gaze in Wonder (Velvetwing adventure) taps one or two creatures. -/
+-- Gaze in Wonder (Velvetwing adventure) taps one or two creatures.
 def gazeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
@@ -10757,7 +10757,7 @@ def gazeSetup : Game :=
 #guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
 #guard
   match velvetwingButterflies.adventure with
-  | some adv => adv.effect == some .tapOneOrTwoCreatures
+  | some adv => adv.spellEffect == some .tapOneOrTwoCreatures
   | none => false
 
 def gazeProposed : Game :=
