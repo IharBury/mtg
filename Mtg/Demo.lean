@@ -22,7 +22,8 @@ reads from the console. `--output FILE` writes accepted game-state commands
 commands such as `state` and `quit` are omitted. When `--input` and
 `--output` are the same file, those commands are replayed and new accepted
 console commands are appended. `autopay` is recorded as the individual
-`tap` and `pay` commands it performs. After scripted input is exhausted, a
+`tap` and `pay` commands it performs. `attach <id>` attaches an Equipment
+you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
 `target` command.
@@ -538,7 +539,8 @@ def helpInteractive (controlAll : Bool := false)
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
   discard <id>         Discard a card; if you do, draw (CR 701.9)
-  decline              Decline an optional discard or choose no target
+  attach <id>          Attach that Equipment you control
+  decline              Decline an optional discard, attach, or choose no target
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   noattack             Declare no attackers
@@ -574,7 +576,9 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "stack <id>").length > 1
 #guard ((helpInteractive false).splitOn "CR 603.3b").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
+#guard ((helpInteractive false).splitOn "attach <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
+#guard ((helpInteractive false).splitOn "optional discard, attach").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
 #guard ((helpInteractive false).splitOn "autopay").length > 1
@@ -2052,11 +2056,18 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 
 def declineUsage : String := "usage: decline"
 
-/-- Decline an optional discard or choose no target for an “up to one” trigger. -/
+/-- Decline an optional discard, attach, or choose no target for an “up to one”
+trigger. -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] => g.apply p .decline
   | _ => throw declineUsage
+
+def attachUsage : String := "usage: attach <id>"
+
+/-- Attach the named Equipment you control to the creature waiting for one. -/
+def applyAttach (g : Game) (p : PlayerId) (tokens : List String) : Except String Game :=
+  applyObjectCommand g p tokens attachUsage (fun id => .choosePermanents #[id])
 
 #guard
   match applyDiscard Tests.spearMayDiscard ⟨0⟩ [] with
@@ -2097,6 +2108,63 @@ def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   | .ok g' =>
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "declines to discard")
+  | .error _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨0⟩ [] with
+  | .error msg => msg == attachUsage
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨0⟩ ["nope"] with
+  | .error msg => msg == attachUsage
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨0⟩ ["1", "2"] with
+  | .error msg => msg == attachUsage
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨0⟩ ["99999"] with
+  | .error msg => msg == "no such object"
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.spearMayDiscard ⟨0⟩
+      [toString (Tests.namedPermanent Tests.spearMayDiscard "Ragged Short Spear").id] with
+  | .error msg => Tests.mentions msg "Not time to choose permanents"
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨1⟩
+      [toString (Tests.namedPermanent Tests.vowMayAttach "Ragged Short Spear").id] with
+  | .error msg => Tests.mentions msg "Only Chandra may attach Equipment"
+  | .ok _ => false
+
+#guard
+  match applyAttach Tests.vowMayAttach ⟨0⟩
+      [toString (Tests.namedPermanent Tests.vowMayAttach "Bofur, Reliable Guardian").id] with
+  | .error msg => Tests.mentions msg "is not an Equipment you control"
+  | .ok _ => false
+
+#guard
+  let g := Tests.vowMayAttach
+  let spear := Tests.namedPermanent g "Ragged Short Spear"
+  match applyAttach g ⟨0⟩ [toString spear.id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    (Tests.namedPermanent g' "Ragged Short Spear").attachedTo ==
+      some (Tests.namedPermanent g' "Bofur, Reliable Guardian").id &&
+    g'.log.any (fun s => Tests.mentions s "attaches to Bofur")
+  | .error _ => false
+
+#guard
+  match applyDecline Tests.vowMayAttach ⟨0⟩ [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    (Tests.namedPermanent g' "Ragged Short Spear").attachedTo.isNone &&
+    g'.log.any (fun s => Tests.mentions s "declines to attach Equipment")
   | .error _ => false
 
 /-- Game-changing interactive commands. `help`/`state`/`visible`/`quit` are
@@ -2276,6 +2344,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "target" => applyTarget g p args
   | "scry" => applyScry g p args
   | "discard" => applyDiscard g p args
+  | "attach" => applyAttach g p args
   | "decline" => applyDecline g p args
   | _ => .error s!"Unknown command: {cmd}"
 
@@ -2666,6 +2735,26 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyInteractiveAsActor Tests.spearMayDiscard "decline" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.vowMayAttach "attach"
+      [toString (Tests.namedPermanent Tests.vowMayAttach "Ragged Short Spear").id] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    (Tests.namedPermanent g' "Ragged Short Spear").attachedTo ==
+      some (Tests.namedPermanent g' "Bofur, Reliable Guardian").id &&
+    g'.log.any (fun s => Tests.mentions s "attaches to Bofur")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.vowMayAttach "decline" [] with
+  | .ok g' =>
+    g'.pending == .none &&
+    g'.hasPriority ⟨0⟩ &&
+    (Tests.namedPermanent g' "Ragged Short Spear").attachedTo.isNone &&
+    g'.log.any (fun s => Tests.mentions s "declines to attach Equipment")
   | .error _ => false
 
 #guard

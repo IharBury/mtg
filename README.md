@@ -171,5 +171,6 @@ The first slice of the engine models the two-player game:
   a Bear creature with power and toughness equal to lands you control)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
-  including choosing the starting player (CR 103.1) and `autopay` to activate
-  mana abilities and pay a locked-in cost (recorded as `tap` and `pay`)
+  including choosing the starting player (CR 103.1), `autopay` to activate
+  mana abilities and pay a locked-in cost (recorded as `tap` and `pay`), and
+  `attach` to attach an Equipment when asked (e.g. Vow to Erebor)
