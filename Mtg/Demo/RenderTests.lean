@@ -425,6 +425,18 @@ def mountainLine (g : Game) : String :=
   let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
   mentions (snapshot twoAttercopsLandPending) (toString ids[0]!) &&
     mentions (snapshot twoAttercopsLandPending) "Whenever a land you control enters"
+#guard (triggerOrderBlock attercopLandPlayed).isNone
+#guard
+  let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
+  let g := addPermanent g beornsHospitality ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+  match triggerOrderBlock g with
+  | some s =>
+    mentions s "Attercop" && mentions s "Beorn's Hospitality" &&
+      mentions s "this creature gets +1/+1 until end of turn" &&
+      mentions s "put a +1/+1 counter on target creature you control"
+  | none => false
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
