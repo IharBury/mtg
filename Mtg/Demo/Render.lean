@@ -61,8 +61,22 @@ def describeStackTarget (g : Game) (e : StackEntry) (i : Nat) : String :=
   | some n => s!"{name} for {n}"
   | none => name
 
+/-- True when every announced target of `e` belongs to one instance of the
+word “target” (chosen together) rather than successive instances. -/
+def targetsShareOneTargetWord (g : Game) (e : StackEntry) : Bool :=
+  match g.findObject? e.objectId with
+  | some o => (g.targetingOf o).kind.spec.slots.isEmpty
+  | none => true
+
+/-- Join same-instance targets with `and`; successive “target” words with
+`; then`. -/
+def targetListSeparator (g : Game) (e : StackEntry) : String :=
+  if targetsShareOneTargetWord g e then " and " else "; then "
+
 /-- Announced targets of a stack object (CR 115 / 601.2c). Nothing prints
-until a target is chosen; choosing none prints `*no target*` (CR 603.3d). -/
+until a target is chosen; choosing none prints `*no target*` (CR 603.3d).
+Several targets of one “target” word are listed with `and`; each further
+instance is listed after `; then`. -/
 def targetClause (g : Game) (e : StackEntry) : String :=
   if e.targets.isEmpty then
     if e.targetsAnnounced then " *no target*" else ""
@@ -71,7 +85,7 @@ def targetClause (g : Game) (e : StackEntry) : String :=
       let mut refs : Array String := #[]
       for i in [0:e.targets.size] do
         refs := refs.push (describeStackTarget g e i)
-      return s!" *targeting {String.intercalate ", " refs.toList}*"
+      return s!" *targeting {String.intercalate (targetListSeparator g e) refs.toList}*"
 
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
@@ -468,6 +482,31 @@ def triggerOrderBlock (g : Game) : Option String :=
           String.intercalate "\n" lines
   | _ => none
 
+/-- Pending prompt while announcing targets (CR 601.2c). Several targets of
+one instance of the word “target” are chosen together; each further
+instance is a later announcement. -/
+def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
+  let name := (g.player p).name
+  match g.objectAwaitingTargets with
+  | none => s!" [choose targets (CR 601.2c, {name})]"
+  | some o =>
+    let kind := (g.targetingOf o).kind
+    let maxN := (g.announcedTargetBounds o).2
+    if (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome ||
+        (kind.spec.slots.isEmpty && maxN > 1) then
+      s!" [choose targets of this \"target\" word together (CR 601.2c, {name})]"
+    else if !kind.spec.slots.isEmpty then
+      let already :=
+        match g.stackEntry? o.id with
+        | some e => e.targets.size
+        | none => 0
+      if already == 0 then
+        s!" [choose the first \"target\" word (CR 601.2c, {name})]"
+      else
+        s!" [choose the next \"target\" word (CR 601.2c, {name})]"
+    else
+      s!" [choose targets (CR 601.2c, {name})]"
+
 def header (g : Game) (viewer : Option PlayerId := none) : String :=
   let viewTag :=
     match viewer with
@@ -485,7 +524,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .chooseMode p =>
       s!" [choose a mode (CR 601.2b, {g.player p |>.name})]"
     | .chooseTargets p =>
-      s!" [choose targets (CR 601.2c, {g.player p |>.name})]"
+      chooseTargetsPending g p
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
     | .sacrificeCreature p =>

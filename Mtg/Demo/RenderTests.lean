@@ -1095,7 +1095,7 @@ def mountainLine (g : Game) : String :=
   (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker").id) "*/*"
 #guard mentions mirkwoodPathmaker.summary "*/*"
 
-#guard mentions (header gandalfEntered) "choose targets (CR 601.2c"
+#guard mentions (header gandalfEntered) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock gandalfEntered) "Gandalf, Spark Starter's ability"
 #guard mentions (stackBlock gandalfEntered) "divided as you choose"
 #guard mentions (stackBlock gandalfEntered) "When Gandalf enters"
@@ -1113,15 +1113,11 @@ def mountainLine (g : Game) : String :=
 #guard mentions (zoneBlock gandalfTargetedOpponent .stack) "*targeting Nissa for 3*"
 #guard (changedZones gandalfEntered gandalfTargetedOpponent).contains .stack
 #guard
-  match gandalfEntered.apply ⟨0⟩ (.divideDamage (Target.player ⟨1⟩) 2) with
-  | .ok g' =>
-    mentions (stackBlock g') "*targeting Nissa for 2*" &&
-      (changedZones gandalfEntered g').contains .stack
-  | .error _ => false
-#guard
   let g := gandalfSplitAnnounced
   let bears := namedPermanent g "Grizzly Bears"
-  mentions (stackBlock g) s!"*targeting Nissa for 2, {bears.id} Grizzly Bears for 1*"
+  mentions (stackBlock g) s!"*targeting Nissa for 2 and {bears.id} Grizzly Bears for 1*" &&
+    !mentions (stackBlock g) "; then" &&
+    (changedZones gandalfSplitSetup g).contains .stack
 
 #guard mentions (header galionAttackDeclared) "choose targets (CR 601.2c"
 #guard mentions (stackBlock galionAttackDeclared) "Galion, Elvenking's Butler's ability"
@@ -1170,7 +1166,7 @@ def mountainLine (g : Game) : String :=
   mentions (objectLine g ogre) "2/2" &&
     !mentions (objectLine g ogre) "trample"
 
-#guard mentions (header titanEntered) "choose targets (CR 601.2c"
+#guard mentions (header titanEntered) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock titanEntered) "Inferno Titan's ability"
 #guard mentions (stackBlock titanEntered) "divided as you choose"
 #guard mentions (stackBlock titanEntered) "Whenever this creature enters or attacks"
@@ -1181,7 +1177,7 @@ def mountainLine (g : Game) : String :=
   let src := namedPermanent g "Inferno Titan"
   mentions (stackBlock g) s!"*source {src.id} Inferno Titan*" &&
     mentions (objectLine g src) "6/6"
-#guard mentions (header titanAttackDeclared) "choose targets (CR 601.2c"
+#guard mentions (header titanAttackDeclared) "choose targets of this \"target\" word together (CR 601.2c"
 #guard mentions (stackBlock titanAttackDeclared) "Inferno Titan's ability"
 #guard mentions (stackBlock titanAttackDeclared) "divided as you choose"
 #guard mentions (stackBlock titanAttackDeclared) "Whenever this creature enters or attacks"
@@ -1280,18 +1276,34 @@ def mountainLine (g : Game) : String :=
   mentions (stackBlock g) s!"*targeting {ogre.id} Gray Ogre*" &&
     mentions (zoneBlock g .stack) s!"*targeting {ogre.id} Gray Ogre*"
 #guard !mentions (stackBlock proposedQuarrel) "*targeting"
+#guard mentions (header proposedQuarrel) "first \"target\" word"
 #guard
   let g := quarrelSourceChosen
   let elves := namedPermanent g "Llanowar Elves"
   mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves*" &&
+    mentions (header g) "next \"target\" word" &&
     (changedZones proposedQuarrel g).contains .stack
 #guard
   let g := targetedQuarrel
   let elves := namedPermanent g "Llanowar Elves"
   let bears := namedPermanent g "Grizzly Bears"
-  mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves, {bears.id} Grizzly Bears*" &&
-    mentions (zoneBlock g .stack) s!"*targeting {elves.id} Llanowar Elves, {bears.id} Grizzly Bears*" &&
+  mentions (stackBlock g) s!"*targeting {elves.id} Llanowar Elves; then {bears.id} Grizzly Bears*" &&
+    mentions (zoneBlock g .stack) s!"*targeting {elves.id} Llanowar Elves; then {bears.id} Grizzly Bears*" &&
+    !mentions (stackBlock g)
+      s!"*targeting {elves.id} Llanowar Elves and {bears.id} Grizzly Bears*" &&
     (changedZones quarrelSourceChosen g).contains .stack
+#guard mentions (header gazeProposed) "choose targets of this \"target\" word together (CR 601.2c"
+#guard
+  let g := gazeOneTarget
+  let bears := namedPermanent g "Grizzly Bears"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears*" &&
+    !mentions (stackBlock g) "; then"
+#guard
+  let g := gazeTwoTargets
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  mentions (stackBlock g) s!"*targeting {bears.id} Grizzly Bears and {ogre.id} Gray Ogre*" &&
+    !mentions (stackBlock g) "; then"
 #guard
   let g := passageResolved
   mentions (objectLine g (namedPermanent g "Gray Ogre")) "can't be blocked"

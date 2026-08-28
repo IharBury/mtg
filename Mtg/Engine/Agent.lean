@@ -156,9 +156,9 @@ where
       match g.defaultMode p spell with
       | some i => some (.chooseMode i)
       | none => some .pass
-  /-- During CR 601.2c / 603.3d, announce a legal target for the proposed
-  spell, activated ability, or triggered ability. Optional “up to one”
-  triggers may choose no target. -/
+  /-- During CR 601.2c / 603.3d, announce a legal target for the current
+  instance of the word “target” on the proposed spell, activated ability,
+  or triggered ability. Optional “up to one” triggers may choose no target. -/
   chooseSpellTarget (g : Game) (p : PlayerId) : Option Action :=
     match g.objectAwaitingTargets with
     | none => some .pass
