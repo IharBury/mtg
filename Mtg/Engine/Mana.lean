@@ -67,6 +67,10 @@ namespace ManaCost
 
 def empty : ManaCost := { symbols := #[] }
 
+/-- The payable zero mana cost `{0}` (CR 107.4d / 118.7). Distinct from
+`empty`, which is no mana cost and cannot be paid (CR 202.1b / 118.6). -/
+def zero : ManaCost := { symbols := #[.generic 0] }
+
 def ofGeneric (n : Nat) : ManaCost :=
   if n == 0 then empty else { symbols := #[.generic n] }
 
@@ -113,6 +117,11 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
 def colors (cost : ManaCost) : ColorSet :=
   cost.symbols.foldl (fun acc s => acc.union s.colorContribution) ColorSet.empty
 
+/-- If `original` required mana and `result` has no symbols, the payable cost
+is `{0}` rather than an empty (unpayable) cost (CR 107.4d / 118.7 / 202.1b). -/
+def afterReduction (original result : ManaCost) : ManaCost :=
+  if original.includesManaPayment && result.symbols.isEmpty then zero else result
+
 /-- Reduce generic mana in this cost by `n`, dropping a `{0}` generic symbol
 (CR 118.7d). Colored symbols are unchanged. -/
 def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
@@ -158,6 +167,9 @@ instance : BEq ManaCost where
 #guard (ofGeneric 4).colors.isColorless
 #guard (ofColors [.blue, .black]).colors.isColorPair
 #guard toString ManaCost.empty == ""
+#guard toString ManaCost.zero == "{0}"
+#guard ManaCost.zero != ManaCost.empty
+#guard !ManaCost.zero.includesManaPayment
 #guard toString (ofGeneric 0) == ""
 #guard toString ({ symbols := #[.generic 0] } : ManaCost) == "{0}"
 #guard toString (ofGeneric 1) == "{1}"
@@ -165,6 +177,8 @@ instance : BEq ManaCost where
 #guard (ofGenericAndColor 4 .black).reduceGeneric 3 == ofGenericAndColor 1 .black
 #guard (ofGenericAndColor 3 .black).reduceGeneric 3 == ofColor .black
 #guard (ofGenericAndColor 1 .black).reduceGeneric 3 == ofColor .black
+#guard afterReduction (ofGeneric 2) ((ofGeneric 2).reduceGeneric 2) == zero
+#guard afterReduction empty empty == empty
 #guard (ofColor .black).addGeneric 4 == ofGenericAndColor 4 .black
 #guard (ofGenericAndColor 1 .black).addGeneric 4 == ofGenericAndColor 5 .black
 

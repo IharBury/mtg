@@ -2596,7 +2596,8 @@ def lockInTargetCostReduction (g : Game) : Game :=
           let n := nDamaged + nTapped + nAttacking
           if n == 0 then g
           else
-            { g with proposedSpell := some { prop with cost := prop.cost.reduceGeneric n } }
+            { g with proposedSpell := some { prop with
+              cost := ManaCost.afterReduction prop.cost (prop.cost.reduceGeneric n) } }
         | none => g
       | _ => g
 
@@ -2807,6 +2808,43 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
+/-- Mana to pay for `face` after alternative costs and pre-target reductions
+(CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
+mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
+Target-based reductions lock in after CR 601.2c. -/
+def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
+  let printedCost :=
+    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+      face.manaCost.reduceGeneric face.costReductionIfCreatureDied
+    else face.manaCost
+  let cost :=
+    match card.playPermission with
+    | some perm =>
+      if perm.withoutManaCost then ManaCost.zero
+      else if perm.anyMana then ManaCost.ofGeneric printedCost.manaValue
+      else printedCost
+    | none => printedCost
+  ManaCost.afterReduction face.manaCost cost
+
+/-- True when `face` has a mana cost that would not be paid to play `card`. -/
+def playsWithoutPayingManaCost (g : Game) (card : GameObject)
+    (face : CardDef := card.printed) : Bool :=
+  face.manaCost.includesManaPayment && !(g.playManaCost card face).includesManaPayment
+
+/-- Mana to activate `ab` after applicable reductions (CR 118.7 / 602.2b).
+A reduction that removes every mana symbol becomes `{0}`. -/
+def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility) : ManaCost :=
+  let cost :=
+    if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
+      ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary
+    else ab.cost.mana
+  ManaCost.afterReduction ab.cost.mana cost
+
+/-- True when `ab` has a mana cost that `p` would not pay to activate it. -/
+def activatesWithoutPayingManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility) :
+    Bool :=
+  ab.cost.mana.includesManaPayment && !(g.activationManaCost p ab).includesManaPayment
+
 /-- After proposing a spell or activated ability, announce modes and additional
 costs (CR 601.2b), then targets (CR 601.2c), then mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
@@ -2857,17 +2895,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let printedCost :=
-    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
-      face.manaCost.reduceGeneric face.costReductionIfCreatureDied
-    else face.manaCost
-  let cost :=
-    match card.playPermission with
-    | some perm =>
-      if perm.withoutManaCost then ManaCost.empty
-      else if perm.anyMana then ManaCost.ofGeneric printedCost.manaValue
-      else printedCost
-    | none => printedCost
+  let cost := g.playManaCost card face
   let needsSacrifice :=
     face.additionalCostSacrificeArtifactOrCreature &&
       face.additionalCostOrPayGeneric.isNone
@@ -3133,10 +3161,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
       ab.cost.payLife ab.cost.discardSource
     return g.becomeActivated p o.name (some id)
-  let manaCost :=
-    if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
-      ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary
-    else ab.cost.mana
+  let manaCost := g.activationManaCost p ab
   let prop : ProposedSpell := {
     caster := p
     cost := manaCost
