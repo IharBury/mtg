@@ -142,6 +142,27 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
   let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
   if s.isEmpty then "" else s!" {s}"
 
+/-- Player who would activate `o`'s abilities (controller, else owner). -/
+def abilityActivator (o : GameObject) : PlayerId :=
+  o.controller.getD o.owner
+
+/-- Parenthetical when `o` can be played or an ability can be activated
+without paying mana (CR 118.7). Play-from-exile permissions are rendered
+separately by `exilePlayPermissionClause`. -/
+def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
+  let play :=
+    match o.playPermission with
+    | some _ => ""
+    | none =>
+      if g.playsWithoutPayingManaCost o then
+        " (may be cast without paying its mana cost)"
+      else ""
+  let activate :=
+    if o.printed.activatedAbilities.any (g.activatesWithoutPayingManaCost (abilityActivator o))
+    then " (may be activated without paying its mana cost)"
+    else ""
+  play ++ activate
+
 /-- Permanent that linked-exiled `o` until it leaves the battlefield (CR 610.3). -/
 def linkedExileSource? (g : Game) (o : GameObject) : Option GameObject :=
   g.battlefield.find? (fun src => src.linkedExile.contains o.id)
@@ -201,7 +222,7 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
     if o.status.untilEotExileIfDies then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
+  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{withoutPayingManaClause g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
 
 /-- Printed face of a card in hand, graveyard, or exile: object id plus Oracle
 summary (mana cost, type line, P/T, keywords and abilities). Lands omit a
@@ -212,20 +233,29 @@ def printedCardLine (o : GameObject) : String :=
 def handLine (g : Game) (id : ObjectId) : String :=
   match g.findObject? id with
   | none => s!"{id} (missing)"
-  | some o => printedCardLine o
+  | some o => s!"{printedCardLine o}{withoutPayingManaClause g o}"
 
 /-- Printed mana cost to play `o` from exile when someone has permission.
 Lands and other cards with no mana cost omit it rather than printing `{0}`
-(CR 202.1b / 118.6). -/
+(CR 202.1b / 118.6). A granted “without paying its mana cost” permission
+prints `{0}` (CR 107.4d / 118.7). -/
 def exilePlayManaCost (o : GameObject) : String :=
   match o.playPermission with
-  | some _ => toString o.printed.manaCost
+  | some perm =>
+    if perm.withoutManaCost && o.printed.manaCost.includesManaPayment then
+      toString ManaCost.zero
+    else
+      toString o.printed.manaCost
   | none => ""
 
-/-- Who may play `o` from exile, if anyone (CR 701.14 / 715.3d). -/
+/-- Who may play `o` from exile, if anyone (CR 701.14 / 715.3d), including
+when the permission replaces the mana cost with `{0}`. -/
 def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   match o.playPermission with
-  | some perm => s!" (may be played by {g.player perm.player |>.name})"
+  | some perm =>
+    let free :=
+      if perm.withoutManaCost then " without paying its mana cost" else ""
+    s!" (may be played by {g.player perm.player |>.name}{free})"
   | none => ""
 
 /-- One card in exile: printed face (mana cost, type line, P/T), a granted play

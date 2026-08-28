@@ -571,6 +571,8 @@ def mountainLine (g : Game) : String :=
   let o := exiledBolt resolvedHunter
   zoneLine resolvedHunter .exile o.id ==
     s!"{o.id} Lightning Bolt \{R} Instant Lightning Bolt deals 3 damage to any target. (may be played by Chandra)"
+#guard !mentions (zoneLine resolvedHunter .exile (exiledBolt resolvedHunter).id)
+  "without paying its mana cost"
 #guard
   let o := exiledMountain resolvedHunterLand
   let line := zoneLine resolvedHunterLand .exile o.id
@@ -1434,5 +1436,99 @@ def mountainLine (g : Game) : String :=
 #guard mentions (header gollumDeclareBlockers) "declare blockers"
 #guard mentions (objectLine howlLifelink (namedPermanent howlLifelink "Raging Goblin"))
   "lifelink"
+
+/-- Grant a “cast without paying its mana cost” exile permission (Thranduil's Decree). -/
+def withFreeExileCast (g : Game) (name : String) (p : PlayerId) : Game :=
+  match g.objects.find? (fun o => o.zone == .exile && o.name == name) with
+  | none => g
+  | some o =>
+    g.setObject { o with playPermission := some {
+      player := p
+      turnEndsRemaining := 0
+      whileExiled := true
+      withoutManaCost := true } }
+
+def freeExileOgre : Game :=
+  withFreeExileCast (insertObject started grayOgre ⟨1⟩ .exile) "Gray Ogre" ⟨0⟩
+
+#guard
+  match freeExileOgre.objects.find? (fun o => o.zone == .exile && o.name == "Gray Ogre") with
+  | none => false
+  | some o =>
+    let line := exileLine freeExileOgre o
+    mentions line "may be played by Chandra without paying its mana cost" &&
+      mentions line "{2}{R}" &&
+      exilePlayManaCost o == "{0}" &&
+      zoneLine freeExileOgre .exile o.id == line &&
+      mentions (zoneBlock freeExileOgre .exile) "without paying its mana cost" &&
+      mentions (snapshot freeExileOgre) "without paying its mana cost" &&
+      freeExileOgre.playsWithoutPayingManaCost o
+
+/-- A creature whose only ability costs `{2}` less (to `{0}`) if you control a
+legendary creature. -/
+def freeKnight : CardDef :=
+  creature "Free Knight" (ManaCost.ofColor .white) #["Human", "Knight"] 1 1
+    (oracleText :=
+      "{2}: This creature gets +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
+    (activatedAbilities := #[
+      activated (.sourceGets 1 1) (ManaCost.ofGeneric 2)
+        (costReductionIfYouControlLegendary := 2)])
+
+def testLegend : CardDef :=
+  legendaryCreature "Test Legend" (ManaCost.ofColor .white) #["Human"] 1 1
+
+def freeKnightAlone : Game :=
+  addPermanent afterDraw freeKnight ⟨0⟩ ⟨0⟩
+
+def freeKnightWithLegend : Game :=
+  addPermanent freeKnightAlone testLegend ⟨0⟩ ⟨0⟩
+
+#guard
+  let o := namedPermanent freeKnightAlone "Free Knight"
+  !freeKnightAlone.activatesWithoutPayingManaCost ⟨0⟩ o.printed.activatedAbilities[0]! &&
+    !mentions (objectLine freeKnightAlone o) "without paying its mana cost"
+
+#guard
+  let o := namedPermanent freeKnightWithLegend "Free Knight"
+  freeKnightWithLegend.activatesWithoutPayingManaCost ⟨0⟩ o.printed.activatedAbilities[0]! &&
+    mentions (objectLine freeKnightWithLegend o) "may be activated without paying its mana cost" &&
+    mentions (battlefieldBlock freeKnightWithLegend) "without paying its mana cost" &&
+    mentions (snapshot freeKnightWithLegend) "without paying its mana cost"
+
+#guard !mentions (objectLine prowlerReady (namedPermanent prowlerReady "Desolation Prowler"))
+  "without paying its mana cost"
+
+def freeKnightActivating : Game :=
+  mustApply (readyMain freeKnightWithLegend) ⟨0⟩
+    (.activate (namedPermanent freeKnightWithLegend "Free Knight").id 0)
+
+#guard pendingCostNotation freeKnightActivating == some "{0}"
+#guard pendingCostLine freeKnightActivating == some "Cost: {0}"
+#guard mentions (header freeKnightActivating) "cost {0}"
+#guard mentions (snapshot freeKnightActivating) "Cost: {0}"
+
+/-- A spell whose entire generic mana cost is waived if a creature died. -/
+def freeCloud : CardDef :=
+  creature "Free Cloud" (ManaCost.ofGeneric 3) #["Bat"] 1 1
+    (costReductionIfCreatureDied := 3)
+
+def freeCloudInHand : Game :=
+  addToHand (readyMain (emptyHand afterDraw ⟨0⟩)) freeCloud ⟨0⟩
+
+def freeCloudAfterDeath : Game :=
+  { freeCloudInHand with creatureDiedThisTurn := true }
+
+#guard
+  let o := handCardNamed freeCloudInHand ⟨0⟩ "Free Cloud"
+  !freeCloudInHand.playsWithoutPayingManaCost o &&
+    !mentions (handLine freeCloudInHand o.id) "without paying its mana cost"
+
+#guard
+  let o := handCardNamed freeCloudAfterDeath ⟨0⟩ "Free Cloud"
+  freeCloudAfterDeath.playsWithoutPayingManaCost o &&
+    mentions (handLine freeCloudAfterDeath o.id) "may be cast without paying its mana cost" &&
+    mentions (playerBlock freeCloudAfterDeath (freeCloudAfterDeath.player ⟨0⟩))
+      "without paying its mana cost" &&
+    mentions (snapshot freeCloudAfterDeath) "without paying its mana cost"
 
 end Mtg.Demo.RenderTests
