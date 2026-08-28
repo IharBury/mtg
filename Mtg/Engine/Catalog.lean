@@ -45,7 +45,7 @@ def card (name : String) (types : Array CardType)
 /-- A basic land whose name is also its land type (CR 305.6). -/
 def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
-    (oracleText := s!"\{T}: Add \{{color.letter}}.")
+    (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
 def plains : CardDef := basicLand "Plains" .white
 def island : CardDef := basicLand "Island" .blue
@@ -236,7 +236,8 @@ def canyonMinotaur : CardDef :=
 
 def ragingGoblin : CardDef :=
   creature "Raging Goblin" (ManaCost.ofColor .red) #["Goblin"] 1 1
-    (oracleText := "Haste") (keywords := Keyword.haste)
+    (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
+    (keywords := Keyword.haste)
 
 def llanowarElves : CardDef :=
   creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
@@ -254,7 +255,8 @@ def rumblingBaloth : CardDef :=
 
 def giantSpider : CardDef :=
   creature "Giant Spider" (ManaCost.ofGenericAndColor 3 .green) #["Spider"] 2 4
-    (oracleText := "Reach") (keywords := Keyword.reach)
+    (oracleText := "Reach (This creature can block creatures with flying.)")
+    (keywords := Keyword.reach)
 
 def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
 
@@ -282,6 +284,14 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 #guard (mountain.summary.splitOn "{T}: Add {R}").length > 1
 #guard (mountain.summary.splitOn "{0}").length == 1
 #guard mountain.summary == "Mountain Basic Land — Mountain {T}: Add {R}."
+#guard plains.oracleText == "({T}: Add {W}.)"
+#guard island.oracleText == "({T}: Add {U}.)"
+#guard swamp.oracleText == "({T}: Add {B}.)"
+#guard mountain.oracleText == "({T}: Add {R}.)"
+#guard forest.oracleText == "({T}: Add {G}.)"
+#guard ragingGoblin.oracleText ==
+  "Haste (This creature can attack and {T} as soon as it comes under your control.)"
+#guard giantSpider.oracleText == "Reach (This creature can block creatures with flying.)"
 #guard (giantSpider.summary.splitOn "reach").length > 1
 #guard giantGrowth.spellEffect == some (.pump 3 3)
 #guard giantGrowth.isInstant

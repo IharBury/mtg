@@ -1582,10 +1582,15 @@ def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
     let parts := cleaned.splitOn "," |>.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
     !parts.isEmpty && parts.all (fun p => kw.any (fun w => w == lowerAscii p))
 
-/-- Oracle ability lines that are not just restating modeled keywords. -/
+/-- Gatherer delimiter between an adventurer card's primary and Adventure faces. -/
+def isAdventureDelimiter (line : String) : Bool :=
+  line == "//ADV//" || line.startsWith "//ADV//"
+
+/-- Oracle ability lines that are not just restating modeled keywords. The
+Gatherer `//ADV//` marker is stored in `oracleText` but is not an ability. -/
 def leftoverOracleLines (c : CardDef) : List String :=
   c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filter (fun line =>
-    !line.isEmpty && !isKeywordRestatement c.keywords line)
+    !line.isEmpty && !isAdventureDelimiter line && !isKeywordRestatement c.keywords line)
 
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
@@ -1663,6 +1668,21 @@ instance : ToString CardDef where
 #guard CardDef.isKeywordRestatement Keyword.hexproof "Hexproof"
 #guard toString Keyword.indestructible == "indestructible"
 #guard CardDef.isKeywordRestatement Keyword.indestructible "Indestructible"
+#guard CardDef.isAdventureDelimiter "//ADV//"
+#guard CardDef.isAdventureDelimiter "//ADV// Spew Flame"
+#guard !CardDef.isAdventureDelimiter "Spew Flame"
+#guard
+  let c : CardDef := {
+    name := "Silent Adventurer"
+    types := #[.creature]
+    oracleText :=
+      "Flying\n//ADV//\nSpew Flame\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
+    keywords := Keyword.flying
+  }
+  leftoverOracleLines c ==
+    ["Spew Flame", "Sorcery — Adventure",
+      "Spew Flame deals 5 damage to target creature."] &&
+    (c.oracleText.splitOn "//ADV//").length > 1
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==

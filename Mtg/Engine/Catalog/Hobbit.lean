@@ -43,7 +43,7 @@ open Mtg.Engine
 
 def bofurReliableGuardian : CardDef :=
   legendaryCreature "Bofur, Reliable Guardian" (ManaCost.ofColor .white) #["Dwarf", "Scout"] 1 1
-    (oracleText := "Lifelink")
+    (oracleText := "Lifelink\n//ADV//\nConcerted Care\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)")
 
 def dwarvenProvisioner : CardDef :=
   creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
@@ -51,7 +51,7 @@ def dwarvenProvisioner : CardDef :=
 
 def velvetwingButterflies : CardDef :=
   creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
-    (oracleText := "Flying")
+    (oracleText := "Flying\n//ADV//\nGaze in Wonder\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
     (keywords := Keyword.flying)
 
 def magnificentEnd : CardDef :=
@@ -130,7 +130,7 @@ def esquireOfTheKing : CardDef :=
 
 def bilboBagginsBurglar : CardDef :=
   legendaryCreature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
-    (oracleText := "When Bilbo Baggins enters, draw a card.")
+    (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
 
 def pelargirSurvivor : CardDef :=
   creature "Pelargir Survivor" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Peasant"] 1 3
@@ -194,7 +194,7 @@ def willowWind : CardDef :=
 
 def bilboLuckwearer : CardDef :=
   legendaryCreature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
-    (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.")
+    (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)")
 
 def uneasyPartings : CardDef :=
   instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
@@ -248,7 +248,7 @@ def raveningWarg : CardDef :=
 
 def gollumSilentSlinker : CardDef :=
   legendaryCreature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
-    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
+    (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\n//ADV//\nMeager Meal\nSorcery — Adventure\nPut a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)")
     (keywords := Keyword.menace)
 
 def bilbosDeadlySlice : CardDef :=
@@ -348,7 +348,7 @@ def improvisedClub : CardDef :=
 def smaugTheGreatCalamity : CardDef :=
   legendaryCreature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
     #["Dragon"] 5 5
-    (oracleText := "Flying\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
+    (oracleText := "Flying\n//ADV//\nSpew Flame\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
     (keywords := Keyword.flying)
     (adventure := some (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red)
       "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
@@ -521,7 +521,7 @@ def mirkwoodPathmaker : CardDef :=
 def beornReluctantHost : CardDef :=
   legendaryCreature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
     #["Human", "Bear", "Shapeshifter"] 5 5
-    (oracleText := "Trample\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
+    (oracleText := "Trample\n//ADV//\nTill and Tend\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
     (keywords := Keyword.trample)
     (adventure := some (adventure "Till and Tend" (ManaCost.ofGenericAndColor 1 .green)
       "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
@@ -830,6 +830,9 @@ def attercop : CardDef :=
       adv.subtypes.any (· == "Adventure") &&
       adv.spellEffect == some (.dealDamageToCreature 5)
   | none => false
+#guard (smaugTheGreatCalamity.oracleText.splitOn "//ADV//").length > 1
+#guard !smaugTheGreatCalamity.leftoverOracleLines.any (· == "//ADV//")
+#guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
 #guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame").length > 1
 #guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
 #guard beornReluctantHost.keywords.trample
@@ -847,8 +850,20 @@ def attercop : CardDef :=
       adv.spellEffect == some .playAdditionalLandThisTurn &&
       !adv.toCardDef.requiresTarget
   | none => false
+#guard (beornReluctantHost.oracleText.splitOn "//ADV//").length > 1
+#guard !beornReluctantHost.leftoverOracleLines.any (· == "//ADV//")
 #guard (beornReluctantHost.summary.splitOn "Till and Tend").length > 1
 #guard (beornReluctantHost.summary.splitOn "trample").length > 1
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
+#guard (bofurReliableGuardian.oracleText.splitOn "//ADV//").length > 1
+#guard (bofurReliableGuardian.oracleText.splitOn "Concerted Care").length > 1
+#guard (velvetwingButterflies.oracleText.splitOn "//ADV//").length > 1
+#guard (velvetwingButterflies.oracleText.splitOn "Gaze in Wonder").length > 1
+#guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1
+#guard (bilboBagginsBurglar.oracleText.splitOn "Take a Glance").length > 1
+#guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1
+#guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot").length > 1
+#guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
+#guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal").length > 1
 
 end Mtg.Engine.Catalog
