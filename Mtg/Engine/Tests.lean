@@ -2,6 +2,7 @@ import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Game
+import Mtg.Engine.Oracle
 
 /-!
 # Compile-time smoke tests for the engine.
@@ -270,7 +271,7 @@ def uncontrolledPermanent : Game :=
 #guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
 #guard mentions landrovalHorizonWitness.summary "flying"
 #guard mentions landrovalHorizonWitness.summary "Whenever two or more creatures"
-#guard mentions soldierOfTheGreyHost.summary "Flash"
+#guard mentions soldierOfTheGreyHost.summary "flash"
 #guard mentions soldierOfTheGreyHost.summary "flying"
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
@@ -741,6 +742,18 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
   | .chooseTriggerToStack p, some _ =>
     mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
+  | .mayPayGeneric _ _, some p =>
+    mustApply g p .decline
+  | .chooseLibraryPlacement _ _, some p =>
+    mustApply g p .chooseBottom
+  | .mayAttachEquipment _ _, some p =>
+    mustApply g p .decline
+  | .tapHumans _, some p =>
+    mustApply g p .decline
+  | .payOrLetCounter _ _ _, some p =>
+    mustApply g p .decline
+  | .mayPlusOneCreature _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -748,11 +761,13 @@ def applyIdle (g : Game) : Game :=
       match g.defaultTarget p spell with
       | some t => mustApply g p (.target t)
       | none =>
-        match spell.triggeredAbility with
-        | some ab =>
-          if ab.allowsZeroTargets then mustApply g p .decline
-          else panic! "no legal target (CR 601.2c)"
-        | none => panic! "no legal target (CR 601.2c)"
+        if g.canFinishOptionalTargets spell then mustApply g p .decline
+        else
+          match spell.triggeredAbility with
+          | some ab =>
+            if ab.allowsZeroTargets then mustApply g p .decline
+            else panic! "no legal target (CR 601.2c)"
+          | none => panic! "no legal target (CR 601.2c)"
   | _, some p =>
     mustApply g p .pass
   | _, none => panic! s!"no actor at {g.step}"
@@ -2080,6 +2095,14 @@ def withRedMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
 /-- Fill `p`'s mana pool with `n` black mana. -/
 def withBlackMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
   withMana g p .black n
+
+/-- Fill `p`'s mana pool with `n` white mana. -/
+def withWhiteMana (g : Game) (p : PlayerId) (n : Nat := 5) : Game :=
+  withMana g p .white n
+
+/-- Fill `p`'s mana pool with `n` blue mana. -/
+def withBlueMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
+  withMana g p .blue n
 
 /-- Empty `p`'s hand and mark a land already played this turn. -/
 def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
@@ -10580,6 +10603,204 @@ def agentBilbosDeadlySliceOnly : Game :=
   | some (.cast id) =>
     (agentBilbosDeadlySliceOnly.object! id).name == "Bilbo's Deadly Slice"
   | _ => false
+
+/-- Magnificent End costs {3} less when it targets a tapped creature. -/
+def magnificentEndSetup (tapped : Bool) : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g :=
+    if tapped then
+      let o := namedPermanent g "Grizzly Bears"
+      g.setObject { o with status := { o.status with tapped := true } }
+    else g
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
+
+def magnificentEndFull : Game := magnificentEndSetup false
+def magnificentEndCheap : Game := magnificentEndSetup true
+
+#guard magnificentEnd.costReductionIfTargetTapped == 3
+#guard
+  match magnificentEndFull.apply ⟨0⟩
+      (.cast (handCardNamed magnificentEndFull ⟨0⟩ "Magnificent End").id) with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.cost.manaValue == 5
+    | none => false
+  | .error _ => false
+
+def magnificentEndCheapLocked : Game :=
+  let g := mustApply magnificentEndCheap ⟨0⟩
+    (.cast (handCardNamed magnificentEndCheap ⟨0⟩ "Magnificent End").id)
+  mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+
+#guard
+  match magnificentEndCheapLocked.proposedSpell with
+  | some prop => prop.cost.manaValue == 2
+  | none => false
+
+/-- Fiend Hunter exiles another creature until it leaves (CR 610.3). -/
+def fiendHunterLinked : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hunter := namedPermanent g "Fiend Hunter"
+  let bears := namedPermanent g "Grizzly Bears"
+  g.exileUntilSourceLeaves (some hunter.id) bears
+
+#guard !(fiendHunterLinked.battlefield.any (fun o => o.name == "Grizzly Bears"))
+#guard fiendHunterLinked.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile)
+#guard (namedPermanent fiendHunterLinked "Fiend Hunter").linkedExile.size == 1
+
+def fiendHunterReturned : Game :=
+  let hunter := namedPermanent fiendHunterLinked "Fiend Hunter"
+  (fiendHunterLinked.move hunter.id (.graveyard ⟨0⟩) none).1
+
+#guard fiendHunterReturned.battlefield.any (fun o => o.name == "Grizzly Bears")
+#guard fiendHunterReturned.log.any (fun s => mentions s "returns to the battlefield")
+
+/-- Mentor of the Meek: another small creature entering offers {1} to draw. -/
+def mentorSmallEnters : Game :=
+  let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let mentor := namedPermanent g "Mentor of the Meek"
+  let elves := namedPermanent g "Llanowar Elves"
+  let g := g.putMatchingSourceTriggers ⟨0⟩ mentor .anotherCreatureYouControlEnters
+    (cause := some elves)
+  g.receivePriority ⟨0⟩
+
+#guard mentorSmallEnters.stack.size == 1
+#guard (mentorSmallEnters.object! mentorSmallEnters.stack.back!.objectId).triggeredAbility ==
+  some (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1)
+
+def mentorMayPay : Game := passBoth mentorSmallEnters
+
+#guard
+  match mentorMayPay.pending with
+  | .mayPayGeneric ⟨0⟩ 1 => true
+  | _ => false
+
+#guard
+  let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let mentor := namedPermanent g "Mentor of the Meek"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.putMatchingSourceTriggers ⟨0⟩ mentor .anotherCreatureYouControlEnters
+    (cause := some giant)
+  let g := g.receivePriority ⟨0⟩
+  g.stack.isEmpty
+
+/-- Dawn of a New Age enters with a hope counter per creature you control. -/
+def dawnWithCreature : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g dawnOfANewAge ⟨0⟩ ⟨0⟩
+  g.afterPermanentEnters (namedPermanent g "Dawn of a New Age")
+
+#guard (namedPermanent dawnWithCreature "Dawn of a New Age").status.hope == 1
+#guard dawnWithCreature.log.any (fun s => mentions s "hope counter")
+
+def dawnEndStep : Game :=
+  let dawn := namedPermanent dawnWithCreature "Dawn of a New Age"
+  let g := dawnWithCreature.putMatchingSourceTriggers ⟨0⟩ dawn .yourEndStep
+  passBoth (g.receivePriority ⟨0⟩)
+
+#guard !(dawnEndStep.battlefield.any (fun o => o.name == "Dawn of a New Age"))
+#guard (dawnEndStep.player ⟨0⟩).life == 24
+#guard dawnEndStep.log.any (fun s => mentions s "is sacrificed")
+
+/-- Islandwalk: the defending player cannot block if they control an Island. -/
+def islandwalkBlocked : Bool :=
+  let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
+  let g := addPermanent g island ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let whale := namedPermanent g "Colossal Whale"
+  let g := g.setObject { whale with status := { whale.status with attacking := true } }
+  !g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
+
+def islandwalkOpen : Bool :=
+  let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let whale := namedPermanent g "Colossal Whale"
+  let g := g.setObject { whale with status := { whale.status with attacking := true } }
+  g.canBlock (namedPermanent g "Grizzly Bears") (g.object! whale.id)
+
+#guard islandwalkBlocked
+#guard islandwalkOpen
+
+/-- Fog on the Barrow-Downs: enchanted creature cannot attack. -/
+def fogCantAttack : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let fog := namedPermanent g "Fog on the Barrow-Downs"
+  let g := g.setObject { fog with attachedTo := some bears.id }
+  !g.canAttack (namedPermanent g "Grizzly Bears")
+
+#guard fogCantAttack
+
+/-- Fog overwrites creature types (CR 205.3m): only a Spirit, not a Bear. -/
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let fog := namedPermanent g "Fog on the Barrow-Downs"
+  let g := g.setObject { fog with attachedTo := some bears.id }
+  let host := namedPermanent g "Grizzly Bears"
+  g.hasSubtype host "Spirit" && !g.hasSubtype host "Bear"
+
+/-- Gaze in Wonder (Velvetwing adventure) taps one or two creatures. -/
+def gazeSetup : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
+
+#guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
+#guard
+  match velvetwingButterflies.adventure with
+  | some adv => adv.effect == some .tapOneOrTwoCreatures
+  | none => false
+
+def gazeProposed : Game :=
+  mustApply gazeSetup ⟨0⟩
+    (.castAdventure (handCardNamed gazeSetup ⟨0⟩ "Velvetwing Butterflies").id)
+
+#guard gazeProposed.pending == .chooseTargets ⟨0⟩
+
+def gazeOneTarget : Game :=
+  mustApply gazeProposed ⟨0⟩
+    (.target (Target.permanent (namedPermanent gazeProposed "Grizzly Bears").id))
+
+#guard gazeOneTarget.pending == .chooseTargets ⟨0⟩
+#guard gazeOneTarget.canFinishOptionalTargets (gazeOneTarget.object! gazeOneTarget.stack.back!.objectId)
+
+def gazeTwoTargets : Game :=
+  mustApply gazeOneTarget ⟨0⟩
+    (.target (Target.permanent (namedPermanent gazeOneTarget "Gray Ogre").id))
+
+def gazeResolvedTwo : Game :=
+  passBoth (mustApply gazeTwoTargets ⟨0⟩ .pay)
+
+#guard (namedPermanent gazeResolvedTwo "Grizzly Bears").status.tapped
+#guard (namedPermanent gazeResolvedTwo "Gray Ogre").status.tapped
+
+def gazeResolvedOne : Game :=
+  let g := mustApply gazeOneTarget ⟨0⟩ .decline
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard (namedPermanent gazeResolvedOne "Grizzly Bears").status.tapped
+#guard !(namedPermanent gazeResolvedOne "Gray Ogre").status.tapped
+
+#guard Keyword.firstStrike.firstStrike
+#guard Keyword.islandwalk.islandwalk
+#guard supportedCardsMatchOracle
+#guard bofurReliableGuardian.matchesOracleText
+#guard mentorOfTheMeek.matchesOracleText
+#guard fiendHunter.matchesOracleText
+#guard dawnOfANewAge.matchesOracleText
+#guard colossalWhale.matchesOracleText
+#guard lorienRevealed.matchesOracleText
+#guard sternScolding.matchesOracleText
+#guard dunedainBlade.matchesOracleText
 
 end Mtg.Engine.Tests
 
