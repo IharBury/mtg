@@ -2335,6 +2335,14 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
   !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
 
+/-- Whether this activated ability currently has a legal target, or does not
+require one. Equip restricted to a creature subtype uses that targeting
+shape rather than “any creature you control” (CR 702.6 / 601.2c). -/
+def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility) : Bool :=
+  match ab.equipSubtype with
+  | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t)).isEmpty
+  | none => ab.allModes.any (g.modeIsChoosable p)
+
 /-- Last target in `legal` matching `pred`. -/
 def lastLegalTarget (legal : Array Target) (pred : Target → Bool) : Option Target :=
   legal.filter pred |>.back?
@@ -3094,7 +3102,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
-  if !ab.allModes.any (g.modeIsChoosable p) then
+  if !g.abilityCanChooseTarget p ab then
     throw s!"{o.name}'s ability requires a target"
 
 /-- Whether `p` may begin activating `ab` of `o` (CR 602.3). Having
