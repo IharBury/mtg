@@ -2730,6 +2730,37 @@ def shouldAutoNoAttack (g : Game) (pending : List String) : Bool :=
   !shouldAutoNoAttack g ["noattack"]
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
 
+/-- Whether the defending player has any legal non-empty blocker declaration.
+An attacker that requires multiple blockers can be blocked only when enough
+individually eligible creatures are available. -/
+def hasLegalBlock (g : Game) : Bool :=
+  g.battlefield.any (fun attacker =>
+    attacker.status.attacking &&
+      let eligible := g.battlefield.filter (fun blocker => g.canBlock blocker attacker) |>.size
+      eligible >= max 1 (g.minBlockersRequired attacker))
+
+/-- Automatically declare no blockers after scripted input is exhausted when
+that is the only legal declaration. -/
+def shouldAutoNoBlock (g : Game) (pending : List String) : Bool :=
+  pending.isEmpty && g.pending == .declareBlockers && !hasLegalBlock g
+
+#guard
+  let g := { Tests.readyToDeclareBlockers with
+    objects := Tests.readyToDeclareBlockers.objects.map (fun o =>
+      if o.controlledBy ⟨1⟩ then
+        { o with status := { o.status with tapped := true } }
+      else o) }
+  shouldAutoNoBlock g []
+#guard
+  let g := { Tests.readyToDeclareBlockers with
+    objects := Tests.readyToDeclareBlockers.objects.map (fun o =>
+      if o.controlledBy ⟨1⟩ then
+        { o with status := { o.status with tapped := true } }
+      else o) }
+  !shouldAutoNoBlock g ["noblock"]
+#guard !shouldAutoNoBlock Tests.readyToDeclareBlockers []
+#guard shouldAutoNoBlock Tests.gollumVsOneBearReadyToBlock []
+
 /-- CR 103.1: the deciding player chooses who takes the first turn. Returns
 the seat index and remaining `--input` lines, or `none` if the user quits.
 The chooser announcement is printed first by `printFirstChooser`. -/
@@ -2818,6 +2849,20 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         IO.println s!"{(g.player p).name} could not automatically declare no attackers: {e}"
       | .ok g' =>
         recordAcceptedCommand output sameFile false "noattack"
+        seen ← printLog g' seen (currentView g' playerView controlAll)
+        printChangedZones g g' (currentView g' playerView controlAll)
+        printChangedLife g g'
+        printChangedMana g g'
+        printPendingPrompt g'
+        g := g'
+      continue
+    if shouldAutoNoBlock g pending then
+      let some p := g.actor | continue
+      match g.apply p (.declareBlockers #[]) with
+      | .error e =>
+        IO.println s!"{(g.player p).name} could not automatically declare no blockers: {e}"
+      | .ok g' =>
+        recordAcceptedCommand output sameFile false "noblock"
         seen ← printLog g' seen (currentView g' playerView controlAll)
         printChangedZones g g' (currentView g' playerView controlAll)
         printChangedLife g g'
