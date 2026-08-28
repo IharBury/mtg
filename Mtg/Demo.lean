@@ -502,6 +502,7 @@ def helpInteractive (controlAll : Bool := false)
   visible off          Show full information in state and later updates
   keep                 Keep this opening hand (CR 103.5)
   keep <id>            Choose which legendary permanent to keep (CR 704.5j)
+  stack <id> [id...]   Put waiting triggered abilities on the stack in that source order (CR 603.3b)
   mulligan             Declare a mulligan; taken after all declarations
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
@@ -552,6 +553,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
 #guard ((helpInteractive false).splitOn "keep <id>").length > 1
 #guard ((helpInteractive false).splitOn "CR 704.5j").length > 1
+#guard ((helpInteractive false).splitOn "stack <id>").length > 1
+#guard ((helpInteractive false).splitOn "CR 603.3b").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
@@ -1003,6 +1006,14 @@ def parsedTwoAmountsSameSource : Bool :=
   match applyAssign Tests.readyToDeclareBlockers ⟨0⟩ [] with
   | .error msg => msg == "Not time to assign combat damage (CR 510.1)"
   | .ok _ => false
+
+def stackUsage : String := "usage: stack <id> [id...]"
+
+/-- Put waiting triggered abilities on the stack in the listed source order
+(CR 603.3b). -/
+def applyStack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  let ids ← parseObjectIds tokens stackUsage
+  g.apply p (.stackTriggers ids)
 
 def bottomUsage : String := "usage: bottom <id> [id ...]"
 
@@ -1997,6 +2008,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
     Except String Game :=
   match cmd with
   | "keep" => applyKeep g p args
+  | "stack" => applyStack g p args
   | "mulligan" => g.apply p .takeMulligan
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
@@ -2047,6 +2059,23 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
     | .ok g' =>
       (g'.battlefield.filter (·.name == "Bofur, Reliable Guardian")).size == 1 &&
       g'.log.any (fun s => Tests.mentions s "704.5j")
+    | .error _ => false
+  | _ => false
+
+#guard
+  match applyStack Tests.twoAttercopsLandPending ⟨0⟩ [] with
+  | .error msg => msg == stackUsage
+  | .ok _ => false
+
+#guard
+  match Tests.twoAttercopsLandPending.pending with
+  | .chooseTriggerToStack _ =>
+    let ids := Tests.twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+    match applyInteractiveAsActor Tests.twoAttercopsLandPending "stack"
+        [toString ids[0]!, toString ids[1]!] with
+    | .ok g' =>
+      g'.stack.size == 2 && g'.waitingTriggers.isEmpty &&
+        g'.log.any (fun s => Tests.mentions s "CR 603.3b")
     | .error _ => false
   | _ => false
 
