@@ -516,7 +516,7 @@ def helpInteractive (controlAll : Bool := false)
   sacrifice            Choose to sacrifice as an additional cost (CR 601.2b)
   play <id>            Play a land
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
-  activate <id>        Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay)
+  activate <id> [n]    Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay). n is 1-based when a card has more than one
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
@@ -550,6 +550,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "CR 601.2d").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 #guard ((helpInteractive false).splitOn "cast <id> adventure").length > 1
+#guard ((helpInteractive false).splitOn "activate <id> [n]").length > 1
 #guard ((helpInteractive false).splitOn "CR 715.3").length > 1
 #guard ((helpInteractive false).splitOn "assign <s> <t> <n>").length > 1
 #guard ((helpInteractive false).splitOn "defending player").length > 1
@@ -1291,16 +1292,28 @@ def applyPlay (g : Game) (p : PlayerId) (tokens : List String) : Except String G
       g'.battlefield.any (fun o => o.name == land.name)
     | .error _ => false
 
-def activateUsage : String := "usage: activate <id>"
+def activateUsage : String := "usage: activate <id> [n]"
 
-/-- Activate the first non-mana activated ability of the named object
-(a permanent, a card in hand, or a card in a graveyard). -/
+/-- Activate a non-mana activated ability of the named object (a permanent,
+a card in hand, or a card in a graveyard). `n` is the 1-based index of the
+printed activated ability; omit it to activate the first. -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let id ← parseRequiredObjectId tokens activateUsage
-  let o ← requireObject g id
-  match o.printed.activatedAbilities[0]? with
-  | none => throw s!"{o.name} has no activated ability"
-  | some _ => g.apply p (.activate id 0)
+  match commandTokens tokens with
+  | [arg] =>
+    match parseObjectId? arg with
+    | none => throw activateUsage
+    | some id =>
+      let _ ← requireObject g id
+      g.apply p (.activate id 0)
+  | [arg, ntok] =>
+    match parseObjectId? arg, ntok.toNat? with
+    | none, _ => throw activateUsage
+    | _, none => throw activateUsage
+    | _, some 0 => throw activateUsage
+    | some id, some n =>
+      let _ ← requireObject g id
+      g.apply p (.activate id (n - 1))
+  | _ => throw activateUsage
 
 def sacrificeUsage : String := "usage: sacrifice <id>"
 
@@ -1356,7 +1369,12 @@ def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok _ => false
 
 #guard
-  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "2"] with
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "nope"] with
+  | .error msg => msg == activateUsage
+  | .ok _ => false
+
+#guard
+  match applyActivate Tests.baubleReady ⟨0⟩ ["1", "0"] with
   | .error msg => msg == activateUsage
   | .ok _ => false
 
@@ -1386,6 +1404,36 @@ def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok g' =>
     g'.pending == .activateManaAbilities ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "begins activating Wayfarer's Bauble")
+  | .error _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match applyActivate g ⟨0⟩ [toString bauble.id, "1"] with
+  | .ok g' => g'.pending == .activateManaAbilities ⟨0⟩
+  | .error _ => false
+
+#guard
+  let g := Tests.baubleReady
+  let bauble := Tests.baubleSource g
+  match applyActivate g ⟨0⟩ [toString bauble.id, "2"] with
+  | .error msg => Tests.mentions msg "has no such activated ability"
+  | .ok _ => false
+
+#guard
+  let g := Tests.dunedainReady
+  let blade := Tests.namedPermanent g "Dúnedain Blade"
+  match applyActivate g ⟨0⟩ [toString blade.id] with
+  | .ok g' => g'.pending == .chooseTargets ⟨0⟩
+  | .error _ => false
+
+#guard
+  let g := Tests.dunedainReady
+  let blade := Tests.namedPermanent g "Dúnedain Blade"
+  match applyActivate g ⟨0⟩ [toString blade.id, "2"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Dúnedain Blade")
   | .error _ => false
 
 #guard
@@ -2370,6 +2418,38 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.log.any (fun s => Tests.mentions s "begins activating Rogue's Passage")
+  | .error _ => false
+
+#guard
+  let g := Tests.dunedainReady
+  let blade := Tests.namedPermanent g "Dúnedain Blade"
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applyActivate g ⟨0⟩ [toString blade.id] with
+  | .error _ => false
+  | .ok g' =>
+    match applyTarget g' ⟨0⟩ [toString bears.id] with
+    | .error msg => Tests.mentions msg "Illegal target"
+    | .ok _ => false
+
+#guard
+  let g := Tests.dunedainReady
+  let blade := Tests.namedPermanent g "Dúnedain Blade"
+  let bears := Tests.namedPermanent g "Grizzly Bears"
+  match applyActivate g ⟨0⟩ [toString blade.id, "2"] with
+  | .error _ => false
+  | .ok g' =>
+    match applyTarget g' ⟨0⟩ [toString bears.id] with
+    | .ok g'' =>
+      g''.pending == .activateManaAbilities ⟨0⟩ &&
+      g''.log.any (fun s => Tests.mentions s "begins activating Dúnedain Blade")
+    | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.dunedainReady "activate"
+      [toString (Tests.namedPermanent Tests.dunedainReady "Dúnedain Blade").id, "2"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.log.any (fun s => Tests.mentions s "begins activating Dúnedain Blade")
   | .error _ => false
 
 #guard

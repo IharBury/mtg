@@ -666,6 +666,11 @@ def attercop : CardDef :=
 #guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
 #guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
 #guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
+#guard dunedainBlade.activatedAbilities.size == 2
+#guard dunedainBlade.activatedAbilities[0]!.equipSubtype == some "Human"
+#guard dunedainBlade.activatedAbilities[1]!.equipSubtype == none
+#guard dunedainBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard dunedainBlade.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]

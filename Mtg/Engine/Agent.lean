@@ -182,32 +182,34 @@ where
       | none => some .pass
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
-    let activatable (o : GameObject) : Bool :=
-      match o.printed.activatedAbilities[0]? with
-      | some ab =>
-        let available :=
-          g.availableManaExcept p (if ab.cost.tap then some o.id else none)
-        g.canActivate p o ab &&
-        available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
-        -- Don't pay life that would reduce the player to 0 or less.
-        (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
-        -- Don't spend mana re-equipping a creature that is already equipped.
-        !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
-        -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
-        !(ab.effect == .targetCantBeBlockedThisTurn &&
-          !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
-        -- Don't typecycle a card you can currently afford to cast.
-        !(ab.activateFromHand && g.canCast p o &&
-          (g.availableMana p).canPay o.printed.manaCost
-            (allowElfRestricted := o.hasSubtype "Elf"))
-      | none => false
+    let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
+      let available :=
+        g.availableManaExcept p (if ab.cost.tap then some o.id else none)
+      g.canActivate p o ab &&
+      available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
+      -- Don't pay life that would reduce the player to 0 or less.
+      (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
+      -- Don't spend mana re-equipping a creature that is already equipped.
+      !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
+      -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
+      !(ab.effect == .targetCantBeBlockedThisTurn &&
+        !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
+      -- Don't typecycle a card you can currently afford to cast.
+      !(ab.activateFromHand && g.canCast p o &&
+        (g.availableMana p).canPay o.printed.manaCost
+          (allowElfRestricted := o.hasSubtype "Elf"))
+    let firstAbility (o : GameObject) : Option Nat :=
+      o.printed.activatedAbilities.findIdx? (shouldActivate o)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
     let candidate :=
-      (g.permanentsOf p).find? activatable <|>
-        gy.find? activatable <|>
-        (g.handObjects p).find? activatable
+      (g.permanentsOf p).find? (fun o => (firstAbility o).isSome) <|>
+        gy.find? (fun o => (firstAbility o).isSome) <|>
+        (g.handObjects p).find? (fun o => (firstAbility o).isSome)
     match candidate with
-    | some o => some (.activate o.id 0)
+    | some o =>
+      match firstAbility o with
+      | some idx => some (.activate o.id idx)
+      | none => chooseCast g p
     | none => chooseCast g p
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
