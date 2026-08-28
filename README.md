@@ -127,7 +127,8 @@ The first slice of the engine models the two-player game:
   or more Elves, or gain life while you control a creature with power 4 or
   greater (Ferocious); scry triggers that pump for each card looked at;
   becomes-blocked triggers that damage blocking
-  creatures, flash, Aura spells that enchant a creature, Equipment (including
+  creatures, flash, Aura spells that enchant a creature (including overwriting
+  its creature types), Equipment (including
   Equip), enters triggers that scry (any number to the bottom, the rest on
   top in any order), draw a card, search the library for a Forest card, may
   discard a card to draw, make a target opponent sacrifice a creature, or deal
