@@ -739,6 +739,8 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.assignCombatDamage #[])
   | .chooseLegend _ _ ids, some p =>
     mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
+  | .chooseTriggerToStack p, some _ =>
+    mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -6420,14 +6422,21 @@ def paidBoltOppGuttersnipe : Game :=
   "Lightning Bolt"
 #guard !paidBoltOppGuttersnipe.log.any (fun s => mentions s "cast trigger")
 
--- Two Guttersnipes both trigger.
-def paidBoltTwoGuttersnipes : Game :=
+-- Two Guttersnipes both trigger; the controller chooses stack order (CR 603.3b).
+def paidBoltTwoGuttersnipesPending : Game :=
   let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
   let g := addPermanent g guttersnipe ⟨0⟩ ⟨0⟩
   let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
   let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
   mustApply g ⟨0⟩ .pay
+
+#guard paidBoltTwoGuttersnipesPending.pending == .chooseTriggerToStack ⟨0⟩
+#guard paidBoltTwoGuttersnipesPending.stack.size == 1
+#guard paidBoltTwoGuttersnipesPending.waitingTriggers.size == 2
+#guard paidBoltTwoGuttersnipesPending.log.any (fun s => mentions s "CR 603.3b")
+
+def paidBoltTwoGuttersnipes : Game := applyIdle paidBoltTwoGuttersnipesPending
 
 #guard paidBoltTwoGuttersnipes.stack.size == 3
 #guard (paidBoltTwoGuttersnipes.object! paidBoltTwoGuttersnipes.stack.back!.objectId).triggeredAbility ==
@@ -8452,12 +8461,26 @@ def afterAttercopCleanup : Game := passBoth (skipTo attercopLandfallResolved .en
 #guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpPower == 0
 #guard (namedPermanent afterAttercopCleanup "Attercop").status.pumpToughness == 0
 
-/-- Two Attercops both trigger from one land. -/
-def twoAttercopsLandPlayed : Game :=
+/-- Two Attercops both trigger from one land; the controller chooses order
+(CR 603.3b). -/
+def twoAttercopsLandPending : Game :=
   let g := addPermanent afterDraw attercop ⟨0⟩ ⟨0⟩
   let g := addPermanent g attercop ⟨0⟩ ⟨0⟩
   let g := addToHand g forest ⟨0⟩
   mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard twoAttercopsLandPending.pending == .chooseTriggerToStack ⟨0⟩
+#guard twoAttercopsLandPending.waitingTriggers.size == 2
+#guard twoAttercopsLandPending.stack.isEmpty
+#guard twoAttercopsLandPending.actor == some ⟨0⟩
+#guard twoAttercopsLandPending.log.any (fun s => mentions s "CR 603.3b")
+#guard
+  match Agent.choose twoAttercopsLandPending ⟨0⟩ with
+  | some (.stackTriggers ids) =>
+    ids == twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+  | _ => false
+
+def twoAttercopsLandPlayed : Game := applyIdle twoAttercopsLandPending
 
 #guard twoAttercopsLandPlayed.stack.size == 2
 #guard (twoAttercopsLandPlayed.object! twoAttercopsLandPlayed.stack.back!.objectId).triggeredAbility ==
@@ -8472,6 +8495,83 @@ def twoAttercopsPumped : Game := passBoth (passBoth twoAttercopsLandPlayed)
 #guard
   let spiders := twoAttercopsPumped.battlefield.filter (fun o => o.name == "Attercop")
   spiders.size == 2 && spiders.all (fun o => twoAttercopsPumped.power o == 3)
+
+/- CR 603.3b: APNAP order and the controller's chosen order. -/
+
+/-- The controller may put the newer Attercop's trigger first (bottom). -/
+def twoAttercopsReversed : Game :=
+  let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+  mustApply twoAttercopsLandPending ⟨0⟩ (.stackTriggers ids.reverse)
+
+#guard twoAttercopsReversed.pending == .none
+#guard twoAttercopsReversed.stack.size == 2
+#guard twoAttercopsReversed.waitingTriggers.isEmpty
+#guard twoAttercopsReversed.hasPriority ⟨0⟩
+#guard
+  let ids := twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩
+  (twoAttercopsReversed.object! twoAttercopsReversed.stack[0]!.objectId).sourceId ==
+    some ids[1]! &&
+    (twoAttercopsReversed.object! twoAttercopsReversed.stack.back!.objectId).sourceId ==
+      some ids[0]!
+#guard twoAttercopsReversed.log.any (fun s =>
+  mentions s "chooses the order of triggered abilities")
+
+-- An incomplete list is illegal.
+#guard
+  match twoAttercopsLandPending.apply ⟨0⟩
+      (.stackTriggers (twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩).pop) with
+  | .error msg => mentions msg "CR 603.3b"
+  | .ok _ => false
+
+-- Only the controller of those triggers may choose the order.
+#guard
+  match twoAttercopsLandPending.apply ⟨1⟩
+      (.stackTriggers (twoAttercopsLandPending.defaultTriggerSourceIds ⟨0⟩)) with
+  | .error msg => mentions msg "CR 603.3b"
+  | .ok _ => false
+
+/-- Both Fireleapers in play with a creature each side can target. -/
+def apnapDiesSetup : Game :=
+  let g := addPermanent afterDraw goblinFireleaper ⟨0⟩ ⟨0⟩
+  let g := addPermanent g goblinFireleaper ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+
+def fireleaperControlledBy (g : Game) (p : PlayerId) : ObjectId :=
+  match (g.permanentsOf p).find? (fun o => o.name == "Goblin Fireleaper") with
+  | some o => o.id
+  | none => panic! "expected Goblin Fireleaper"
+
+/-- Chandra (AP) and Nissa each have a dies trigger; AP puts first and
+announces targets before NAP's trigger is stacked (CR 603.3b / 603.3d). -/
+def apnapDiesTriggers : Game :=
+  let chandraId := fireleaperControlledBy apnapDiesSetup ⟨0⟩
+  let nissaId := fireleaperControlledBy apnapDiesSetup ⟨1⟩
+  let (g, _) := apnapDiesSetup.move chandraId (.graveyard ⟨0⟩) none
+  let (g, _) := g.move nissaId (.graveyard ⟨1⟩) none
+  g.receivePriority ⟨0⟩
+
+#guard apnapDiesTriggers.stack.size == 1
+#guard apnapDiesTriggers.waitingTriggers.size == 1
+#guard apnapDiesTriggers.waitingTriggers[0]!.controller == ⟨1⟩
+#guard apnapDiesTriggers.pending == .chooseTargets ⟨0⟩
+#guard apnapDiesTriggers.stack[0]!.controller == ⟨0⟩
+#guard (apnapDiesTriggers.object! apnapDiesTriggers.stack[0]!.objectId).sourceId ==
+  some (fireleaperControlledBy apnapDiesSetup ⟨0⟩)
+
+def apnapDiesAfterApTargets : Game :=
+  match (apnapDiesTriggers.permanentsOf ⟨1⟩).find? (fun o => o.name == "Grizzly Bears") with
+  | none => panic! "expected Nissa's Grizzly Bears"
+  | some bears =>
+    mustApply apnapDiesTriggers ⟨0⟩ (.target (Target.permanent bears.id))
+
+#guard apnapDiesAfterApTargets.stack.size == 2
+#guard apnapDiesAfterApTargets.waitingTriggers.isEmpty
+#guard apnapDiesAfterApTargets.pending == .chooseTargets ⟨1⟩
+#guard apnapDiesAfterApTargets.stack[0]!.controller == ⟨0⟩
+#guard apnapDiesAfterApTargets.stack.back!.controller == ⟨1⟩
+#guard (apnapDiesAfterApTargets.object! apnapDiesAfterApTargets.stack.back!.objectId).sourceId ==
+  some (fireleaperControlledBy apnapDiesSetup ⟨1⟩)
 
 /-- Wood Elves putting a Forest onto the battlefield also triggers landfall. -/
 def attercopWoodElvesResolved : Game :=

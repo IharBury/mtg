@@ -403,6 +403,14 @@ def mountainLine (g : Game) : String :=
   | some s => mentions s "Bofur, Reliable Guardian" && mentions s "704.5j"
   | none => false
 #guard mentions (snapshot twoBofursSBA) "chooses which Bofur, Reliable Guardian to keep"
+#guard mentions (header twoAttercopsLandPending) "choose trigger order (CR 603.3b"
+#guard mentions (header twoAttercopsLandPending) "Chandra"
+#guard
+  match triggerOrderBlock twoAttercopsLandPending with
+  | some s => mentions s "Attercop" && mentions s "CR 603.3b" && mentions s "landfall"
+  | none => false
+#guard mentions (snapshot twoAttercopsLandPending)
+  "chooses the order of triggered abilities (CR 603.3b)"
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"

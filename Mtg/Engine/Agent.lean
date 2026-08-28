@@ -74,6 +74,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.assignCombatDamage #[])
     | .chooseLegend _ _ ids =>
       some (.keepLegend (defaultLegendToKeep g ids))
+    | .chooseTriggerToStack q =>
+      some (.stackTriggers (defaultTriggerSourceIds g q))
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=

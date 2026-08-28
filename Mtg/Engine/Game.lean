@@ -52,6 +52,8 @@ and exiling a card from an opponent's graveyard while opponents lose life,
 another-Elf-enters pumps
 (CR 603.6a), landfall triggers that put +1/+1 counters or pump the source
 until end of turn (CR 603.6a / 603.3d / 601.2c),
+triggered abilities waiting until a player would receive priority and
+going on the stack in APNAP order (CR 603.3 / 603.3b),
 dies triggers that deal damage equal to last-known power (CR 700.4 / 113.7a)
 or give an opposing creature -1 / -1, and “whenever one or more other creatures die”
 scry triggers,
@@ -346,12 +348,12 @@ def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     Array TriggeredAbility :=
   source.printed.triggeredAbilities.filter (·.firesOn event)
 
-/-- A triggered ability waiting to be put onto the stack after state-based
-actions or a keyword action (CR 603.3). `source` is a snapshot of the permanent
-as it existed when the trigger event occurred. `lastKnownPower` is last-known
-power for dies triggers (CR 113.7a) and the number of cards looked at for
-“whenever you scry” (CR 701.20). Dies and scry share this structure; `event`
-says which flush should put it on the stack. -/
+/-- A triggered ability waiting to be put onto the stack the next time a
+player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
+the permanent as it existed when the trigger event occurred. `lastKnownPower`
+is last-known power for dies triggers (CR 113.7a) and the number of cards
+looked at for “whenever you scry” (CR 701.20). `lastKnownToughness` is
+last-known toughness for attack triggers that copy P/T (CR 113.7a). -/
 structure WaitingTrigger where
   controller : PlayerId
   source : GameObject
@@ -359,13 +361,15 @@ structure WaitingTrigger where
   /-- Event this ability is waiting to be put on the stack for. -/
   event : TriggerEvent := .dying
   lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
 def GameObject.waitingTriggersFor (source : GameObject) (controller : PlayerId)
-    (event : TriggerEvent) (lastKnownPower : Option Int := none) : Array WaitingTrigger :=
+    (event : TriggerEvent) (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Array WaitingTrigger :=
   source.matchingTriggers event |>.map (fun ab =>
-    { controller, source, ability := ab, event, lastKnownPower })
+    { controller, source, ability := ab, event, lastKnownPower, lastKnownToughness })
 
 /-- A spell or ability on the stack (CR 405). Last array element is the top. -/
 structure StackEntry where
@@ -455,6 +459,9 @@ inductive Pending where
   /-- This player chooses which of these legendary permanents with the same
   name to keep; the rest are put into their owners' graveyards (CR 704.5j). -/
   | chooseLegend (player : PlayerId) (name : String) (ids : Array ObjectId)
+  /-- This player chooses the order of their waiting triggered abilities
+  for the current CR 603.3b part. -/
+  | chooseTriggerToStack (player : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -535,6 +542,9 @@ inductive Action where
   | keep
   /-- Choose which legendary permanent to keep under the legend rule (CR 704.5j). -/
   | keepLegend (id : ObjectId)
+  /-- Put waiting triggered abilities on the stack in this source order
+  (first listed is put first, so it is farthest from the top) (CR 603.3b). -/
+  | stackTriggers (ids : Array ObjectId)
   /-- Declare a London mulligan; it is taken after every remaining player has
   declared (CR 103.5). -/
   | takeMulligan
@@ -590,10 +600,9 @@ structure Game where
   mulliganToBottom : Array PlayerId := #[]
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
-  /-- Triggered abilities waiting to be put onto the stack (CR 603.3). Dies
-  triggers wait until a player would receive priority (CR 700.4); “whenever
-  you scry” waits until the scry action finishes (CR 701.20). Distinguished
-  by `WaitingTrigger.event`. -/
+  /-- Triggered abilities waiting to be put onto the stack the next time a
+  player would receive priority (CR 603.3 / 603.3b). Distinguished by
+  `WaitingTrigger.event`. -/
   waitingTriggers : Array WaitingTrigger := #[]
 deriving Repr, Inhabited
 
@@ -1353,12 +1362,10 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
 def checkSBA (g : Game) : Game :=
   (g.checkSBACounted).1
 
-/-- Triggered abilities waiting to be put onto the stack (CR 603.3, 514.3a).
-Attack, becomes-blocked, enters, and cast triggers are put on the stack as
-their events happen (CR 508.2, 509.5c, 603.6a, 601.2i). Dies triggers wait
-until a player would receive priority (CR 603.3 / 700.4). -/
+/-- Triggered abilities waiting to be put onto the stack (CR 603.3 / 603.3b,
+514.3a). All triggered abilities wait until a player would receive priority. -/
 def hasWaitingTriggers (g : Game) : Bool :=
-  g.waitingTriggers.any (·.event == .dying)
+  !g.waitingTriggers.isEmpty
 
 /-- CR 103.8a: in a two-player game the starting player skips the draw step
 of their first turn. -/
@@ -1560,14 +1567,28 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     g.putTriggeredAbilityOnStack controller source ab event.label
       lastKnownPower lastKnownToughness
 
-/-- Apply each printed trigger of `source` that fires on `event`. -/
+/-- Append waiting-trigger snapshots. -/
+def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
+  if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
+
+/-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
+intervening condition is checked when the event occurs. -/
+def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
+    (ab : TriggeredAbility) (event : TriggerEvent)
+    (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
+  if !g.triggerConditionHolds controller ab then g
+  else
+    g.enqueueWaitingTriggers #[{
+      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }]
+
+/-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
     (event : TriggerEvent)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none) : Game :=
   Id.run do
     let mut g := g
     for ab in source.matchingTriggers event do
-      g := g.putQueuedTrigger controller source ab event lastKnownPower lastKnownToughness
+      g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
     return g
 
 /-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
@@ -1607,9 +1628,66 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
 def waitingFor (g : Game) (event : TriggerEvent) : Array WaitingTrigger :=
   g.waitingTriggers.filter (·.event == event)
 
-/-- Append waiting-trigger snapshots. -/
-def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
-  if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
+/-- One “whenever one or more other creatures die” trigger per source
+(CR 603.2a / 603.3b). -/
+def dedupWaitingTriggers (wts : Array WaitingTrigger) : Array WaitingTrigger :=
+  wts.foldl (fun acc wt =>
+    if wt.event == .oneOrMoreOtherCreaturesDie &&
+        acc.any (fun w =>
+          w.event == .oneOrMoreOtherCreaturesDie && w.source.id == wt.source.id) then
+      acc
+    else acc.push wt) #[]
+
+/-- CR 603.3b: part 1 is every waiting trigger whose condition is not another
+ability triggering; part 2 is the remainder. -/
+def waitingTriggersPart (g : Game) (part2 : Bool) : Array WaitingTrigger :=
+  g.waitingTriggers.filter (fun wt => wt.event.isAnotherAbilityTriggering == part2)
+    |> dedupWaitingTriggers
+
+/-- The current CR 603.3b batch: part 1 if any remain, otherwise part 2. -/
+def currentTriggerBatch (g : Game) : Array WaitingTrigger :=
+  let part1 := g.waitingTriggersPart false
+  if !part1.isEmpty then part1 else g.waitingTriggersPart true
+
+/-- This player's waiting triggers in the current CR 603.3b part. -/
+def waitingTriggersOf (g : Game) (p : PlayerId) : Array WaitingTrigger :=
+  g.currentTriggerBatch.filter (·.controller == p)
+
+/-- Source ids of `p`'s current batch, oldest first (the default order). -/
+def defaultTriggerSourceIds (g : Game) (p : PlayerId) : Array ObjectId :=
+  (g.waitingTriggersOf p).map (·.source.id)
+
+/-- Next player in APNAP order who has a waiting trigger in this part
+(CR 603.3b / 101.4). -/
+def nextTriggerStackingPlayer? (g : Game) : Option PlayerId :=
+  let batch := g.currentTriggerBatch
+  g.apnapPlayers.find? (fun p => batch.any (·.controller == p))
+
+/-- Remove `wt` from the waiting list. A “one or more other creatures die”
+trigger consumes every queued copy from the same source. -/
+def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
+  if wt.event == .oneOrMoreOtherCreaturesDie then
+    { g with waitingTriggers :=
+      g.waitingTriggers.filter (fun w =>
+        !(w.event == .oneOrMoreOtherCreaturesDie && w.source.id == wt.source.id)) }
+  else
+    match g.waitingTriggers.findIdx? (fun w =>
+      w.controller == wt.controller && w.source.id == wt.source.id &&
+        w.ability == wt.ability && w.event == wt.event) with
+    | none => g
+    | some i => { g with waitingTriggers := g.waitingTriggers.eraseIdx! i }
+
+/-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
+def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
+  if wts.isEmpty then g
+  else
+    Id.run do
+      let mut g := g
+      for wt in wts do
+        g := g.removeWaitingTrigger wt
+        g := g.putQueuedTrigger wt.controller wt.source wt.ability wt.event
+          wt.lastKnownPower wt.lastKnownToughness
+      return g.promptTriggerTargetsIfNeeded
 
 /-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
 decides the log label and whether to remove abilities that require a target
@@ -1626,38 +1704,44 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
     Id.run do
       let mut g := { g with waitingTriggers := g.waitingTriggers.filter (·.event != event) }
       for wt in waiting do
-        g := g.putQueuedTrigger wt.controller wt.source wt.ability event wt.lastKnownPower
+        g := g.putQueuedTrigger wt.controller wt.source wt.ability event
+          wt.lastKnownPower wt.lastKnownToughness
       return g.promptTriggerTargetsIfNeeded
 
-/-- Put queued dies triggers onto the stack (CR 603.3 / 700.4). -/
-def putWaitingDeathTriggers (g : Game) : Game :=
-  let g := g.flushWaitingTriggers .dying
-  g.flushWaitingTriggers .oneOrMoreOtherCreaturesDie
-
-/-- Put queued “whenever you scry” triggers onto the stack (CR 603.3 / 701.20).
-`lastKnownPower` stores the number of cards looked at. -/
-def putWaitingScryTriggers (g : Game) : Game :=
-  g.flushWaitingTriggers .youScry
-
-/-- CR 704.3: check state-based actions, then (if none remain to perform,
-including an unfinished legend-rule choice) put waiting triggers on the
-stack. Repeat until that process is idle, then `p` receives priority. -/
-def receivePriority (g : Game) (p : PlayerId) : Game :=
-  let g := g.checkSBA
+/-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers
+on the stack in APNAP order (each player choosing the order of their own).
+After that batch, check state-based actions again. Repeat until idle, then
+`p` receives priority. `recheckSba` is false while still placing the current
+batch (targets or the next player's triggers). -/
+partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
+  let g := if recheckSba then g.checkSBA else g
   if g.over then g
   -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
   -- the SBA. Do not put triggers on the stack or grant priority yet.
   else if g.legendChoicePending? then g
+  else if g.pending != .none then g
   else
-    let g := g.putWaitingDeathTriggers
-    if g.over then g
-    else
-      let g :=
-        match g.pending with
-        | .scry _ _ => g
-        | _ => g.putWaitingScryTriggers
-      if g.over || g.pending != .none then g
-      else { g with priority := p, consecutivePasses := 0 }
+    match g.nextTriggerStackingPlayer? with
+    | none =>
+      if g.waitingTriggers.isEmpty then
+        if recheckSba then
+          { g with priority := p, consecutivePasses := 0 }
+        else
+          -- Finished this CR 603.3b pass; check SBAs and any new triggers.
+          receivePriority g p true
+      else
+        let g := g.putTriggerBatch g.currentTriggerBatch
+        if g.over || g.pending != .none then g
+        else receivePriority g p true
+    | some q =>
+      let mine := g.waitingTriggersOf q
+      if mine.size ≤ 1 then
+        let g := g.putTriggerBatch mine
+        if g.over || g.pending != .none then g
+        else receivePriority g p false
+      else
+        { g with pending := .chooseTriggerToStack q }.logMsg
+          s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
 
 /-- Put enters-the-battlefield triggers of `o` onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
@@ -2503,13 +2587,14 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
   | _ => throw "Not time to choose a mode (CR 601.2b)"
 
 /-- After a trigger's targets (and any damage division) are fully announced,
-prompt the next trigger that needs targets or give priority. -/
+prompt the next trigger that needs targets or continue the CR 603.3b
+process (remaining waiting triggers, then SBAs). -/
 def afterTriggerTargetsChosen (g : Game) : Game :=
   match g.triggerNeedingTargets with
   | some _ =>
     promptTriggerTargetsIfNeeded { g with pending := .none }
   | none =>
-    receivePriority { g with pending := .none } g.activePlayer
+    receivePriority { g with pending := .none } g.activePlayer false
 
 /-- Announce the chosen target for a proposed spell or a triggered ability
 (CR 601.2c / 603.3d). `amount?` is the damage assigned to this target of a
@@ -4233,6 +4318,33 @@ def keepLegend (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game :=
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to apply the legend rule (CR 704.5j)"
 
+/-- Put this player's waiting triggered abilities on the stack in the listed
+source order (CR 603.3b). First listed is put first (farthest from the top). -/
+def stackTriggers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
+  match g.pending with
+  | .chooseTriggerToStack q =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may choose the order of triggered abilities (CR 603.3b)"
+    let mine := g.waitingTriggersOf p
+    if ids.size != mine.size then
+      throw "List each waiting triggered ability's source once (CR 603.3b)"
+    let mut remaining := mine
+    let mut ordered : Array WaitingTrigger := #[]
+    for id in ids do
+      match remaining.findIdx? (fun wt => wt.source.id == id) with
+      | none =>
+        throw "That permanent has no waiting triggered ability to put on the stack (CR 603.3b)"
+      | some i =>
+        ordered := ordered.push remaining[i]!
+        remaining := remaining.eraseIdx! i
+    let g := { g with pending := .none }.logMsg
+      s!"{(g.player p).name} chooses the order of triggered abilities (CR 603.3b)"
+    let g := g.putTriggerBatch ordered
+    if g.over || g.pending != .none then
+      return g
+    return g.receivePriority g.activePlayer false
+  | _ => throw "Not time to choose triggered-ability order (CR 603.3b)"
+
 /-- Record that this player will mulligan. The mulligan itself is taken only
 after every remaining player has declared (CR 103.5). -/
 def takeMulligan (g : Game) (p : PlayerId) : Except String Game := do
@@ -4304,6 +4416,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
   | .keepLegend id => g.keepLegend p id
+  | .stackTriggers ids => g.stackTriggers p ids
   | .takeMulligan => g.takeMulligan p
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
@@ -4335,6 +4448,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseDiscardCard p _ => some p
     | .assignCombatDamage p _ => some p
     | .chooseLegend p _ _ => some p
+    | .chooseTriggerToStack p => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

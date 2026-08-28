@@ -1110,6 +1110,8 @@ structure Spec where
   label : String
   /-- Remove the ability when it requires a target and has none (CR 603.3d). -/
   checkTargets : Bool := true
+  /-- Trigger condition is another ability triggering (CR 603.3b part 2). -/
+  isAnotherAbilityTriggering : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this event. `clause`, `isWhenever`, `label`, and
@@ -1156,6 +1158,10 @@ def label (e : TriggerEvent) : String :=
 /-- True when Game removes this trigger for lack of a legal target (CR 603.3d). -/
 def checkTargets (e : TriggerEvent) : Bool :=
   e.spec.checkTargets
+
+/-- True when this event is “another ability triggering” (CR 603.3b part 2). -/
+def isAnotherAbilityTriggering (e : TriggerEvent) : Bool :=
+  e.spec.isAnotherAbilityTriggering
 
 end TriggerEvent
 

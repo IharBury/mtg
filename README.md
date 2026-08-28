@@ -134,7 +134,9 @@ The first slice of the engine models the two-player game:
   gain life equal to its power, pumps when another Elf you control enters,
   landfall triggers that
   put +1/+1 counters on a target creature you control or give this creature
-  +1/+1 until end of turn, activated pumps
+  +1/+1 until end of turn, triggered abilities waiting until a player would
+  receive priority and going on the stack in APNAP order with each player
+  choosing the order of their own (CR 603.3b), activated pumps
   that last until end of turn (including paying life), activated abilities that put +1/+1
   counters on the source, dies triggers that deal damage equal
   to last-known power to a creature an opponent controls, cast triggers that
