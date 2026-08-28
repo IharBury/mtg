@@ -42,6 +42,7 @@ def card (name : String) (types : Array CardType)
     (isToken : Bool := false)
     (cantBeCountered : Bool := false)
     (flashIfYouControlSubtype : Option String := none)
+    (ward : Option Nat := none)
     (colorIndicator : Option ColorSet := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -54,7 +55,7 @@ def card (name : String) (types : Array CardType)
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
   tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
-  flashIfYouControlSubtype, colorIndicator,
+  flashIfYouControlSubtype, ward, colorIndicator,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -87,7 +88,8 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (colorIndicator : Option ColorSet := none)
     (isToken : Bool := false)
     (cantBeCountered : Bool := false)
-    (flashIfYouControlSubtype : Option String := none) : CardDef :=
+    (flashIfYouControlSubtype : Option String := none)
+    (ward : Option Nat := none) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -100,6 +102,7 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (colorIndicator := colorIndicator) (isToken := isToken)
     (cantBeCountered := cantBeCountered)
     (flashIfYouControlSubtype := flashIfYouControlSubtype)
+    (ward := ward)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -190,12 +193,16 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (entersWithHopePerCreature : Bool := false)
-    (entersTapped : Bool := false) : CardDef :=
+    (entersTapped : Bool := false)
+    (supertypes : Array Supertype := #[])
+    (ward : Option Nat := none) : CardDef :=
   card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
+    (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
     (entersWithHopePerCreature := entersWithHopePerCreature)
     (entersTapped := entersTapped)
+    (ward := ward)
 
 /-- An Aura enchantment (CR 303.4). -/
 def aura (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -212,6 +219,7 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (tapAddMana : Array ManaType := #[])
+    (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColor : Bool := false)
     (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
@@ -221,6 +229,7 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (keywords := keywords) (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
+    (tapAddManaForEach := tapAddManaForEach)
     (tapAddAnyColor := tapAddAnyColor)
     (tapSacrificeAddAnyColor := tapSacrificeAddAnyColor)
     (isToken := isToken)
@@ -263,6 +272,37 @@ def treasureToken : CardDef :=
 def humanSoldierToken : CardDef :=
   creature "Human Soldier" ManaCost.empty #["Human", "Soldier"] 1 1
     (colorIndicator := some (ColorSet.singleton .white))
+    (isToken := true)
+
+/-- A Food token. -/
+def foodToken : CardDef :=
+  artifact "Food" ManaCost.empty
+    "{2}, {T}, Sacrifice this artifact: You gain 3 life."
+    (subtypes := #["Food"])
+    (activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
+      effect := .gainLife 3
+    }])
+    (isToken := true)
+
+def wolfToken : CardDef :=
+  creature "Wolf" ManaCost.empty #["Wolf"] 2 2
+    (colorIndicator := some (ColorSet.singleton .green))
+    (isToken := true)
+
+def dwarfToken : CardDef :=
+  creature "Dwarf" ManaCost.empty #["Dwarf"] 2 2
+    (colorIndicator := some (ColorSet.singleton .red))
+    (isToken := true)
+
+def bearToken : CardDef :=
+  creature "Bear" ManaCost.empty #["Bear"] 2 2
+    (colorIndicator := some (ColorSet.singleton .green))
+    (isToken := true)
+
+def elfToken : CardDef :=
+  creature "Elf" ManaCost.empty #["Elf"] 1 1
+    (colorIndicator := some (ColorSet.singleton .green))
     (isToken := true)
 
 /-- An activated ability (CR 602.1). -/

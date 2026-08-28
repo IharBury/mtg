@@ -265,6 +265,64 @@ def dwarvenWarriors : CardDef :=
     (activatedAbilities := #[
       activated (.targetCantBeBlockedPowerAtMost 2) (tap := true)])
 
+def rageIntoTheValley : CardDef :=
+  sorcery "Rage into the Valley" (ManaCost.ofGenericAndColor 2 .black)
+    "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+    (some (.drawLoseLifeThenAmass 2))
+
+def gatheringOfDarkness : CardDef :=
+  sorcery "Gathering of Darkness" (ManaCost.ofGenericAndColor 3 .black)
+    "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+    (some (.returnCreatureFromGyThenAmass 3))
+
+def soundTheTrumpets : CardDef :=
+  instant "Sound the Trumpets" (ManaCost.ofGenericAndColors 1 [.blue, .blue])
+    "Counter target spell. If that spell's mana value was 2 or less, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+    (some (.counterThenRecruitIfMvAtMost 2))
+
+def fatefulDiscovery : CardDef :=
+  enchantment "Fateful Discovery" (ManaCost.ofGenericAndColors 3 [.blue, .blue])
+    "Whenever an artifact you control enters, draw a card."
+    (triggeredAbilities := #[.onArtifactYouControlEntersDraw])
+
+def chiefWargsCompany : CardDef :=
+  creature "Chief Warg's Company" (ManaCost.ofGenericAndColors 1 [.black, .green])
+    #["Wolf"] 5 3
+    (oracleText := "Trample\nThis creature can't attack unless you control two or more other Wolves.\nAt the beginning of your upkeep, create a 2/2 green Wolf creature token.")
+    (keywords := Keyword.trample)
+    (staticAbilities := #[.cantAttackUnlessYouControlNOther 2 "Wolf"])
+    (triggeredAbilities := #[.onYourUpkeepCreateTokens .wolf 1])
+
+def dwarvenShortsword : CardDef :=
+  artifact "Dwarven Shortsword" (ManaCost.ofGenericAndColor 3 .white)
+    "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
+    (subtypes := #["Equipment"])
+    (triggeredAbilities := #[.onEnterCreateThenAttach .dwarf])
+    (staticAbilities := #[.equippedCreatureGets 1 2])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
+
+def goblinPlateMail : CardDef :=
+  artifact "Goblin Plate Mail" (ManaCost.ofGenericAndHybrids 1 .black .red)
+    "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}"
+    (subtypes := #["Equipment"])
+    (triggeredAbilities := #[.onEnterAmassThenAttach 1])
+    (staticAbilities := #[.equippedCreatureGetsAndHas 1 0 Keyword.menace])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 4)])
+
+def bagEndBanquet : CardDef :=
+  artifact "Bag End Banquet" (ManaCost.ofGeneric 6)
+    "When this artifact enters, create three Food tokens.\n{T}: Add {C} for each Food you control."
+    (triggeredAbilities := #[.onEnterCreateTokens .food 3])
+    (tapAddManaForEach := #[⟨.colorless, "Food"⟩])
+
+def floweringOfTheWhiteTree : CardDef :=
+  enchantment "Flowering of the White Tree" (ManaCost.ofColors [.white, .white])
+    "Legendary creatures you control get +2/+1 and have ward {1}.\nNonlegendary creatures you control get +1/+1."
+    (supertypes := #[.legendary])
+    (staticAbilities := #[
+      .legendaryCreaturesGetAndWard 2 1 1,
+      .nonlegendaryCreaturesGet 1 1])
+
 def allCards : Array CardDef := #[
   ordinaryBear,
   largeBear,
@@ -303,7 +361,16 @@ def allCards : Array CardDef := #[
   mistyMountainsRaider,
   greatGoblinFoulHearted,
   bardsCompany,
-  dwarvenWarriors
+  dwarvenWarriors,
+  rageIntoTheValley,
+  gatheringOfDarkness,
+  soundTheTrumpets,
+  fatefulDiscovery,
+  chiefWargsCompany,
+  dwarvenShortsword,
+  goblinPlateMail,
+  bagEndBanquet,
+  floweringOfTheWhiteTree
 ]
 
 end Mtg.Engine.Catalog.HobbitSet

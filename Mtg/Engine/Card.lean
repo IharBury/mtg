@@ -106,6 +106,49 @@ def firstStrike : Keywords := { Keywords.none with firstStrike := true }
 def islandwalk : Keywords := { Keywords.none with islandwalk := true }
 end Keyword
 
+/-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
+cards reconstruct printed “create a …” lines. -/
+inductive TokenKind where
+  | treasure
+  | food
+  | humanSoldier
+  | wolf
+  | dwarf
+  | bear
+  | elf
+deriving Repr, Inhabited, BEq
+
+namespace TokenKind
+
+def oracleNoun : TokenKind → String
+  | .treasure => "Treasure token"
+  | .food => "Food token"
+  | .humanSoldier => "1/1 white Human Soldier creature token"
+  | .wolf => "2/2 green Wolf creature token"
+  | .dwarf => "2/2 red Dwarf creature token"
+  | .bear => "2/2 green Bear creature token"
+  | .elf => "1/1 green Elf creature token"
+
+def pluralNoun : TokenKind → String
+  | .treasure => "Treasure tokens"
+  | .food => "Food tokens"
+  | .humanSoldier => "1/1 white Human Soldier creature tokens"
+  | .wolf => "2/2 green Wolf creature tokens"
+  | .dwarf => "2/2 red Dwarf creature tokens"
+  | .bear => "2/2 green Bear creature tokens"
+  | .elf => "1/1 green Elf creature tokens"
+
+/-- Oracle “create …” clause for `n` tokens of this kind. -/
+def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
+  let tappedS := if tapped then "tapped " else ""
+  if n == 1 then
+    s!"create a {tappedS}{k.oracleNoun}"
+  else
+    let nWord := if n == 3 then "three" else toString n
+    s!"create {nWord} {tappedS}{k.pluralNoun}"
+
+end TokenKind
+
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
 in `EffectTargetKind.spec` and `Game.legalTargetsForAtomicKind` rather than
@@ -173,6 +216,8 @@ inductive EffectTargetKind where
   | creatureYouControlAnySubtype (subtypes : Array String)
   /-- Target permanent. -/
   | permanent
+  /-- Target creature card in your graveyard. -/
+  | creatureCardInYourGraveyard
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -287,6 +332,8 @@ def spec : EffectTargetKind → Spec
       prefer := .own }
   | .permanent =>
     { noun := "target permanent", prefer := .ownThenOpponent }
+  | .creatureCardInYourGraveyard =>
+    { noun := "target creature card from your graveyard", prefer := .last }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -457,6 +504,13 @@ inductive SpellEffect where
   | pumpAndGrantKeywords (power toughness : Int) (k : Keywords)
   /-- Amass Goblins `n` (CR 701.43). -/
   | amassGoblins (n : Nat)
+  /-- You draw a card and lose 1 life, then amass Goblins `n`. -/
+  | drawLoseLifeThenAmass (n : Nat)
+  /-- Return up to one target creature card from your graveyard to your hand,
+  then amass Goblins `n`. -/
+  | returnCreatureFromGyThenAmass (n : Nat)
+  /-- Counter target spell. If its mana value was `n` or less, recruit. -/
+  | counterThenRecruitIfMvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -634,6 +688,12 @@ inductive SpellResolution where
   | destroyArtifactOrEnchantmentGainLife (life : Nat)
   /-- Amass Goblins `n`. -/
   | amassGoblins (n : Nat)
+  /-- Draw a card, lose 1 life, then amass Goblins `n`. -/
+  | drawLoseLifeThenAmass (n : Nat)
+  /-- Return an optional graveyard creature card, then amass Goblins `n`. -/
+  | returnCreatureFromGyThenAmass (n : Nat)
+  /-- Counter the targeted spell; recruit if its mana value was `n` or less. -/
+  | counterThenRecruitIfMvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -648,6 +708,8 @@ structure SpellMeta where
   (required count equals the maximum). Gaze in Wonder uses `2` with a
   required count of `1` (“one or two”). -/
   maxTargets : Nat := 0
+  /-- Zero targets is a legal announcement (CR 115.1c), e.g. “up to one”. -/
+  allowsZeroTargets : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -767,6 +829,14 @@ def spec : SpellEffect → SpellMeta
       resolution := .onPermanent (.pumpAndGrant p t k) }
   | .amassGoblins n =>
     { targeting := .of .none, castKind := .pump, resolution := .amassGoblins n }
+  | .drawLoseLifeThenAmass n =>
+    { targeting := .of .none, castKind := .draw, resolution := .drawLoseLifeThenAmass n }
+  | .returnCreatureFromGyThenAmass n =>
+    { targeting := .of .creatureCardInYourGraveyard, castKind := .draw,
+      allowsZeroTargets := true, resolution := .returnCreatureFromGyThenAmass n }
+  | .counterThenRecruitIfMvAtMost n =>
+    { targeting := .of .spell, castKind := .counter,
+      resolution := .counterThenRecruitIfMvAtMost n }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -787,6 +857,10 @@ def targetCount (e : SpellEffect) : Nat :=
 unless `spec.maxTargets` is set (e.g. “one or two”). -/
 def maxTargetCount (e : SpellEffect) : Nat :=
   if e.spec.maxTargets == 0 then e.targetCount else e.spec.maxTargets
+
+/-- True when zero targets is a legal announcement (CR 115.1c). -/
+def allowsZeroTargets (e : SpellEffect) : Bool :=
+  e.spec.allowsZeroTargets
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
@@ -852,9 +926,12 @@ def toNotation (e : SpellEffect) : String :=
     s!"destroy {noun}. You gain {n} life"
   | .amassGoblins n =>
     s!"amass Goblins {n}"
-
-instance : ToString SpellEffect where
-  toString := toNotation
+  | .drawLoseLifeThenAmass n =>
+    s!"you draw a card and lose 1 life. Amass Goblins {n}"
+  | .returnCreatureFromGyThenAmass n =>
+    s!"return up to one {noun} to your hand. Amass Goblins {n}"
+  | .counterThenRecruitIfMvAtMost n =>
+    s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
 
 end SpellEffect
 
@@ -920,6 +997,10 @@ inductive AbilityEffect where
   | recruit
   /-- Scry `n`. -/
   | scry (n : Nat)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -973,6 +1054,10 @@ inductive AbilityResolution where
   | recruit
   /-- Scry `n`. -/
   | scry (n : Nat)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -1049,6 +1134,10 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .recruit }
   | .scry n =>
     { resolution := .scry n }
+  | .gainLife n =>
+    { resolution := .gainLife n }
+  | .createTokens kind n =>
+    { resolution := .createTokens kind n }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -1120,6 +1209,10 @@ def toNotation (e : AbilityEffect) : String :=
     "Recruit"
   | .scry n =>
     s!"Scry {n}"
+  | .gainLife n =>
+    s!"You gain {n} life"
+  | .createTokens kind n =>
+    capitalizeAscii (TokenKind.createPhrase kind n)
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -1260,6 +1353,19 @@ inductive StaticAbility where
   | powerEqualCreaturesYouControl
   /-- Armies you control have trample. -/
   | armiesYouControlHaveTrample
+  /-- Creatures you control (including this) get +P/+T. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- This has haste as long as you control another permanent of this subtype. -/
+  | hasteIfYouControlOtherSubtype (subtype : String)
+  /-- This can't attack unless you control `n` or more other permanents of
+  this subtype. -/
+  | cantAttackUnlessYouControlNOther (n : Nat) (subtype : String)
+  /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
+  | legendaryCreaturesGetAndWard (power toughness : Int) (ward : Nat)
+  /-- Nonlegendary creatures you control get +P/+T. -/
+  | nonlegendaryCreaturesGet (power toughness : Int)
+  /-- Equipped creature gets +P/+T and has these keywords. -/
+  | equippedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1304,6 +1410,14 @@ inductive StaticShape where
   | creaturesYouControlPower
   /-- Creatures you control of this subtype have trample. -/
   | youControlSubtypeTrample (subtype : String)
+  /-- Creatures you control get +P/+T (includes the source). -/
+  | teamPump (power toughness : Int) (legendaryOnly nonlegendaryOnly : Bool)
+  /-- This has haste while you control another of this subtype. -/
+  | hasteIfOtherSubtype (subtype : String)
+  /-- This can't attack unless you control `n` other permanents of this subtype. -/
+  | cantAttackUnlessNOther (n : Nat) (subtype : String)
+  /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
+  | legendaryTeamPumpWard (power toughness : Int) (ward : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1320,6 +1434,18 @@ structure StaticMeta where
   hostKeywords : Keywords := Keywords.none
   cantBeBlockedByTokens : Bool := false
   creaturesYouControlPower : Bool := false
+  /-- Lord pump includes the source (not only other creatures). -/
+  lordIncludesSelf : Bool := false
+  /-- Lord pump applies only to legendary creatures. -/
+  lordLegendaryOnly : Bool := false
+  /-- Lord pump applies only to nonlegendary creatures. -/
+  lordNonlegendaryOnly : Bool := false
+  /-- Ward cost this ability grants matching creatures. -/
+  grantedWard : Option Nat := none
+  /-- This has haste while you control another of this subtype. -/
+  hasteIfOtherSubtype : Option String := none
+  /-- Can't attack unless you control this many other permanents of the subtype. -/
+  cantAttackUnlessNOther : Option (Nat × String) := none
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -1337,6 +1463,14 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
   | .creaturesYouControlPower => { creaturesYouControlPower := true }
   | .youControlSubtypeTrample subtype => { trampleSubtypes := some #[subtype] }
+  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+    { lordPump := some (#[], p, t), lordIncludesSelf := true,
+      lordLegendaryOnly := legendaryOnly, lordNonlegendaryOnly := nonlegendaryOnly }
+  | .hasteIfOtherSubtype subtype => { hasteIfOtherSubtype := some subtype }
+  | .cantAttackUnlessNOther n subtype => { cantAttackUnlessNOther := some (n, subtype) }
+  | .legendaryTeamPumpWard p t w =>
+    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordLegendaryOnly := true,
+      grantedWard := some w }
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1356,6 +1490,12 @@ def shape : StaticAbility → StaticShape
   | .cantBeBlockedByTokens => .cantBeBlockedByTokens
   | .powerEqualCreaturesYouControl => .creaturesYouControlPower
   | .armiesYouControlHaveTrample => .youControlSubtypeTrample "Army"
+  | .creaturesYouControlGet p t => .teamPump p t false false
+  | .hasteIfYouControlOtherSubtype subtype => .hasteIfOtherSubtype subtype
+  | .cantAttackUnlessYouControlNOther n subtype => .cantAttackUnlessNOther n subtype
+  | .legendaryCreaturesGetAndWard p t w => .legendaryTeamPumpWard p t w
+  | .nonlegendaryCreaturesGet p t => .teamPump p t false true
+  | .equippedCreatureGetsAndHas p t k => .hostKeywords "Equipped creature" k p t
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -1399,6 +1539,20 @@ def toNotation (ab : StaticAbility) : String :=
   | .youControlSubtypeTrample subtype =>
     let plural := if subtype == "Army" then "Armies" else pluralSubtype subtype
     s!"{plural} you control have trample."
+  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+    let who :=
+      if legendaryOnly then "Legendary creatures you control"
+      else if nonlegendaryOnly then "Nonlegendary creatures you control"
+      else "Creatures you control"
+    s!"{who} get {signedStat p}/{signedStat t}."
+  | .hasteIfOtherSubtype subtype =>
+    s!"This creature has haste as long as you control another {subtype}."
+  | .cantAttackUnlessNOther n subtype =>
+    let nWord := if n == 2 then "two" else toString n
+    let plural := if subtype == "Wolf" then "Wolves" else pluralSubtype subtype
+    s!"This creature can't attack unless you control {nWord} or more other {plural}."
+  | .legendaryTeamPumpWard p t w =>
+    s!"Legendary creatures you control get {signedStat p}/{signedStat t} and have ward \{{w}}."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -1447,6 +1601,30 @@ def blocksTokens (ab : StaticAbility) : Bool :=
 /-- True for the creatures-you-control power characteristic-defining ability. -/
 def isCreaturesYouControlPower (ab : StaticAbility) : Bool :=
   ab.shape.spec.creaturesYouControlPower
+
+/-- True when this lord pump also applies to the source. -/
+def lordIncludesSelf (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordIncludesSelf
+
+/-- True when this lord pump applies only to legendary creatures. -/
+def lordLegendaryOnly (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordLegendaryOnly
+
+/-- True when this lord pump applies only to nonlegendary creatures. -/
+def lordNonlegendaryOnly (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordNonlegendaryOnly
+
+/-- Ward cost this ability grants matching creatures, if any. -/
+def grantedWard? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.grantedWard
+
+/-- Subtype that grants this creature haste while another is controlled. -/
+def hasteIfOtherSubtype? (ab : StaticAbility) : Option String :=
+  ab.shape.spec.hasteIfOtherSubtype
+
+/-- Attack restriction: need `n` other permanents of this subtype. -/
+def cantAttackUnlessNOther? (ab : StaticAbility) : Option (Nat × String) :=
+  ab.shape.spec.cantAttackUnlessNOther
 
 end StaticAbility
 
@@ -1638,6 +1816,22 @@ inductive TriggeredAbility where
   | onEnterOrAttackAmassGoblins (n : Nat)
   /-- Whenever this creature enters or attacks, recruit. -/
   | onEnterOrAttackRecruit
+  /-- At the beginning of your upkeep, create `n` tokens. -/
+  | onYourUpkeepCreateTokens (kind : TokenKind) (n : Nat)
+  /-- When this permanent enters, create `n` tokens. -/
+  | onEnterCreateTokens (kind : TokenKind) (n : Nat)
+  /-- Landfall — create `n` tokens. -/
+  | onLandYouControlEntersCreateTokens (kind : TokenKind) (n : Nat)
+  /-- Whenever you attack, recruit. -/
+  | onYouAttackRecruit
+  /-- At the beginning of your end step, draw a card. -/
+  | onYourEndStepDraw
+  /-- Whenever an artifact you control enters, draw a card. -/
+  | onArtifactYouControlEntersDraw
+  /-- When this Equipment enters, create a token then attach this to it. -/
+  | onEnterCreateThenAttach (kind : TokenKind)
+  /-- When this Equipment enters, amass Goblins `n` then attach to the Army. -/
+  | onEnterAmassThenAttach (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -1684,6 +1878,10 @@ inductive TriggerEvent where
   | youAttack
   /-- You cast a noncreature spell (CR 601.2i / 603.3). -/
   | youCastNoncreature
+  /-- The beginning of your upkeep (CR 503.1 / 603.1). -/
+  | yourUpkeep
+  /-- An artifact you control enters (CR 603.6a). -/
+  | artifactYouControlEnters
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -1758,6 +1956,12 @@ def spec : TriggerEvent → Spec
     { clause := "you attack", label := "attack trigger", checkTargets := false }
   | .youCastNoncreature =>
     { clause := "you cast a noncreature spell", label := "cast trigger",
+      checkTargets := false }
+  | .yourUpkeep =>
+    { clause := "the beginning of your upkeep", isWhenever := false,
+      label := "upkeep trigger", checkTargets := false }
+  | .artifactYouControlEnters =>
+    { clause := "an artifact you control enters", label := "artifact-enters trigger",
       checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
@@ -1882,6 +2086,12 @@ inductive TriggerResolution where
   | drawAndLoseLife
   /-- Amass Goblins `n`. -/
   | amassGoblins (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
+  /-- Create a token, then attach the source to it. -/
+  | createThenAttach (kind : TokenKind)
+  /-- Amass Goblins `n`, then attach the source to the Army. -/
+  | amassThenAttach (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -2061,6 +2271,22 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering, .attacking], resolution := .amassGoblins n }
   | .onEnterOrAttackRecruit =>
     { events := #[.entering, .attacking], resolution := .recruit }
+  | .onYourUpkeepCreateTokens kind n =>
+    { events := #[.yourUpkeep], resolution := .createTokens kind n false }
+  | .onEnterCreateTokens kind n =>
+    { events := #[.entering], resolution := .createTokens kind n false }
+  | .onLandYouControlEntersCreateTokens kind n =>
+    { events := #[.landYouControlEnters], resolution := .createTokens kind n false }
+  | .onYouAttackRecruit =>
+    { events := #[.youAttack], resolution := .recruit }
+  | .onYourEndStepDraw =>
+    { events := #[.yourEndStep], resolution := .draw 1 }
+  | .onArtifactYouControlEntersDraw =>
+    { events := #[.artifactYouControlEnters], resolution := .draw 1 }
+  | .onEnterCreateThenAttach kind =>
+    { events := #[.entering], resolution := .createThenAttach kind }
+  | .onEnterAmassThenAttach n =>
+    { events := #[.entering], resolution := .amassThenAttach n }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -2109,6 +2335,8 @@ def eventPrefix (t : TriggerTiming) : String :=
     "At the beginning of your end step"
   else if t.events.contains .yourBeginCombat then
     "At the beginning of combat on your turn"
+  else if t.events.contains .yourUpkeep then
+    "At the beginning of your upkeep"
   else if t.events.contains .anotherCreatureYouControlEnters then
     match t.anotherCreaturePowerAtMost with
     | some n =>
@@ -2215,6 +2443,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you draw a card and lose 1 life"
   | .amassGoblins n =>
     s!"amass Goblins {n}"
+  | .createTokens kind n tapped =>
+    TokenKind.createPhrase kind n (tapped := tapped)
+  | .createThenAttach kind =>
+    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .amassThenAttach n =>
+    s!"amass Goblins {n}, then attach this Equipment to the amassed Army"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -2313,6 +2547,8 @@ structure CardDef where
   cantBeCountered : Bool := false
   /-- You may cast this as though it had flash if you control this subtype. -/
   flashIfYouControlSubtype : Option String := none
+  /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
+  ward : Option Nat := none
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
@@ -2378,6 +2614,12 @@ def requiresTarget (c : CardDef) : Bool :=
   match c.spellEffect with
   | some e => e.requiresTarget
   | none => !c.spellModes.isEmpty && c.spellModes.all (·.requiresTarget)
+
+/-- True when the printed spell may be announced with zero targets. -/
+def allowsZeroTargets (c : CardDef) : Bool :=
+  match c.spellEffect with
+  | some e => e.allowsZeroTargets
+  | none => false
 
 /-- True when the printed effect or a mode is classified as `k`. -/
 def hasCastKind (c : CardDef) (k : SpellCastKind) : Bool :=

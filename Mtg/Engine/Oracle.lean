@@ -310,6 +310,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    | some t =>
      [s!"You may cast this spell as though it had flash if you control a {t}."]
    | none => []) ++
+  (match c.ward with
+   | some n => [s!"Ward \{{n}}."]
+   | none => []) ++
   (if c.entersTapped then
     [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
      else "This land enters tapped."]
@@ -329,6 +332,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
         if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
     | some .returnSpellDraw =>
       ["Return target spell to its owner's hand.", "Draw a card."]
+    | some (.drawLoseLifeThenAmass n) =>
+      ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
+    | some (.returnCreatureFromGyThenAmass n) =>
+      ["Return up to one target creature card from your graveyard to your hand.",
+        s!"Amass Goblins {n}."]
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with

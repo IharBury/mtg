@@ -907,6 +907,87 @@ def goblinArmyToken : CardDef := {
   isToken := true
 }
 
+/-- A Food token (CR 111 / 701.34). -/
+def foodToken : CardDef := {
+  name := "Food"
+  types := #[.artifact]
+  subtypes := #["Food"]
+  oracleText := "{2}, {T}, Sacrifice this artifact: You gain 3 life."
+  activatedAbilities := #[{
+    cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
+    effect := .gainLife 3
+  }]
+  isToken := true
+}
+
+def wolfToken : CardDef := {
+  name := "Wolf"
+  types := #[.creature]
+  subtypes := #["Wolf"]
+  power := some 2
+  toughness := some 2
+  colorIndicator := some (ColorSet.singleton .green)
+  isToken := true
+}
+
+def dwarfToken : CardDef := {
+  name := "Dwarf"
+  types := #[.creature]
+  subtypes := #["Dwarf"]
+  power := some 2
+  toughness := some 2
+  colorIndicator := some (ColorSet.singleton .red)
+  isToken := true
+}
+
+def bearToken : CardDef := {
+  name := "Bear"
+  types := #[.creature]
+  subtypes := #["Bear"]
+  power := some 2
+  toughness := some 2
+  colorIndicator := some (ColorSet.singleton .green)
+  isToken := true
+}
+
+def elfToken : CardDef := {
+  name := "Elf"
+  types := #[.creature]
+  subtypes := #["Elf"]
+  power := some 1
+  toughness := some 1
+  colorIndicator := some (ColorSet.singleton .green)
+  isToken := true
+}
+
+/-- Printed characteristics for a `TokenKind`. -/
+def tokenPrinted (k : TokenKind) : CardDef :=
+  match k with
+  | .treasure => treasureToken
+  | .food => foodToken
+  | .humanSoldier => humanSoldierToken
+  | .wolf => wolfToken
+  | .dwarf => dwarfToken
+  | .bear => bearToken
+  | .elf => elfToken
+
+/-- Create `n` tokens of `kind`. -/
+def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
+    (n : Nat) (tapped := false) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in [0:n] do
+      let (g', _) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
+      g := g'
+    return g
+
+/-- Attach `src` to `host` (CR 301.5 / 303.4). -/
+def attachSourceTo (g : Game) (src host : GameObject) : Game :=
+  let (g, ts) := g.bumpTime
+  let src := g.object! src.id
+  let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
+  g.logMsg s!"{src.name} attaches to {host.name}"
+
 /-- An ability object ceases to exist after it resolves (CR 608.2m). -/
 def ceaseToExist (g : Game) (id : ObjectId) : Game :=
   { g with objects := g.objects.filter (fun o => o.id != id) }
@@ -966,17 +1047,24 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
-  if !isLordOf src target then (0, 0)
-  else
-    src.staticAbilities.foldl
-      (fun acc ab =>
-        match ab.lordPump? with
-        | some (subtypes, p, t) =>
-          if subtypes.isEmpty || subtypes.any (g.hasSubtype target) then
-            addStats acc (p, t)
-          else acc
-        | none => acc)
-      (0, 0)
+  src.staticAbilities.foldl
+    (fun acc ab =>
+      match ab.lordPump? with
+      | none => acc
+      | some (subtypes, p, t) =>
+        let sameController :=
+          src.isOnBattlefield && target.isOnBattlefield &&
+            src.controller == target.controller && src.controller.isSome &&
+            target.isCreature
+        let otherOk := src.id != target.id || ab.lordIncludesSelf
+        let legendaryOk :=
+          (!ab.lordLegendaryOnly || target.isLegendary) &&
+          (!ab.lordNonlegendaryOnly || !target.isLegendary)
+        let subtypeOk := subtypes.isEmpty || subtypes.any (g.hasSubtype target)
+        if sameController && otherOk && legendaryOk && subtypeOk then
+          addStats acc (p, t)
+        else acc)
+    (0, 0)
 
 /-- Continuous +P/+T granted to `o` by other permanents you control (CR 613.3c). -/
 def lordStatBonus (g : Game) (o : GameObject) : Int × Int :=
@@ -1218,12 +1306,37 @@ def enchantedCantAttackOrBlock (g : Game) (o : GameObject) : Bool :=
     a.attachedTo == some o.id &&
       a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
 
+/-- Printed haste, until-EOT haste, or a static “haste as long as you control
+another …” ability. -/
+def hasHaste (g : Game) (o : GameObject) : Bool :=
+  o.printedOrUntilEot.haste ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.hasteIfOtherSubtype? with
+      | none => false
+      | some t =>
+        match o.controller with
+        | none => false
+        | some p =>
+          (g.permanentsOf p).any (fun x => x.id != o.id && g.hasSubtype x t)))
+
 def canAttack (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield && o.isCreature &&
   o.controlledBy g.activePlayer &&
   !o.status.tapped && !o.printedOrUntilEot.defender &&
-  !o.hasSummoningSickness &&
-  !g.enchantedCantAttackOrBlock o
+  !(o.status.summoningSick && !g.hasHaste o) &&
+  !g.enchantedCantAttackOrBlock o &&
+  o.staticAbilities.all (fun ab =>
+    match ab.cantAttackUnlessNOther? with
+    | none => true
+    | some (n, subtype) =>
+      match o.controller with
+      | none => false
+      | some p =>
+        let others :=
+          (g.permanentsOf p).filter (fun x =>
+            x.id != o.id && g.hasSubtype x subtype) |>.size
+        others >= n)
 
 /-- Whether `p` currently controls a permanent with any of these subtypes. -/
 def controlsAnySubtype (g : Game) (p : PlayerId) (subtypes : Array String) : Bool :=
@@ -1794,6 +1907,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.controlledBy caster && subtypes.any (g.hasSubtype o))
   | .permanent =>
     g.legalPermanentTargets caster (·.isOnBattlefield)
+  | .creatureCardInYourGraveyard =>
+    g.legalGraveyardCardTargets caster (·.printed.isCreature)
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -2152,7 +2267,13 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   let g := g.putEnterTriggersOnStack o
   let g := g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
-  g.putAnotherCreatureYouControlEntersTriggers (g.object! o.id)
+  let g := g.putAnotherCreatureYouControlEntersTriggers (g.object! o.id)
+  match (g.object! o.id).controller with
+  | some p =>
+    if (g.object! o.id).printed.isArtifact then
+      g.putControlledTriggersWithPrompt p .artifactYouControlEnters
+    else g
+  | none => g
 
 /-- After a land enters, put its enters triggers, Elf-enters triggers, and landfall. -/
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
@@ -2430,7 +2551,9 @@ such as Gaze in Wonder require one target and allow a second; every target
 of that one instance of the word “target” is announced together. -/
 def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   match g.currentSpellEffect obj with
-  | some e => (e.targetCount, e.maxTargetCount)
+  | some e =>
+    let maxN := e.maxTargetCount
+    if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
   | none =>
     match obj.abilityEffect with
     | some e => (e.targetCount, e.targetCount)
@@ -2580,7 +2703,8 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
    else true) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
-  if o.printed.requiresTarget then !(g.legalSpellTargets p o |>.isEmpty)
+  if o.printed.requiresTarget then
+    o.printed.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
   else o.printed.isPermanentCard || o.printed.spellEffect.isSome || o.printed.isModal
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
@@ -3022,7 +3146,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   if face.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{face.name} has sorcery speed"
   if (face.requiresTarget || face.isModal) &&
-      (g.legalCastTargets p face).isEmpty then
+      (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   if face.additionalCostSacrificeArtifactOrCreature &&
       face.additionalCostOrPayGeneric.isNone &&
@@ -4037,6 +4161,32 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       return g
   | .amassGoblins n =>
     g.amassGoblins controller n
+  | .drawLoseLifeThenAmass n =>
+    let g := g.draw controller 1
+    let g := g.loseLife controller 1
+    g.amassGoblins controller n
+  | .returnCreatureFromGyThenAmass n =>
+    let g :=
+      match targets[0]? with
+      | some (Target.card oid) =>
+        match g.findObject? oid with
+        | none => g.logMsg "The target is no longer in the graveyard"
+        | some o =>
+          let name := o.name
+          let (g, _) := g.move oid (.hand controller) none
+          g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+      | _ => g
+    g.amassGoblins controller n
+  | .counterThenRecruitIfMvAtMost n =>
+    match targets[0]? with
+    | some (Target.card id) =>
+      match g.findObject? id with
+      | none => g.logMsg "The target is no longer legal"
+      | some o =>
+        let mv := o.printed.manaValue
+        let g := g.counterStackSpell id
+        if mv <= n then g.beginRecruit controller else g
+    | _ => g.logMsg "The target is no longer legal"
   | .destroyArtifactOrEnchantmentGainLife n =>
     let g := g.applyOnPermanent controller effect.targetKind targets .destroy
     if n == 0 then g
@@ -4156,6 +4306,10 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.beginRecruit controller
   | .scry n =>
     g.beginScry controller n
+  | .gainLife n =>
+    g.gainLife controller n
+  | .createTokens kind n =>
+    g.createKindTokens controller kind n
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -4392,6 +4546,20 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.loseLife controller 1
   | .amassGoblins n =>
     g.amassGoblins controller n
+  | .createTokens kind n tapped =>
+    g.createKindTokens controller kind n (tapped := tapped)
+  | .createThenAttach kind =>
+    let (g, tok) := g.createToken controller (tokenPrinted kind)
+    g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src tok)
+      "The Equipment is no longer in play"
+  | .amassThenAttach n =>
+    let g := g.amassGoblins controller n
+    let army :=
+      (g.permanentsOf controller).find? (fun o => g.hasSubtype o "Army")
+    match army, sourceId.bind g.findObject? with
+    | some host, some src =>
+      if src.isOnBattlefield then g.attachSourceTo src host else g
+    | _, _ => g
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -4900,6 +5068,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       { g with pending := .declareBlockers }
   | .combatDamage =>
       g.beginCombatDamageAssignment
+  | .upkeep =>
+    let ap := g.activePlayer
+    let g := g.putControlledTriggers ap .yourUpkeep
+    g.receivePriority ap
   | .beginningOfCombat =>
     let ap := g.activePlayer
     let g := g.putControlledTriggers ap .yourBeginCombat
@@ -5370,7 +5542,18 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
       return g.afterTriggerTargetsChosen
     | none =>
-      if g.canFinishOptionalTargets obj then
+      let allowZero :=
+        match g.currentSpellEffect obj with
+        | some e => e.allowsZeroTargets
+        | none => false
+      if allowZero then
+        let g := g.setStackEntryTargets obj.id #[]
+        let g := g.logMsg
+          s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
+        if g.proposedSpell.isSome then
+          return g.afterTargetsChosen
+        return g.afterTriggerTargetsChosen
+      else if g.canFinishOptionalTargets obj then
         let g := g.logMsg
           s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
         if g.proposedSpell.isSome then

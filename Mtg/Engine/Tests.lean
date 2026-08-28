@@ -11108,6 +11108,15 @@ open Catalog.HobbitSet
 #guard goblinTown.matchesOracleText
 #guard mirkwood.matchesOracleText
 #guard hobbitHole.matchesOracleText
+#guard rageIntoTheValley.matchesOracleText
+#guard gatheringOfDarkness.matchesOracleText
+#guard soundTheTrumpets.matchesOracleText
+#guard fatefulDiscovery.matchesOracleText
+#guard chiefWargsCompany.matchesOracleText
+#guard dwarvenShortsword.matchesOracleText
+#guard goblinPlateMail.matchesOracleText
+#guard bagEndBanquet.matchesOracleText
+#guard floweringOfTheWhiteTree.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
@@ -11225,6 +11234,39 @@ def giganticBigBearUncounterable : Game :=
     giganticBigBearUncounterable.stack.back!.objectId).name ==
     "Gigantic Big Bear" &&
     giganticBigBearUncounterable.log.any (fun s => mentions s "can't be countered")
+
+/-- Rage into the Valley draws, loses life, and amasses Goblins. -/
+def rageAmass : Game :=
+  started.applyEffect ⟨0⟩ (.drawLoseLifeThenAmass 2) #[]
+
+#guard
+  (rageAmass.player ⟨0⟩).life == 19 &&
+    (namedPermanent rageAmass "Goblin Army").status.plusOnePlusOne == 2
+
+/-- Chief Warg's Company cannot attack without two other Wolves. -/
+def loneWargCompany : Game :=
+  addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩
+
+#guard !loneWargCompany.canAttack (namedPermanent loneWargCompany "Chief Warg's Company")
+
+/-- Dwarven Shortsword enters, makes a Dwarf, and attaches. -/
+def shortswordEntered : Game :=
+  let g := addPermanent started dwarvenShortsword ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Dwarven Shortsword"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterCreateThenAttach .dwarf) (some src.id)
+
+#guard
+  let dwarf := namedPermanent shortswordEntered "Dwarf"
+  let sword := namedPermanent shortswordEntered "Dwarven Shortsword"
+  dwarf.printed.isToken && sword.attachedTo == some dwarf.id
+
+/-- Bag End Banquet creates three Foods. -/
+def banquetFoods : Game :=
+  (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ (.onEnterCreateTokens .food 3) none
+
+#guard
+  (banquetFoods.battlefield.filter (fun o => o.name == "Food")).size == 3
 
 end Mtg.Engine.Tests
 
