@@ -594,8 +594,66 @@ def mountainLine (g : Game) : String :=
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "{1}{G}" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "Creature — Bear" &&
       mentions (zoneLine resolvedSmiteOnBears .exile o.id) "2/2" &&
-      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "may be played"
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "may be played" &&
+      !mentions (zoneLine resolvedSmiteOnBears .exile o.id) "exiled until"
   | none => false
+
+-- Linked exile until a source leaves (CR 610.3) prints on the exiled card and
+-- on the source permanent. Ordinary exile (above) does not.
+#guard
+  let g := fiendHunterLinked
+  let hunter := namedPermanent g "Fiend Hunter"
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Grizzly Bears") with
+  | none => false
+  | some bears =>
+    let untilClause :=
+      s!"*exiled until {hunter.id} Fiend Hunter leaves the battlefield*"
+    let exilingClause := s!"*exiling {bears.id} Grizzly Bears*"
+    (match linkedExileSource? g bears with
+      | some src => src.id == hunter.id
+      | none => false) &&
+      (linkedExiledCards g hunter).size == 1 &&
+      exileUntilLeavesClause g bears == s!" {untilClause}" &&
+      linkedExileClause g hunter == s!" {exilingClause}" &&
+      mentions (exileLine g bears) untilClause &&
+      mentions (zoneLine g .exile bears.id) untilClause &&
+      mentions (zoneBlock g .exile) untilClause &&
+      mentions (snapshot g) untilClause &&
+      mentions (objectLine g hunter) exilingClause &&
+      mentions (zoneBlock g .battlefield) exilingClause &&
+      mentions (battlefieldBlock g) exilingClause &&
+      mentions (snapshot g) exilingClause
+
+-- After the source leaves, the card is back and neither marker remains.
+#guard
+  let g := fiendHunterReturned
+  let bears := namedPermanent g "Grizzly Bears"
+  !mentions (objectLine g bears) "exiled until" &&
+    !mentions (objectLine g bears) "*exiling" &&
+    !mentions (snapshot g) "exiled until" &&
+    !mentions (snapshot g) "*exiling" &&
+    !(g.objects.any (fun o => o.zone == .exile && o.name == "Grizzly Bears"))
+
+-- Several cards linked to one source are listed together.
+#guard
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
+  let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Llanowar Elves")
+  let hunter := namedPermanent g "Fiend Hunter"
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Grizzly Bears"),
+        g.objects.find? (fun o => o.zone == .exile && o.name == "Llanowar Elves") with
+  | some bears, some elves =>
+    let clause :=
+      s!"*exiling {bears.id} Grizzly Bears, {elves.id} Llanowar Elves*"
+    mentions (objectLine g hunter) clause &&
+      mentions (exileLine g bears)
+        s!"*exiled until {hunter.id} Fiend Hunter leaves the battlefield*" &&
+      mentions (exileLine g elves)
+        s!"*exiled until {hunter.id} Fiend Hunter leaves the battlefield*"
+  | _, _ => false
 
 -- Granted trample shows on other Orcs and Goblins you control, not on others.
 #guard mentions
