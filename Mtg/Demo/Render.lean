@@ -524,14 +524,18 @@ def legendRuleBlock (g : Game) : Option String :=
           String.intercalate "\n" lines
   | _ => none
 
+/-- One waiting triggered ability: source id (for `stack`), name, and text. -/
+def waitingTriggerLine (wt : WaitingTrigger) : String :=
+  let text := textForStackedAbility wt.source.printed (TriggeredAbility.toNotation wt.ability)
+  s!"{wt.source.id} {wt.source.name} {text}"
+
 /-- Snapshot section listing waiting triggered abilities a player must put
 on the stack in an order they choose (CR 603.3b). -/
 def triggerOrderBlock (g : Game) : Option String :=
   match g.pending with
   | .chooseTriggerToStack p =>
     let lines :=
-      (g.waitingTriggersOf p).toList.map (fun wt =>
-        s!"  {wt.source.id} {wt.source.name} ({wt.event.label})")
+      (g.waitingTriggersOf p).toList.map (fun wt => s!"  {waitingTriggerLine wt}")
     if lines.isEmpty then none
     else
       some <|
