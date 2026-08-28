@@ -2716,7 +2716,7 @@ def shouldAutoPass (g : Game) (pending : List String) : Bool :=
 no permanent can legally attack. -/
 def shouldAutoNoAttack (g : Game) (pending : List String) : Bool :=
   pending.isEmpty && g.pending == .declareAttackers &&
-    !(g.battlefield.any g.canAttack)
+    (g.battlefield.filter (g.canAttack)).isEmpty
 
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers ["noattack"]
