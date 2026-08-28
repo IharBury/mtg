@@ -613,8 +613,37 @@ def setPlayer (g : Game) (pl : Player) : Game :=
 def modifyPlayer (g : Game) (p : PlayerId) (f : Player → Player) : Game :=
   g.setPlayer (f (g.player p))
 
+/-- Set `p`'s life total and log `msg`. -/
+def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
+  g.setPlayer { (g.player p) with life := life } |>.logMsg msg
+
 def livingPlayers (g : Game) : Array Player :=
   g.players.filter (fun pl => !pl.lost)
+
+/-- Living opponents of `p` (CR 102.2). -/
+def livingOpponents (g : Game) (p : PlayerId) : Array Player :=
+  g.livingPlayers.filter (fun pl => pl.id != p)
+
+/-- Apply `f` to each living opponent of `controller`. -/
+def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId → Game) :
+    Game :=
+  g.livingOpponents controller |>.foldl (fun g pl => f g pl.id) g
+
+/-- Player targets for every member of `ps`. -/
+def playerTargets (ps : Array Player) : Array Target :=
+  ps.map (fun pl => Target.player pl.id)
+
+/-- Living players in turn order from `start` who satisfy `eligible`. -/
+def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
+    Array PlayerId :=
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(start.idx + k) % n⟩
+      if eligible (g.player q) then
+        acc := acc.push q
+    return acc
 
 def opponent (g : Game) (p : PlayerId) : PlayerId :=
   let living := g.livingPlayers
@@ -901,6 +930,37 @@ def move (g : Game) (id : ObjectId) (dest : Zone) (controller : Option PlayerId 
     if exileInstead then g.logMsg s!"{old.name} is exiled instead of dying" else g
   (g, newId)
 
+/-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
+replacements are applied by `move` (CR 614.1). -/
+def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+  let g := g.logMsg reason
+  (g.move o.id (.graveyard o.owner) none).1
+
+/-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
+and optional attachment. -/
+def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
+    (tapped := false) (summoningSick := true)
+    (attachedTo : Option ObjectId := none) : Game × ObjectId :=
+  let (g, newId) := g.move id .battlefield (some controller)
+  let o := g.object! newId
+  let o := { o with
+    status := { o.status with tapped := tapped, summoningSick := summoningSick } }
+  let o :=
+    match attachedTo with
+    | some host => { o with attachedTo := some host }
+    | none => o
+  (g.setObject o, newId)
+
+/-- If 0 or 1 living players remain, set the game result (CR 104). -/
+def decideGameIfFinished (g : Game) : Option Game :=
+  let living := g.livingPlayers
+  if living.size == 0 then
+    some ({ g with result := some .draw } |>.logMsg "The game is a draw")
+  else if living.size == 1 then
+    let w := living[0]!
+    some ({ g with result := some (.won w.id) } |>.logMsg s!"{w.name} wins the game")
+  else none
+
 def emptyManaPools (g : Game) : Game :=
   Id.run do
     let mut g := g
@@ -961,28 +1021,32 @@ def mayDeclareAsBlocker (g : Game) (blocker : GameObject) : Bool :=
       | some p => g.controlsAnySubtype p subtypes
     | none => true)
 
+/-- Printed or until-end-of-turn keyword selected by `sel`. -/
+def hasPrintedOrEot (o : GameObject) (sel : Keywords → Bool) : Bool :=
+  sel o.printedOrUntilEot
+
 /-- Whether `o` has vigilance (CR 702.20). Attacking does not cause it to tap. -/
 def hasVigilance (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.vigilance
+  hasPrintedOrEot o (·.vigilance)
 
 /-- Whether `o` has flying, printed or granted (CR 702.9). -/
 def hasFlying (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.flying
+  hasPrintedOrEot o (·.flying)
 
 /-- Whether `o` can't be blocked, printed or granted until end of turn
 (CR 509.1b / 611.2a). -/
 def hasCantBeBlocked (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.cantBeBlocked
+  hasPrintedOrEot o (·.cantBeBlocked)
 
 /-- Whether `o` has lifelink, printed or granted until end of turn (CR 702.15). -/
 def hasLifelink (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.lifelink
+  hasPrintedOrEot o (·.lifelink)
 
 /-- Whether `o` has menace, printed or granted until end of turn (CR 702.111).
 Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.menace
+  hasPrintedOrEot o (·.menace)
 
 /-- Minimum number of creatures required to block `o`, or `0` if unrestricted.
 Menace is 2; Troll of Khazad-dûm is 3. -/
@@ -1024,11 +1088,11 @@ def grantsTrampleTo (src target : GameObject) : Bool :=
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 def hasHexproof (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.hexproof
+  hasPrintedOrEot o (·.hexproof)
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.deathtouch
+  hasPrintedOrEot o (·.deathtouch)
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
@@ -1145,14 +1209,11 @@ def needsCombatDamageChoice (g : Game) (forAttackers : Bool) : Bool :=
 /-- Living players in APNAP order (CR 101.4): the active player, then the
 next player in turn order, and so on. -/
 def apnapPlayers (g : Game) : Array PlayerId :=
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-      if !(g.player q).lost then
-        acc := acc.push q
-    return acc
+  g.playersInOrderFrom g.activePlayer (fun pl => !pl.lost)
+
+/-- Alias of `apnapPlayers` (CR 101.4). -/
+def apnapOrder (g : Game) : Array PlayerId :=
+  g.apnapPlayers
 
 /-- Legendary permanents `p` currently controls. -/
 def legendaryPermanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
@@ -1214,16 +1275,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.setPlayer { pl with lost := true }
             g := g.logMsg s!"{pl.name} loses the game (poison)"
             changed := true
-      let livingAfterLoss := g.livingPlayers
-      if livingAfterLoss.size == 0 then
-        g := { g with result := some .draw }
-        g := g.logMsg "The game is a draw"
-        return (g, true)
-      else if livingAfterLoss.size == 1 then
-        let w := livingAfterLoss[0]!
-        g := { g with result := some (.won w.id) }
-        g := g.logMsg s!"{w.name} wins the game"
-        return (g, true)
+      match g.decideGameIfFinished with
+      | some finished => return (finished, true)
+      | none => pure ()
       -- Waiting for a legend-rule choice: do not apply further SBAs until
       -- the player keeps one copy (CR 704.5j). Drop a stale prompt if the
       -- group is no longer two or more.
@@ -1244,23 +1298,17 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         if o.isCreature then
           let t := g.toughness o
           if t ≤ 0 then
-            g := g.logMsg s!"{o.name} dies (toughness {t})"
-            let (g', _) := g.move o.id (.graveyard o.owner) none
-            g := g'
+            g := g.moveToOwnerGraveyard o s!"{o.name} dies (toughness {t})"
             changed := true
           else if o.status.damage ≥ t && !g.hasIndestructible o then
-            g := g.logMsg s!"{o.name} dies from lethal damage"
-            let (g', _) := g.move o.id (.graveyard o.owner) none
-            g := g'
+            g := g.moveToOwnerGraveyard o s!"{o.name} dies from lethal damage"
             changed := true
           else if o.status.dealtDeathtouch then
             -- CR 704.5h: any damage from a deathtouch source since the last
             -- SBA check is lethal. The flag is then cleared even if the
             -- creature survives (e.g. indestructible).
             if !g.hasIndestructible o then
-              g := g.logMsg s!"{o.name} dies from deathtouch"
-              let (g', _) := g.move o.id (.graveyard o.owner) none
-              g := g'
+              g := g.moveToOwnerGraveyard o s!"{o.name} dies from deathtouch"
               changed := true
             else
               g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
@@ -1280,9 +1328,8 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             | some host => host.isOnBattlefield && host.isCreature
             | none => false
           if !legal then
-            g := g.logMsg s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
-            let (g', _) := g.move o.id (.graveyard o.owner) none
-            g := g'
+            g := g.moveToOwnerGraveyard o
+              s!"{o.name} is put into its owner's graveyard (CR 704.5n)"
             changed := true
       -- Illegally attached Equipment (CR 704.5n). Unattached Equipment stays.
       for o in g.battlefield do
@@ -1295,16 +1342,9 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.setObject { o with attachedTo := none }
             g := g.logMsg s!"{o.name} becomes unattached (CR 704.5n)"
             changed := true
-      let living := g.livingPlayers
-      if living.size == 0 then
-        g := { g with result := some .draw }
-        g := g.logMsg "The game is a draw"
-        return (g, true)
-      else if living.size == 1 then
-        let w := living[0]!
-        g := { g with result := some (.won w.id) }
-        g := g.logMsg s!"{w.name} wins the game"
-        return (g, true)
+      match g.decideGameIfFinished with
+      | some finished => return (finished, true)
+      | none => pure ()
       if changed then
         let (g', _) := checkSBACounted g
         return (g', true)
@@ -1412,7 +1452,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .anotherCreatureYouControl =>
     g.legalCreatureTargets caster (fun o => o.controlledBy caster && some o.id != sourceId)
   | .playerOrCreature =>
-    g.livingPlayers.map (fun pl => Target.player pl.id) ++
+    playerTargets g.livingPlayers ++
       g.legalCreatureTargets caster (fun _ => true)
   | .elfInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o => o.hasSubtype "Elf")
@@ -1428,12 +1468,11 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (·.isColorlessNonland)
   | .creatureYouControlThenOppCreature => #[]
   | .player =>
-    g.livingPlayers.map (fun pl => Target.player pl.id)
+    playerTargets g.livingPlayers
   | .opponent =>
-    g.livingPlayers.filter (fun pl => pl.id != caster)
-      |>.map (fun pl => Target.player pl.id)
+    playerTargets (g.livingOpponents caster)
   | .oppGraveyardCard =>
-    g.livingPlayers.filter (fun pl => pl.id != caster)
+    g.livingOpponents caster
       |>.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id (fun _ => true)) #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
@@ -1631,6 +1670,12 @@ def putEnterTriggersOnStack (g : Game) (o : GameObject) : Game :=
       g := g.putMatchingSourceTriggers p o .entering
       return g.promptTriggerTargetsIfNeeded
 
+/-- Put controlled triggers for `event` onto the stack, then prompt for targets
+if a trigger requires them (CR 603.3d). -/
+def putControlledTriggersWithPrompt (g : Game) (p : PlayerId) (event : TriggerEvent)
+    (excludeId : Option ObjectId := none) : Game :=
+  g.putControlledTriggers p event excludeId |>.promptTriggerTargetsIfNeeded
+
 /-- Put “whenever a land you control enters” triggers onto the stack (CR 603.6a).
 Abilities that require a target and have none are removed (CR 603.3d). -/
 def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
@@ -1639,8 +1684,7 @@ def putLandYouControlEntersTriggers (g : Game) (land : GameObject) : Game :=
     match land.controller with
     | none => g
     | some landController =>
-      g.putControlledTriggers landController .landYouControlEnters
-        |>.promptTriggerTargetsIfNeeded
+      g.putControlledTriggersWithPrompt landController .landYouControlEnters
 
 /-- Put “whenever you cast an instant or sorcery” triggers onto the stack
 (CR 601.2i / 603.3). -/
@@ -1657,9 +1701,8 @@ def putAnotherElfYouControlEntersTriggers (g : Game) (entering : GameObject) : G
     match entering.controller with
     | none => g
     | some p =>
-      g.putControlledTriggers p .anotherElfYouControlEnters
-          (excludeId := some entering.id)
-        |>.promptTriggerTargetsIfNeeded
+      g.putControlledTriggersWithPrompt p .anotherElfYouControlEnters
+        (excludeId := some entering.id)
 
 /-- After a permanent enters, put its enters triggers and “another Elf you
 control enters” triggers (CR 603.6a). -/
@@ -1680,12 +1723,10 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw (g.playZoneError p card)
   if !card.printed.isLand then
     throw s!"{card.name} is not a land"
-  let (g, newId) := g.move id .battlefield (some p)
+  let (g, newId) := g.putOntoBattlefield id p (summoningSick := false)
   let g := g.modifyPlayer p (fun pl => { pl with landsPlayedThisTurn := pl.landsPlayedThisTurn + 1 })
   let g := g.logMsg s!"{(g.player p).name} plays {card.name}"
   -- Permanents enter untapped (CR 110.5b); lands have no summoning sickness.
-  let o := g.object! newId
-  let g := g.setObject { o with status := { o.status with summoningSick := false } }
   let g := g.afterLandEnters (g.object! newId)
   if g.pending != .none then
     return g
@@ -2248,8 +2289,8 @@ def payLifeCost (g : Game) (p : PlayerId) (n : Nat) : Except String Game := do
   let pl := g.player p
   if pl.life < (n : Int) then
     throw s!"{pl.name} cannot pay {n} life"
-  let g := g.setPlayer { pl with life := pl.life - (n : Int) }
-  return g.logMsg s!"{pl.name} pays {n} life ({(g.player p).life} life)"
+  return g.setLife p (pl.life - (n : Int))
+    s!"{pl.name} pays {n} life ({pl.life - (n : Int)} life)"
 
 /-- Pay `{T}`, life, discard, and/or sacrifice the source as part of an activation cost
 (CR 601.2h / 118.3b / 702.29). -/
@@ -2525,39 +2566,12 @@ def announceTarget (g : Game) (p : PlayerId) (t : Target) (amount? : Option Nat 
       return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
-/-- Whether `p` may begin activating `ab` of `o` (CR 602.3). Having
-enough mana in the pool is not required; mana abilities are activated at
-CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29). -/
-def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
-  let fromBattlefield :=
-    o.isOnBattlefield && o.controlledBy p &&
-      !ab.activateFromGraveyard && !ab.activateFromHand
-  let fromGraveyard :=
-    ab.activateFromGraveyard && o.zone == .graveyard o.owner && o.owner == p
-  let fromHand :=
-    ab.activateFromHand && o.zone == .hand o.owner && o.owner == p
-  (fromBattlefield || fromGraveyard || fromHand) &&
-  g.hasPriority p &&
-  (if ab.onlyAsSorcery then g.asSorcery? p else true) &&
-  (if ab.onlyDuringYourTurn then g.activePlayer == p else true) &&
-  (if ab.onceEachTurn then o.status.activationsThisTurn == 0 else true) &&
-  (if ab.cost.tap then o.canPayTapCost else true) &&
-  (if ab.cost.sacrificeAnotherCreatureOrArtifact then
-    !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty
-   else true) &&
-  (if ab.onlyIfYouControlLegendary then g.controlsLegendaryCreature p else true) &&
-  g.canPayLife p ab.cost.payLife &&
-  (ab.allModes.any (g.modeIsChoosable p))
-
-def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
-    Except String Game := do
+/-- Shared activation legality (CR 602.3). `canActivate` is this check as a
+`Bool`; `activateAbility` reports the first failing reason. -/
+def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
+    Except String Unit := do
   if !g.hasPriority p then
     throw "You don't have priority"
-  let some o := g.findObject? id | throw "no such object"
-  if o.printed.activatedAbilities.isEmpty then
-    throw s!"{o.name} has no activated ability"
-  let some ab := o.printed.activatedAbilities[abilityIdx]?
-    | throw s!"{o.name} has no such activated ability"
   if ab.activateFromGraveyard then
     if !(o.zone == .graveyard o.owner && o.owner == p) then
       throw s!"{o.name}'s ability can be activated only from the graveyard"
@@ -2582,12 +2596,29 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if ab.cost.tap && o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
-      (g.sacrificeCreatureOrArtifactChoices p id).isEmpty then
+      (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if !ab.allModes.any (g.modeIsChoosable p) then
     throw s!"{o.name}'s ability requires a target"
+
+/-- Whether `p` may begin activating `ab` of `o` (CR 602.3). Having
+enough mana in the pool is not required; mana abilities are activated at
+CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29). -/
+def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
+  (g.validateActivation p o ab).isOk
+
+def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat) :
+    Except String Game := do
+  if !g.hasPriority p then
+    throw "You don't have priority"
+  let some o := g.findObject? id | throw "no such object"
+  if o.printed.activatedAbilities.isEmpty then
+    throw s!"{o.name} has no activated ability"
+  let some ab := o.printed.activatedAbilities[abilityIdx]?
+    | throw s!"{o.name} has no such activated ability"
+  g.validateActivation p o ab
   let pl := g.player p
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
@@ -2619,40 +2650,29 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   }
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 
-/-- Living players in APNAP order, starting with the active player (CR 101.4). -/
-def apnapOrder (g : Game) : Array PlayerId :=
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-      if !(g.player q).lost then
-        acc := acc.push q
-    return acc
-
 /-- Creatures `p` currently controls. -/
 def creaturesControlledBy (g : Game) (p : PlayerId) : Array GameObject :=
   (g.permanentsOf p).filter (·.isCreature)
 
-/-- First player in `players` who controls a creature, plus those after them. -/
-def nextActorWithCreatures (g : Game) (players : Array PlayerId) :
+/-- First player in `players` who satisfies `pred`, plus those after them. -/
+def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
     Option (PlayerId × Array PlayerId) :=
   Id.run do
     for i in [0:players.size] do
       let p := players[i]!
-      if !(g.creaturesControlledBy p).isEmpty then
+      if pred p then
         return some (p, players.extract (i + 1) players.size)
     return none
+
+/-- First player in `players` who controls a creature, plus those after them. -/
+def nextActorWithCreatures (g : Game) (players : Array PlayerId) :
+    Option (PlayerId × Array PlayerId) :=
+  g.nextActorWhere players (fun p => !(g.creaturesControlledBy p).isEmpty)
 
 /-- First player in `players` who has a card in hand, plus those after them. -/
 def nextActorWithHandCard (g : Game) (players : Array PlayerId) :
     Option (PlayerId × Array PlayerId) :=
-  Id.run do
-    for i in [0:players.size] do
-      let p := players[i]!
-      if !(g.player p).hand.isEmpty then
-        return some (p, players.extract (i + 1) players.size)
-    return none
+  g.nextActorWhere players (fun p => !(g.player p).hand.isEmpty)
 
 /-- Sacrifice the chosen creatures simultaneously, then give priority. -/
 def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
@@ -2663,11 +2683,14 @@ def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
       | some o =>
         if o.isOnBattlefield && o.isCreature then
           let who := o.controller.getD o.owner
-          g := g.logMsg s!"{(g.player who).name} sacrifices {o.name}"
-          let (g', _) := g.move id (.graveyard o.owner) none
-          g := g'
+          g := g.moveToOwnerGraveyard o
+            s!"{(g.player who).name} sacrifices {o.name}"
       | none => pure ()
     return g.receivePriority g.activePlayer
+
+/-- Log `msg` for each player in `ps`. -/
+def logForPlayers (g : Game) (ps : Array PlayerId) (msg : PlayerId → String) : Game :=
+  ps.foldl (fun g p => g.logMsg (msg p)) g
 
 /-- Ask the next player who can sacrifice a creature, or finish if none remain. -/
 def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
@@ -2675,9 +2698,8 @@ def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
   match g.nextActorWithCreatures players with
   | none =>
     let skipped := players.filter (fun p => (g.creaturesControlledBy p).isEmpty)
-    let g :=
-      skipped.foldl (fun g p =>
-        g.logMsg s!"{(g.player p).name} has no creature to sacrifice") g
+    let g := g.logForPlayers skipped (fun p =>
+      s!"{(g.player p).name} has no creature to sacrifice")
     g.finishChosenSacrifices chosen
   | some (p, rest) =>
     { g with pending := .chooseSacrificeCreature p chosen rest }
@@ -2688,9 +2710,8 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
   match g.nextActorWithHandCard players with
   | none =>
     let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
-    let g :=
-      skipped.foldl (fun g p =>
-        g.logMsg s!"{(g.player p).name} has no card to discard") g
+    let g := g.logForPlayers skipped (fun p =>
+      s!"{(g.player p).name} has no card to discard")
     { g with pending := .none }.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
@@ -2705,8 +2726,8 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {sac.name}"
-    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
-    let (g, _) := g.move id (.graveyard sac.owner) none
+    let g := g.moveToOwnerGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name}"
     match g.proposedSpell with
     | some prop =>
       let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
@@ -2730,8 +2751,8 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeCreature p sac then
       throw s!"Can't sacrifice {sac.name}"
-    let g := g.logMsg s!"{(g.player p).name} sacrifices {sac.name}"
-    let (g, _) := g.move id (.graveyard sac.owner) none
+    let g := g.moveToOwnerGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name}"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to sacrifice a permanent"
@@ -2743,9 +2764,7 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
   if g.hasIndestructible o then
     g.logMsg s!"{o.name} is indestructible and isn't destroyed"
   else
-    let g := g.logMsg s!"{o.name} is destroyed"
-    let (g, _) := g.move o.id (.graveyard o.owner) none
-    g
+    g.moveToOwnerGraveyard o s!"{o.name} is destroyed"
 
 /-- Update `o`'s status in place. -/
 def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
@@ -2769,8 +2788,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
   let pl := g.player pid
-  let g := g.setPlayer { pl with life := pl.life - n }
-  g.logMsg s!"{pl.name} is dealt {n} damage ({(g.player pid).life} life)"
+  g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
 
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/
@@ -2778,8 +2796,7 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
-    let g := g.setPlayer { pl with life := pl.life - (n : Int) }
-    g.logMsg s!"{pl.name} loses {n} life ({(g.player p).life} life)"
+    g.setLife p (pl.life - (n : Int)) s!"{pl.name} loses {n} life ({pl.life - (n : Int)} life)"
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
@@ -2831,30 +2848,39 @@ def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
 def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=
   g.pumpPermanent o p t (trample := true)
 
+/-- First library card of `p` whose printed characteristics satisfy `pred`
+(bottom of the library first). -/
+def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Option ObjectId :=
+  (g.player p).library.find? (fun id =>
+    match g.findObject? id with
+    | some o => pred o.printed
+    | none => false)
+
+/-- Search `p`'s library for a card matching `pred`, apply `onFound` or log a
+miss, then shuffle (CR 701.19). Picks the first matching card in library
+order (bottom first). -/
+def resolveLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool)
+    (kind : String) (onFound : Game → ObjectId → Game) : Game :=
+  let pl := g.player p
+  let g :=
+    match g.findLibraryCard? p pred with
+    | none => g.logMsg s!"{pl.name} searches their library and finds no {kind}"
+    | some id => onFound g id
+  g.shuffleLibrary p
+
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
 (tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
 in library order (bottom first). -/
 def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
     (tapped : Bool) (kind : String) : Game :=
-  let pl := g.player p
-  let found := pl.library.find? (fun id =>
-    match g.findObject? id with
-    | some o => pred o.printed
-    | none => false)
-  let g :=
-    match found with
-    | none =>
-      g.logMsg s!"{pl.name} searches their library and finds no {kind}"
-    | some landId =>
-      let landName := (g.object! landId).name
-      let (g, newId) := g.move landId .battlefield (some p)
-      let o := g.object! newId
-      let g := g.setObject { o with
-        status := { o.status with tapped := tapped, summoningSick := false } }
-      let suffix := if tapped then " tapped" else ""
-      let g := g.logMsg s!"{pl.name} puts {landName} onto the battlefield{suffix}"
-      g.afterLandEnters (g.object! newId)
-  g.shuffleLibrary p
+  g.resolveLibrarySearch p pred kind fun g landId =>
+    let landName := (g.object! landId).name
+    let (g, newId) := g.putOntoBattlefield landId p (tapped := tapped)
+      (summoningSick := false)
+    let suffix := if tapped then " tapped" else ""
+    let g := g.logMsg
+      s!"{(g.player p).name} puts {landName} onto the battlefield{suffix}"
+    g.afterLandEnters (g.object! newId)
 
 /-- Search `p`'s library for a basic land card, put it onto the battlefield
 tapped, then shuffle (CR 701.19). -/
@@ -2870,21 +2896,11 @@ def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
 it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
 card in library order (bottom first). -/
 def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
-  let pl := g.player p
-  let kind := s!"{landType} card"
-  let found := pl.library.find? (fun id =>
-    match g.findObject? id with
-    | some o => isLandTypeCard o.printed landType
-    | none => false)
-  let g :=
-    match found with
-    | none =>
-      g.logMsg s!"{pl.name} searches their library and finds no {kind}"
-    | some cardId =>
+  g.resolveLibrarySearch p (fun c => isLandTypeCard c landType) s!"{landType} card"
+    fun g cardId =>
       let cardName := (g.object! cardId).name
       let (g, _) := g.move cardId (.hand p) none
-      g.logMsg s!"{pl.name} reveals {cardName} and puts it into their hand"
-  g.shuffleLibrary p
+      g.logMsg s!"{(g.player p).name} reveals {cardName} and puts it into their hand"
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.14). -/
@@ -3123,8 +3139,7 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
-    let g := g.setPlayer { pl with life := pl.life + (n : Int) }
-    g.logMsg s!"{pl.name} gains {n} life ({(g.player p).life} life)"
+    g.setLife p (pl.life + (n : Int)) s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -3145,11 +3160,9 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
       g.logMsg s!"{name} is returned to {(g.player o.owner).name}'s hand"
     else
       let name := o.name
-      let (g, newId) := g.move o.id .battlefield (some controller)
-      let o := g.object! newId
       let sick := !o.printed.keywords.haste
-      let g := g.setObject { o with
-        status := { o.status with tapped := tapped, summoningSick := sick } }
+      let (g, newId) := g.putOntoBattlefield o.id controller (tapped := tapped)
+        (summoningSick := sick)
       let g := g.logMsg
         (if tapped then s!"{name} returns to the battlefield tapped"
          else s!"{name} returns to the battlefield")
@@ -3323,12 +3336,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.gainLife controller n
       | _ => g.logMsg "The target is no longer legal"
   | .damageEachOpponent n =>
-    Id.run do
-      let mut g := g
-      for pl in g.livingPlayers do
-        if pl.id != controller then
-          g := g.dealDamageToPlayer pl.id n
-      return g
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
   | .pumpByLookedAt =>
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnTriggerSource sourceId (.pump (n : Int) (n : Int))
@@ -3357,12 +3365,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           g.logMsg s!"{name} is exiled"
         | none => g.logMsg "The target is no longer in the graveyard"
       | _ => g
-    Id.run do
-      let mut g := g
-      for pl in g.livingPlayers do
-        if pl.id != controller then
-          g := g.loseLife pl.id n
-      return g
+    g.forEachOpponent controller (fun g pid => g.loseLife pid n)
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -3400,16 +3403,15 @@ def isLegalAuraHost (host : GameObject) : Bool :=
 /-- Resolve an Aura spell, attaching it or putting it into the graveyard (CR 303.4, 608.3a). -/
 def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
   let toGraveyard (g : Game) : Game :=
-    let (g, _) := g.move obj.id (.graveyard obj.owner) none
-    g.logMsg s!"{obj.name} goes to the graveyard (illegal Aura target)"
+    g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard (illegal Aura target)"
   match entry.targets[0]? with
   | some (Target.permanent hostId) =>
     match g.findObject? hostId with
     | some host =>
       if isLegalAuraHost host then
-        let (g, newId) := g.move obj.id .battlefield (some entry.controller)
+        let (g, newId) := g.putOntoBattlefield obj.id entry.controller
+          (attachedTo := some host.id)
         let o := g.object! newId
-        let g := g.setObject { o with attachedTo := some host.id }
         let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
         g.afterPermanentEnters (g.object! newId)
       else
@@ -3460,16 +3462,14 @@ def resolveTop (g : Game) : Game :=
         else if obj.printed.isAura then
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
-          let (g, newId) := g.move obj.id .battlefield (some entry.controller)
+          let sick := !obj.printed.keywords.haste
+          let (g, newId) := g.putOntoBattlefield obj.id entry.controller
+            (summoningSick := sick)
           let o := g.object! newId
-          let sick := !o.printed.keywords.haste
-          let g := g.setObject { o with status := { o.status with summoningSick := sick } }
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
         else
-          let owner := obj.owner
-          let (g, _) := g.move obj.id (.graveyard owner) none
-          g.logMsg s!"{obj.name} goes to the graveyard"
+          g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
 
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
   if g.pending != .declareAttackers || g.activePlayer != p then
@@ -3986,15 +3986,7 @@ def openingHandsPending (g : Game) : Bool :=
 /-- Players who have not yet kept an opening hand, in turn order from the
 starting player (CR 103.5). -/
 def playersStillDecidingMulligan (g : Game) : Array PlayerId :=
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(g.startingPlayer.idx + k) % n⟩
-      let pl := g.player q
-      if !pl.lost && !pl.keptOpeningHand then
-        acc := acc.push q
-    return acc
+  g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost && !pl.keptOpeningHand)
 
 def promptMulligan (g : Game) (p : PlayerId) : Game :=
   { g with pending := .declareMulligan p }
@@ -4080,30 +4072,31 @@ def resolveDeclaredMulligans (g : Game) : Game :=
     else
       promptBottom { g with willMulligan := #[], mulliganToBottom := order } order[0]!
 
+/-- Remove `who` from a sequential CR 103.5 queue, then finish or prompt the
+next player. -/
+def advancePlayerQueue (g : Game) (who : PlayerId) (queue : Array PlayerId)
+    (store : Game → Array PlayerId → Game) (whenEmpty : Game → Game)
+    (prompt : Game → PlayerId → Game) : Game :=
+  if g.over then g
+  else
+    let rest := queue.filter (fun q => q != who)
+    let g := store g rest
+    if rest.isEmpty then whenEmpty g else prompt g rest[0]!
+
 /-- After `who` has declared keep or mulligan, the next declarer in this round
 acts. When the round's declarations are complete, pending mulligans are taken
 together. -/
 def afterDeclaration (g : Game) (who : PlayerId) : Game :=
-  if g.over then g
-  else
-    let rest := g.mulliganToDeclare.filter (fun q => q != who)
-    let g := { g with mulliganToDeclare := rest }
-    if rest.isEmpty then
-      g.resolveDeclaredMulligans
-    else
-      g.promptMulligan rest[0]!
+  g.advancePlayerQueue who g.mulliganToDeclare
+    (fun g rest => { g with mulliganToDeclare := rest })
+    (·.resolveDeclaredMulligans) (·.promptMulligan)
 
 /-- After `who` has put cards on the bottom, the next such player acts, or a
 new declaration round begins. -/
 def afterBottom (g : Game) (who : PlayerId) : Game :=
-  if g.over then g
-  else
-    let rest := g.mulliganToBottom.filter (fun q => q != who)
-    let g := { g with mulliganToBottom := rest }
-    if rest.isEmpty then
-      g.beginMulliganRound
-    else
-      g.promptBottom rest[0]!
+  g.advancePlayerQueue who g.mulliganToBottom
+    (fun g rest => { g with mulliganToBottom := rest })
+    (·.beginMulliganRound) (·.promptBottom)
 
 def uniqueObjectIds (ids : Array ObjectId) : Bool :=
   Id.run do
