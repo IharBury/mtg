@@ -313,6 +313,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (match c.ward with
    | some n => [s!"Ward \{{n}}."]
    | none => []) ++
+  (match c.flashback with
+   | some cost => [s!"Flashback {cost}"]
+   | none => []) ++
   (if c.entersTapped then
     [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
      else "This land enters tapped."]

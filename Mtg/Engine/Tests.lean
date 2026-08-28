@@ -11117,6 +11117,14 @@ open Catalog.HobbitSet
 #guard goblinPlateMail.matchesOracleText
 #guard bagEndBanquet.matchesOracleText
 #guard floweringOfTheWhiteTree.matchesOracleText
+#guard momentOfGlory.matchesOracleText
+#guard plunderTheTrollshaws.matchesOracleText
+#guard tidingsOfWar.matchesOracleText
+#guard eaglesRescue.matchesOracleText
+#guard gandalfWanderingWizard.matchesOracleText
+#guard trollNegotiations.matchesOracleText
+#guard dwarvenMattock.matchesOracleText
+#guard mithrilCoat.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
@@ -11267,6 +11275,20 @@ def banquetFoods : Game :=
 
 #guard
   (banquetFoods.battlefield.filter (fun o => o.name == "Food")).size == 3
+
+/-- Tidings of War from hand amasses 1; from the graveyard it would amass 3. -/
+def tidingsFromHandAmass1 : Bool :=
+  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+    (castFromGraveyard := false)).battlefield.any (fun o =>
+      o.name == "Goblin Army" && o.status.plusOnePlusOne == 1)
+
+def tidingsFromGraveyardAmass3 : Bool :=
+  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+    (castFromGraveyard := true)).battlefield.any (fun o =>
+      o.name == "Goblin Army" && o.status.plusOnePlusOne == 3)
+
+#guard tidingsFromHandAmass1
+#guard tidingsFromGraveyardAmass3
 
 end Mtg.Engine.Tests
 

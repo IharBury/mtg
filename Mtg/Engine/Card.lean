@@ -218,6 +218,10 @@ inductive EffectTargetKind where
   | permanent
   /-- Target creature card in your graveyard. -/
   | creatureCardInYourGraveyard
+  /-- Target legendary creature you control. -/
+  | legendaryCreatureYouControl
+  /-- Target creature you control with power `n` or less. -/
+  | creatureYouControlPowerAtMost (n : Int)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -334,6 +338,10 @@ def spec : EffectTargetKind → Spec
     { noun := "target permanent", prefer := .ownThenOpponent }
   | .creatureCardInYourGraveyard =>
     { noun := "target creature card from your graveyard", prefer := .last }
+  | .legendaryCreatureYouControl =>
+    { noun := "target legendary creature you control", prefer := .own }
+  | .creatureYouControlPowerAtMost n =>
+    { noun := s!"target creature you control with power {n} or less", prefer := .own }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -511,6 +519,15 @@ inductive SpellEffect where
   | returnCreatureFromGyThenAmass (n : Nat)
   /-- Counter target spell. If its mana value was `n` or less, recruit. -/
   | counterThenRecruitIfMvAtMost (n : Nat)
+  /-- Put `n` +1/+1 counters on target creature you control, then it fights. -/
+  | plusOneThenFight (n : Nat)
+  /-- Put a +1/+1 counter on target creature you control; if cast from a
+  graveyard, also each other creature you control. -/
+  | plusOneThenEachOtherIfFromGy
+  /-- Draw `n` cards, or `fromGy` if this spell was cast from a graveyard. -/
+  | drawIfFromGy (n fromGy : Nat)
+  /-- Amass Goblins `n`, or `fromGy` if cast from a graveyard. -/
+  | amassGoblinsOrFromGy (n fromGy : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -694,6 +711,14 @@ inductive SpellResolution where
   | returnCreatureFromGyThenAmass (n : Nat)
   /-- Counter the targeted spell; recruit if its mana value was `n` or less. -/
   | counterThenRecruitIfMvAtMost (n : Nat)
+  /-- +1/+1 counters on the first target, then it fights the second. -/
+  | plusOneThenFight (n : Nat)
+  /-- +1/+1 on the target; if from the graveyard, also each other. -/
+  | plusOneThenEachOtherIfFromGy
+  /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
+  | drawIfFromGy (n fromGy : Nat)
+  /-- Amass Goblins `n`, or `fromGy` if cast from a graveyard. -/
+  | amassGoblinsOrFromGy (n fromGy : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -837,6 +862,16 @@ def spec : SpellEffect → SpellMeta
   | .counterThenRecruitIfMvAtMost n =>
     { targeting := .of .spell, castKind := .counter,
       resolution := .counterThenRecruitIfMvAtMost n }
+  | .plusOneThenFight n =>
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      resolution := .plusOneThenFight n }
+  | .plusOneThenEachOtherIfFromGy =>
+    { targeting := .of .creatureYouControl, castKind := .pump,
+      resolution := .plusOneThenEachOtherIfFromGy }
+  | .drawIfFromGy n fromGy =>
+    { targeting := .of .none, castKind := .draw, resolution := .drawIfFromGy n fromGy }
+  | .amassGoblinsOrFromGy n fromGy =>
+    { targeting := .of .none, castKind := .pump, resolution := .amassGoblinsOrFromGy n fromGy }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -932,6 +967,14 @@ def toNotation (e : SpellEffect) : String :=
     s!"return up to one {noun} to your hand. Amass Goblins {n}"
   | .counterThenRecruitIfMvAtMost n =>
     s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
+  | .plusOneThenFight n =>
+    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
+  | .plusOneThenEachOtherIfFromGy =>
+    "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
+  | .drawIfFromGy n fromGy =>
+    s!"draw {cardPhrase n}. If this spell was cast from a graveyard, draw {cardPhrase fromGy} instead"
+  | .amassGoblinsOrFromGy n fromGy =>
+    s!"amass Goblins {n}. If this spell was cast from a graveyard, amass Goblins {fromGy} instead"
 
 end SpellEffect
 
@@ -1001,6 +1044,11 @@ inductive AbilityEffect where
   | gainLife (n : Nat)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat)
+  /-- The source's owner shuffles it into their library and draws `n` cards. -/
+  | ownerShuffleSourceDraw (n : Nat)
+  /-- Return this from the graveyard attached to a creature you control with
+  power `n` or less. -/
+  | returnFromGyAttachPowerAtMost (n : Int)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1058,6 +1106,10 @@ inductive AbilityResolution where
   | gainLife (n : Nat)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat)
+  /-- Owner shuffles the source into their library and draws `n`. -/
+  | ownerShuffleSourceDraw (n : Nat)
+  /-- Return from the graveyard attached to the targeted creature. -/
+  | returnFromGyAttach
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -1138,6 +1190,11 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .gainLife n }
   | .createTokens kind n =>
     { resolution := .createTokens kind n }
+  | .ownerShuffleSourceDraw n =>
+    { resolution := .ownerShuffleSourceDraw n }
+  | .returnFromGyAttachPowerAtMost n =>
+    { targeting := .of (.creatureYouControlPowerAtMost n),
+      resolution := .returnFromGyAttach }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -1213,6 +1270,10 @@ def toNotation (e : AbilityEffect) : String :=
     s!"You gain {n} life"
   | .createTokens kind n =>
     capitalizeAscii (TokenKind.createPhrase kind n)
+  | .ownerShuffleSourceDraw n =>
+    s!"This owner shuffles him into their library and draws {cardPhrase n}"
+  | .returnFromGyAttach =>
+    s!"Return this card from your graveyard to the battlefield attached to {noun}"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -1366,6 +1427,8 @@ inductive StaticAbility where
   | nonlegendaryCreaturesGet (power toughness : Int)
   /-- Equipped creature gets +P/+T and has these keywords. -/
   | equippedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  /-- Equipped creature gets +P/+T and has ward `{w}`. -/
+  | equippedCreatureGetsAndWard (power toughness : Int) (ward : Nat)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1418,6 +1481,8 @@ inductive StaticShape where
   | cantAttackUnlessNOther (n : Nat) (subtype : String)
   /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
   | legendaryTeamPumpWard (power toughness : Int) (ward : Nat)
+  /-- Equipped/enchanted host gets +P/+T and has ward `{w}`. -/
+  | hostGetsAndWard (host : String) (power toughness : Int) (ward : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1471,6 +1536,8 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .legendaryTeamPumpWard p t w =>
     { lordPump := some (#[], p, t), lordIncludesSelf := true, lordLegendaryOnly := true,
       grantedWard := some w }
+  | .hostGetsAndWard _ p t w =>
+    { hostBonus := (p, t), grantedWard := some w }
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1496,6 +1563,7 @@ def shape : StaticAbility → StaticShape
   | .legendaryCreaturesGetAndWard p t w => .legendaryTeamPumpWard p t w
   | .nonlegendaryCreaturesGet p t => .teamPump p t false true
   | .equippedCreatureGetsAndHas p t k => .hostKeywords "Equipped creature" k p t
+  | .equippedCreatureGetsAndWard p t w => .hostGetsAndWard "Equipped creature" p t w
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -1553,6 +1621,8 @@ def toNotation (ab : StaticAbility) : String :=
     s!"This creature can't attack unless you control {nWord} or more other {plural}."
   | .legendaryTeamPumpWard p t w =>
     s!"Legendary creatures you control get {signedStat p}/{signedStat t} and have ward \{{w}}."
+  | .hostGetsAndWard host p t w =>
+    s!"{host} gets {signedStat p}/{signedStat t} and has ward \{{w}}."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -1832,6 +1902,11 @@ inductive TriggeredAbility where
   | onEnterCreateThenAttach (kind : TokenKind)
   /-- When this Equipment enters, amass Goblins `n` then attach to the Army. -/
   | onEnterAmassThenAttach (n : Nat)
+  /-- When this Equipment enters, attach it to target creature you control of
+  this subtype. -/
+  | onEnterAttachToSubtype (subtype : String)
+  /-- When this Equipment enters, attach it to target legendary creature. -/
+  | onEnterAttachToLegendary
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -2092,6 +2167,8 @@ inductive TriggerResolution where
   | createThenAttach (kind : TokenKind)
   /-- Amass Goblins `n`, then attach the source to the Army. -/
   | amassThenAttach (n : Nat)
+  /-- Attach the source to the targeted permanent. -/
+  | attachSourceToTarget
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -2287,6 +2364,12 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering], resolution := .createThenAttach kind }
   | .onEnterAmassThenAttach n =>
     { events := #[.entering], resolution := .amassThenAttach n }
+  | .onEnterAttachToSubtype subtype =>
+    { events := #[.entering], targeting := .of (.creatureYouControlSubtype subtype),
+      resolution := .attachSourceToTarget }
+  | .onEnterAttachToLegendary =>
+    { events := #[.entering], targeting := .of .legendaryCreatureYouControl,
+      resolution := .attachSourceToTarget }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -2449,6 +2532,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
   | .amassThenAttach n =>
     s!"amass Goblins {n}, then attach this Equipment to the amassed Army"
+  | .attachSourceToTarget =>
+    s!"attach it to {noun}"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -2549,6 +2634,8 @@ structure CardDef where
   flashIfYouControlSubtype : Option String := none
   /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
   ward : Option Nat := none
+  /-- Flashback cost (CR 702.34). -/
+  flashback : Option ManaCost := none
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]

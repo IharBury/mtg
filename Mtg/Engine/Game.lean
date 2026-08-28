@@ -259,6 +259,8 @@ structure GameObject where
   adventurerCard : Option CardDef := none
   /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
   linkedExile : Array ObjectId := #[]
+  /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
+  castFromGraveyard : Bool := false
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -1781,12 +1783,18 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
   g.objects.filter (fun o => g.mayPlayFromExile p o)
 
 /-- Whether `p` may play `o` from hand or from exile under a permission. -/
+def mayPlayFromGraveyard (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .graveyard p && o.owner == p && o.printed.flashback.isSome
+
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).hand.contains o.id || g.mayPlayFromExile p o
+  (g.player p).hand.contains o.id || g.mayPlayFromExile p o ||
+    g.mayPlayFromGraveyard p o
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
   if o.zone == .exile && !g.mayPlayFromExile p o then
     "You may not play that card from exile"
+  else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
+    "You may not play that card from your graveyard"
   else
     "That card is not in your hand"
 
@@ -1909,6 +1917,12 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
     g.legalPermanentTargets caster (·.isOnBattlefield)
   | .creatureCardInYourGraveyard =>
     g.legalGraveyardCardTargets caster (·.printed.isCreature)
+  | .legendaryCreatureYouControl =>
+    g.legalCreatureTargets caster (fun o =>
+      o.controlledBy caster && o.isLegendary)
+  | .creatureYouControlPowerAtMost n =>
+    g.legalCreatureTargets caster (fun o =>
+      o.controlledBy caster && g.power o <= n)
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -3075,7 +3089,9 @@ mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
 Target-based reductions lock in after CR 601.2c. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
   let printedCost :=
-    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+    if card.castFromGraveyard || card.zone == .graveyard card.owner then
+      face.flashback.getD face.manaCost
+    else if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
       face.manaCost.reduceGeneric face.costReductionIfCreatureDied
     else face.manaCost
   let cost :=
@@ -3157,6 +3173,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
   let cost := g.playManaCost card face
+  let fromGraveyard := card.zone == .graveyard card.owner
   let needsSacrifice :=
     face.additionalCostSacrificeArtifactOrCreature &&
       face.additionalCostOrPayGeneric.isNone
@@ -3169,6 +3186,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if asAdventure then
       let o := g.object! newId
       g.setObject { o with printed := face, adventurerCard := some original.printed }
+    else g
+  let g :=
+    if fromGraveyard then
+      let o := g.object! newId
+      g.setObject { o with castFromGraveyard := true }
     else g
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
@@ -3985,7 +4007,7 @@ def returnLinkedExile (g : Game) (source : GameObject) : Game :=
     return g
 
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
-    (targets : Array Target) : Game :=
+    (targets : Array Target) (castFromGraveyard := false) : Game :=
   match effect.resolution with
   | .fight =>
     match targets[0]?, targets[1]? with
@@ -4187,6 +4209,43 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         let g := g.counterStackSpell id
         if mv <= n then g.beginRecruit controller else g
     | _ => g.logMsg "The target is no longer legal"
+  | .plusOneThenFight n =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent srcId), some (Target.permanent destId) =>
+      match g.findObject? srcId, g.findObject? destId with
+      | some src, some _dest =>
+        let g := g.addPlusOnePlusOneTo src n
+        let src := g.object! srcId
+        let dest := g.object! destId
+        let g := g.dealDamageFrom src.name dest (g.power src).toNat
+          (deathtouch := g.hasDeathtouch src)
+        match g.findObject? destId, g.findObject? srcId with
+        | some dest, some src =>
+          g.dealDamageFrom dest.name src (g.power dest).toNat
+            (deathtouch := g.hasDeathtouch dest)
+        | _, _ => g
+      | _, _ => g.logMsg "The target is no longer legal"
+    | _, _ => g.logMsg "The target is no longer legal"
+  | .plusOneThenEachOtherIfFromGy =>
+    match targets[0]? with
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none => g.logMsg "The target is no longer legal"
+      | some o =>
+        let g := g.addPlusOnePlusOneTo o 1
+        if !castFromGraveyard then g
+        else
+          Id.run do
+            let mut g := g
+            for c in g.battlefield do
+              if c.isCreature && c.controlledBy controller && c.id != oid then
+                g := g.addPlusOnePlusOneTo c 1
+            return g
+    | _ => g.logMsg "The target is no longer legal"
+  | .drawIfFromGy n fromGy =>
+    g.draw controller (if castFromGraveyard then fromGy else n)
+  | .amassGoblinsOrFromGy n fromGy =>
+    g.amassGoblins controller (if castFromGraveyard then fromGy else n)
   | .destroyArtifactOrEnchantmentGainLife n =>
     let g := g.applyOnPermanent controller effect.targetKind targets .destroy
     if n == 0 then g
@@ -4310,6 +4369,28 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.gainLife controller n
   | .createTokens kind n =>
     g.createKindTokens controller kind n
+  | .ownerShuffleSourceDraw n =>
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The source is no longer in play"
+    | some src =>
+      let owner := src.owner
+      let (g, _) := g.move src.id (.library owner) none
+      let g := g.shuffleLibrary owner
+      g.draw owner n
+  | .returnFromGyAttach =>
+    match sourceId.bind g.findObject?, targets[0]? with
+    | some src, some (Target.permanent hostId) =>
+      match g.findObject? hostId with
+      | none => g.logMsg "The target is no longer legal"
+      | some host =>
+        if !host.isOnBattlefield then g.logMsg "The target is no longer legal"
+        else
+          let (g, newId) := g.putOntoBattlefield src.id controller
+            (attachedTo := some host.id)
+          let o := g.object! newId
+          let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+          g.afterPermanentEnters (g.object! newId)
+    | _, _ => g.logMsg "The source is no longer in the graveyard"
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -4560,6 +4641,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | some host, some src =>
       if src.isOnBattlefield then g.attachSourceTo src host else g
     | _, _ => g
+  | .attachSourceToTarget =>
+    g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
+      g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
+        "The Equipment is no longer in play")
+      sourceId (some "The target is no longer legal")
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -4654,6 +4740,7 @@ def resolveTop (g : Game) : Game :=
         let g :=
           match spellEffectOf obj entry.chosenMode with
           | some e => g.applyEffect entry.controller e entry.targets
+            (castFromGraveyard := obj.castFromGraveyard)
           | none => g
         if obj.isAdventureSpell then
           g.resolveAdventureSpell entry (g.object! obj.id)
@@ -4666,6 +4753,9 @@ def resolveTop (g : Game) : Game :=
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
+        else if obj.castFromGraveyard then
+          let (g, _) := g.move obj.id .exile none
+          g.logMsg s!"{obj.name} is exiled (flashback)"
         else
           g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
 

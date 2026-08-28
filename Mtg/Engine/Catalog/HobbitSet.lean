@@ -323,6 +323,65 @@ def floweringOfTheWhiteTree : CardDef :=
       .legendaryCreaturesGetAndWard 2 1 1,
       .nonlegendaryCreaturesGet 1 1])
 
+def momentOfGlory : CardDef :=
+  sorcery "Moment of Glory" (ManaCost.ofColor .white)
+    "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control.\nFlashback {4}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+    (some .plusOneThenEachOtherIfFromGy)
+    (flashback := some (ManaCost.ofGenericAndColor 4 .white))
+
+def plunderTheTrollshaws : CardDef :=
+  instant "Plunder the Trollshaws" (ManaCost.ofGenericAndColor 1 .blue)
+    "Draw a card. If this spell was cast from a graveyard, draw two cards instead.\nFlashback {3}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+    (some (.drawIfFromGy 1 2))
+    (flashback := some (ManaCost.ofGenericAndColor 3 .blue))
+
+def tidingsOfWar : CardDef :=
+  sorcery "Tidings of War" (ManaCost.ofColor .red)
+    "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead. (To amass Goblins X, put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+    (some (.amassGoblinsOrFromGy 1 3))
+    (flashback := some (ManaCost.ofGenericAndColor 3 .red))
+
+def eaglesRescue : CardDef :=
+  enchantment "Eagle's Rescue" (ManaCost.ofGenericAndHybrids 2 .white .blue 2)
+    "Enchant creature\nEnchanted creature gets +2/+2 and has flying.\n{2}{W/U}{W/U}: Return this card from your graveyard to the battlefield attached to target creature you control with power 1 or less. Activate only as a sorcery."
+    (subtypes := #["Aura"])
+    (staticAbilities := #[.enchantedCreatureGetsAndHas 2 2 Keyword.flying])
+    (activatedAbilities := #[
+      activated (.returnFromGyAttachPowerAtMost 1)
+        (ManaCost.ofGenericAndHybrids 2 .white .blue 2)
+        (activateFromGraveyard := true) (onlyAsSorcery := true)])
+
+def gandalfWanderingWizard : CardDef :=
+  legendaryCreature "Gandalf, Wandering Wizard" (ManaCost.ofGenericAndColor 4 .blue)
+    #["Avatar", "Wizard"] 4 5
+    (oracleText := "Ward {3} (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {3}.)\n{6}: Gandalf's owner shuffles him into their library and draws three cards.")
+    (ward := some 3)
+    (activatedAbilities := #[
+      activated (.ownerShuffleSourceDraw 3) (ManaCost.ofGeneric 6)])
+
+def trollNegotiations : CardDef :=
+  sorcery "Troll Negotiations" (ManaCost.ofGenericAndColors 2 [.green, .green])
+    "Put two +1/+1 counters on target creature you control. Then it fights target creature an opponent controls. (Each deals damage equal to its power to the other.)"
+    (some (.plusOneThenFight 2))
+
+def dwarvenMattock : CardDef :=
+  artifact "Dwarven Mattock" (ManaCost.ofGeneric 2)
+    "When this Equipment enters, attach it to target Dwarf you control.\nEquipped creature gets +2/+2 and has ward {1}. (Whenever equipped creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
+    (subtypes := #["Equipment"])
+    (triggeredAbilities := #[.onEnterAttachToSubtype "Dwarf"])
+    (staticAbilities := #[.equippedCreatureGetsAndWard 2 2 1])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def mithrilCoat : CardDef :=
+  artifact "Mithril Coat" (ManaCost.ofGeneric 3)
+    "Flash\nIndestructible\nWhen Mithril Coat enters, attach it to target legendary creature you control.\nEquipped creature has indestructible.\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (keywords := Keyword.flash.merge Keyword.indestructible)
+    (triggeredAbilities := #[.onEnterAttachToLegendary])
+    (staticAbilities := #[.equippedCreatureHasKeywords Keyword.indestructible])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
 def allCards : Array CardDef := #[
   ordinaryBear,
   largeBear,
@@ -370,7 +429,15 @@ def allCards : Array CardDef := #[
   dwarvenShortsword,
   goblinPlateMail,
   bagEndBanquet,
-  floweringOfTheWhiteTree
+  floweringOfTheWhiteTree,
+  momentOfGlory,
+  plunderTheTrollshaws,
+  tidingsOfWar,
+  eaglesRescue,
+  gandalfWanderingWizard,
+  trollNegotiations,
+  dwarvenMattock,
+  mithrilCoat
 ]
 
 end Mtg.Engine.Catalog.HobbitSet

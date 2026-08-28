@@ -43,6 +43,7 @@ def card (name : String) (types : Array CardType)
     (cantBeCountered : Bool := false)
     (flashIfYouControlSubtype : Option String := none)
     (ward : Option Nat := none)
+    (flashback : Option ManaCost := none)
     (colorIndicator : Option ColorSet := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
@@ -55,7 +56,7 @@ def card (name : String) (types : Array CardType)
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
   tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
-  flashIfYouControlSubtype, ward, colorIndicator,
+  flashIfYouControlSubtype, ward, flashback, colorIndicator,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -117,7 +118,8 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (tapAddAnyColorEqualToPower : Bool := false)
     (tapAddAnyColorForInstantOrSorcery : Bool := false)
     (adventure : Option AdventureFace := none)
-    (costReductionIfCreatureDied : Nat := 0) : CardDef :=
+    (costReductionIfCreatureDied : Nat := 0)
+    (ward : Option Nat := none) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords) (tapAddMana := tapAddMana)
     (supertypes := #[.legendary] ++ supertypes)
@@ -128,6 +130,7 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (tapAddAnyColorForInstantOrSorcery := tapAddAnyColorForInstantOrSorcery)
     (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
+    (ward := ward)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
@@ -139,7 +142,8 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionIfTargetDamaged : Nat := 0)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
-    (activatedAbilities : Array ActivatedAbility := #[]) : CardDef :=
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (flashback : Option ManaCost := none) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -150,6 +154,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionIfTargetTapped := costReductionIfTargetTapped)
     (costReductionIfTargetAttackingNontoken := costReductionIfTargetAttackingNontoken)
     (activatedAbilities := activatedAbilities)
+    (flashback := flashback)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -161,12 +166,13 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionIfTargetDamaged : Nat := 0)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
-    (activatedAbilities : Array ActivatedAbility := #[]) : CardDef :=
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (flashback : Option ManaCost := none) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
     costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
-    activatedAbilities
+    activatedAbilities (flashback := flashback)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -178,12 +184,13 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionIfTargetDamaged : Nat := 0)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
-    (activatedAbilities : Array ActivatedAbility := #[]) : CardDef :=
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (flashback : Option ManaCost := none) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
     costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
-    activatedAbilities
+    activatedAbilities (flashback := flashback)
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
