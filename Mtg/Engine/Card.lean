@@ -1588,11 +1588,23 @@ def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
 def isAdventureDelimiter (line : String) : Bool :=
   line == "//ADV//" || line.startsWith "//ADV//"
 
+/-- Drop a leading `//ADV//` marker. The remainder (Adventure name and mana
+cost) is kept so leftover Oracle text does not lose printed mana symbols. -/
+def stripAdventureDelimiter (line : String) : Option String :=
+  if line == "//ADV//" then none
+  else if line.startsWith "//ADV//" then
+    let rest := (line.drop "//ADV//".length).trimAscii.copy
+    if rest.isEmpty then none else some rest
+  else some line
+
 /-- Oracle ability lines that are not just restating modeled keywords. The
 Gatherer `//ADV//` marker is stored in `oracleText` but is not an ability. -/
 def leftoverOracleLines (c : CardDef) : List String :=
-  c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filter (fun line =>
-    !line.isEmpty && !isAdventureDelimiter line && !isKeywordRestatement c.keywords line)
+  c.oracleText.splitOn "\n" |>.map (fun s => s.trimAscii.copy) |>.filterMap (fun line =>
+    match stripAdventureDelimiter line with
+    | none => none
+    | some rest =>
+      if rest.isEmpty || isKeywordRestatement c.keywords rest then none else some rest)
 
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
@@ -1672,8 +1684,11 @@ instance : ToString CardDef where
 #guard toString Keyword.indestructible == "indestructible"
 #guard CardDef.isKeywordRestatement Keyword.indestructible "Indestructible"
 #guard CardDef.isAdventureDelimiter "//ADV//"
-#guard CardDef.isAdventureDelimiter "//ADV// Spew Flame"
-#guard !CardDef.isAdventureDelimiter "Spew Flame"
+#guard CardDef.isAdventureDelimiter "//ADV// Spew Flame {4}{R}"
+#guard !CardDef.isAdventureDelimiter "Spew Flame {4}{R}"
+#guard CardDef.stripAdventureDelimiter "//ADV//" == none
+#guard CardDef.stripAdventureDelimiter "//ADV// Spew Flame {4}{R}" ==
+  some "Spew Flame {4}{R}"
 #guard
   let c : CardDef := {
     name := "Silent Adventurer"
@@ -1686,6 +1701,17 @@ instance : ToString CardDef where
     ["Spew Flame {4}{R}", "Sorcery — Adventure",
       "Spew Flame deals 5 damage to target creature."] &&
     (c.oracleText.splitOn "//ADV//").length > 1
+#guard
+  let c : CardDef := {
+    name := "Silent Adventurer"
+    types := #[.creature]
+    oracleText :=
+      "Flying\n//ADV// Spew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature."
+    keywords := Keyword.flying
+  }
+  leftoverOracleLines c ==
+    ["Spew Flame {4}{R}", "Sorcery — Adventure",
+      "Spew Flame deals 5 damage to target creature."]
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
