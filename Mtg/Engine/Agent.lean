@@ -23,11 +23,7 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
     if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
       some .pay
     else
-      match (g.manaSources p).find? (fun (src, types) =>
-        !(prop.tapSource && prop.sourceId == some src.id) &&
-        !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
-        !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
-        !types.isEmpty) with
+      match (g.manaSourcesForProposed p prop)[0]? with
       | some (src, types) =>
         match g.preferredManaType p types prop.cost allowElf with
         | some t => some (.tapForMana src.id t)

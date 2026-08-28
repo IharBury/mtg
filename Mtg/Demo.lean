@@ -2913,94 +2913,59 @@ def subsetFromMask {α : Type} (xs : Array α) (mask : Nat) : Array α :=
 def payingSourceSubset (a b : Array (GameObject × Array ManaType)) : Bool :=
   a.all (fun (oa, _) => b.any (fun (ob, _) => oa.id == ob.id))
 
-/-- Mana type to try first from `types` given the mana already in `pool`. -/
-def preferredTypeForPool (pool : ManaPool) (types : Array ManaType)
-    (cost : ManaCost) (allowElf : Bool) : Option ManaType :=
-  match types[0]? with
-  | none => none
-  | some first =>
-    match Color.all.find? (fun c =>
-      let req := cost.coloredCount c
-      let held :=
-        if allowElf then pool.get (.colored c)
-        else pool.unrestricted (.colored c)
-      held < req && types.contains (.colored c)) with
-    | some c => some (.colored c)
-    | none => some first
+/-- Pool after tapping `src` for `t`, including spending restrictions. -/
+def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) :
+    ManaPool :=
+  pool.add t (g.manaFromTap src t)
+    (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
+    (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
 
 /-- Whether tapping every source in `sources` can pay `cost` for some
 type assignment. -/
 def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf : Bool) : List (GameObject × Array ManaType) → Bool
-  | [] => pool.canPay cost allowElf
+    (allowElf allowInst : Bool) : List (GameObject × Array ManaType) → Bool
+  | [] => pool.canPay cost allowElf allowInst
   | (src, types) :: rest =>
     types.any (fun t =>
-      let amount := g.manaFromTap src t
-      let elfRestricted := src.printed.tapAddAnyColorEqualToPower
-      canPayTappingAll g (pool.add t amount (elfRestricted := elfRestricted))
-        cost allowElf rest)
-
-/-- One legal type for each source so the taps pay `cost`, preferring
-unmet colored requirements. -/
-def assignTapTypes (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf : Bool) :
-    List (GameObject × Array ManaType) → Option (List (ObjectId × ManaType))
-  | [] => if pool.canPay cost allowElf then some [] else none
-  | (src, types) :: rest =>
-    let ordered : Array ManaType :=
-      match preferredTypeForPool pool types cost allowElf with
-      | some pref =>
-        if types.contains pref then
-          #[pref] ++ types.filter (fun t => t != pref)
-        else types
-      | none => types
-    Id.run do
-      for t in ordered do
-        let amount := g.manaFromTap src t
-        let elfRestricted := src.printed.tapAddAnyColorEqualToPower
-        match assignTapTypes g (pool.add t amount (elfRestricted := elfRestricted))
-            cost allowElf rest with
-        | some taps => return some ((src.id, t) :: taps)
-        | none => pure ()
-      return none
+      canPayTappingAll g (poolAfterTap g pool src t) cost allowElf allowInst rest)
 
 /-- Unique source set that can pay when there are too many sources to
 enumerate every subset. Recognizes a single sufficient source, or that
 every source is required. -/
 def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf : Bool) (sources : Array (GameObject × Array ManaType)) :
+    (allowElf allowInst : Bool) (sources : Array (GameObject × Array ManaType)) :
     Option (Array (GameObject × Array ManaType)) :=
   Id.run do
     let mut singles : Array (GameObject × Array ManaType) := #[]
     for src in sources do
-      if canPayTappingAll g pool cost allowElf [src] then
+      if canPayTappingAll g pool cost allowElf allowInst [src] then
         singles := singles.push src
     if singles.size == 1 then
       return some singles
     if singles.size > 1 then
       return none
-    if !canPayTappingAll g pool cost allowElf sources.toList then
+    if !canPayTappingAll g pool cost allowElf allowInst sources.toList then
       return none
     for i in [0:sources.size] do
       let rest := sources.extract 0 i ++ sources.extract (i + 1) sources.size
-      if canPayTappingAll g pool cost allowElf rest.toList then
+      if canPayTappingAll g pool cost allowElf allowInst rest.toList then
         return none
     return some sources
 
 /-- The unique inclusion-minimal set of sources that can pay `cost`, if any. -/
 def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf : Bool) (sources : Array (GameObject × Array ManaType)) :
+    (allowElf allowInst : Bool) (sources : Array (GameObject × Array ManaType)) :
     Option (Array (GameObject × Array ManaType)) :=
   let n := sources.size
   if n > 20 then
-    uniquePayingSourceSetLarge g pool cost allowElf sources
+    uniquePayingSourceSetLarge g pool cost allowElf allowInst sources
   else
     let limit := 1 <<< n
     Id.run do
       let mut best : Option (Array (GameObject × Array ManaType)) := none
       for mask in [1:limit] do
         let sub := subsetFromMask sources mask
-        if canPayTappingAll g pool cost allowElf sub.toList then
+        if canPayTappingAll g pool cost allowElf allowInst sub.toList then
           match best with
           | none => best := some sub
           | some prev =>
@@ -3012,52 +2977,24 @@ def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
               return none
       return best
 
-/-- Sources `p` may tap in this CR 601.2g window. -/
-def payableManaSources (g : Game) (p : PlayerId) (prop : ProposedSpell) :
-    Array (GameObject × Array ManaType) :=
-  (g.manaSources p).filter (fun (src, types) =>
-    !(prop.tapSource && prop.sourceId == some src.id) && !types.isEmpty)
-
-/-- Unique taps that produce enough mana to pay the locked-in cost. -/
-def uniquePayingTaps (g : Game) (p : PlayerId) (prop : ProposedSpell) :
-    Option (Array (ObjectId × ManaType)) :=
-  let pool := (g.player p).manaPool
-  let allowElf := g.proposedAllowsElfRestricted prop
-  if pool.canPay prop.cost allowElf then
-    some #[]
-  else
-    match uniquePayingSourceSet g pool prop.cost allowElf (payableManaSources g p prop) with
-    | none => none
-    | some subset =>
-      match assignTapTypes g pool prop.cost allowElf subset.toList with
-      | none => none
-      | some taps => some taps.toArray
-
-/-- Console `tap` line for one source. Multi-type sources name the color. -/
-def tapCommandFor (g : Game) (id : ObjectId) (m : ManaType) : String :=
-  match g.findObject? id with
-  | some o =>
-    if o.printed.manaAbilities.size <= 1 then s!"tap {id}"
-    else s!"tap {id} {m.letter}"
-  | none => s!"tap {id} {m.letter}"
-
-/-- `tap`/`pay` commands that pay the locked-in mana cost when that payment
-is unique. Does not reverse an unpaid spell or ability. -/
-def uniqueManaPaymentCommands (g : Game) : Option (List String) :=
+/-- True when the locked-in mana cost has exactly one legal payment. -/
+def hasUniqueManaPayment (g : Game) : Bool :=
   match g.pending, g.proposedSpell with
   | .activateManaAbilities p, some prop =>
-    if !g.canPayLife p prop.payLife then none
-    else if !g.sourceStillPayable prop then none
+    if !g.canPayLife p prop.payLife then false
+    else if !g.sourceStillPayable prop then false
     else if prop.needsSacrificeOther &&
         (g.sacrificeCreatureOrArtifactChoices p
           (prop.sourceId.getD prop.spellId)).isEmpty then
-      none
+      false
     else
-      match uniquePayingTaps g p prop with
-      | none => none
-      | some taps =>
-        some (taps.toList.map (fun (id, m) => tapCommandFor g id m) ++ ["pay"])
-  | _, _ => none
+      let pool := (g.player p).manaPool
+      let allowElf := g.proposedAllowsElfRestricted prop
+      let allowInst := g.proposedAllowsInstRestricted prop
+      pool.canPay prop.cost allowElf allowInst ||
+        (uniquePayingSourceSet g pool prop.cost allowElf allowInst
+          (g.manaSourcesForProposed p prop)).isSome
+  | _, _ => false
 
 /-- `sacrifice <id>` when exactly one permanent can pay that cost. -/
 def uniqueSacrificeCommand (g : Game) : Option String :=
@@ -3069,89 +3006,56 @@ def uniqueSacrificeCommand (g : Game) : Option String :=
     | none => none
   | _ => none
 
-/-- Console commands that pay the pending cost when that payment is unique. -/
-def uniqueCostPaymentCommands (g : Game) : Option (List String) :=
-  match uniqueManaPaymentCommands g with
-  | some cmds => some cmds
-  | none => (uniqueSacrificeCommand g).map (fun c => [c])
-
-/-- Apply each console command as the acting player. -/
-def applyInteractiveLines (g : Game) : List String → Except String Game
-  | [] => .ok g
-  | line :: rest =>
-    let parts := line.splitOn " "
-    match applyInteractiveAsActor g (parts.headD "") (parts.drop 1) with
-    | .error e => .error e
-    | .ok g' => applyInteractiveLines g' rest
-
 /-- Automatically pay a cost only after scripted input is exhausted and
 there is only one legal way to pay it. -/
 def shouldAutoPay (g : Game) (pending : List String) : Bool :=
-  pending.isEmpty && (uniqueCostPaymentCommands g).isSome
+  pending.isEmpty && (hasUniqueManaPayment g || (uniqueSacrificeCommand g).isSome)
+
+/-- Apply the unique payment via `autopay` or `sacrifice`, and the `--output`
+lines that record it. -/
+def autoPayStep? (g : Game) (pending : List String) :
+    Option (Except String (Game × Array String)) :=
+  if !shouldAutoPay g pending then none
+  else
+    match uniqueSacrificeCommand g with
+    | some line =>
+      let parts := line.splitOn " "
+      some (applyInteractiveAsActor g (parts.headD "") (parts.drop 1) |>.map
+        (fun g' => (g', #[line])))
+    | none =>
+      some (applyAutopayAsActor g [] |>.map (fun r => (r.game, r.commands)))
 
 #guard shouldAutoPay Tests.targetedBolt []
 #guard !shouldAutoPay Tests.targetedBolt ["pay"]
 #guard !shouldAutoPay Tests.started []
 #guard !shouldAutoPay Tests.proposedOgre []
 #guard !shouldAutoPay Tests.paidHunter []
-
-#guard
-  match uniqueCostPaymentCommands Tests.targetedBolt with
-  | some cmds =>
-    cmds == [s!"tap {(Tests.namedPermanent Tests.targetedBolt "Mountain").id}", "pay"] &&
-    match applyInteractiveLines Tests.targetedBolt cmds with
-    | .ok g' =>
-      g'.pending == .none &&
-      g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
-    | .error _ => false
-  | none => false
-
-#guard
-  match uniqueCostPaymentCommands Tests.tappedForBolt with
-  | some ["pay"] => true
-  | _ => false
-
+#guard shouldAutoPay Tests.tappedForBolt []
+#guard shouldAutoPay Tests.proposedHunter []
+#guard shouldAutoPay Tests.targetedClub []
+#guard shouldAutoPay Tests.proposedBauble []
 #guard
   let g := Tests.addUntappedLand Tests.targetedBolt Catalog.mountain
-  (uniqueCostPaymentCommands g).isNone
-
+  !shouldAutoPay g []
 #guard
   let g := Tests.addUntappedLand Tests.targetedBolt Catalog.forest
-  match uniqueCostPaymentCommands g with
-  | some cmds =>
-    cmds == [s!"tap {(Tests.namedPermanent g "Mountain").id}", "pay"]
-  | none => false
+  shouldAutoPay g []
+#guard shouldAutoPay Tests.paidClub []
 
+#guard (autoPayStep? Tests.targetedBolt ["pay"]).isNone
 #guard
-  match uniqueCostPaymentCommands Tests.proposedBauble with
-  | some cmds =>
-    cmds.length == 3 && cmds.getLast? == some "pay" &&
-    match applyInteractiveLines Tests.proposedBauble cmds with
-    | .ok g' =>
-      g'.pending == .none &&
-      g'.log.any (fun s => Tests.mentions s "activates Wayfarer's Bauble")
-    | .error _ => false
-  | none => false
-
+  match autoPayStep? Tests.targetedBolt [], applyAutopay Tests.targetedBolt ⟨0⟩ [] with
+  | some (.ok (g', cmds)), .ok r =>
+    cmds == r.commands && g'.pending == .none &&
+      cmds == #[tapCommand Tests.boltMountain.id (.colored .red), "pay"] &&
+      g'.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | _, _ => false
 #guard
-  match uniqueCostPaymentCommands Tests.proposedHunter with
-  | some ["pay"] => true
-  | _ => false
-
-#guard
-  match uniqueCostPaymentCommands Tests.targetedClub with
-  | some ["pay"] => true
-  | _ => false
-
-#guard
-  match uniqueCostPaymentCommands Tests.paidClub with
-  | some [s] =>
-    s == s!"sacrifice {(Tests.clubFodder Tests.paidClub).id}" &&
-    match applyInteractiveLines Tests.paidClub [s] with
-    | .ok g' =>
+  match autoPayStep? Tests.paidClub [] with
+  | some (.ok (g', cmds)) =>
+    cmds == #[s!"sacrifice {(Tests.clubFodder Tests.paidClub).id}"] &&
       g'.pending == .none &&
       g'.log.any (fun s => Tests.mentions s "casts Improvised Club")
-    | .error _ => false
   | _ => false
 
 /-- Automatically pass only after scripted input is exhausted and priority
@@ -3393,32 +3297,17 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
       continue
-    if shouldAutoPay g pending then
-      match uniqueCostPaymentCommands g with
-      | none => pure ()
-      | some cmds =>
-        let mut autoFailed := false
-        let mut autoPaid := false
+    if let some step := autoPayStep? g pending then
+      match step with
+      | .error e =>
+        let who := match g.actor with | some p => (g.player p).name | none => "Player"
+        IO.println s!"{who} could not automatically pay: {e}"
+      | .ok (g', cmds) =>
         for line in cmds do
-          if autoFailed then
-            pure ()
-          else
-            let parts := line.splitOn " "
-            match applyInteractiveAsActor g (parts.headD "") (parts.drop 1) with
-            | .error e =>
-              let who :=
-                match g.actor with
-                | some p => (g.player p).name
-                | none => "Player"
-              IO.println s!"{who} could not automatically pay: {e}"
-              autoFailed := true
-            | .ok g' =>
-              recordAcceptedCommand output sameFile false line
-              seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
-              g := g'
-              autoPaid := true
-        if autoPaid && !autoFailed then
-          continue
+          recordAcceptedCommand output sameFile false line
+        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        g := g'
+      continue
     if shouldAutoNoAttack g pending then
       let some p := g.actor | continue
       match g.apply p (.declareAttackers #[]) with

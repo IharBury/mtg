@@ -2459,6 +2459,19 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     | none => false
   | .activatedAbility => false
 
+/-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
+Sources reserved for `{T}`, or whose mana cannot be spent on this spell or
+ability, are omitted. -/
+def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Array (GameObject × Array ManaType) :=
+  let allowElf := g.proposedAllowsElfRestricted prop
+  let allowInst := g.proposedAllowsInstRestricted prop
+  (g.manaSources p).filter (fun (src, types) =>
+    !(prop.tapSource && prop.sourceId == some src.id) &&
+    !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
+    !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
+    !types.isEmpty)
+
 /-- A mana type among `types` that helps pay an unmet colored requirement. -/
 def preferredManaType (g : Game) (p : PlayerId) (types : Array ManaType)
     (cost : ManaCost) (allowElfRestricted : Bool) : Option ManaType :=
