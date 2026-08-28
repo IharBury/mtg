@@ -70,16 +70,47 @@ def stripAbilityWord (s : String) : String :=
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
 
-/-- Printed-name variants used in Oracle (`Gandalf, Spark Starter` → `Gandalf`). -/
+/-- Printed-name variants used in Oracle (`Gandalf, Spark Starter` → `Gandalf`).
+The first word is skipped when it is an article so `The Lonely Mountain`
+does not treat `the` as the card name. Name replacement uses `replaceWord`
+so `Ori` does not rewrite `storied`. -/
 def nameAliases (name : String) : List String :=
   let trimmed := name.trimAscii.copy
   let beforeComma := (trimmed.splitOn ",").headD trimmed |>.trimAscii.copy
   let first := (beforeComma.splitOn " ").headD beforeComma
-  uniqueStrings ([trimmed, beforeComma, first].filter (fun s => s.length > 2))
+  let skipFirst :=
+    first == "The" || first == "A" || first == "An" || first == "Of"
+  let aliases :=
+    if skipFirst then [trimmed, beforeComma] else [trimmed, beforeComma, first]
+  uniqueStrings (aliases.filter (fun s => s.length > 2))
 
 /-- Replace each `old` with `new` in order. -/
 def applyReplacements (s : String) (pairs : List (String × String)) : String :=
   pairs.foldl (fun acc p => acc.replace p.fst p.snd) s
+
+/-- Replace an isolated word. Non-letters count as boundaries so `Gollum`
+still matches in `Gollum can't`. -/
+def replaceWord (s old new : String) : String :=
+  if old.isEmpty then s
+  else
+    Id.run do
+      let chars := s.toList
+      let needle := old.toList
+      let n := needle.length
+      let mut acc : List Char := []
+      let mut i : Nat := 0
+      while i < chars.length do
+        let slice := chars.drop i |>.take n
+        let beforeOk := i == 0 || !(chars[i - 1]!.isAlphanum)
+        let afterOk :=
+          i + n >= chars.length || !(chars[i + n]!.isAlphanum)
+        if slice == needle && beforeOk && afterOk then
+          acc := acc ++ new.toList
+          i := i + n
+        else
+          acc := acc ++ [chars[i]!]
+          i := i + 1
+      String.ofList acc
 
 /-- Lowercase, drop reminders, and replace the card's name with `this`. -/
 def prepareLine (cardName : String) (s : String) : String :=
@@ -88,10 +119,10 @@ def prepareLine (cardName : String) (s : String) : String :=
   let s := stripAbilityWord s
   let s := (lowerAscii s).trimAscii.copy
   let aliases := nameAliases cardName |>.map lowerAscii
-  let namePairs :=
-    aliases.map (fun a => (s!"{a}'s", "this")) ++
-    aliases.map (fun a => (a, "this"))
-  let s := applyReplacements s namePairs
+  let s :=
+    aliases.foldl (fun acc a =>
+      let acc := acc.replace s!"{a}'s" "this"
+      replaceWord acc a "this") s
   applyReplacements s [
     ("this creature's", "this"),
     ("this permanent's", "this"),
@@ -110,10 +141,6 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this card", "this"),
     ("this spell", "this")
   ]
-
-/-- Replace an isolated word. -/
-def replaceWord (s old new : String) : String :=
-  ((" " ++ s ++ " ").replace s!" {old} " s!" {new} ").drop 1 |>.dropEnd 1 |>.copy
 
 /-- English number words that appear in Oracle (`two cards`, `three or more`). -/
 def replaceNumberWords (s : String) : String :=
@@ -154,7 +181,8 @@ def normalizePhrases (s : String) : String :=
     ("and only once each turn", "activate only once each turn"),
     ("activate only from the graveyard", ""),
     ("activate only from your hand", ""),
-    ("if you control a creature with power", "while you control a creature with power")
+    ("if you control a creature with power", "while you control a creature with power"),
+    ("other elf creatures you control", "other elves you control")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -239,6 +267,12 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
     | some t => s!"{t}cycling {ab.cost.mana}"
     | none =>
       let timing :=
+        (if ab.costReductionIfYouControlLegendary != 0 then
+          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
+         else "") ++
+        (if ab.costReductionPerEquipment != 0 then
+          s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
+         else "") ++
         (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
         (if ab.onlyDuringYourTurn && ab.onceEachTurn then
           " Activate only during your turn and only once each turn."
@@ -246,10 +280,7 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
           (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
         (if ab.onlyIfYouControlLegendary then
-          " Activate only if you control a legendary creature." else "") ++
-        (if ab.costReductionIfYouControlLegendary != 0 then
-          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
-         else "")
+          " Activate only if you control a legendary creature." else "")
       let body :=
         if ab.isModal then
           let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -277,6 +308,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionIfTargetAttackingNontoken != 0 then
     [s!"This spell costs \{{c.costReductionIfTargetAttackingNontoken}} less to cast if it targets an attacking nontoken creature."]
    else []) ++
+  (if c.costReductionEqualFlyingPower then
+    ["This spell costs {X} less to cast, where X is the total power of creatures you control with flying."]
+   else []) ++
   (if c.additionalCostSacrificeArtifactOrCreature then
     match c.additionalCostOrPayGeneric with
     | some n =>
@@ -300,9 +334,26 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.tapAddAnyColor then
     ["{T}: Add one mana of any color."]
    else []) ++
+  (if c.tapAddAnyColorForLegendary then
+    ["{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered."]
+   else []) ++
+  (if c.tapAddTwoAmong.size >= 2 then
+    let letters := c.tapAddTwoAmong.toList.map (fun t => s!"\{{t.letter}}")
+    let joined :=
+      match letters with
+      | [a, b] => s!"{a} and/or {b}"
+      | xs =>
+        let last := xs.getLast!
+        let init := String.intercalate ", " xs.dropLast
+        s!"{init}, and/or {last}"
+    [s!"\{T}: Add two mana in any combination of {joined}."]
+   else []) ++
   (if c.tapSacrificeAddAnyColor then
     ["{T}, Sacrifice this artifact: Add one mana of any color."]
    else []) ++
+  (match c.crew with
+   | some n => [s!"Crew {n}"]
+   | none => []) ++
   (if c.cantBeCountered then
     ["This spell can't be countered."]
    else []) ++
@@ -320,6 +371,15 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
      else "This land enters tapped."]
    else []) ++
+  (if c.entersTappedUnlessLegendary then
+    [if c.hasSupertype .legendary then
+      s!"{c.name} enters tapped unless you control a legendary creature."
+     else
+      "This land enters tapped unless you control a legendary creature."]
+   else []) ++
+  (if c.entersTappedUnlessEquipment then
+    ["This land enters tapped unless you control an Equipment."]
+   else []) ++
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
    else []) ++
@@ -327,7 +387,14 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.activatedAbilities.toList.map activatedOracleLine ++
   (if !c.spellModes.isEmpty then
-    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map SpellEffect.toNotation)}"]
+    let modes := String.intercalate "; " (c.spellModes.toList.map (spellEffectLine c.name))
+    [match c.chooseTwoIfYouControlSubtype, c.chooseOneOrBoth with
+     | some t, _ =>
+       s!"Choose one. If you control a {t} as you cast this spell, you may choose two instead. {modes}"
+     | none, true =>
+       s!"Choose one or both — {modes}"
+     | none, false =>
+       s!"Choose one — {modes}"]
    else
     match c.spellEffect with
     | some (.tapScryDraw scryN drawN) =>

@@ -11125,6 +11125,44 @@ open Catalog.HobbitSet
 #guard trollNegotiations.matchesOracleText
 #guard dwarvenMattock.matchesOracleText
 #guard mithrilCoat.matchesOracleText
+#guard greatUglyLookingGoblin.matchesOracleText
+#guard theArkenstone.matchesOracleText
+#guard bolgsCompany.matchesOracleText
+#guard noriTellerOfTales.matchesOracleText
+#guard theLordOfTheEagles.matchesOracleText
+#guard throrsMap.matchesOracleText
+#guard rivendell.matchesOracleText
+#guard delightedHalfling.matchesOracleText
+#guard relicOfSauron.matchesOracleText
+#guard longLostLances.matchesOracleText
+#guard theBlackArrow.matchesOracleText
+#guard smaugTheMagnificent.matchesOracleText
+#guard theQueenOfDale.matchesOracleText
+#guard lothoCorruptShirriff.matchesOracleText
+#guard oriKeeperOfSongs.matchesOracleText
+#guard oinTheBrave.matchesOracleText
+#guard bomburGentleDreamer.matchesOracleText
+#guard filiThePathfinder.matchesOracleText
+#guard thorinOakenshield.matchesOracleText
+#guard dainLordOfTheIronHills.matchesOracleText
+#guard oldThrush.matchesOracleText
+#guard mostDecrepitOldBird.matchesOracleText
+#guard lakeTownMariners.matchesOracleText
+#guard flameOfAnor.matchesOracleText
+#guard lastMarchOfTheEnts.matchesOracleText
+#guard raiseThePalisade.matchesOracleText
+#guard dragonsDesire.matchesOracleText
+#guard pineconeStrike.matchesOracleText
+#guard oriPlateStacker.matchesOracleText
+#guard dainOfTheAncientHalls.matchesOracleText
+#guard treasureVault.matchesOracleText
+#guard theLonelyMountain.matchesOracleText
+#guard thranduilSindarinLiege.matchesOracleText
+#guard aragornAndArwenWed.matchesOracleText
+#guard gloinTheMighty.matchesOracleText
+#guard ironHillsStalwart.matchesOracleText
+#guard oldFatSpider.matchesOracleText
+#guard greatGildedBoat.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3

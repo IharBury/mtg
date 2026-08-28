@@ -45,6 +45,14 @@ def card (name : String) (types : Array CardType)
     (ward : Option Nat := none)
     (flashback : Option ManaCost := none)
     (colorIndicator : Option ColorSet := none)
+    (entersTappedUnlessLegendary : Bool := false)
+    (entersTappedUnlessEquipment : Bool := false)
+    (tapAddAnyColorForLegendary : Bool := false)
+    (costReductionEqualFlyingPower : Bool := false)
+    (crew : Option Nat := none)
+    (tapAddTwoAmong : Array ManaType := #[])
+    (chooseOneOrBoth : Bool := false)
+    (chooseTwoIfYouControlSubtype : Option String := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -57,6 +65,9 @@ def card (name : String) (types : Array CardType)
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
   tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
   flashIfYouControlSubtype, ward, flashback, colorIndicator,
+  entersTappedUnlessLegendary, entersTappedUnlessEquipment,
+  tapAddAnyColorForLegendary, costReductionEqualFlyingPower, crew,
+  tapAddTwoAmong, chooseOneOrBoth, chooseTwoIfYouControlSubtype,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -90,7 +101,9 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (isToken : Bool := false)
     (cantBeCountered : Bool := false)
     (flashIfYouControlSubtype : Option String := none)
-    (ward : Option Nat := none) : CardDef :=
+    (ward : Option Nat := none)
+    (tapAddAnyColorForLegendary : Bool := false)
+    (costReductionEqualFlyingPower : Bool := false) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -104,6 +117,8 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (cantBeCountered := cantBeCountered)
     (flashIfYouControlSubtype := flashIfYouControlSubtype)
     (ward := ward)
+    (tapAddAnyColorForLegendary := tapAddAnyColorForLegendary)
+    (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -119,7 +134,8 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (tapAddAnyColorForInstantOrSorcery : Bool := false)
     (adventure : Option AdventureFace := none)
     (costReductionIfCreatureDied : Nat := 0)
-    (ward : Option Nat := none) : CardDef :=
+    (ward : Option Nat := none)
+    (costReductionEqualFlyingPower : Bool := false) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords) (tapAddMana := tapAddMana)
     (supertypes := #[.legendary] ++ supertypes)
@@ -131,6 +147,7 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
     (ward := ward)
+    (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
@@ -143,7 +160,10 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
     (activatedAbilities : Array ActivatedAbility := #[])
-    (flashback : Option ManaCost := none) : CardDef :=
+    (flashback : Option ManaCost := none)
+    (cantBeCountered : Bool := false)
+    (chooseOneOrBoth : Bool := false)
+    (chooseTwoIfYouControlSubtype : Option String := none) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -155,6 +175,9 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionIfTargetAttackingNontoken := costReductionIfTargetAttackingNontoken)
     (activatedAbilities := activatedAbilities)
     (flashback := flashback)
+    (cantBeCountered := cantBeCountered)
+    (chooseOneOrBoth := chooseOneOrBoth)
+    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -167,12 +190,18 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
     (activatedAbilities : Array ActivatedAbility := #[])
-    (flashback : Option ManaCost := none) : CardDef :=
+    (flashback : Option ManaCost := none)
+    (cantBeCountered : Bool := false)
+    (chooseOneOrBoth : Bool := false)
+    (chooseTwoIfYouControlSubtype : Option String := none) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
     costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
     activatedAbilities (flashback := flashback)
+    (cantBeCountered := cantBeCountered)
+    (chooseOneOrBoth := chooseOneOrBoth)
+    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -185,12 +214,18 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
     (activatedAbilities : Array ActivatedAbility := #[])
-    (flashback : Option ManaCost := none) : CardDef :=
+    (flashback : Option ManaCost := none)
+    (cantBeCountered : Bool := false)
+    (chooseOneOrBoth : Bool := false)
+    (chooseTwoIfYouControlSubtype : Option String := none) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
     costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
     activatedAbilities (flashback := flashback)
+    (cantBeCountered := cantBeCountered)
+    (chooseOneOrBoth := chooseOneOrBoth)
+    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -231,8 +266,13 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
     (keywords : Keywords := Keywords.none)
-    (supertypes : Array Supertype := #[]) : CardDef :=
+    (supertypes : Array Supertype := #[])
+    (crew : Option Nat := none)
+    (tapAddTwoAmong : Array ManaType := #[])
+    (power : Option Int := none)
+    (toughness : Option Int := none) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
+    (power := power) (toughness := toughness)
     (keywords := keywords) (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
@@ -240,6 +280,8 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (tapAddAnyColor := tapAddAnyColor)
     (tapSacrificeAddAnyColor := tapSacrificeAddAnyColor)
     (isToken := isToken)
+    (crew := crew)
+    (tapAddTwoAmong := tapAddTwoAmong)
 
 /-- A nonbasic land. -/
 def land (name : String) (oracleText : String)
@@ -250,12 +292,16 @@ def land (name : String) (oracleText : String)
     (supertypes : Array Supertype := #[])
     (entersTapped : Bool := false)
     (triggeredAbilities : Array TriggeredAbility := #[])
-    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[])
+    (entersTappedUnlessLegendary : Bool := false)
+    (entersTappedUnlessEquipment : Bool := false) : CardDef :=
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
     (supertypes := supertypes) (tapAddMana := tapAddMana)
     (tapAddOneOf := tapAddOneOf) (activatedAbilities := activatedAbilities)
     (entersTapped := entersTapped) (triggeredAbilities := triggeredAbilities)
     (staticAbilities := staticAbilities)
+    (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
+    (entersTappedUnlessEquipment := entersTappedUnlessEquipment)
 
 /-- A legendary land. -/
 def legendaryLand (name : String) (oracleText : String)
@@ -263,9 +309,11 @@ def legendaryLand (name : String) (oracleText : String)
     (tapAddOneOf : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
-    (entersTapped : Bool := false) : CardDef :=
+    (entersTapped : Bool := false)
+    (entersTappedUnlessLegendary : Bool := false) : CardDef :=
   land name oracleText tapAddMana tapAddOneOf activatedAbilities subtypes
     (supertypes := #[.legendary]) (entersTapped := entersTapped)
+    (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
 
 /-- A Treasure token (CR 111 / 701.42). -/
 def treasureToken : CardDef :=
@@ -324,7 +372,10 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlLegendary : Bool := false)
     (discardSource : Bool := false)
     (costReductionIfYouControlLegendary : Nat := 0)
-    (equipSubtype : Option String := none) :
+    (equipSubtype : Option String := none)
+    (sacrificeAnotherSubtype : Option String := none)
+    (discardACard : Bool := false)
+    (costReductionPerEquipment : Nat := 0) :
     ActivatedAbility := {
   cost := {
     mana := mana
@@ -333,10 +384,12 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
     payLife := payLife
     discardSource := discardSource
+    sacrificeAnotherSubtype := sacrificeAnotherSubtype
+    discardACard := discardACard
   }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
-  costReductionIfYouControlLegendary, equipSubtype
+  costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
