@@ -633,15 +633,15 @@ def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId �
 def playerTargets (ps : Array Player) : Array Target :=
   ps.map (fun pl => Target.player pl.id)
 
-/-- Living players in turn order from `start` who satisfy `include`. -/
-def playersInOrderFrom (g : Game) (start : PlayerId) (include : Player → Bool) :
+/-- Living players in turn order from `start` who satisfy `eligible`. -/
+def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
     Array PlayerId :=
   let n := g.players.size
   Id.run do
     let mut acc : Array PlayerId := #[]
     for k in [0:n] do
       let q : PlayerId := ⟨(start.idx + k) % n⟩
-      if include (g.player q) then
+      if eligible (g.player q) then
         acc := acc.push q
     return acc
 
@@ -943,10 +943,13 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (attachedTo : Option ObjectId := none) : Game × ObjectId :=
   let (g, newId) := g.move id .battlefield (some controller)
   let o := g.object! newId
-  let g := g.setObject { o with
-    status := { o.status with tapped := tapped, summoningSick := summoningSick }
-    attachedTo := attachedTo.getD o.attachedTo }
-  (g, newId)
+  let o := { o with
+    status := { o.status with tapped := tapped, summoningSick := summoningSick } }
+  let o :=
+    match attachedTo with
+    | some host => { o with attachedTo := some host }
+    | none => o
+  (g.setObject o, newId)
 
 /-- If 0 or 1 living players remain, set the game result (CR 104). -/
 def decideGameIfFinished (g : Game) : Option Game :=
@@ -2652,7 +2655,7 @@ def creaturesControlledBy (g : Game) (p : PlayerId) : Array GameObject :=
   (g.permanentsOf p).filter (·.isCreature)
 
 /-- First player in `players` who satisfies `pred`, plus those after them. -/
-def nextActorWhere (g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
+def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
     Option (PlayerId × Array PlayerId) :=
   Id.run do
     for i in [0:players.size] do
