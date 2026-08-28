@@ -115,8 +115,8 @@ def stackFaceExtras (o : GameObject) : String :=
   if s.isEmpty then "" else s!" {s}"
 
 /-- One object on the stack, including announced targets (CR 115 / 601.2c).
-`withId` prefixes the object id, matching zone listings. -/
-def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := false) : String :=
+`withId` prefixes the object id, matching zone listings and `state`. -/
+def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String :=
   match g.findObject? e.objectId with
   | none => if withId then s!"{e.objectId} (missing)" else "(missing)"
   | some o =>
@@ -364,7 +364,7 @@ def playerBlock (g : Game) (pl : Player) (viewer : Option PlayerId := none) : St
 def stackBlock (g : Game) : String :=
   if g.stack.isEmpty then "Stack: (empty)"
   else
-    let lines := g.stack.toList.reverse.map (fun e => s!"  {stackObjectLine g e}")
+    let lines := g.stack.toList.reverse.map (fun e => s!"  {stackObjectLine g e true}")
     "Stack (top first):\n" ++ String.intercalate "\n" lines
 
 /-- Locked-in total cost of a proposed spell or ability (CR 601.2f / 602.2b). -/
