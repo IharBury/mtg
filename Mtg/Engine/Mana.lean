@@ -177,7 +177,7 @@ instance : BEq ManaCost where
 #guard (ofGenericAndColor 4 .black).reduceGeneric 3 == ofGenericAndColor 1 .black
 #guard (ofGenericAndColor 3 .black).reduceGeneric 3 == ofColor .black
 #guard (ofGenericAndColor 1 .black).reduceGeneric 3 == ofColor .black
-#guard afterReduction (ofGeneric 2) (ofGeneric 2).reduceGeneric 2 == zero
+#guard afterReduction (ofGeneric 2) ((ofGeneric 2).reduceGeneric 2) == zero
 #guard afterReduction empty empty == empty
 #guard (ofColor .black).addGeneric 4 == ofGenericAndColor 4 .black
 #guard (ofGenericAndColor 1 .black).addGeneric 4 == ofGenericAndColor 5 .black
