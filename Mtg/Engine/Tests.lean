@@ -4207,6 +4207,12 @@ def bladeEquipped : Game := passBoth paidBladeEquip
   | some (.cast _) => true
   | _ => true
 
+def dunedainEquipHuman : ActivatedAbility :=
+  dunedainBlade.activatedAbilities[0]!
+
+def dunedainEquip : ActivatedAbility :=
+  dunedainBlade.activatedAbilities[1]!
+
 /-- Dúnedain Blade with a Human, a Bear, and {3} so either Equip can be paid. -/
 def dunedainReady : Game :=
   let g := addPermanent afterDraw dunedainBlade ⟨0⟩ ⟨0⟩
@@ -4217,19 +4223,19 @@ def dunedainReady : Game :=
 
 #guard dunedainBlade.activatedAbilities.size == 2
 #guard dunedainReady.canActivate ⟨0⟩
-  (namedPermanent dunedainReady "Dúnedain Blade")
-  dunedainBlade.activatedAbilities[0]!
+  (namedPermanent dunedainReady "Dúnedain Blade") dunedainEquipHuman
 #guard dunedainReady.canActivate ⟨0⟩
-  (namedPermanent dunedainReady "Dúnedain Blade")
-  dunedainBlade.activatedAbilities[1]!
+  (namedPermanent dunedainReady "Dúnedain Blade") dunedainEquip
 
 /-- Equip Human cannot target a non-Human. -/
-#guard
+def dunedainHumanRejectsBear : Bool :=
   let g := mustApply dunedainReady ⟨0⟩
     (.activate (namedPermanent dunedainReady "Dúnedain Blade").id 0)
   match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
+
+#guard dunedainHumanRejectsBear
 
 /-- Equip {3} can attach to a non-Human. -/
 def dunedainEquippedBear : Game :=
@@ -4264,17 +4270,26 @@ def dunedainBearOnly : Game :=
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withWhiteMana g ⟨0⟩ 3
 
-#guard !dunedainBearOnly.canActivate ⟨0⟩
-  (namedPermanent dunedainBearOnly "Dúnedain Blade")
-  dunedainBlade.activatedAbilities[0]!
+#guard !(dunedainBearOnly.canActivate ⟨0⟩
+  (namedPermanent dunedainBearOnly "Dúnedain Blade") dunedainEquipHuman)
 #guard dunedainBearOnly.canActivate ⟨0⟩
-  (namedPermanent dunedainBearOnly "Dúnedain Blade")
-  dunedainBlade.activatedAbilities[1]!
-#guard
+  (namedPermanent dunedainBearOnly "Dúnedain Blade") dunedainEquip
+
+def dunedainHumanNeedsTarget : Bool :=
+  match dunedainBearOnly.activateAbility ⟨0⟩
+      (namedPermanent dunedainBearOnly "Dúnedain Blade").id 0 with
+  | .error msg => mentions msg "requires a target"
+  | .ok _ => false
+
+#guard dunedainHumanNeedsTarget
+
+def dunedainAgentChoosesEquip : Bool :=
   match Agent.choose dunedainBearOnly ⟨0⟩ with
   | some (.activate id 1) =>
     (dunedainBearOnly.object! id).name == "Dúnedain Blade"
   | _ => false
+
+#guard dunedainAgentChoosesEquip
 
 /-- A Human and only {1}: the heuristic activates Equip Human. -/
 def dunedainHumanCheap : Game :=
@@ -4283,11 +4298,13 @@ def dunedainHumanCheap : Game :=
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withWhiteMana g ⟨0⟩ 1
 
-#guard
+def dunedainAgentChoosesEquipHuman : Bool :=
   match Agent.choose dunedainHumanCheap ⟨0⟩ with
   | some (.activate id 0) =>
     (dunedainHumanCheap.object! id).name == "Dúnedain Blade"
   | _ => false
+
+#guard dunedainAgentChoosesEquipHuman
 
 /-- The +2/+1 is a continuous effect, so it does not wear off in cleanup. -/
 def afterBladeCleanup : Game := passBoth (skipTo bladeEquipped .end 80)
