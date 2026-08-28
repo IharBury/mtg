@@ -142,8 +142,34 @@ def objectFaceExtras (g : Game) (o : GameObject) : String :=
   let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
   if s.isEmpty then "" else s!" {s}"
 
+/-- Permanent that linked-exiled `o` until it leaves the battlefield (CR 610.3). -/
+def linkedExileSource? (g : Game) (o : GameObject) : Option GameObject :=
+  g.battlefield.find? (fun src => src.linkedExile.contains o.id)
+
+/-- Cards `o` has exiled until it leaves that are still in exile (CR 610.3). -/
+def linkedExiledCards (g : Game) (o : GameObject) : Array GameObject :=
+  o.linkedExile.filterMap (fun id =>
+    match g.findObject? id with
+    | some e => if e.zone == .exile then some e else none
+    | none => none)
+
+/-- Battlefield marker for cards this permanent has linked-exiled (CR 610.3). -/
+def linkedExileClause (g : Game) (o : GameObject) : String :=
+  let cards := linkedExiledCards g o
+  if cards.isEmpty then ""
+  else
+    let refs := cards.toList.map (fun e => objectRef g e.id)
+    s!" *exiling {String.intercalate ", " refs}*"
+
+/-- Exile marker naming the permanent that must leave for `o` to return (CR 610.3). -/
+def exileUntilLeavesClause (g : Game) (o : GameObject) : String :=
+  match linkedExileSource? g o with
+  | some src => s!" *exiled until {objectRef g src.id} leaves the battlefield*"
+  | none => ""
+
 /-- Battlefield line for one permanent: id, name, current type line (CR 205.1a),
-P/T when it is a creature, then keywords, control, and status. -/
+P/T when it is a creature, then keywords, control, status, and cards it has
+exiled until it leaves (CR 610.3). -/
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
@@ -168,13 +194,14 @@ def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := 
         s!" *equipping {objectRef g hostId}*"
       else
         s!" *enchanting {objectRef g hostId}*"
+  let linked := linkedExileClause g o
   let dmg :=
     if o.status.damage > 0 then s!" dmg:{o.status.damage}" else ""
   let exileIfDies :=
     if o.status.untilEotExileIfDies then " *exile if dies*" else ""
   let counters :=
     if o.status.plusOnePlusOne > 0 then s!" +1/+1×{o.status.plusOnePlusOne}" else ""
-  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{dmg}{exileIfDies}"
+  s!"{o.id} {o.name}{types}{pt}{counters}{objectFaceExtras g o}{controlClause g o group}{tap}{sick}{atk}{blk}{ench}{linked}{dmg}{exileIfDies}"
 
 /-- Printed face of a card in hand, graveyard, or exile: object id plus Oracle
 summary (mana cost, type line, P/T, keywords and abilities). Lands omit a
@@ -201,10 +228,10 @@ def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   | some perm => s!" (may be played by {g.player perm.player |>.name})"
   | none => ""
 
-/-- One card in exile: printed face (mana cost, type line, P/T) plus a granted
-play permission, if any. -/
+/-- One card in exile: printed face (mana cost, type line, P/T), a granted play
+permission if any, and a linked-exile return condition (CR 610.3) if any. -/
 def exileLine (g : Game) (o : GameObject) : String :=
-  s!"{printedCardLine o}{exilePlayPermissionClause g o}"
+  s!"{printedCardLine o}{exilePlayPermissionClause g o}{exileUntilLeavesClause g o}"
 
 /-- Whether `viewer` may look at card faces in `z` (CR 400.2, 401.2, 402.2).
 `none` is omniscient: public zones and hands are shown, but libraries stay
