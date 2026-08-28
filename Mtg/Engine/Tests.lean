@@ -4236,6 +4236,86 @@ def bladeEquipped : Game := passBoth paidBladeEquip
   | some (.cast _) => true
   | _ => true
 
+/-- Bofur (a Dwarf) and unattached Equipment; Vow to Erebor offers the attach. -/
+def vowMayAttach : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+    #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
+
+#guard
+  match vowMayAttach.pending with
+  | .mayAttachEquipment ⟨0⟩ id =>
+    id == (namedPermanent vowMayAttach "Bofur, Reliable Guardian").id
+  | _ => false
+#guard vowMayAttach.actor == some ⟨0⟩
+#guard !vowMayAttach.hasPriority ⟨0⟩
+#guard vowMayAttach.log.any (fun s => mentions s "may attach an Equipment to Bofur")
+#guard vowMayAttach.power (namedPermanent vowMayAttach "Bofur, Reliable Guardian") == 3
+#guard (namedPermanent vowMayAttach "Ragged Short Spear").attachedTo.isNone
+
+/-- The heuristic attaches an Equipment it controls that is not already on the host. -/
+#guard
+  match Agent.choose vowMayAttach ⟨0⟩ with
+  | some (.choosePermanents ids) =>
+    ids == #[(namedPermanent vowMayAttach "Ragged Short Spear").id]
+  | _ => false
+
+def vowAttached : Game :=
+  mustApply vowMayAttach ⟨0⟩
+    (.choosePermanents #[(namedPermanent vowMayAttach "Ragged Short Spear").id])
+
+#guard (namedPermanent vowAttached "Ragged Short Spear").attachedTo ==
+  some (namedPermanent vowAttached "Bofur, Reliable Guardian").id
+#guard vowAttached.power (namedPermanent vowAttached "Bofur, Reliable Guardian") == 5
+#guard vowAttached.pending == .none
+#guard vowAttached.hasPriority ⟨0⟩
+#guard vowAttached.log.any (fun s => mentions s "attaches to Bofur")
+
+#guard
+  match vowMayAttach.apply ⟨1⟩
+      (.choosePermanents #[(namedPermanent vowMayAttach "Ragged Short Spear").id]) with
+  | .error msg => mentions msg "Only Chandra may attach Equipment"
+  | .ok _ => false
+
+#guard
+  match vowMayAttach.apply ⟨0⟩
+      (.choosePermanents #[(namedPermanent vowMayAttach "Bofur, Reliable Guardian").id]) with
+  | .error msg => mentions msg "is not an Equipment you control"
+  | .ok _ => false
+
+def vowDeclined : Game := mustApply vowMayAttach ⟨0⟩ .decline
+
+#guard vowDeclined.pending == .none
+#guard (namedPermanent vowDeclined "Ragged Short Spear").attachedTo.isNone
+#guard vowDeclined.log.any (fun s => mentions s "declines to attach Equipment")
+
+/-- A non-Dwarf is pumped; the spell does not ask to attach Equipment. -/
+def vowOnBears : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+#guard vowOnBears.pending == .none
+#guard vowOnBears.power (namedPermanent vowOnBears "Grizzly Bears") == 4
+#guard (namedPermanent vowOnBears "Ragged Short Spear").attachedTo.isNone
+
+/-- No Equipment: the player is still asked, and the heuristic declines. -/
+def vowMayAttachNoGear : Game :=
+  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+    #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
+
+#guard
+  match vowMayAttachNoGear.pending with
+  | .mayAttachEquipment ⟨0⟩ _ => true
+  | _ => false
+#guard
+  match Agent.choose vowMayAttachNoGear ⟨0⟩ with
+  | some .decline => true
+  | _ => false
+
 def dunedainEquipHuman : ActivatedAbility :=
   dunedainBlade.activatedAbilities[0]!
 
