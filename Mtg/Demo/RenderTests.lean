@@ -96,7 +96,7 @@ def mountainLine (g : Game) : String :=
   objectLine g (lastPermanent g)
 
 #guard mountainLine withMountain ==
-  s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Chandra)"
+  s!"{(lastPermanent withMountain).id} Mountain {(lastPermanent withMountain).typeLine} (\{T}: Add \{R}.) (owned by Chandra, controlled by Chandra)"
 #guard mentions (mountainLine withMountain) "Land"
 #guard mentions (mountainLine withMountain) "{T}: Add {R}"
 -- Hands print the card summary; lands have no mana cost, so not `{0}`.
@@ -240,7 +240,7 @@ def mountainLine (g : Game) : String :=
 #guard !mentions (stackBlock guideEntered) "(summoning sickness)"
 
 #guard mountainLine stolenMountain ==
-  s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} \{T}: Add \{R}. (owned by Chandra, controlled by Nissa)"
+  s!"{(lastPermanent stolenMountain).id} Mountain {(lastPermanent stolenMountain).typeLine} (\{T}: Add \{R}.) (owned by Chandra, controlled by Nissa)"
 -- Grouped under Nissa: owner differs, so it is printed; controller matches.
 -- The shared battlefield is not listed under either player block.
 #guard !mentions (playerBlock stolenMountain (stolenMountain.player ⟨0⟩)) "Battlefield"
