@@ -700,6 +700,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "defending player").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
+#guard ((helpInteractive false).splitOn "CR 103.5c").length > 1
 #guard ((helpInteractive false).splitOn "keep <id>").length > 1
 #guard ((helpInteractive false).splitOn "CR 704.5j").length > 1
 #guard ((helpInteractive false).splitOn "stack <id>").length > 1
