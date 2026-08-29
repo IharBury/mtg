@@ -3966,4 +3966,225 @@ def chorusStillPaysOk : Bool :=
 
 #guard chorusStillPaysOk
 
+/-!
+## 180, 190 — token doubling applies to every token
+-/
+
+def tokenDoublingAllTokensOk : Bool :=
+  bardKingOfDale.tokenDoubling &&
+    (ruling 180).comment.contains "you'll do that for all the tokens" &&
+    (ruling 190).comment.contains "apply those abilities individually"
+
+#guard tokenDoublingAllTokensOk
+
+/-!
+## 193 — draw replacement order is the drawing player's choice
+-/
+
+def drawReplacementOrderOk : Bool :=
+  bardKingOfDale.drawTwoExceptFirstDrawStep &&
+    (ruling 193).comment.contains "the player drawing the card chooses the order"
+
+#guard drawReplacementOrderOk
+
+/-!
+## 241–244 — blocked and attacking stay that way
+-/
+
+def blockedStaysBlockedOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bear (fun s => { s with blocked := true, attacking := true })
+  let g := g.pumpPermanent (namedPermanent g "Gray Ogre") 2 0
+  (namedPermanent g "Grizzly Bears").status.blocked &&
+    (namedPermanent g "Grizzly Bears").status.attacking &&
+    (ruling 241).comment.contains "won't cause him to become unblocked" &&
+    (ruling 242).comment.contains "remain an attacking creature" &&
+    (ruling 243).comment.contains "won't change or undo that block" &&
+    (ruling 244).comment.contains "won't cause that creature to become unblocked"
+
+#guard blockedStaysBlockedOk
+
+/-!
+## 246, 247, 249, 299 — announced costs lock in
+-/
+
+def announcedCostLocksInOk : Bool :=
+  cavernHoardDragon.costReductionEqualOppArtifacts &&
+    theLordOfTheEagles.costReductionEqualFlyingPower &&
+    (ruling 246).comment.contains "cost is locked in" &&
+    (ruling 247).comment.contains "cost is locked in" &&
+    (ruling 249).comment.contains "no player may take actions until the spell has been paid" &&
+    (ruling 299).comment.contains "locked in before you pay"
+
+#guard announcedCostLocksInOk
+
+/-!
+## 250 — Flame of Anor modes stay chosen
+-/
+
+def flameModesStayOk : Bool :=
+  flameOfAnor.chooseTwoIfYouControlSubtype == some "Wizard" &&
+    (ruling 250).comment.contains "will still have two modes chosen"
+
+#guard flameModesStayOk
+
+/-!
+## 252 — Last Light searches only a Dragon permanent card
+-/
+
+def lastLightDragonOnlyOk : Bool :=
+  lastLightOfDurinSDay.name == "Last Light of Durin's Day" &&
+    (ruling 252).comment.contains "Only a Dragon permanent card"
+
+#guard lastLightDragonOnlyOk
+
+/-!
+## 263 — Settle the Wreckage targets the player
+-/
+
+def settleTargetsPlayerOk : Bool :=
+  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
+    SpellEffect.targetKind .exileAttackersSearchBasics == .player &&
+    (ruling 263).comment.contains "targets only the player"
+
+#guard settleTargetsPlayerOk
+
+/-!
+## 264, 266 — mana types; snow is not a type
+-/
+
+def sixManaTypesOk : Bool :=
+  (Color.all.length + 1) == 6 &&
+    (ruling 264).comment.contains "white, blue, black, red, green, and co" &&
+    (ruling 266).comment.contains "Snow mana is not a type of mana"
+
+#guard sixManaTypesOk
+
+/-!
+## 270, 324 — Olog-hai Crusher restriction is checked when blocking
+-/
+
+def ologHaiBlockRestrictionOk : Bool :=
+  ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]] &&
+    (ruling 270).comment.contains "doesn't have to block" &&
+    (ruling 324).comment.contains "matters only at the time you declare blockers"
+
+#guard ologHaiBlockRestrictionOk
+
+/-!
+## 273 — Mirkwood Meditator overwrites earlier set-P/T
+-/
+
+def meditatorOverwritesSetPTOk : Bool :=
+  let g := addPermanent afterDraw mirkwoodMeditator ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Mirkwood Meditator"
+  let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (1, 1) })
+  let o := namedPermanent g "Mirkwood Meditator"
+  let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (4, 2) })
+  g.power (namedPermanent g "Mirkwood Meditator") == 4 &&
+    g.toughness (namedPermanent g "Mirkwood Meditator") == 2 &&
+    (ruling 273).comment.contains "overwrites any previous effects"
+
+#guard meditatorOverwritesSetPTOk
+
+/-!
+## 287, 303, 304 — type-changing effects last
+-/
+
+def typeChangeLastsOk : Bool :=
+  beornsHospitality.activatedAbilities[0]!.effect ==
+      .becomeBearCreatureWithLandsPT &&
+    (ruling 287).comment.contains "lasts indefinitely" &&
+    (ruling 303).comment.contains "don't wear off during the cleanup step" &&
+    (ruling 304).comment.contains "lasts indefinitely"
+
+#guard typeChangeLastsOk
+
+/-!
+## 307, 350 — choose an existing creature type
+-/
+
+def chooseExistingCreatureTypeOk : Bool :=
+  raiseThePalisade.spellEffect == some .chooseTypeReturnOthers &&
+    (ruling 307).comment.contains "existing creature type" &&
+    (ruling 350).comment.contains "existing creature type"
+
+#guard chooseExistingCreatureTypeOk
+
+/-!
+## 309 — Fireleaper uses last-known power
+-/
+
+def fireleaperLastKnownOk : Bool :=
+  goblinFireleaper.triggeredAbilities ==
+      #[.onDiesDealDamageEqualToPowerToOppCreature] &&
+    (ruling 309).comment.contains "last existed on the battlefield"
+
+#guard fireleaperLastKnownOk
+
+/-!
+## 310 — cost reduction applies to generic mana
+-/
+
+def genericCostReductionOk : Bool :=
+  radagastOfRhosgobel.firstCreatureCostsLess == 2 &&
+    (ruling 310).comment.contains "start with the mana cost or alternative cost"
+
+#guard genericCostReductionOk
+
+/-!
+## 316 — Dáin counts Dwarves on resolution
+-/
+
+def dainCountsOnResolveOk : Bool :=
+  dainOfTheAncientHalls.triggeredAbilities ==
+      #[.onAttackDamageEqualSubtypeToEachOpponent "Dwarf"] &&
+    (ruling 316).comment.contains "as Dáin's last ability resolves"
+
+#guard dainCountsOnResolveOk
+
+/-!
+## 329 — Woodland Weavemaster tap is a mana ability
+-/
+
+def weavemasterManaAbilityOk : Bool :=
+  woodlandWeavemaster.tapAddAnyColorEqualToPower &&
+    (ruling 329).comment.contains "mana ability"
+
+#guard weavemasterManaAbilityOk
+
+/-!
+## 344 — Gollum the Abandoned optional exile target
+-/
+
+def gollumAbandonedOptionalTargetOk : Bool :=
+  gollumTheAbandoned.triggeredAbilities ==
+      #[.onEnterExileOppGyCardOppsLoseLife 2] &&
+    (ruling 344).comment.contains "don't have to choose a target"
+
+#guard gollumAbandonedOptionalTargetOk
+
+/-!
+## 347 — cascade exiles face up
+-/
+
+def cascadeFaceUpOk : Bool :=
+  callForthTheTempest.cascade == 2 &&
+    (ruling 347).comment.contains "exile the cards face up"
+
+#guard cascadeFaceUpOk
+
+/-!
+## 358 — Ori gains life only for destroyed permanents
+-/
+
+def oriOnlyDestroyedOk : Bool :=
+  oriPlateStacker.triggeredAbilities ==
+      #[.onEnterDestroyOppArtifactsEnchantmentsGainLife] &&
+    (ruling 358).comment.contains "isn't actually destroyed"
+
+#guard oriOnlyDestroyedOk
+
 end Mtg.Engine.RulingTests
