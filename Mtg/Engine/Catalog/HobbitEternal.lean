@@ -563,7 +563,7 @@ def andurilFlameOfTheWest : CardDef :=
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (staticAbilities := #[.equippedCreatureGets 3 1])
-    (triggeredAbilities := #[.printed "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."])
+    (triggeredAbilities := #[.onEquippedAttacksCreateSpirits])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def andurilNarsilReforged : CardDef :=
@@ -576,15 +576,16 @@ def andurilNarsilReforged : CardDef :=
 
 def aragornTheUniter : CardDef :=
   legendaryCreature "Aragorn, the Uniter" (ManaCost.ofColors [.red, .green, .white, .blue]) #["Human", "Noble"] 5 5 (oracleText := "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.\nWhenever you cast a blue spell, scry 2.\nWhenever you cast a red spell, Aragorn deals 3 damage to target opponent.\nWhenever you cast a green spell, target creature gets +4/+4 until end of turn.")
-    (triggeredAbilities := #[.printed "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.",
-      .printed "Whenever you cast a blue spell, scry 2.",
-      .printed "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent.",
-      .printed "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."])
+    (triggeredAbilities := #[.onCastColorCreateTokens .white .humanSoldier 1,
+      .onCastColorScry .blue 2,
+      .onCastColorDamageOpponent .red 3,
+      .onCastColorPump .green 4 4])
 
 def arwenMortalQueen : CardDef :=
-  legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
-    (staticAbilities := #[.printed "Arwen enters with an indestructible counter on her.",
-      .printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+  let c :=
+    legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
+      (staticAbilities := #[.printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+  { c with entersWithIndestructibleCounter := true }
 
 def arwenWeaverOfHope : CardDef :=
   legendaryCreature "Arwen, Weaver of Hope" (ManaCost.ofGenericAndColors 1 [.green, .green]) #["Elf", "Noble"] 2 1 (oracleText := "Each other creature you control enters with a number of additional +1/+1 counters on it equal to Arwen's toughness.")
@@ -598,7 +599,7 @@ def bilboSRing : CardDef :=
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (staticAbilities := #[.equippedHexproofUnblockableDuringYourTurn])
-    (triggeredAbilities := #[.printed "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."])
+    (triggeredAbilities := #[.onEquippedAttacksAloneDrawLoseLife])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1) (subtype := some "Halfling"),
       equipAbility (ManaCost.ofGeneric 4)])
 
@@ -614,12 +615,12 @@ def cavernHoardDragon : CardDef :=
   creature "Cavern-Hoard Dragon" (ManaCost.ofGenericAndColors 7 [.red, .red]) #["Dragon"] 6 6 (oracleText := "This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls.\nFlying, trample, haste\nWhenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls.")
     (costReductionEqualOppArtifacts := true)
     (keywords := Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
-    (triggeredAbilities := #[.printed "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."])
+    (triggeredAbilities := #[.onCombatDamageCreateTreasuresEqualPlayerArtifacts])
 
 def chiefOfTheWilds : CardDef :=
   legendaryCreature "Chief of the Wilds" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Wolf"] 4 4 (oracleText := "Menace\nWhenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds.\nIf a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time.")
     (keywords := Keyword.menace)
-    (staticAbilities := #[.printed "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."])
+    (staticAbilities := #[.extraTriggerAnotherYouControl #["Wolf"] true])
     (triggeredAbilities := #[.printed "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."])
 
 def dragonCursedHalls : CardDef :=
@@ -628,18 +629,20 @@ def dragonCursedHalls : CardDef :=
     (staticAbilities := #[.printed "{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""])
 
 def elvenChorus : CardDef :=
-  enchantment "Elven Chorus" (ManaCost.ofGenericAndColor 3 .green) "You may look at the top card of your library any time.\nYou may cast creature spells from the top of your library.\nCreatures you control have \"{T}: Add one mana of any color.\""
-    (staticAbilities := #[.printed "You may look at the top card of your library any time.",
-      .printed "You may cast creature spells from the top of your library.",
-      .printed "Creatures you control have \"{T}: Add one mana of any color.\""])
+  let c :=
+    enchantment "Elven Chorus" (ManaCost.ofGenericAndColor 3 .green) "You may look at the top card of your library any time.\nYou may cast creature spells from the top of your library.\nCreatures you control have \"{T}: Add one mana of any color.\""
+  { c with
+    mayLookAtTopAnytime := true
+    mayCastCreaturesFromTop := true
+    grantCreaturesTapAddAnyColor := true }
 
 def galadrielSDismissal : CardDef :=
-  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)"))
-    (staticAbilities := #[.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)"])
+  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead."))
+    (kicker := some (ManaCost.ofGenericAndColor 2 .white))
 
 def galadrielLightOfValinor : CardDef :=
   legendaryCreature "Galadriel, Light of Valinor" (ManaCost.ofGenericAndColors 2 [.green, .white, .blue]) #["Elf", "Noble"] 3 3 (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
-    (staticAbilities := #[.printed "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."])
+    (triggeredAbilities := #[.onAnotherCreatureYouControlEntersAlliance])
 
 def gandalfPartyGuest : CardDef :=
   legendaryCreature "Gandalf, Party Guest" (ManaCost.ofGenericAndColors 1 [.blue, .red, .white]) #["Avatar", "Wizard"] 3 4 (oracleText := "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control.")
@@ -679,7 +682,7 @@ def mountDoom : CardDef :=
 def orcishBowmasters : CardDef :=
   creature "Orcish Bowmasters" (ManaCost.ofGenericAndColor 1 .black) #["Orc", "Archer"] 1 1 (oracleText := "Flash\nWhen this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[.printed "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."])
+    (triggeredAbilities := #[.onEnterOrOpponentDrawsDeal1AmassOrcs])
 
 def palantirOfOrthanc : CardDef :=
   artifact "Palantír of Orthanc" (ManaCost.ofGeneric 3) "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
@@ -728,12 +731,13 @@ def theReaverCleaver : CardDef :=
 def thorinCompanySLeader : CardDef :=
   legendaryCreature "Thorin, Company's Leader" (ManaCost.ofGenericAndColor 4 .red) #["Dwarf", "Warrior"] 4 5 (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
     (staticAbilities := #[.printed "{10}: Creatures you control gain double strike until end of turn."])
-    (triggeredAbilities := #[.printed "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."])
+    (triggeredAbilities := #[.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2])
 
 def tomBombadil : CardDef :=
-  legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
-    (staticAbilities := #[.printed "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible."])
-    (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+  let c :=
+    legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
+      (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+  { c with hexproofIndestructibleIfLore := some 4 }
 
 def witchKingOfAngmar : CardDef :=
   legendaryCreature "Witch-king of Angmar" (ManaCost.ofGenericAndColors 3 [.black, .black]) #["Wraith", "Noble"] 5 3 (oracleText := "Flying\nWhenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you.\nDiscard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him.")

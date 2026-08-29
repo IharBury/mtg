@@ -45,6 +45,8 @@ structure Keywords where
   prowess : Bool := false
   /-- Ascend (CR 702.131). -/
   ascend : Bool := false
+  /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
+  shadow : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -78,7 +80,8 @@ def fields : List Field := [
   ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
   ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
   ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
-  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩
+  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
+  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -121,6 +124,7 @@ def storied : Keywords := { Keywords.none with storied := true }
 def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
 def prowess : Keywords := { Keywords.none with prowess := true }
 def ascend : Keywords := { Keywords.none with ascend := true }
+def shadow : Keywords := { Keywords.none with shadow := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -133,6 +137,8 @@ inductive TokenKind where
   | dwarf
   | bear
   | elf
+  | spirit
+  | birdSoldier
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -145,6 +151,8 @@ def oracleNoun : TokenKind → String
   | .dwarf => "2/2 red Dwarf creature token"
   | .bear => "2/2 green Bear creature token"
   | .elf => "1/1 green Elf creature token"
+  | .spirit => "1/1 white Spirit creature token with flying"
+  | .birdSoldier => "4/4 white Bird Soldier creature token with flying"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -154,6 +162,8 @@ def pluralNoun : TokenKind → String
   | .dwarf => "2/2 red Dwarf creature tokens"
   | .bear => "2/2 green Bear creature tokens"
   | .elf => "1/1 green Elf creature tokens"
+  | .spirit => "1/1 white Spirit creature tokens with flying"
+  | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -1760,6 +1770,9 @@ inductive StaticAbility where
   | otherSubtypeGetPowerPerArtifactToken (subtype : String)
   /-- As long as you have an enduring story, Dwarf triggers go twice. -/
   | extraTriggerIfEnduringStorySubtype (subtype : String)
+  /-- If a triggered ability of another matching permanent you control
+  triggers, it triggers an additional time (e.g. Chief of the Wilds). -/
+  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
   /-- Enchanted creature loses all abilities and doesn't untap. -/
   | enchantedLosesAbilitiesDoesntUntap
   /-- During your turn, equipped creature has hexproof and can't be blocked. -/
@@ -1862,6 +1875,7 @@ inductive StaticShape where
   /-- Other matching creatures get +P/+0 per artifact token. -/
   | otherSubtypePowerPerArtifactToken (subtype : String)
   | extraTriggerIfEnduringStorySubtype (subtype : String)
+  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
   | enchantedLosesAbilitiesDoesntUntap
   | equippedHexproofUnblockableDuringYourTurn
   | equippedTriggersAgain
@@ -1984,6 +1998,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .instantSorceryCostReductionEqualEquippedPower => {}
   | .otherSubtypePowerPerArtifactToken _ => {}
   | .extraTriggerIfEnduringStorySubtype _ => {}
+  | .extraTriggerAnotherYouControl _ _ => {}
   | .enchantedLosesAbilitiesDoesntUntap => {}
   | .equippedHexproofUnblockableDuringYourTurn => {}
   | .equippedTriggersAgain => {}
@@ -2040,6 +2055,8 @@ def shape : StaticAbility → StaticShape
     .otherSubtypePowerPerArtifactToken subtype
   | .extraTriggerIfEnduringStorySubtype subtype =>
     .extraTriggerIfEnduringStorySubtype subtype
+  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+    .extraTriggerAnotherYouControl subtypes includeBattles
   | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
   | .equippedHexproofUnblockableDuringYourTurn =>
     .equippedHexproofUnblockableDuringYourTurn
@@ -2171,6 +2188,15 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Other {plural} you control get +1/+0 for each artifact token you control."
   | .extraTriggerIfEnduringStorySubtype subtype =>
     s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
+  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+    let parts :=
+      subtypes.toList ++ (if includeBattles then ["battle"] else [])
+    let joined :=
+      match parts with
+      | [a] => a
+      | [a, b] => s!"{a} or {b}"
+      | xs => String.intercalate ", " xs
+    s!"If a triggered ability of another {joined} you control triggers, that ability triggers an additional time."
   | .enchantedLosesAbilitiesDoesntUntap =>
     "Enchanted creature loses all abilities and doesn't untap during its controller's untap step."
   | .equippedHexproofUnblockableDuringYourTurn =>
@@ -2404,6 +2430,8 @@ inductive TriggeredAbility where
   | onEnterDrawThenBottomIfNoLegendary
   /-- When this creature enters, you may exile another target creature. -/
   | onEnterMayExileAnotherCreature
+  /-- Whenever equipped creature attacks alone, you draw a card and lose 1 life. -/
+  | onEquippedAttacksAloneDrawLoseLife
   /-- When this creature leaves the battlefield, return the exiled card. -/
   | onLeaveReturnExiled
   /-- When this enchantment enters, exile target nonland an opponent controls
@@ -2583,6 +2611,69 @@ inductive TriggeredAbility where
   permanent card with mana value `mv` or less from a graveyard onto the
   battlefield. -/
   | onCombatDamagePutNonlandMvAtMost (mv : Nat)
+  /-- Whenever this enters or attacks, put a hone counter on each Equipment
+  you control (e.g. Dwalin, Weaponmaster). -/
+  | onEnterOrAttackHoneEachEquipment
+  /-- Cascade on the spell that is being cast (CR 702.85). -/
+  | onCastCascade
+  /-- Whenever the Ring tempts you, draw `n` cards. -/
+  | onTheRingTemptsYouDraw (n : Nat)
+  /-- Whenever you choose a creature as your Ring-bearer, draw a card. -/
+  | onChooseRingBearerDraw
+  /-- Whenever a token you control enters, reward by how many times this has
+  resolved this turn (e.g. Belladonna Took). -/
+  | onTokenYouControlEntersBelladonna
+  /-- Whenever you activate an ability of a creature, draw a card. Triggers
+  only once each turn (e.g. Elrond, Moon-Reader). -/
+  | onActivateCreatureAbilityDrawOnce
+  /-- When this enters, you may sacrifice another creature. If you do, a
+  reflexive trigger deals that creature's power as damage (e.g. Bolg of the
+  North). -/
+  | onEnterBolgMaySacrifice
+  /-- Reflexive trigger after Bolg's sacrifice instruction. -/
+  | onBolgDealSacrificedPower
+  /-- Whenever equipped creature attacks, create two tapped Spirits; they
+  enter attacking if that creature is legendary and you control it
+  (e.g. Andúril, Flame of the West). -/
+  | onEquippedAttacksCreateSpirits
+  /-- Whenever this deals combat damage to a player, create a Treasure for
+  each artifact that player controls (e.g. Cavern-Hoard Dragon). -/
+  | onCombatDamageCreateTreasuresEqualPlayerArtifacts
+  /-- When this enters and whenever an opponent draws a card except the first
+  one they draw in each of their draw steps, deal 1 then amass Orcs 1
+  (e.g. Orcish Bowmasters). -/
+  | onEnterOrOpponentDrawsDeal1AmassOrcs
+  /-- Whenever an opponent draws their second card each turn, create a
+  Treasure (e.g. Gleaming Splendor). -/
+  | onOpponentDrawsSecondCreateTreasure
+  /-- Whenever you attack with creatures with total power `n` or greater
+  for the first time each turn, untap attackers and take an extra combat
+  (e.g. Desert Were-Worm). -/
+  | onAttackWithTotalPowerUntapExtraCombat (n : Int)
+  /-- Delayed: create `n` Bird Soldier tokens (The Eagles Are Coming!). -/
+  | onDelayedEaglesCreateBirds
+  /-- Alliance — whenever another creature you control enters, choose one
+  that hasn't been chosen this turn (e.g. Galadriel, Light of Valinor). -/
+  | onAnotherCreatureYouControlEntersAlliance
+  /-- When this enters, destroy up to one other target creature. Its
+  controller amasses Goblins X equal to that creature's last-known power
+  (e.g. Azog, Moria's Ruin). -/
+  | onEnterDestroyOtherAmassControllerPower
+  /-- Whenever a permanent you control of this subtype deals combat damage
+  to a player or battle, create `n` tokens (e.g. Thorin, Company's Leader). -/
+  | onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
+      (n : Nat)
+  /-- Alliance-style modes that last for the object's lifetime
+  (e.g. Gollum, Riddle Master). -/
+  | onOpponentCastsChosenParityModes
+  /-- Whenever you cast a spell of this color, create tokens. -/
+  | onCastColorCreateTokens (color : Color) (kind : TokenKind) (n : Nat)
+  /-- Whenever you cast a spell of this color, scry. -/
+  | onCastColorScry (color : Color) (n : Nat)
+  /-- Whenever you cast a spell of this color, deal damage to target opponent. -/
+  | onCastColorDamageOpponent (color : Color) (n : Nat)
+  /-- Whenever you cast a spell of this color, target creature gets +P/+T. -/
+  | onCastColorPump (color : Color) (power toughness : Int)
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2662,6 +2753,33 @@ inductive TriggerEvent where
   | thisOrAnotherSubtypeYouControlEnters
   /-- This deals combat damage to a player or battle. -/
   | dealsCombatDamageToPlayerOrBattle
+  /-- The Ring tempts you. -/
+  | theRingTemptsYou
+  /-- You choose a creature as your Ring-bearer. -/
+  | youChooseRingBearer
+  /-- Equipped creature is the only attacker declared this combat. -/
+  | equippedAttacksAlone
+  /-- A token you control enters (CR 603.6a). -/
+  | tokenYouControlEnters
+  /-- You activate an ability of a creature, including a mana ability
+  (CR 605.3b / 603.2). -/
+  | youActivateCreatureAbility
+  /-- Equipped creature attacks (CR 508.2). -/
+  | equippedAttacks
+  /-- An opponent draws a card that is not the first card of their draw step. -/
+  | opponentDrawsExceptFirstDrawStep
+  /-- An opponent draws their second card this turn. -/
+  | opponentDrawsSecondCard
+  /-- You attack with creatures whose total power meets a threshold. -/
+  | youAttackWithTotalPower
+  /-- Delayed trigger: create Bird Soldiers at the next upkeep. -/
+  | eaglesCreateBirds
+  /-- You sacrificed a creature to Bolg's enters instruction. -/
+  | bolgSacrificedForReflexive
+  /-- You cast a spell of this color. -/
+  | youCastColor (color : Color)
+  /-- An opponent casts a spell whose mana value matches a chosen odd/even. -/
+  | opponentCastsMatchingParity
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2780,6 +2898,45 @@ def spec : TriggerEvent → Spec
   | .dealsCombatDamageToPlayerOrBattle =>
     { clause := "this deals combat damage to a player or battle",
       label := "combat-damage trigger" }
+  | .theRingTemptsYou =>
+    { clause := "the Ring tempts you", label := "Ring-tempts trigger",
+      checkTargets := false }
+  | .youChooseRingBearer =>
+    { clause := "you choose a creature as your Ring-bearer",
+      label := "Ring-bearer trigger", checkTargets := false }
+  | .equippedAttacksAlone =>
+    { clause := "equipped creature attacks alone",
+      label := "attacks-alone trigger", checkTargets := false }
+  | .tokenYouControlEnters =>
+    { clause := "a token you control enters", label := "token-enters trigger",
+      checkTargets := false }
+  | .youActivateCreatureAbility =>
+    { clause := "you activate an ability of a creature",
+      label := "activate-creature trigger", checkTargets := false }
+  | .equippedAttacks =>
+    { clause := "equipped creature attacks",
+      label := "equipped-attacks trigger", checkTargets := false }
+  | .opponentDrawsExceptFirstDrawStep =>
+    { clause := "an opponent draws a card except the first one they draw in each of their draw steps",
+      label := "opponent-draw trigger" }
+  | .opponentDrawsSecondCard =>
+    { clause := "an opponent draws their second card each turn",
+      label := "opponent-second-card trigger", checkTargets := false }
+  | .youAttackWithTotalPower =>
+    { clause := "you attack with creatures with total power 12 or greater",
+      label := "total-power-attack trigger", checkTargets := false }
+  | .eaglesCreateBirds =>
+    { clause := "the beginning of the next upkeep", isWhenever := false,
+      label := "delayed Bird Soldier trigger", checkTargets := false }
+  | .bolgSacrificedForReflexive =>
+    { clause := "you sacrifice a creature this way", isWhenever := false,
+      label := "reflexive trigger" }
+  | .youCastColor c =>
+    { clause := s!"you cast a {c} spell", label := "cast-color trigger",
+      checkTargets := false }
+  | .opponentCastsMatchingParity =>
+    { clause := "an opponent casts a spell with mana value of the chosen quality",
+      label := "parity-cast trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -2873,6 +3030,8 @@ inductive TriggerResolution where
   | mayPayGenericDraw (generic : Nat)
   /-- Draw a card, then put a card on the bottom if you control no legendary. -/
   | drawThenBottomIfNoLegendary
+  /-- Exile the targeted permanent. Link it if the source is still in play. -/
+  | exileTarget
   /-- Exile the targeted permanent until the source leaves the battlefield. -/
   | exileUntilLeaves
   /-- Return cards exiled by the source. -/
@@ -2957,6 +3116,36 @@ inductive TriggerResolution where
   /-- Put a nonland permanent card with mana value at most `mv` from a
   graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
+  /-- Put a hone counter on each Equipment you control. -/
+  | honeEachEquipment
+  /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
+  | cascade
+  /-- First resolve: gain 1 life. Second: draw. Third: +1/+1 each creature.
+  Later resolves this turn do nothing (Belladonna Took). -/
+  | belladonnaTokenReward
+  /-- You may sacrifice another creature you control (Bolg). -/
+  | bolgMaySacrifice
+  /-- Deal last-known sacrificed power to the target; amass Goblins equal to
+  excess damage. -/
+  | bolgDealSacrificedPower
+  /-- Create two tapped Spirits; they enter attacking if the equipped
+  creature is legendary and you control it. -/
+  | createSpiritsForEquipped
+  /-- Create a Treasure for each artifact the damaged player controls. -/
+  | createTreasuresEqualDamagedPlayerArtifacts
+  /-- Deal 1 damage to any target, then amass Orcs 1. -/
+  | deal1ThenAmassOrcs
+  /-- Untap attacking creatures; an additional combat phase follows. -/
+  | untapAttackersExtraCombat
+  /-- Create Bird Soldier tokens equal to last-known count. -/
+  | eaglesCreateBirds
+  /-- Apply an unused Alliance mode, or do nothing if all were chosen. -/
+  | allianceMode
+  /-- Destroy the targeted creature if any; that controller amasses equal
+  to last-known power. No target means no player amasses. -/
+  | destroyOtherAmassControllerPower
+  /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
+  | gollumMode
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3077,7 +3266,9 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering], resolution := .drawThenBottomIfNoLegendary }
   | .onEnterMayExileAnotherCreature =>
     { events := #[.entering], targeting := .of .anotherCreature,
-      allowsZeroTargets := true, resolution := .exileUntilLeaves }
+      allowsZeroTargets := true, resolution := .exileTarget }
+  | .onEquippedAttacksAloneDrawLoseLife =>
+    { events := #[.equippedAttacksAlone], resolution := .drawAndLoseLife }
   | .onLeaveReturnExiled =>
     { events := #[.leaving], resolution := .returnLinkedExile }
   | .onEnterExileOppNonlandUntilLeaves =>
@@ -3246,6 +3437,59 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.dealsCombatDamageToPlayerOrBattle],
       targeting := .of .nonland, allowsZeroTargets := true,
       resolution := .putNonlandMvAtMostFromGy mv }
+  | .onEnterOrAttackHoneEachEquipment =>
+    { events := #[.entering, .attacking], resolution := .honeEachEquipment }
+  | .onCastCascade =>
+    { events := #[], resolution := .cascade }
+  | .onTheRingTemptsYouDraw n =>
+    { events := #[.theRingTemptsYou], resolution := .draw n }
+  | .onChooseRingBearerDraw =>
+    { events := #[.youChooseRingBearer], resolution := .draw 1 }
+  | .onTokenYouControlEntersBelladonna =>
+    { events := #[.tokenYouControlEnters], resolution := .belladonnaTokenReward }
+  | .onActivateCreatureAbilityDrawOnce =>
+    { events := #[.youActivateCreatureAbility], resolution := .draw 1,
+      onceEachTurn := true }
+  | .onEnterBolgMaySacrifice =>
+    { events := #[.entering], resolution := .bolgMaySacrifice }
+  | .onBolgDealSacrificedPower =>
+    { events := #[.bolgSacrificedForReflexive], targeting := .of .anotherCreature,
+      resolution := .bolgDealSacrificedPower }
+  | .onEquippedAttacksCreateSpirits =>
+    { events := #[.equippedAttacks], resolution := .createSpiritsForEquipped }
+  | .onCombatDamageCreateTreasuresEqualPlayerArtifacts =>
+    { events := #[.dealsCombatDamageToPlayer],
+      resolution := .createTreasuresEqualDamagedPlayerArtifacts }
+  | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
+    { events := #[.entering, .opponentDrawsExceptFirstDrawStep],
+      targeting := .of .playerOrCreature, resolution := .deal1ThenAmassOrcs }
+  | .onOpponentDrawsSecondCreateTreasure =>
+    { events := #[.opponentDrawsSecondCard], resolution := .createTreasure }
+  | .onAttackWithTotalPowerUntapExtraCombat _n =>
+    { events := #[.youAttackWithTotalPower],
+      resolution := .untapAttackersExtraCombat, onceEachTurn := true }
+  | .onDelayedEaglesCreateBirds =>
+    { events := #[.eaglesCreateBirds], resolution := .eaglesCreateBirds }
+  | .onAnotherCreatureYouControlEntersAlliance =>
+    { events := #[.anotherCreatureYouControlEnters], resolution := .allianceMode }
+  | .onEnterDestroyOtherAmassControllerPower =>
+    { events := #[.entering], targeting := .of .anotherCreature,
+      allowsZeroTargets := true, resolution := .destroyOtherAmassControllerPower }
+  | .onSubtypeYouControlCombatDamageCreateTokens _subtype kind n =>
+    { events := #[.dealsCombatDamageToPlayerOrBattle],
+      resolution := .createTokens kind n false }
+  | .onOpponentCastsChosenParityModes =>
+    { events := #[.opponentCastsMatchingParity], resolution := .gollumMode }
+  | .onCastColorCreateTokens c kind n =>
+    { events := #[.youCastColor c], resolution := .createTokens kind n false }
+  | .onCastColorScry c n =>
+    { events := #[.youCastColor c], resolution := .scry n }
+  | .onCastColorDamageOpponent c n =>
+    { events := #[.youCastColor c], targeting := .of .opponent,
+      resolution := .damageEachOpponent n }
+  | .onCastColorPump c p t =>
+    { events := #[.youCastColor c], targeting := .of .creature,
+      resolution := .onPermanent (.pump p t) }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3389,6 +3633,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may pay \{{generic}}. If you do, draw a card"
   | .drawThenBottomIfNoLegendary =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
+  | .exileTarget =>
+    if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
   | .exileUntilLeaves =>
     if t.allowsZeroTargets then
       if t.targeting.kind == .defendingPlayerCreature then
@@ -3489,6 +3735,32 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+  | .honeEachEquipment =>
+    "put a hone counter on each Equipment you control"
+  | .cascade =>
+    "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
+  | .belladonnaTokenReward =>
+    "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
+  | .bolgMaySacrifice =>
+    "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+  | .bolgDealSacrificedPower =>
+    s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+  | .createSpiritsForEquipped =>
+    "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
+  | .createTreasuresEqualDamagedPlayerArtifacts =>
+    "you create a Treasure token for each artifact that player controls"
+  | .deal1ThenAmassOrcs =>
+    s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
+  | .untapAttackersExtraCombat =>
+    "untap all attacking creatures. After this phase, there is an additional combat phase"
+  | .eaglesCreateBirds =>
+    "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+  | .allianceMode =>
+    "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
+  | .destroyOtherAmassControllerPower =>
+    s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
+  | .gollumMode =>
+    "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3500,13 +3772,47 @@ def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
 
 def toNotation (ab : TriggeredAbility) : String :=
-  match ab.resolution with
+  match ab with
+  | .onEnterBolgMaySacrifice =>
+    "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage."
+  | .onEquippedAttacksCreateSpirits =>
+    "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."
+  | .onCombatDamageCreateTreasuresEqualPlayerArtifacts =>
+    "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."
+  | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
+    "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+  | .onOpponentDrawsSecondCreateTreasure =>
+    "Whenever an opponent draws their second card each turn, you create a Treasure token."
+  | .onAttackWithTotalPowerUntapExtraCombat n =>
+    s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
+  | .onAnotherCreatureYouControlEntersAlliance =>
+    "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
+  | .onEnterDestroyOtherAmassControllerPower =>
+    "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+  | .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2 =>
+    "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
+  | .onOpponentCastsChosenParityModes =>
+    "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
+  | .onCastColorCreateTokens .white .humanSoldier 1 =>
+    "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token."
+  | .onCastColorScry .blue 2 =>
+    "Whenever you cast a blue spell, scry 2."
+  | .onCastColorDamageOpponent .red 3 =>
+    "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
+  | .onCastColorPump .green 4 4 =>
+    "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."
   | .printed text => text
   | _ =>
-    let t := ab.timing
-    let once :=
-      if t.onceEachTurn then " This ability triggers only once each turn." else ""
-    s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+    match ab.resolution with
+    | .printed text => text
+    | _ =>
+      let t := ab.timing
+      if t.events.contains .equippedAttacksAlone then
+        "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+      else
+        let once :=
+          if t.onceEachTurn then " This ability triggers only once each turn." else ""
+        s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -3664,6 +3970,14 @@ structure CardDef where
   tapAddColorlessPerSubtype : Option String := none
   /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
   cascade : Nat := 0
+  /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
+  kicker : Option ManaCost := none
+  /-- If one or more tokens would be created under your control, twice that
+  many of those tokens are created instead (e.g. Bard, King of Dale). -/
+  tokenDoubling : Bool := false
+  /-- If you would draw a card except the first one you draw in each of your
+  draw steps, draw two cards instead. -/
+  drawTwoExceptFirstDrawStep : Bool := false
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
@@ -3671,6 +3985,34 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
+  /-- If a creature an opponent controls would die, exile it instead
+  (e.g. Head of the Hunt). -/
+  exileOppCreaturesInstead : Bool := false
+  /-- You may look at the top card of your library any time
+  (e.g. Elven Chorus). -/
+  mayLookAtTopAnytime : Bool := false
+  /-- You may cast creature spells from the top of your library
+  (e.g. Elven Chorus). Does not grant flash or change timing. -/
+  mayCastCreaturesFromTop : Bool := false
+  /-- Creatures you control have `{T}: Add one mana of any color`
+  (e.g. Elven Chorus). -/
+  grantCreaturesTapAddAnyColor : Bool := false
+  /-- The first creature spell you cast each turn costs this much generic
+  less (e.g. Radagast of Rhosgobel). -/
+  firstCreatureCostsLess : Nat := 0
+  /-- The first creature spell you cast each turn can be cast as though it
+  had flash (e.g. Radagast of Rhosgobel). -/
+  firstCreatureHasFlash : Bool := false
+  /-- Hexproof and indestructible while you control this many lore counters
+  among Sagas (e.g. Tom Bombadil). -/
+  hexproofIndestructibleIfLore : Option Nat := none
+  /-- This creature enters with an indestructible counter. -/
+  entersWithIndestructibleCounter : Bool := false
+  /-- As this permanent enters, choose odd or even (Gollum, Riddle Master). -/
+  asEntersChooseOddEven : Bool := false
+  /-- Spells you cast from anywhere other than your hand cost this much
+  generic mana less (e.g. Bilbo, Thief in the Night). -/
+  costReductionNotFromHand : Nat := 0
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
@@ -3700,6 +4042,8 @@ def isInstant (c : CardDef) : Bool := c.hasType .instant
 def isSorcery (c : CardDef) : Bool := c.hasType .sorcery
 def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
 def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
+def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
+def isBattle (c : CardDef) : Bool := c.hasType .battle
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
@@ -3707,6 +4051,13 @@ def isAura (c : CardDef) : Bool :=
 /-- Equipment subtype on an Artifact (CR 301.5). -/
 def isEquipment (c : CardDef) : Bool :=
   c.isArtifact && c.hasSubtype "Equipment"
+
+/-- Names a player may choose for “choose a card name”, including an
+Adventure face (Gatherer ruling on adventurer cards). -/
+def choosableNames (c : CardDef) : Array String :=
+  match c.adventure with
+  | some adv => #[c.name, adv.name]
+  | none => #[c.name]
 
 /-- Timing of a sorcery: also the default for permanent spells without flash (CR 302.1, 307.1). -/
 def hasSorcerySpeed (c : CardDef) : Bool :=
@@ -3764,7 +4115,8 @@ def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
-        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 then
+        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
+        c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity then
       (Color.all.map ManaType.colored).toArray
      else #[])
 
@@ -4190,6 +4542,10 @@ instance : ToString CardDef where
   "Other Orcs and Goblins you control have trample."
 #guard StaticAbility.toNotation (.otherCreaturesGet #["Elf"] 1 1) ==
   "Other Elf creatures you control get +1/+1."
+#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #["Wolf"] true) ==
+  "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
+#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype "Dwarf") ==
+  "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
 #guard TapAddForEach.toNotation { mana := .colored .green, subtype := "Elf" } ==
   "{T}: Add {G} for each Elf you control"
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==
@@ -4503,5 +4859,25 @@ def isLandTypeCard (c : CardDef) (landType : String) : Bool :=
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
   isLandTypeCard c "Forest"
+
+#guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
+  "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
+#guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==
+  "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn."
+#guard TriggeredAbility.firesOn .onTokenYouControlEntersBelladonna .tokenYouControlEnters
+#guard TriggeredAbility.firesOn .onActivateCreatureAbilityDrawOnce .youActivateCreatureAbility
+#guard TriggeredAbility.onceEachTurn .onActivateCreatureAbilityDrawOnce
+#guard
+  let c : CardDef := {
+    name := "Smaug, the Great Calamity"
+    types := #[.creature]
+    adventure := some {
+      name := "Spew Flame"
+      manaCost := ManaCost.ofGenericAndColor 4 .red
+      oracleText := ""
+      spellEffect := some (.dealDamageToCreature 5)
+    }
+  }
+  c.choosableNames == #["Smaug, the Great Calamity", "Spew Flame"]
 
 end Mtg.Engine

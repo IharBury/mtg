@@ -182,7 +182,10 @@ def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
-  insertObject g card owner .battlefield (some controller) { summoningSick := false }
+  let status : Status :=
+    { summoningSick := false
+      indestructibleCounters := if card.entersWithIndestructibleCounter then 1 else 0 }
+  insertObject g card owner .battlefield (some controller) status
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/
 def addUntappedLand (g : Game) (card : CardDef) : Game :=
@@ -759,6 +762,8 @@ def applyIdle (g : Game) : Game :=
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"
     | some id => mustApply g p (.discard id)
+  | .maySacrificeAnotherBolg _ _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

@@ -627,6 +627,14 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may put a +1/+1 counter ({g.player p |>.name})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
+    | .chooseKicker p =>
+      s!" [announce kicker (CR 702.32, {g.player p |>.name})]"
+    | .chooseGift p =>
+      s!" [announce gift (CR 702.185, {g.player p |>.name})]"
+    | .chooseRingBearer p =>
+      s!" [choose a Ring-bearer ({g.player p |>.name})]"
+    | .maySacrificeAnotherBolg p _ =>
+      s!" [may sacrifice another creature ({g.player p |>.name})]"
   let result :=
     match g.result with
     | none => ""

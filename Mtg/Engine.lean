@@ -8,6 +8,8 @@ import Mtg.Engine.Deck
 import Mtg.Engine.Game
 import Mtg.Engine.Mana
 import Mtg.Engine.Oracle
+import Mtg.Engine.OracleRulings
+import Mtg.Engine.RulingTests
 import Mtg.Engine.Rules
 import Mtg.Engine.Tests
 import Mtg.Engine.Turn

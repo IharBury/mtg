@@ -137,6 +137,39 @@ structure Status where
   /-- This permanent is an artifact in addition to its other types until
   end of turn (e.g. Stone by Sunlight). -/
   additionalArtifactUntilEot : Bool := false
+  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
+  Equipment is attached (judge rulings on Dwalin / Sting). -/
+  hone : Nat := 0
+  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
+  shadow : Nat := 0
+  /-- Phased out (CR 702.26). Treated as though it does not exist. -/
+  phasedOut : Bool := false
+  /-- Host this Aura or Equipment phased out with. -/
+  phasedWith : Option ObjectId := none
+  /-- This creature is its controller's Ring-bearer. -/
+  ringBearer : Bool := false
+  /-- Alliance modes chosen this turn (0 = add GGG, 1 = +1/+1 each, 2 = scry
+  then draw). Reset as the turn ends. -/
+  allianceModesChosen : Array Nat := #[]
+  /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
+  chosenModes : Array Nat := #[]
+  /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
+  chosenOdd : Option Bool := none
+  /-- Lore counters on a Saga (CR 714). -/
+  lore : Nat := 0
+  /-- Indestructible counters. -/
+  indestructibleCounters : Nat := 0
+  /-- Lifelink counters (Arwen, Mortal Queen). -/
+  lifelinkCounters : Nat := 0
+  /-- Creature type chosen as this permanent entered (Unexpected Party). -/
+  chosenCreatureType : Option String := none
+  /-- Creatures this player controls cannot block this attacker this turn
+  (The Black Gate). Cleared in cleanup. -/
+  cantBeBlockedByPlayer : Option PlayerId := none
+  /-- Influence counters (Palantír of Orthanc). -/
+  influence : Nat := 0
+  /-- This permanent is only a Food artifact (Supper for Spiders). -/
+  onlyFoodArtifact : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -190,7 +223,9 @@ def untilEotFields : List UntilEotField := [
     fun s => { s with untilEotExileIfDies := false }⟩,
   ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,
   ⟨fun s => s.additionalArtifactUntilEot,
-    fun s => { s with additionalArtifactUntilEot := false }⟩
+    fun s => { s with additionalArtifactUntilEot := false }⟩,
+  ⟨fun s => s.cantBeBlockedByPlayer.isSome,
+    fun s => { s with cantBeBlockedByPlayer := none }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
@@ -229,6 +264,14 @@ structure PlayPermission where
   anyMana : Bool := false
   /-- The card may be cast without paying its mana cost. -/
   withoutManaCost : Bool := false
+  /-- You may play this only while you control a permanent of this subtype
+  (Flameshape). Checked as you begin to cast, not as the spell resolves. -/
+  requireSubtype : Option String := none
+  /-- Timing restrictions based on card type are ignored (cast-as-it-resolves
+  effects such as Glamdring, Gríma, and Gandalf). -/
+  ignoreTiming : Bool := false
+  /-- The card is exiled face down (Flameshape, Riddles in the Dark). -/
+  faceDown : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- An object currently in the game (CR 109). -/
@@ -259,8 +302,23 @@ structure GameObject where
   adventurerCard : Option CardDef := none
   /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
   linkedExile : Array ObjectId := #[]
+  /-- Cards this permanent exiled that a leave trigger may return (Fiend
+  Hunter). Unlike `linkedExile`, these do not return automatically. -/
+  leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- This spell's kicker cost was paid (CR 702.32). -/
+  kicked : Bool := false
+  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
+  giftPromisedTo : Option PlayerId := none
+  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
+  isCopy : Bool := false
+  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
+  legendary spell, so it can't be countered. Copies do not inherit this. -/
+  uncounterableThisCast : Bool := false
+  /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
+  Off the stack, `{X}` is 0. -/
+  chosenX : Option Nat := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -279,19 +337,23 @@ def name (o : GameObject) : String := o.printed.name
 
 /-- Current card types, including a lasting “becomes a creature” effect. -/
 def types (o : GameObject) : Array CardType :=
-  let ts :=
-    if o.status.additionalCreature && !o.printed.isCreature then
-      o.printed.types.push .creature
-    else
-      o.printed.types
-  if o.status.additionalArtifactUntilEot && !ts.any (· == .artifact) then
-    ts.push .artifact
-  else ts
+  if o.status.onlyFoodArtifact then #[.artifact]
+  else
+    let ts :=
+      if o.status.additionalCreature && !o.printed.isCreature then
+        o.printed.types.push .creature
+      else
+        o.printed.types
+    if o.status.additionalArtifactUntilEot && !ts.any (· == .artifact) then
+      ts.push .artifact
+    else ts
 
 /-- Current subtypes, including those granted by a lasting type-changing effect. -/
 def subtypes (o : GameObject) : Array Subtype :=
-  let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
-  o.printed.subtypes ++ extra
+  if o.status.onlyFoodArtifact then #["Food"]
+  else
+    let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
+    o.printed.subtypes ++ extra
 
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
@@ -306,7 +368,12 @@ def power (o : GameObject) : Int :=
 def toughness (o : GameObject) : Int :=
   (o.printed.toughness.getD 0) + o.status.pumpToughness + (o.status.plusOnePlusOne : Int)
 
-def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
+def isOnBattlefield (o : GameObject) : Bool :=
+  o.zone == .battlefield && !o.status.phasedOut
+
+/-- Still in the battlefield zone, including while phased out (CR 702.26d). -/
+def isBattlefieldObject (o : GameObject) : Bool :=
+  o.zone == .battlefield
 
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
@@ -318,7 +385,7 @@ def you (o : GameObject) : PlayerId :=
 
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
-  o.printed.isCreature || o.status.additionalCreature
+  !o.status.onlyFoodArtifact && (o.printed.isCreature || o.status.additionalCreature)
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -438,6 +505,14 @@ structure ProposedSpell where
   abilityModes : Array AbilityEffect := #[]
   /-- Override the announced targeting shape (e.g. Equip Human). -/
   targetKindOverride : Option EffectTargetKind := none
+  /-- The proposed spell will be kicked if this is true. -/
+  kicked : Bool := false
+  /-- Kicker has been announced (paid or declined). -/
+  kickerAnnounced : Bool := false
+  /-- Opponent chosen for a promised gift, if any. -/
+  giftTo : Option PlayerId := none
+  /-- Gift has been announced (promised or declined). -/
+  giftAnnounced : Bool := false
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -497,6 +572,14 @@ inductive Pending where
   | mayPlusOneCreature (player : PlayerId)
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
+  /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
+  | chooseKicker (player : PlayerId)
+  /-- Announce whether to promise a gift to an opponent (CR 702.185 / 601.2b). -/
+  | chooseGift (player : PlayerId)
+  /-- Choose a creature you control as your Ring-bearer. -/
+  | chooseRingBearer (player : PlayerId)
+  /-- You may sacrifice another creature to Bolg's enters instruction. -/
+  | maySacrificeAnotherBolg (player : PlayerId) (bolgId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -528,12 +611,42 @@ structure Player where
   graveyard : Array ObjectId := #[]
   /-- Cards drawn this turn (for “second card each turn” triggers). -/
   cardsDrawnThisTurn : Nat := 0
+  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
+  cardsDrawnThisDrawStep : Nat := 0
   /-- Spells cast this turn (for “second spell each turn” triggers). -/
   spellsCastThisTurn : Nat := 0
   /-- Noncreature spells cast this turn. -/
   noncreatureSpellsCastThisTurn : Nat := 0
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
+  /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
+  theRingAbilities : Nat := 0
+  /-- Current Ring-bearer, if any. -/
+  ringBearerId : Option ObjectId := none
+  /-- Ascend: the city's blessing for the rest of the game. -/
+  citysBlessing : Bool := false
+  /-- Mana value of each spell this player has cast this turn. -/
+  castManaValuesThisTurn : Array Nat := #[]
+  /-- True when this player has a commander (Commander / Oathbreaker). -/
+  hasCommander : Bool := false
+  /-- Combined color identity of this player's commander(s). Empty when they
+  have no commander or the commander is colorless (CR 903.4). -/
+  commanderColorIdentity : ColorSet := {}
+  /-- Times Belladonna Took's token-enters ability has resolved this turn. -/
+  belladonnaResolvesThisTurn : Nat := 0
+  /-- Protection from everything until this player's next turn
+  (e.g. The One Ring). -/
+  protectionFromEverything : Bool := false
+  /-- Bird Soldier tokens to create at the beginning of the next upkeep
+  (The Eagles Are Coming!). -/
+  eaglesBirdsNextUpkeep : Nat := 0
+  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
+  lifeGainedThisTurn : Nat := 0
+  /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
+  creatureSpellsCastThisTurn : Nat := 0
+  /-- Qualities beheld this game (Elven Passage and similar). A later zone
+  change of the revealed card or chosen permanent does not un-behold. -/
+  beheldQualities : Array String := #[]
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -616,6 +729,12 @@ inductive Action where
   | chooseBottom
   /-- Attach this Equipment, or tap these Humans. -/
   | choosePermanents (ids : Array ObjectId)
+  /-- Pay (`true`) or decline (`false`) the optional kicker cost. -/
+  | announceKicker (kick : Bool)
+  /-- Promise a gift to this opponent, or `none` to decline. -/
+  | announceGift (to : Option PlayerId)
+  /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
+  | chooseRingBearer (id : Option ObjectId)
   | concede
 deriving Repr
 
@@ -669,6 +788,18 @@ structure Game where
   pendingRegularCombatDamage : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
+  batch, so simultaneous deaths still see those sources (Gatherer). -/
+  lockedDeathReplacements : Option (Array (PlayerId × ObjectId)) := none
+  /-- While an SBA death batch is applying, `move` skips per-object
+  “other creatures die” triggers; the batch queues them from the snapshot. -/
+  suppressOthersDie : Bool := false
+  /-- Player most recently dealt combat damage by a creature whose
+  combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
+  lastCombatDamagePlayer : Option PlayerId := none
+  /-- True while a spell is being cast from the top of a library
+  (Elven Chorus cannot show the new top until that finishes). -/
+  castingFromTop : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -703,9 +834,11 @@ def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId �
     Game :=
   g.livingOpponents controller |>.foldl (fun g pl => f g pl.id) g
 
-/-- Player targets for every member of `ps`. -/
+/-- Player targets for every member of `ps` who does not have protection
+from everything. -/
 def playerTargets (ps : Array Player) : Array Target :=
-  ps.map (fun pl => Target.player pl.id)
+  ps.filter (fun pl => !pl.protectionFromEverything) |>.map (fun pl =>
+    Target.player pl.id)
 
 /-- Living players in turn order from `start` who satisfy `eligible`. -/
 def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
@@ -753,6 +886,175 @@ def battlefield (g : Game) : Array GameObject :=
 
 def permanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o => o.controlledBy p)
+
+/-- Whether `p` currently has an enduring story. -/
+def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).enduringStory
+
+/-- A permanent counts once toward Storied even if it is legendary, an
+artifact, and a Saga. -/
+def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
+
+/-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
+def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (g.countsTowardStoried) |>.size
+
+/-- Whether `p` controls a permanent with storied. -/
+def controlsStoried (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.storied)
+
+/-- Grant an enduring story if `p` now qualifies. The designation is on the
+player and is never removed. Not a triggered ability. -/
+def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
+  if (g.player p).enduringStory then g
+  else if g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
+    g.modifyPlayer p (fun pl => { pl with enduringStory := true })
+      |>.logMsg s!"{(g.player p).name} has an enduring story"
+  else g
+
+/-- Grant an enduring story to every player who now qualifies. -/
+def refreshEnduringStory (g : Game) : Game :=
+  g.players.foldl (fun g pl => g.grantEnduringStoryIfNeeded pl.id) g
+
+/-- Whether `p` has an emblem named The Ring. -/
+def hasTheRing (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).theRingAbilities > 0
+
+/-- Number of The Ring abilities `p`'s emblem currently has. -/
+def theRingAbilityCount (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).theRingAbilities
+
+/-- Whether `o` is `p`'s Ring-bearer. -/
+def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  (g.player p).ringBearerId == some o.id && o.status.ringBearer
+
+/-- Creatures `p` controls that can be chosen as Ring-bearer. -/
+def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (fun o => o.isCreature)
+
+/-- Clear Ring-bearer marks, then mark `chosen` if present. -/
+def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId) : Game :=
+  let g :=
+    g.objects.foldl (fun acc o =>
+      if o.status.ringBearer && o.controlledBy p then
+        acc.setObject { o with status := { o.status with ringBearer := false } }
+      else acc) g
+  match chosen with
+  | none =>
+    g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
+  | some id =>
+    match g.findObject? id with
+    | none => g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
+    | some o =>
+      let g := g.setObject { o with status := { o.status with ringBearer := true } }
+      g.modifyPlayer p (fun pl => { pl with ringBearerId := some id })
+
+/-- Whether `p` currently has the city's blessing. -/
+def hasCitysBlessing (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).citysBlessing
+
+/-- Number of permanents `p` currently controls (phased-out objects do not
+count). -/
+def permanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).size
+
+/-- Whether `p` controls a permanent with ascend, or a resolving spell with
+ascend on the stack. -/
+def controlsAscend (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.ascend) ||
+    g.stack.any (fun e =>
+      match g.findObject? e.objectId with
+      | some o =>
+        o.controller == some p && o.printed.keywords.ascend &&
+          o.triggeredAbility.isNone && o.abilityEffect.isNone
+      | none => false)
+
+/-- Grant the city's blessing if `p` now qualifies. The designation is on the
+player and is never removed. Not a triggered ability. -/
+def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
+  if (g.player p).citysBlessing then g
+  else if g.controlsAscend p && g.permanentCount p ≥ 10 then
+    g.modifyPlayer p (fun pl => { pl with citysBlessing := true })
+      |>.logMsg s!"{(g.player p).name} has the city's blessing"
+  else g
+
+/-- Grant the city's blessing to every player who now qualifies. -/
+def refreshCitysBlessing (g : Game) : Game :=
+  g.players.foldl (fun g pl => g.grantCitysBlessingIfNeeded pl.id) g
+
+/-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
+def putShadowCounter (g : Game) (o : GameObject) : Game :=
+  let extra :=
+    if o.status.additionalSubtypes.any (· == "Wraith") then o.status.additionalSubtypes
+    else o.status.additionalSubtypes.push "Wraith"
+  g.setObject { o with status := { o.status with
+    shadow := o.status.shadow + 1
+    additionalSubtypes := extra } }
+    |>.logMsg s!"{o.name} gets a shadow counter"
+
+/-- Attachments that should phase out or in with `host`. -/
+def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
+  g.objects.filter (fun o =>
+    o.zone == .battlefield && o.attachedTo == some host.id)
+
+/-- Remove `o` from combat (CR 506.4). -/
+def removeFromCombat (g : Game) (o : GameObject) : Game :=
+  let g := g.setObject { o with status := { o.status with
+    attacking := false
+    blocking := #[] } }
+  g.objects.foldl (fun acc x =>
+    if x.status.blocking.any (· == o.id) then
+      acc.setObject { x with status := { x.status with
+        blocking := x.status.blocking.filter (· != o.id) } }
+    else acc) g
+
+/-- Phase `o` out, along with Auras and Equipment attached to it. Does not
+trigger leaves-the-battlefield abilities. -/
+def phaseOut (g : Game) (o : GameObject) : Game :=
+  if o.status.phasedOut || o.zone != .battlefield then g
+  else
+    let g := g.removeFromCombat o
+    let o := g.object! o.id
+    let g := g.setObject { o with status := { o.status with
+      phasedOut := true, phasedWith := none } }
+    let g := g.logMsg s!"{o.name} phases out"
+    (g.attachmentsOf o).foldl (fun acc att =>
+      let att := acc.object! att.id
+      let acc := acc.removeFromCombat att
+      let att := acc.object! att.id
+      acc.setObject { att with status := { att.status with
+        phasedOut := true, phasedWith := some o.id } }
+        |>.logMsg s!"{att.name} phases out attached to {o.name}") g
+
+/-- Phase `o` in, along with anything that phased out attached to it.
+Counters and “as this enters” choices are kept. Does not trigger enters. -/
+def phaseIn (g : Game) (o : GameObject) : Game :=
+  if !o.status.phasedOut then g
+  else
+    let g := g.setObject { o with status := { o.status with
+      phasedOut := false, phasedWith := none, summoningSick := false } }
+    let g := g.logMsg s!"{o.name} phases in"
+    g.objects.foldl (fun acc att =>
+      if att.status.phasedOut && att.status.phasedWith == some o.id then
+        acc.setObject { att with status := { att.status with
+          phasedOut := false, summoningSick := false } }
+          |>.logMsg s!"{att.name} phases in still attached to {o.name}"
+      else acc) g
+
+/-- Phase in every phased-out permanent `p` controls (CR 502.1). -/
+def phaseInControlled (g : Game) (p : PlayerId) : Game :=
+  g.objects.foldl (fun acc o =>
+    if o.zone == .battlefield && o.status.phasedOut && o.controlledBy p &&
+        o.status.phasedWith.isNone then
+      acc.phaseIn (acc.object! o.id)
+    else acc) g
+
+/-- Mana value of other spells `p` has cast this turn. Copies that were not
+cast are not recorded. -/
+def otherCastManaValueThisTurn (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
 
 /-- Lands `p` currently controls (CR 305.1). -/
 def landsYouControl (g : Game) (p : PlayerId) : Nat :=
@@ -884,15 +1186,76 @@ def humanSoldierToken : CardDef := {
   isToken := true
 }
 
-/-- Create a token under `controller` (CR 111.2 / 608.2c). -/
-def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
+/-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
+Only weavers already on the battlefield before timestamp `asOf` apply
+(simultaneous enters do not see each other). -/
+def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
+  match entering.controller with
+  | none => 0
+  | some p =>
+    if !entering.isCreature then 0
+    else
+      (g.permanentsOf p).foldl (fun acc weaver =>
+        if weaver.id == entering.id then acc
+        else if !weaver.printed.othersEnterWithPlusOneEqualToughness then acc
+        else if weaver.timestamp >= asOf then acc
+        else acc + weaver.toughness.toNat) 0
+
+/-- Put `n` additional +1/+1 counters on `o` as it enters from hope-weaver
+replacements. -/
+def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
+  let n := g.hopeCountersOnEnter o asOf
+  if n == 0 then g
+  else
+    let o := { o with status := o.status.addPlusOnePlusOne n }
+    (g.setObject o).logMsg s!"{o.name} enters with {n} additional +1/+1 counter(s)"
+
+/-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
+that must let enters-the-battlefield triggers see the token (amass, recruit)
+invoke `afterPermanentEnters` after this returns. -/
+def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) : Game × GameObject :=
   let printed := { printed with isToken := true }
   let sick := printed.isCreature && !printed.keywords.haste
+  let asOf := g.timestamp
   let (g, obj) := g.allocObject printed controller .battlefield (some controller)
     (status := { tapped := tapped, summoningSick := sick })
   let g := g.logMsg s!"{(g.player controller).name} creates {obj.name}"
+  let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
+  -- Storied is not a trigger; an artifact token can be the third permanent.
+  let g := g.refreshEnduringStory
   (g, g.object! obj.id)
+
+/-- How many times a token-creating event is replaced (`2^n` for `n`
+token-doublers such as Bard, King of Dale). -/
+def tokenCreateMultiplier (g : Game) (controller : PlayerId) : Nat :=
+  let n := (g.permanentsOf controller).filter (fun o => o.printed.tokenDoubling) |>.size
+  Nat.pow 2 n
+
+/-- Extra Treasures created alongside each Food (Bilbo, Fellow Conspirator). -/
+def foodTreasureReplacements (g : Game) (controller : PlayerId) : Nat :=
+  (g.permanentsOf controller).filter (fun o => o.printed.foodAlsoCreatesTreasure) |>.size
+
+/-- Create a token under `controller`, applying token-doubling and
+Food-and-Treasure replacement effects. -/
+def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
+    (tapped := false) : Game × GameObject :=
+  let copies := g.tokenCreateMultiplier controller
+  let extraTreasure :=
+    if printed.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+  Id.run do
+    let mut g := g
+    let mut last : Option GameObject := none
+    for _ in [0:copies] do
+      let (g', obj) := g.createOneToken controller printed (tapped := tapped)
+      g := g'
+      last := some obj
+    for _ in [0:copies * extraTreasure] do
+      let (g', _) := g.createOneToken controller treasureToken (tapped := tapped)
+      g := g'
+    match last with
+    | some obj => (g, g.object! obj.id)
+    | none => (g, g.object! ⟨0⟩)
 
 /-- Create `n` Treasure tokens, optionally tapped. -/
 def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
@@ -904,16 +1267,25 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
       g := g'
     return g
 
-/-- A 0/0 black Goblin Army creature token (amass Goblins). -/
-def goblinArmyToken : CardDef := {
-  name := "Goblin Army"
+/-- A 0/0 black Army creature token of the given subtype (amass). -/
+def armyToken (subtype : String) : CardDef := {
+  name := s!"{subtype} Army"
   types := #[.creature]
-  subtypes := #["Goblin", "Army"]
+  subtypes := #[subtype, "Army"]
   power := some 0
   toughness := some 0
   colorIndicator := some (ColorSet.singleton .black)
   isToken := true
 }
+
+/-- A 0/0 black Goblin Army creature token (amass Goblins). -/
+def goblinArmyToken : CardDef := armyToken "Goblin"
+
+/-- A 0/0 black Orc Army creature token (amass Orcs). -/
+def orcArmyToken : CardDef := armyToken "Orc"
+
+/-- A 0/0 black Zombie Army creature token (amass Zombies). -/
+def zombieArmyToken : CardDef := armyToken "Zombie"
 
 /-- A Food token (CR 111 / 701.34). -/
 def foodToken : CardDef := {
@@ -968,6 +1340,30 @@ def elfToken : CardDef := {
   isToken := true
 }
 
+/-- A 1/1 white Spirit creature token with flying. -/
+def spiritToken : CardDef := {
+  name := "Spirit"
+  types := #[.creature]
+  subtypes := #["Spirit"]
+  power := some 1
+  toughness := some 1
+  colorIndicator := some (ColorSet.singleton .white)
+  keywords := Keyword.flying
+  isToken := true
+}
+
+/-- A 4/4 white Bird Soldier creature token with flying. -/
+def birdSoldierToken : CardDef := {
+  name := "Bird Soldier"
+  types := #[.creature]
+  subtypes := #["Bird", "Soldier"]
+  power := some 4
+  toughness := some 4
+  colorIndicator := some (ColorSet.singleton .white)
+  keywords := Keyword.flying
+  isToken := true
+}
+
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
@@ -978,15 +1374,20 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .dwarf => dwarfToken
   | .bear => bearToken
   | .elf => elfToken
+  | .spirit => spiritToken
+  | .birdSoldier => birdSoldierToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
-    (n : Nat) (tapped := false) : Game :=
+    (n : Nat) (tapped := false) (attacking := false) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let (g', _) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
+      let (g', obj) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
       g := g'
+      if attacking then
+        g := g.setObject { (g.object! obj.id) with
+          status := { (g.object! obj.id).status with attacking := true } }
     return g
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4). -/
@@ -1068,7 +1469,10 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
         let legendaryOk :=
           (!ab.lordLegendaryOnly || target.isLegendary) &&
           (!ab.lordNonlegendaryOnly || !target.isLegendary)
-        let subtypeOk := subtypes.isEmpty || subtypes.any (g.hasSubtype target)
+        let subtypeOk :=
+          match src.status.chosenCreatureType with
+          | some t => g.hasSubtype target t
+          | none => subtypes.isEmpty || subtypes.any (g.hasSubtype target)
         if sameController && otherOk && legendaryOk && subtypeOk then
           addStats acc (p, t)
         else acc)
@@ -1094,17 +1498,77 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
   else
     g.battlefield.foldl
       (fun acc aura =>
-        if aura.attachedTo == some o.id then addStats acc (auraStatBonus aura)
+        if aura.attachedTo == some o.id then
+          addStats acc (addStats (auraStatBonus aura) ((aura.status.hone : Int), 0))
         else acc)
       (0, 0)
 
-/-- Power and toughness of `o`, including pumps, counters, land-count setting
-effects, until-EOT base setting, attached bonuses, and lord bonuses (CR 208.2).
-Also last-known information before `o` leaves the battlefield (CR 113.7a). -/
+/-- Self +P/+T from “as long as you have an enduring story”. -/
+def enduringStorySelfBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (pw, tw, _) => addStats acc (pw, tw)
+            | none => acc)
+          (0, 0)
+
+/-- Team +P/+T from “as long as you have an enduring story, creatures you
+control get …”. -/
+def enduringStoryTeamBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield || !o.isCreature then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        (g.permanentsOf p).foldl
+          (fun acc src =>
+            src.staticAbilities.foldl
+              (fun acc ab =>
+                match ab.teamIfEnduringStory? with
+                | some (pw, tw) => addStats acc (pw, tw)
+                | none => acc)
+              acc)
+          (0, 0)
+
+/-- Keywords granted while the controller has an enduring story. -/
+def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if !g.hasEnduringStory p then Keywords.none
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (_, _, k) => Keywords.merge acc k
+            | none => acc)
+          Keywords.none
+
+/-- +P/+0 from `powerPerMountain` (e.g. Desert Were-Worm). -/
+def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
+  if o.printed.powerPerMountain == 0 then 0
+  else
+    let n :=
+      (g.permanentsOf o.you).filter (fun p => g.hasSubtype p "Mountain") |>.size
+    Int.ofNat (o.printed.powerPerMountain * n)
+
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let n : Int := o.status.plusOnePlusOne
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
-      g.lordStatBonus o].foldl addStats (0, 0)
+      g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
+      (g.mountainPowerBonus o, (0 : Int))].foldl
+    addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotPower (g : Game) (o : GameObject) : Int :=
@@ -1113,6 +1577,25 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
 /-- Toughness of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
   (g.snapshotPT o).2
+
+/-- Permanents that exile opposing creatures that would die. -/
+def deathReplacementSources (g : Game) : Array (PlayerId × ObjectId) :=
+  match g.lockedDeathReplacements with
+  | some xs => xs
+  | none =>
+    g.battlefield.filterMap (fun o =>
+      if o.printed.exileOppCreaturesInstead then
+        o.controller.map (fun p => (p, o.id))
+      else none)
+
+/-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
+opposing creature that would go to a graveyard. -/
+def exileInsteadController? (g : Game) (dying : GameObject) : Option PlayerId :=
+  (g.deathReplacementSources.find? (fun (p, id) =>
+    id != dying.id &&
+      match dying.controller with
+      | some q => p != q
+      | none => false)).map (fun (p, _) => p)
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
@@ -1128,11 +1611,18 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (controller : Option PlayerId := none) : Game × ObjectId :=
   let old := g.object! id
-  let exileInstead :=
-    old.zone == .battlefield && old.status.untilEotExileIfDies &&
-      match dest with
-      | .graveyard _ => true
-      | _ => false
+  let wouldGoToGy :=
+    match dest with
+    | .graveyard _ => true
+    | _ => false
+  let headCtrl :=
+    if old.zone == .battlefield && old.isCreature && wouldGoToGy then
+      g.exileInsteadController? old
+    else none
+  let headExile := headCtrl.isSome
+  let smiteExile :=
+    old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
+  let exileInstead := headExile || smiteExile
   let dest := if exileInstead then Zone.exile else dest
   let died :=
     old.zone == .battlefield && old.isCreature &&
@@ -1147,7 +1637,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   let othersDie :=
-    if died then
+    if died && !g.suppressOthersDie then
       g.battlefield.foldl (fun acc o =>
         if o.id == old.id then acc
         else
@@ -1191,22 +1681,48 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | some o =>
             if o.zone == .exile then
               let name := o.name
-              let (g', returnedId) := g.move o.id .battlefield (some o.owner)
-              g := g'
-              let returned := g.object! returnedId
-              let sick := !returned.printed.keywords.haste
-              g := g.setObject { returned with
-                status := { returned.status with summoningSick := sick } }
-              g := g.logMsg s!"{name} returns to the battlefield"
-              let returned := g.object! returnedId
-              match returned.controller with
-              | some p =>
-                g := { g with waitingTriggers :=
-                  g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
-              | none => pure ()
+              if o.printed.isAura then
+                match g.battlefield.find? (fun h => h.isCreature) with
+                | none =>
+                  g := g.logMsg
+                    s!"{name} remains in exile (can't be attached legally)"
+                | some host =>
+                  let hostId := host.id
+                  let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                  g := g'
+                  let returned := g.object! returnedId
+                  g := g.setObject { returned with attachedTo := some hostId }
+                  g := g.logMsg
+                    s!"{name} returns attached to {host.name} (does not target)"
+                  let returned := g.object! returnedId
+                  match returned.controller with
+                  | some p =>
+                    g := { g with waitingTriggers :=
+                      g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
+                  | none => pure ()
+              else
+                let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                g := g'
+                let returned := g.object! returnedId
+                let sick := !returned.printed.keywords.haste
+                g := g.setObject { returned with
+                  status := { returned.status with summoningSick := sick } }
+                g := g.logMsg s!"{name} returns to the battlefield"
+                let returned := g.object! returnedId
+                match returned.controller with
+                | some p =>
+                  g := { g with waitingTriggers :=
+                    g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
+                | none => pure ()
           | none => pure ()
         return g
     else g
+  let g :=
+    match headCtrl with
+    | some p =>
+      let (g, _) := g.createToken p wolfToken
+      g.logMsg s!"{(g.player p).name} creates a Wolf (exiled instead of dying)"
+    | none => g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
@@ -1216,10 +1732,12 @@ def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   (g.move o.id (.graveyard o.owner) none).1
 
 /-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
-and optional attachment. -/
+and optional attachment. `applyHope` applies Arwen-style enter-with-counters
+using weavers that were already present. -/
 def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (tapped := false) (summoningSick := true)
-    (attachedTo : Option ObjectId := none) : Game × ObjectId :=
+    (attachedTo : Option ObjectId := none) (applyHope := true) : Game × ObjectId :=
+  let asOf := g.timestamp
   let (g, newId) := g.move id .battlefield (some controller)
   let o := g.object! newId
   let o := { o with
@@ -1228,7 +1746,9 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     match attachedTo with
     | some host => { o with attachedTo := some host }
     | none => o
-  (g.setObject o, newId)
+  let g := g.setObject o
+  let g := if applyHope then g.applyHopeEnterCounters (g.object! newId) asOf else g
+  (g, newId)
 
 /-- If 0 or 1 living players remain, set the game result (CR 104). -/
 def decideGameIfFinished (g : Game) : Option Game :=
@@ -1249,33 +1769,72 @@ def emptyManaPools (g : Game) : Game :=
         g := g.setPlayer { pl with manaPool := ManaPool.empty }
     return g
 
-/-- Draw `n` cards for `p` (CR 121). -/
+/-- Draw one card with no replacement effects (CR 121). -/
+def drawOneCard (g : Game) (p : PlayerId) : Game :=
+  let pl := g.player p
+  if pl.library.isEmpty then
+    let g := g.setPlayer { pl with drewFromEmpty := true }
+    g.logMsg s!"{pl.name} tries to draw from an empty library"
+  else
+    let top := pl.library.back!
+    let cardName := (g.object! top).name
+    let rest := pl.library.pop
+    let g := g.setPlayer { pl with library := rest }
+    let (g, _) := g.move top (.hand p) none
+    let pl := g.player p
+    let drawn := pl.cardsDrawnThisTurn + 1
+    let drawStepDrawn :=
+      if g.step == .draw && g.activePlayer == p then
+        pl.cardsDrawnThisDrawStep + 1
+      else pl.cardsDrawnThisDrawStep
+    let g := g.setPlayer { pl with
+      cardsDrawnThisTurn := drawn
+      cardsDrawnThisDrawStep := drawStepDrawn }
+    let g := g.logMsg s!"{pl.name} draws {cardName}"
+    let firstOfTheirDrawStep :=
+      g.step == .draw && g.activePlayer == p && drawStepDrawn == 1
+    Id.run do
+      let mut g := g
+      for o in g.permanentsOf p do
+        g := { g with waitingTriggers :=
+          g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
+        if drawn == 2 then
+          g := { g with waitingTriggers :=
+            g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+      for opp in g.livingOpponents p do
+        for o in g.permanentsOf opp.id do
+          if !firstOfTheirDrawStep then
+            g := { g with waitingTriggers :=
+              g.waitingTriggers ++
+                o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep }
+          if drawn == 2 then
+            g := { g with waitingTriggers :=
+              g.waitingTriggers ++
+                o.waitingTriggersFor opp.id .opponentDrawsSecondCard }
+      return g
+
+/-- How many cards replace one draw (`2^n` Bard effects, except the first
+card of your draw step). -/
+def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
+  let pl := g.player p
+  let firstOfYourDrawStep :=
+    g.step == .draw && g.activePlayer == p && pl.cardsDrawnThisDrawStep == 0
+  if firstOfYourDrawStep then 1
+  else
+    let n := (g.permanentsOf p).filter (fun o =>
+      o.printed.drawTwoExceptFirstDrawStep) |>.size
+    Nat.pow 2 n
+
 def draw (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let pl := g.player p
-      if pl.library.isEmpty then
-        g := g.setPlayer { pl with drewFromEmpty := true }
-        g := g.logMsg s!"{pl.name} tries to draw from an empty library"
-        return g
-      else
-        let top := pl.library.back!
-        let cardName := (g.object! top).name
-        let rest := pl.library.pop
-        g := g.setPlayer { pl with library := rest }
-        let (g', _) := g.move top (.hand p) none
-        g := g'
+      let copies := g.drawMultiplier p
+      for _ in [0:copies] do
         let pl := g.player p
-        let drawn := pl.cardsDrawnThisTurn + 1
-        g := g.setPlayer { pl with cardsDrawnThisTurn := drawn }
-        g := g.logMsg s!"{pl.name} draws {cardName}"
-        for o in g.permanentsOf p do
-          g := { g with waitingTriggers :=
-            g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
-          if drawn == 2 then
-            g := { g with waitingTriggers :=
-              g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+        if pl.drewFromEmpty then
+          return g
+        g := g.drawOneCard p
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a
@@ -1387,9 +1946,17 @@ def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
             Keywords.merge k ab.hostKeywords) Keywords.none)
       else acc) Keywords.none
 
-/-- Printed, until-end-of-turn, and attached-host keywords. -/
+/-- Printed, until-end-of-turn, attached-host, and enduring-story keywords. -/
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
-  Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o)
+  let base :=
+    Keywords.merge (Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o))
+      (g.enduringStoryKeywords o)
+  if o.status.shadow > 0 then { base with shadow := true } else base
+
+/-- Whether `o` currently has shadow (printed, granted, or from a counter).
+Multiple instances are redundant. -/
+def hasShadow (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).shadow
 
 /-- Printed or until-end-of-turn keyword selected by `sel`. -/
 def hasPrintedOrEot (o : GameObject) (sel : Keywords → Bool) : Bool :=
@@ -1424,8 +1991,10 @@ def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.cantBeBlocked)
 
-/-- Whether `o` has lifelink, printed or granted until end of turn (CR 702.15). -/
+/-- Whether `o` has lifelink, printed, granted until end of turn, or from a
+lifelink counter (CR 702.15). -/
 def hasLifelink (g : Game) (o : GameObject) : Bool :=
+  o.status.lifelinkCounters > 0 ||
   g.hasKeyword o (·.lifelink) ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
@@ -1488,7 +2057,12 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       | some n => g.snapshotPower blocker <= n
       | none => false)) &&
   (!g.hasFlying attacker ||
-    g.hasFlying blocker || (g.currentKeywords blocker).reach)
+    g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
+  (!(g.hasShadow attacker) || g.hasShadow blocker) &&
+  (!(g.hasShadow blocker) || g.hasShadow attacker) &&
+  !(match attacker.status.cantBeBlockedByPlayer with
+    | some pid => blocker.controlledBy pid
+    | none => false)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
@@ -1498,9 +2072,20 @@ def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
     | some subtypes => subtypes.any (g.hasSubtype target)
     | none => false)
 
-/-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
-def hasHexproof (_g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.hexproof)
+/-- Lore counters among Sagas `p` controls. -/
+def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.saga.isSome then acc + o.status.lore else acc) 0
+
+/-- Whether `o` currently has hexproof and indestructible from Tom Bombadil's
+lore-threshold static. -/
+def loreThresholdProtection (g : Game) (o : GameObject) : Bool :=
+  match o.printed.hexproofIndestructibleIfLore, o.controller with
+  | some n, some p => g.loreAmongSagas p ≥ n
+  | _, _ => false
+
+def hasHexproof (g : Game) (o : GameObject) : Bool :=
+  hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
@@ -1508,9 +2093,18 @@ def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
-def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.indestructible &&
+def hasIndestructible (g : Game) (o : GameObject) : Bool :=
+  (o.printedOrUntilEot.indestructible ||
+    o.status.indestructibleCounters > 0 ||
+    g.loreThresholdProtection o) &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
+
+/-- Mana value of `o` (CR 202.3). `{X}` is the chosen value while the object
+is on the stack and 0 otherwise (rulings 178 / 185 / 186). -/
+def objectManaValue (_g : Game) (o : GameObject) : Nat :=
+  let printed := o.printed.manaValue
+  if o.zone != .stack then printed
+  else printed + o.chosenX.getD 0
 
 /-- Whether `o` has trample, printed, granted until end of turn, or granted by
 a static ability (CR 702.19, 604.2). -/
@@ -1717,24 +2311,49 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := { g with pending := .none }
       | _ => pure ()
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
+      -- Snapshot exile-instead replacements first so a simultaneous death
+      -- of Head of the Hunt still exiles opposing creatures.
+      let snap :=
+        g.battlefield.filterMap (fun o =>
+          if o.printed.exileOppCreaturesInstead then
+            o.controller.map (fun p => (p, o.id))
+          else none)
+      let victims :=
+        g.battlefield.filterMap (fun o =>
+          if !o.isCreature then none
+          else
+            let t := g.toughness o
+            if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
+            else if o.status.damage ≥ t && !g.hasIndestructible o then
+              some (o, s!"{o.name} dies from lethal damage")
+            else if o.status.dealtDeathtouch && !g.hasIndestructible o then
+              some (o, s!"{o.name} dies from deathtouch")
+            else none)
+      if !victims.isEmpty then
+        g := { g with
+          lockedDeathReplacements := some snap
+          suppressOthersDie := true }
+        for o in g.battlefield do
+          if victims.any (fun pair => pair.1.id != o.id) then
+            match o.controller with
+            | some p =>
+              g := { g with waitingTriggers :=
+                g.waitingTriggers ++
+                  o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
+            | none => pure ()
+      for pair in victims do
+        let o := pair.1
+        let reason := pair.2
+        match g.findObject? o.id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature then
+            g := g.moveToOwnerGraveyard o reason
+            changed := true
+        | none => pure ()
+      g := { g with lockedDeathReplacements := none, suppressOthersDie := false }
       for o in g.battlefield do
-        if o.isCreature then
-          let t := g.toughness o
-          if t ≤ 0 then
-            g := g.moveToOwnerGraveyard o s!"{o.name} dies (toughness {t})"
-            changed := true
-          else if o.status.damage ≥ t && !g.hasIndestructible o then
-            g := g.moveToOwnerGraveyard o s!"{o.name} dies from lethal damage"
-            changed := true
-          else if o.status.dealtDeathtouch then
-            -- CR 704.5h: any damage from a deathtouch source since the last
-            -- SBA check is lethal. The flag is then cleared even if the
-            -- creature survives (e.g. indestructible).
-            if !g.hasIndestructible o then
-              g := g.moveToOwnerGraveyard o s!"{o.name} dies from deathtouch"
-              changed := true
-            else
-              g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+        if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
+          g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>
@@ -1743,6 +2362,12 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
         return (g, true)
       | none => pure ()
+      -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
+      for o in g.objects do
+        if o.printed.isToken && o.zone != .battlefield then
+          g := g.ceaseToExist o.id
+          g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
+          changed := true
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -1800,21 +2425,36 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
+/-- Extra land plays from permanents such as Thranduil's Company. Each such
+permanent is cumulative with other extra-land effects (rulings 288 / 306). -/
+def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    match o.printed.extraLandIfOtherSubtype with
+    | none => acc
+    | some t =>
+      if (g.permanentsOf p).any (fun other =>
+        other.id != o.id && g.hasSubtype other t) then
+        acc + 1
+      else acc) 0
+
 /-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
 def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
-  1 + (g.player p).additionalLandsThisTurn
+  1 + (g.player p).additionalLandsThisTurn + g.extraLandsFromPermanents p
 
 /-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && (g.player p).landsPlayedThisTurn < g.landPlaysAllowed p
 
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
-def mayPlayFromExile (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match o.playPermission with
   | some perm =>
     perm.player == p &&
-      (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0)
+      (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0) &&
+      (match perm.requireSubtype with
+       | none => true
+       | some t => g.controlsAnySubtype p #[t])
   | none => false
 
 /-- Cards in exile that `p` currently may play. -/
@@ -1825,15 +2465,44 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
 def mayPlayFromGraveyard (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p && o.printed.flashback.isSome
 
+/-- True when `p` controls a permanent that lets them look at the library top. -/
+def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.mayLookAtTopAnytime)
+
+/-- True when `p` may look at the top card of their library right now.
+Elven Chorus does not reveal a new top while a spell from that top is
+still being cast. -/
+def canLookAtLibraryTop (g : Game) (p : PlayerId) : Bool :=
+  g.controlsLookAtTop p && !g.castingFromTop
+
+/-- True when `p` controls a permanent that lets them cast creatures from
+the top of their library. Does not grant flash or change timing. -/
+def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.mayCastCreaturesFromTop)
+
+/-- The top card of `p`'s library, if any. -/
+def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
+  (g.player p).library.back?.bind g.findObject?
+
+/-- True when `o` is the top card of `p`'s library and they may cast it as
+a creature spell from there. Timing is still checked by `canCast`. -/
+def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.printed.isCreature &&
+    o.zone == .library p &&
+    (g.player p).library.back? == some o.id &&
+    g.controlsCastCreaturesFromTop p
+
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (g.player p).hand.contains o.id || g.mayPlayFromExile p o ||
-    g.mayPlayFromGraveyard p o
+    g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
   if o.zone == .exile && !g.mayPlayFromExile p o then
     "You may not play that card from exile"
   else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
     "You may not play that card from your graveyard"
+  else if o.zone == .library p && !g.mayPlayFromLibraryTop p o then
+    "You may not play that card from the top of your library"
   else
     "That card is not in your hand"
 
@@ -2060,7 +2729,11 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       match cause with
       | some o => g.power o ≤ n
       | none => true
-  powerOk && otherOk
+  let lifeOk :=
+    match ab.timing.gainedLifeAtLeast with
+    | none => true
+    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+  powerOk && otherOk && lifeOk
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -2079,6 +2752,25 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
 def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
 
+/-- Extra times a trigger of `source` fires from Bifur / Chief / Wizard's Staff
+statics. Each such ability adds one additional instance; they stack. -/
+def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) : Nat :=
+  let story := (g.player controller).enduringStory
+  (g.permanentsOf controller).foldl (fun acc o =>
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .extraTriggerIfEnduringStorySubtype subtype =>
+        if story && g.hasSubtype source subtype then acc + 1 else acc
+      | .extraTriggerAnotherYouControl subtypes includeBattles =>
+        if o.id == source.id then acc
+        else
+          let matchSubtype := subtypes.any (fun s => g.hasSubtype source s)
+          let matchBattle := includeBattles && source.printed.isBattle
+          if matchSubtype || matchBattle then acc + 1 else acc
+      | .equippedTriggersAgain =>
+        if o.attachedTo == some source.id then acc + 1 else acc
+      | _ => acc) acc) 0
+
 /-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
 intervening condition is checked when the event occurs. -/
 def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
@@ -2094,8 +2786,14 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         | some o => g.setObject { o with status := { o.status with firedOnceEachTurn := true } }
         | none => g
       else g
-    g.enqueueWaitingTriggers #[{
-      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }]
+    let copies := g.extraTriggerCopies controller source + 1
+    let wt : WaitingTrigger := {
+      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }
+    Id.run do
+      let mut g := g
+      for _ in [0:copies] do
+        g := g.enqueueWaitingTriggers #[wt]
+      return g
 
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
@@ -2295,8 +2993,22 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let nonc :=
     if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
     else pl.noncreatureSpellsCastThisTurn + 1
+  let creat :=
+    if spell.printed.isCreature then pl.creatureSpellsCastThisTurn + 1
+    else pl.creatureSpellsCastThisTurn
   let g := g.modifyPlayer caster (fun p =>
-    { p with spellsCastThisTurn := spells, noncreatureSpellsCastThisTurn := nonc })
+    { p with
+      spellsCastThisTurn := spells
+      noncreatureSpellsCastThisTurn := nonc
+      creatureSpellsCastThisTurn := creat
+      castManaValuesThisTurn :=
+        p.castManaValuesThisTurn.push (g.objectManaValue spell) })
+  let g :=
+    Id.run do
+      let mut g := g
+      for _ in [0:spell.printed.cascade] do
+        g := g.putTriggeredAbilityOnStack caster spell .onCastCascade "cascade trigger"
+      return g
   let g :=
     if spell.printed.isInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery
@@ -2304,6 +3016,23 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     if spell.printed.isCreature then g
     else g.putControlledTriggers caster .youCastNoncreature
+  let colors := spell.printed.colors
+  let g :=
+    Color.all.foldl (fun acc c =>
+      if colors.contains c then
+        acc.putControlledTriggers caster (.youCastColor c)
+      else acc) g
+  let mv := g.objectManaValue spell
+  let g :=
+    (g.livingOpponents caster).foldl (fun acc pl =>
+      acc.foldControlledPermanents pl.id none fun acc o =>
+        match o.status.chosenOdd with
+        | none => acc
+        | some odd =>
+          let parityOk := if odd then mv % 2 == 1 else mv % 2 == 0
+          if parityOk then
+            acc.putMatchingSourceTriggers pl.id o .opponentCastsMatchingParity
+          else acc) g
   let g :=
     if spells == 2 then
       g.livingPlayers.foldl (fun acc pl =>
@@ -2340,6 +3069,17 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
+  -- Storied is granted as the permanent enters, before SBA (legend rule /
+  -- 0 toughness) and before enters triggers use the stack.
+  let g := g.refreshEnduringStory
+  let g := g.refreshCitysBlessing
+  let g :=
+    if o.printed.entersWithIndestructibleCounter then
+      let g := g.setObject { o with status :=
+        { o.status with indestructibleCounters := o.status.indestructibleCounters + 1 } }
+      g.logMsg s!"{o.name} enters with an indestructible counter"
+    else g
+  let o := g.object! o.id
   let g :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
@@ -2362,6 +3102,10 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.putControlledTriggersWithPrompt p .thisOrNontokenSubtypeYouControlEnters
   match (g.object! o.id).controller with
   | some p =>
+    let g :=
+      if (g.object! o.id).printed.isToken then
+        g.putControlledTriggers p .tokenYouControlEnters
+      else g
     if (g.object! o.id).printed.isArtifact then
       g.putControlledTriggersWithPrompt p .artifactYouControlEnters
     else g
@@ -2401,15 +3145,34 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
 def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
   (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
 
+/-- Colors among legendary creatures and planeswalkers `p` controls (Mox Amber).
+Colorless is not a color; a colorless legend contributes nothing. -/
+def legendaryManaColors (g : Game) (p : PlayerId) : ColorSet :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.isLegendary && (o.isCreature || o.printed.isPlaneswalker) then
+      ColorSet.union acc o.printed.colors
+    else acc) ColorSet.empty
+
 /-- Mana added by tapping `o` for `mana` (CR 106.4 / 605.3b). A
 `tapAddManaForEach` ability counts permanents the controller currently
 controls with the listed subtype. `tapAddAnyColorEqualToPower` adds this
-creature's current power (CR 208.2). -/
+creature's current power (CR 208.2). Mox Amber and Arcane Signet may
+produce 0 when no matching color is available. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
   if o.printed.tapAddAnyColorEqualToPower then
     match mana with
     | .colored _ => (g.power o).toNat
     | .colorless => 0
+  else if o.printed.tapAddAnyColorAmongLegendaries then
+    match mana, o.controller with
+    | .colored c, some p => if (g.legendaryManaColors p).contains c then 1 else 0
+    | _, _ => 0
+  else if o.printed.tapAddCommanderIdentity then
+    match mana, o.controller with
+    | .colored c, some p =>
+      let pl := g.player p
+      if pl.hasCommander && pl.commanderColorIdentity.contains c then 1 else 0
+    | _, _ => 0
   else
     match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
     | some a =>
@@ -2459,17 +3222,28 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     { pl with manaPool :=
       ManaPool.add pl.manaPool mana amount elfRestricted instRestricted })
   let produced :=
-    if amount == 1 then toString mana else s!"{mana} ×{amount}"
+    if amount == 0 then "no mana"
+    else if amount == 1 then toString mana
+    else s!"{mana} ×{amount}"
   let restrictNote :=
     if elfRestricted then " (Elf spells and abilities)"
     else if instRestricted then " (instant or sorcery spells)"
     else ""
-  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}{restrictNote}"
+  let g :=
+    if amount == 0 then
+      g.logMsg s!"{g.player p |>.name} taps {o.name} but adds no mana"
+    else
+      g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}{restrictNote}"
   let g :=
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
     | none => g
-  -- Mana abilities don't use the stack (CR 605.3b).
+  -- Mana abilities don't use the stack (CR 605.3b), but they still activate
+  -- and can cause Elrond-style triggers.
+  let g :=
+    if o.isCreature then
+      g.putControlledTriggers p .youActivateCreatureAbility
+    else g
   return { g with consecutivePasses := 0 }
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
@@ -2778,8 +3552,12 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     match face.flashIfYouControlSubtype with
     | some t => g.controlsAnySubtype p #[t]
     | none => false
+  let radagastFlash :=
+    face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
+      (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
-  (if face.hasSorcerySpeed && !hasConditionalFlash then g.asSorcery? p else true)
+  (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash then
+    g.asSorcery? p else true)
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
@@ -2787,7 +3565,9 @@ non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !o.printed.isLand &&
   g.mayPlay p o &&
-  g.timingAllowsCast p o.printed &&
+  (match o.playPermission with
+   | some perm => perm.ignoreTiming || g.timingAllowsCast p o.printed
+   | none => g.timingAllowsCast p o.printed) &&
   (if o.printed.additionalCostSacrificeArtifactOrCreature &&
       o.printed.additionalCostOrPayGeneric.isNone then
     (g.permanentsOf p).any (fun perm =>
@@ -2817,7 +3597,9 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     let face := adv.toCardDef
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
-    g.timingAllowsCast p face &&
+    (match o.playPermission with
+     | some perm => perm.ignoreTiming || g.timingAllowsCast p face
+     | none => g.timingAllowsCast p face) &&
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
@@ -2898,7 +3680,8 @@ def reverseProposedSpell (g : Game) : Game :=
         objects := objects
         stack := prop.stackBefore
         pending := .none
-        proposedSpell := none }
+        proposedSpell := none
+        castingFromTop := false }
       g := g.modifyPlayer prop.caster (fun pl =>
         { pl with hand := prop.handBefore, manaPool := prop.manaBefore })
       for id in prop.tapped do
@@ -2912,8 +3695,37 @@ def reverseProposedSpell (g : Game) : Game :=
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
 
+/-- Queue “becomes the target” triggers once per unique targeted permanent
+(CR 603.2 / 601.2c). A spell or ability that targets the same permanent
+more than once still triggers only once. -/
+def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
+    (targets : Array Target) : Game :=
+  Id.run do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for t in targets do
+      match t with
+      | Target.permanent oid =>
+        if !seen.contains oid then
+          seen := seen.push oid
+          match g.findObject? oid with
+          | some o =>
+            if o.controller != some caster then
+              match o.controller with
+              | some c =>
+                g := g.putMatchingSourceTriggers c o .becomesTarget
+              | none => pure ()
+          | none => pure ()
+      | _ => pure ()
+    return g
+
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
+  let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  let g :=
+    match g.stackEntry? spell.id with
+    | some e => g.queueBecomesTargetTriggers p e.targets
+    | none => g
   let g := g.putCastTriggersOnStack p spell
   g.receivePriority p
 
@@ -3032,9 +3844,17 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | some sid =>
       match g.findObject? sid with
       | some src =>
-        g.setObject { src with status := { src.status with
+        let g := g.setObject { src with status := { src.status with
           activationsThisTurn := src.status.activationsThisTurn + 1 } }
+        let src := g.object! sid
+        if src.isCreature then
+          g.putControlledTriggers p .youActivateCreatureAbility
+        else g
       | none => g
+  let g :=
+    match g.stack.back? with
+    | some e => g.queueBecomesTargetTriggers p e.targets
+    | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
 /-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
@@ -3055,6 +3875,410 @@ def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : Objec
 /-- Whether `sac` is a legal creature for `p` to sacrifice to an edict. -/
 def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
   (g.sacrificeCreatureChoices p).any (·.id == sac.id)
+
+/-- Creatures `p` controls that are tied for least power. -/
+def leastPowerCreatures (g : Game) (p : PlayerId) : Array GameObject :=
+  let cs := g.sacrificeCreatureChoices p
+  match cs[0]? with
+  | none => #[]
+  | some first =>
+    let minP := cs.foldl (fun acc o => min acc (g.power o)) (g.power first)
+    cs.filter (fun o => g.power o == minP)
+
+/-- Sacrifice a least-power creature `p` controls. If several are tied and
+`chosen` is none, the player still chooses (logged; no sacrifice yet). -/
+def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
+    (chosen : Option ObjectId := none) : Game :=
+  let tied := g.leastPowerCreatures p
+  if tied.isEmpty then
+    g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
+  else
+    let pick :=
+      match chosen with
+      | some id => tied.find? (fun o => o.id == id)
+      | none => if tied.size == 1 then some tied[0]! else none
+    match pick with
+    | some o =>
+      g.moveToOwnerGraveyard o
+        s!"{(g.player p).name} sacrifices {o.name} (least power)"
+    | none =>
+      g.logMsg
+        s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
+
+/-- Unused Alliance modes on `src` (0 = add GGG, 1 = +1/+1 each, 2 = scry 2
+then draw). -/
+def unusedAllianceModes (_g : Game) (src : GameObject) : Array Nat :=
+  #[0, 1, 2].filter (fun m => !src.status.allianceModesChosen.contains m)
+
+/-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
+If every mode was already chosen, the ability is removed with no effect. -/
+def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if src.status.allianceModesChosen.size >= 3 ||
+        (g.unusedAllianceModes src).isEmpty then
+      g.logMsg
+        "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+    else if src.status.allianceModesChosen.contains mode then
+      g.logMsg "That Alliance mode has already been chosen this turn"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
+      match src.controller, mode with
+      | some c, 0 =>
+        let g := g.modifyPlayer c (fun pl =>
+          { pl with manaPool :=
+            pl.manaPool.add (.colored .green) 3 })
+        g.logMsg ((g.player c).name ++ " adds {G}{G}{G}")
+      | some c, 1 =>
+        Id.run do
+          let mut g := g
+          for o in g.battlefield do
+            if o.isCreature && o.controlledBy c then
+              g := g.setObject { o with status := o.status.addPlusOnePlusOne 1 }
+          return g.logMsg
+            s!"{(g.player c).name} puts a +1/+1 counter on each creature they control"
+      | some c, 2 =>
+        (g.draw c 1).logMsg ((g.player c).name ++ " scries 2, then draws a card")
+      | _, _ => g
+
+/-- Unused Gollum modes on `src` (0 = +1/+1, 1 = drain, 2 = draw). Modes last
+for the object's lifetime (ruling 164). -/
+def unusedGollumModes (_g : Game) (src : GameObject) : Array Nat :=
+  #[0, 1, 2].filter (fun m => !src.status.chosenModes.contains m)
+
+/-- Apply one unused Gollum mode. If every mode was already chosen, the
+ability is removed with no effect and Gollum remains. -/
+def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if (g.unusedGollumModes src).isEmpty then
+      g.logMsg
+        "all three modes have been chosen. The ability is removed from the stack with no effect"
+    else if src.status.chosenModes.contains mode then
+      g.logMsg "That mode has already been chosen"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with chosenModes := src.status.chosenModes.push mode } }
+      match src.controller, mode with
+      | some _, 0 =>
+        let src := g.object! sourceId
+        let g := g.setObject { src with status := src.status.addPlusOnePlusOne 1 }
+        g.logMsg s!"{src.name} gets a +1/+1 counter"
+      | some c, 1 =>
+        let g := g.forEachOpponent c (fun g pid =>
+          let pl := g.player pid
+          g.setLife pid (pl.life - 2)
+            s!"{pl.name} loses 2 life ({pl.life - 2} life)")
+        let pl := g.player c
+        g.setLife c (pl.life + 2)
+          s!"{pl.name} gains 2 life ({pl.life + 2} life)"
+      | some c, 2 =>
+        g.draw c 1
+      | _, _ => g
+
+/-- As Gollum enters, choose odd (`true`) or even (`false`). Zero is even. -/
+def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
+  match g.findObject? sourceId with
+  | none => g
+  | some src =>
+    let g := g.setObject { src with status := { src.status with chosenOdd := some odd } }
+    g.logMsg
+      (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
+
+/-- Remove an indestructible counter as a cost (ruling 357). -/
+def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
+  if o.status.indestructibleCounters == 0 then
+    throw s!"{o.name} has no indestructible counter"
+  let g := g.setObject { o with status :=
+    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
+  return g.logMsg s!"{o.name} loses an indestructible counter"
+
+/-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
+no counters are put on Arwen or the target (ruling 189). -/
+def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectId) : Game :=
+  match targetId.bind g.findObject? with
+  | none =>
+    g.logMsg "The target is no longer legal. The ability does nothing."
+  | some o =>
+    if !o.isOnBattlefield || !o.isCreature || o.id == arwenId then
+      g.logMsg "The target is no longer legal. The ability does nothing."
+    else
+      let putCounters (g : Game) (oid : ObjectId) : Game :=
+        match g.findObject? oid with
+        | none => g
+        | some x =>
+          let g := g.setObject { x with status :=
+            { x.status with
+              plusOnePlusOne := x.status.plusOnePlusOne + 1
+              lifelinkCounters := x.status.lifelinkCounters + 1 } }
+          g.logMsg s!"{x.name} gets a +1/+1 counter and a lifelink counter"
+      let g := g.setObject { o with status := o.status.grantUntilEot Keyword.indestructible }
+      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
+      let g := putCounters g o.id
+      putCounters g arwenId
+
+/-- Behold a quality: choose a matching permanent you control or reveal a
+matching card from your hand. Later zone changes do not un-behold (117). -/
+def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
+  let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
+  let hasHand :=
+    (g.player p).hand.any (fun id =>
+      match g.findObject? id with
+      | some o => o.printed.hasSubtype quality
+      | none => false)
+  if hasPerm || hasHand then
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with beheldQualities := pl.beheldQualities.push quality })
+    g.logMsg s!"{(g.player p).name} beholds a {quality}"
+  else
+    g.logMsg s!"{(g.player p).name} does not behold a {quality}"
+
+/-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
+def qualityWasBeheld (g : Game) (p : PlayerId) (quality : String) : Bool :=
+  (g.player p).beheldQualities.contains quality
+
+/-- Choose a creature type as this permanent enters. The static pump applies
+immediately; no player may act between the choice and the bonus. -/
+def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : String) :
+    Game :=
+  match g.findObject? sourceId with
+  | none => g
+  | some src =>
+    let g := g.setObject { src with status :=
+      { src.status with chosenCreatureType := some creatureType } }
+    g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
+
+/-- Draw one card for each graveyard with seven or more cards. -/
+def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
+  let n := g.players.filter (fun pl => pl.graveyard.size >= 7) |>.size
+  if n == 0 then
+    g.logMsg s!"{(g.player p).name} draws no cards (no graveyard has seven cards)"
+  else
+    g.draw p n
+
+/-- Discard the hand (zero cards is legal) and draw that many. The choice is
+made during resolution; nothing happens between discard and draw. -/
+def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Game :=
+  if !doDiscard then
+    g.logMsg s!"{(g.player p).name} does not discard their hand"
+  else
+    let ids := (g.player p).hand
+    let n := ids.size
+    let g :=
+      ids.foldl (fun acc id =>
+        match acc.findObject? id with
+        | none => acc
+        | some o =>
+          let (acc, _) := acc.move id (.graveyard o.owner) none
+          acc) g
+    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
+    if n == 0 then g else g.draw p n
+
+/-- Players currently tied for most life. -/
+def playersWithMostLife (g : Game) : Array PlayerId :=
+  let living := g.livingPlayers
+  match living[0]? with
+  | none => #[]
+  | some first =>
+    let best := living.foldl (fun acc pl => max acc pl.life) first.life
+    living.filter (fun pl => pl.life == best) |>.map (·.id)
+
+/-- The Black Gate: check most life as the ability resolves, then those
+creatures (including later ones) cannot block the target this turn. -/
+def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
+    (chosen : PlayerId) : Game :=
+  if !(g.playersWithMostLife).contains chosen then
+    g.logMsg "The chosen player does not have the most life. The ability does nothing."
+  else
+    match g.findObject? attackerId with
+    | none => g.logMsg "The target is no longer legal"
+    | some o =>
+      if !o.isOnBattlefield then
+        g.logMsg "The target is no longer legal"
+      else
+        let g := g.setObject { o with status :=
+          { o.status with cantBeBlockedByPlayer := some chosen } }
+        g.logMsg
+          s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
+
+/-- Put the returned cards onto the battlefield as Food artifacts only.
+They keep name, mana cost, mana value, abilities, and legendary. -/
+def supperForSpidersReturn (g : Game) (controller : PlayerId)
+    (ids : Array ObjectId) : Game :=
+  ids.foldl (fun acc id =>
+    match acc.findObject? id with
+    | none => acc
+    | some o =>
+      if o.zone != .graveyard o.owner then acc
+      else
+        let (acc, newId) := acc.move id .battlefield (some controller)
+        let o := acc.object! newId
+        let acc := acc.setObject { o with status :=
+          { o.status with onlyFoodArtifact := true, summoningSick := true } }
+        acc.logMsg s!"{o.name} returns as a Food artifact") g
+
+/-- Exile the top `n` cards face down. They may be played while exiled if you
+control `subtype`. Timing and costs are unchanged. -/
+def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
+    (subtype : String) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in List.range n do
+      let pl := g.player p
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let cardName := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        let o := g.object! newId
+        g := g.setObject { o with
+          playPermission := some {
+            player := p
+            turnEndsRemaining := 0
+            whileExiled := true
+            requireSubtype := some subtype
+            faceDown := true } }
+        g := g.logMsg s!"{pl.name} exiles a card face down"
+        let _ := cardName
+    return g
+
+/-- Exile cards from `victim`'s library until an instant or sorcery, face up.
+An empty library becomes that player's library again. The found card may be
+cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
+in a random order. -/
+partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
+    (castTheCard : Bool) : Game :=
+  Id.run do
+    let mut g := g
+    let mut exiled : Array ObjectId := #[]
+    let mut found : Option ObjectId := none
+    while found.isNone && !(g.player victim).library.isEmpty do
+      let top := (g.player victim).library.back!
+      let name := (g.object! top).name
+      let (g', newId) := g.move top .exile none
+      g := g'
+      let o := g.object! newId
+      g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
+      if o.printed.isInstantOrSorcery then
+        found := some newId
+      else
+        exiled := exiled.push newId
+    match found with
+    | none =>
+      let (rng, lib) := g.rng.shuffle exiled
+      g := { g with rng := rng }
+      for id in lib do
+        let (g', _) := g.move id (.library victim) none
+        g := g'
+      return g.logMsg
+        s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+    | some instId =>
+      if castTheCard then
+        let o := g.object! instId
+        let (g', _) := g.move instId .stack (some controller)
+        g := g'.logMsg
+          s!"{(g.player controller).name} casts {o.name} as the ability resolves"
+      else
+        let (g', _) := g.move instId (.library victim) none
+        g := g'
+      let (rng, rest) := g.rng.shuffle exiled
+      g := { g with rng := rng }
+      return rest.foldl (fun acc id =>
+        (acc.move id (.library victim) none).1) g
+
+/-- An uncast copy ceases the next time state-based actions are checked. -/
+def ceaseUncastCopies (g : Game) : Game :=
+  g.objects.foldl (fun acc o =>
+    if o.isCopy && o.zone != .stack && o.zone != .battlefield then
+      let acc := acc.ceaseToExist o.id
+      acc.logMsg s!"{o.name} ceases to exist"
+    else acc) g
+
+/-- True when `p` can pay Saruman's ward (discard an enchantment, instant,
+or sorcery card). -/
+def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).hand.any (fun id =>
+    match g.findObject? id with
+    | some o => o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+    | none => false)
+
+/-- Split the top four library cards into a face-up pile and a face-down pile.
+A 4/0 split is legal. The face-down pile is not revealed if it is put into
+hand. -/
+def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
+    (chooseFaceDown : Bool) : Game :=
+  let lib := (g.player p).library
+  let n := min 4 lib.size
+  let taken := lib.extract (lib.size - n) lib.size
+  let faceUpN := min faceUpCount taken.size
+  let faceUp := taken.extract (taken.size - faceUpN) taken.size
+  let faceDown := taken.extract 0 (taken.size - faceUpN)
+  let g := g.logMsg
+    s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
+  let toHand := if chooseFaceDown then faceDown else faceUp
+  let toGy := if chooseFaceDown then faceUp else faceDown
+  let g :=
+    if chooseFaceDown then
+      g.logMsg "The face-down pile is put into hand without being revealed"
+    else
+      g.logMsg "The face-up pile is put into hand"
+  let g :=
+    toHand.foldl (fun acc id =>
+      (acc.move id (.hand p) none).1) g
+  toGy.foldl (fun acc id =>
+    (acc.move id (.graveyard p) none).1) g
+
+/-- Linked activated abilities last only while the copier still has them. -/
+def linkedAbilitiesStillLinked (stillHasThoseAbilities : Bool) : Bool :=
+  stillHasThoseAbilities
+
+/-- Treat a copied activated ability as referring to the copier's name. -/
+def rewriteAbilityCardName (abilityText printedName copierName : String) : String :=
+  abilityText.replace printedName copierName
+
+/-- Must-attack-if-able may be declined when every legal attack would cost. -/
+def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool :=
+  onlyAttacksRequireCost
+
+/-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
+as an Adventure, so it cannot be cast as a permanent later. -/
+def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let name := o.name
+    let (g, newId) := g.move id .exile none
+    let o := g.object! newId
+    let g := g.setObject { o with playPermission := none, adventurerCard := none }
+    g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
+
+/-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
+so his last ability triggers (ruling 74). -/
+def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
+  let g := g.logMsg "The final chapter ability is removed from the stack"
+  match (g.permanentsOf controller).find? (fun o =>
+    o.printed.hexproofIndestructibleIfLore.isSome) with
+  | none => g
+  | some tom =>
+    match tom.printed.triggeredAbilities[0]? with
+    | none => g
+    | some ab =>
+      g.queueTrigger controller tom ab .entering
+        |>.logMsg s!"{tom.name}'s last ability triggers"
+
+/-- A token copy of a battlefield permanent. The copy is not kicked. -/
+def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
+    : Game × GameObject :=
+  let (g, tok) := g.createToken controller src.printed
+  let tok := { tok with kicked := false }
+  (g.setObject tok, tok)
 
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
@@ -3161,32 +4385,96 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
+/-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
+def playCostStart (card : GameObject) (face : CardDef) : ManaCost :=
+  if card.castFromGraveyard || card.zone == .graveyard card.owner then
+    face.flashback.getD face.manaCost
+  else face.manaCost
+
+/-- Apply cost reductions to `start` (CR 118.7 / 601.2f). Increases such as
+kicker must already be included in `start`. -/
+def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
+    (start : ManaCost) : ManaCost :=
+  let caster := card.controller.getD card.owner
+  let afterDied :=
+    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+      start.reduceGeneric face.costReductionIfCreatureDied
+    else start
+  let afterFly :=
+    if face.costReductionEqualFlyingPower then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
+      afterDied.reduceGeneric n
+    else afterDied
+  let afterAff :=
+    match face.affinityForSubtype with
+    | some t =>
+      let st := if t == "Elves" then "Elf" else t
+      let n := (g.permanentsOf caster).filter (fun o => g.hasSubtype o st) |>.size
+      afterFly.reduceGeneric n
+    | none => afterFly
+  let afterOpp :=
+    if face.costReductionEqualOppArtifacts then
+      let n :=
+        g.players.foldl (fun acc pl =>
+          if pl.id == caster || pl.lost then acc
+          else
+            let arts :=
+              (g.permanentsOf pl.id).filter (fun o => o.printed.isArtifact) |>.size
+            max acc arts) 0
+      afterAff.reduceGeneric n
+    else afterAff
+  let afterSpell :=
+    if face.isInstant || face.isSorcery then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          let reduces :=
+            o.staticAbilities.any (fun ab =>
+              match ab with
+              | .instantSorceryCostReductionEqualEquippedPower => true
+              | _ => false)
+          if !reduces then acc
+          else
+            match o.attachedTo.bind g.findObject? with
+            | some host =>
+              if host.isOnBattlefield then acc + (g.power host).toNat else acc
+            | none => acc) 0
+      afterOpp.reduceGeneric n
+    else afterOpp
+  let afterFirst :=
+    if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          acc + o.printed.firstCreatureCostsLess) 0
+      afterSpell.reduceGeneric n
+    else afterSpell
+  let notFromHand :=
+    match card.zone with
+    | .hand _ => 0
+    | _ =>
+      (g.permanentsOf caster).foldl (fun acc o =>
+        acc + o.printed.costReductionNotFromHand) 0
+  afterFirst.reduceGeneric notFromHand
+
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
 mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
-Target-based reductions lock in after CR 601.2c. -/
-def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
-  let printedCost :=
-    if card.castFromGraveyard || card.zone == .graveyard card.owner then
-      face.flashback.getD face.manaCost
-    else if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
-      face.manaCost.reduceGeneric face.costReductionIfCreatureDied
-    else if face.costReductionEqualFlyingPower then
-      let n :=
-        match card.controller with
-        | none => 0
-        | some p =>
-          (g.permanentsOf p).foldl (fun acc o =>
-            if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
-      face.manaCost.reduceGeneric n
-    else face.manaCost
+Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
+are applied before these reductions. -/
+def playManaCost (g : Game) (card : GameObject) (face : CardDef)
+    (increase : ManaCost := ManaCost.empty) : ManaCost :=
+  let start := playCostStart card face
+  let afterIncrease := start.addCost increase
+  let afterEquip := g.applyCastCostReductions card face afterIncrease
   let cost :=
     match card.playPermission with
     | some perm =>
-      if perm.withoutManaCost then ManaCost.zero
-      else if perm.anyMana then ManaCost.ofGeneric printedCost.manaValue
-      else printedCost
-    | none => printedCost
+      if perm.withoutManaCost then
+        g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
+      else afterEquip
+    | none => afterEquip
   ManaCost.afterReduction face.manaCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/
@@ -3215,13 +4503,20 @@ def activatesWithoutPayingManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbil
 costs (CR 601.2b), then targets (CR 601.2c), then mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
     (needsMode needsTarget : Bool) (modeCitation : String)
-    (needsAdditionalCost : Bool := false) : Game :=
+    (needsAdditionalCost : Bool := false) (needsKicker : Bool := false)
+    (needsGift : Bool := false) : Game :=
   if needsMode then
     let g := { g with pending := .chooseMode p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a mode ({modeCitation})"
   else if needsAdditionalCost then
     let g := { g with pending := .chooseAdditionalCost p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose an additional cost (CR 601.2b)"
+  else if needsKicker then
+    let g := { g with pending := .chooseKicker p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
+  else if needsGift then
+    let g := { g with pending := .chooseGift p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
   else if needsTarget then
     let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
@@ -3270,7 +4565,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
+  let fromTop :=
+    original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  let g := { g with castingFromTop := fromTop || g.castingFromTop }
   let g :=
     if asAdventure then
       let o := g.object! newId
@@ -3285,8 +4583,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.additionalCostOrPayGeneric.isSome
+  let needsKicker := face.kicker.isSome
+  let needsGift := face.giftTreasure
   if !needsMode && !needsTarget && !cost.includesManaPayment && !needsSacrifice &&
-      !needsAdditionalCostChoice then
+      !needsAdditionalCostChoice && !needsKicker && !needsGift then
     return g.becomeCast p (g.object! newId)
   let prop : ProposedSpell := {
     caster := p
@@ -3301,6 +4601,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
     (needsAdditionalCost := needsAdditionalCostChoice)
+    (needsKicker := needsKicker) (needsGift := needsGift)
 
 /-- Announce the chosen mode for a modal spell or activated ability
 (CR 601.2b / 700.2). -/
@@ -3663,6 +4964,27 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       s!"{(g.player p).name} sacrifices {sac.name}"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .maySacrificeAnotherBolg q bolgId =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p ||
+        sac.id == bolgId then
+      throw s!"Can't sacrifice {sac.name} to Bolg"
+    let pw := g.power sac
+    let g := g.moveToOwnerGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
+    let g := { g with pending := .none }
+    match g.findObject? bolgId with
+    | none =>
+      return g.receivePriority g.activePlayer
+    | some bolg =>
+      match bolg.controller with
+      | none => return g.receivePriority g.activePlayer
+      | some c =>
+        let g := g.queueTrigger c bolg .onBolgDealSacrificedPower
+          .bolgSacrificedForReflexive (lastKnownPower := some pw)
+        return g.receivePriority g.activePlayer
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
@@ -3694,9 +5016,13 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
-def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
+def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
+    (preventable := true) : Game :=
   let pl := g.player pid
-  g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+  if preventable && pl.protectionFromEverything then
+    g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
+  else
+    g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
 
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/
@@ -3730,21 +5056,46 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
   g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
 
-/-- Amass Goblins `n` (CR 701.43). -/
-def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+/-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
+enters as 0/0 and triggers see that power before counters are put on it. If
+you control more than one Army, the newest is chosen (the player would
+choose; tests use a single Army). -/
+def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat) : Game :=
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  let createdFresh := armies.isEmpty
   let (g, army) :=
-    match armies[0]? with
-    | some o => (g, o)
-    | none => g.createToken controller goblinArmyToken
+    match armies.toList with
+    | [] => g.createToken controller (armyToken subtype)
+    | x :: xs =>
+      (g, xs.foldl (fun (best : GameObject) (o : GameObject) =>
+        if o.timestamp ≥ best.timestamp then o else best) x)
   let g :=
-    if g.hasSubtype army "Goblin" then g
+    if createdFresh then
+      let g := g.afterPermanentEnters (g.object! army.id)
+      g.logMsg s!"the amassed Army entered as a 0/0 creature"
+    else g
+  let army := g.object! army.id
+  let g :=
+    if g.hasSubtype army subtype then g
     else
       g.mapObjectStatus army (fun s =>
-        { s with additionalSubtypes := s.additionalSubtypes.push "Goblin" })
+        { s with additionalSubtypes := s.additionalSubtypes.push subtype })
   let army := g.object! army.id
   let g := g.addPlusOnePlusOneTo army n
-  g.logMsg s!"{(g.player controller).name} amasses Goblins {n}"
+  g.logMsg
+    s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+
+/-- Amass Goblins `n` (CR 701.43). -/
+def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Goblin" n
+
+/-- Amass Orcs `n` (CR 701.43). -/
+def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Orc" n
+
+/-- Amass Zombies `n` (CR 701.43). -/
+def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Zombie" n
 
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
@@ -3784,20 +5135,23 @@ def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Optio
 miss, then shuffle (CR 701.19). Picks the first matching card in library
 order (bottom first). -/
 def resolveLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool)
-    (kind : String) (onFound : Game → ObjectId → Game) : Game :=
+    (kind : String) (onFound : Game → ObjectId → Game) (find := true) : Game :=
   let pl := g.player p
   let g :=
-    match g.findLibraryCard? p pred with
-    | none => g.logMsg s!"{pl.name} searches their library and finds no {kind}"
-    | some id => onFound g id
+    if !find then
+      g.logMsg s!"{pl.name} chooses not to find a {kind}"
+    else
+      match g.findLibraryCard? p pred with
+      | none => g.logMsg s!"{pl.name} searches their library and finds no {kind}"
+      | some id => onFound g id
   g.shuffleLibrary p
 
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
 (tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
 in library order (bottom first). -/
 def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
-    (tapped : Bool) (kind : String) : Game :=
-  g.resolveLibrarySearch p pred kind fun g landId =>
+    (tapped : Bool) (kind : String) (find := true) : Game :=
+  g.resolveLibrarySearch p pred kind (find := find) fun g landId =>
     let landName := (g.object! landId).name
     let (g, newId) := g.putOntoBattlefield landId p (tapped := tapped)
       (summoningSick := false)
@@ -3813,8 +5167,8 @@ def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
 
 /-- Search `p`'s library for a Forest card, put it onto the battlefield, then
 shuffle (CR 701.19 / 305.7). -/
-def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
-  g.resolveSearchLibrary p isForestCard false "Forest card"
+def resolveSearchForest (g : Game) (p : PlayerId) (find := true) : Game :=
+  g.resolveSearchLibrary p isForestCard false "Forest card" (find := find)
 
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
 it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
@@ -4037,6 +5391,71 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
+/-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
+or mill. -/
+def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+  match target with
+  | none =>
+    g.logMsg
+      "The target is no longer legal. No influence counter, scry, draw, or mill."
+  | some pid =>
+    if (g.player pid).lost then
+      g.logMsg
+        "The target is no longer legal. No influence counter, scry, draw, or mill."
+    else
+      match g.findObject? sourceId with
+      | none =>
+        g.logMsg
+          "The target is no longer legal. No influence counter, scry, draw, or mill."
+      | some src =>
+        if !src.isOnBattlefield || pid == src.you then
+          g.logMsg
+            "The target is no longer legal. No influence counter, scry, draw, or mill."
+        else
+          let g := g.setObject { src with status :=
+            { src.status with influence := src.status.influence + 1 } }
+          let g := g.logMsg s!"{src.name} gets an influence counter"
+          g.beginScry src.you 2
+
+/-- Put a card onto the stack as an ability is resolving. Timing may be
+ignored. The permission does not last after this ability finishes. -/
+def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
+    (ignoreTiming := true) (withoutManaCost := true) : Game :=
+  match g.findObject? id with
+  | none => g.logMsg "There is no card to cast"
+  | some o =>
+    if !ignoreTiming && !g.timingAllowsCast p o.printed then
+      g.logMsg s!"{o.name} cannot be cast now (timing)"
+    else if !withoutManaCost &&
+        !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+      g.logMsg s!"{o.name} cannot be cast (costs)"
+    else
+      let name := o.name
+      let (g, _) := g.move id .stack (some p)
+      g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+
+/-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
+def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
+  let before :=
+    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
+  let g := opponents.foldl (fun acc pid => acc.mill pid n) g
+  let after :=
+    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
+  (g, after > before)
+
+/-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
+def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
+  match g.findObject? targetId with
+  | none => g.logMsg "The target is no longer legal"
+  | some o =>
+    if !o.isOnBattlefield || !o.isCreature then
+      g.logMsg "The target is no longer legal"
+    else
+      let g := g.addPlusOnePlusOneTo o 1
+      let o := g.object! o.id
+      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.lifelink)
+      g.logMsg s!"{o.name} gains lifelink until end of turn"
+
 /-- Counter a spell on the stack. `exile` puts a permanent spell into exile
 and may grant a free cast (CR 701.5 / Thranduil's Decree). -/
 def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
@@ -4046,7 +5465,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
   | some o =>
     if o.zone != .stack then
       g.logMsg s!"{o.name} is no longer on the stack"
-    else if o.printed.cantBeCountered then
+    else if o.printed.cantBeCountered || o.uncounterableThisCast then
       g.logMsg s!"{o.name} can't be countered"
     else
       let dest :=
@@ -4079,25 +5498,75 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | none => g
   g.logMsg s!"{name} is exiled until the source leaves the battlefield"
 
-/-- Return cards linked-exiled by `source`. -/
-def returnLinkedExile (g : Game) (source : GameObject) : Game :=
-  Id.run do
-    let mut g := g
-    for id in source.linkedExile do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .exile then
-          let name := o.name
-          let owner := o.owner
-          let (g', newId) := g.move id .battlefield (some owner)
-          g := g'
+/-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
+does not return automatically when the source leaves. -/
+def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
+    Game :=
+  let name := o.name
+  let (g, newId) := g.move o.id .exile none
+  let g :=
+    match sourceId.bind g.findObject? with
+    | some src =>
+      g.setObject { src with leaveTriggerExile := src.leaveTriggerExile.push newId }
+    | none => g
+  g.logMsg s!"{name} is exiled"
+
+/-- Return one exiled id to the battlefield under its owner. Auras attach
+without targeting; if they cannot attach, they remain in exile. -/
+def returnExiledId (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    if o.zone != .exile then g
+    else
+      let name := o.name
+      let owner := o.owner
+      if o.printed.isAura then
+        match g.battlefield.find? (fun h => h.isCreature) with
+        | none =>
+          g.logMsg s!"{name} remains in exile (can't be attached legally)"
+        | some host =>
+          let hostId := host.id
+          let hostName := host.name
+          let (g, newId) := g.move id .battlefield (some owner)
           let o := g.object! newId
-          let sick := !o.printed.keywords.haste
-          g := g.setObject { o with status := { o.status with summoningSick := sick } }
-          g := g.logMsg s!"{name} returns to the battlefield"
-          g := g.afterPermanentEnters (g.object! newId)
-      | none => pure ()
-    return g
+          let g := g.setObject { o with attachedTo := some hostId }
+          let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
+          g.afterPermanentEnters (g.object! newId)
+      else
+        let (g, newId) := g.move id .battlefield (some owner)
+        let o := g.object! newId
+        let sick := !o.printed.keywords.haste
+        let g := g.setObject { o with status := { o.status with summoningSick := sick } }
+        let g := g.logMsg s!"{name} returns to the battlefield"
+        g.afterPermanentEnters (g.object! newId)
+
+/-- Return cards linked-exiled by `source` (leave-trigger list first, then
+until-leaves). -/
+def returnLinkedExile (g : Game) (source : GameObject) : Game :=
+  (source.leaveTriggerExile ++ source.linkedExile).foldl
+    (fun acc id => acc.returnExiledId id) g
+
+/-- `p` loses and leaves the game. Their permanents leave immediately, so
+until-leaves one-shots return those cards. Leave triggers do not go on the
+stack (they cease with the leaving player's abilities). -/
+def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
+  let g := g.setPlayer { (g.player p) with lost := true }
+  let g := g.logMsg s!"{(g.player p).name} leaves the game"
+  let g := { g with
+    stack := g.stack.filter (fun e =>
+      match g.findObject? e.objectId with
+      | some o => !(o.controlledBy p || o.owner == p)
+      | none => true)
+    waitingTriggers := g.waitingTriggers.filter (fun wt => wt.controller != p) }
+  let ids := g.battlefield.filter (fun o => o.owner == p) |>.map (·.id)
+  let g :=
+    ids.foldl (fun acc id =>
+      match acc.findObject? id with
+      | none => acc
+      | some _ => (acc.move id .exile none).1) g
+  { g with
+    waitingTriggers := g.waitingTriggers.filter (fun wt => wt.controller != p) }
 
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) (castFromGraveyard := false) : Game :=
@@ -4172,14 +5641,21 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .scry n =>
     g.beginScry controller n
   | .tapScryDraw scryN drawN =>
-    let g := g.applyOnPermanent controller effect.targetKind targets .tap
-    let g := { g with pendingDrawAfterScry := some (controller, drawN) }
-    let g := g.beginScry controller scryN
-    if g.pendingDrawAfterScry.isSome &&
-        (match g.pending with | .scry _ _ => false | _ => true) then
-      let g := { g with pendingDrawAfterScry := none }
-      g.draw controller drawN
-    else g
+    let legal := g.legalTargetsForKind controller effect.targetKind
+    match targets[0]? with
+    | some t =>
+      if legal.contains t then
+        let g := g.applyOnPermanent controller effect.targetKind targets .tap
+        let g := { g with pendingDrawAfterScry := some (controller, drawN) }
+        let g := g.beginScry controller scryN
+        if g.pendingDrawAfterScry.isSome &&
+            (match g.pending with | .scry _ _ => false | _ => true) then
+          let g := { g with pendingDrawAfterScry := none }
+          g.draw controller drawN
+        else g
+      else
+        g.logMsg "The spell doesn't resolve"
+    | none => g.logMsg "The spell doesn't resolve"
   | .tapTargets =>
     Id.run do
       let mut g := g
@@ -4473,13 +5949,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _ => g.logMsg "The target is no longer legal")
   | .createTokensX kind =>
     g.createKindTokens controller kind 1
-  | .exileTopPlayIfYouControlSubtype n _subtype =>
-    let g := Id.run do
-      let mut g := g
-      for _ in List.range n do
-        g := g.resolveExileTopPlayUntilEndOfNextTurn controller
-      return g
-    g
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
     Id.run do
       let mut g := g
@@ -4527,7 +5998,10 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
-    g.setLife p (pl.life + (n : Int)) s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    let g := g.setLife p (pl.life + (n : Int))
+      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    g.modifyPlayer p (fun pl =>
+      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -4637,19 +6111,16 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       let g := g.shuffleLibrary owner
       g.draw owner n
   | .returnFromGyAttach =>
-    match sourceId.bind g.findObject?, targets[0]? with
-    | some src, some (Target.permanent hostId) =>
-      match g.findObject? hostId with
-      | none => g.logMsg "The target is no longer legal"
-      | some host =>
-        if !host.isOnBattlefield then g.logMsg "The target is no longer legal"
-        else
-          let (g, newId) := g.putOntoBattlefield src.id controller
-            (attachedTo := some host.id)
-          let o := g.object! newId
-          let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
-          g.afterPermanentEnters (g.object! newId)
-    | _, _ => g.logMsg "The source is no longer in the graveyard"
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The source is no longer in the graveyard"
+    | some src =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g host =>
+        let (g, newId) := g.putOntoBattlefield src.id controller
+          (attachedTo := some host.id)
+        let o := g.object! newId
+        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        g.afterPermanentEnters (g.object! newId))
+        sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
   | .addMana types =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=
@@ -4721,12 +6192,236 @@ def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : Perma
     Game :=
   g.applyOnSource sourceId action "The triggered ability's source is no longer in play"
 
-/-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
+/-- Queue “whenever the Ring tempts you” and “whenever you choose a
+Ring-bearer” triggers for `p`. -/
+def putRingTemptTriggers (g : Game) (p : PlayerId) (choseBearer : Bool) : Game :=
+  let g := g.putControlledTriggers p .theRingTemptsYou
+  if choseBearer then g.putControlledTriggers p .youChooseRingBearer else g
+
+/-- As the Ring tempts `p`: get The Ring emblem if needed, gain its next
+ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing
+the same creature still counts as choosing it. -/
+def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none) : Game :=
+  let pl := g.player p
+  let nextAbilities := min 4 (pl.theRingAbilities + 1)
+  let gainedEmblem := pl.theRingAbilities == 0
+  let g := g.modifyPlayer p (fun pl => { pl with theRingAbilities := nextAbilities })
+  let g :=
+    if gainedEmblem then
+      g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
+    else g
+  let g := g.logMsg
+    s!"{(g.player p).name}'s emblem named The Ring gains its next ability ({nextAbilities})"
+  let choices := g.ringBearerChoices p
+  let pick :=
+    match chosen with
+    | some id =>
+      if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
+    | none => choices[0]?.map (·.id)
+  let g := g.setRingBearer p pick
+  let g :=
+    match pick with
+    | some id =>
+      g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+    | none =>
+      g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
+  g.putRingTemptTriggers p pick.isSome
+
+/-- A targeted spell or ability that would tempt only does so if it resolves. -/
+def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) : Game :=
+  if kind != .none && targets.isEmpty then
+    g.logMsg "The spell doesn't resolve. The Ring won't tempt you."
+  else
+    g.withLegalKindTarget p kind targets (fun g _ => g.temptWithTheRing p)
+      (missing := some "The spell doesn't resolve. The Ring won't tempt you.")
+
+/-- Give the promised gift (a Treasure) to `to` before other effects. -/
+def givePromisedGift (g : Game) (to : PlayerId) : Game :=
+  let (g, _) := g.createToken to treasureToken
+  g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
+
+/-- Copy a spell on the stack. The copy is also kicked / has the same
+promised gift. It is not cast. -/
+def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  let (g, copy) := g.allocObject src.printed controller .stack (some controller)
+  let g := g.setObject { copy with
+    kicked := src.kicked
+    giftPromisedTo := src.giftPromisedTo
+    isCopy := true
+    adventurerCard := src.adventurerCard }
+  let g := g.putStackEntry controller copy.id
+  g.logMsg s!"A copy of {src.name} is created"
+
+/-- Exile from the top until a nonland with mana value less than `maxMv`.
+The resulting spell must also have lesser mana value. Casting is optional. -/
+def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    let mut exiled : Array ObjectId := #[]
+    let mut found : Option GameObject := none
+    while found.isNone && !(g.player p).library.isEmpty do
+      match (g.player p).library.back? with
+      | none => pure ()
+      | some id =>
+        let (g', newId) := g.move id .exile none
+        g := g'
+        exiled := exiled.push newId
+        let card := g.object! newId
+        if !card.printed.isLand && card.printed.manaCost.manaValue < maxMv then
+          found := some card
+    g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+    match found with
+    | none =>
+      for id in exiled.reverse do
+        let (g', _) := g.move id (.library (g.object! id).owner) none
+        g := g'
+      return g.logMsg "No cheaper nonland card was exiled"
+    | some card =>
+      let others := exiled.filter (· != card.id)
+      for id in others.reverse do
+        let (g', _) := g.move id (.library (g.object! id).owner) none
+        g := g'
+      if card.printed.manaCost.manaValue < maxMv then
+        return g.logMsg
+          s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+      else
+        let (g', _) := g.move card.id (.library card.owner) none
+        return g'.logMsg
+          s!"{card.name}'s resulting spell does not have lesser mana value"
+
+/-- Cast `cardId` from exile without paying its mana cost (cascade). -/
+def castCascadeCard (g : Game) (p : PlayerId) (cardId : ObjectId) (maxMv : Nat) :
+    Except String Game := do
+  let some card := g.findObject? cardId | throw "no such card"
+  if card.printed.isLand then
+    throw "A land cannot be cast"
+  if card.printed.manaCost.manaValue >= maxMv then
+    throw "The resulting spell must have lesser mana value than the cascade spell"
+  let (g, newId) := g.move cardId .stack (some p)
+  let o := g.object! newId
+  let g := g.setObject { o with
+    playPermission := some {
+      player := p
+      turnEndsRemaining := 0
+      withoutManaCost := true } }
+  let g := g.putStackEntry p newId
+  return g.becomeCast p (g.object! newId)
+
+/-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
+def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell is waiting for kicker"
+  if prop.kicked && kick then
+    throw "The kicker ability doesn't let you pay a kicker cost more than once"
+  if !kick then
+    return { g with proposedSpell := some { prop with
+      kicked := false, kickerAnnounced := true } }
+  let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  match spell.printed.kicker with
+  | none => throw "That spell has no kicker"
+  | some kicker =>
+    let g := g.setObject { spell with kicked := true }
+    let face := spell.printed
+    let start :=
+      if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
+        ManaCost.empty
+      else playCostStart spell face
+    let cost :=
+      ManaCost.afterReduction face.manaCost
+        (g.applyCastCostReductions spell face (start.addCost kicker))
+    return { g with proposedSpell := some { prop with
+      kicked := true
+      kickerAnnounced := true
+      cost } }
+
+/-- Promise a gift to `to`. Cannot promise more than once. -/
+def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell is waiting for a gift"
+  if prop.giftTo.isSome && to.isSome then
+    throw "You can't pay a gift cost more than once"
+  let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  let g := g.setObject { spell with giftPromisedTo := to }
+  return { g with proposedSpell := some { prop with
+    giftTo := to, giftAnnounced := true } }
+
+/-- Continue the proposal window after kicker / gift announcements. -/
+def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    if spell.printed.giftTreasure && !prop.giftAnnounced then
+      let g := { g with pending := .chooseGift p }
+      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+    else if g.proposedNeedsTarget prop then
+      let g := { g with pending := .chooseTargets p }
+      g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+    else
+      g.afterTargetsChosen
+  | _, _ => g
+
+def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game := do
+  match g.pending with
+  | .chooseKicker caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may announce kicker"
+    let g ← g.applyKickerToProposed kick
+    let g := g.logMsg
+      (if kick then s!"{(g.player p).name} kicks the spell"
+       else s!"{(g.player p).name} does not kick the spell")
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to announce kicker"
+
+def announceGift (g : Game) (p : PlayerId) (to : Option PlayerId) : Except String Game := do
+  match g.pending with
+  | .chooseGift caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may promise a gift"
+    if let some opp := to then
+      if opp == p then throw "You must promise the gift to an opponent"
+    let g ← g.applyGiftToProposed to
+    let g :=
+      match to with
+      | some opp =>
+        g.logMsg s!"{(g.player p).name} promises a gift to {(g.player opp).name}"
+      | none =>
+        g.logMsg s!"{(g.player p).name} does not promise a gift"
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to promise a gift"
+
+def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except String Game := do
+  match g.pending with
+  | .chooseRingBearer caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose a Ring-bearer"
+    let choices := g.ringBearerChoices p
+    if id.isNone && !choices.isEmpty then
+      throw "You must choose a creature if you control one"
+    let g := { g with pending := .none }
+    return g.temptWithTheRing p id
+  | _ => throw "Not time to choose a Ring-bearer"
+
+/-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
+“While you control” attack triggers are not rechecked. -/
+def interveningStillHolds (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) : Bool :=
+  let lifeOk :=
+    match ab.timing.gainedLifeAtLeast with
+    | none => true
+    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+  let beginCombatFerocious :=
+    match ab with
+    | .onYourBeginCombatFerociousPlusOne =>
+      g.greatestPowerAmongCreatures controller ≥ 4
+    | _ => true
+  lifeOk && beginCombatFerocious
+
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
     (sourceName : String := "This creature") : Game :=
+  if !g.interveningStillHolds controller ab then
+    g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+  else
   match ab.resolution with
   | .pumpGreatestPower =>
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
@@ -4856,9 +6551,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     else
       { g with pending := .putOnBottom controller 1 }.logMsg
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-  | .exileUntilLeaves =>
+  | .exileTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+      g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
+  | .exileUntilLeaves =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+          g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+      else
+        g.logMsg "The source has left the battlefield. Nothing is exiled."
+    | none =>
+      g.logMsg "The source has left the battlefield. Nothing is exiled."
   | .returnLinkedExile =>
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
@@ -5028,7 +6733,12 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         types.foldl (fun pool t => pool.add t) pl.manaPool })
     g.logMsg s!"{(g.player controller).name} adds mana"
   | .defenderSacsLeastPower =>
-    g.logMsg "Defending player sacrifices a least-power creature"
+    let defn := g.opponent controller
+    let chosen :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    g.sacrificeLeastPowerCreature defn chosen
   | .createAxe =>
     g.logMsg "An Axe token is created"
   | .tapOppOrUntapYours =>
@@ -5071,6 +6781,153 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .putNonlandMvAtMostFromGy _mv =>
     g.logMsg "A nonland permanent card may enter from a graveyard"
+  | .honeEachEquipment =>
+    let eqs :=
+      g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
+    eqs.foldl (init := g) fun acc eq =>
+      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + 1 })
+        |>.logMsg s!"{eq.name} received a hone counter"
+  | .cascade =>
+    let maxMv :=
+      match sourceId with
+      | some sid =>
+        match g.findObject? sid with
+        | some src => src.printed.manaCost.manaValue
+        | none => 0
+      | none => 0
+    g.resolveCascade controller maxMv
+  | .belladonnaTokenReward =>
+    let n := (g.player controller).belladonnaResolvesThisTurn + 1
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with belladonnaResolvesThisTurn := n })
+    if n == 1 then
+      g.gainLife controller 1
+    else if n == 2 then
+      g.draw controller 1
+    else if n == 3 then
+      Id.run do
+        let mut g := g
+        for o in g.battlefield do
+          if o.isCreature && o.controlledBy controller then
+            g := g.addPlusOnePlusOneTo o 1
+        return g.logMsg
+          s!"{(g.player controller).name} puts a +1/+1 counter on each creature they control"
+    else
+      g.logMsg
+        s!"Belladonna Took's ability has no effect (resolved {n} times this turn)"
+  | .bolgMaySacrifice =>
+    match sourceId with
+    | some sid =>
+      { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
+        s!"{(g.player controller).name} may sacrifice another creature (Bolg reflexive trigger)"
+    | none => g.logMsg "Bolg is no longer in play"
+  | .bolgDealSacrificedPower =>
+    let amt := lastKnownPower.getD 0
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let remain := g.toughness o - o.status.damage
+      let raw := amt - remain
+      let excess : Nat := if raw > 0 then raw.toNat else 0
+      let g := g.dealDamageFrom sourceName o amt
+      if excess > 0 then
+        g.amassGoblins controller excess |>.logMsg
+          s!"excess damage {excess} — amass Goblins {excess}"
+      else g) "The target is no longer legal"
+  | .createSpiritsForEquipped =>
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The Equipment is no longer in play"
+    | some eq =>
+      let hostOk :=
+        match eq.attachedTo.bind g.findObject? with
+        | some host =>
+          host.isOnBattlefield && host.isLegendary &&
+            host.controller == some controller
+        | none => false
+      let attacking := hostOk
+      let g :=
+        g.createKindTokens controller .spirit 2 (tapped := true) (attacking := attacking)
+      if attacking then
+        g.logMsg
+          s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+      else
+        g.logMsg
+          s!"{(g.player controller).name} creates two tapped Spirit tokens"
+  | .createTreasuresEqualDamagedPlayerArtifacts =>
+    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let n :=
+      g.battlefield.filter (fun o =>
+        o.printed.isArtifact && o.controlledBy pid) |>.size
+    g.createTreasureTokens controller n |>.logMsg
+      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
+  | .deal1ThenAmassOrcs =>
+    let g := g.applyEffect controller (.dealDamage 1) targets
+    g.amassOrcs controller 1
+  | .untapAttackersExtraCombat =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.status.attacking then
+          g := g.applyPermanentAction o .untap
+      return g.logMsg
+        "Attacking creatures untap. An additional combat phase will occur"
+  | .eaglesCreateBirds =>
+    let n := lastKnownPower.getD 0
+    g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
+      s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
+  | .allianceMode =>
+    match sourceId with
+    | none =>
+      g.logMsg "The ability is removed from the stack with no effect"
+    | some sid =>
+      match g.findObject? sid with
+      | none =>
+        g.logMsg "The ability is removed from the stack with no effect"
+      | some src =>
+        match (g.unusedAllianceModes src)[0]? with
+        | none =>
+          g.logMsg
+            "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+        | some mode =>
+          g.applyAllianceMode sid mode
+  | .gollumMode =>
+    match sourceId with
+    | none =>
+      g.logMsg "The ability is removed from the stack with no effect"
+    | some sid =>
+      match g.findObject? sid with
+      | none =>
+        g.logMsg "The ability is removed from the stack with no effect"
+      | some src =>
+        match (g.unusedGollumModes src)[0]? with
+        | none =>
+          g.logMsg
+            "all three modes have been chosen. The ability is removed from the stack with no effect"
+        | some mode =>
+          g.applyGollumMode sid mode
+  | .destroyOtherAmassControllerPower =>
+    match targets[0]? with
+    | none =>
+      g.logMsg
+        "No target was chosen. Its controller is undefined and no player amasses Goblins."
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none =>
+        g.logMsg "The target is no longer legal"
+      | some o =>
+        if !o.isOnBattlefield then
+          g.logMsg "The target is no longer legal"
+        else
+          let pw := lastKnownPower.getD (g.power o)
+          let ctrl := o.controller
+          let youControlled := ctrl == some controller
+          let g := g.destroyPermanent o
+          match ctrl with
+          | none => g
+          | some pid =>
+            let n := if pw > 0 then pw.toNat else 0
+            let g := g.amassGoblins pid n
+            if youControlled then g.draw controller 1 else g
+    | _ =>
+      g.logMsg "No target was chosen. Its controller is undefined and no player amasses Goblins."
   | .printed text =>
     g.logMsg text
 
@@ -5090,6 +6947,22 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
       g := g.putControlledTriggers p .youAttack
+    if attackerIds.size == 1 then
+      let aid := attackerIds[0]!
+      for o in g.permanentsOf p do
+        if o.attachedTo == some aid then
+          g := g.putMatchingSourceTriggers p o .equippedAttacksAlone
+    let totalPower :=
+      attackerIds.foldl (fun acc id => acc + g.snapshotPower (g.object! id)) 0
+    if totalPower >= 12 then
+      g := g.putControlledTriggers p .youAttackWithTotalPower
+    for id in attackerIds do
+      for eq in g.battlefield do
+        if eq.attachedTo == some id then
+          match eq.controller with
+          | some c =>
+            g := g.putMatchingSourceTriggers c eq .equippedAttacks
+          | none => pure ()
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
@@ -5164,6 +7037,10 @@ def resolveTop (g : Game) : Game :=
           entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
         g.ceaseToExist obj.id
       else
+        let g :=
+          match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
+          | some to, true => g.givePromisedGift to
+          | _, _ => g
         let g :=
           match spellEffectOf obj entry.chosenMode with
           | some e => g.applyEffect entry.controller e entry.targets
@@ -5399,7 +7276,18 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if asgn.toPlayer > 0 then
         match src.controller with
         | some pid =>
+          g := { g with lastCombatDamagePlayer := some defn }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
+          g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
+          if src.isCreature then
+            for o in g.permanentsOf pid do
+              for ab in o.printed.triggeredAbilities do
+                match ab with
+                | TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens
+                    subtype _ _ =>
+                  if o.id != src.id && g.hasSubtype src subtype then
+                    g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
+                | _ => pure ()
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone
@@ -5497,16 +7385,25 @@ def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with creatureDiedThisTurn := false }
     for pl in g.players do
-      if pl.cardsDrawnThisTurn != 0 then
+      if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
+          pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
+          pl.spellsCastThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
+          cardsDrawnThisDrawStep := 0
           spellsCastThisTurn := 0
-          noncreatureSpellsCastThisTurn := 0 }
+          noncreatureSpellsCastThisTurn := 0
+          creatureSpellsCastThisTurn := 0
+          castManaValuesThisTurn := #[]
+          belladonnaResolvesThisTurn := 0
+          lifeGainedThisTurn := 0 }
     for o in g.battlefield do
-      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn then
+      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
+          !o.status.allianceModesChosen.isEmpty then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
-          firedOnceEachTurn := false } }
+          firedOnceEachTurn := false
+          allianceModesChosen := #[] } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -5559,15 +7456,21 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
+      -- CR 502.1: phased-out permanents phase in before the player untaps.
+      g := g.phaseInControlled ap
       g := g.modifyPlayer ap (fun pl =>
         { pl with landsPlayedThisTurn := 0, additionalLandsThisTurn := 0 })
       for o in g.permanentsOf ap do
         -- CR 502.2: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
-        if o.status.tapped then
+        let skipUntap :=
+          o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
+            !g.hasEnduringStory ap
+        if o.status.tapped && !skipUntap then
           g := g.logMsg s!"{apName} untaps {o.name}"
-        g := g.setObject { o with status := { o.status with tapped := false, summoningSick := false } }
+        let tapped := if skipUntap then o.status.tapped else false
+        g := g.setObject { o with status := { o.status with tapped := tapped, summoningSick := false } }
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>
@@ -5590,6 +7493,16 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.beginCombatDamageAssignment
   | .upkeep =>
     let ap := g.activePlayer
+    let g := Id.run do
+      let mut g := g
+      for pl in g.players do
+        if pl.eaglesBirdsNextUpkeep > 0 then
+          let n := pl.eaglesBirdsNextUpkeep
+          g := g.setPlayer { pl with eaglesBirdsNextUpkeep := 0 }
+          g := g.createKindTokens pl.id .birdSoldier n
+          g := g.logMsg
+            s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+      return g
     let g := g.putControlledTriggers ap .yourUpkeep
     g.receivePriority ap
   | .beginningOfCombat =>
@@ -5598,6 +7511,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer
+    let g :=
+      g.livingPlayers.foldl (fun acc pl =>
+        acc.putControlledTriggers pl.id .eachEndStep) g
     let g := g.putControlledTriggers ap .yourEndStep
     g.receivePriority ap
   | .cleanup =>
@@ -5626,6 +7542,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority g.activePlayer
 
 def beginTurn (g : Game) : Game :=
+  let p := g.activePlayer
+  let g :=
+    if (g.player p).protectionFromEverything then
+      g.setPlayer { (g.player p) with protectionFromEverything := false }
+        |>.logMsg s!"{(g.player p).name}'s protection from everything ends"
+    else g
   -- No player receives priority during untap (CR 502.4).
   (g.beginStep .untap).beginStep .upkeep
 
@@ -6115,6 +8037,13 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.logMsg s!"{(g.player p).name} declines to put a +1/+1 counter"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .maySacrificeAnotherBolg q _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to sacrifice"
+    let g := g.logMsg
+      s!"{(g.player p).name} declines to sacrifice a creature to Bolg"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
@@ -6270,6 +8199,9 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .chooseTop => g.chooseLibrarySide p true
   | .chooseBottom => g.chooseLibrarySide p false
   | .choosePermanents ids => g.choosePermanents p ids
+  | .announceKicker kick => g.announceKicker p kick
+  | .announceGift to => g.announceGift p to
+  | .chooseRingBearer id => g.announceRingBearer p id
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -6304,8 +8236,55 @@ def actor (g : Game) : Option PlayerId :=
     | .payOrLetCounter p _ _ => some p
     | .mayPlusOneCreature p => some p
     | .recruitDiscard p => some p
+    | .chooseKicker p => some p
+    | .chooseGift p => some p
+    | .chooseRingBearer p => some p
+    | .maySacrificeAnotherBolg p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
+
+/-- Return owned creatures to hand and schedule that many Bird Soldiers
+for the next upkeep (The Eagles Are Coming!). Tokens returned this way
+are counted; they later cease in hand (CR 704.5d). -/
+def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
+    (ids : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let mut n : Nat := 0
+    for id in ids do
+      match g.findObject? id with
+      | none => pure ()
+      | some o =>
+        if o.isOnBattlefield && o.isCreature && o.owner == p then
+          let name := o.name
+          let owner := o.owner
+          let (g', _) := g.move o.id (.hand owner) none
+          g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
+          n := n + 1
+    if n > 0 then
+      g := g.modifyPlayer p (fun pl =>
+        { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n })
+      g := g.logMsg
+        s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
+    return g
+
+/-- Choose up to two creatures (they are not targets) and destroy the rest
+(Mount Doom). Shroud and hexproof do not stop the choice. -/
+def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.isCreature && !keep.contains o.id then
+        g := g.destroyPermanent o
+    return g.logMsg "Chosen creatures are kept; the rest are destroyed"
+
+/-- Two different players each draw a card (Gleaming Splendor). The same
+player cannot be chosen twice. -/
+def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
+  if a == b then
+    throw "Two target players must be different"
+  let g := g.draw a 1
+  return g.draw b 1
 
 end Game
 

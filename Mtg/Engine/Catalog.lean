@@ -71,6 +71,9 @@ def card (name : String) (types : Array CardType)
     (extraLandIfOtherSubtype : Option String := none)
     (tapAddColorlessPerSubtype : Option String := none)
     (cascade : Nat := 0)
+    (kicker : Option ManaCost := none)
+    (tokenDoubling : Bool := false)
+    (drawTwoExceptFirstDrawStep : Bool := false)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -91,7 +94,8 @@ def card (name : String) (types : Array CardType)
   additionalCostSacrificeCreature, asEntersChooseCreatureType,
   saga, affinityForSubtype, costReductionEqualOppArtifacts, giftTreasure,
   foodAlsoCreatesTreasure, othersEnterWithPlusOneEqualToughness, powerPerMountain,
-  extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade,
+  extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade, kicker,
+  tokenDoubling, drawTwoExceptFirstDrawStep,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -136,7 +140,9 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (cascade : Nat := 0) : CardDef :=
+    (cascade : Nat := 0)
+    (tokenDoubling : Bool := false)
+    (drawTwoExceptFirstDrawStep : Bool := false) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -161,6 +167,8 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
+    (tokenDoubling := tokenDoubling)
+    (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -186,7 +194,9 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (tapAddColorlessPerSubtype : Option String := none)
     (affinityForSubtype : Option String := none)
     (costReductionEqualOppArtifacts : Bool := false)
-    (cascade : Nat := 0) : CardDef :=
+    (cascade : Nat := 0)
+    (tokenDoubling : Bool := false)
+    (drawTwoExceptFirstDrawStep : Bool := false) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords) (tapAddMana := tapAddMana)
     (supertypes := #[.legendary] ++ supertypes)
@@ -208,6 +218,8 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (affinityForSubtype := affinityForSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (cascade := cascade)
+    (tokenDoubling := tokenDoubling)
+    (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
@@ -229,6 +241,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionEqualOppArtifacts : Bool := false)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
+    (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
@@ -249,6 +262,7 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (giftTreasure := giftTreasure)
     (cascade := cascade)
+    (kicker := kicker)
     (staticAbilities := staticAbilities)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
@@ -271,6 +285,7 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionEqualOppArtifacts : Bool := false)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
+    (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
@@ -285,6 +300,7 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (giftTreasure := giftTreasure)
     (cascade := cascade)
+    (kicker := kicker)
     (staticAbilities := staticAbilities)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
@@ -307,6 +323,7 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionEqualOppArtifacts : Bool := false)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
+    (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
@@ -321,6 +338,7 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (giftTreasure := giftTreasure)
     (cascade := cascade)
+    (kicker := kicker)
     (staticAbilities := staticAbilities)
 
 /-- A non-Aura enchantment. -/

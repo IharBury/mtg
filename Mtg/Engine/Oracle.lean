@@ -329,6 +329,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    else if c.cascade >= 2 then
      [String.intercalate ", " (List.replicate c.cascade "Cascade")]
    else []) ++
+  (match c.kicker with
+   | some cost => [s!"Kicker {cost.toNotation}"]
+   | none => []) ++
   (if c.giftTreasure then
     ["Gift a Treasure"]
    else []) ++
@@ -433,9 +436,43 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.foodAlsoCreatesTreasure then
     ["If you would create a Food token, instead create a Food token and a Treasure token."]
    else []) ++
+  (if c.drawTwoExceptFirstDrawStep then
+    ["If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead."]
+   else []) ++
+  (if c.tokenDoubling then
+    ["If one or more tokens would be created under your control, twice that many of those tokens are created instead."]
+   else []) ++
   (if c.othersEnterWithPlusOneEqualToughness then
     ["Each other creature you control enters with a number of additional +1/+1 counters on it equal to this toughness."]
    else []) ++
+  (if c.mayLookAtTopAnytime then
+    ["You may look at the top card of your library any time."]
+   else []) ++
+  (if c.mayCastCreaturesFromTop then
+    ["You may cast creature spells from the top of your library."]
+   else []) ++
+  (if c.grantCreaturesTapAddAnyColor then
+    ["Creatures you control have \"{T}: Add one mana of any color.\""]
+   else []) ++
+  (if c.firstCreatureCostsLess > 0 then
+    [if c.firstCreatureHasFlash then
+      s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast and can be cast as though it had flash."
+     else
+      s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast."]
+   else []) ++
+  (if c.asEntersChooseOddEven then
+    ["As Gollum enters, choose odd or even. (Zero is even.)"]
+   else []) ++
+  (if c.costReductionNotFromHand > 0 then
+    [s!"Spells you cast from anywhere other than your hand cost \{{c.costReductionNotFromHand}} less to cast."]
+   else []) ++
+  (if c.entersWithIndestructibleCounter then
+    ["Arwen enters with an indestructible counter on her."]
+   else []) ++
+  (match c.hexproofIndestructibleIfLore with
+   | some n =>
+     [s!"As long as there are {n} or more lore counters among Sagas you control, {c.name} has hexproof and indestructible."]
+   | none => []) ++
   (if c.powerPerMountain != 0 then
     [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
    else []) ++
