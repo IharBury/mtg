@@ -763,7 +763,7 @@ def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
 
 /-- A permanent counts once toward Storied even if it is legendary, an
 artifact, and a Saga. -/
-def countsTowardStoried (g : Game) (o : GameObject) : Bool :=
+def countsTowardStoried (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
     (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
 
@@ -3847,7 +3847,8 @@ def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat) : Game
     match armies.toList with
     | [] => g.createToken controller (armyToken subtype)
     | x :: xs =>
-      (g, xs.foldl (fun best o => if o.timestamp ≥ best.timestamp then o else best) x)
+      (g, xs.foldl (fun (best : GameObject) (o : GameObject) =>
+        if o.timestamp ≥ best.timestamp then o else best) x)
   let g :=
     if createdFresh then
       let g := g.afterPermanentEnters (g.object! army.id)

@@ -1126,8 +1126,9 @@ def uniqueHobHocOracleRulingCount : Nat := uniqueHobHocOracleRulings.size
 #guard uniqueHobHocOracleRulings.back!.id == 359
 #guard (uniqueHobHocOracleRulings.map (·.id)).toList ==
   (List.range uniqueHobHocOracleRulingCount).map (· + 1)
-#guard CardDef.uniqueStrings (uniqueHobHocOracleRulings.toList.map (·.comment))
-  |>.length == uniqueHobHocOracleRulingCount
+#guard
+  (CardDef.uniqueStrings (uniqueHobHocOracleRulings.toList.map (·.comment))).length ==
+    uniqueHobHocOracleRulingCount
 #guard uniqueHobHocOracleRulings.all (fun r => !r.cards.isEmpty)
 
 end Mtg.Engine
