@@ -314,6 +314,8 @@ structure Spec where
   /-- 0-based slot indices that are optional (“up to one”). Announcing no
   target for such a slot advances to the next instance (CR 115.1c / 601.2c). -/
   optionalSlots : Array Nat := #[]
+  /-- True when this shape targets a spell on the stack. -/
+  stackSpell : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this targeting shape. `targetCount`, `noun`, and
@@ -365,11 +367,12 @@ def spec : EffectTargetKind → Spec
   | .creatureYouControlSubtype subtype =>
     { noun := s!"target {subtype} you control", prefer := .own }
   | .spell =>
-    { noun := "target spell" }
+    { noun := "target spell", stackSpell := true }
   | .creatureSpell =>
-    { noun := "target creature spell" }
+    { noun := "target creature spell", stackSpell := true }
   | .creatureSpellPTAtMost n =>
-    { noun := s!"target creature spell with power or toughness {n} or less" }
+    { noun := s!"target creature spell with power or toughness {n} or less",
+      stackSpell := true }
   | .defendingPlayerCreature =>
     { noun := "target creature defending player controls" }
   | .twoNonlandsSharingType =>
@@ -448,6 +451,10 @@ def noun (k : EffectTargetKind) : String :=
 /-- Default demonstration-agent preference for this targeting shape. -/
 def defaultPreference (k : EffectTargetKind) : TargetPreference :=
   k.spec.prefer
+
+/-- True when this shape targets a spell on the stack. -/
+def targetsStackSpell (k : EffectTargetKind) : Bool :=
+  k.spec.stackSpell
 
 /-- Kind of the `i`th instance of the word “target” (0-based). Atomic shapes
 return themselves for every slot. -/
@@ -5463,6 +5470,10 @@ instance : ToString CardDef where
 #guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
 #guard EffectTargetKind.defaultPreference .creature == .opponent
+#guard EffectTargetKind.targetsStackSpell .spell
+#guard EffectTargetKind.targetsStackSpell .creatureSpell
+#guard EffectTargetKind.targetsStackSpell (.creatureSpellPTAtMost 2)
+#guard !EffectTargetKind.targetsStackSpell .creature
 #guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
 #guard SpellEffect.targetKind .destroyCreature == .creature
 #guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
