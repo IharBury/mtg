@@ -9,7 +9,8 @@ import Mtg.Engine.Zone
 /-!
 # Game state and rules engine
 
-Encodes starting a game (CR 103), including the London mulligan (CR 103.5),
+Encodes starting a game (CR 103), including the London mulligan (CR 103.5,
+including the free first mulligan in multiplayer and Brawl, CR 103.5c),
 ending a game (CR 104), priority (CR 117), playing lands (CR 116.2a / 305),
 including additional land plays this turn (CR 305.2b),
 casting the spells we model (CR 601), including choosing modes of modal spells
@@ -669,7 +670,8 @@ structure Player where
   poison : Nat := 0
   lost : Bool := false
   drewFromEmpty : Bool := false
-  /-- Completed London mulligans this game (CR 103.5). -/
+  /-- Completed London mulligans this game (CR 103.5). The first may not
+  count toward bottoming or the zero-card limit (CR 103.5c). -/
   mulligansTaken : Nat := 0
   /-- Set once this player declines further mulligans (CR 103.5). -/
   keptOpeningHand : Bool := false
@@ -730,6 +732,8 @@ deriving Repr, Inhabited
 structure StartConfig where
   seats : Array Seat
   format : Format := .constructed
+  /-- CR 903.12 Brawl option. The first mulligan is free (CR 103.5c / 903.12g). -/
+  brawl : Bool := false
   seed : UInt64 := 20260807
   /-- Index into `seats`. `none` means the RNG chooses. -/
   startingPlayer : Option Nat := none
@@ -839,6 +843,8 @@ structure Game where
   result : Option GameResult := none
   log : Array String := #[]
   format : Format := .constructed
+  /-- CR 903.12 Brawl option (free first mulligan, CR 103.5c / 903.12g). -/
+  brawl : Bool := false
   consecutivePasses : Nat := 0
   /-- Set when CR 514.3a grants priority during the current cleanup step. -/
   cleanupGivesPriority : Bool := false
@@ -2695,10 +2701,14 @@ def checkSBA (g : Game) : Game :=
 def hasWaitingTriggers (g : Game) : Bool :=
   !g.waitingTriggers.isEmpty
 
+/-- CR 100.1b: a multiplayer game begins with more than two players. -/
+def isMultiplayer (g : Game) : Bool :=
+  g.players.size > 2
+
 /-- CR 103.8a: in a two-player game the starting player skips the draw step
-of their first turn. -/
+of their first turn. Multiplayer games do not skip that draw (CR 103.8c). -/
 def skipsFirstDraw (g : Game) : Bool :=
-  g.isFirstTurn && g.players.size == 2 && g.activePlayer == g.startingPlayer
+  g.isFirstTurn && !g.isMultiplayer && g.activePlayer == g.startingPlayer
 
 /-- Whether a player currently receives priority (CR 117.3a, 502.4, 514.3,
 103.8a / 500.11). A skipped draw step grants none. -/
@@ -9216,8 +9226,19 @@ def promptMulligan (g : Game) (p : PlayerId) : Game :=
   { g with pending := .declareMulligan p }
     |>.logMsg s!"{g.player p |>.name} may keep or take a mulligan (CR 103.5)"
 
-def promptBottom (g : Game) (p : PlayerId) : Game :=
+/-- CR 103.5c / 903.12g: the first mulligan does not count in a multiplayer
+game or in any Brawl game. -/
+def freeFirstMulligan (g : Game) : Bool :=
+  g.isMultiplayer || g.brawl
+
+/-- Mulligans that count toward bottoming and the zero-card limit
+(CR 103.5, 103.5c). -/
+def countedMulligans (g : Game) (p : PlayerId) : Nat :=
   let n := (g.player p).mulligansTaken
+  if g.freeFirstMulligan then n - 1 else n
+
+def promptBottom (g : Game) (p : PlayerId) : Game :=
+  let n := g.countedMulligans p
   let cards := if n == 1 then "1 card" else s!"{n} cards"
   { g with pending := .putOnBottom p n }
     |>.logMsg s!"{g.player p |>.name} puts {cards} on the bottom of their library (CR 103.5)"
@@ -9260,10 +9281,11 @@ def returnHandToLibrary (g : Game) (p : PlayerId) : Game :=
     return g
 
 /-- A player may mulligan until that mulligan would leave a zero-card opening
-hand, after which they may not take further mulligans (CR 103.5). -/
+hand, after which they may not take further mulligans (CR 103.5). The first
+mulligan in multiplayer or Brawl does not count toward that limit (CR 103.5c). -/
 def canTakeMulligan (g : Game) (p : PlayerId) : Bool :=
   let pl := g.player p
-  !g.over && !pl.keptOpeningHand && pl.mulligansTaken < pl.startingHandSize
+  !g.over && !pl.keptOpeningHand && g.countedMulligans p < pl.startingHandSize
 
 /-- Perform one already-declared mulligan: shuffle, then draw a new starting
 hand (CR 103.5). Bottoming is a later choice. -/
@@ -9275,11 +9297,26 @@ def executeOneMulligan (g : Game) (p : PlayerId) : Game :=
   let g := g.returnHandToLibrary p
   g.requestShuffle p (.draw p size) |>.continueIfShuffled
 
+/-- Players whose first mulligan is free put no cards on the bottom
+(CR 103.5c). -/
+def skipFreeMulliganBottoms (g : Game) : Game :=
+  Id.run do
+    let mut g := g
+    let mut need : Array PlayerId := #[]
+    for p in g.mulliganToBottom do
+      if g.countedMulligans p == 0 then
+        g := g.logMsg
+          s!"{g.player p |>.name} puts no cards on the bottom of their library (CR 103.5c)"
+      else
+        need := need.push p
+    return { g with mulliganToBottom := need }
+
 /-- Take remaining declared mulligans, pausing if `--norandom` needs a
 library order. `mulliganToBottom` is the original simultaneous group. -/
 partial def executeMulliganQueue (g : Game) (rest : Array PlayerId) : Game :=
   match rest[0]? with
   | none =>
+    let g := g.skipFreeMulliganBottoms
     if g.mulliganToBottom.isEmpty then
       g.beginMulliganRound
     else
@@ -9989,6 +10026,7 @@ def start (cfg : StartConfig) : Except String Game := do
     objects := #[]
     rng := Rng.ofSeed cfg.seed
     format := cfg.format
+    brawl := cfg.brawl
     norandom := cfg.norandom
   }
   for i in [0:cfg.seats.size] do

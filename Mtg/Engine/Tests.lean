@@ -1386,6 +1386,112 @@ def afterZeroHand : Game :=
   | .error msg => mentions msg "zero cards"
   | .ok _ => false
 
+#guard !drawnHands.isMultiplayer
+#guard !drawnHands.freeFirstMulligan
+#guard !drawnHands.brawl
+#guard drawnHands.countedMulligans ⟨0⟩ == 0
+
+/-- Three constructed seats so CR 100.1b treats the game as multiplayer. -/
+def testThreeConfig : StartConfig := {
+  seats := #[
+    { name := "Chandra", deck := testRedDeck },
+    { name := "Nissa", deck := testGreenDeck },
+    { name := "Liliana", deck := testRedDeck }
+  ]
+  format := .constructed
+  seed := 1
+  startingPlayer := some 0
+}
+
+def threeDrawnHands : Game :=
+  match Start.start testThreeConfig with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard threeDrawnHands.isMultiplayer
+#guard threeDrawnHands.freeFirstMulligan
+#guard !threeDrawnHands.skipsFirstDraw
+#guard threeDrawnHands.pending == .declareMulligan ⟨0⟩
+#guard threeDrawnHands.players.size == 3
+
+/-- CR 103.5c: the first multiplayer mulligan puts no cards on the bottom. -/
+def afterThreeChandraDeclares : Game :=
+  mustApply threeDrawnHands ⟨0⟩ .takeMulligan
+
+#guard afterThreeChandraDeclares.pending == .declareMulligan ⟨1⟩
+#guard (afterThreeChandraDeclares.player ⟨0⟩).mulligansTaken == 0
+
+def afterThreeFirstMulligan : Game :=
+  let g := mustApply afterThreeChandraDeclares ⟨1⟩ .keep
+  mustApply g ⟨2⟩ .keep
+
+#guard afterThreeFirstMulligan.pending == .declareMulligan ⟨0⟩
+#guard afterThreeFirstMulligan.actor == some ⟨0⟩
+#guard (afterThreeFirstMulligan.player ⟨0⟩).hand.size == 7
+#guard (afterThreeFirstMulligan.player ⟨0⟩).mulligansTaken == 1
+#guard afterThreeFirstMulligan.countedMulligans ⟨0⟩ == 0
+#guard !(afterThreeFirstMulligan.player ⟨0⟩).keptOpeningHand
+#guard (afterThreeFirstMulligan.player ⟨1⟩).keptOpeningHand
+#guard (afterThreeFirstMulligan.player ⟨2⟩).keptOpeningHand
+#guard afterThreeFirstMulligan.log.any (fun s => mentions s "CR 103.5c")
+#guard afterThreeFirstMulligan.log.any (fun s =>
+  mentions s "puts no cards on the bottom")
+#guard afterThreeFirstMulligan.canTakeMulligan ⟨0⟩
+
+/-- The second multiplayer mulligan counts as the first toward bottoming. -/
+def afterThreeSecondMulligan : Game :=
+  mustApply afterThreeFirstMulligan ⟨0⟩ .takeMulligan
+
+#guard afterThreeSecondMulligan.pending == .putOnBottom ⟨0⟩ 1
+#guard (afterThreeSecondMulligan.player ⟨0⟩).mulligansTaken == 2
+#guard afterThreeSecondMulligan.countedMulligans ⟨0⟩ == 1
+#guard (afterThreeSecondMulligan.player ⟨0⟩).hand.size == 7
+
+/-- In multiplayer, one extra mulligan is legal before the zero-card limit. -/
+def eighthMultiplayerMulligan : Game :=
+  let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 7 })
+  let g := mustApply g ⟨0⟩ .takeMulligan
+  let g := mustApply g ⟨1⟩ .keep
+  mustApply g ⟨2⟩ .keep
+
+#guard eighthMultiplayerMulligan.pending == .putOnBottom ⟨0⟩ 7
+#guard (eighthMultiplayerMulligan.player ⟨0⟩).mulligansTaken == 8
+#guard eighthMultiplayerMulligan.countedMulligans ⟨0⟩ == 7
+
+#guard
+  let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 8 })
+  match g.apply ⟨0⟩ .takeMulligan with
+  | .error msg => mentions msg "zero cards"
+  | .ok _ => false
+
+/-- CR 103.5c / 903.12g: any Brawl game, including two-player, has a free first
+mulligan. -/
+def brawlDrawnHands : Game :=
+  match Start.start { testConfig 1 with brawl := true } with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard !brawlDrawnHands.isMultiplayer
+#guard brawlDrawnHands.brawl
+#guard brawlDrawnHands.freeFirstMulligan
+#guard brawlDrawnHands.skipsFirstDraw
+
+def afterBrawlFirstMulligan : Game :=
+  let g := mustApply brawlDrawnHands ⟨0⟩ .takeMulligan
+  mustApply g ⟨1⟩ .keep
+
+#guard afterBrawlFirstMulligan.pending == .declareMulligan ⟨0⟩
+#guard (afterBrawlFirstMulligan.player ⟨0⟩).hand.size == 7
+#guard (afterBrawlFirstMulligan.player ⟨0⟩).mulligansTaken == 1
+#guard afterBrawlFirstMulligan.countedMulligans ⟨0⟩ == 0
+#guard afterBrawlFirstMulligan.log.any (fun s => mentions s "CR 103.5c")
+
+def afterBrawlSecondMulligan : Game :=
+  mustApply afterBrawlFirstMulligan ⟨0⟩ .takeMulligan
+
+#guard afterBrawlSecondMulligan.pending == .putOnBottom ⟨0⟩ 1
+#guard (afterBrawlSecondMulligan.player ⟨0⟩).mulligansTaken == 2
+
 -- The heuristic keeps opening hands rather than mulliganing.
 #guard
   match Agent.choose drawnHands ⟨0⟩ with
