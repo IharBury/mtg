@@ -161,6 +161,15 @@ structure Status where
   indestructibleCounters : Nat := 0
   /-- Lifelink counters (Arwen, Mortal Queen). -/
   lifelinkCounters : Nat := 0
+  /-- Creature type chosen as this permanent entered (Unexpected Party). -/
+  chosenCreatureType : Option String := none
+  /-- Creatures this player controls cannot block this attacker this turn
+  (The Black Gate). Cleared in cleanup. -/
+  cantBeBlockedByPlayer : Option PlayerId := none
+  /-- Influence counters (Palantír of Orthanc). -/
+  influence : Nat := 0
+  /-- This permanent is only a Food artifact (Supper for Spiders). -/
+  onlyFoodArtifact : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -214,7 +223,9 @@ def untilEotFields : List UntilEotField := [
     fun s => { s with untilEotExileIfDies := false }⟩,
   ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,
   ⟨fun s => s.additionalArtifactUntilEot,
-    fun s => { s with additionalArtifactUntilEot := false }⟩
+    fun s => { s with additionalArtifactUntilEot := false }⟩,
+  ⟨fun s => s.cantBeBlockedByPlayer.isSome,
+    fun s => { s with cantBeBlockedByPlayer := none }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
@@ -253,6 +264,14 @@ structure PlayPermission where
   anyMana : Bool := false
   /-- The card may be cast without paying its mana cost. -/
   withoutManaCost : Bool := false
+  /-- You may play this only while you control a permanent of this subtype
+  (Flameshape). Checked as you begin to cast, not as the spell resolves. -/
+  requireSubtype : Option String := none
+  /-- Timing restrictions based on card type are ignored (cast-as-it-resolves
+  effects such as Glamdring, Gríma, and Gandalf). -/
+  ignoreTiming : Bool := false
+  /-- The card is exiled face down (Flameshape, Riddles in the Dark). -/
+  faceDown : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- An object currently in the game (CR 109). -/
@@ -283,6 +302,9 @@ structure GameObject where
   adventurerCard : Option CardDef := none
   /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
   linkedExile : Array ObjectId := #[]
+  /-- Cards this permanent exiled that a leave trigger may return (Fiend
+  Hunter). Unlike `linkedExile`, these do not return automatically. -/
+  leaveTriggerExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
   /-- This spell's kicker cost was paid (CR 702.32). -/
@@ -315,19 +337,23 @@ def name (o : GameObject) : String := o.printed.name
 
 /-- Current card types, including a lasting “becomes a creature” effect. -/
 def types (o : GameObject) : Array CardType :=
-  let ts :=
-    if o.status.additionalCreature && !o.printed.isCreature then
-      o.printed.types.push .creature
-    else
-      o.printed.types
-  if o.status.additionalArtifactUntilEot && !ts.any (· == .artifact) then
-    ts.push .artifact
-  else ts
+  if o.status.onlyFoodArtifact then #[.artifact]
+  else
+    let ts :=
+      if o.status.additionalCreature && !o.printed.isCreature then
+        o.printed.types.push .creature
+      else
+        o.printed.types
+    if o.status.additionalArtifactUntilEot && !ts.any (· == .artifact) then
+      ts.push .artifact
+    else ts
 
 /-- Current subtypes, including those granted by a lasting type-changing effect. -/
 def subtypes (o : GameObject) : Array Subtype :=
-  let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
-  o.printed.subtypes ++ extra
+  if o.status.onlyFoodArtifact then #["Food"]
+  else
+    let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
+    o.printed.subtypes ++ extra
 
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
@@ -359,7 +385,7 @@ def you (o : GameObject) : PlayerId :=
 
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
-  o.printed.isCreature || o.status.additionalCreature
+  !o.status.onlyFoodArtifact && (o.printed.isCreature || o.status.additionalCreature)
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -1443,7 +1469,10 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
         let legendaryOk :=
           (!ab.lordLegendaryOnly || target.isLegendary) &&
           (!ab.lordNonlegendaryOnly || !target.isLegendary)
-        let subtypeOk := subtypes.isEmpty || subtypes.any (g.hasSubtype target)
+        let subtypeOk :=
+          match src.status.chosenCreatureType with
+          | some t => g.hasSubtype target t
+          | none => subtypes.isEmpty || subtypes.any (g.hasSubtype target)
         if sameController && otherOk && legendaryOk && subtypeOk then
           addStats acc (p, t)
         else acc)
@@ -1652,19 +1681,39 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | some o =>
             if o.zone == .exile then
               let name := o.name
-              let (g', returnedId) := g.move o.id .battlefield (some o.owner)
-              g := g'
-              let returned := g.object! returnedId
-              let sick := !returned.printed.keywords.haste
-              g := g.setObject { returned with
-                status := { returned.status with summoningSick := sick } }
-              g := g.logMsg s!"{name} returns to the battlefield"
-              let returned := g.object! returnedId
-              match returned.controller with
-              | some p =>
-                g := { g with waitingTriggers :=
-                  g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
-              | none => pure ()
+              if o.printed.isAura then
+                match g.battlefield.find? (fun h => h.isCreature) with
+                | none =>
+                  g := g.logMsg
+                    s!"{name} remains in exile (can't be attached legally)"
+                | some host =>
+                  let hostId := host.id
+                  let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                  g := g'
+                  let returned := g.object! returnedId
+                  g := g.setObject { returned with attachedTo := some hostId }
+                  g := g.logMsg
+                    s!"{name} returns attached to {host.name} (does not target)"
+                  let returned := g.object! returnedId
+                  match returned.controller with
+                  | some p =>
+                    g := { g with waitingTriggers :=
+                      g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
+                  | none => pure ()
+              else
+                let (g', returnedId) := g.move o.id .battlefield (some o.owner)
+                g := g'
+                let returned := g.object! returnedId
+                let sick := !returned.printed.keywords.haste
+                g := g.setObject { returned with
+                  status := { returned.status with summoningSick := sick } }
+                g := g.logMsg s!"{name} returns to the battlefield"
+                let returned := g.object! returnedId
+                match returned.controller with
+                | some p =>
+                  g := { g with waitingTriggers :=
+                    g.waitingTriggers ++ returned.waitingTriggersFor p .entering }
+                | none => pure ()
           | none => pure ()
         return g
     else g
@@ -2010,7 +2059,10 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   (!g.hasFlying attacker ||
     g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
   (!(g.hasShadow attacker) || g.hasShadow blocker) &&
-  (!(g.hasShadow blocker) || g.hasShadow attacker)
+  (!(g.hasShadow blocker) || g.hasShadow attacker) &&
+  !(match attacker.status.cantBeBlockedByPlayer with
+    | some pid => blocker.controlledBy pid
+    | none => false)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
@@ -2394,12 +2446,15 @@ def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && (g.player p).landsPlayedThisTurn < g.landPlaysAllowed p
 
 /-- Whether `p` may play `o` from exile under a granted permission (CR 701.14 / 715.3d). -/
-def mayPlayFromExile (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match o.playPermission with
   | some perm =>
     perm.player == p &&
-      (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0)
+      (perm.fromAdventure || perm.whileExiled || perm.turnEndsRemaining > 0) &&
+      (match perm.requireSubtype with
+       | none => true
+       | some t => g.controlsAnySubtype p #[t])
   | none => false
 
 /-- Cards in exile that `p` currently may play. -/
@@ -3510,7 +3565,9 @@ non-mana costs such as sacrificing a permanent must still be payable. -/
 def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   !o.printed.isLand &&
   g.mayPlay p o &&
-  g.timingAllowsCast p o.printed &&
+  (match o.playPermission with
+   | some perm => perm.ignoreTiming || g.timingAllowsCast p o.printed
+   | none => g.timingAllowsCast p o.printed) &&
   (if o.printed.additionalCostSacrificeArtifactOrCreature &&
       o.printed.additionalCostOrPayGeneric.isNone then
     (g.permanentsOf p).any (fun perm =>
@@ -3540,7 +3597,9 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     let face := adv.toCardDef
     !g.adventureExileForbidsRecast o &&
     g.mayPlay p o &&
-    g.timingAllowsCast p face &&
+    (match o.playPermission with
+     | some perm => perm.ignoreTiming || g.timingAllowsCast p face
+     | none => g.timingAllowsCast p face) &&
     if face.requiresTarget then !(g.legalCastTargets p face).isEmpty
     else true
 
@@ -3982,6 +4041,223 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
 /-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
 def qualityWasBeheld (g : Game) (p : PlayerId) (quality : String) : Bool :=
   (g.player p).beheldQualities.contains quality
+
+/-- Choose a creature type as this permanent enters. The static pump applies
+immediately; no player may act between the choice and the bonus. -/
+def chooseCreatureTypeAsEnters (g : Game) (sourceId : ObjectId) (creatureType : String) :
+    Game :=
+  match g.findObject? sourceId with
+  | none => g
+  | some src =>
+    let g := g.setObject { src with status :=
+      { src.status with chosenCreatureType := some creatureType } }
+    g.logMsg s!"{src.name}: {creatureType} is chosen as it enters"
+
+/-- Draw one card for each graveyard with seven or more cards. -/
+def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
+  let n := g.players.filter (fun pl => pl.graveyard.size >= 7) |>.size
+  if n == 0 then
+    g.logMsg s!"{(g.player p).name} draws no cards (no graveyard has seven cards)"
+  else
+    g.draw p n
+
+/-- Discard the hand (zero cards is legal) and draw that many. The choice is
+made during resolution; nothing happens between discard and draw. -/
+def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Game :=
+  if !doDiscard then
+    g.logMsg s!"{(g.player p).name} does not discard their hand"
+  else
+    let ids := (g.player p).hand
+    let n := ids.size
+    let g :=
+      ids.foldl (fun acc id =>
+        match acc.findObject? id with
+        | none => acc
+        | some o =>
+          let (acc, _) := acc.move id (.graveyard o.owner) none
+          acc) g
+    let g := g.logMsg s!"{(g.player p).name} discards {n} card(s)"
+    if n == 0 then g else g.draw p n
+
+/-- Players currently tied for most life. -/
+def playersWithMostLife (g : Game) : Array PlayerId :=
+  let living := g.livingPlayers
+  match living[0]? with
+  | none => #[]
+  | some first =>
+    let best := living.foldl (fun acc pl => max acc pl.life) first.life
+    living.filter (fun pl => pl.life == best) |>.map (·.id)
+
+/-- The Black Gate: check most life as the ability resolves, then those
+creatures (including later ones) cannot block the target this turn. -/
+def applyBlackGateUnblockable (g : Game) (attackerId : ObjectId)
+    (chosen : PlayerId) : Game :=
+  if !(g.playersWithMostLife).contains chosen then
+    g.logMsg "The chosen player does not have the most life. The ability does nothing."
+  else
+    match g.findObject? attackerId with
+    | none => g.logMsg "The target is no longer legal"
+    | some o =>
+      if !o.isOnBattlefield then
+        g.logMsg "The target is no longer legal"
+      else
+        let g := g.setObject { o with status :=
+          { o.status with cantBeBlockedByPlayer := some chosen } }
+        g.logMsg
+          s!"{o.name} can't be blocked by creatures {(g.player chosen).name} controls this turn"
+
+/-- Put the returned cards onto the battlefield as Food artifacts only.
+They keep name, mana cost, mana value, abilities, and legendary. -/
+def supperForSpidersReturn (g : Game) (controller : PlayerId)
+    (ids : Array ObjectId) : Game :=
+  ids.foldl (fun acc id =>
+    match acc.findObject? id with
+    | none => acc
+    | some o =>
+      if o.zone != .graveyard o.owner then acc
+      else
+        let (acc, newId) := acc.move id .battlefield (some controller)
+        let o := acc.object! newId
+        let acc := acc.setObject { o with status :=
+          { o.status with onlyFoodArtifact := true, summoningSick := true } }
+        acc.logMsg s!"{o.name} returns as a Food artifact") g
+
+/-- Exile the top `n` cards face down. They may be played while exiled if you
+control `subtype`. Timing and costs are unchanged. -/
+def exileTopPlayIfYouControlSubtype (g : Game) (p : PlayerId) (n : Nat)
+    (subtype : String) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in List.range n do
+      let pl := g.player p
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let cardName := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        let o := g.object! newId
+        g := g.setObject { o with
+          playPermission := some {
+            player := p
+            turnEndsRemaining := 0
+            whileExiled := true
+            requireSubtype := some subtype
+            faceDown := true } }
+        g := g.logMsg s!"{pl.name} exiles a card face down"
+        let _ := cardName
+    return g
+
+/-- Exile cards from `victim`'s library until an instant or sorcery, face up.
+An empty library becomes that player's library again. The found card may be
+cast as this ability resolves, ignoring timing. Uncast cards go on the bottom
+in a random order. -/
+partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
+    (castTheCard : Bool) : Game :=
+  Id.run do
+    let mut g := g
+    let mut exiled : Array ObjectId := #[]
+    let mut found : Option ObjectId := none
+    while found.isNone && !(g.player victim).library.isEmpty do
+      let top := (g.player victim).library.back!
+      let name := (g.object! top).name
+      let (g', newId) := g.move top .exile none
+      g := g'
+      let o := g.object! newId
+      g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
+      if o.printed.isInstantOrSorcery then
+        found := some newId
+      else
+        exiled := exiled.push newId
+    match found with
+    | none =>
+      let (rng, lib) := g.rng.shuffle exiled
+      g := { g with rng := rng }
+      for id in lib do
+        let (g', _) := g.move id (.library victim) none
+        g := g'
+      return g.logMsg
+        s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+    | some instId =>
+      if castTheCard then
+        let o := g.object! instId
+        let (g', _) := g.move instId .stack (some controller)
+        g := g'.logMsg
+          s!"{(g.player controller).name} casts {o.name} as the ability resolves"
+      else
+        let (g', _) := g.move instId (.library victim) none
+        g := g'
+      let (rng, rest) := g.rng.shuffle exiled
+      g := { g with rng := rng }
+      return rest.foldl (fun acc id =>
+        (acc.move id (.library victim) none).1) g
+
+/-- An uncast copy ceases the next time state-based actions are checked. -/
+def ceaseUncastCopies (g : Game) : Game :=
+  g.objects.foldl (fun acc o =>
+    if o.isCopy && o.zone != .stack && o.zone != .battlefield then
+      let acc := acc.ceaseToExist o.id
+      acc.logMsg s!"{o.name} ceases to exist"
+    else acc) g
+
+/-- True when `p` can pay Saruman's ward (discard an enchantment, instant,
+or sorcery card). -/
+def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).hand.any (fun id =>
+    match g.findObject? id with
+    | some o => o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+    | none => false)
+
+/-- Split the top four library cards into a face-up pile and a face-down pile.
+A 4/0 split is legal. The face-down pile is not revealed if it is put into
+hand. -/
+def riddlesInTheDark (g : Game) (p : PlayerId) (faceUpCount : Nat)
+    (chooseFaceDown : Bool) : Game :=
+  let lib := (g.player p).library
+  let n := min 4 lib.size
+  let taken := lib.extract (lib.size - n) lib.size
+  let faceUpN := min faceUpCount taken.size
+  let faceUp := taken.extract (taken.size - faceUpN) taken.size
+  let faceDown := taken.extract 0 (taken.size - faceUpN)
+  let g := g.logMsg
+    s!"{(g.player p).name} separates {faceUp.size} face-up and {faceDown.size} face-down"
+  let toHand := if chooseFaceDown then faceDown else faceUp
+  let toGy := if chooseFaceDown then faceUp else faceDown
+  let g :=
+    if chooseFaceDown then
+      g.logMsg "The face-down pile is put into hand without being revealed"
+    else
+      g.logMsg "The face-up pile is put into hand"
+  let g :=
+    toHand.foldl (fun acc id =>
+      (acc.move id (.hand p) none).1) g
+  toGy.foldl (fun acc id =>
+    (acc.move id (.graveyard p) none).1) g
+
+/-- Linked activated abilities last only while the copier still has them. -/
+def linkedAbilitiesStillLinked (stillHasThoseAbilities : Bool) : Bool :=
+  stillHasThoseAbilities
+
+/-- Treat a copied activated ability as referring to the copier's name. -/
+def rewriteAbilityCardName (abilityText printedName copierName : String) : String :=
+  abilityText.replace printedName copierName
+
+/-- Must-attack-if-able may be declined when every legal attack would cost. -/
+def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool :=
+  onlyAttacksRequireCost
+
+/-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
+as an Adventure, so it cannot be cast as a permanent later. -/
+def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    let name := o.name
+    let (g, newId) := g.move id .exile none
+    let o := g.object! newId
+    let g := g.setObject { o with playPermission := none, adventurerCard := none }
+    g.logMsg s!"{name} is exiled (Bilbo's replacement). It cannot be cast as a permanent"
 
 /-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
 so his last ability triggers (ruling 74). -/
@@ -5115,6 +5391,71 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
+/-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
+or mill. -/
+def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
+  match target with
+  | none =>
+    g.logMsg
+      "The target is no longer legal. No influence counter, scry, draw, or mill."
+  | some pid =>
+    if (g.player pid).lost then
+      g.logMsg
+        "The target is no longer legal. No influence counter, scry, draw, or mill."
+    else
+      match g.findObject? sourceId with
+      | none =>
+        g.logMsg
+          "The target is no longer legal. No influence counter, scry, draw, or mill."
+      | some src =>
+        if !src.isOnBattlefield || pid == src.you then
+          g.logMsg
+            "The target is no longer legal. No influence counter, scry, draw, or mill."
+        else
+          let g := g.setObject { src with status :=
+            { src.status with influence := src.status.influence + 1 } }
+          let g := g.logMsg s!"{src.name} gets an influence counter"
+          g.beginScry src.you 2
+
+/-- Put a card onto the stack as an ability is resolving. Timing may be
+ignored. The permission does not last after this ability finishes. -/
+def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
+    (ignoreTiming := true) (withoutManaCost := true) : Game :=
+  match g.findObject? id with
+  | none => g.logMsg "There is no card to cast"
+  | some o =>
+    if !ignoreTiming && !g.timingAllowsCast p o.printed then
+      g.logMsg s!"{o.name} cannot be cast now (timing)"
+    else if !withoutManaCost &&
+        !(g.player p).manaPool.canPay (g.playManaCost o o.printed) then
+      g.logMsg s!"{o.name} cannot be cast (costs)"
+    else
+      let name := o.name
+      let (g, _) := g.move id .stack (some p)
+      g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+
+/-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
+def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
+  let before :=
+    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
+  let g := opponents.foldl (fun acc pid => acc.mill pid n) g
+  let after :=
+    opponents.foldl (fun acc pid => acc + (g.player pid).graveyard.size) 0
+  (g, after > before)
+
+/-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
+def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
+  match g.findObject? targetId with
+  | none => g.logMsg "The target is no longer legal"
+  | some o =>
+    if !o.isOnBattlefield || !o.isCreature then
+      g.logMsg "The target is no longer legal"
+    else
+      let g := g.addPlusOnePlusOneTo o 1
+      let o := g.object! o.id
+      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.lifelink)
+      g.logMsg s!"{o.name} gains lifelink until end of turn"
+
 /-- Counter a spell on the stack. `exile` puts a permanent spell into exile
 and may grant a free cast (CR 701.5 / Thranduil's Decree). -/
 def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
@@ -5157,25 +5498,75 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | none => g
   g.logMsg s!"{name} is exiled until the source leaves the battlefield"
 
-/-- Return cards linked-exiled by `source`. -/
-def returnLinkedExile (g : Game) (source : GameObject) : Game :=
-  Id.run do
-    let mut g := g
-    for id in source.linkedExile do
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .exile then
-          let name := o.name
-          let owner := o.owner
-          let (g', newId) := g.move id .battlefield (some owner)
-          g := g'
+/-- Exile `o` for a leave-the-battlefield trigger (Fiend Hunter). The card
+does not return automatically when the source leaves. -/
+def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject) :
+    Game :=
+  let name := o.name
+  let (g, newId) := g.move o.id .exile none
+  let g :=
+    match sourceId.bind g.findObject? with
+    | some src =>
+      g.setObject { src with leaveTriggerExile := src.leaveTriggerExile.push newId }
+    | none => g
+  g.logMsg s!"{name} is exiled"
+
+/-- Return one exiled id to the battlefield under its owner. Auras attach
+without targeting; if they cannot attach, they remain in exile. -/
+def returnExiledId (g : Game) (id : ObjectId) : Game :=
+  match g.findObject? id with
+  | none => g
+  | some o =>
+    if o.zone != .exile then g
+    else
+      let name := o.name
+      let owner := o.owner
+      if o.printed.isAura then
+        match g.battlefield.find? (fun h => h.isCreature) with
+        | none =>
+          g.logMsg s!"{name} remains in exile (can't be attached legally)"
+        | some host =>
+          let hostId := host.id
+          let hostName := host.name
+          let (g, newId) := g.move id .battlefield (some owner)
           let o := g.object! newId
-          let sick := !o.printed.keywords.haste
-          g := g.setObject { o with status := { o.status with summoningSick := sick } }
-          g := g.logMsg s!"{name} returns to the battlefield"
-          g := g.afterPermanentEnters (g.object! newId)
-      | none => pure ()
-    return g
+          let g := g.setObject { o with attachedTo := some hostId }
+          let g := g.logMsg s!"{name} returns attached to {hostName} (does not target)"
+          g.afterPermanentEnters (g.object! newId)
+      else
+        let (g, newId) := g.move id .battlefield (some owner)
+        let o := g.object! newId
+        let sick := !o.printed.keywords.haste
+        let g := g.setObject { o with status := { o.status with summoningSick := sick } }
+        let g := g.logMsg s!"{name} returns to the battlefield"
+        g.afterPermanentEnters (g.object! newId)
+
+/-- Return cards linked-exiled by `source` (leave-trigger list first, then
+until-leaves). -/
+def returnLinkedExile (g : Game) (source : GameObject) : Game :=
+  (source.leaveTriggerExile ++ source.linkedExile).foldl
+    (fun acc id => acc.returnExiledId id) g
+
+/-- `p` loses and leaves the game. Their permanents leave immediately, so
+until-leaves one-shots return those cards. Leave triggers do not go on the
+stack (they cease with the leaving player's abilities). -/
+def playerLeavesGame (g : Game) (p : PlayerId) : Game :=
+  let g := g.setPlayer { (g.player p) with lost := true }
+  let g := g.logMsg s!"{(g.player p).name} leaves the game"
+  let g := { g with
+    stack := g.stack.filter (fun e =>
+      match g.findObject? e.objectId with
+      | some o => !(o.controlledBy p || o.owner == p)
+      | none => true)
+    waitingTriggers := g.waitingTriggers.filter (fun wt => wt.controller != p) }
+  let ids := g.battlefield.filter (fun o => o.owner == p) |>.map (·.id)
+  let g :=
+    ids.foldl (fun acc id =>
+      match acc.findObject? id with
+      | none => acc
+      | some _ => (acc.move id .exile none).1) g
+  { g with
+    waitingTriggers := g.waitingTriggers.filter (fun wt => wt.controller != p) }
 
 def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     (targets : Array Target) (castFromGraveyard := false) : Game :=
@@ -5558,13 +5949,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _ => g.logMsg "The target is no longer legal")
   | .createTokensX kind =>
     g.createKindTokens controller kind 1
-  | .exileTopPlayIfYouControlSubtype n _subtype =>
-    let g := Id.run do
-      let mut g := g
-      for _ in List.range n do
-        g := g.resolveExileTopPlayUntilEndOfNextTurn controller
-      return g
-    g
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
     Id.run do
       let mut g := g
@@ -6167,7 +6553,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
   | .exileTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-      g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+      g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
   | .exileUntilLeaves =>
     match sourceId.bind g.findObject? with
     | some src =>

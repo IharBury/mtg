@@ -4265,4 +4265,532 @@ def lastKnownSacrificePowerOk : Bool :=
 
 #guard lastKnownSacrificePowerOk
 
+/-!
+## 143, 271 — The Master of Lake-town: two triggers, last usually from the GY
+-/
+
+def masterDiesThenLastAbilityOk : Bool :=
+  let g := addPermanent afterDraw theMasterOfLakeTown ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let mid := (g.player ⟨0⟩).graveyard.size
+  let (g, _) := g.move (namedPermanent g "The Master of Lake-town").id
+    (.graveyard ⟨0⟩) none
+  let inGy := g.objects.any (fun o =>
+    o.name == "The Master of Lake-town" && o.zone == .graveyard ⟨0⟩)
+  let g := g.drawPerSevenCardGraveyard ⟨0⟩
+  inGy && mid >= 6 &&
+    (g.player ⟨0⟩).graveyard.size >= 7 &&
+    (ruling 271).comment.contains "usually be in a graveyard"
+
+#guard masterDiesThenLastAbilityOk
+
+def masterMillFirstThenDrawOk : Bool :=
+  let g := addPermanent afterDraw theMasterOfLakeTown ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "The Master of Lake-town").id
+    (.graveyard ⟨0⟩) none
+  let g := g.loseLife ⟨1⟩ 3
+  let g := g.mill ⟨1⟩ 3
+  let g := g.drawPerSevenCardGraveyard ⟨0⟩
+  g.objects.any (fun o =>
+    o.name == "The Master of Lake-town" && o.zone == .graveyard ⟨0⟩) &&
+    (ruling 143).comment.contains "two triggered abilities"
+
+#guard masterMillFirstThenDrawOk
+
+/-!
+## 144, 166 — Thranduil linked abilities and name rewrite
+-/
+
+#guard
+  Game.linkedAbilitiesStillLinked true &&
+    !(Game.linkedAbilitiesStillLinked false) &&
+    (ruling 144).comment.contains "link only lasts for as long as Thranduil has those abilities"
+
+#guard
+  Game.rewriteAbilityCardName
+      "Exile target card named Lórien Guide." "Lórien Guide" "Thranduil, the Elvenking" ==
+    "Exile target card named Thranduil, the Elvenking." &&
+    (ruling 166).comment.contains "referenced Thranduil by name instead"
+
+/-!
+## 165 — Banishing Light Aura return does not target; stay in exile if illegal
+-/
+
+def banishingLightAuraNoHostStaysOk : Bool :=
+  let g := addPermanent afterDraw banishingLight ⟨0⟩ ⟨0⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let light := namedPermanent g "Banishing Light"
+  let g := g.exileUntilSourceLeaves (some light.id) (namedPermanent g "Fog on the Barrow-Downs")
+  let light := namedPermanent g "Banishing Light"
+  let g := (g.move light.id (.graveyard ⟨0⟩) none).1
+  g.objects.any (fun o => o.name == "Fog on the Barrow-Downs" && o.zone == .exile) &&
+    g.log.any (fun s => mentions s "remains in exile") &&
+    (ruling 165).comment.contains "remains in exile"
+
+#guard banishingLightAuraNoHostStaysOk
+
+def banishingLightAuraHexproofOk : Bool :=
+  let g := addPermanent afterDraw banishingLight ⟨0⟩ ⟨0⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bear (·.grantUntilEot Keyword.hexproof)
+  let light := namedPermanent g "Banishing Light"
+  let g := g.exileUntilSourceLeaves (some light.id) (namedPermanent g "Fog on the Barrow-Downs")
+  let light := namedPermanent g "Banishing Light"
+  let g := (g.move light.id (.graveyard ⟨0⟩) none).1
+  let fog := namedPermanent g "Fog on the Barrow-Downs"
+  let bear := namedPermanent g "Grizzly Bears"
+  g.hasHexproof bear && fog.attachedTo == some bear.id &&
+    g.log.any (fun s => mentions s "does not target") &&
+    (ruling 165).comment.contains "hexproof"
+
+#guard banishingLightAuraHexproofOk
+
+/-!
+## 175, 201, 277, 336 — Gríma exile-until-instant, face up, cast as it resolves
+-/
+
+def grimaEmptyLibraryBecomesLibraryOk : Bool :=
+  let g := afterDraw.setPlayer { (afterDraw.player ⟨1⟩) with library := #[] }
+  let g := addToLibraryTop g mountain ⟨1⟩
+  let g := addToLibraryTop g mountain ⟨1⟩
+  let before := (g.player ⟨1⟩).library.size
+  let g := g.grimaExileUntilInstantOrSorcery ⟨0⟩ ⟨1⟩ false
+  (g.player ⟨1⟩).library.size == before &&
+    !(g.objects.any (fun o => o.zone == .exile && o.name == "Mountain")) &&
+    g.log.any (fun s => mentions s "become that player's library") &&
+    (ruling 175).comment.contains "become that player's library"
+
+#guard grimaEmptyLibraryBecomesLibraryOk
+
+def grimaFaceUpCastDuringResolveOk : Bool :=
+  let g := addToLibraryTop afterDraw mountain ⟨1⟩
+  let g := addToLibraryTop g lightningBolt ⟨1⟩
+  let g := g.grimaExileUntilInstantOrSorcery ⟨0⟩ ⟨1⟩ true
+  g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+    g.log.any (fun s => mentions s "face up") &&
+    g.log.any (fun s => mentions s "as the ability resolves") &&
+    (ruling 277).comment.contains "exiled face up" &&
+    (ruling 336).comment.contains "while the ability is resolving" &&
+    (ruling 201).comment.contains "bottom of its owner's library"
+
+#guard grimaFaceUpCastDuringResolveOk
+
+/-!
+## 200, 341, 337 — cast during resolution, ignore timing
+-/
+
+def castDuringResolutionIgnoresTimingOk : Bool :=
+  let g := skipTo afterDraw .beginningOfCombat 80
+  let g := addToHand g lightningBolt ⟨0⟩
+  let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
+  let g := g.castAsPartOfResolution ⟨0⟩ bolt.id (ignoreTiming := true)
+  g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+    g.log.any (fun s => mentions s "as the ability resolves") &&
+    (ruling 200).comment.contains "Timing permissions based on the card's type are ignored" &&
+    (ruling 341).comment.contains "Timing restrictions based on the card's types are ignored" &&
+    (ruling 337).comment.contains "while the ability is resolving"
+
+#guard castDuringResolutionIgnoresTimingOk
+
+/-!
+## 212, 213, 343 — Saruman ward, uncast copy ceases, reflexive mill
+-/
+
+def sarumanWardNeedsCardOk : Bool :=
+  let empty := afterDraw.setPlayer { (afterDraw.player ⟨0⟩) with hand := #[] }
+  let g := addToHand empty lightningBolt ⟨0⟩
+  !(empty.canPaySarumanWard ⟨0⟩) &&
+    g.canPaySarumanWard ⟨0⟩ &&
+    (ruling 212).comment.contains "won't be able to pay Saruman"
+
+#guard sarumanWardNeedsCardOk
+
+def uncastCopyCeasesOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨0⟩
+  let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
+  let (g, eid) := g.move bolt.id .exile none
+  let o := g.object! eid
+  let g := g.setObject { o with isCopy := true }
+  let g := g.ceaseUncastCopies
+  !(g.objects.any (fun o => o.isCopy && o.name == "Lightning Bolt")) &&
+    g.log.any (fun s => mentions s "ceases to exist") &&
+    (ruling 213).comment.contains "copy ceases to exist"
+
+#guard uncastCopyCeasesOk
+
+def sarumanReflexiveAfterMillOk : Bool :=
+  let (g, fired) := afterDraw.millThenReflexive #[⟨1⟩] 2
+  fired &&
+    (g.player ⟨1⟩).graveyard.size >= 2 &&
+    (ruling 343).comment.contains "reflexive"
+
+#guard sarumanReflexiveAfterMillOk
+
+/-!
+## 214 — Bard can target the Human Soldier created while recruiting
+-/
+
+def bardTargetsRecruitSoldierOk : Bool :=
+  let g := addPermanent afterDraw bardTheBowman ⟨0⟩ ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := g.setPlayer { (g.player ⟨0⟩) with cardsDrawnThisTurn := 1 }
+  let bolt := handCardNamed g ⟨0⟩ "Lightning Bolt"
+  let g := g.beginRecruit ⟨0⟩
+  let g :=
+    match g.discardForDraw ⟨0⟩ bolt.id with
+    | .ok g => g
+    | .error _ => g
+  let soldier :=
+    g.battlefield.find? (fun o => o.name == "Human Soldier")
+  match soldier with
+  | none => false
+  | some tok =>
+    let g := g.applyBardBowman tok.id
+    tok.printed.isToken &&
+      (namedPermanent g "Human Soldier").status.plusOnePlusOne == 1 &&
+      g.hasLifelink (namedPermanent g "Human Soldier") &&
+      (ruling 214).comment.contains "Human Soldier you create can be chosen"
+
+#guard bardTargetsRecruitSoldierOk
+
+/-!
+## 226 — Bat-Cloud reduction still applies if that player lost
+-/
+
+def batCloudReductionIfPlayerLostOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨1⟩) none
+  let g := g.setPlayer { (g.player ⟨1⟩) with lost := true }
+  let g := addToHand g dreadedBatCloud ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Dreaded Bat-Cloud"
+  let cost := g.playManaCost card dreadedBatCloud
+  g.creatureDiedThisTurn &&
+    (g.player ⟨1⟩).lost &&
+    cost == ManaCost.ofGenericAndColor 1 .black &&
+    (ruling 226).comment.contains "Dreaded Bat-Cloud's cost reduction applies"
+
+#guard batCloudReductionIfPlayerLostOk
+
+/-!
+## 227, 228, 229, 248, 289, 290 — until-leaves vs Fiend Hunter leave trigger
+-/
+
+def celebrateOwnerLeavesReturnsOk : Bool :=
+  let g := addPermanent afterDraw celebrateTheMountainKing ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Celebrate the Mountain-king"
+  let g := g.exileUntilSourceLeaves (some src.id) (namedPermanent g "Grizzly Bears")
+  let g := g.playerLeavesGame ⟨0⟩
+  g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    (g.player ⟨0⟩).lost &&
+    (ruling 227).comment.contains "one-shot effect that returns" &&
+    (ruling 228).comment.contains "one-shot effect that returns"
+
+#guard celebrateOwnerLeavesReturnsOk
+
+def whaleOwnerLeavesReturnsOk : Bool :=
+  let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Colossal Whale"
+  let g := g.exileUntilSourceLeaves (some src.id) (namedPermanent g "Grizzly Bears")
+  let g := g.playerLeavesGame ⟨0⟩
+  g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    (g.player ⟨0⟩).lost &&
+    (ruling 289).comment.contains "immediately after Colossal Whale" &&
+    (ruling 290).comment.contains "immediately after Celebrate"
+
+#guard whaleOwnerLeavesReturnsOk
+
+def fiendHunterOwnerLeavesStaysExiledOk : Bool :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Fiend Hunter"
+  let g := g.exileForLeaveTrigger (some src.id) (namedPermanent g "Grizzly Bears")
+  let g := g.playerLeavesGame ⟨0⟩
+  g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
+    !(g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
+    (ruling 229).comment.contains "remains exiled indefinitely"
+
+#guard fiendHunterOwnerLeavesStaysExiledOk
+
+def fiendHunterReturnIsNewObjectOk : Bool :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let oldId := (namedPermanent g "Grizzly Bears").id
+  let src := namedPermanent g "Fiend Hunter"
+  let g := g.exileForLeaveTrigger (some src.id) (namedPermanent g "Grizzly Bears")
+  let src := namedPermanent g "Fiend Hunter"
+  let g := g.returnLinkedExile src
+  let returned := namedPermanent g "Grizzly Bears"
+  returned.id != oldId &&
+    (ruling 248).comment.contains "new object with no relation"
+
+#guard fiendHunterReturnIsNewObjectOk
+
+def untilLeavesImmediateNoSbaGapOk : Bool :=
+  let g := addPermanent afterDraw colossalWhale ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Colossal Whale"
+  let g := g.exileUntilSourceLeaves (some src.id) (namedPermanent g "Grizzly Bears")
+  let src := namedPermanent g "Colossal Whale"
+  let g := (g.move src.id (.graveyard ⟨0⟩) none).1
+  g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    g.pending == .none &&
+    (ruling 289).comment.contains "Nothing happens between the two events"
+
+#guard untilLeavesImmediateNoSbaGapOk
+
+/-!
+## 278 — Unexpected Party type is chosen as it enters
+-/
+
+def unexpectedPartyTypeImmediateOk : Bool :=
+  let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let party := namedPermanent g "An Unexpected Party"
+  let g := g.chooseCreatureTypeAsEnters party.id "Human"
+  let human := namedPermanent g "Lakeshore Apothecary"
+  g.pending == .none &&
+    (namedPermanent g "An Unexpected Party").status.chosenCreatureType == some "Human" &&
+    g.power human == 3 &&
+    (ruling 278).comment.contains "can't take any actions between"
+
+#guard unexpectedPartyTypeImmediateOk
+
+/-!
+## 279, 283 — Black Gate most-life checked on resolve; later creatures too
+-/
+
+def blackGateMostLifeAndLaterCreatureOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bear with status := { bear.status with attacking := true } }
+  let g := g.setLife ⟨1⟩ 25 "p1 has most life"
+  let g := g.applyBlackGateUnblockable (namedPermanent g "Grizzly Bears").id ⟨1⟩
+  let g := addPermanent g lakeshoreApothecary ⟨1⟩ ⟨1⟩
+  let attacker := namedPermanent g "Grizzly Bears"
+  let later := namedPermanent g "Lakeshore Apothecary"
+  !(g.canBlock later attacker) &&
+    (g.player ⟨1⟩).life == 25 &&
+    (ruling 279).comment.contains "as The Black Gate's last ability resolves" &&
+    (ruling 283).comment.contains "including creatures that weren't on the battlefield"
+
+#guard blackGateMostLifeAndLaterCreatureOk
+
+/-!
+## 284 — Uneasy Partings: owner chooses top or bottom
+-/
+
+def uneasyPartingsOwnerChoosesOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.applyEffect ⟨0⟩ .putOnTopOrBottom
+    #[Target.permanent bear.id]
+  (match g.pending with
+   | .chooseLibraryPlacement p id => p == ⟨1⟩ && id == bear.id
+   | _ => false) &&
+    (ruling 284).comment.contains "creature's owner chooses"
+
+#guard uneasyPartingsOwnerChoosesOk
+
+/-!
+## 286, 348 — Balin discard is decided on resolve, empty hand legal
+-/
+
+def balinEmptyHandDiscardOk : Bool :=
+  let g := afterDraw.setPlayer { (afterDraw.player ⟨0⟩) with hand := #[] }
+  let g := g.mayDiscardHandDrawThatMany ⟨0⟩ true
+  (g.player ⟨0⟩).hand.size == 0 &&
+    g.pending == .none &&
+    (ruling 348).comment.contains "even if your hand contains zero cards" &&
+    (ruling 286).comment.contains "during the resolution of the ability"
+
+#guard balinEmptyHandDiscardOk
+
+def balinDiscardThenDrawAtomicOk : Bool :=
+  let g := afterDraw
+  let n := (g.player ⟨0⟩).hand.size
+  let g := g.mayDiscardHandDrawThatMany ⟨0⟩ true
+  (g.player ⟨0⟩).hand.size == n &&
+    g.pending == .none &&
+    (ruling 286).comment.contains "no opportunity for an opponent to respond"
+
+#guard balinDiscardThenDrawAtomicOk
+
+/-!
+## 295 — Supper for Spiders: Food artifacts only; keep name and abilities
+-/
+
+def supperForSpidersFoodOnlyOk : Bool :=
+  let g := addToGraveyard afterDraw dainLordOfTheIronHills ⟨1⟩
+  let card := namedGraveyardCard g ⟨1⟩ "Dáin, Lord of the Iron Hills"
+  let g := g.supperForSpidersReturn ⟨0⟩ #[card.id]
+  let food := namedPermanent g "Dáin, Lord of the Iron Hills"
+  food.status.onlyFoodArtifact &&
+    !food.isCreature &&
+    food.types == #[.artifact] &&
+    food.subtypes == #["Food"] &&
+    food.isLegendary &&
+    food.printed.manaCost == dainLordOfTheIronHills.manaCost &&
+    (ruling 295).comment.contains "only Food artifacts" &&
+    (ruling 295).comment.contains "retain their name, mana cost, mana value, and abilities"
+
+#guard supperForSpidersFoodOnlyOk
+
+/-!
+## 327 — Dáin: must-attack may decline if every attack costs
+-/
+
+def dainMustAttackDeclineOk : Bool :=
+  Game.mustAttackCanDeclineIfOnlyAttackCosts true &&
+    !(Game.mustAttackCanDeclineIfOnlyAttackCosts false) &&
+    (ruling 327).comment.contains "choose not to attack" &&
+    dainLordOfTheIronHills.staticAbilities.any (fun ab =>
+      match ab with
+      | .creaturesCantAttackYouUnlessPayIfEnduringStory _ => true
+      | _ => false)
+
+#guard dainMustAttackDeclineOk
+
+/-!
+## 330 — Bilbo: failed Adventure is Bilbo-exiled, not Adventure-exiled
+-/
+
+def bilboFailedAdventureNoLaterCastOk : Bool :=
+  let g := addToGraveyard afterDraw bilboLuckwearer ⟨0⟩
+  let card := namedGraveyardCard g ⟨0⟩ "Bilbo, Luckwearer"
+  let g := g.exileFailedAdventureFromBilbo card.id
+  let o :=
+    match g.objects.find? (fun x => x.name == "Bilbo, Luckwearer") with
+    | some x => x
+    | none => namedPermanent afterDraw "Grizzly Bears"
+  o.zone == .exile && o.playPermission.isNone &&
+    (ruling 330).comment.contains "exiled by the replacement effect created by Bilbo"
+
+#guard bilboFailedAdventureNoLaterCastOk
+
+/-!
+## 338 — Palantír illegal target does nothing
+-/
+
+def palantirIllegalTargetOk : Bool :=
+  let g := addPermanent afterDraw palantirOfOrthanc ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Palantír of Orthanc"
+  let g := g.applyPalantir src.id none
+  (namedPermanent g "Palantír of Orthanc").status.influence == 0 &&
+    g.pending == .none &&
+    g.log.any (fun s => mentions s "No influence counter") &&
+    (ruling 338).comment.contains "You won't put an influence counter"
+
+#guard palantirIllegalTargetOk
+
+/-!
+## 339 — Minas Tirith Garrison tap-then-draw is atomic
+-/
+
+def minasTirithTapDrawAtomicOk : Bool :=
+  let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let human := namedPermanent g "Lakeshore Apothecary"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onAttackTapHumansDraw
+    (some (namedPermanent g "Minas Tirith Garrison").id)
+  let g :=
+    match g.choosePermanents ⟨0⟩ #[human.id] with
+    | .ok g => g
+    | .error _ => g
+  (namedPermanent g "Lakeshore Apothecary").status.tapped &&
+    (g.player ⟨0⟩).hand.size == hand0 + 1 &&
+    g.pending == .none &&
+    (ruling 339).comment.contains "No player may take any other actions between"
+
+#guard minasTirithTapDrawAtomicOk
+
+/-!
+## 345, 349 — Riddles: face-down pile not revealed; 4+0 legal
+-/
+
+def riddlesFourZeroFaceDownOk : Bool :=
+  let g := afterDraw
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.riddlesInTheDark ⟨0⟩ 0 true
+  (g.player ⟨0⟩).hand.size == hand0 + 4 &&
+    g.log.any (fun s => mentions s "face-down") &&
+    g.log.any (fun s => mentions s "without being revealed") &&
+    (ruling 345).comment.contains "don't have to reveal the cards in the face-down pile" &&
+    (ruling 349).comment.contains "one pile of four and one pile of zero"
+
+#guard riddlesFourZeroFaceDownOk
+
+/-!
+## 351, 356 — Flameshape: Wizard required to cast, not to resolve; normal timing
+-/
+
+def flameshapeWizardToCastNotResolveOk : Bool :=
+  let g := addToLibraryTop afterDraw lightningBolt ⟨0⟩
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := g.exileTopPlayIfYouControlSubtype ⟨0⟩ 2 "Wizard"
+  let bolt :=
+    match g.objects.find? (fun o => o.name == "Lightning Bolt" && o.zone == .exile) with
+    | some o => o
+    | none => namedPermanent afterDraw "Grizzly Bears"
+  let without := !(g.mayPlayFromExile ⟨0⟩ bolt)
+  let g := addPermanent g radagastOfRhosgobel ⟨0⟩ ⟨0⟩
+  let bolt :=
+    match g.objects.find? (fun o => o.name == "Lightning Bolt" && o.zone == .exile) with
+    | some o => o
+    | none => namedPermanent afterDraw "Grizzly Bears"
+  let withWiz := g.mayPlayFromExile ⟨0⟩ bolt
+  let g := g.castAsPartOfResolution ⟨0⟩ bolt.id (ignoreTiming := false)
+  let onStack := g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
+  let g := (g.move (namedPermanent g "Radagast of Rhosgobel").id (.graveyard ⟨0⟩) none).1
+  let stillStack := g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
+  without && withWiz && onStack && stillStack &&
+    bolt.playPermission.isSome &&
+    (match bolt.playPermission with
+     | some perm => perm.requireSubtype == some "Wizard" && !perm.ignoreTiming && !perm.withoutManaCost
+     | none => false) &&
+    (ruling 351).comment.contains "losing control of your last Wizard" &&
+    (ruling 356).comment.contains "pay all costs and follow all timing rules"
+
+#guard flameshapeWizardToCastNotResolveOk
+
+/-!
+## 352–355 — Moria Marauder, Inside Information, Thranduil's Decree, Shadow
+of the Enemy: normal timing and costs
+-/
+
+def normalTimingAndCostsOk : Bool :=
+  let g := addToHand afterDraw mountain ⟨0⟩
+  let land := handCardNamed g ⟨0⟩ "Mountain"
+  let (g, eid) := g.move land.id .exile none
+  let o := g.object! eid
+  let g := g.setObject { o with
+    playPermission := some {
+      player := ⟨0⟩
+      turnEndsRemaining := 0
+      whileExiled := true } }
+  let o := g.object! eid
+  let combat := skipTo g .beginningOfCombat 80
+  let o2 := combat.object! eid
+  let perm := o2.playPermission.getD { player := ⟨0⟩, turnEndsRemaining := 0 }
+  g.mayPlayFromExile ⟨0⟩ o &&
+    g.canPlayLand ⟨0⟩ &&
+    !(combat.canPlayLand ⟨0⟩) &&
+    !perm.ignoreTiming &&
+    (ruling 352).comment.contains "normal timing rules" &&
+    (ruling 353).comment.contains "only during your main phase" &&
+    (ruling 354).comment.contains "timing restrictions and permissions" &&
+    (ruling 355).comment.contains "pay all costs and follow all normal timing rules"
+
+#guard normalTimingAndCostsOk
+
 end Mtg.Engine.RulingTests
