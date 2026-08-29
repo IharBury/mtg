@@ -127,10 +127,6 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
           | some t => some (.tapForMana src.id t)
           | none => some .decline
         | none => some .decline
-    | .mayPlusOneCreature _ =>
-      match (g.permanentsOf p).find? (·.isCreature) with
-      | some o => some (.choosePermanents #[o.id])
-      | none => some .decline
     | .recruitDiscard _ =>
       match (g.player p).hand.back? with
       | some id => some (.discard id)
@@ -178,7 +174,8 @@ where
       match g.defaultTarget p spell with
       | some t => some (.target t)
       | none =>
-        if g.canFinishOptionalTargets spell then some .decline
+        if g.canSkipCurrentOptionalSlot spell then some .decline
+        else if g.canFinishOptionalTargets spell then some .decline
         else
           match spell.triggeredAbility with
           | some ab =>

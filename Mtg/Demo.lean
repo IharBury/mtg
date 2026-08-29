@@ -1910,6 +1910,60 @@ def applyTarget (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .ok _ => false
 
 #guard
+  match applyCast Tests.meagerMealSetup ⟨0⟩
+      [toString (Tests.handCardNamed Tests.meagerMealSetup ⟨0⟩
+        "Gollum, Silent Slinker").id, "adventure"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    (g'.object! g'.stack.back!.objectId).name == "Meager Meal" &&
+    g'.log.any (fun s => Tests.mentions s "begins casting Meager Meal") &&
+    g'.log.any (fun s => Tests.mentions s "must choose a target (CR 601.2c)")
+  | .error _ => false
+
+#guard
+  match applyTarget Tests.proposedMeagerMeal ⟨0⟩ ["Chandra"] with
+  | .error msg => Tests.mentions msg "Illegal target"
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedMeagerMeal ⟨0⟩ ["opponent"] with
+  | .error msg => Tests.mentions msg "Illegal target"
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedMeagerMeal ⟨0⟩ ["Grizzly Bears", "Chandra"] with
+  | .error msg => msg == sequentialTargetUsage
+  | .ok _ => false
+
+#guard
+  match applyTarget Tests.proposedMeagerMeal ⟨0⟩ ["Grizzly Bears"] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets ==
+      #[Target.permanent (Tests.namedPermanent g' "Grizzly Bears").id] &&
+    match applyTarget g' ⟨0⟩ ["Chandra"] with
+    | .ok g'' =>
+      g''.pending == .activateManaAbilities ⟨0⟩ &&
+      g''.stack.back!.targets ==
+        #[Target.permanent (Tests.namedPermanent g'' "Grizzly Bears").id,
+          Target.player ⟨0⟩]
+    | .error _ => false
+  | .error _ => false
+
+#guard
+  match Tests.proposedMeagerMeal.apply ⟨0⟩ .decline with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "chooses no target") &&
+    match applyTarget g' ⟨0⟩ ["opponent"] with
+    | .ok g'' =>
+      g''.pending == .activateManaAbilities ⟨0⟩ &&
+      g''.stack.back!.targets == #[Target.player ⟨1⟩]
+    | .error _ => false
+  | .error _ => false
+
+#guard
   match applyTarget Tests.gandalfEntered ⟨0⟩ ["opponent", "x"] with
   | .error msg => msg == divideTargetUsage
   | .ok _ => false
@@ -2063,7 +2117,7 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 def declineUsage : String := "usage: decline"
 
 /-- Decline an optional discard, attach, or choose no target for an “up to one”
-trigger. -/
+instance of the word “target” (CR 115.1c / 601.2c). -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] => g.apply p .decline
@@ -2114,6 +2168,14 @@ def applyAttach (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .ok g' =>
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "declines to discard")
+  | .error _ => false
+
+#guard
+  match applyDecline Tests.proposedMeagerMeal ⟨0⟩ [] with
+  | .ok g' =>
+    g'.pending == .chooseTargets ⟨0⟩ &&
+    g'.stack.back!.targets.isEmpty &&
+    g'.log.any (fun s => Tests.mentions s "chooses no target")
   | .error _ => false
 
 #guard

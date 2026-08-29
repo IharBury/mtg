@@ -486,6 +486,10 @@ structure StackEntry where
   targetsAnnounced : Bool := false
   /-- Chosen mode index for a modal spell (CR 700.2). -/
   chosenMode : Option Nat := none
+  /-- Optional “up to one” slots that were skipped while announcing
+  (CR 115.1c / 601.2c). The current instance index is
+  `targets.size + skippedOptionalSlots`. -/
+  skippedOptionalSlots : Nat := 0
 deriving Repr, Inhabited
 
 /-- Whether a proposed payment is for a spell (CR 601) or an activated ability (CR 602). -/
@@ -586,8 +590,6 @@ inductive Pending where
   | tapHumans (player : PlayerId)
   /-- Pay `{n}` or let the targeted spell be countered. -/
   | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : ObjectId)
-  /-- You may put a +1/+1 counter on a creature. -/
-  | mayPlusOneCreature (player : PlayerId)
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
   /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
@@ -2782,6 +2784,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .twoCreaturesOrLandsYouControl => #[]
   | .equipmentYouControlThenCreatureYouControl => #[]
   | .twoPlayers => #[]
+  | .upToOneCreatureThenPlayer => #[]
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -2792,8 +2795,15 @@ def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
   if kind.spec.slots.isEmpty then
     g.legalTargetsForAtomicKind caster kind sourceId
   else
-    let parts := kind.spec.slots.map (fun k => g.legalTargetsForAtomicKind caster k sourceId)
-    if parts.any (·.isEmpty) then #[] else parts.foldl (· ++ ·) #[]
+    Id.run do
+      let mut acc : Array Target := #[]
+      let mut requiredMissing := false
+      for i in [0:kind.spec.slots.size] do
+        let part := g.legalTargetsForAtomicKind caster kind.spec.slots[i]! sourceId
+        if part.isEmpty && !kind.isOptionalSlot i then
+          requiredMissing := true
+        acc := acc ++ part
+      if requiredMissing then #[] else acc
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
@@ -3584,6 +3594,29 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
 def sharesCardType (a b : GameObject) : Bool :=
   a.types.any (fun t => b.types.contains t)
 
+/-- Current instance of the word “target” being announced (0-based).
+Skipped optional slots count toward this index so the next instance is
+the next “target” word in the card text (CR 601.2c). -/
+def currentTargetSlot (g : Game) (obj : GameObject) : Nat :=
+  match g.stackEntry? obj.id with
+  | some e => e.targets.size + e.skippedOptionalSlots
+  | none => 0
+
+/-- Skip the current optional “up to one” instance without announcing a
+target (CR 115.1c / 601.2c). -/
+def skipOptionalTargetSlot (g : Game) (objectId : ObjectId) : Game :=
+  match g.stack.findIdx? (fun e => e.objectId == objectId) with
+  | none => g
+  | some i =>
+    { g with stack := g.stack.set! i { g.stack[i]! with
+        skippedOptionalSlots := g.stack[i]!.skippedOptionalSlots + 1 } }
+
+/-- True when the current instance of “target” is optional (“up to one”). -/
+def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
+  let kind := (g.targetingOf obj).kind
+  let i := g.currentTargetSlot obj
+  !kind.spec.slots.isEmpty && i < kind.spec.slots.size && kind.isOptionalSlot i
+
 /-- Legal targets for the object currently being announced (spell or ability).
 Already-chosen targets are excluded (CR 115.3). Multiple instances of the
 word “target” offer the next unset slot from `EffectTargetKind.slotKind`.
@@ -3594,7 +3627,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
     | some e => e.targets
     | none => #[]
   let kind := (g.targetingOf o).kind
-  let slot := kind.slotKind already.size
+  let slot := kind.slotKind (g.currentTargetSlot o)
   let legal := (g.legalTargetsForKind p slot o.sourceId).filter (fun t => !already.contains t)
   if kind == .twoNonlandsSharingType then
     match already[0]? with
@@ -4999,7 +5032,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       let g := g.setStackEntryTargets obj.id (e.targets.push t)
       let g := g.logMsg
         s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
-      if e.targets.size + 1 < kind.targetCount then
+      if g.currentTargetSlot obj < kind.spec.slots.size then
         return { g with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
@@ -6011,18 +6044,30 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _, _ => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
   | .plusOneAndPlayerGainsLife n =>
-    let g :=
-      g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-        match tgt with
-        | Target.player pid =>
-          if n == 0 then g
+    Id.run do
+      let creatureLegal := g.legalTargetsForAtomicKind controller .creature none
+      let playerLegal := g.legalTargetsForAtomicKind controller .player none
+      let mut g := g
+      for t in targets do
+        match t with
+        | Target.permanent oid =>
+          if creatureLegal.contains t then
+            match g.findObject? oid with
+            | some o => g := g.addPlusOnePlusOneTo o 1
+            | none => g := g.logMsg "The target is no longer in play"
           else
-            let pl := g.player pid
-            g.setLife pid (pl.life + (n : Int))
-              s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
-        | _ => g)
-    { g with pending := .mayPlusOneCreature controller }.logMsg
-      s!"{(g.player controller).name} may put a +1/+1 counter on a creature"
+            g := g.illegalAbilityTarget t
+        | Target.player pid =>
+          if playerLegal.contains t then
+            if n != 0 then
+              let pl := g.player pid
+              g := g.setLife pid (pl.life + (n : Int))
+                s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+          else
+            g := g.illegalAbilityTarget t
+        | Target.card _ =>
+          g := g.illegalAbilityTarget t
+      return g
   | .returnSpellDraw =>
     let g :=
       match targets[0]? with
@@ -8976,7 +9021,7 @@ def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Gam
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to choose library placement"
 
-/-- Attach Equipment, tap Humans, or put a +1/+1 counter, depending on pending. -/
+/-- Attach Equipment or tap Humans, depending on pending. -/
 def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     Except String Game := do
   match g.pending with
@@ -9012,17 +9057,6 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       n := n + 1
     g := { g with pending := .none }
     g := if n == 0 then g else g.draw p n
-    return g.receivePriority g.activePlayer
-  | .mayPlusOneCreature q =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may put a +1/+1 counter"
-    if ids.size != 1 then
-      throw "Choose one creature"
-    let some o := g.findObject? ids[0]! | throw "no such object"
-    if !(o.isOnBattlefield && o.isCreature) then
-      throw s!"{o.name} is not a creature on the battlefield"
-    let g := g.addPlusOnePlusOneTo o 1
-    let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
   | _ => throw "Not time to choose permanents"
 
@@ -9060,6 +9094,15 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
         return g.afterTriggerTargetsChosen
+      else if g.canSkipCurrentOptionalSlot obj then
+        let g := g.skipOptionalTargetSlot obj.id
+        let g := g.logMsg
+          s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
+        if g.currentTargetSlot obj < (g.targetingOf obj).kind.spec.slots.size then
+          return { g with pending := .chooseTargets p }
+        if g.proposedSpell.isSome then
+          return g.afterTargetsChosen
+        return g.afterTriggerTargetsChosen
       else if g.canFinishOptionalTargets obj then
         let g := g.logMsg
           s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
@@ -9090,12 +9133,6 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to tap Humans"
     let g := g.logMsg s!"{(g.player p).name} taps no Humans"
-    let g := { g with pending := .none }
-    return g.receivePriority g.activePlayer
-  | .mayPlusOneCreature q =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may decline to put a +1/+1 counter"
-    let g := g.logMsg s!"{(g.player p).name} declines to put a +1/+1 counter"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
   | .maySacrificeAnotherBolg q _ =>
@@ -9295,7 +9332,6 @@ def actor (g : Game) : Option PlayerId :=
     | .mayAttachEquipment p _ => some p
     | .tapHumans p => some p
     | .payOrLetCounter p _ _ => some p
-    | .mayPlusOneCreature p => some p
     | .recruitDiscard p => some p
     | .chooseKicker p => some p
     | .chooseGift p => some p
