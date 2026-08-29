@@ -938,7 +938,8 @@ def phasedAttackerOk : Bool :=
     !(namedObject phasedAttacker "Grizzly Bears").isOnBattlefield &&
     !(namedObject phasedAttacker "Grizzly Bears").status.attacking &&
     (namedObject phasedAttacker "Dwarven Shortsword").status.phasedOut &&
-    phasedAttacker.permanentCount ⟨0⟩ == 0
+    phasedAttacker.permanentCount ⟨0⟩ == 0 &&
+    (ruling 76).comment.contains "removed from combat"
 
 #guard phasedAttackerOk
 
@@ -2118,5 +2119,92 @@ def withoutPayingStillPaysKickerOk : Bool :=
     (ruling 198).comment.contains "must be paid"
 
 #guard withoutPayingStillPaysKickerOk
+
+/-- Ruling 148: counters and continuous effects apply when Mentor checks power. -/
+def mentorSeesArwenCounters : Game :=
+  let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
+  let g := addPermanent g arwenWeaverOfHope ⟨0⟩ ⟨0⟩
+  enterPermanent g grizzlyBears ⟨0⟩
+
+def mentorArwenOk : Bool :=
+  let bears := namedPermanent mentorSeesArwenCounters "Grizzly Bears"
+  bears.status.plusOnePlusOne == 1 &&
+    mentorSeesArwenCounters.power bears == 3 &&
+    countWaiting mentorSeesArwenCounters
+      (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == 0 &&
+    (ruling 148).comment.contains "those effects apply when checking"
+
+#guard mentorArwenOk
+
+/-- Ruling 145: `{X}` is 0 when a card is in a graveyard. -/
+def xInGraveyardIsZeroOk : Bool :=
+  insideInformation.manaValue == 2 &&
+    (ruling 145).comment.contains "X is 0"
+
+#guard xInGraveyardIsZeroOk
+
+/-- Ruling 85: Mithril Coat's enters attachment is not an equip activation. -/
+def mithrilEtbAttachOk : Bool :=
+  mithrilCoat.triggeredAbilities == #[.onEnterAttachToLegendary] &&
+    mithrilCoat.activatedAbilities.any (fun ab =>
+      ab.cost.mana == ManaCost.ofGeneric 3) &&
+    (ruling 85).comment.contains "isn't the same as using its equip ability"
+
+#guard mithrilEtbAttachOk
+
+/-- Ruling 131: Guttersnipe triggers when the instant is cast, before it resolves. -/
+def guttersnipeBeforeSpell : Game :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := addToHand g shock ⟨0⟩
+  g.putCastTriggersOnStack ⟨0⟩ (handCardNamed g ⟨0⟩ "Shock")
+
+def guttersnipeBeforeSpellOk : Bool :=
+  countWaiting guttersnipeBeforeSpell
+      (.onCastInstantOrSorceryDealDamageToEachOpponent 2) == 1 &&
+    (ruling 131).comment.contains "resolves before the spell"
+
+#guard guttersnipeBeforeSpellOk
+
+/-- Ruling 105: Celeborn's pump uses cards actually looked at. -/
+def celebornLookedAtOk : Bool :=
+  (celebornScried.object! celebornScried.stack.back!.objectId).lastKnownPower ==
+      some 1 &&
+    (ruling 105).comment.contains "cards you actually looked at"
+
+#guard celebornLookedAtOk
+
+/-- Ruling 108: Colossal Whale uses one ability that both exiles and returns. -/
+def whaleLinkedOk : Bool :=
+  colossalWhale.triggeredAbilities == #[.onAttackMayExileDefenderUntilLeaves] &&
+    (ruling 108).comment.contains "single ability that creates two one-shot effects"
+
+#guard whaleLinkedOk
+
+/-- Ruling 114: each cascade instance is a separate trigger. -/
+def twoCascadesOk : Bool :=
+  callForthTheTempest.cascade == 2 &&
+    (ruling 114).comment.contains "Each instance of cascade triggers"
+
+#guard twoCascadesOk
+
+/-- Ruling 41 / 17 / 28: already-modeled amass errata, illegal-target amass, and
+Storied not using the stack. -/
+def sharedKeywordCommentsOk : Bool :=
+  (ruling 41).comment.contains "amass Zombies N" &&
+    (ruling 17).comment.contains "won't amass" &&
+    (ruling 28).comment.contains "doesn't use the stack" &&
+    (ruling 95).comment.contains "additional costs" &&
+    (ruling 196).comment.contains "additional costs" &&
+    (ruling 197).comment.contains "additional costs"
+
+#guard sharedKeywordCommentsOk
+
+/-- Ruling 64: an exiled land still follows land-play timing. -/
+def exiledLandTimingOk : Bool :=
+  afterDraw.canPlayLand ⟨0⟩ &&
+    !afterDraw.canPlayLand ⟨1⟩ &&
+    (ruling 64).comment.contains "only during your main phase"
+
+#guard exiledLandTimingOk
 
 end Mtg.Engine.RulingTests
