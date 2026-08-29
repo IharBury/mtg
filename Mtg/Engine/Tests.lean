@@ -12789,19 +12789,29 @@ def threeUnpaidCostCounters : Game :=
     o.name == "Lightning Bolt"))
 #guard threeUnpaidCostCounters.log.any (fun s => mentions s "CR 800.4f")
 
-/-- The leaving player's next turn does not begin (CR 800.4k). Effects that
-last until that turn expire when it would have begun (CR 800.4m). -/
-def threeSkipLeftPlayerTurn : Game :=
+/-- After Chandra leaves during her turn, Nissa takes the next turn and the
+until-next-turn effect still lasts (CR 800.4j / 800.4m). -/
+def threeAfterLeftPlayerCurrentTurn : Game :=
   let g := threeStarted.modifyPlayer ⟨0⟩ (fun pl =>
     { pl with protectionFromEverything := true })
   let g := mustApply g ⟨0⟩ .concede
+  passBoth (skipTo g .end 200)
+
+#guard threeAfterLeftPlayerCurrentTurn.activePlayer == ⟨1⟩
+#guard threeAfterLeftPlayerCurrentTurn.step == .upkeep
+#guard (threeAfterLeftPlayerCurrentTurn.player ⟨0⟩).protectionFromEverything
+
+/-- Chandra's next turn does not begin (CR 800.4k). Effects that last until
+that turn expire when it would have begun (CR 800.4m). -/
+def threeSkipLeftPlayerTurn : Game :=
+  let g := passBoth (skipTo threeAfterLeftPlayerCurrentTurn .end 200)
   passBoth (skipTo g .end 200)
 
 #guard threeSkipLeftPlayerTurn.activePlayer == ⟨1⟩
 #guard threeSkipLeftPlayerTurn.step == .upkeep
 #guard !(threeSkipLeftPlayerTurn.player ⟨0⟩).protectionFromEverything
 #guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "CR 800.4m")
-#guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "Nissa's turn")
+#guard threeSkipLeftPlayerTurn.log.any (fun s => mentions s "Liliana's turn")
 
 /-- A later first-main lore counter advances a Saga that entered this turn. -/
 def loreAfterFirstMain : Game :=

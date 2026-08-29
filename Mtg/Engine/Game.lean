@@ -9376,7 +9376,7 @@ def startNextTurn (g : Game) : Game :=
       if (g.player q).lost then
         g := g.expireUntilNextTurnEffects q
       else
-        let g := { g with
+        g := { g with
           activePlayer := q
           turnNumber := g.turnNumber + 1
           isFirstTurn := false
