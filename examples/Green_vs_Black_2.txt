@@ -1,0 +1,665 @@
+--name Chakka --deck Green --name KingLW1 --deck Black --decides KingLW1 --norandom --multiplayer
+first KingLW1
+shuffle 11 12 13 14 15 18 19 21 22 23 25 26 27 30 31 34 36 38 39 35 10 9 17 8 32 24 33 6 7 5 4 37 20 0 1 2 3 16 28 29
+shuffle 41 43 73 46 48 49 50 51 52 55 56 74 58 59 62 63 64 65 66 67 47 68 44 69 53 54 70 71 72 45 57 60 75 61 76 42 77 40 78 79
+keep
+keep
+pass
+pass
+play 87
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 83
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 88
+cast 89
+tap #94 B
+tap #98 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 84
+cast 82
+tap #96 G
+tap #102 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 90
+cast 91
+tap #94 B
+tap #98 B
+tap #106 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 85
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 101
+tap #96 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 92
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+cast 93
+mode 2
+target 108
+tap #94 B
+tap #98 B
+tap #106 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 86
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 97
+pass
+pass
+pass
+pass
+attack 108
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 80
+target 104
+tap 96 102 110 118
+pay
+pass
+pass
+cast 105
+target 104
+tap #94 B
+tap #98 B
+tap #106 B
+tap #114 B
+pay
+pass
+pass
+pass
+pass
+scry bottom 72
+pass
+pass
+scry bottom 6 7
+pass
+pass
+pass
+pass
+pass
+pass
+play 109
+cast 95
+tap 96 102 110 118
+pay
+pass
+pass
+pass
+pass
+scry top 24 bottom 32
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 113
+mode 1
+target 132
+tap #94 B
+tap #98 B
+tap #106 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 119
+tap #114 B
+tap #120 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 117
+cast 81
+tap #96 G
+tap #102 G
+tap #110 G
+tap #118 G
+pay
+pass
+pass
+cast 129
+tap #130 G
+tap #141 G
+tap #112 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 134
+pass
+pass
+pass
+pass
+attack 108
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 140
+mode 1
+target #108
+tap #96 G
+tap #102 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 146
+activate 139
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 145 139 143 100
+pass
+pass
+target 143
+pass
+pass
+pass
+pass
+pass
+pass
+cast 152
+tap #94 B
+tap #98 B
+tap #106 B
+tap #114 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 163
+tap #96 G
+tap #102 G
+pay
+pass
+pass
+play 148
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 167
+tap #94 B
+tap #98 B
+tap #106 B
+pay
+pass
+pass
+target opponent
+pass
+pass
+sacrifice 165
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 172
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 174
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 176
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 178
+tap #94 B
+pay
+pass
+pass
+pass
+pass
+scry bottom 68
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+activate 169
+target #180
+tap #98 B
+tap #106 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 183
+tap #96 G
+tap #102 G
+tap #110 G
+pay
+pass
+pass
+pass
+pass
+shuffle 32 7 11 12 13 14 15 18 19 21 22 23 25 26 27 30 31 34 38 39 36
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 188 adventure
+target 180
+target KingLW1
+tap #94 B
+pay
+pass
+pass
+cast 190
+tap #98 B
+tap #106 B
+tap #114 B
+tap #120 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 185 180
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 194
+tap #96 G
+tap #102 G
+tap #110 G
+pay
+pass
+pass
+pass
+pass
+shuffle 32 11 12 13 14 15 18 19 21 22 23 25 26 27 30 31 34 38 39
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
