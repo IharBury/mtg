@@ -4706,9 +4706,9 @@ def oneRingBurdenDraw : Game :=
 #guard (oneRingBurdenDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
 #guard oneRingBurdenDraw.log.any (fun s => mentions s "burden")
 
-/-- Gríma is unblockable as a printed keyword, not a `.printed` static. -/
+/-- Grima is unblockable as a keyword, not a printed static stub. -/
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
-#guard !grimaSarumanSFootman.staticAbilities.any (fun | .printed _ => true | _ => false)
+#guard grimaSarumanSFootman.staticAbilities.isEmpty
 
 /-!
 ## 339 — Minas Tirith Garrison tap-then-draw is atomic
