@@ -419,11 +419,33 @@ def elspethJaceLiliana : Array DemoPlayer := #[
     (g.player ⟨0⟩).name == "Elspeth" &&
     (g.player ⟨1⟩).name == "Jace" &&
     (g.player ⟨2⟩).name == "Liliana" &&
+    g.isMultiplayer &&
+    g.freeFirstMulligan &&
     g.objects.any (fun o => o.name == "Bofur, Reliable Guardian") &&
     g.objects.any (fun o => o.name == "Bilbo Baggins, Burglar") &&
     g.objects.any (fun o => o.name == "Gollum, Silent Slinker") &&
     !g.objects.any (fun o => o.name == "Smaug, the Great Calamity")
   | .error _ => false
+
+-- CR 103.5c: three-player Welcome Decks treat the first mulligan as free.
+#guard
+  match Start.start (demoConfig 1 (some 0) elspethJaceLiliana) with
+  | .error _ => false
+  | .ok g =>
+    match g.apply ⟨0⟩ .takeMulligan with
+    | .error _ => false
+    | .ok g =>
+      match g.apply ⟨1⟩ .keep with
+      | .error _ => false
+      | .ok g =>
+        match g.apply ⟨2⟩ .keep with
+        | .error _ => false
+        | .ok g =>
+          g.pending == .declareMulligan ⟨0⟩ &&
+          (g.player ⟨0⟩).hand.size == 7 &&
+          (g.player ⟨0⟩).mulligansTaken == 1 &&
+          g.countedMulligans ⟨0⟩ == 0 &&
+          g.log.any (fun s => (s.splitOn "CR 103.5c").length > 1)
 
 #guard
   match Start.start (demoConfig 1 (some 0) #[
@@ -626,7 +648,7 @@ def helpInteractive (controlAll : Bool := false)
   keep                 Keep this opening hand (CR 103.5)
   keep <id>            Choose which legendary permanent to keep (CR 704.5j)
   stack <id> [id...]   Put waiting triggered abilities on the stack in that source order (CR 603.3b)
-  mulligan             Declare a mulligan; taken after all declarations
+  mulligan             Declare a mulligan; taken after all declarations (CR 103.5 / 103.5c)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
@@ -678,6 +700,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "defending player").length > 1
 #guard ((helpInteractive false).splitOn "first <name>").length > 1
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
+#guard ((helpInteractive false).splitOn "103.5c").length > 1
 #guard ((helpInteractive false).splitOn "keep <id>").length > 1
 #guard ((helpInteractive false).splitOn "CR 704.5j").length > 1
 #guard ((helpInteractive false).splitOn "stack <id>").length > 1
