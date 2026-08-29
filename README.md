@@ -74,13 +74,12 @@ commands and commands that do not change the game (`state`, `quit`, `help`,
 `visible`) are omitted. `autopay` is written as the individual `tap` and `pay`
 commands it performs. When `--input` and `--output` are the same file, the
 existing flags and commands are replayed and new accepted console commands
-are appended. After
-those commands are exhausted (or when no input file is given), a cost with
-only one legal payment is paid automatically; the demo writes the individual
-commands (`tap`, `pay`, `sacrifice`) to `--output`. Put
-`first <name>` at the top of an input file when the first named
-player is the one deciding; pass `--decides NAME` so a replay asks the same
-player.
+are appended. After those commands are exhausted (or when no input file is
+given), a cost with only one legal payment is paid automatically; the demo
+writes the individual commands (`tap`, `pay`, `sacrifice`) to `--output`.
+Put `--decides NAME` among the input-file flags (or pass it on the command
+line) and `first <name>` after those flags when the first named player is
+the one deciding, so a replay asks the same player.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`
