@@ -855,6 +855,14 @@ def skipTo (g : Game) (st : Step) : Nat → Game
     else if g.step == st && g.pending == .none then g
     else skipTo (applyIdle g) st n
 
+/-- Advance by idle actions until `g.pending` is `pend`. -/
+def skipToPending (g : Game) (pend : Pending) : Nat → Game
+  | 0 => panic! s!"skipToPending fuel exhausted at {g.step}"
+  | n + 1 =>
+    if g.over then panic! "game over while skipping"
+    else if g.pending == pend then g
+    else skipToPending (applyIdle g) pend n
+
 def passBoth (g : Game) : Game :=
   applyIdle (applyIdle g)
 
@@ -1186,6 +1194,7 @@ def onlyBearsAttack : Game :=
   | .error e => panic! e
 
 #guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attacking
+#guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.attackingWhom == some ⟨1⟩
 #guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.tapped
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.attacking
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.tapped
@@ -1457,6 +1466,99 @@ def eighthMultiplayerMulligan : Game :=
 #guard eighthMultiplayerMulligan.pending == .putOnBottom ⟨0⟩ 7
 #guard (eighthMultiplayerMulligan.player ⟨0⟩).mulligansTaken == 8
 #guard eighthMultiplayerMulligan.countedMulligans ⟨0⟩ == 7
+
+/-- Three-player game after opening hands, ready for Chandra's first turn. -/
+def threeStarted : Game := keepOpeningHands threeDrawnHands 16
+
+#guard threeStarted.players.size == 3
+#guard threeStarted.activePlayer == ⟨0⟩
+
+/-- Chandra has a Gray Ogre and must declare attackers. -/
+def threeReadyToAttack : Game :=
+  skipToPending (addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩) .declareAttackers 200
+
+#guard threeReadyToAttack.pending == .declareAttackers
+#guard threeReadyToAttack.activePlayer == ⟨0⟩
+#guard threeReadyToAttack.opponent ⟨0⟩ == ⟨1⟩
+
+/-- Default declaration attacks the next opponent (Nissa). -/
+def threeOgreAttacksNissa : Game :=
+  mustApply threeReadyToAttack ⟨0⟩
+    (.declareAttackers #[(namedPermanent threeReadyToAttack "Gray Ogre").id])
+
+#guard (namedPermanent threeOgreAttacksNissa "Gray Ogre").status.attackingWhom == some ⟨1⟩
+#guard threeOgreAttacksNissa.defendingPlayer == ⟨1⟩
+
+/-- Chandra can choose to attack Liliana instead of Nissa (CR 508.1). -/
+def threeOgreAttacksLiliana : Game :=
+  mustApply threeReadyToAttack ⟨0⟩
+    (.declareAttackers #[(namedPermanent threeReadyToAttack "Gray Ogre").id] (some ⟨2⟩))
+
+#guard (namedPermanent threeOgreAttacksLiliana "Gray Ogre").status.attackingWhom == some ⟨2⟩
+#guard threeOgreAttacksLiliana.defendingPlayer == ⟨2⟩
+
+#guard
+  match threeReadyToAttack.declareAttackers ⟨0⟩
+      #[(namedPermanent threeReadyToAttack "Gray Ogre").id] (some ⟨0⟩) with
+  | .error msg => mentions msg "cannot attack yourself"
+  | .ok _ => false
+
+/-- Liliana, not Nissa, declares blockers when she is being attacked. -/
+def threeLilianaToBlock : Game :=
+  skipToPending threeOgreAttacksLiliana .declareBlockers 80
+
+#guard threeLilianaToBlock.pending == .declareBlockers
+#guard threeLilianaToBlock.actor == some ⟨2⟩
+#guard threeLilianaToBlock.defendingPlayer == ⟨2⟩
+
+/-- Unblocked combat damage goes to the chosen defending player. -/
+def threeLilianaTookCombat : Game :=
+  skipTo threeOgreAttacksLiliana .postcombatMain 80
+
+#guard (threeLilianaTookCombat.player ⟨2⟩).life == 18
+#guard (threeLilianaTookCombat.player ⟨1⟩).life == 20
+#guard (threeLilianaTookCombat.player ⟨0⟩).life == 20
+
+/-- Two Gray Ogres so each can attack a different opponent (CR 508.1). -/
+def threeTwoOgresReady : Game :=
+  skipToPending
+    (addPermanent (addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩)
+    .declareAttackers 200
+
+#guard threeTwoOgresReady.pending == .declareAttackers
+#guard (threeTwoOgresReady.battlefield.filter (·.name == "Gray Ogre")).size == 2
+
+def threeSplitAttack : Game :=
+  let ogres := threeTwoOgresReady.battlefield.filter (·.name == "Gray Ogre")
+  mustApply threeTwoOgresReady ⟨0⟩
+    (.declareAttackers #[ogres[0]!.id, ogres[1]!.id] none #[some ⟨1⟩, some ⟨2⟩])
+
+#guard
+  let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
+  ogres[0]!.status.attackingWhom == some ⟨1⟩ &&
+    ogres[1]!.status.attackingWhom == some ⟨2⟩
+
+/-- Nissa declares blockers first (APNAP), then Liliana. -/
+def threeSplitNissaToBlock : Game :=
+  skipToPending threeSplitAttack .declareBlockers 80
+
+#guard threeSplitNissaToBlock.pending == .declareBlockers
+#guard threeSplitNissaToBlock.actor == some ⟨1⟩
+#guard threeSplitNissaToBlock.defendingPlayers == #[⟨1⟩, ⟨2⟩]
+
+def threeSplitLilianaToBlock : Game :=
+  mustApply threeSplitNissaToBlock ⟨1⟩ (.declareBlockers #[])
+
+#guard threeSplitLilianaToBlock.pending == .declareBlockers
+#guard threeSplitLilianaToBlock.actor == some ⟨2⟩
+
+/-- Each unblocked ogre deals 2 to its own defending player. -/
+def threeSplitCombatDone : Game :=
+  skipTo threeSplitAttack .postcombatMain 80
+
+#guard (threeSplitCombatDone.player ⟨1⟩).life == 18
+#guard (threeSplitCombatDone.player ⟨2⟩).life == 18
+#guard (threeSplitCombatDone.player ⟨0⟩).life == 20
 
 #guard
   let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 8 })
@@ -10151,7 +10253,7 @@ def agentNightsWhisperOnly : Game :=
 #guard
   let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
   match Agent.choose g ⟨0⟩ with
-  | some (.declareAttackers ids) =>
+  | some (.declareAttackers ids _ _) =>
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
 

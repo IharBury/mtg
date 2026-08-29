@@ -198,15 +198,20 @@ def exileUntilLeavesClause (g : Game) (o : GameObject) : String :=
   | none => ""
 
 /-- Battlefield line for one permanent: id, name, current type line (CR 205.1a),
-P/T when it is a creature, then keywords, control, status, and cards it has
-exiled until it leaves (CR 610.3). -/
+P/T when it is a creature, then keywords, control, status (including who an
+attacker is attacking, CR 508.1), and cards it has exiled until it leaves
+(CR 610.3). -/
 def objectLine (g : Game) (o : GameObject) (group : Option (Option PlayerId) := none) :
     String :=
   let tap := if o.status.tapped then " (tapped)" else ""
   let sick := if o.hasSummoningSickness then " (summoning sickness)" else ""
   let atk :=
     if o.status.attacking then
-      if o.status.blocked then " *attacking, blocked*" else " *attacking*"
+      let dest :=
+        match o.status.attackingWhom with
+        | some pid => (g.player pid).name
+        | none => (g.player g.defendingPlayer).name
+      if o.status.blocked then s!" *attacking {dest}, blocked*" else s!" *attacking {dest}*"
     else ""
   let blk :=
     if o.status.blocking.isEmpty then ""
@@ -489,7 +494,11 @@ def combatDamageTargetRefs (g : Game) (source : GameObject) (forAttackers : Bool
     (g.legalCombatDamageRecipients source forAttackers).toList.map (fun o =>
       objectRef g o.id)
   if g.canAssignCombatDamageToDefendingPlayer source forAttackers then
-    creatures ++ [(g.player (g.opponent g.activePlayer)).name]
+    let dest :=
+      match source.status.attackingWhom with
+      | some pid => pid
+      | none => g.defendingPlayer
+    creatures ++ [(g.player dest).name]
   else creatures
 
 /-- One assigning creature: how much damage it must assign and to whom. -/

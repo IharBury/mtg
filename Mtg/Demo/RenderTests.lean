@@ -390,7 +390,7 @@ def mountainLine (g : Game) : String :=
   mentions (zoneBlock g .battlefield) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (battlefieldBlock g) s!"*blocking {ogre.id} Gray Ogre*" &&
   mentions (snapshot g) s!"*blocking {ogre.id} Gray Ogre*" &&
-  mentions (objectLine g ogre) "*attacking, blocked*"
+  mentions (objectLine g ogre) "*attacking Nissa, blocked*"
 #guard !mentions
   (objectLine readyToDeclareBlockers (namedPermanent readyToDeclareBlockers "Grizzly Bears"))
   "*blocking"
@@ -492,9 +492,24 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := goblinBlockedByBears
   let goblin := namedPermanent g "Battle-Scarred Goblin"
-  mentions (objectLine g goblin) "*attacking, blocked*" &&
+  mentions (objectLine g goblin) "*attacking Nissa, blocked*" &&
     !mentions (objectLine goblinDeclaredAttacker (namedPermanent goblinDeclaredAttacker
       "Battle-Scarred Goblin")) "*blocked"
+
+-- The demo names who an attacker is attacking (CR 508.1).
+#guard
+  mentions (objectLine onlyBearsAttack (namedPermanent onlyBearsAttack "Grizzly Bears"))
+    "*attacking Nissa*" &&
+    !mentions (objectLine onlyBearsAttack (namedPermanent onlyBearsAttack "Grizzly Bears"))
+      "blocked"
+#guard
+  mentions (objectLine threeOgreAttacksLiliana
+      (namedPermanent threeOgreAttacksLiliana "Gray Ogre"))
+    "*attacking Liliana*"
+#guard
+  let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
+  mentions (objectLine threeSplitAttack ogres[0]!) "*attacking Nissa*" &&
+    mentions (objectLine threeSplitAttack ogres[1]!) "*attacking Liliana*"
 
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty

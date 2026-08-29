@@ -104,6 +104,8 @@ structure Status where
   /-- Until-end-of-turn +P/+T (cleared in cleanup, CR 514.3 / 613.4c). -/
   pump : Int × Int := (0, 0)
   attacking : Bool := false
+  /-- Player this creature is attacking (CR 508.1). Set with `attacking`. -/
+  attackingWhom : Option PlayerId := none
   /-- Attacking creatures this creature is blocking (CR 509.1a / 510.1d). -/
   blocking : Array ObjectId := #[]
   /-- Set when this attacker becomes blocked (CR 509.1h). Remains true even if
@@ -772,7 +774,10 @@ inductive Action where
   /-- Choose to pay extra generic mana rather than sacrifice, as an additional
   cost (CR 601.2b). `true` pays the generic alternative; `false` sacrifices. -/
   | chooseAdditionalCost (payGeneric : Bool)
-  | declareAttackers (ids : Array ObjectId)
+  /-- `defender` is the destination when `each` is omitted or an entry is
+  `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1). -/
+  | declareAttackers (ids : Array ObjectId) (defender : Option PlayerId := none)
+      (each : Array (Option PlayerId) := #[])
   | declareBlockers (assignments : Array (ObjectId × ObjectId))
   /-- Announce combat damage assignment (CR 510.1). Omitted sources use a
   legal default; listed sources must divide their power among legal creature
@@ -866,6 +871,9 @@ structure Game where
   mulliganToBottom : Array PlayerId := #[]
   /-- Combat damage assigned this step and not yet dealt (CR 510.1 / 510.2). -/
   assignedCombatDamage : Array CreatureCombatAssignment := #[]
+  /-- Defending players who still must declare blockers, in APNAP order
+  (CR 509.1 / 802). -/
+  blockersQueue : Array PlayerId := #[]
   /-- Triggered abilities waiting to be put onto the stack the next time a
   player would receive priority (CR 603.3 / 603.3b). Distinguished by
   `WaitingTrigger.event`. -/
@@ -960,6 +968,47 @@ def opponent (g : Game) (p : PlayerId) : PlayerId :=
     if living[0]!.id == p then living[1]!.id else living[0]!.id
   else
     PlayerId.mk ((p.idx + 1) % g.players.size)
+
+/-- Player being attacked this combat (CR 508.1). Taken from an attacking
+creature's `attackingWhom`, or the next opponent if none is recorded. -/
+def defendingPlayer (g : Game) : PlayerId :=
+  match g.blockersQueue[0]? with
+  | some p => p
+  | none =>
+    match g.objects.find? (fun o => o.isOnBattlefield && o.status.attackingWhom.isSome) with
+    | some o => o.status.attackingWhom.getD (g.opponent g.activePlayer)
+    | none => g.opponent g.activePlayer
+
+/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4). -/
+def defendingPlayers (g : Game) : Array PlayerId :=
+  let attacked :=
+    g.objects.filterMap (fun o =>
+      if o.isOnBattlefield && o.status.attacking then o.status.attackingWhom else none)
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+      if q != g.activePlayer && !(g.player q).lost && attacked.contains q then
+        acc := acc.push q
+    return acc
+
+/-- Player who must declare blockers now. -/
+def currentBlockersPlayer (g : Game) : PlayerId :=
+  g.defendingPlayer
+
+/-- Legal attack destination: a living opponent of `p` (CR 508.1). Omitted
+means the next opponent in turn order. -/
+def resolveAttackDestination (g : Game) (p : PlayerId) (defender : Option PlayerId) :
+    Except String PlayerId :=
+  match defender with
+  | none => .ok (g.opponent p)
+  | some d =>
+    if d == p then throw "cannot attack yourself"
+    else if (g.player d).lost then throw s!"{(g.player d).name} has already lost"
+    else if !(g.livingOpponents p).any (fun pl => pl.id == d) then
+      throw s!"{(g.player d).name} is not an opponent"
+    else .ok d
 
 def nextLiving (g : Game) (p : PlayerId) : PlayerId :=
   let n := g.players.size
@@ -1113,6 +1162,7 @@ def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
 def removeFromCombat (g : Game) (o : GameObject) : Game :=
   let g := g.setObject { o with status := { o.status with
     attacking := false
+    attackingWhom := none
     blocking := #[] } }
   g.objects.foldl (fun acc x =>
     if x.status.blocking.any (· == o.id) then
@@ -1481,12 +1531,15 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
     (n : Nat) (tapped := false) (attacking := false) : Game :=
   Id.run do
     let mut g := g
+    let dest := if attacking then some g.defendingPlayer else none
     for _ in [0:n] do
       let (g', obj) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
       g := g'
       if attacking then
         g := g.setObject { (g.object! obj.id) with
-          status := { (g.object! obj.id).status with attacking := true } }
+          status := { (g.object! obj.id).status with
+            attacking := true
+            attackingWhom := dest } }
     return g
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4). -/
@@ -2279,7 +2332,10 @@ def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
 declaration (CR 509.1b). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
-  let defender := g.opponent g.activePlayer
+  let defender :=
+    match attacker.status.attackingWhom with
+    | some pid => pid
+    | none => g.defendingPlayer
   let islandwalkUnblockable :=
     g.hasIslandwalk attacker &&
       (g.permanentsOf defender).any (fun o => g.hasSubtype o "Island")
@@ -2911,7 +2967,7 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
           (o.printed.toughness.getD 0) <= (n : Int)))
   | .defendingPlayerCreature =>
     g.legalCreatureTargets caster (fun o =>
-      o.controlledBy (g.opponent g.activePlayer))
+      o.controlledBy g.defendingPlayer)
   | .twoNonlandsSharingType => #[]
   | .creaturePowerAtLeast n =>
     g.legalCreatureTargets caster (fun o => g.power o >= n)
@@ -8434,7 +8490,14 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     let attackedWithElves := attackerIds.any (fun id => g.hasSubtype (g.object! id) "Elf")
     if attackedWithElves then
       g := g.putControlledTriggers p .youAttackWithElves
-    if attackerIds.size >= 2 then
+    let attacksSamePlayer :=
+      attackerIds.any (fun id =>
+        match (g.object! id).status.attackingWhom with
+        | none => attackerIds.size >= 2
+        | some d =>
+          (attackerIds.filter (fun id' =>
+            (g.object! id').status.attackingWhom == some d)).size >= 2)
+    if attacksSamePlayer then
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
       g := g.putControlledTriggers p .youAttack
@@ -8577,16 +8640,26 @@ def resolveTop (g : Game) : Game :=
         else
           g.moveToOwnerGraveyard obj s!"{obj.name} goes to the graveyard"
 
-def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Game := do
+def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (defender : Option PlayerId := none) (each : Array (Option PlayerId) := #[]) :
+    Except String Game := do
   if g.pending != .declareAttackers || g.activePlayer != p then
     throw "Not time to declare attackers"
   let mut g := g
-  for id in ids do
+  for i in [0:ids.size] do
+    let id := ids[i]!
     let o := g.object! id
     if !g.canAttack o then
       throw s!"{o.name} cannot attack"
+    let want :=
+      match each[i]? with
+      | some (some d) => some d
+      | some none => defender
+      | none => defender
+    let dest ← g.resolveAttackDestination p want
     g := g.setObject { o with status := { o.status with
       attacking := true
+      attackingWhom := some dest
       tapped := o.status.tapped || !g.hasVigilance o } }
     g := g.logMsg s!"{g.player p |>.name} attacks with {o.name}"
   if ids.isEmpty then
@@ -8602,7 +8675,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
     Except String Game := do
   if g.pending != .declareBlockers then
     throw "Not time to declare blockers"
-  if p != g.opponent g.activePlayer then
+  if p != g.currentBlockersPlayer then
     throw "Only the defending player declares blockers"
   let mut g := g
   for (blockerId, attackerId) in assignments do
@@ -8627,7 +8700,11 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   g := g.putBlockedTriggersOnStack assignments
-  return { g with pending := .none } |>.receivePriority g.activePlayer
+  let rest := g.blockersQueue.extract 1 g.blockersQueue.size
+  if rest.isEmpty then
+    return { g with pending := .none, blockersQueue := #[] } |>.receivePriority g.activePlayer
+  else
+    return { g with pending := .declareBlockers, blockersQueue := rest }
 
 /-- Sum of combat damage this assignment sends to creatures. -/
 def creatureDamageTotal (asgn : CreatureCombatAssignment) : Int :=
@@ -8753,9 +8830,12 @@ def checkCombatAssignmentBatch (g : Game) (forAttackers : Bool)
 def dealAssignedCombatDamage (g : Game) : Game :=
   Id.run do
     let mut g := g
-    let defn := g.opponent g.activePlayer
     for asgn in g.assignedCombatDamage do
       let src := g.object! asgn.source
+      let defn :=
+        match src.status.attackingWhom with
+        | some pid => pid
+        | none => g.defendingPlayer
       let mut totalDealt : Int := 0
       let recipients :=
         if src.status.attacking then g.blockersOf src.id else g.creaturesBlockedBy src
@@ -8841,7 +8921,7 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
 /-- After attackers have assigned, the defending player assigns (CR 510.1d)
 or damage is dealt if they have no division to announce. -/
 def finishAttackerCombatAssignment (g : Game) : Game :=
-  let defender := g.opponent g.activePlayer
+  let defender := g.defendingPlayer
   if g.needsCombatDamageChoice false then
     { g with pending := .assignCombatDamage defender false }
       |>.logMsg s!"{(g.player defender).name} assigns combat damage (CR 510.1d)"
@@ -8881,11 +8961,18 @@ def announceCombatDamage (g : Game) (p : PlayerId)
 
 def clearCombat (g : Game) : Game :=
   Id.run do
-    let mut g := { g with firstStrikeDamageDone := false, pendingRegularCombatDamage := false }
+    let mut g := { g with
+      firstStrikeDamageDone := false
+      pendingRegularCombatDamage := false
+      blockersQueue := #[] }
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then
         g := g.setObject { o with
-          status := { o.status with attacking := false, blocking := #[], blocked := false } }
+          status := { o.status with
+            attacking := false
+            attackingWhom := none
+            blocking := #[]
+            blocked := false } }
     return g
 
 def clearEOT (g : Game) : Game :=
@@ -9027,7 +9114,10 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     if (g.battlefield.filter (·.status.attacking)).isEmpty then
       g.logMsg "No attackers; skipping declare blockers and combat damage (CR 508.8)"
     else
-      { g with pending := .declareBlockers }
+      let queue :=
+        let ps := g.defendingPlayers
+        if ps.isEmpty then #[g.opponent g.activePlayer] else ps
+      { g with pending := .declareBlockers, blockersQueue := queue }
   | .combatDamage =>
       g.beginCombatDamageAssignment
   | .upkeep =>
@@ -9879,7 +9969,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pay => g.pay p
   | .sacrifice id => g.sacrificeForActivation p id
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
-  | .declareAttackers ids => g.declareAttackers p ids
+  | .declareAttackers ids defender each => g.declareAttackers p ids defender each
   | .declareBlockers as => g.declareBlockers p as
   | .assignCombatDamage asgns => g.announceCombatDamage p asgns
   | .keep => g.keepOpeningHand p
@@ -9910,7 +10000,7 @@ def actor (g : Game) : Option PlayerId :=
   else
     match g.pending with
     | .declareAttackers => some g.activePlayer
-    | .declareBlockers => some (g.opponent g.activePlayer)
+    | .declareBlockers => some g.currentBlockersPlayer
     | .activateManaAbilities caster => some caster
     | .chooseMode p => some p
     | .chooseTargets p => some p
