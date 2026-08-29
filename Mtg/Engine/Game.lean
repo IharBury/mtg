@@ -2906,6 +2906,23 @@ def stackSpells (g : Game) (pred : GameObject → Bool := fun _ => true) : Array
 def legalStackSpellTargets (g : Game) (pred : GameObject → Bool) : Array Target :=
   g.stackSpells pred |>.map (fun o => Target.card o.id)
 
+/-- Whether this target is a spell on the stack that `p` controls. -/
+def isOwnStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
+  | .card oid =>
+    (g.findObject? oid).any (fun o => o.zone == .stack && o.controlledBy p)
+  | _ => false
+
+/-- Whether this target is a spell on the stack an opponent of `p` controls. -/
+def isOppStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
+  | .card oid =>
+    (g.findObject? oid).any (fun o =>
+      o.zone == .stack && (g.livingOpponents p).any (fun pl => o.controlledBy pl.id))
+  | _ => false
+
+/-- Opponent-controlled spells currently on the stack. -/
+def oppStackSpells (g : Game) (p : PlayerId) : Array GameObject :=
+  g.stackSpells (fun o => (g.livingOpponents p).any (fun pl => o.controlledBy pl.id))
+
 /-- Legal targets for an atomic targeting shape (no sequential slots). -/
 def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
     (sourceId : Option ObjectId) : Array Target :=
@@ -3803,27 +3820,46 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   g.legalTargetsForFace p o.printed (g.chosenModeOf o)
 
-/-- Legal mode indices for a modal spell (CR 700.2d). -/
+/-- True when this mode can be announced: it needs no target, or a legal one
+exists (CR 700.2d). -/
+def spellModeIsChoosable (g : Game) (p : PlayerId) (e : SpellEffect) : Bool :=
+  !e.requiresTarget || !(g.legalTargets p e).isEmpty
+
+/-- Legal mode indices for a modal spell (CR 700.2d). Untargeted modes stay
+choosable even when another mode has no legal target. -/
 def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
   if !o.printed.isModal then #[]
   else
     Id.run do
       let mut acc : Array Nat := #[]
       for i in [0:o.printed.spellModes.size] do
-        if !(g.legalTargets p o.printed.spellModes[i]!).isEmpty then
+        if g.spellModeIsChoosable p o.printed.spellModes[i]! then
           acc := acc.push i
       return acc
 
-/-- Default mode: a preferred mode if that mode is legal, else the first legal mode. -/
+/-- True when `e` targets a stack spell an opponent of `p` controls. -/
+def effectHasOppSpellTarget (g : Game) (p : PlayerId) (e : SpellEffect) : Bool :=
+  e.targetKind.targetsStackSpell &&
+    (g.legalTargetsForKind p e.targetKind).any (g.isOppStackSpellTarget p)
+
+/-- Default mode: a preferred mode if that mode is legal, else the first legal
+mode. Spell-counter modes are skipped unless an opponent's spell is a legal
+target, so the demonstration agent does not counter its own spells. -/
 def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let legal := g.legalModes p spell
-  let preferredIdx := legal.find? (fun i =>
+  let avoidOwnCounter (i : Nat) : Bool :=
+    match spell.printed.spellModes[i]? with
+    | some e => e.targetKind.targetsStackSpell && !g.effectHasOppSpellTarget p e
+    | none => false
+  let usable := legal.filter (fun i => !avoidOwnCounter i)
+  let pool := if usable.isEmpty then legal else usable
+  let preferredIdx := pool.find? (fun i =>
     match spell.printed.spellModes[i]? with
     | some e => e.preferAsDefaultMode
     | none => false)
   match preferredIdx with
   | some i => some i
-  | none => legal[0]?
+  | none => pool[0]?
 
 /-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b). -/
 def legalAbilityTargets (g : Game) (p : PlayerId) (e : AbilityEffect) : Array Target :=
@@ -3994,8 +4030,10 @@ def isOppPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
 /-- Default choice among `legal` for this targeting shape (CR 601.2c). -/
 def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
     (legal : Array Target) : Option Target :=
-  let own := lastLegalTarget legal (g.isOwnPermanentTarget p)
-  let opp := lastLegalTarget legal (g.isOppPermanentTarget p)
+  let own := lastLegalTarget legal (fun t =>
+    g.isOwnPermanentTarget p t || g.isOwnStackSpellTarget p t)
+  let opp := lastLegalTarget legal (fun t =>
+    g.isOppPermanentTarget p t || g.isOppStackSpellTarget p t)
   match targeting.prefer with
   | .own => own
   | .opponent => opp
@@ -4013,7 +4051,7 @@ and divided-damage enters or attack triggers prefer the opponent; creature-damag
 and dies triggers prefer an opposing creature; destroy-flying prefers an opponent's flyer;
 destroy-creature prefers an opposing creature;
 destroy-colorless prefers an opposing colorless nonland; destroy-artifact-or-land prefers
-an opposing artifact or land; Mirkwood Elk prefers an Elf
+an opposing artifact or land; counterspells prefer an opposing spell; Mirkwood Elk prefers an Elf
 card in the controller's graveyard; Crude Bent Blade prefers an opposing player; Smite the Deathless prefers an opposing creature; Quarrel prefers a creature you control, then
 an opposing creature; Rogue's Passage, pumps, the +1/+1-counter
 mode, Equip, landfall, Galion's and Oliphaunt's attack triggers, and Auras prefer a creature the
@@ -5162,7 +5200,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "Lands are played, not cast (CR 305)"
   if face.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{face.name} has sorcery speed"
-  if (face.requiresTarget || face.isModal) &&
+  if face.isModal then
+    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+  else if face.requiresTarget &&
       (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   if face.additionalCostSacrificeArtifactOrCreature &&
@@ -5254,7 +5295,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if !spell.printed.isModal then
         throw "That spell is not modal (CR 700.2)"
       let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
-      if (g.legalTargets p effect).isEmpty then
+      if !g.spellModeIsChoosable p effect then
         throw "That mode has no legal target (CR 700.2d)"
       let g := g.setProposedMode mode
       let g := g.logMsg

@@ -294,10 +294,19 @@ where
       else none
     let extraLandAdventure :=
       adventurePlayable.find? (fun o => adventureKind o .extraLand)
+    let isSpellCounter (o : GameObject) : Bool :=
+      o.printed.spellEffect.any (fun e => e.targetKind.targetsStackSpell) ||
+        o.printed.spellModes.any (fun e => e.targetKind.targetsStackSpell)
+    let hasOppSpellTarget (o : GameObject) : Bool :=
+      match o.printed.spellEffect with
+      | some e => g.effectHasOppSpellTarget p e
+      | none => o.printed.spellModes.any (g.effectHasOppSpellTarget p)
+    -- Cast a counter only when an opponent's spell is a legal target.
     let counter :=
-      if !(g.stackSpells (fun _ => true)).isEmpty then
-        playable.find? (fun o => spellKind o .counter || modeKind o .counter)
-      else none
+      playable.find? (fun o =>
+        (spellKind o .counter || modeKind o .counter) &&
+          if isSpellCounter o then hasOppSpellTarget o
+          else !(g.stackSpells (fun _ => true)).isEmpty)
     if let some o := counter then
       some (.cast o.id)
     else if let some o := burn then
