@@ -594,6 +594,28 @@ def supportedCatalogCards : Array CardDef :=
     ++ Catalog.hobbitCards
     ++ Catalog.hobbitEternalCards
 
+/-- True when a catalog card still stores an ability or effect as `.printed`. -/
+def usesPrintedStub (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  c.triggeredAbilities.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  (match c.spellEffect with
+   | some (.printed _) => true
+   | _ => false) ||
+  c.spellModes.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  c.activatedAbilities.any (fun ab =>
+    (match ab.effect with
+     | .printed _ => true
+     | _ => false) ||
+    ab.otherModes.any (fun
+      | .printed _ => true
+      | _ => false))
+
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
   supportedCatalogCards.all (·.matchesOracleText)
@@ -632,5 +654,6 @@ def supportedOracleFailures : List String :=
 #guard magnificentEnd.matchesOracleText
 #guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
+#guard !supportedCatalogCards.any usesPrintedStub
 
 end Mtg.Engine

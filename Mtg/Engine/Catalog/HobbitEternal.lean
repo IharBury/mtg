@@ -1017,5 +1017,18 @@ def hobbitEternalCards : Array CardDef := #[
 #guard nightsWhisper.hasCastKind .draw
 #guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
 #guard (nightsWhisper.summary.splitOn "lose 2 life").length > 1
+#guard theOneRing.activatedAbilities[0]!.effect == .burdenThenDraw
+#guard theOneRing.triggeredAbilities ==
+  #[.onEnterIfCastProtectionEverything, .onYourUpkeepLoseLifePerBurden]
+#guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
+#guard grimaSarumanSFootman.keywords.cantBeBlocked
+#guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
+#guard arwenMortalQueen.entersWithIndestructibleCounter
+#guard arwenMortalQueen.activatedAbilities[0]!.effect == .arwenShare
+#guard callForthTheTempest.spellEffect == some .damageOppCreaturesEqualOtherSpellsMv
+#guard galadrielSDismissal.spellEffect == some .phaseOutKicker
+#guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]
+#guard mountDoom.activatedAbilities.size == 2
+#guard mountDoom.activatedAbilities[1]!.cost.sacrificeLegendaryArtifact
 
 end Mtg.Engine.Catalog

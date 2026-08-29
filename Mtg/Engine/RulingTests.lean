@@ -4696,6 +4696,20 @@ def palantirIllegalTargetOk : Bool :=
 
 #guard palantirIllegalTargetOk
 
+/-- The One Ring's tap ability puts a burden counter and draws that many. -/
+def oneRingBurdenDraw : Game :=
+  let g := addPermanent afterDraw theOneRing ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "The One Ring").id 0)
+  mustApply (mustApply g ⟨0⟩ .pass) ⟨1⟩ .pass
+
+#guard (namedPermanent oneRingBurdenDraw "The One Ring").status.burden == 1
+#guard (oneRingBurdenDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
+#guard oneRingBurdenDraw.log.any (fun s => mentions s "burden")
+
+/-- Gríma is unblockable as a printed keyword, not a `.printed` static. -/
+#guard grimaSarumanSFootman.keywords.cantBeBlocked
+#guard !grimaSarumanSFootman.staticAbilities.any (fun | .printed _ => true | _ => false)
+
 /-!
 ## 339 — Minas Tirith Garrison tap-then-draw is atomic
 -/
