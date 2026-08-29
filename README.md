@@ -65,19 +65,21 @@ they are deciding; a heuristic opponent otherwise chooses to go first.
 In `--multiplayer`, the deciding player is prompted. In `--auto`, the deciding
 player (heuristic) chooses to go first.
 `--input FILE` (one command per line) runs those commands first in either
-interactive mode, then further commands come from the console. `--output FILE`
+interactive mode, then further commands come from the console. Lines that
+start with `--` are additional flags instead of commands. `--output FILE`
 writes accepted game-state commands from the input file and from the console
-(one per line), so a session can be replayed with `--input`. Incorrect commands
-and commands that do not change the game (`state`, `quit`, `help`, `visible`)
-are omitted. `autopay` is written as the individual `tap` and `pay` commands
-it performs. When `--input` and `--output` are the same file, the existing
-commands are replayed and new accepted console commands are appended. After
-those commands are exhausted (or when no input file is given), a cost with
-only one legal payment is paid automatically; the demo writes the individual
-commands (`tap`, `pay`, `sacrifice`) to `--output`. Put
-`first <name>` at the top of an input file when the first named
-player is the one deciding; pass `--decides NAME` so a replay asks the same
-player.
+(one per line), so a session can be replayed with `--input`. When `--output`
+is a different file, flags read from `--input` are written first. Incorrect
+commands and commands that do not change the game (`state`, `quit`, `help`,
+`visible`) are omitted. `autopay` is written as the individual `tap` and `pay`
+commands it performs. When `--input` and `--output` are the same file, the
+existing flags and commands are replayed and new accepted console commands
+are appended. After those commands are exhausted (or when no input file is
+given), a cost with only one legal payment is paid automatically; the demo
+writes the individual commands (`tap`, `pay`, `sacrifice`) to `--output`.
+Put `--decides NAME` among the input-file flags (or pass it on the command
+line) and `first <name>` after those flags when the first named player is
+the one deciding, so a replay asks the same player.
 
 In either interactive mode, `visible` prints the board as the acting player
 sees it (other players' hand sizes but not the cards themselves). `visible on`

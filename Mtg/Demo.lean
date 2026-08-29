@@ -17,11 +17,13 @@ using `--seed`. In interactive modes that player uses `first <name>` before
 opening hands are drawn, unless a heuristic opponent is deciding and chooses
 to go first. `visible` prints only information that player can see; `--visible`
 starts in that view. `--input FILE` runs commands from the file first, then
-reads from the console. `--output FILE` writes accepted game-state commands
+reads from the console. Lines that start with `--` are additional flags
+instead of commands; when `--output` is a different file those flags are
+written first. `--output FILE` writes accepted game-state commands
 (from the file or the console) to that file. Incorrect commands and session
 commands such as `state` and `quit` are omitted. When `--input` and
-`--output` are the same file, those commands are replayed and new accepted
-console commands are appended. `autopay` is recorded as the individual
+`--output` are the same file, those flags and commands are replayed and new
+accepted console commands are appended. `autopay` is recorded as the individual
 `tap` and `pay` commands it performs. `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
@@ -52,14 +54,16 @@ Options:
   --decides NAME  Player who chooses who takes the first turn (CR 103.1);
                   default is a random player using --seed
   --input FILE    With --interactive or --multiplayer, run these commands
-                  first, then read from the console
+                  first, then read from the console. Lines that start
+                  with -- are additional flags instead of commands
   --output FILE   With --interactive or --multiplayer, write accepted
                   game-state commands (from --input and from the console)
-                  to this file. Incorrect commands and session commands
-                  such as state and quit are omitted. The same path as
-                  --input replays that file and appends new commands.
-                  Unique automatic cost payments are written as tap, pay,
-                  and sacrifice commands
+                  to this file. Flags from --input are written first when
+                  this path is different from --input. Incorrect commands and session commands
+                  such as state and quit are omitted.
+                  The same path as --input replays that file and appends
+                  new commands. Unique automatic cost payments are written
+                  as tap, pay, and sacrifice commands
   --seed N        RNG seed (default 20260807)
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
@@ -587,7 +591,9 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
-#guard (usage.splitOn "replays that file and appends new commands").length > 1
+#guard (usage.splitOn "additional flags instead of commands").length > 1
+#guard (usage.splitOn "Flags from --input are written first").length > 1
+#guard (usage.splitOn "replays that file and appends").length > 1
 #guard (usage.splitOn "Unique automatic cost payments").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
@@ -2983,23 +2989,66 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .error msg => Tests.mentions msg "cannot pay"
   | .ok _ => false
 
-/-- Non-empty trimmed commands from an input file (one command per line). -/
+/-- A line that starts with `--` is additional flags, not a game command. -/
+def isFlagLine (s : String) : Bool :=
+  s.startsWith "--"
+
+#guard isFlagLine "--visible"
+#guard isFlagLine "--seed 42"
+#guard isFlagLine "--name Elspeth --deck white"
+#guard !isFlagLine "keep"
+#guard !isFlagLine "first Chandra"
+#guard !isFlagLine "visible"
+
+/-- Flags and remaining commands from an `--input` file. -/
+structure InputScript where
+  flags : List String
+  commands : List String
+
+/-- Split trimmed non-empty lines into flag lines and commands. -/
+def inputScriptFromLines (lines : Array String) : InputScript :=
+  let trimmed := lines.toList.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
+  {
+    flags := trimmed.filter isFlagLine
+    commands := trimmed.filter (fun s => !isFlagLine s)
+  }
+
+/-- Non-empty trimmed commands from an input file (one command per line).
+Flag lines that start with `--` are omitted. -/
 def commandsFromLines (lines : Array String) : List String :=
-  lines.toList.map (fun s => s.trimAscii.copy) |>.filter (fun s => !s.isEmpty)
+  (inputScriptFromLines lines).commands
+
+/-- Command-line tokens from flag lines in `--input`. -/
+def flagTokens (flagLines : List String) : List String :=
+  flagLines.foldl (fun acc line => acc ++ commandTokens (line.splitOn " ")) []
 
 #guard commandsFromLines #["keep", "pass"] == ["keep", "pass"]
 #guard commandsFromLines #["  keep  ", "", "pass"] == ["keep", "pass"]
 #guard commandsFromLines #["", "  \t  "] == []
 #guard commandsFromLines #["keep\r", "bottom 3 4"] == ["keep", "bottom 3 4"]
+#guard commandsFromLines #["--visible", "keep", "pass"] == ["keep", "pass"]
+#guard (inputScriptFromLines #["--visible", "keep", "pass"]).flags == ["--visible"]
+#guard (inputScriptFromLines #["--visible", "keep", "pass"]).commands == ["keep", "pass"]
+#guard (inputScriptFromLines #["--seed 42", "--name Elspeth", "keep"]).flags ==
+  ["--seed 42", "--name Elspeth"]
+#guard (inputScriptFromLines #["keep", "--visible", "pass"]).flags == ["--visible"]
+#guard (inputScriptFromLines #["keep", "--visible", "pass"]).commands == ["keep", "pass"]
+#guard (inputScriptFromLines #["  --visible  ", "", "keep"]).flags == ["--visible"]
+#guard flagTokens ["--visible"] == ["--visible"]
+#guard flagTokens ["--seed 42", "--visible"] == ["--seed", "42", "--visible"]
+#guard flagTokens ["--name Elspeth --deck white"] ==
+  ["--name", "Elspeth", "--deck", "white"]
+#guard flagTokens ["--decides", "Nissa"] == ["--decides", "Nissa"]
+#guard flagTokens [] == []
 
-/-- Load `--input` commands, or `[]` when no file was given. -/
-def pendingCommands (inputFile : Option String) : IO (Except String (List String)) := do
+/-- Load `--input` flags and commands, or empty lists when no file was given. -/
+def loadInputScript (inputFile : Option String) : IO (Except String InputScript) := do
   match inputFile with
-  | none => return .ok []
+  | none => return .ok { flags := [], commands := [] }
   | some path =>
     try
       let lines ← IO.FS.lines path
-      return .ok (commandsFromLines lines)
+      return .ok (inputScriptFromLines lines)
     catch e =>
       return .error s!"Failed to read input file {path}: {e}"
 
@@ -3014,6 +3063,17 @@ def sameInputOutput (inputFile outputFile : Option String) : Bool :=
 #guard !sameInputOutput none (some "session.txt")
 #guard !sameInputOutput (some "session.txt") none
 #guard !sameInputOutput none none
+
+/-- Write flags from `--input` at the start of `--output` only when they are
+different files. Same-file sessions already contain those lines. -/
+def shouldWriteInputFlags (sameFile : Bool) (flags : List String) : Bool :=
+  !sameFile && !flags.isEmpty
+
+#guard shouldWriteInputFlags false ["--visible"]
+#guard shouldWriteInputFlags false ["--seed 42", "--visible"]
+#guard !shouldWriteInputFlags true ["--visible"]
+#guard !shouldWriteInputFlags false []
+#guard !shouldWriteInputFlags true []
 
 /-- When input and output are the same file, commands already loaded from the
 file stay there; only new console commands are appended. -/
@@ -3109,6 +3169,13 @@ def recordAcceptedCommand (output : Option IO.FS.Handle)
     (sameFile fromInput : Bool) (line : String) : IO Unit := do
   if shouldWriteOutput sameFile fromInput true ((line.splitOn " ").headD "") then
     recordCommand output line
+
+/-- Write flags read from `--input` to `--output` when they are different files. -/
+def recordInputFlags (output : Option IO.FS.Handle) (sameFile : Bool)
+    (flags : List String) : IO Unit := do
+  if shouldWriteInputFlags sameFile flags then
+    for line in flags do
+      recordCommand output line
 
 /-- Whether a player with priority has a legal action that affects the game
 other than passing or conceding. Mana abilities count even when their mana
@@ -3679,18 +3746,36 @@ structure DemoOptions where
   /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
   decides : Option Nat
 
-def parseArgs (args : List String) : Except String DemoOptions :=
+/-- Raw flag values before player-name validation. `seed` / `fuel` are `none`
+until those flags appear, so input-file flags can fill the defaults. -/
+structure DemoFlagValues where
+  interactive : Bool
+  multiplayer : Bool
+  playerView : Bool
+  seed : Option UInt64
+  fuel : Option Nat
+  inputFile : Option String
+  outputFile : Option String
+  names : Array String
+  decks : Array Color
+  decidesName : Option String
+  /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
+  modeSet : Bool
+
+/-- Parse flag tokens without checking that `--input` / `--visible` have a mode. -/
+def parseFlagList (args : List String) : Except String DemoFlagValues :=
   Id.run do
     let mut interactive := false
     let mut multiplayer := false
     let mut playerView := false
-    let mut seed : UInt64 := 20260807
-    let mut fuel : Nat := 800
+    let mut seed : Option UInt64 := none
+    let mut fuel : Option Nat := none
     let mut inputFile : Option String := none
     let mut outputFile : Option String := none
     let mut names : Array String := #[]
     let mut decks : Array Color := #[]
     let mut decidesName : Option String := none
+    let mut modeSet := false
     let mut rest := args
     while !rest.isEmpty do
       match rest with
@@ -3700,14 +3785,17 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       | "--auto" :: xs =>
         interactive := false
         multiplayer := false
+        modeSet := true
         rest := xs
       | "--interactive" :: xs =>
         interactive := true
         multiplayer := false
+        modeSet := true
         rest := xs
       | "--multiplayer" :: xs =>
         interactive := true
         multiplayer := true
+        modeSet := true
         rest := xs
       | "--visible" :: xs =>
         playerView := true
@@ -3737,13 +3825,13 @@ def parseArgs (args : List String) : Except String DemoOptions :=
         match n.toNat? with
         | none => return .error s!"Bad seed: {n}"
         | some v =>
-          seed := UInt64.ofNat v
+          seed := some (UInt64.ofNat v)
           rest := xs
       | "--fuel" :: n :: xs =>
         match n.toNat? with
         | none => return .error s!"Bad fuel: {n}"
         | some v =>
-          fuel := v
+          fuel := some v
           rest := xs
       | "--name" :: name :: xs =>
         if name.startsWith "--" then
@@ -3764,43 +3852,103 @@ def parseArgs (args : List String) : Except String DemoOptions :=
       | "--deck" :: [] => return .error "Missing Welcome Deck color"
       | x :: _ => return .error s!"Unknown argument: {x}"
       | [] => break
-    if playerView && !interactive then
-      return .error "--visible requires --interactive or --multiplayer"
-    if inputFile.isSome && !interactive then
-      return .error "--input requires --interactive or --multiplayer"
-    if outputFile.isSome && !interactive then
-      return .error "--output requires --interactive or --multiplayer"
-    match playersFromFlags names decks with
-    | .error e => return .error e
+    return .ok {
+      interactive := interactive
+      multiplayer := multiplayer
+      playerView := playerView
+      seed := seed
+      fuel := fuel
+      inputFile := inputFile
+      outputFile := outputFile
+      names := names
+      decks := decks
+      decidesName := decidesName
+      modeSet := modeSet
+    }
+
+/-- Merge CLI flags with additional flags from `--input`. File flags override
+mode, seed, fuel, players, and `--decides` when present. `--visible` is
+enabled if either side sets it. `--input` / `--output` stay on the CLI. -/
+def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
+  {
+    interactive := if file.modeSet then file.interactive else cli.interactive
+    multiplayer := if file.modeSet then file.multiplayer else cli.multiplayer
+    playerView := cli.playerView || file.playerView
+    seed :=
+      match file.seed with
+      | some s => some s
+      | none => cli.seed
+    fuel :=
+      match file.fuel with
+      | some n => some n
+      | none => cli.fuel
+    inputFile := cli.inputFile
+    outputFile := cli.outputFile
+    names := if file.names.isEmpty then cli.names else file.names
+    decks := if file.decks.isEmpty then cli.decks else file.decks
+    decidesName :=
+      match file.decidesName with
+      | some n => some n
+      | none => cli.decidesName
+    modeSet := file.modeSet || cli.modeSet
+  }
+
+/-- Apply defaults and reject illegal flag combinations. -/
+def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
+  if v.playerView && !v.interactive then
+    .error "--visible requires --interactive or --multiplayer"
+  else if v.inputFile.isSome && !v.interactive then
+    .error "--input requires --interactive or --multiplayer"
+  else if v.outputFile.isSome && !v.interactive then
+    .error "--output requires --interactive or --multiplayer"
+  else
+    match playersFromFlags v.names v.decks with
+    | .error e => .error e
     | .ok players =>
-      match decidesName with
+      let seed := v.seed.getD 20260807
+      let fuel := v.fuel.getD 800
+      match v.decidesName with
       | none =>
-        return .ok {
-          interactive := interactive
-          multiplayer := multiplayer
-          playerView := playerView
+        .ok {
+          interactive := v.interactive
+          multiplayer := v.multiplayer
+          playerView := v.playerView
           seed := seed
           fuel := fuel
-          inputFile := inputFile
-          outputFile := outputFile
+          inputFile := v.inputFile
+          outputFile := v.outputFile
           players := players
           decides := none
         }
       | some name =>
         match parsePlayerName (seatsFromPlayers players) name with
-        | .error e => return .error e
+        | .error e => .error e
         | .ok i =>
-          return .ok {
-            interactive := interactive
-            multiplayer := multiplayer
-            playerView := playerView
+          .ok {
+            interactive := v.interactive
+            multiplayer := v.multiplayer
+            playerView := v.playerView
             seed := seed
             fuel := fuel
-            inputFile := inputFile
-            outputFile := outputFile
+            inputFile := v.inputFile
+            outputFile := v.outputFile
             players := players
             decides := some i
           }
+
+def parseArgs (args : List String) : Except String DemoOptions :=
+  match parseFlagList args with
+  | .error e => .error e
+  | .ok v => finishOptions v
+
+/-- Parse the command line together with additional flags from `--input`. -/
+def parseArgsWithFlags (args flagLines : List String) : Except String DemoOptions :=
+  match parseFlagList args with
+  | .error e => .error e
+  | .ok cli =>
+    match parseFlagList (flagTokens flagLines) with
+    | .error e => .error e
+    | .ok file => finishOptions (mergeFlagValues cli file)
 
 #guard
   match parseArgs ["--interactive", "--visible"] with
@@ -4076,46 +4224,135 @@ def parseArgs (args : List String) : Except String DemoOptions :=
   | .error msg => msg == "Missing player name for --decides"
   | .ok _ => false
 
-def main (args : List String) : IO UInt32 := do
-  match parseArgs args with
-  | .error "help" =>
+#guard
+  match parseArgsWithFlags ["--interactive", "--input", "opening.txt"] [] with
+  | .ok opt => opt.interactive && opt.inputFile == some "opening.txt" && !opt.playerView
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"] ["--visible"] with
+  | .ok opt => opt.interactive && opt.playerView && opt.inputFile == some "opening.txt"
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"] ["--seed 42"] with
+  | .ok opt => opt.seed == 42 && opt.interactive
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--seed", "99", "--input", "opening.txt"] ["--seed 42"] with
+  | .ok opt => opt.seed == 42
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"] ["--fuel 12"] with
+  | .ok opt => opt.fuel == 12
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--input", "opening.txt"] ["--interactive"] with
+  | .ok opt => opt.interactive && !opt.multiplayer && opt.inputFile == some "opening.txt"
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"] ["--multiplayer"] with
+  | .ok opt => opt.interactive && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--input", "opening.txt"] [] with
+  | .error msg => msg == "--input requires --interactive or --multiplayer"
+  | .ok _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "a.txt", "--output", "b.txt"]
+      ["--output c.txt", "--input d.txt", "--visible"] with
+  | .ok opt =>
+    opt.inputFile == some "a.txt" && opt.outputFile == some "b.txt" && opt.playerView
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"]
+      ["--name Elspeth --deck white", "--name Jace --deck blue"] with
+  | .ok opt => opt.players == elspethJace
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--name", "Chandra", "--deck", "red",
+        "--name", "Nissa", "--deck", "green", "--input", "opening.txt"]
+      ["--name Elspeth --deck white", "--name Jace --deck blue"] with
+  | .ok opt => opt.players == elspethJace
+  | _ => false
+
+#guard
+  match parseArgsWithFlags
+      ["--interactive", "--input", "opening.txt"] ["--decides Nissa"] with
+  | .ok opt => opt.decides == some 1
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--interactive"] ["--chandra"] with
+  | .error msg => msg == "Unknown argument: --chandra"
+  | .ok _ => false
+
+def printUsageError (e : String) : IO UInt32 := do
+  if e == "help" then
     IO.println usage
     return 0
-  | .error e =>
+  else
     IO.eprintln e
     IO.println usage
     return 1
-  | .ok opt =>
-    match (← pendingCommands opt.inputFile) with
+
+def main (args : List String) : IO UInt32 := do
+  match parseFlagList args with
+  | .error e =>
+    printUsageError e
+  | .ok cli =>
+    match (← loadInputScript cli.inputFile) with
     | .error e =>
       IO.eprintln e
       return 1
-    | .ok pending =>
-      let sameFile := sameInputOutput opt.inputFile opt.outputFile
-      match (← openOutputFile opt.outputFile sameFile) with
+    | .ok script =>
+      match parseArgsWithFlags args script.flags with
       | .error e =>
-        IO.eprintln e
-        return 1
-      | .ok output =>
-        printEngineBanner
-        printDeckAssignments opt.players
-        let decider := assignDecider opt.players opt.seed opt.decides
-        let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
-        printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
-        if opt.interactive then
-          match (←
-            if humanChooses then
-              chooseStartingPlayer (seatsFromPlayers opt.players) decider
-                opt.multiplayer pending output sameFile
-            else
-              pure (some (decider, pending))) with
-          | none => return 0
-          | some (startIdx, pending) =>
-            let g ← startGame opt.seed (some startIdx) opt.players
-            printOpening g (currentView g opt.playerView opt.multiplayer)
-            interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+        printUsageError e
+      | .ok opt =>
+        let pending := script.commands
+        let sameFile := sameInputOutput opt.inputFile opt.outputFile
+        match (← openOutputFile opt.outputFile sameFile) with
+        | .error e =>
+          IO.eprintln e
+          return 1
+        | .ok output =>
+          recordInputFlags output sameFile script.flags
+          printEngineBanner
+          printDeckAssignments opt.players
+          let decider := assignDecider opt.players opt.seed opt.decides
+          let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
+          printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
+          if opt.interactive then
+            match (←
+              if humanChooses then
+                chooseStartingPlayer (seatsFromPlayers opt.players) decider
+                  opt.multiplayer pending output sameFile
+              else
+                pure (some (decider, pending))) with
+            | none => return 0
+            | some (startIdx, pending) =>
+              let g ← startGame opt.seed (some startIdx) opt.players
+              printOpening g (currentView g opt.playerView opt.multiplayer)
+              interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+              return 0
+          else
+            let g ← startDemo opt.seed (some decider) (players := opt.players)
+            runAuto g opt.fuel
             return 0
-        else
-          let g ← startDemo opt.seed (some decider) (players := opt.players)
-          runAuto g opt.fuel
-          return 0
