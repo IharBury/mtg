@@ -102,6 +102,72 @@ def nissaStarts : Game :=
 #guard nissaStarts.actor == some ⟨1⟩
 #guard nissaStarts.log.any (· == "Starting player: Nissa")
 
+/-- `--norandom` pauses before opening shuffles so the host supplies the order. -/
+def norandomOpening : Game :=
+  match Start.start { testConfig 1 with norandom := true } with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard norandomOpening.norandom
+#guard (norandomOpening.player ⟨0⟩).hand.isEmpty
+#guard (norandomOpening.player ⟨1⟩).hand.isEmpty
+#guard
+  match norandomOpening.pendingRandom? with
+  | some (.shuffleLibrary p) => p == ⟨0⟩
+  | _ => false
+
+#guard
+  match norandomOpening.apply ⟨0⟩ (.supplyOrder #[⟨99⟩]) with
+  | .error msg =>
+    msg == "Shuffle must list each library card once (bottom first), or omit the ids to keep the current order"
+  | .ok _ => false
+
+def norandomAfterFirstShuffle : Game :=
+  match norandomOpening.apply ⟨0⟩ (.supplyOrder #[]) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard
+  match norandomAfterFirstShuffle.pendingRandom? with
+  | some (.shuffleLibrary p) => p == ⟨1⟩
+  | _ => false
+#guard (norandomAfterFirstShuffle.player ⟨0⟩).hand.isEmpty
+
+def norandomDrawnHands : Game :=
+  match norandomAfterFirstShuffle.apply ⟨1⟩ (.supplyOrder #[]) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard norandomDrawnHands.pending == .declareMulligan ⟨0⟩
+#guard (norandomDrawnHands.player ⟨0⟩).hand.size == 7
+#guard (norandomDrawnHands.player ⟨1⟩).hand.size == 7
+#guard (norandomDrawnHands.player ⟨0⟩).library.size == 53
+
+/- Without `--norandom`, `Start.start` still shuffles from the seed. -/
+#guard !drawnHands.norandom
+#guard drawnHands.pendingRandom?.isNone
+
+#guard
+  match Start.start { testConfig 1 with norandom := true, startingPlayer := none } with
+  | .ok g =>
+    match g.pendingRandom? with
+    | some (.chooseIndex n) => n == 2 && g.startingPlayer == ⟨0⟩
+    | _ => false
+  | .error _ => false
+
+#guard
+  match Start.start { testConfig 1 with norandom := true, startingPlayer := none } with
+  | .ok g =>
+    match g.apply ⟨0⟩ (.supplyIndex 1) with
+    | .ok g' =>
+      g'.startingPlayer == ⟨1⟩ &&
+        (match g'.pendingRandom? with
+         | some (.shuffleLibrary p) => p == ⟨0⟩
+         | _ => false) &&
+        g'.log.any (· == "Starting player: Nissa")
+    | .error _ => false
+  | .error _ => false
+
 def nissaStarted : Game := keepOpeningHands nissaStarts 8
 
 #guard nissaStarted.startingPlayer == ⟨1⟩

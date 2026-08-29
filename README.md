@@ -56,6 +56,8 @@ lake exe mtg-demo -- --multiplayer --input session.txt --output session.txt
 lake exe mtg-demo -- --decides Nissa
 lake exe mtg-demo -- --interactive --decides Chandra
 lake exe mtg-demo -- --seed 42 --fuel 200
+lake exe mtg-demo -- --norandom --decides Chandra --interactive
+lake exe mtg-demo -- --norandom --input opening.txt
 ```
 
 `--interactive` is the first named player against heuristic opponents.
@@ -63,6 +65,13 @@ lake exe mtg-demo -- --seed 42 --fuel 200
 prompt names who must act.
 `--decides NAME` names the player who chooses who takes the first turn
 (CR 103.1). By default the demo picks one at random using `--seed`.
+`--norandom` stops the engine from shuffling or rolling. The demo asks who
+was chosen at random to decide (unless `--decides` is set) and asks for each
+later random result: `shuffle [id...]` (library order, bottom first; no ids
+keeps the current order), `order [id...]` (a subset put into a zone in that
+order), `pick <id>` (a randomly selected object), `random <n>` (a 0-based
+index), or `flip heads` / `flip tails`. `--input` / `--output` may be used
+with `--norandom` even in `--auto` so those answers can be replayed.
 In `--interactive`, the first named player is prompted for `first <name>` when
 they are deciding; a heuristic opponent otherwise chooses to go first.
 In `--multiplayer`, the deciding player is prompted. In `--auto`, the deciding

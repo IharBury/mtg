@@ -143,6 +143,9 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.permanentsOf p).find? (fun o => o.isCreature && o.id != bolgId) with
       | some o => some (.sacrifice o.id)
       | none => some .decline
+    | .resolveRandom _ =>
+      -- Random results are supplied by the host (`--norandom`), never the heuristic.
+      none
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=
