@@ -1,0 +1,506 @@
+--name Adam --deck Red --name Eva --deck Black --decides Adam --seed 1 --multiplayer
+first Adam
+mulligan
+mulligan
+bottom 106
+bottom 116
+keep
+mulligan
+bottom 135 136
+keep
+pass
+pass
+play 102
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 131
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 104
+cast 103
+tap 139 143
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 132
+cast 140
+tap 141 147
+pay
+pass
+pass
+decline
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 105
+pass
+pass
+pass
+pass
+attack 145
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 151
+tap 139 143
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 133
+pass
+pass
+pass
+pass
+attack 149
+pass
+pass
+block 154 149
+pass
+pass
+target 149
+pass
+pass
+pass
+pass
+pass
+pass
+cast 130
+tap 141 147 156
+pay
+pass
+pass
+pass
+pass
+sacrifice 161
+sacrifice 145
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 142
+tap 139 143
+pay
+pass
+pass
+pass
+pass
+discard 165
+play 170
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 146
+cast 134
+tap 141 147 156 174
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 101
+tap 139 143 152 172
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 173
+pass
+pass
+pass
+pass
+attack 176
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 180
+tap 141 147 156 174 181
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 184
+cast 171 adventure
+target 183
+tap 139 143 152 172 185
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 179
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 189
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 191
+cast 177
+tap 139 143
+pay
+pass
+pass
+activate 167
+target 194
+tap 152 172 185
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 196
+tap 141 147 156
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 199
+pass
+pass
+pass
+pass
+attack 179 194
+pass
+pass
+block 176 179
+pass
+pass
+pass
+pass
+scry top 50
+pass
+pass
+pass
+pass
+cast 187
+tap 139 143 152 172 185 192 200
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 206
+target 205
+tap 141 147 156
+pay
+pass
+pass
+pass
+pass
+scry bottom 129
+pass
+pass
+pass
+pass
+attack 198
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 211
+pass
+pass
+pass
+pass
+attack 194
+pass
+pass
+noblock
+activate 194
+tap 139 143
+pay
+activate 194
+tap 152 172
+pay
+activate 194
+tap 185 192
+pay
+activate 194
+tap 200 212
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack 198
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 217
+tap 141 147 156
+pay
+pass
+pass
+target Adam
+pass
+pass
+sacrifice 194
+target 198
+pass
+pass
+pass
+pass
+scry bottom 40
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 107
+target Eva
+tap 139 143
+pay
+sacrifice 167
+pass
+pass

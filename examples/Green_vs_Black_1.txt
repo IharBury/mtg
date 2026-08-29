@@ -1,0 +1,684 @@
+--name Adam --deck Green --name Eva --deck Black --decides Adam --seed 20260807 --multiplayer
+first Adam
+keep
+keep
+pass
+pass
+play 80
+cast 84
+tap 94
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 89
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 83
+tap 96 94
+pay
+pass
+pass
+play 85
+target 96
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 91
+cast 104
+tap 98 105
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 81
+target 96
+pass
+pass
+cast 108
+tap 102 109
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 92
+cast 88
+tap 98 105 114
+pay
+pass
+pass
+target Adam
+pass
+pass
+sacrifice 112
+pass
+pass
+pass
+pass
+attack 107
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 119
+target 96
+pass
+pass
+cast 82
+target 96
+target 107
+tap 94 109
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 96
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 125
+tap 98 114
+pay
+pass
+pass
+play 127
+cast 87
+tap 105 130
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack 96
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 133
+tap 109 120
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 128
+cast 113
+target 96
+tap 114 130 137
+pay
+pass
+pass
+activate 116
+target 132
+tap 98 105
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 86
+target 135
+target 132
+tap 109 120
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 142
+tap #94 G
+tap #102 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 93
+tap #98 B
+tap #105 B
+tap #114 C
+tap #130 B
+pay
+pass
+pass
+cast 97 adventure
+target 150
+target Eva
+tap #137 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 153
+stack 101 135
+target 135
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack 135
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 99
+tap #94 G
+tap #102 G
+tap #109 C
+tap #120 G
+tap #154 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 159
+cast 136
+target 158
+tap #98 B
+tap #105 B
+tap #114 C
+tap #130 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 148
+tap #137 B
+tap #160 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 166
+tap #94 G
+tap #102 G
+tap #109 C
+pay
+pass
+pass
+pass
+pass
+stack 101 135
+target 147
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 165 135
+pass
+pass
+target 135
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+activate 116
+target #150
+tap #98 B
+tap #105 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+cast 176
+mode 2
+target 150
+tap #114 C
+tap #130 B
+tap #137 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 180
+tap #94 G
+tap #102 G
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 147 150 182 150
+pass
+pass
+assign 150 147 4 150 182 3
+pass
+pass
+pass
+pass
+cast 152
+tap #98 B
+tap #105 B
+tap #114 C
+tap #130 B
+pay
+pass
+pass
+activate 116
+target #188
+tap #137 B
+tap #160 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 190
+tap #94 G
+tap #102 G
+tap #109 C
+tap #120 G
+tap #154 G
+tap #170 G
+pay
+pass
+pass
+target 139
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 195
+tap #98 B
+pay
+pass
+pass
+pass
+pass
+scry bottom 66
+cast 90
+tap #105 B
+tap #114 C
+tap #130 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 168 188 192 188
+pass
+pass
+assign 188 192 6
+pass
+pass
+scry bottom 68
+pass
+pass
+pass
+pass
+cast 183
+tap #137 B
+tap #160 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 206
+tap #94 G
+tap #102 G
+pay
+pass
+pass
+pass
+pass
+cast 210
+tap #109 C
+tap #120 G
+tap #154 G
+tap #170 G
+pay
+pass
+pass
+pass
+pass
+scry top 8 24
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+activate 116
+target 200
+tap #98 B
+tap #105 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 212 205 208 197
+pass
+pass
