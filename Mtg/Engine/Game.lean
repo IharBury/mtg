@@ -2100,6 +2100,12 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           s!"{(g.player p).name} chooses which {name} to keep (legend rule, CR 704.5j)"
         return (g, true)
       | none => pure ()
+      -- Tokens in zones other than the battlefield cease to exist (CR 704.5d).
+      for o in g.objects do
+        if o.printed.isToken && o.zone != .battlefield then
+          g := g.ceaseToExist o.id
+          g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
+          changed := true
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -5461,9 +5467,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     else
       { g with pending := .putOnBottom controller 1 }.logMsg
         s!"{(g.player controller).name} puts a card from their hand on the bottom of their library"
-  | .exileUntilLeaves =>
+  | .exileTarget =>
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+  | .exileUntilLeaves =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+          g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
+      else
+        g.logMsg "The source has left the battlefield. Nothing is exiled."
+    | none =>
+      g.logMsg "The source has left the battlefield. Nothing is exiled."
   | .returnLinkedExile =>
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
@@ -5710,6 +5726,11 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
       g := g.putControlledTriggers p .youAttack
+    if attackerIds.size == 1 then
+      let aid := attackerIds[0]!
+      for o in g.permanentsOf p do
+        if o.attachedTo == some aid then
+          g := g.putMatchingSourceTriggers p o .equippedAttacksAlone
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/

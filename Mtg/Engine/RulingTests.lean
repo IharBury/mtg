@@ -1363,4 +1363,206 @@ def bardAndBilboFoodOk : Bool :=
 
 #guard bardAndBilboFoodOk
 
+/-!
+## 39, 47, 73, 87–89, 134, 136–138 — linked exile
+-/
+
+/-- Ruling 39 / 73: a returned permanent is a new object, not in combat,
+and has no counters. -/
+def exileReturnNewObjectOk : Bool :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let oldId := bears.id
+  let g := g.setObject { bears with status :=
+    { bears.status with attacking := true, plusOnePlusOne := 2 } }
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := (g.move hunter.id (.graveyard ⟨0⟩) none).1
+  let returned := namedPermanent g "Grizzly Bears"
+  returned.id != oldId &&
+    !returned.status.attacking &&
+    returned.status.plusOnePlusOne == 0 &&
+    (ruling 39).comment.contains "new object" &&
+    (ruling 73).comment.contains "won't be in combat"
+
+#guard exileReturnNewObjectOk
+
+/-- Ruling 47: an exiled token ceases to exist and does not return. -/
+def exileTokenNoReturn : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨1⟩ Game.wolfToken
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.exileUntilSourceLeaves (some hunter.id) (g.object! tok.id)
+  let g := g.checkSBA
+  let hunter := namedPermanent g "Fiend Hunter"
+  (g.move hunter.id (.graveyard ⟨0⟩) none).1.checkSBA
+
+def exileTokenNoReturnOk : Bool :=
+  !(exileTokenNoReturn.battlefield.any (fun o => o.name == "Wolf")) &&
+    !(exileTokenNoReturn.objects.any (fun o =>
+      o.name == "Wolf" && o.zone == .exile)) &&
+    exileTokenNoReturn.log.any (fun s => mentions s "ceases to exist") &&
+    (ruling 47).comment.contains "will not return"
+
+#guard exileTokenNoReturnOk
+
+/-- Ruling 87 / 88 / 89: Auras go to the graveyard; Equipment stays
+unattached; counters cease. -/
+def exileAuraAndEquip : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let g := addPermanent g dunedainBlade ⟨1⟩ ⟨1⟩
+  let g := g.attachSourceTo (namedPermanent g "Fog on the Barrow-Downs")
+    (namedPermanent g "Grizzly Bears")
+  let g := g.attachSourceTo (namedPermanent g "Dúnedain Blade")
+    (namedPermanent g "Grizzly Bears")
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status :=
+    { bears.status with plusOnePlusOne := 1 } }
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.exileUntilSourceLeaves (some hunter.id) (namedPermanent g "Grizzly Bears")
+  g.checkSBA
+
+def exileAuraAndEquipOk : Bool :=
+  let fogGy := exileAuraAndEquip.objects.any (fun o =>
+    o.name == "Fog on the Barrow-Downs" && o.zone == .graveyard ⟨1⟩)
+  let blade := namedPermanent exileAuraAndEquip "Dúnedain Blade"
+  let bearsExiled := exileAuraAndEquip.objects.find? (fun o =>
+    o.name == "Grizzly Bears" && o.zone == .exile)
+  fogGy && blade.isOnBattlefield && blade.attachedTo.isNone &&
+    (match bearsExiled with
+     | some o => o.status.plusOnePlusOne == 0
+     | none => false) &&
+    (ruling 87).comment.contains "Equipment" &&
+    (ruling 88).comment.contains "Auras" &&
+    (ruling 89).comment.contains "new object"
+
+#guard exileAuraAndEquipOk
+
+/-- Ruling 134 / 136 / 137: if a “until this leaves” source is gone, nothing
+is exiled. -/
+def sourceLeftNoExile : Game :=
+  let g := addPermanent afterDraw banishingLight ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let lightId := (namedPermanent g "Banishing Light").id
+  let bearsId := (namedPermanent g "Grizzly Bears").id
+  let g := (g.move lightId (.graveyard ⟨0⟩) none).1
+  g.applyTriggeredAbility ⟨0⟩ .onEnterExileOppNonlandUntilLeaves (some lightId)
+    #[Target.permanent bearsId]
+
+def sourceLeftNoExileOk : Bool :=
+  sourceLeftNoExile.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    sourceLeftNoExile.log.any (fun s => mentions s "Nothing is exiled") &&
+    ((ruling 134).comment.contains "won't be exiled" ||
+      (ruling 134).comment.contains "won’t be exiled") &&
+    (ruling 137).comment.contains "won't be exiled"
+
+#guard sourceLeftNoExileOk
+
+/-- Ruling 138: Fiend Hunter's first ability still exiles if it already left;
+the leave trigger had nothing to return. -/
+def fiendLeftStillExiles : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hunterId := (namedPermanent g "Fiend Hunter").id
+  let bearsId := (namedPermanent g "Grizzly Bears").id
+  let g := (g.move hunterId (.graveyard ⟨0⟩) none).1
+  g.applyTriggeredAbility ⟨0⟩ .onEnterMayExileAnotherCreature (some hunterId)
+    #[Target.permanent bearsId]
+
+def fiendLeftStillExilesOk : Bool :=
+  !(fiendLeftStillExiles.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
+    fiendLeftStillExiles.objects.any (fun o =>
+      o.name == "Grizzly Bears" && o.zone == .exile) &&
+    (ruling 138).comment.contains "first ability"
+
+#guard fiendLeftStillExilesOk
+
+/-!
+## 66 — attacks alone
+-/
+
+def ringAndTwoCreatures : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g bilboSRing ⟨0⟩ ⟨0⟩
+  g.attachSourceTo (namedPermanent g "Bilbo's Ring")
+    (namedPermanent g "Grizzly Bears")
+
+def ringReadyToAttack : Game :=
+  passBoth (skipTo ringAndTwoCreatures .beginningOfCombat 80)
+
+def ringAttacksAlone : Game :=
+  mustApply ringReadyToAttack ⟨0⟩
+    (.declareAttackers #[(namedPermanent ringReadyToAttack "Grizzly Bears").id])
+
+def ringAttacksAloneOk : Bool :=
+  (match ringAttacksAlone.stack.back? with
+   | some e =>
+     (ringAttacksAlone.object! e.objectId).triggeredAbility ==
+       some .onEquippedAttacksAloneDrawLoseLife
+   | none => false) &&
+    (ruling 66).comment.contains "only creature declared as an attacker"
+
+#guard ringAttacksAloneOk
+
+def ringAloneResolved : Game := passBoth ringAttacksAlone
+
+def ringAloneResolvedOk : Bool :=
+  (ringAloneResolved.player ⟨0⟩).hand.size ==
+      (ringReadyToAttack.player ⟨0⟩).hand.size + 1 &&
+    (ringAloneResolved.player ⟨0⟩).life ==
+      (ringReadyToAttack.player ⟨0⟩).life - 1
+
+#guard ringAloneResolvedOk
+
+/-- Ruling 66: attacking with two creatures does not count as attacking alone,
+even if only one remains later. -/
+def ringAttacksTogether : Game :=
+  mustApply ringReadyToAttack ⟨0⟩
+    (.declareAttackers #[
+      (namedPermanent ringReadyToAttack "Grizzly Bears").id,
+      (namedPermanent ringReadyToAttack "Gray Ogre").id])
+
+def ringAttacksTogetherOk : Bool :=
+  !ringAttacksTogether.stack.any (fun e =>
+    (ringAttacksTogether.object! e.objectId).triggeredAbility ==
+      some .onEquippedAttacksAloneDrawLoseLife)
+
+#guard ringAttacksTogetherOk
+
+/-!
+## 70, 71 — becoming unblockable after blocked
+-/
+
+def stillBlockedAfterUnblockable : Game :=
+  bearsBlockOgre.grantCantBeBlockedThisTurn
+    (namedPermanent bearsBlockOgre "Gray Ogre")
+
+def stillBlockedAfterUnblockableOk : Bool :=
+  (namedPermanent stillBlockedAfterUnblockable "Gray Ogre").status.blocked &&
+    stillBlockedAfterUnblockable.hasCantBeBlocked
+      (namedPermanent stillBlockedAfterUnblockable "Gray Ogre") &&
+    (ruling 70).comment.contains "won't cause that creature to become unblocked" &&
+    (ruling 71).comment.contains "won't cause that creature to become unblocked"
+
+#guard stillBlockedAfterUnblockableOk
+
+/-- Ruling 122: Food is an artifact type, never a creature type. -/
+def foodIsArtifactTypeOk : Bool :=
+  Game.foodToken.isArtifact &&
+    !(Game.foodToken.isCreature) &&
+    (ruling 122).comment.contains "never a creature type"
+
+#guard foodIsArtifactTypeOk
+
+/-- Ruling 45: hone counters grant +1/+0 on any Equipment. -/
+def honeAnyEquipmentOk : Bool :=
+  (ruling 45).comment.contains "any Equipment"
+
+#guard honeAnyEquipmentOk
+
 end Mtg.Engine.RulingTests

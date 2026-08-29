@@ -1053,8 +1053,9 @@ def insideInformation : CardDef :=
 
 def keyToTheSideDoor : CardDef :=
   artifact "Key to the Side-Door" (ManaCost.ofGeneric 1) "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
-    (staticAbilities := #[.printed "{2}, {T}: Target creature can't be blocked this turn.",
-      .printed "{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."])
+    (activatedAbilities := #[
+      activated .targetCantBeBlockedThisTurn (ManaCost.ofGeneric 2) (tap := true)])
+    (staticAbilities := #[.printed "{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."])
 
 def lakeTownToymaker : CardDef :=
   creature "Lake-town Toymaker" (ManaCost.ofGenericAndColor 3 .white) #["Human", "Artificer"] 3 4 (oracleText := "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn.")

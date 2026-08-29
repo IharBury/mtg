@@ -598,7 +598,7 @@ def bilboSRing : CardDef :=
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (staticAbilities := #[.equippedHexproofUnblockableDuringYourTurn])
-    (triggeredAbilities := #[.printed "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."])
+    (triggeredAbilities := #[.onEquippedAttacksAloneDrawLoseLife])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1) (subtype := some "Halfling"),
       equipAbility (ManaCost.ofGeneric 4)])
 

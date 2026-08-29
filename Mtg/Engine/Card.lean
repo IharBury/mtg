@@ -2408,6 +2408,8 @@ inductive TriggeredAbility where
   | onEnterDrawThenBottomIfNoLegendary
   /-- When this creature enters, you may exile another target creature. -/
   | onEnterMayExileAnotherCreature
+  /-- Whenever equipped creature attacks alone, you draw a card and lose 1 life. -/
+  | onEquippedAttacksAloneDrawLoseLife
   /-- When this creature leaves the battlefield, return the exiled card. -/
   | onLeaveReturnExiled
   /-- When this enchantment enters, exile target nonland an opponent controls
@@ -2679,6 +2681,8 @@ inductive TriggerEvent where
   | theRingTemptsYou
   /-- You choose a creature as your Ring-bearer. -/
   | youChooseRingBearer
+  /-- Equipped creature is the only attacker declared this combat. -/
+  | equippedAttacksAlone
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2803,6 +2807,9 @@ def spec : TriggerEvent → Spec
   | .youChooseRingBearer =>
     { clause := "you choose a creature as your Ring-bearer",
       label := "Ring-bearer trigger", checkTargets := false }
+  | .equippedAttacksAlone =>
+    { clause := "equipped creature attacks alone",
+      label := "attacks-alone trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -2896,6 +2903,8 @@ inductive TriggerResolution where
   | mayPayGenericDraw (generic : Nat)
   /-- Draw a card, then put a card on the bottom if you control no legendary. -/
   | drawThenBottomIfNoLegendary
+  /-- Exile the targeted permanent. Link it if the source is still in play. -/
+  | exileTarget
   /-- Exile the targeted permanent until the source leaves the battlefield. -/
   | exileUntilLeaves
   /-- Return cards exiled by the source. -/
@@ -3104,7 +3113,9 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering], resolution := .drawThenBottomIfNoLegendary }
   | .onEnterMayExileAnotherCreature =>
     { events := #[.entering], targeting := .of .anotherCreature,
-      allowsZeroTargets := true, resolution := .exileUntilLeaves }
+      allowsZeroTargets := true, resolution := .exileTarget }
+  | .onEquippedAttacksAloneDrawLoseLife =>
+    { events := #[.equippedAttacksAlone], resolution := .drawAndLoseLife }
   | .onLeaveReturnExiled =>
     { events := #[.leaving], resolution := .returnLinkedExile }
   | .onEnterExileOppNonlandUntilLeaves =>
@@ -3424,6 +3435,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"you may pay \{{generic}}. If you do, draw a card"
   | .drawThenBottomIfNoLegendary =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
+  | .exileTarget =>
+    if t.allowsZeroTargets then s!"you may exile {noun}" else s!"exile {noun}"
   | .exileUntilLeaves =>
     if t.allowsZeroTargets then
       if t.targeting.kind == .defendingPlayerCreature then
@@ -3543,9 +3556,12 @@ def toNotation (ab : TriggeredAbility) : String :=
   | .printed text => text
   | _ =>
     let t := ab.timing
-    let once :=
-      if t.onceEachTurn then " This ability triggers only once each turn." else ""
-    s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+    if t.events.contains .equippedAttacksAlone then
+      "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+    else
+      let once :=
+        if t.onceEachTurn then " This ability triggers only once each turn." else ""
+      s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
