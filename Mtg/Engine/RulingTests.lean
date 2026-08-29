@@ -4793,4 +4793,70 @@ def normalTimingAndCostsOk : Bool :=
 
 #guard normalTimingAndCostsOk
 
+/-!
+## Quote the remaining judge comments exercised by earlier `Ruling N` tests
+-/
+
+def earlierRulingCommentsQuotedOk : Bool :=
+  (ruling 2).comment.contains "adventurer card is a permanent card" &&
+    (ruling 3).comment.contains "has an Adventure" &&
+    (ruling 4).comment.contains "isn't casting it for an alternative cost" &&
+    (ruling 5).comment.contains "exiles it instead of putting it into its owner's graveyard" &&
+    (ruling 6).comment.contains "won't give you permission to cast it as a permanent" &&
+    (ruling 12).comment.contains "ignore all of the card's normal characteristics" &&
+    (ruling 14).comment.contains "Amass Orcs works the same way" &&
+    (ruling 15).comment.contains "enters the battlefield as a 0/0 creature before receiving counters" &&
+    (ruling 16).comment.contains "you control multiple Army creatures" &&
+    (ruling 18).comment.contains "To amass Goblins N" &&
+    (ruling 19).comment.contains "doesn't trigger if a permanent already on the battlefield becomes a land" &&
+    (ruling 20).comment.contains "triggers whenever a land you control enters for any reason" &&
+    (ruling 21).comment.contains "each landfall ability of permanents you control will trigger" &&
+    (ruling 23).comment.contains "no player may take any other actions until it's done" &&
+    (ruling 24).comment.contains "A single permanent can only count once" &&
+    (ruling 25).comment.contains "don't control a permanent with storied" &&
+    (ruling 26).comment.contains "you get an enduring story before it leaves" &&
+    (ruling 27).comment.contains "for the rest of the game" &&
+    (ruling 29).comment.contains "Typecycling is a form of cycling" &&
+    (ruling 30).comment.contains "doesn't allow you to draw a card" &&
+    (ruling 31).comment.contains "cast this card from your graveyard" &&
+    (ruling 32).comment.contains "will always be exiled afterward" &&
+    (ruling 33).comment.contains "put into your graveyard during your turn" &&
+    (ruling 37).comment.contains "based on the card's type" &&
+    (ruling 40).comment.contains "Amass Zombies works the same way" &&
+    (ruling 42).comment.contains "you get an emblem named The Ring" &&
+    (ruling 43).comment.contains "only one emblem named The Ring" &&
+    (ruling 44).comment.contains "you must choose a creature" &&
+    (ruling 46).comment.contains "kicker cost was paid" &&
+    (ruling 48).comment.contains "already your Ring-bearer" &&
+    (ruling 50).comment.contains "can't pay any alternative costs" &&
+    (ruling 54).comment.contains "the Ring to tempt you" &&
+    (ruling 56).comment.contains "even if you don't control a creature" &&
+    (ruling 57).comment.contains "gains its abilities in order" &&
+    (ruling 60).comment.contains "power boost applies only while" &&
+    (ruling 62).comment.contains "total cost" &&
+    (ruling 67).comment.contains "shadow counter" &&
+    (ruling 68).comment.contains "mana value is determined only by" &&
+    (ruling 77).comment.contains "phased-out objects" &&
+    (ruling 79).comment.contains "modify a creature's power and/or toughness" &&
+    (ruling 81).comment.contains "As Galion's ability resolves" &&
+    (ruling 82).comment.contains "phased out, Auras and Equipment" &&
+    (ruling 83).comment.contains "additional cost to cast a spell with gift" &&
+    (ruling 84).comment.contains "Ascend on a permanent isn't a triggered ability" &&
+    (ruling 101).comment.contains "Cascade triggers when you cast" &&
+    (ruling 107).comment.contains "Choices made for permanents as they enter" &&
+    (ruling 110).comment.contains "Count the mana values of all other spells" &&
+    (ruling 113).comment.contains "2021 rules change to cascade" &&
+    (ruling 124).comment.contains "For instants and sorceries with gift" &&
+    (ruling 152).comment.contains "gift was promised" &&
+    (ruling 157).comment.contains "cascade is countered" &&
+    (ruling 168).comment.contains "multiple evasion abilities" &&
+    (ruling 203).comment.contains "Bard, King of Dale and create an Army" &&
+    (ruling 208).comment.contains "copy a kicked spell on the stack" &&
+    (ruling 210).comment.contains "copy a spell for which the gift" &&
+    (ruling 254).comment.contains "Phased-out permanents are treated as though they don't exist" &&
+    (ruling 255).comment.contains "Phasing out doesn't cause" &&
+    (ruling 323).comment.contains "When the cascade ability resolves"
+
+#guard earlierRulingCommentsQuotedOk
+
 end Mtg.Engine.RulingTests
