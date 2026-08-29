@@ -287,11 +287,18 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
-  spellCard .instant name manaCost oracleText spellEffect spellModes
-    additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
-    costReductionIfCreatureDied costReductionIfTargetDamaged
-    costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
-    activatedAbilities (flashback := flashback)
+  spellCard .instant name manaCost oracleText
+    (spellEffect := spellEffect) (spellModes := spellModes)
+    (additionalCostSacrificeArtifactOrCreature :=
+      additionalCostSacrificeArtifactOrCreature)
+    (additionalCostOrPayGeneric := additionalCostOrPayGeneric)
+    (costReductionIfCreatureDied := costReductionIfCreatureDied)
+    (costReductionIfTargetDamaged := costReductionIfTargetDamaged)
+    (costReductionIfTargetTapped := costReductionIfTargetTapped)
+    (costReductionIfTargetAttackingNontoken :=
+      costReductionIfTargetAttackingNontoken)
+    (activatedAbilities := activatedAbilities)
+    (flashback := flashback)
     (cantBeCountered := cantBeCountered)
     (chooseOneOrBoth := chooseOneOrBoth)
     (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
@@ -325,11 +332,18 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
-  spellCard .sorcery name manaCost oracleText spellEffect spellModes
-    additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
-    costReductionIfCreatureDied costReductionIfTargetDamaged
-    costReductionIfTargetTapped costReductionIfTargetAttackingNontoken
-    activatedAbilities (flashback := flashback)
+  spellCard .sorcery name manaCost oracleText
+    (spellEffect := spellEffect) (spellModes := spellModes)
+    (additionalCostSacrificeArtifactOrCreature :=
+      additionalCostSacrificeArtifactOrCreature)
+    (additionalCostOrPayGeneric := additionalCostOrPayGeneric)
+    (costReductionIfCreatureDied := costReductionIfCreatureDied)
+    (costReductionIfTargetDamaged := costReductionIfTargetDamaged)
+    (costReductionIfTargetTapped := costReductionIfTargetTapped)
+    (costReductionIfTargetAttackingNontoken :=
+      costReductionIfTargetAttackingNontoken)
+    (activatedAbilities := activatedAbilities)
+    (flashback := flashback)
     (cantBeCountered := cantBeCountered)
     (chooseOneOrBoth := chooseOneOrBoth)
     (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)

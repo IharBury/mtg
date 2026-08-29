@@ -87,10 +87,13 @@ def targetClause (g : Game) (e : StackEntry) : String :=
         refs := refs.push (describeStackTarget g e i)
       return s!" *targeting {String.intercalate (targetListSeparator g e) refs.toList}*"
 
+/-- Leading space when `s` is nonempty; otherwise empty. -/
+def spacedSuffix (s : String) : String :=
+  if s.isEmpty then "" else s!" {s}"
+
 /-- Keywords and abilities printed after a card's name (and P/T). -/
 def faceExtras (c : CardDef) : String :=
-  let s := c.keywordsAndAbilities
-  if s.isEmpty then "" else s!" {s}"
+  spacedSuffix c.keywordsAndAbilities
 
 /-- How well leftover Oracle `line` matches a stacked ability's structured text. -/
 def abilityLineScore (line abilityText : String) : Nat :=
@@ -126,7 +129,7 @@ def stackFaceExtras (o : GameObject) : String :=
     | some t, _ => textForStackedAbility o.printed (TriggeredAbility.toNotation t)
     | none, some e => textForStackedAbility o.printed (AbilityEffect.toNotation e)
     | none, none => o.printed.keywordsAndAbilities
-  if s.isEmpty then "" else s!" {s}"
+  spacedSuffix s
 
 /-- One object on the stack, including announced targets (CR 115 / 601.2c).
 `withId` prefixes the object id, matching zone listings and `state`. -/
@@ -139,8 +142,7 @@ def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
-  let s := o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o)
-  if s.isEmpty then "" else s!" {s}"
+  spacedSuffix (o.printed.keywordsAndAbilitiesOf (g.effectiveKeywords o))
 
 /-- Player who would activate `o`'s abilities (controller, else owner). -/
 def abilityActivator (o : GameObject) : PlayerId :=

@@ -1228,6 +1228,12 @@ def currentView (g : Game) (playerView : Bool) (controlAll : Bool) : Option Play
   else if controlAll then g.actor
   else some ⟨0⟩
 
+/-- Acting player for auto-step error messages. -/
+def actorDisplayName (g : Game) (fallback := "Player") : String :=
+  match g.actor with
+  | some p => (g.player p).name
+  | none => fallback
+
 #guard (currentView Tests.nissaDraw true false) == some ⟨0⟩
 #guard (currentView Tests.nissaDraw true true) == some ⟨1⟩
 #guard (currentView Tests.nissaDraw false true).isNone
@@ -3955,20 +3961,13 @@ def autoTargetStep? (g : Game) (pending : List String) :
     | .error _ => false
   | _ => false
 
-/-- CR 103.1: the deciding player chooses who takes the first turn. Returns
-the seat index and remaining `--input` lines, or `none` if the user quits.
-The chooser announcement is printed first by `printFirstChooser`. -/
-partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
-    (controlAll : Bool) (pending : List String)
-    (output : Option IO.FS.Handle) (sameFile : Bool := false) :
+/-- Shared REPL for `first <name>` / `decides <name>` prompts. -/
+partial def promptUntilChosen (prompt helpText usage verb : String)
+    (parse : List String → Except String Nat) (pending : List String)
+    (output : Option IO.FS.Handle) (sameFile : Bool) :
     IO (Option (Nat × List String)) := do
   let mut pending := pending
   let mut chosen : Option Nat := none
-  let prompt :=
-    if controlAll then
-      s!"mtg ({seats[decider]!.name})> "
-    else
-      "mtg> "
   while chosen.isNone do
     IO.print prompt
     (← IO.getStdout).flush
@@ -3983,18 +3982,50 @@ partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
       IO.println "Goodbye."
       return none
     | "help" =>
-      IO.println helpChooseFirst
-    | "first" =>
-      match parseFirstPlayer seats (parts.drop 1) with
-      | .error e => IO.println s!"! {e}"
-      | .ok idx =>
-        recordAcceptedCommand output sameFile fromInput line
-        chosen := some idx
+      IO.println helpText
     | _ =>
-      IO.println "! Choose who takes the first turn (CR 103.1): first <name>"
+      if cmd == verb then
+        match parse (parts.drop 1) with
+        | .error e => IO.println s!"! {e}"
+        | .ok idx =>
+          recordAcceptedCommand output sameFile fromInput line
+          chosen := some idx
+      else
+        IO.println s!"! {usage}"
   match chosen with
   | some idx => return some (idx, pending)
   | none => return none
+
+/-- Record accepted auto-step commands and reprint the updated game. -/
+def recordAndRefresh (output : Option IO.FS.Handle) (sameFile : Bool)
+    (g g' : Game) (seen : Nat) (playerView controlAll : Bool)
+    (cmds : Array String) : IO Nat := do
+  for line in cmds do
+    recordAcceptedCommand output sameFile false line
+  refreshAfterStep g g' seen (currentView g' playerView controlAll)
+
+/-- Apply a unique automatic action and format the failure message. -/
+def applyAutoAction (g : Game) (p : PlayerId) (action : Action)
+    (failVerb : String) : Except String Game :=
+  match g.apply p action with
+  | .error e => .error s!"{(g.player p).name} could not automatically {failVerb}: {e}"
+  | .ok g' => .ok g'
+
+/-- CR 103.1: the deciding player chooses who takes the first turn. Returns
+the seat index and remaining `--input` lines, or `none` if the user quits.
+The chooser announcement is printed first by `printFirstChooser`. -/
+partial def chooseStartingPlayer (seats : Array Seat) (decider : Nat)
+    (controlAll : Bool) (pending : List String)
+    (output : Option IO.FS.Handle) (sameFile : Bool := false) :
+    IO (Option (Nat × List String)) :=
+  let prompt :=
+    if controlAll then
+      s!"mtg ({seats[decider]!.name})> "
+    else
+      "mtg> "
+  promptUntilChosen prompt helpChooseFirst
+    "Choose who takes the first turn (CR 103.1): first <name>"
+    "first" (parseFirstPlayer seats) pending output sameFile
 
 partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     (controlAll : Bool := false) (pending : List String := [])
@@ -4036,52 +4067,41 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     if let some step := autoTargetStep? g pending then
       match step with
       | .error e =>
-        let who := match g.actor with | some p => (g.player p).name | none => "Player"
-        IO.println s!"{who} could not automatically target: {e}"
+        IO.println s!"{actorDisplayName g} could not automatically target: {e}"
       | .ok (g', line) =>
-        recordAcceptedCommand output sameFile false line
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #[line]
         g := g'
       continue
     if let some step := autoPayStep? g pending then
       match step with
       | .error e =>
-        let who := match g.actor with | some p => (g.player p).name | none => "Player"
-        IO.println s!"{who} could not automatically pay: {e}"
+        IO.println s!"{actorDisplayName g} could not automatically pay: {e}"
       | .ok (g', cmds) =>
-        for line in cmds do
-          recordAcceptedCommand output sameFile false line
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        seen ← recordAndRefresh output sameFile g g' seen playerView controlAll cmds
         g := g'
       continue
     if shouldAutoNoAttack g pending then
       let some p := g.actor | continue
-      match g.apply p (.declareAttackers #[]) with
-      | .error e =>
-        IO.println s!"{(g.player p).name} could not automatically declare no attackers: {e}"
+      match applyAutoAction g p (.declareAttackers #[]) "declare no attackers" with
+      | .error e => IO.println e
       | .ok g' =>
-        recordAcceptedCommand output sameFile false "noattack"
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noattack"]
         g := g'
       continue
     if shouldAutoNoBlock g pending then
       let some p := g.actor | continue
-      match g.apply p (.declareBlockers #[]) with
-      | .error e =>
-        IO.println s!"{(g.player p).name} could not automatically declare no blockers: {e}"
+      match applyAutoAction g p (.declareBlockers #[]) "declare no blockers" with
+      | .error e => IO.println e
       | .ok g' =>
-        recordAcceptedCommand output sameFile false "noblock"
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noblock"]
         g := g'
       continue
     if shouldAutoPass g pending then
       let some p := g.actor | continue
-      match g.apply p .pass with
-      | .error e =>
-        IO.println s!"{(g.player p).name} could not automatically pass: {e}"
+      match applyAutoAction g p .pass "pass" with
+      | .error e => IO.println e
       | .ok g' =>
-        recordAcceptedCommand output sameFile false "pass"
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+        seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["pass"]
         g := g'
       continue
     let prompt :=
@@ -4995,34 +5015,8 @@ partial def chooseDecider (players : Array DemoPlayer) (pending : List String)
   for p in players do
     IO.println s!"  decides {p.name}"
   IO.println ""
-  let mut pending := pending
-  let mut chosen : Option Nat := none
-  while chosen.isNone do
-    IO.print "mtg> "
-    (← IO.getStdout).flush
-    let (line, rest, fromInput) ← nextSessionCommand pending
-    pending := rest
-    if line.isEmpty then
-      continue
-    let parts := line.splitOn " "
-    let cmd := parts.headD ""
-    match cmd with
-    | "quit" | "exit" =>
-      IO.println "Goodbye."
-      return none
-    | "help" =>
-      IO.println (helpChooseDecider players)
-    | "decides" =>
-      match parseDecider players (parts.drop 1) with
-      | .error e => IO.println s!"! {e}"
-      | .ok idx =>
-        recordAcceptedCommand output sameFile fromInput line
-        chosen := some idx
-    | _ =>
-      IO.println s!"! {decidesUsage players}"
-  match chosen with
-  | some idx => return some (idx, pending)
-  | none => return none
+  promptUntilChosen "mtg> " (helpChooseDecider players) (decidesUsage players)
+    "decides" (parseDecider players) pending output sameFile
 
 #guard
   match parseDecider defaultDemoPlayers ["Nissa"] with

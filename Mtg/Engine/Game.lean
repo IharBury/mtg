@@ -1001,14 +1001,23 @@ def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
 def controlsStoried (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o => o.printed.keywords.storied)
 
+/-- Grant a lasting player designation if `p` now qualifies. The designation
+is never removed. Not a triggered ability. -/
+def grantDesignationIfNeeded (g : Game) (p : PlayerId)
+    (already : Player → Bool) (qualifies : Game → PlayerId → Bool)
+    (set : Player → Player) (msg : String) : Game :=
+  if already (g.player p) then g
+  else if qualifies g p then
+    g.modifyPlayer p set |>.logMsg s!"{(g.player p).name} {msg}"
+  else g
+
 /-- Grant an enduring story if `p` now qualifies. The designation is on the
 player and is never removed. Not a triggered ability. -/
 def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
-  if (g.player p).enduringStory then g
-  else if g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
-    g.modifyPlayer p (fun pl => { pl with enduringStory := true })
-      |>.logMsg s!"{(g.player p).name} has an enduring story"
-  else g
+  g.grantDesignationIfNeeded p (·.enduringStory)
+    (fun g p => g.controlsStoried p && g.storiedPermanentCount p ≥ 3)
+    (fun pl => { pl with enduringStory := true })
+    "has an enduring story"
 
 /-- Grant an enduring story to every player who now qualifies. -/
 def refreshEnduringStory (g : Game) : Game :=
@@ -1070,11 +1079,10 @@ def controlsAscend (g : Game) (p : PlayerId) : Bool :=
 /-- Grant the city's blessing if `p` now qualifies. The designation is on the
 player and is never removed. Not a triggered ability. -/
 def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
-  if (g.player p).citysBlessing then g
-  else if g.controlsAscend p && g.permanentCount p ≥ 10 then
-    g.modifyPlayer p (fun pl => { pl with citysBlessing := true })
-      |>.logMsg s!"{(g.player p).name} has the city's blessing"
-  else g
+  g.grantDesignationIfNeeded p (·.citysBlessing)
+    (fun g p => g.controlsAscend p && g.permanentCount p ≥ 10)
+    (fun pl => { pl with citysBlessing := true })
+    "has the city's blessing"
 
 /-- Grant the city's blessing to every player who now qualifies. -/
 def refreshCitysBlessing (g : Game) : Game :=
@@ -1271,16 +1279,24 @@ def treasureToken : CardDef := {
   isToken := true
 }
 
-/-- A 1/1 white Human Soldier creature token. -/
-def humanSoldierToken : CardDef := {
-  name := "Human Soldier"
-  types := #[.creature]
-  subtypes := #["Human", "Soldier"]
-  power := some 1
-  toughness := some 1
-  colorIndicator := some (ColorSet.singleton .white)
+/-- A creature token. `color` is the color indicator (CR 202.2e). -/
+def creatureToken (name : String) (subtypes : Array String)
+    (power toughness : Int) (color : Option Color := none)
+    (keywords : Keywords := Keywords.none)
+    (types : Array CardType := #[.creature]) : CardDef := {
+  name
+  types
+  subtypes
+  power := some power
+  toughness := some toughness
+  colorIndicator := color.map ColorSet.singleton
+  keywords
   isToken := true
 }
+
+/-- A 1/1 white Human Soldier creature token. -/
+def humanSoldierToken : CardDef :=
+  creatureToken "Human Soldier" #["Human", "Soldier"] 1 1 (some .white)
 
 /-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
 Only weavers already on the battlefield before timestamp `asOf` apply
@@ -1396,92 +1412,34 @@ def foodToken : CardDef := {
   isToken := true
 }
 
-def wolfToken : CardDef := {
-  name := "Wolf"
-  types := #[.creature]
-  subtypes := #["Wolf"]
-  power := some 2
-  toughness := some 2
-  colorIndicator := some (ColorSet.singleton .green)
-  isToken := true
-}
+def wolfToken : CardDef :=
+  creatureToken "Wolf" #["Wolf"] 2 2 (some .green)
 
-def dwarfToken : CardDef := {
-  name := "Dwarf"
-  types := #[.creature]
-  subtypes := #["Dwarf"]
-  power := some 2
-  toughness := some 2
-  colorIndicator := some (ColorSet.singleton .red)
-  isToken := true
-}
+def dwarfToken : CardDef :=
+  creatureToken "Dwarf" #["Dwarf"] 2 2 (some .red)
 
-def bearToken : CardDef := {
-  name := "Bear"
-  types := #[.creature]
-  subtypes := #["Bear"]
-  power := some 2
-  toughness := some 2
-  colorIndicator := some (ColorSet.singleton .green)
-  isToken := true
-}
+def bearToken : CardDef :=
+  creatureToken "Bear" #["Bear"] 2 2 (some .green)
 
-def elfToken : CardDef := {
-  name := "Elf"
-  types := #[.creature]
-  subtypes := #["Elf"]
-  power := some 1
-  toughness := some 1
-  colorIndicator := some (ColorSet.singleton .green)
-  isToken := true
-}
+def elfToken : CardDef :=
+  creatureToken "Elf" #["Elf"] 1 1 (some .green)
 
 /-- A 1/1 white Spirit creature token with flying. -/
-def spiritToken : CardDef := {
-  name := "Spirit"
-  types := #[.creature]
-  subtypes := #["Spirit"]
-  power := some 1
-  toughness := some 1
-  colorIndicator := some (ColorSet.singleton .white)
-  keywords := Keyword.flying
-  isToken := true
-}
+def spiritToken : CardDef :=
+  creatureToken "Spirit" #["Spirit"] 1 1 (some .white) Keyword.flying
 
 /-- A 4/4 white Bird Soldier creature token with flying. -/
-def birdSoldierToken : CardDef := {
-  name := "Bird Soldier"
-  types := #[.creature]
-  subtypes := #["Bird", "Soldier"]
-  power := some 4
-  toughness := some 4
-  colorIndicator := some (ColorSet.singleton .white)
-  keywords := Keyword.flying
-  isToken := true
-}
+def birdSoldierToken : CardDef :=
+  creatureToken "Bird Soldier" #["Bird", "Soldier"] 4 4 (some .white) Keyword.flying
 
 /-- A 6/6 red Dragon creature token with flying. -/
-def dragonToken : CardDef := {
-  name := "Dragon"
-  types := #[.creature]
-  subtypes := #["Dragon"]
-  power := some 6
-  toughness := some 6
-  colorIndicator := some (ColorSet.singleton .red)
-  keywords := Keyword.flying
-  isToken := true
-}
+def dragonToken : CardDef :=
+  creatureToken "Dragon" #["Dragon"] 6 6 (some .red) Keyword.flying
 
 /-- A 3/1 colorless Wall artifact creature token with defender. -/
-def wallToken : CardDef := {
-  name := "Stone Boulder"
-  types := #[.artifact, .creature]
-  subtypes := #["Wall"]
-  power := some 3
-  toughness := some 1
-  keywords := Keyword.defender
-  isToken := true
-}
+def wallToken : CardDef :=
+  creatureToken "Stone Boulder" #["Wall"] 3 1 none Keyword.defender
+    (types := #[.artifact, .creature])
 
 /-- A colorless Equipment artifact token named Axe. -/
 def axeToken : CardDef := {
@@ -3194,15 +3152,26 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
       g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness cause
     return g
 
-/-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
-def foldControlledPermanents (g : Game) (p : PlayerId)
-    (excludeId : Option ObjectId := none) (f : Game → GameObject → Game) : Game :=
+/-- Apply `f` to each battlefield permanent matching `pred`. -/
+def foldBattlefield (g : Game) (pred : GameObject → Bool)
+    (f : Game → GameObject → Game) : Game :=
   Id.run do
     let mut g := g
     for o in g.battlefield do
-      if o.controlledBy p && excludeId != some o.id then
+      if pred o then
         g := f g o
     return g
+
+/-- Apply `f` to each battlefield permanent `p` controls, optionally skipping one id. -/
+def foldControlledPermanents (g : Game) (p : PlayerId)
+    (excludeId : Option ObjectId := none) (f : Game → GameObject → Game) : Game :=
+  g.foldBattlefield (fun o => o.controlledBy p && excludeId != some o.id) f
+
+/-- Apply `f` to each creature `p` controls, optionally skipping one id. -/
+def forEachControlledCreature (g : Game) (p : PlayerId)
+    (f : Game → GameObject → Game) (excludeId : Option ObjectId := none) : Game :=
+  g.foldControlledPermanents p excludeId fun g o =>
+    if o.isCreature then f g o else g
 
 /-- Put matching triggers of permanents `p` controls that fire on `event`. -/
 def putControlledTriggers (g : Game) (p : PlayerId)
@@ -5682,6 +5651,25 @@ def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : G
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{o.name} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
+/-- Until-end-of-turn +P/+T on each creature `p` controls. -/
+def pumpControlledCreatures (g : Game) (p : PlayerId) (pw tw : Int) : Game :=
+  g.forEachControlledCreature p (fun g o => g.pumpPermanent o pw tw)
+
+/-- Grant `kw` until end of turn to each creature `p` controls that matches `pred`. -/
+def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
+    (label : String) (pred : Game → GameObject → Bool := fun _ _ => true) : Game :=
+  g.forEachControlledCreature p fun g o =>
+    if pred g o then
+      g.mapObjectStatus o (·.grantUntilEot kw)
+        |>.logMsg s!"{o.name} gains {label} until end of turn"
+    else g
+
+/-- Move `id` to `to`'s hand and log the return. -/
+def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
+  let name := (g.object! id).name
+  let (g, _) := g.move id (.hand to) none
+  g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
+
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
@@ -5808,15 +5796,24 @@ shuffle (CR 701.19 / 305.7). -/
 def resolveSearchForest (g : Game) (p : PlayerId) (find := true) : Game :=
   g.resolveSearchLibrary p isForestCard false "Forest card" (find := find)
 
+/-- Search `p`'s library for a card matching `pred`, reveal it, put it into
+their hand, then shuffle. -/
+def resolveLibrarySearchToHand (g : Game) (p : PlayerId)
+    (pred : CardDef → Bool) (kind : String) : Game :=
+  g.resolveLibrarySearch p pred kind fun g cardId =>
+    let cardName := (g.object! cardId).name
+    let (g, _) := g.move cardId (.hand p) none
+    g.logMsg s!"{(g.player p).name} reveals {cardName} and puts it into their hand"
+
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
 it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
 card in library order (bottom first). -/
 def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : String) : Game :=
-  g.resolveLibrarySearch p (fun c => c.hasSubtype landType) s!"{landType} card"
-    fun g cardId =>
-      let cardName := (g.object! cardId).name
-      let (g, _) := g.move cardId (.hand p) none
-      g.logMsg s!"{(g.player p).name} reveals {cardName} and puts it into their hand"
+  g.resolveLibrarySearchToHand p (fun c => c.hasSubtype landType) s!"{landType} card"
+
+/-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/
+def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
+  g.resolveLibrarySearchToHand p isBasicLandCard "basic land card"
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.14). -/
@@ -6029,6 +6026,30 @@ def mill (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g'.logMsg s!"{pl.name} mills {name}"
     return g
 
+/-- Mill `n`, then put matching milled cards from the graveyard into hand.
+`maxPut` limits how many are returned (`none` means all matches). -/
+def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
+    (pred : GameObject → Bool) (maxPut : Option Nat := none) : Game :=
+  let g := g.mill p n
+  let gy := (g.player p).graveyard
+  let take := gy.size.min n
+  let milled := gy.extract (gy.size - take) gy.size
+  Id.run do
+    let mut g := g
+    let mut left := maxPut.getD milled.size
+    for id in milled do
+      if left > 0 && pred (g.object! id) then
+        let name := (g.object! id).name
+        let (g', _) := g.move id (.hand p) none
+        g := g'.logMsg s!"{(g.player p).name} puts {name} into their hand"
+        left := left - 1
+    return g
+
+/-- Deal `n` damage to each non-Dragon creature. -/
+def dealDamageToEachNonDragon (g : Game) (n : Nat) : Game :=
+  g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o "Dragon")
+    (fun g o => g.applyPermanentAction o (.dealDamage n))
+
 /-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
 or mill. -/
 def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : Game :=
@@ -6236,12 +6257,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
   | .allCreaturesPump p t =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature then
-          g := g.pumpPermanent o p t
-      return g
+    g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
   | .playerDrawLoseLife cards life =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -6253,12 +6269,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
       | Target.player pid =>
-        Id.run do
-          let mut g := g
-          for o in g.battlefield do
-            if o.isCreature && o.controlledBy pid then
-              g := g.pumpPermanent o pw tw
-          return g
+        g.pumpControlledCreatures pid pw tw
       | _ => g.logMsg "The target is no longer legal")
   | .destroyAndControllerLosesLife n =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
@@ -6395,12 +6406,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _ => g.logMsg "The target is no longer legal"
     g.draw controller 1
   | .creaturesYouControlPump pw tw =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.pumpPermanent o pw tw
-      return g
+    g.pumpControlledCreatures controller pw tw
   | .amassGoblins n =>
     g.amassGoblins controller n
   | .drawLoseLifeThenAmass n =>
@@ -6414,9 +6420,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer in the graveyard"
         | some o =>
-          let name := o.name
-          let (g, _) := g.move oid (.hand controller) none
-          g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+          g.returnToHand o.id controller
       | _ => g
     g.amassGoblins controller n
   | .counterThenRecruitIfMvAtMost n =>
@@ -6455,31 +6459,19 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         let g := g.addPlusOnePlusOneTo o 1
         if !castFromGraveyard then g
         else
-          Id.run do
-            let mut g := g
-            for c in g.battlefield do
-              if c.isCreature && c.controlledBy controller && c.id != oid then
-                g := g.addPlusOnePlusOneTo c 1
-            return g
+          g.forEachControlledCreature controller
+            (fun g c => g.addPlusOnePlusOneTo c 1) (some oid)
     | _ => g.logMsg "The target is no longer legal"
   | .drawIfFromGy n fromGy =>
     g.draw controller (if castFromGraveyard then fromGy else n)
   | .amassGoblinsOrFromGy n fromGy =>
     g.amassGoblins controller (if castFromGraveyard then fromGy else n)
   | .searchLegendaryCreatureToHand =>
-    g.resolveLibrarySearch controller (fun c =>
+    g.resolveLibrarySearchToHand controller (fun c =>
       c.isCreature && c.hasSupertype .legendary) "legendary creature card"
-      fun g cardId =>
-        let cardName := (g.object! cardId).name
-        let (g, _) := g.move cardId (.hand controller) none
-        g.logMsg s!"{(g.player controller).name} reveals {cardName} and puts it into their hand"
   | .dealDamageToEachOppCreature n =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !o.controlledBy controller then
-          g := g.applyPermanentAction o (.dealDamage n)
-      return g
+    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
+      (fun g o => g.applyPermanentAction o (.dealDamage n))
   | .targetPlayerDraw n =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -6497,25 +6489,13 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       { pl with manaPool := pl.manaPool.add (.colored .red) n })
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
   | .dealDamageToEachNonDragon n =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !g.hasSubtype o "Dragon" then
-          g := g.applyPermanentAction o (.dealDamage n)
-      return g
+    g.dealDamageToEachNonDragon n
   | .chooseTypeReturnOthers =>
     let chosen :=
       (g.battlefield.find? (fun o => o.isCreature && o.controlledBy controller)
         |>.bind (fun o => o.printed.subtypes[0]?)).getD "Elf"
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !g.hasSubtype o chosen then
-          let owner := o.owner
-          let name := o.name
-          let (g', _) := g.move o.id (.hand owner) none
-          g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
-      return g
+    g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o chosen)
+      (fun g o => g.returnToHand o.id o.owner)
   | .drawEqualToughnessThenPutCreatures =>
     let greatest :=
       (g.permanentsOf controller).foldl (fun acc o =>
@@ -6532,57 +6512,19 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
           g := g.afterPermanentEnters (g.object! newId)
       return g
   | .millThenPutInstantOrSorcery n =>
-    let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let take := gy.size.min n
-    let milled := gy.extract (gy.size - take) gy.size
-    match milled.find? (fun id =>
-      let c := (g.object! id).printed
-      c.isInstant || c.isSorcery) with
-    | none => g
-    | some id =>
-      let name := (g.object! id).name
-      let (g, _) := g.move id (.hand controller) none
-      g.logMsg s!"{(g.player controller).name} puts {name} into their hand"
+    g.millThenPutFromGy controller n
+      (fun o => o.printed.isInstant || o.printed.isSorcery) (some 1)
   | .millThenPutLands n max =>
-    let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let take := gy.size.min n
-    let milled := gy.extract (gy.size - take) gy.size
-    Id.run do
-      let mut g := g
-      let mut left := max
-      for id in milled do
-        if left > 0 && (g.object! id).printed.isLand then
-          let name := (g.object! id).name
-          let (g', _) := g.move id (.hand controller) none
-          g := g'.logMsg s!"{(g.player controller).name} puts {name} into their hand"
-          left := left - 1
-      return g
+    g.millThenPutFromGy controller n (fun o => o.printed.isLand) (some max)
   | .dealDamageToEachNonDragonThenAddDragonMana n =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !g.hasSubtype o "Dragon" then
-          g := g.applyPermanentAction o (.dealDamage n)
-      g := g.modifyPlayer controller (fun pl =>
-        { pl with manaPool := pl.manaPool.add (.colored .red) 4 })
-      return g.logMsg
+    let g := g.dealDamageToEachNonDragon n
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored .red) 4 })
+      |>.logMsg
         s!"{(g.player controller).name} adds four mana that can be spent only on Dragon spells"
   | .millThenPutAllInstantsOrSorceries n =>
-    let g := g.mill controller n
-    let gy := (g.player controller).graveyard
-    let take := gy.size.min n
-    let milled := gy.extract (gy.size - take) gy.size
-    Id.run do
-      let mut g := g
-      for id in milled do
-        let o := g.object! id
-        if o.printed.isInstant || o.printed.isSorcery then
-          let name := o.name
-          let (g', _) := g.move id (.hand controller) none
-          g := g'.logMsg s!"{(g.player controller).name} puts {name} into their hand"
-      return g
+    g.millThenPutFromGy controller n
+      (fun o => o.printed.isInstant || o.printed.isSorcery)
   | .exileAttackersSearchBasics =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -6737,12 +6679,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .damageOppCreaturesEqualOtherSpellsMv =>
     let xs := (g.player controller).castManaValuesThisTurn
     let n : Nat := (xs.extract 0 xs.size.pred).foldl (fun a b => a + b) 0
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && !o.controlledBy controller then
-          g := g.dealDamageToPermanent o (Int.ofNat n)
-      return g.logMsg s!"deals {n} damage to each opposing creature"
+    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
+      (fun g o => g.dealDamageToPermanent o (Int.ofNat n))
+      |>.logMsg s!"deals {n} damage to each opposing creature"
   | .phaseOutKicker =>
     if kicked then
       match targets[0]? with
@@ -6791,9 +6730,7 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
     if o.zone != .graveyard o.owner then
       g.logMsg s!"{o.name} is no longer in the graveyard"
     else if toHand then
-      let name := o.name
-      let (g, _) := g.move o.id (.hand o.owner) none
-      g.logMsg s!"{name} is returned to {(g.player o.owner).name}'s hand"
+      g.returnToHand o.id o.owner
     else
       let name := o.name
       let sick := !o.printed.keywords.haste
@@ -6816,10 +6753,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         if src.attachedTo == some host.id then
           g.logMsg s!"{src.name} is already attached to {host.name}"
         else
-          let (g, ts) := g.bumpTime
-          let src := g.object! src.id
-          let g := g.setObject { src with attachedTo := some host.id, timestamp := ts }
-          g.logMsg s!"{src.name} attaches to {host.name}")
+          g.attachSourceTo src host)
         "The Equipment is no longer in play"
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action sourceId
@@ -6845,12 +6779,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .returnFromGraveyardToHand =>
     g.returnSourceFromGraveyard sourceId controller (toHand := true)
   | .creaturesYouControlPump pw tw =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.pumpPermanent o pw tw
-      return g
+    g.pumpControlledCreatures controller pw tw
   | .mill n =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -6900,11 +6829,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         types.foldl (fun pool t => pool.add t) pl.manaPool })
     g.logMsg s!"{(g.player controller).name} adds mana"
   | .searchBasicLandToHand =>
-    g.resolveLibrarySearch controller isBasicLandCard "basic land card"
-      fun g cardId =>
-        let cardName := (g.object! cardId).name
-        let (g, _) := g.move cardId (.hand controller) none
-        g.logMsg s!"{(g.player controller).name} reveals {cardName} and puts it into their hand"
+    g.resolveSearchBasicLandToHand controller
   | .createTokensX kind =>
     g.createKindTokens controller kind 1
   | .draw n =>
@@ -6920,23 +6845,11 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
           | none => g
         g.logMsg s!"{(g.player controller).name} puts {cardName} onto the battlefield tapped"
   | .creaturesYouControlGetOppsLoseLife p t life =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.pumpPermanent o p t
-      for pl in g.livingOpponents controller do
-        g := g.loseLife pl.id life
-      return g
+    let g := g.pumpControlledCreatures controller p t
+    g.forEachOpponent controller (fun g pid => g.loseLife pid life)
   | .goblinsAndOrcsGainMenace =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller &&
-            (g.hasSubtype o "Goblin" || g.hasSubtype o "Orc") then
-          g := g.mapObjectStatus o (·.grantUntilEot Keyword.menace)
-          g := g.logMsg s!"{o.name} gains menace until end of turn"
-      return g
+    g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
+      (fun g o => g.hasSubtype o "Goblin" || g.hasSubtype o "Orc")
   | .exileThenReturnNextEnd =>
     Id.run do
       let mut g := g
@@ -7031,13 +6944,8 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       let g := g.logMsg s!"{o.name} gets a burden counter ({n})"
       g.draw controller n
   | .teamGainDoubleStrike =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.mapObjectStatus o (·.grantUntilEot Keyword.doubleStrike)
-          g := g.logMsg s!"{o.name} gains double strike until end of turn"
-      return g
+    g.grantUntilEotToControlledCreatures controller Keyword.doubleStrike
+      "double strike"
   | .sourceGainsIndestructibleTap =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
@@ -7302,13 +7210,6 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
     return g.temptWithTheRing p id
   | _ => throw "Not time to choose a Ring-bearer"
 
-/-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/
-def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
-  g.resolveLibrarySearch p isBasicLandCard "basic land card" fun g cardId =>
-    let cardName := (g.object! cardId).name
-    let (g, _) := g.move cardId (.hand p) none
-    g.logMsg s!"{(g.player p).name} reveals {cardName} and puts it into their hand"
-
 /-- Search for up to `max` basic Plains, exile them linked to `sourceId`,
 shuffle, and gain `life`. -/
 def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
@@ -7386,14 +7287,12 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
         g.logMsg s!"{src.name} gains landfall"
     | none => g
   | .elvesGetVigilance p =>
-    Id.run do
-      let mut g := g
-      for o in g.permanentsOf controller do
-        if o.isCreature && g.hasSubtype o "Elf" then
-          g := g.pumpPermanent o p 0
-          g := g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.vigilance)
-          g := g.logMsg s!"{o.name} gets {signedStat p}/+0 and gains vigilance until end of turn"
-      return g
+    g.forEachControlledCreature controller fun g o =>
+      if g.hasSubtype o "Elf" then
+        let g := g.pumpPermanent o p 0
+        g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.vigilance)
+          |>.logMsg s!"{o.name} gets {signedStat p}/+0 and gains vigilance until end of turn"
+      else g
   | .opponentDiscardsNonland =>
     g.withLegalKindTarget controller .opponent targets (fun g t =>
       match t with
@@ -7574,9 +7473,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         | none => g.logMsg "The target is no longer in the graveyard"
         | some o =>
           let n := (g.power o).toNat
-          let name := o.name
-          let (g, _) := g.move oid (.hand controller) none
-          let g := g.logMsg s!"{name} is returned to {(g.player controller).name}'s hand"
+          let g := g.returnToHand oid controller
           g.gainLife controller n
       | _ => g.logMsg "The target is no longer legal"
   | .damageEachOpponent n =>
@@ -7611,15 +7508,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       | _ => g
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .creaturesYouControlPumpAndFirstStrike pw =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.pumpPermanent o pw 0
-          let o := g.object! o.id
-          g := g.mapObjectStatus o (·.grantUntilEot Keyword.firstStrike)
-          g := g.logMsg s!"{o.name} gains first strike until end of turn"
-      return g
+    g.forEachControlledCreature controller fun g o =>
+      let g := g.pumpPermanent o pw 0
+      let o := g.object! o.id
+      g.mapObjectStatus o (·.grantUntilEot Keyword.firstStrike)
+        |>.logMsg s!"{o.name} gains first strike until end of turn"
   | .pumpForEachOtherCreature =>
     g.withTriggerSource sourceId fun g o =>
       let others :=
@@ -7697,21 +7590,10 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       let o := g.object! o.id
       if g.hasSubtype o subtype then g.addPlusOnePlusOneTo o 1 else g)
   | .plusOneEachYouControl =>
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.addPlusOnePlusOneTo o 1
-      return g
+    g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
   | .sourceGetsAndTeamTrample p =>
     let g := g.applyOnTriggerSource sourceId (.pump p 0)
-    Id.run do
-      let mut g := g
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller then
-          g := g.mapObjectStatus o (·.grantUntilEot Keyword.trample)
-          g := g.logMsg s!"{o.name} gains trample until end of turn"
-      return g
+    g.grantUntilEotToControlledCreatures controller Keyword.trample "trample"
   | .drawAndLoseLife =>
     let g := g.draw controller 1
     g.loseLife controller 1
@@ -7737,11 +7619,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
   | .searchBasicToHand =>
-    g.resolveLibrarySearch controller isBasicLandCard "basic land card"
-      fun g cardId =>
-        let cardName := (g.object! cardId).name
-        let (g, _) := g.move cardId (.hand controller) none
-        g.logMsg s!"{(g.player controller).name} reveals {cardName} and puts it into their hand"
+    g.resolveSearchBasicLandToHand controller
   | .gainLifeSearchBasicOnTop n =>
     let g := g.gainLife controller n
     g.resolveLibrarySearch controller isBasicLandCard "basic land card"
@@ -7752,14 +7630,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         let g := g.setPlayer { pl with library := lib }
         g.logMsg s!"{(g.player controller).name} puts {cardName} on top of their library"
   | .plusOneEachOtherGainLife =>
-    Id.run do
-      let mut g := g
-      let mut n : Nat := 0
-      for o in g.battlefield do
-        if o.isCreature && o.controlledBy controller && some o.id != sourceId then
-          g := g.addPlusOnePlusOneTo o 1
-          n := n + 1
-      return if n == 0 then g else g.gainLife controller n
+    let others :=
+      g.battlefield.filter (fun o =>
+        o.isCreature && o.controlledBy controller && some o.id != sourceId)
+    let g := others.foldl (fun acc o => acc.addPlusOnePlusOneTo o 1) g
+    if others.isEmpty then g else g.gainLife controller others.size
   | .destroyOppArtifactsEnchantmentsGainLife =>
     Id.run do
       let mut g := g
@@ -7864,12 +7739,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g := g'.logMsg s!"{name} is put into {(g'.player controller).name}'s hand"
       return g.shuffleLibrary controller
   | .pumpAndDamageOpponents n =>
-    let g := g.applyOnTriggerSource sourceId (.pump 1 1)
-    Id.run do
-      let mut g := g
-      for pl in g.livingOpponents controller do
-        g := g.loseLife pl.id n
-      return g
+    g.applyOnTriggerSource sourceId (.pump 1 1)
+      |>.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .createTappedTreasuresEqualOppArtifacts =>
     let n :=
       g.battlefield.filter (fun o =>
@@ -7915,12 +7786,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     else if n == 2 then
       g.draw controller 1
     else if n == 3 then
-      Id.run do
-        let mut g := g
-        for o in g.battlefield do
-          if o.isCreature && o.controlledBy controller then
-            g := g.addPlusOnePlusOneTo o 1
-        return g.logMsg
+      g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
+        |>.logMsg
           s!"{(g.player controller).name} puts a +1/+1 counter on each creature they control"
     else
       g.logMsg
