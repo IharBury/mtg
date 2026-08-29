@@ -58,6 +58,7 @@ lake exe mtg-demo -- --interactive --decides Chandra
 lake exe mtg-demo -- --seed 42 --fuel 200
 lake exe mtg-demo -- --norandom --decides Chandra --interactive
 lake exe mtg-demo -- --norandom --input opening.txt
+lake exe mtg-demo -- --constructed --name Alice --deck alice.txt --name Bob --deck bob.txt
 ```
 
 `--interactive` is the first named player against heuristic opponents.
@@ -65,6 +66,9 @@ lake exe mtg-demo -- --norandom --input opening.txt
 prompt names who must act.
 `--decides NAME` names the player who chooses who takes the first turn
 (CR 103.1). By default the demo picks one at random using `--seed`.
+`--constructed` validates decks as constructed play (CR 100.2a: minimum 60,
+four-of except basic lands). Without it the demo is limited play (CR 100.2b),
+matching the 40-card Welcome Decks.
 `--norandom` stops the engine from shuffling or rolling. The demo asks who
 was chosen at random to decide (unless `--decides` is set) and asks for each
 later random result: `shuffle [id...]` (library order, bottom first; no ids
