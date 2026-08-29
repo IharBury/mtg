@@ -1175,8 +1175,9 @@ def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType 
     if o.printed.tapAddAnyColorEqualToPower then
       match g.proposedSpell with
       | some prop =>
-        some ((g.preferredManaType p (g.manaAbilitiesOf o) prop.cost
-          (g.proposedAllowsElfRestricted prop)).getD (.colored .green))
+        some ((g.preferredManaType p o (g.manaAbilitiesOf o) prop.cost
+          (g.proposedAllowsElfRestricted prop)
+          (g.proposedAllowsInstRestricted prop)).getD (.colored .green))
       | none => some (.colored .green)
     else some first
 
@@ -2385,6 +2386,40 @@ def applyAutopayAsActor (g : Game) (tokens : List String) : Except String Autopa
         (Tests.namedPermanent r.game "Woodland Weavemaster").status.tapped &&
         r.game.log.any (fun s => Tests.mentions s "casts Llanowar Elves")
     | .error _ => false
+
+#guard
+  match applyAutopay Tests.forestFirstBolt ⟨0⟩ [] with
+  | .ok r =>
+    let mountain := Tests.namedPermanent Tests.forestFirstBolt "Mountain"
+    r.commands == #[tapCommand mountain.id (.colored .red), "pay"] &&
+      (Tests.namedPermanent r.game "Forest").status.tapped == false &&
+      r.game.log.any (fun s => Tests.mentions s "casts Lightning Bolt")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.weavemasterForestGrowth ⟨0⟩ [] with
+  | .ok r =>
+    let forest := Tests.namedPermanent Tests.weavemasterForestGrowth "Forest"
+    r.commands == #[tapCommand forest.id (.colored .green), "pay"] &&
+      (Tests.namedPermanent r.game "Woodland Weavemaster").status.tapped == false &&
+      r.game.log.any (fun s => Tests.mentions s "casts Giant Growth")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.delightedHalflingForestGrowth ⟨0⟩ [] with
+  | .ok r =>
+    let forest := Tests.namedPermanent Tests.delightedHalflingForestGrowth "Forest"
+    r.commands == #[tapCommand forest.id (.colored .green), "pay"] &&
+      (Tests.namedPermanent r.game "Delighted Halfling").status.tapped == false &&
+      r.game.log.any (fun s => Tests.mentions s "casts Giant Growth")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.delightedHalflingGrowth ⟨0⟩ [] with
+  | .error msg =>
+    Tests.mentions msg "cannot pay" &&
+      !(Tests.namedPermanent Tests.delightedHalflingGrowth "Delighted Halfling").status.tapped
+  | .ok _ => false
 
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=

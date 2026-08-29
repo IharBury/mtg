@@ -13,7 +13,8 @@ open Mtg.Engine
 open Mtg.Engine.Game
 
 /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay.
-Colors are chosen to meet unmet colored requirements, else the source's first type. -/
+Only mana that can be spent on the pending payment is considered (CR 106.10).
+Colors are chosen to meet unmet colored requirements. -/
 def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
   match g.proposedSpell with
   | none => some .pay
@@ -23,11 +24,10 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
     if (g.player p).manaPool.canPay prop.cost allowElf allowInst then
       some .pay
     else
-      match (g.manaSourcesForProposed p prop)[0]? with
-      | some (src, types) =>
-        match g.preferredManaType p types prop.cost allowElf with
-        | some t => some (.tapForMana src.id t)
-        | none => some .pay
+      match (g.manaSourcesForProposed p prop).findSome? (fun (src, types) =>
+        (g.preferredManaType p src types prop.cost allowElf allowInst).map
+          (fun t => Action.tapForMana src.id t)) with
+      | some a => some a
       | none => some .pay
 
 /-- Choose a single legal action for `p`, or `none` if that player is not to act. -/

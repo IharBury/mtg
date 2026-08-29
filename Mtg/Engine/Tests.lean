@@ -8013,6 +8013,100 @@ def agentWeavemasterGrowth : Game :=
   | some (.cast id) => (agentWeavemasterGrowth.object! id).name != "Giant Growth"
   | _ => true
 
+/-- Forest is listed before the Mountain, so a greedy tap would waste it on `{R}`. -/
+def forestFirstBolt : Game :=
+  let g := addUntappedLand started forest
+  let g := addToHand (addUntappedLand g mountain) lightningBolt ⟨0⟩
+  proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Lightning Bolt").id (Target.player ⟨1⟩)
+
+#guard
+  let sources := forestFirstBolt.manaSources ⟨0⟩
+  sources.size == 2 && sources[0]!.1.name == "Forest"
+
+#guard
+  match Agent.chooseManaPayment forestFirstBolt ⟨0⟩ with
+  | some (.tapForMana id (.colored .red)) =>
+    (forestFirstBolt.object! id).name == "Mountain"
+  | _ => false
+
+/-- Weavemaster's Elf-only mana cannot pay Giant Growth; the Forest can. -/
+def weavemasterForestGrowth : Game :=
+  let g := addUntappedLand weavemasterReady forest
+  let g := addToHand g giantGrowth ⟨0⟩
+  proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Woodland Weavemaster").id)
+
+#guard
+  match weavemasterForestGrowth.proposedSpell with
+  | some prop =>
+    let sources := weavemasterForestGrowth.manaSourcesForProposed ⟨0⟩ prop
+    sources.size == 1 && sources[0]!.1.name == "Forest"
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment weavemasterForestGrowth ⟨0⟩ with
+  | some (.tapForMana id (.colored .green)) =>
+    (weavemasterForestGrowth.object! id).name == "Forest"
+  | _ => false
+
+/-- Delighted Halfling's colored mana is legendary-only; Giant Growth is not. -/
+def delightedHalflingForestGrowth : Game :=
+  let g := addPermanent afterDraw delightedHalfling ⟨0⟩ ⟨0⟩
+  let g := addUntappedLand g forest
+  let g := addToHand g giantGrowth ⟨0⟩
+  proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Delighted Halfling").id)
+
+#guard
+  match delightedHalflingForestGrowth.proposedSpell with
+  | some prop =>
+    let sources := delightedHalflingForestGrowth.manaSourcesForProposed ⟨0⟩ prop
+    let half := sources.find? (fun (o, _) => o.name == "Delighted Halfling")
+    let forestSrc := sources.find? (fun (o, _) => o.name == "Forest")
+    half.any (fun (_, types) =>
+      types.size == 1 && types.contains .colorless) &&
+      forestSrc.any (fun (_, types) => types.contains (.colored .green))
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment delightedHalflingForestGrowth ⟨0⟩ with
+  | some (.tapForMana id (.colored .green)) =>
+    (delightedHalflingForestGrowth.object! id).name == "Forest"
+  | _ => false
+
+/-- With only legendary-restricted colored mana, do not tap Halfling for `{G}`. -/
+def delightedHalflingGrowth : Game :=
+  let g := addPermanent afterDraw delightedHalfling ⟨0⟩ ⟨0⟩
+  let g := addToHand g giantGrowth ⟨0⟩
+  proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Delighted Halfling").id)
+
+#guard
+  match Agent.chooseManaPayment delightedHalflingGrowth ⟨0⟩ with
+  | some .pay =>
+    !(namedPermanent delightedHalflingGrowth "Delighted Halfling").status.tapped
+  | _ => false
+
+/-- Halfling may tap for colored mana when the pending spell is legendary. -/
+def delightedHalflingCeleborn : Game :=
+  let g := addPermanent afterDraw delightedHalfling ⟨0⟩ ⟨0⟩
+  let g := addToHand g celebornTheWise ⟨0⟩
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Celeborn the Wise").id)
+
+#guard
+  match delightedHalflingCeleborn.proposedSpell with
+  | some prop =>
+    delightedHalflingCeleborn.proposedAllowsLegendaryRestricted prop &&
+      (delightedHalflingCeleborn.manaSourcesForProposed ⟨0⟩ prop).any (fun (o, types) =>
+        o.name == "Delighted Halfling" && types.contains (.colored .green))
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment delightedHalflingCeleborn ⟨0⟩ with
+  | some (.tapForMana id (.colored .green)) =>
+    (delightedHalflingCeleborn.object! id).name == "Delighted Halfling"
+  | _ => false
+
 /- Mirkwood Pathmaker: power and toughness equal lands you control in all
 zones (CR 208.2a / 604.3). -/
 
