@@ -463,6 +463,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.asEntersChooseOddEven then
     ["As Gollum enters, choose odd or even. (Zero is even.)"]
    else []) ++
+  (if c.costReductionNotFromHand > 0 then
+    [s!"Spells you cast from anywhere other than your hand cost \{{c.costReductionNotFromHand}} less to cast."]
+   else []) ++
   (if c.entersWithIndestructibleCounter then
     ["Arwen enters with an indestructible counter on her."]
    else []) ++

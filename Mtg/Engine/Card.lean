@@ -4010,6 +4010,9 @@ structure CardDef where
   entersWithIndestructibleCounter : Bool := false
   /-- As this permanent enters, choose odd or even (Gollum, Riddle Master). -/
   asEntersChooseOddEven : Bool := false
+  /-- Spells you cast from anywhere other than your hand cost this much
+  generic mana less (e.g. Bilbo, Thief in the Night). -/
+  costReductionNotFromHand : Nat := 0
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none

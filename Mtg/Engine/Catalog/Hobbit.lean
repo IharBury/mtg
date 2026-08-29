@@ -962,9 +962,10 @@ def bilboSGambit : CardDef :=
     (giftTreasure := true)
 
 def bilboThiefInTheNight : CardDef :=
-  legendaryCreature "Bilbo, Thief in the Night" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 2 2 (oracleText := "Spells you cast from anywhere other than your hand cost {1} less to cast.\nWhenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.")
-    (staticAbilities := #[.printed "Spells you cast from anywhere other than your hand cost {1} less to cast."])
-    (triggeredAbilities := #[.printed "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."])
+  let c :=
+    legendaryCreature "Bilbo, Thief in the Night" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 2 2 (oracleText := "Spells you cast from anywhere other than your hand cost {1} less to cast.\nWhenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.")
+      (triggeredAbilities := #[.printed "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."])
+  { c with costReductionNotFromHand := 1 }
 
 def bolgOfTheNorth : CardDef :=
   legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")

@@ -4187,4 +4187,82 @@ def oriOnlyDestroyedOk : Bool :=
 
 #guard oriOnlyDestroyedOk
 
+/-!
+## 194 — Eagle's Rescue stays in the graveyard if the target is illegal
+-/
+
+def eaglesRescueIllegalStaysOk : Bool :=
+  let g := addToGraveyard afterDraw eaglesRescue ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let rescue := namedGraveyardCard g ⟨0⟩ "Eagle's Rescue"
+  let g := g.applyAbilityEffect ⟨0⟩ (.returnFromGyAttachPowerAtMost 1)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id] (some rescue.id)
+  g.objects.any (fun o => o.name == "Eagle's Rescue" && o.zone == .graveyard ⟨0⟩) &&
+    (ruling 194).comment.contains "remains in your graveyard"
+
+#guard eaglesRescueIllegalStaysOk
+
+/-!
+## 220 — Bard's Company flash is checked only as you begin to cast
+-/
+
+def bardsCompanyFlashLockOk : Bool :=
+  let g := skipTo afterDraw .beginningOfCombat 80
+  let g := addToHand g bardsCompany ⟨0⟩
+  let without := !(g.timingAllowsCast ⟨0⟩ bardsCompany)
+  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let withHuman := g.timingAllowsCast ⟨0⟩ bardsCompany
+  bardsCompany.flashIfYouControlSubtype == some "Human" &&
+    without && withHuman &&
+    (ruling 220).comment.contains "only as you begin the casting process"
+
+#guard bardsCompanyFlashLockOk
+
+/-!
+## 224 — Guttersnipe hits each opponent (2HG: 4 to the team)
+-/
+
+def guttersnipeEachOpponentOk : Bool :=
+  let g := addPermanent afterDraw guttersnipe ⟨0⟩ ⟨0⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
+    (some (namedPermanent g "Guttersnipe").id)
+  (g.player ⟨1⟩).life == 18 &&
+    (ruling 224).comment.contains "opposing team to lose 4 life"
+
+#guard guttersnipeEachOpponentOk
+
+/-!
+## 281 — Bilbo reduces only generic mana, and only off-hand
+-/
+
+def bilboNotFromHandReductionOk : Bool :=
+  let g := addPermanent afterDraw bilboThiefInTheNight ⟨0⟩ ⟨0⟩
+  let g := addToHand g grizzlyBears ⟨0⟩
+  let fromHand := g.playManaCost (handCardNamed g ⟨0⟩ "Grizzly Bears") grizzlyBears
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let fromGy := g.playManaCost (namedGraveyardCard g ⟨0⟩ "Grizzly Bears") grizzlyBears
+  fromHand == grizzlyBears.manaCost &&
+    fromGy == ManaCost.ofColor .green &&
+    (ruling 281).comment.contains "anywhere other than your hand" &&
+    (ruling 281).comment.contains "can't reduce requirements of a specific color"
+
+#guard bilboNotFromHandReductionOk
+
+/-!
+## 318, 319 — sacrificed creature uses last-known power
+-/
+
+def lastKnownSacrificePowerOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let pw := g.power bear
+  let (g, _) := g.move bear.id (.graveyard ⟨0⟩) none
+  pw == 2 &&
+    (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").printed.power == some 2 &&
+    (ruling 318).comment.contains "last existed on the battlefield" &&
+    (ruling 319).comment.contains "last existed on the battlefield"
+
+#guard lastKnownSacrificePowerOk
+
 end Mtg.Engine.RulingTests

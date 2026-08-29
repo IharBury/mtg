@@ -4166,12 +4166,20 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
             | none => acc) 0
       afterOpp.reduceGeneric n
     else afterOpp
-  if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
-    let n :=
+  let afterFirst :=
+    if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          acc + o.printed.firstCreatureCostsLess) 0
+      afterSpell.reduceGeneric n
+    else afterSpell
+  let notFromHand :=
+    match card.zone with
+    | .hand _ => 0
+    | _ =>
       (g.permanentsOf caster).foldl (fun acc o =>
-        acc + o.printed.firstCreatureCostsLess) 0
-    afterSpell.reduceGeneric n
-  else afterSpell
+        acc + o.printed.costReductionNotFromHand) 0
+  afterFirst.reduceGeneric notFromHand
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -5717,19 +5725,16 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       let g := g.shuffleLibrary owner
       g.draw owner n
   | .returnFromGyAttach =>
-    match sourceId.bind g.findObject?, targets[0]? with
-    | some src, some (Target.permanent hostId) =>
-      match g.findObject? hostId with
-      | none => g.logMsg "The target is no longer legal"
-      | some host =>
-        if !host.isOnBattlefield then g.logMsg "The target is no longer legal"
-        else
-          let (g, newId) := g.putOntoBattlefield src.id controller
-            (attachedTo := some host.id)
-          let o := g.object! newId
-          let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
-          g.afterPermanentEnters (g.object! newId)
-    | _, _ => g.logMsg "The source is no longer in the graveyard"
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The source is no longer in the graveyard"
+    | some src =>
+      g.withLegalKindPermanent controller effect.targetKind targets (fun g host =>
+        let (g, newId) := g.putOntoBattlefield src.id controller
+          (attachedTo := some host.id)
+        let o := g.object! newId
+        let g := g.logMsg s!"{o.name} enters the battlefield attached to {host.name}"
+        g.afterPermanentEnters (g.object! newId))
+        sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
   | .addMana types =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=
