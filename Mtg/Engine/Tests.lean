@@ -11556,7 +11556,7 @@ def thranduilCopyResolved : Game := passBoth paidThranduilCopy
     thranduilCopyResolved.log.any (fun s =>
       mentions s "Thranduil, the Elvenking gets 3 +1/+1 counters")
 
-/-- A non-Elf in the graveyard is not copied. -/
+/- A non-Elf in the graveyard is not copied. -/
 #guard
   let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g ragingGoblin ⟨0⟩
