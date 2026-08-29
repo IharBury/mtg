@@ -631,6 +631,27 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose a Ring-bearer ({g.player p |>.name})]"
     | .maySacrificeAnotherBolg p _ =>
       s!" [may sacrifice another creature ({g.player p |>.name})]"
+    | .resolveRandom req =>
+      match req with
+      | .shuffleLibrary p =>
+        s!" [shuffle {(g.player p).name}'s library (--norandom)]"
+      | .orderInto _ dest =>
+        let destName :=
+          match dest with
+          | .library p => s!"{(g.player p).name}'s library"
+          | .hand p => s!"{(g.player p).name}'s hand"
+          | .graveyard p => s!"{(g.player p).name}'s graveyard"
+          | .battlefield => "the battlefield"
+          | .stack => "the stack"
+          | .exile => "exile"
+          | .command => "command"
+          | .ante => "ante"
+        s!" [supply a random order into {destName} (--norandom)]"
+      | .chooseObject _ =>
+        " [pick the randomly chosen object (--norandom)]"
+      | .chooseIndex n =>
+        if n == 2 then " [coin toss (--norandom)]"
+        else s!" [random index 0..{n - 1} (--norandom)]"
   let result :=
     match g.result with
     | none => ""

@@ -547,6 +547,40 @@ structure ProposedSpell where
   activation : Option ActivatedAbility := none
 deriving Repr, Inhabited
 
+/-- A random event the engine would otherwise resolve with `Rng`.
+`--norandom` leaves it pending so a host (the demo) can supply the result. -/
+inductive RandomRequest where
+  /-- Shuffle this player's library. The result is a permutation
+  (index 0 = bottom). An empty result keeps the current order. -/
+  | shuffleLibrary (player : PlayerId)
+  /-- Put these cards into `dest` in the supplied order (index 0 = first
+  / bottom). An empty result keeps their current relative order. -/
+  | orderInto (ids : Array ObjectId) (dest : Zone)
+  /-- Choose one of these objects at random. -/
+  | chooseObject (ids : Array ObjectId)
+  /-- Choose a natural number `0 ≤ i < n` (a coin toss is `n = 2`). -/
+  | chooseIndex (n : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Work that still belongs to an effect after a `--norandom` result is
+applied. The RNG path runs the same work immediately. -/
+inductive AfterRandom where
+  | none
+  /-- Draw `n` cards for `p`. -/
+  | draw (p : PlayerId) (n : Nat)
+  /-- `p` gains `n` life. -/
+  | gainLife (p : PlayerId) (n : Nat)
+  /-- Continue CR 103.3 opening shuffles from this seat index. -/
+  | openingShuffles (next : Nat)
+  /-- After this player's library is ordered, draw a new opening hand and
+  continue simultaneous mulligans for `rest`. -/
+  | mulliganQueue (drawn : PlayerId) (rest : Array PlayerId)
+  /-- Seat `i` takes the first turn; then opening shuffles. -/
+  | setStartingPlayer (i : Nat)
+  /-- Put the chosen creature onto the battlefield for `controller`, then shuffle. -/
+  | putCreatureThenShuffle (controller : PlayerId)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   | none
@@ -610,6 +644,8 @@ inductive Pending where
   | chooseRingBearer (player : PlayerId)
   /-- You may sacrifice another creature to Bolg's enters instruction. -/
   | maySacrificeAnotherBolg (player : PlayerId) (bolgId : ObjectId)
+  /-- A random event must be resolved by supplying its result (`--norandom`). -/
+  | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -696,6 +732,8 @@ structure StartConfig where
   seed : UInt64 := 20260807
   /-- Index into `seats`. `none` means the RNG chooses. -/
   startingPlayer : Option Nat := none
+  /-- When true, never shuffle or roll; leave a `Pending.resolveRandom`. -/
+  norandom : Bool := false
 
 inductive Action where
   | pass
@@ -771,6 +809,11 @@ inductive Action where
   /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
   | chooseRingBearer (id : Option ObjectId)
   | concede
+  /-- Supply the order or chosen object for a pending random event
+  (`--norandom`). An empty list keeps the current order of a shuffle. -/
+  | supplyOrder (ids : Array ObjectId)
+  /-- Supply an index for a pending `chooseIndex` random event (`--norandom`). -/
+  | supplyIndex (i : Nat)
 deriving Repr
 
 structure Game where
@@ -787,6 +830,11 @@ structure Game where
   nextObjectId : Nat := 0
   timestamp : Nat := 0
   rng : Rng := Rng.ofSeed 1
+  /-- When true, random events become `Pending.resolveRandom` instead of
+  using `rng`. -/
+  norandom : Bool := false
+  /-- Continuation after a `--norandom` result is applied. -/
+  afterRandom : AfterRandom := .none
   result : Option GameResult := none
   log : Array String := #[]
   format : Format := .constructed
@@ -2017,11 +2065,61 @@ def returnStackSpell (g : Game) (spellId : ObjectId) : Game :=
       let (g, _) := g.move spellId (.hand owner) none
       g.logMsg s!"{name} is returned to {(g.player owner).name}'s hand"
 
+/-- True when a `--norandom` result is still required. -/
+def pendingRandom? (g : Game) : Option RandomRequest :=
+  match g.pending with
+  | .resolveRandom req => some req
+  | _ => none
+
+/-- Shuffle `p`'s library (CR 103.3 / 701.19). With `norandom`, a library
+of two or more cards becomes `Pending.resolveRandom` instead of using `rng`. -/
 def shuffleLibrary (g : Game) (p : PlayerId) : Game :=
   let pl := g.player p
-  let (rng, lib) := g.rng.shuffle pl.library
-  { g with rng := rng } |>.setPlayer { pl with library := lib }
-   |>.logMsg s!"{pl.name} shuffles their library"
+  if g.norandom then
+    if pl.library.size ≤ 1 then
+      g.logMsg s!"{pl.name} shuffles their library"
+    else
+      { g with pending := .resolveRandom (.shuffleLibrary p) }
+        |>.logMsg s!"{pl.name} shuffles their library"
+  else
+    let (rng, lib) := g.rng.shuffle pl.library
+    { g with rng := rng } |>.setPlayer { pl with library := lib }
+     |>.logMsg s!"{pl.name} shuffles their library"
+
+/-- Record `after` and shuffle. If `--norandom` pauses, `after` stays on the
+game until the host supplies an order. -/
+def requestShuffle (g : Game) (p : PlayerId) (after : AfterRandom := .none) : Game :=
+  { g with afterRandom := after }.shuffleLibrary p
+
+/-- Move `ids` into `dest` in this order. For a library, first listed becomes
+the new bottom of that group. -/
+def moveIdsInOrder (g : Game) (ids : Array ObjectId) (dest : Zone) : Game :=
+  match dest with
+  | .library owner =>
+    Id.run do
+      let mut g := g
+      let mut newBottom : Array ObjectId := #[]
+      for id in ids do
+        let (g', newId) := g.move id dest none
+        g := g'
+        newBottom := newBottom.push newId
+      let pl := g.player owner
+      let without := newBottom.foldl (fun lib id => lib.filter (· != id)) pl.library
+      g.setPlayer { pl with library := newBottom ++ without }
+  | _ =>
+    ids.foldl (fun acc id => (acc.move id dest none).1) g
+
+/-- Put `ids` into `dest` in a random order. With `norandom` and two or more
+cards, becomes `Pending.resolveRandom`. -/
+def requestOrderInto (g : Game) (ids : Array ObjectId) (dest : Zone)
+    (log : String) : Game :=
+  if ids.size ≤ 1 then
+    g.moveIdsInOrder ids dest |>.logMsg log
+  else if g.norandom then
+    { g with pending := .resolveRandom (.orderInto ids dest) }.logMsg log
+  else
+    let (rng, ordered) := g.rng.shuffle ids
+    { g with rng := rng }.moveIdsInOrder ordered dest |>.logMsg log
 
 /-- True when an Aura attached to `o` makes it only a listed subtype and
 unable to attack or block (e.g. Fog on the Barrow-Downs). -/
@@ -4567,12 +4665,7 @@ partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : Play
         exiled := exiled.push newId
     match found with
     | none =>
-      let (rng, lib) := g.rng.shuffle exiled
-      g := { g with rng := rng }
-      for id in lib do
-        let (g', _) := g.move id (.library victim) none
-        g := g'
-      return g.logMsg
+      return g.requestOrderInto exiled (.library victim)
         s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
     | some instId =>
       if castTheCard then
@@ -4583,10 +4676,8 @@ partial def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : Play
       else
         let (g', _) := g.move instId (.library victim) none
         g := g'
-      let (rng, rest) := g.rng.shuffle exiled
-      g := { g with rng := rng }
-      return rest.foldl (fun acc id =>
-        (acc.move id (.library victim) none).1) g
+      return g.requestOrderInto exiled (.library victim)
+        s!"{(g.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
 
 /-- An uncast copy ceases the next time state-based actions are checked. -/
 def ceaseUncastCopies (g : Game) : Game :=
@@ -5510,6 +5601,19 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
       s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
     g.modifyPlayer p (fun pl =>
       { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
+
+/-- If a shuffle is waiting for a `--norandom` result, leave it. Otherwise
+run a stored draw or life-gain after-action. -/
+def continueIfShuffled (g : Game) : Game :=
+  match g.pendingRandom? with
+  | some _ => g
+  | none =>
+    let after := g.afterRandom
+    let g := { g with afterRandom := .none }
+    match after with
+    | .draw p n => g.draw p n
+    | .gainLife p n => g.gainLife p n
+    | other => { g with afterRandom := other }
 
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
@@ -6566,8 +6670,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
             g := g.afterLandEnters (g.object! newId)
           else pure ()
         | none => pure ()
-      g := g.shuffleLibrary controller
-      return g.gainLife controller life
+      g := g.requestShuffle controller (.gainLife controller life)
+      return g.continueIfShuffled
   | .gainControlOppArtifacts =>
     Id.run do
       let mut g := g
@@ -6730,8 +6834,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     | some src =>
       let owner := src.owner
       let (g, _) := g.move src.id (.library owner) none
-      let g := g.shuffleLibrary owner
-      g.draw owner n
+      g.requestShuffle owner (.draw owner n) |>.continueIfShuffled
   | .returnFromGyAttach =>
     match sourceId.bind g.findObject? with
     | none => g.logMsg "The source is no longer in the graveyard"
@@ -7011,12 +7114,26 @@ def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
     g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
     match found with
     | none =>
+      if g.norandom && exiled.size > 1 then
+        return g.requestOrderInto exiled (.library p)
+          s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
       for id in exiled.reverse do
         let (g', _) := g.move id (.library (g.object! id).owner) none
         g := g'
       return g.logMsg "No cheaper nonland card was exiled"
     | some card =>
       let others := exiled.filter (· != card.id)
+      if g.norandom && others.size > 1 then
+        let g2 :=
+          if card.printed.manaCost.manaValue < maxMv then
+            g.logMsg
+              s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+          else
+            let (g', _) := g.move card.id (.library card.owner) none
+            g'.logMsg
+              s!"{card.name}'s resulting spell does not have lesser mana value"
+        return g2.requestOrderInto others (.library p)
+          s!"{(g.player p).name} puts the remaining exiled cards on the bottom of their library in a random order"
       for id in others.reverse do
         let (g', _) := g.move id (.library (g.object! id).owner) none
         g := g'
@@ -7162,8 +7279,8 @@ def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
           g := g.setObject { src with linkedExile := src.linkedExile.push newId }
         | none => pure ()
         g := g.logMsg s!"{(g.player p).name} exiles {name}"
-    g := g.shuffleLibrary p
-    return g.gainLife p life
+    g := g.requestShuffle p (.gainLife p life)
+    return g.continueIfShuffled
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
@@ -8011,6 +8128,12 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           match g.findObject? id with
           | some o => o.printed.isCreature
           | none => false)
+      if g.norandom && creatures.size > 1 then
+        return { g with
+          pending := .resolveRandom (.chooseObject creatures)
+          afterRandom := .putCreatureThenShuffle controller }
+          |>.logMsg
+            s!"{(g.player controller).name} reveals the top {n} cards and puts a random creature onto the battlefield"
       match creatures[0]? with
       | none =>
         g := g.logMsg "No creature card was revealed"
@@ -9235,8 +9358,25 @@ def executeOneMulligan (g : Game) (p : PlayerId) : Game :=
   let g := g.modifyPlayer p (fun pl => { pl with mulligansTaken := n })
   let g := g.logMsg s!"{g.player p |>.name} takes a mulligan ({n})"
   let g := g.returnHandToLibrary p
-  let g := g.shuffleLibrary p
-  g.draw p size
+  g.requestShuffle p (.draw p size) |>.continueIfShuffled
+
+/-- Take remaining declared mulligans, pausing if `--norandom` needs a
+library order. `mulliganToBottom` is the original simultaneous group. -/
+partial def executeMulliganQueue (g : Game) (rest : Array PlayerId) : Game :=
+  match rest[0]? with
+  | none =>
+    if g.mulliganToBottom.isEmpty then
+      g.beginMulliganRound
+    else
+      promptBottom g g.mulliganToBottom[0]!
+  | some p =>
+    let more := rest.extract 1 rest.size
+    let g := g.executeOneMulligan p
+    match g.pendingRandom? with
+    | some _ =>
+      { g with afterRandom := .mulliganQueue p more }
+    | none =>
+      executeMulliganQueue g more
 
 /-- After every remaining player has declared, those who chose to mulligan
 do so at the same time (CR 103.5). -/
@@ -9247,16 +9387,11 @@ def resolveDeclaredMulligans (g : Game) : Game :=
     let order := g.playersStillDecidingMulligan.filter (fun p => g.willMulligan.contains p)
     let g := g.logMsg
       "Players who chose to mulligan do so at the same time (CR 103.5)"
-    let g :=
-      Id.run do
-        let mut g := g
-        for p in order do
-          g := g.executeOneMulligan p
-        return g
     if order.isEmpty then
       g.beginMulliganRound
     else
-      promptBottom { g with willMulligan := #[], mulliganToBottom := order } order[0]!
+      let g := { g with willMulligan := #[], mulliganToBottom := order }
+      executeMulliganQueue g order
 
 /-- Remove `who` from a sequential CR 103.5 queue, then finish or prompt the
 next player. -/
@@ -9672,6 +9807,112 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
     return g.afterBottom p
   | _ => throw "Not time to put cards on the bottom (CR 103.5)"
 
+/-- CR 103.3: shuffle remaining libraries, then draw opening hands. -/
+partial def continueOpeningShuffles (g : Game) (next : Nat) : Game :=
+  if next >= g.players.size then
+    Id.run do
+      let mut g := { g with afterRandom := .none, pending := .none }
+      for pl in g.players do
+        g := g.draw pl.id (g.player pl.id).startingHandSize
+      return g.beginMulliganRound
+  else
+    let p : PlayerId := ⟨next⟩
+    let g := g.requestShuffle p (.openingShuffles (next + 1))
+    match g.pendingRandom? with
+    | some _ => g
+    | none =>
+      let g := { g with afterRandom := .none }
+      continueOpeningShuffles g (next + 1)
+
+/-- Run the stored after-action. `grantPriority` is true when the host just
+supplied a `--norandom` result (the original caller is no longer on the
+stack). -/
+partial def finishAfterRandom (g : Game) (grantPriority : Bool) : Game :=
+  let after := g.afterRandom
+  let g := { g with afterRandom := .none }
+  let g :=
+    match after with
+    | .none => g
+    | .draw p n => g.draw p n
+    | .gainLife p n => g.gainLife p n
+    | .openingShuffles next => continueOpeningShuffles g next
+    | .mulliganQueue p rest =>
+      let g := g.draw p (g.player p).startingHandSize
+      executeMulliganQueue g rest
+    | .setStartingPlayer i =>
+      let n := g.players.size
+      let i := if n == 0 then 0 else i % n
+      let sp : PlayerId := ⟨i⟩
+      let g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
+      let g := g.logMsg s!"Starting player: {(g.player sp).name}"
+      continueOpeningShuffles g 0
+    | .putCreatureThenShuffle _ => g
+  if grantPriority && g.pending == .none && !g.openingHandsPending && !g.over
+      && !g.players.isEmpty then
+    g.receivePriority g.activePlayer
+  else g
+
+/-- Apply a `--norandom` permutation or chosen object. -/
+def supplyOrder (g : Game) (ids : Array ObjectId) : Except String Game := do
+  match g.pending with
+  | .resolveRandom req =>
+    match req with
+    | .shuffleLibrary p =>
+      let pl := g.player p
+      let ids := if ids.isEmpty then pl.library else ids
+      if !isPermutation ids pl.library then
+        throw "Shuffle must list each library card once (bottom first), or omit the ids to keep the current order"
+      let g := { g with pending := .none }
+      let g := g.setPlayer { (g.player p) with library := ids }
+      return g.finishAfterRandom true
+    | .orderInto expected dest =>
+      let ids := if ids.isEmpty then expected else ids
+      if !isPermutation ids expected then
+        throw "Order must list each of those cards once, or omit the ids to keep their current order"
+      let g := { g with pending := .none }
+      let g := g.moveIdsInOrder ids dest
+      return g.finishAfterRandom true
+    | .chooseObject choices =>
+      match ids[0]?, ids.size with
+      | some id, 1 =>
+        if !choices.contains id then
+          throw "That is not one of the random choices"
+        match g.afterRandom with
+        | .putCreatureThenShuffle controller =>
+          let some o := g.findObject? id | throw "no such object"
+          let name := o.name
+          let (g, newId) := g.putOntoBattlefield id controller
+          let g := g.logMsg s!"{name} enters the battlefield"
+          let g := g.afterPermanentEnters (g.object! newId)
+          let g := { g with pending := .none, afterRandom := .none }
+          let g := g.shuffleLibrary controller
+          match g.pendingRandom? with
+          | some _ => return g
+          | none => return g.finishAfterRandom true
+        | _ =>
+          let g := { g with pending := .none }
+          return g.finishAfterRandom true
+      | _, _ => throw "Pick exactly one of the listed objects"
+    | .chooseIndex _ =>
+      throw "Supply an index (random <n> or flip heads/tails)"
+  | _ => throw "No random event is waiting for a result"
+
+/-- Apply a `--norandom` index (starting player, coin toss). -/
+def supplyIndex (g : Game) (i : Nat) : Except String Game := do
+  match g.pending with
+  | .resolveRandom (.chooseIndex n) =>
+    if i >= n then
+      throw s!"Choose a number from 0 to {n - 1}"
+    let g := { g with pending := .none }
+    match g.afterRandom with
+    | .setStartingPlayer _ =>
+      return finishAfterRandom { g with afterRandom := .setStartingPlayer i } true
+    | _ =>
+      return g.finishAfterRandom true
+  | .resolveRandom _ =>
+    throw "This random event needs an order or a chosen object, not an index"
+  | _ => throw "No random event is waiting for a result"
+
 def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
@@ -9705,6 +9946,8 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .announceGift to => g.announceGift p to
   | .chooseRingBearer id => g.announceRingBearer p id
   | .concede => return g.concede p
+  | .supplyOrder ids => g.supplyOrder ids
+  | .supplyIndex i => g.supplyIndex i
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)
@@ -9741,6 +9984,16 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseGift p => some p
     | .chooseRingBearer p => some p
     | .maySacrificeAnotherBolg p _ => some p
+    | .resolveRandom req =>
+      match req with
+      | .shuffleLibrary p => some p
+      | .orderInto _ dest =>
+        match dest with
+        | .library p | .hand p | .graveyard p => some p
+        | _ =>
+          if g.players.isEmpty then none else some g.startingPlayer
+      | .chooseObject _ | .chooseIndex _ =>
+        if g.players.isEmpty then none else some g.startingPlayer
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 
@@ -9816,28 +10069,51 @@ def materializeSeat (g : Game) (seatIdx : Nat) (seat : Seat) : Except String Gam
 def start (cfg : StartConfig) : Except String Game := do
   if cfg.seats.size < 2 then
     throw "A game needs at least two players (CR 100.1)"
-  let mut g : Game := { players := #[], objects := #[], rng := Rng.ofSeed cfg.seed, format := cfg.format }
+  let mut g : Game := {
+    players := #[]
+    objects := #[]
+    rng := Rng.ofSeed cfg.seed
+    format := cfg.format
+    norandom := cfg.norandom
+  }
   for i in [0:cfg.seats.size] do
     g ← materializeSeat g i cfg.seats[i]!
   -- Determine starting player (CR 103.1).
-  let (g', startIdx) :=
-    match cfg.startingPlayer with
-    | some i => (g, i % g.players.size)
-    | none =>
+  match cfg.startingPlayer with
+  | none =>
+    if cfg.norandom then
+      g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+      g := { g with
+        pending := .resolveRandom (.chooseIndex g.players.size)
+        afterRandom := .setStartingPlayer 0 }
+      return g.logMsg
+        "Choose who takes the first turn (CR 103.1); the engine will not roll"
+    else
       let (rng, r) := g.rng.next
-      ({ g with rng := rng }, r.toNat % g.players.size)
-  g := g'
-  let sp : PlayerId := ⟨startIdx⟩
-  g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
-  g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
-  g := g.logMsg s!"Starting player: {g.player sp |>.name}"
-  for pl in g.players do
-    g := g.shuffleLibrary pl.id
-  -- Starting life (CR 103.4) already 20. Draw opening hands, then mulligan
-  -- (CR 103.5). The first turn begins after every player has kept.
-  for pl in g.players do
-    g := g.draw pl.id (g.player pl.id).startingHandSize
-  return g.beginMulliganRound
+      let startIdx := r.toNat % g.players.size
+      let sp : PlayerId := ⟨startIdx⟩
+      g := { g with rng := rng, startingPlayer := sp, activePlayer := sp, priority := sp }
+      g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+      g := g.logMsg s!"Starting player: {g.player sp |>.name}"
+      for pl in g.players do
+        g := g.shuffleLibrary pl.id
+      for pl in g.players do
+        g := g.draw pl.id (g.player pl.id).startingHandSize
+      return g.beginMulliganRound
+  | some i =>
+    let startIdx := i % g.players.size
+    let sp : PlayerId := ⟨startIdx⟩
+    g := { g with startingPlayer := sp, activePlayer := sp, priority := sp }
+    g := g.logMsg s!"Rules: {Mtg.Engine.Rules.identification}"
+    g := g.logMsg s!"Starting player: {g.player sp |>.name}"
+    if cfg.norandom then
+      return g.continueOpeningShuffles 0
+    else
+      for pl in g.players do
+        g := g.shuffleLibrary pl.id
+      for pl in g.players do
+        g := g.draw pl.id (g.player pl.id).startingHandSize
+      return g.beginMulliganRound
 
 end Start
 

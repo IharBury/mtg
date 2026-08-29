@@ -19,7 +19,9 @@ takes the first turn (CR 103.1); by default one player is chosen at random
 using `--seed`. In interactive modes that player uses `first <name>` before
 opening hands are drawn, unless a heuristic opponent is deciding and chooses
 to go first. `visible` prints only information that player can see; `--visible`
-starts in that view. `--input FILE` runs commands from the file first, then
+starts in that view. `--norandom` stops the engine from shuffling or
+rolling; the demo asks for each random result (`shuffle`, `order`, `pick`,
+`random`, `flip`). `--input FILE` runs commands from the file first, then
 reads from the console. Lines that start with `--` are additional flags
 instead of commands; when `--output` is a different file those flags are
 written first. `--output FILE` writes accepted game-state commands
@@ -46,7 +48,7 @@ def usage : String :=
 
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
-                    [--decides NAME] [--input FILE] [--output FILE]
+                    [--norandom] [--decides NAME] [--input FILE] [--output FILE]
                     [--check] [--seed N] [--fuel N]
                     [--name NAME --deck COLOR|FILE]...
 
@@ -56,13 +58,15 @@ Options:
   --multiplayer   Control every player from the console
   --visible       With --interactive or --multiplayer, hide information the
                   acting player cannot see
+  --norandom      Never shuffle or roll; ask for each random result
   --decides NAME  Player who chooses who takes the first turn (CR 103.1);
-                  default is a random player using --seed
-  --input FILE    With --interactive or --multiplayer, run these commands
-                  first, then read from the console. Lines that start
-                  with -- are additional flags instead of commands
-  --output FILE   With --interactive or --multiplayer, write accepted
-                  game-state commands (from --input and from the console)
+                  default is a random player using --seed (or a prompt
+                  with --norandom)
+  --input FILE    With --interactive, --multiplayer, or --norandom, run
+                  these commands first, then read from the console. Lines
+                  that start with -- are additional flags instead of commands
+  --output FILE   With --interactive, --multiplayer, or --norandom, write
+                  accepted game-state commands (from --input and from the console)
                   to this file. Flags from --input are written first when
                   this path is different from --input. Incorrect commands and session commands
                   such as state and quit are omitted.
@@ -73,7 +77,7 @@ Options:
                   the console. Exit 0 only if every command is legal and
                   the game ends (a winner or a draw). Unused commands
                   after the game ends are an error
-  --seed N        RNG seed (default 20260807)
+  --seed N        RNG seed (default 20260807); unused with --norandom
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
   --deck COLOR    That player's Hobbit Welcome Deck (repeat once per player)
@@ -93,7 +97,8 @@ effective 7 August 2026.
 
 At the start of a game, one player is chosen to decide who takes the
 first turn (CR 103.1). `--decides NAME` names that player; the default
-is a random player chosen using --seed. In --interactive, the first
+is a random player chosen using --seed. `--norandom` asks who was
+chosen instead of rolling. In --interactive, the first
 named player chooses with `first <name>` when they are deciding; a
 heuristic opponent otherwise chooses to go first. In --multiplayer,
 the deciding player chooses with `first <name>`. In --auto, the
@@ -157,11 +162,13 @@ def playersFromFlags (names : Array String) (decks : Array DemoDeck) :
 
 /-- `startingPlayer` is the seat that takes the first turn after CR 103.1. -/
 def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (players : Array DemoPlayer := defaultDemoPlayers) : StartConfig := {
+    (players : Array DemoPlayer := defaultDemoPlayers)
+    (norandom : Bool := false) : StartConfig := {
   seats := seatsFromPlayers players
   format := .limited
   seed := seed
   startingPlayer := startingPlayer
+  norandom := norandom
 }
 
 /-- Usage for the CR 103.1 `first` command, listing legal player names. -/
@@ -466,12 +473,54 @@ def printTriggerOrder (g : Game) : IO Unit := do
       IO.println s!"  {line}"
   | none => pure ()
 
-/-- Pending cost, combat-damage assignment, legend-rule, or trigger order. -/
+/-- Lines listing objects the host must name for a `--norandom` result. -/
+def randomChoiceLines (g : Game) (ids : Array ObjectId) : String :=
+  String.intercalate "\n"
+    (ids.toList.map (fun id =>
+      match g.findObject? id with
+      | some o => s!"  {o.id} {o.name}"
+      | none => s!"  {id}"))
+
+/-- Prompt for a pending random event (`--norandom`). -/
+def randomPromptBlock (g : Game) : Option String :=
+  match g.pendingRandom? with
+  | none => none
+  | some (.shuffleLibrary p) =>
+    let lib := (g.player p).library
+    some <|
+      s!"{(g.player p).name} shuffles their library. Provide the new order (bottom first).\n" ++
+      "  shuffle            keep the current order\n" ++
+      "  shuffle <id>...\n" ++
+      randomChoiceLines g lib
+  | some (.orderInto ids dest) =>
+    some <|
+      s!"Provide the random order of these cards into {zoneLabel g dest} (first listed = first / bottom).\n" ++
+      "  order              keep their current order\n" ++
+      "  order <id>...\n" ++
+      randomChoiceLines g ids
+  | some (.chooseObject ids) =>
+    some <|
+      "Choose which object the random event selected.\n" ++
+      "  pick <id>\n" ++
+      randomChoiceLines g ids
+  | some (.chooseIndex n) =>
+    if n == 2 then
+      some "Coin toss: flip heads  or  flip tails  (also random 0 / random 1)"
+    else
+      some s!"Choose a number from 0 to {n - 1}: random <n>"
+
+/-- Pending cost, combat-damage assignment, legend-rule, trigger order, or
+a `--norandom` result. -/
 def printPendingPrompt (g : Game) : IO Unit := do
   printPendingCost g
   printCombatAssignment g
   printLegendRule g
   printTriggerOrder g
+  match randomPromptBlock g with
+  | some block =>
+    for line in block.splitOn "\n" do
+      IO.println s!"  {line}"
+  | none => pure ()
 
 /-- Print log, zone, life, mana, and pending-prompt updates after a step. -/
 def refreshAfterStep (before after : Game) (seen : Nat)
@@ -520,8 +569,8 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
 def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (seats : Array Seat := demoSeats) : IO Game := do
-  match Start.start { seats, format := .limited, seed, startingPlayer } with
+    (seats : Array Seat := demoSeats) (norandom : Bool := false) : IO Game := do
+  match Start.start { seats, format := .limited, seed, startingPlayer, norandom } with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
@@ -531,35 +580,17 @@ def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
 def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
   let _ ← printLog g 0 viewer
   printState g viewer
+  printPendingPrompt g
 
 /-- Start a demo game and print the opening snapshot. The starting player is
 the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
-    (seats : Array Seat := demoSeats) : IO Game := do
-  let g ← startGame seed startingPlayer seats
+    (seats : Array Seat := demoSeats) (norandom : Bool := false) : IO Game := do
+  let g ← startGame seed startingPlayer seats norandom
   printOpening g viewer
   return g
-
-partial def runAuto (g : Game) (fuel : Nat) : IO Unit := do
-  let mut g := g
-  let mut seen := g.log.size
-  let mut remaining := fuel
-  while remaining > 0 && !g.over do
-    remaining := remaining - 1
-    match Agent.step g with
-    | .error e =>
-      IO.println s!"Agent stopped: {e}"
-      break
-    | .ok g' =>
-      seen ← refreshAfterStep g g' seen
-      g := g'
-  printState g
-  match g.result with
-  | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
-  | some .draw => IO.println "The game is a draw."
-  | none => IO.println s!"Stopped after {fuel} actions (turn {g.turnNumber})."
 
 def helpInteractive (controlAll : Bool := false)
     (you : String := "the first player") : String :=
@@ -567,6 +598,11 @@ def helpInteractive (controlAll : Bool := false)
   s!"Commands:
   help                 Show this help
   first <name>         Choose who takes the first turn (CR 103.1)
+  shuffle [id...]      Supply a library shuffle (bottom first); no ids keeps the current order
+  order [id...]        Supply the order of cards for a random rearrangement
+  pick <id>            Choose the object selected by a random event
+  random <n>           Supply a 0-based index for a random roll
+  flip heads|tails     Supply a coin toss
   state                Print the board
   visible              Print only information {viewWho} can see (CR 400.2)
   visible on           Use {viewWho}'s view for state and later updates
@@ -656,6 +692,9 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "supported catalog").length > 1
 #guard (usage.splitOn "--decides NAME").length > 1
 #guard (usage.splitOn "random player").length > 1
+#guard (usage.splitOn "--norandom").length > 1
+#guard ((helpInteractive false).splitOn "shuffle [id...]").length > 1
+#guard ((helpInteractive false).splitOn "flip heads").length > 1
 #guard (usage.splitOn "white, blue, black, red, or green").length > 1
 #guard (usage.splitOn "first <name>").length > 1
 #guard (usage.splitOn "CR 103.1").length > 1
@@ -2476,6 +2515,63 @@ def applyAutopayAsActor (g : Game) (tokens : List String) : Except String Autopa
       !(Tests.namedPermanent Tests.delightedHalflingGrowth "Delighted Halfling").status.tapped
   | .ok _ => false
 
+def shuffleUsage : String := "usage: shuffle [id ...]"
+def orderUsage : String := "usage: order [id ...]"
+def pickUsage : String := "usage: pick <id>"
+def randomIndexUsage : String := "usage: random <n>"
+def flipUsage : String := "usage: flip heads|tails"
+
+/-- Apply a `--norandom` result; any actor is accepted. -/
+def applySupplyOrder (g : Game) (ids : Array ObjectId) : Except String Game :=
+  match g.actor with
+  | some p => g.apply p (.supplyOrder ids)
+  | none =>
+    if g.players.isEmpty then .error "No random event is waiting for a result"
+    else g.apply ⟨0⟩ (.supplyOrder ids)
+
+def applySupplyIndex (g : Game) (i : Nat) : Except String Game :=
+  match g.actor with
+  | some p => g.apply p (.supplyIndex i)
+  | none =>
+    if g.players.isEmpty then .error "No random event is waiting for a result"
+    else g.apply ⟨0⟩ (.supplyIndex i)
+
+/-- `shuffle` with no ids keeps the current library order. -/
+def applyShuffle (g : Game) (tokens : List String) : Except String Game := do
+  let tokens := commandTokens tokens
+  if tokens.isEmpty then
+    applySupplyOrder g #[]
+  else
+    let ids ← parseObjectIds tokens shuffleUsage
+    applySupplyOrder g ids
+
+/-- `order` with no ids keeps the current relative order. -/
+def applyOrder (g : Game) (tokens : List String) : Except String Game := do
+  let tokens := commandTokens tokens
+  if tokens.isEmpty then
+    applySupplyOrder g #[]
+  else
+    let ids ← parseObjectIds tokens orderUsage
+    applySupplyOrder g ids
+
+def applyPick (g : Game) (tokens : List String) : Except String Game := do
+  let id ← parseRequiredObjectId tokens pickUsage
+  applySupplyOrder g #[id]
+
+def applyRandomIndex (g : Game) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | [n] =>
+    match n.toNat? with
+    | none => throw randomIndexUsage
+    | some i => applySupplyIndex g i
+  | _ => throw randomIndexUsage
+
+def applyFlip (g : Game) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | ["heads"] | ["head"] => applySupplyIndex g 0
+  | ["tails"] | ["tail"] => applySupplyIndex g 1
+  | _ => throw flipUsage
+
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
   match cmd with
@@ -2504,6 +2600,11 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
   | "decline" => applyDecline g p args
+  | "shuffle" => applyShuffle g args
+  | "order" => applyOrder g args
+  | "pick" => applyPick g args
+  | "random" => applyRandomIndex g args
+  | "flip" => applyFlip g args
   | _ => .error s!"Unknown command: {cmd}"
 
 /-- Issue a console command as the player who currently must act. -/
@@ -3139,6 +3240,30 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.proposedOgre "autopay" [] "autopay" with
   | .error msg => Tests.mentions msg "cannot pay"
+  | .ok _ => false
+
+#guard
+  match applyShuffle Tests.norandomOpening [] with
+  | .ok g' =>
+    match g'.pendingRandom? with
+    | some (.shuffleLibrary p) => p == ⟨1⟩ && (g'.player ⟨0⟩).hand.isEmpty
+    | _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.norandomOpening "shuffle" [] with
+  | .ok g1 =>
+    match applyInteractiveAsActor g1 "shuffle" [] with
+    | .ok g2 =>
+      g2.pending == .declareMulligan ⟨0⟩ &&
+        (g2.player ⟨0⟩).hand.size == 7 &&
+        (g2.player ⟨1⟩).hand.size == 7
+    | .error _ => false
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.drawnHands "shuffle" [] with
+  | .error msg => msg == "No random event is waiting for a result"
   | .ok _ => false
 
 /-- A line that starts with `--` is additional flags, not a game command. -/
@@ -3862,7 +3987,8 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   while !g.over do
     -- Interactive: let the heuristic play every other seat until you must act.
     if !controlAll then
-      while !g.over && (match g.actor with | some p => p != you | none => false) do
+      while !g.over && g.pendingRandom?.isNone &&
+          (match g.actor with | some p => p != you | none => false) do
         let actorName :=
           match g.actor with
           | some p => (g.player p).name
@@ -3990,6 +4116,56 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   | some .draw => IO.println "The game is a draw."
   | none => pure ()
 
+/-- Heuristic game. When `--norandom` leaves a random event pending, the host
+supplies the result from `--input` or the console. -/
+partial def runAuto (g : Game) (fuel : Nat)
+    (pending : List String := [])
+    (output : Option IO.FS.Handle := none)
+    (sameFile : Bool := false) : IO Unit := do
+  let mut g := g
+  let mut seen := g.log.size
+  let mut remaining := fuel
+  let mut pending := pending
+  while remaining > 0 && !g.over do
+    if g.pendingRandom?.isSome then
+      IO.print "mtg> "
+      (← IO.getStdout).flush
+      let (line, rest, fromInput) ← nextSessionCommand pending
+      pending := rest
+      if line.isEmpty then
+        continue
+      let parts := line.splitOn " "
+      let cmd := parts.headD ""
+      match cmd with
+      | "quit" | "exit" =>
+        IO.println "Goodbye."
+        return
+      | "help" =>
+        IO.println (helpInteractive false)
+      | "state" => printState g
+      | _ =>
+        match applyLoggedAction g cmd (parts.drop 1) line with
+        | .error e => IO.println s!"! {e}"
+        | .ok (g', recorded) =>
+          for rec in recorded do
+            recordAcceptedCommand output sameFile fromInput rec
+          seen ← refreshAfterStep g g' seen
+          g := g'
+      continue
+    remaining := remaining - 1
+    match Agent.step g with
+    | .error e =>
+      IO.println s!"Agent stopped: {e}"
+      break
+    | .ok g' =>
+      seen ← refreshAfterStep g g' seen
+      g := g'
+  printState g
+  match g.result with
+  | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
+  | some .draw => IO.println "The game is a draw."
+  | none => IO.println s!"Stopped after {fuel} actions (turn {g.turnNumber})."
+
 /-- Parse a Hobbit Welcome Deck color name or letter. -/
 def parseWelcomeDeck (token : String) : Except String Color :=
   match token.map Char.toLower with
@@ -4059,6 +4235,7 @@ structure DemoOptions where
   interactive : Bool
   multiplayer : Bool
   playerView : Bool
+  norandom : Bool
   seed : UInt64
   fuel : Nat
   inputFile : Option String
@@ -4075,6 +4252,7 @@ structure DemoFlagValues where
   interactive : Bool
   multiplayer : Bool
   playerView : Bool
+  norandom : Bool
   seed : Option UInt64
   fuel : Option Nat
   inputFile : Option String
@@ -4092,6 +4270,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
     let mut interactive := false
     let mut multiplayer := false
     let mut playerView := false
+    let mut norandom := false
     let mut seed : Option UInt64 := none
     let mut fuel : Option Nat := none
     let mut inputFile : Option String := none
@@ -4124,6 +4303,9 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
         rest := xs
       | "--visible" :: xs =>
         playerView := true
+        rest := xs
+      | "--norandom" :: xs =>
+        norandom := true
         rest := xs
       | "--decides" :: name :: xs =>
         if name.startsWith "--" then
@@ -4184,6 +4366,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
       interactive := interactive
       multiplayer := multiplayer
       playerView := playerView
+      norandom := norandom
       seed := seed
       fuel := fuel
       inputFile := inputFile
@@ -4203,6 +4386,7 @@ def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
     interactive := if file.modeSet then file.interactive else cli.interactive
     multiplayer := if file.modeSet then file.multiplayer else cli.multiplayer
     playerView := cli.playerView || file.playerView
+    norandom := cli.norandom || file.norandom
     seed :=
       match file.seed with
       | some s => some s
@@ -4233,9 +4417,9 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
     .error "--check requires --input"
   else if v.playerView && !interactive then
     .error "--visible requires --interactive or --multiplayer"
-  else if v.inputFile.isSome && !interactive then
+  else if v.inputFile.isSome && !interactive && !v.norandom then
     .error "--input requires --interactive or --multiplayer"
-  else if v.outputFile.isSome && !interactive then
+  else if v.outputFile.isSome && !interactive && !v.norandom then
     .error "--output requires --interactive or --multiplayer"
   else
     match playersFromFlags v.names v.decks with
@@ -4249,6 +4433,7 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
           interactive := interactive
           multiplayer := multiplayer
           playerView := v.playerView
+          norandom := v.norandom
           seed := seed
           fuel := fuel
           inputFile := v.inputFile
@@ -4265,6 +4450,7 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
             interactive := interactive
             multiplayer := multiplayer
             playerView := v.playerView
+            norandom := v.norandom
             seed := seed
             fuel := fuel
             inputFile := v.inputFile
@@ -4295,7 +4481,7 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   let decider := assignDecider opt.players opt.seed opt.decides
   let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
   let (startIdx, rest) ← takeStartingPlayer seats humanChooses decider commands
-  let g ← Start.start { seats, format := .limited, seed := opt.seed, startingPlayer := some startIdx }
+  let g ← Start.start { seats, format := .limited, seed := opt.seed, startingPlayer := some startIdx, norandom := opt.norandom }
   replayCompleteGame g rest
 
 #guard
@@ -4359,6 +4545,26 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   | .ok _ => false
 
 #guard
+  match parseArgs ["--norandom"] with
+  | .ok opt => opt.norandom && !opt.interactive
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--norandom"] with
+  | .ok opt => opt.norandom && opt.interactive
+  | _ => false
+
+#guard
+  match parseArgs ["--norandom", "--input", "opening.txt"] with
+  | .ok opt => opt.norandom && opt.inputFile == some "opening.txt"
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--norandom", "--input", "opening.txt"] ["--norandom"] with
+  | .ok opt => opt.norandom
+  | _ => false
+
+#guard
   match parseArgs ["--check", "--input", "examples/foo.txt"] with
   | .ok opt =>
     opt.check && opt.interactive && opt.multiplayer &&
@@ -4388,6 +4594,11 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
 #guard
   match parseArgsWithFlags ["--check", "--input", "foo.txt"] ["--multiplayer"] with
   | .ok opt => opt.check && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--norandom", "--input", "foo.txt"] with
+  | .ok opt => opt.check && opt.norandom && opt.interactive && opt.multiplayer
   | _ => false
 
 #guard
@@ -4733,6 +4944,74 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   | .error msg => msg == "Unknown argument: --chandra"
   | .ok _ => false
 
+/-- Usage for reporting who was chosen at random to decide (CR 103.1). -/
+def decidesUsage (players : Array DemoPlayer) : String :=
+  let names := String.intercalate " or " (players.toList.map (·.name))
+  s!"usage: decides <name> ({names})"
+
+def helpChooseDecider (players : Array DemoPlayer) : String :=
+  s!"Commands:
+  help                 Show this help
+  decides <name>       Who was chosen at random to decide who takes the first turn
+  quit                 Exit
+
+{decidesUsage players}
+"
+
+def parseDecider (players : Array DemoPlayer) (tokens : List String) : Except String Nat :=
+  match commandTokens tokens with
+  | [name] => parsePlayerName (seatsFromPlayers players) name
+  | _ => .error (decidesUsage players)
+
+/-- `--norandom` without `--decides`: ask who the random CR 103.1 chooser was. -/
+partial def chooseDecider (players : Array DemoPlayer) (pending : List String)
+    (output : Option IO.FS.Handle) (sameFile : Bool := false) :
+    IO (Option (Nat × List String)) := do
+  IO.println "Who is chosen at random to decide who takes the first turn (CR 103.1)?"
+  for p in players do
+    IO.println s!"  decides {p.name}"
+  IO.println ""
+  let mut pending := pending
+  let mut chosen : Option Nat := none
+  while chosen.isNone do
+    IO.print "mtg> "
+    (← IO.getStdout).flush
+    let (line, rest, fromInput) ← nextSessionCommand pending
+    pending := rest
+    if line.isEmpty then
+      continue
+    let parts := line.splitOn " "
+    let cmd := parts.headD ""
+    match cmd with
+    | "quit" | "exit" =>
+      IO.println "Goodbye."
+      return none
+    | "help" =>
+      IO.println (helpChooseDecider players)
+    | "decides" =>
+      match parseDecider players (parts.drop 1) with
+      | .error e => IO.println s!"! {e}"
+      | .ok idx =>
+        recordAcceptedCommand output sameFile fromInput line
+        chosen := some idx
+    | _ =>
+      IO.println s!"! {decidesUsage players}"
+  match chosen with
+  | some idx => return some (idx, pending)
+  | none => return none
+
+#guard
+  match parseDecider defaultDemoPlayers ["Nissa"] with
+  | .ok 1 => true
+  | _ => false
+
+#guard
+  match parseDecider defaultDemoPlayers ["frodo"] with
+  | .error msg => msg == "No player named frodo"
+  | .ok _ => false
+
+#guard ((helpChooseDecider defaultDemoPlayers).splitOn "decides").length > 1
+
 def printUsageError (e : String) : IO UInt32 := do
   if e == "help" then
     IO.println usage
@@ -4789,23 +5068,33 @@ def main (args : List String) : IO UInt32 := do
               recordInputFlags output sameFile script.flags
               printEngineBanner
               printDeckAssignments opt.players
-              let decider := assignDecider opt.players opt.seed opt.decides
-              let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
-              printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
-              if opt.interactive then
-                match (←
-                  if humanChooses then
-                    chooseStartingPlayer seats decider
-                      opt.multiplayer pending output sameFile
-                  else
-                    pure (some (decider, pending))) with
-                | none => return 0
-                | some (startIdx, pending) =>
-                  let g ← startGame opt.seed (some startIdx) seats
-                  printOpening g (currentView g opt.playerView opt.multiplayer)
-                  interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+              match (←
+                if opt.norandom && opt.decides.isNone then
+                  chooseDecider opt.players pending output sameFile
+                else
+                  pure (some (assignDecider opt.players opt.seed opt.decides, pending))) with
+              | none => return 0
+              | some (decider, pending) =>
+                let humanChooses :=
+                  humanChoosesFirst opt.interactive opt.multiplayer decider
+                let atRandom := opt.decides.isNone
+                printFirstChooser opt.players decider atRandom (!humanChooses)
+                if opt.interactive then
+                  match (←
+                    if humanChooses then
+                      chooseStartingPlayer seats decider
+                        opt.multiplayer pending output sameFile
+                    else
+                      pure (some (decider, pending))) with
+                  | none => return 0
+                  | some (startIdx, pending) =>
+                    let g ← startGame opt.seed (some startIdx) seats opt.norandom
+                    printOpening g (currentView g opt.playerView opt.multiplayer)
+                    interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                    return 0
+                else
+                  let g ←
+                    startDemo opt.seed (some decider) (seats := seats)
+                      (norandom := opt.norandom)
+                  runAuto g opt.fuel pending output sameFile
                   return 0
-              else
-                let g ← startDemo opt.seed (some decider) (seats := seats)
-                runAuto g opt.fuel
-                return 0
