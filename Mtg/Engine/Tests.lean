@@ -10534,6 +10534,50 @@ def gnashingMinusFive : Game :=
   mentions s "If Rumbling Baloth would die this turn, exile it instead")
 #guard gnashingMinusFive.log.any (fun s => mentions s "exiled instead of dying")
 
+/-- CR 614.6: Gnashing's first mode sets exile-if-dies, then minus five
+toughness makes the target 0 toughness. The die event is replaced, so
+Great Fierce Bee does not scry. -/
+def gnashingBeeSilent : Game :=
+  let g := addPermanent gnashingReady greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := mustApply g ⟨0⟩
+    (.cast (handCardNamed g ⟨0⟩ "Gnashing of Teeth").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Rumbling Baloth").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard gnashingBeeSilent.objects.any (fun o =>
+  o.name == "Rumbling Baloth" && o.zone == .exile)
+#guard gnashingBeeSilent.battlefield.any (fun o => o.name == "Great Fierce Bee")
+#guard !gnashingBeeSilent.creatureDiedThisTurn
+#guard countWaitingAbility gnashingBeeSilent
+  (.onOneOrMoreOtherCreaturesDieScry 1) == 0
+#guard !gnashingBeeSilent.stack.any (fun e =>
+  (gnashingBeeSilent.object! e.objectId).triggeredAbility ==
+    some (.onOneOrMoreOtherCreaturesDieScry 1))
+#guard !gnashingBeeSilent.log.any (fun s => mentions s "scries 1")
+#guard match gnashingBeeSilent.pending with | .scry _ _ => false | _ => true
+
+/-- Targeting the Bee itself also replaces its death; no other creature died. -/
+def gnashingTargetsBee : Game :=
+  let g := addPermanent afterDraw greatFierceBee ⟨1⟩ ⟨1⟩
+  let g := readyMain (emptyHand g ⟨0⟩)
+  let g := withBlackMana (addToHand g gnashingOfTeeth ⟨0⟩) ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.cast (handCardNamed g ⟨0⟩ "Gnashing of Teeth").id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Great Fierce Bee").id))
+  passBoth (mustApply g ⟨0⟩ .pay)
+
+#guard gnashingTargetsBee.objects.any (fun o =>
+  o.name == "Great Fierce Bee" && o.zone == .exile)
+#guard !gnashingTargetsBee.creatureDiedThisTurn
+#guard !gnashingTargetsBee.stack.any (fun e =>
+  (gnashingTargetsBee.object! e.objectId).triggeredAbility ==
+    some (.onOneOrMoreOtherCreaturesDieScry 1))
+#guard match gnashingTargetsBee.pending with | .scry _ _ => false | _ => true
+
 def gnashingPlayerPump : Game :=
   let g := addPermanent gnashingReady grizzlyBears ⟨0⟩ ⟨0⟩
   let g := mustApply g ⟨0⟩
