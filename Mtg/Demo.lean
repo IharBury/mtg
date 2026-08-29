@@ -21,7 +21,9 @@ opening hands are drawn, unless a heuristic opponent is deciding and chooses
 to go first. `visible` prints only information that player can see; `--visible`
 starts in that view. `--norandom` stops the engine from shuffling or
 rolling; the demo asks for each random result (`shuffle`, `order`, `pick`,
-`random`, `flip`). `--input FILE` runs commands from the file first, then
+`random`, `flip`). `--constructed` treats the game as constructed play
+(CR 100.2a); otherwise it is limited play (CR 100.2b). `--input FILE` runs
+commands from the file first, then
 reads from the console. Lines that start with `--` are additional flags
 instead of commands; when `--output` is a different file those flags are
 written first. `--output FILE` writes accepted game-state commands
@@ -39,6 +41,7 @@ game ends (a winner or a draw).
 -/
 
 open Mtg.Engine
+open Mtg.Engine.Catalog
 open Mtg.Engine.Game
 open Mtg.Demo
 open Mtg.Demo.Render
@@ -48,8 +51,8 @@ def usage : String :=
 
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
-                    [--norandom] [--decides NAME] [--input FILE] [--output FILE]
-                    [--check] [--seed N] [--fuel N]
+                    [--norandom] [--constructed] [--decides NAME]
+                    [--input FILE] [--output FILE] [--check] [--seed N] [--fuel N]
                     [--name NAME --deck COLOR|FILE]...
 
 Options:
@@ -59,6 +62,8 @@ Options:
   --visible       With --interactive or --multiplayer, hide information the
                   acting player cannot see
   --norandom      Never shuffle or roll; ask for each random result
+  --constructed   Treat the game as constructed play (CR 100.2a); default
+                  is limited play (CR 100.2b)
   --decides NAME  Player who chooses who takes the first turn (CR 103.1);
                   default is a random player using --seed (or a prompt
                   with --norandom)
@@ -98,7 +103,9 @@ effective 7 August 2026.
 At the start of a game, one player is chosen to decide who takes the
 first turn (CR 103.1). `--decides NAME` names that player; the default
 is a random player chosen using --seed. `--norandom` asks who was
-chosen instead of rolling. In --interactive, the first
+chosen instead of rolling. `--constructed` validates decks as
+constructed play (CR 100.2a); the default is limited play (CR 100.2b).
+In --interactive, the first
 named player chooses with `first <name>` when they are deciding; a
 heuristic opponent otherwise chooses to go first. In --multiplayer,
 the deciding player chooses with `first <name>`. In --auto, the
@@ -160,12 +167,19 @@ def playersFromFlags (names : Array String) (decks : Array DemoDeck) :
   | some name => throw s!"Duplicate player name: {name}"
   | none => return players
 
+/-- Constructed play (CR 100.2a) when `--constructed` is set; otherwise limited. -/
+def demoFormat (constructed : Bool) : Format :=
+  if constructed then .constructed else .limited
+
+#guard demoFormat false == .limited
+#guard demoFormat true == .constructed
+
 /-- `startingPlayer` is the seat that takes the first turn after CR 103.1. -/
 def demoConfig (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (players : Array DemoPlayer := defaultDemoPlayers)
-    (norandom : Bool := false) : StartConfig := {
+    (norandom : Bool := false) (constructed : Bool := false) : StartConfig := {
   seats := seatsFromPlayers players
-  format := .limited
+  format := demoFormat constructed
   seed := seed
   startingPlayer := startingPlayer
   norandom := norandom
@@ -569,8 +583,9 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
 def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (seats : Array Seat := demoSeats) (norandom : Bool := false) : IO Game := do
-  match Start.start { seats, format := .limited, seed, startingPlayer, norandom } with
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO Game := do
+  match Start.start { seats, format := demoFormat constructed, seed, startingPlayer, norandom } with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
@@ -587,8 +602,9 @@ the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
-    (seats : Array Seat := demoSeats) (norandom : Bool := false) : IO Game := do
-  let g ← startGame seed startingPlayer seats norandom
+    (seats : Array Seat := demoSeats) (norandom : Bool := false)
+    (constructed : Bool := false) : IO Game := do
+  let g ← startGame seed startingPlayer seats norandom constructed
   printOpening g viewer
   return g
 
@@ -693,6 +709,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "--decides NAME").length > 1
 #guard (usage.splitOn "random player").length > 1
 #guard (usage.splitOn "--norandom").length > 1
+#guard (usage.splitOn "--constructed").length > 1
+#guard (usage.splitOn "constructed play").length > 1
 #guard ((helpInteractive false).splitOn "shuffle [id...]").length > 1
 #guard ((helpInteractive false).splitOn "flip heads").length > 1
 #guard (usage.splitOn "white, blue, black, red, or green").length > 1
@@ -4280,6 +4298,8 @@ structure DemoOptions where
   multiplayer : Bool
   playerView : Bool
   norandom : Bool
+  /-- Constructed play (CR 100.2a) when true; limited play (CR 100.2b) otherwise. -/
+  constructed : Bool
   seed : UInt64
   fuel : Nat
   inputFile : Option String
@@ -4297,6 +4317,7 @@ structure DemoFlagValues where
   multiplayer : Bool
   playerView : Bool
   norandom : Bool
+  constructed : Bool
   seed : Option UInt64
   fuel : Option Nat
   inputFile : Option String
@@ -4315,6 +4336,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
     let mut multiplayer := false
     let mut playerView := false
     let mut norandom := false
+    let mut constructed := false
     let mut seed : Option UInt64 := none
     let mut fuel : Option Nat := none
     let mut inputFile : Option String := none
@@ -4350,6 +4372,9 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
         rest := xs
       | "--norandom" :: xs =>
         norandom := true
+        rest := xs
+      | "--constructed" :: xs =>
+        constructed := true
         rest := xs
       | "--decides" :: name :: xs =>
         if name.startsWith "--" then
@@ -4411,6 +4436,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
       multiplayer := multiplayer
       playerView := playerView
       norandom := norandom
+      constructed := constructed
       seed := seed
       fuel := fuel
       inputFile := inputFile
@@ -4423,14 +4449,16 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
     }
 
 /-- Merge CLI flags with additional flags from `--input`. File flags override
-mode, seed, fuel, players, and `--decides` when present. `--visible` is
-enabled if either side sets it. `--input` / `--output` stay on the CLI. -/
+mode, seed, fuel, players, and `--decides` when present. `--visible`,
+`--norandom`, and `--constructed` are enabled if either side sets them.
+`--input` / `--output` stay on the CLI. -/
 def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
   {
     interactive := if file.modeSet then file.interactive else cli.interactive
     multiplayer := if file.modeSet then file.multiplayer else cli.multiplayer
     playerView := cli.playerView || file.playerView
     norandom := cli.norandom || file.norandom
+    constructed := cli.constructed || file.constructed
     seed :=
       match file.seed with
       | some s => some s
@@ -4478,6 +4506,7 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
           multiplayer := multiplayer
           playerView := v.playerView
           norandom := v.norandom
+          constructed := v.constructed
           seed := seed
           fuel := fuel
           inputFile := v.inputFile
@@ -4495,6 +4524,7 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
             multiplayer := multiplayer
             playerView := v.playerView
             norandom := v.norandom
+            constructed := v.constructed
             seed := seed
             fuel := fuel
             inputFile := v.inputFile
@@ -4518,14 +4548,19 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
     | .error e => .error e
     | .ok file => finishOptions (mergeFlagValues cli file)
 
-/-- Start a limited demo game from an `--input` script and require that the
+/-- Start a demo game from an `--input` script and require that the
 replay is a valid, complete game. -/
 def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List String) :
     Except String Game := do
   let decider := assignDecider opt.players opt.seed opt.decides
   let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
   let (startIdx, rest) ← takeStartingPlayer seats humanChooses decider commands
-  let g ← Start.start { seats, format := .limited, seed := opt.seed, startingPlayer := some startIdx, norandom := opt.norandom }
+  let g ← Start.start {
+    seats
+    format := demoFormat opt.constructed
+    seed := opt.seed
+    startingPlayer := some startIdx
+    norandom := opt.norandom }
   replayCompleteGame g rest
 
 #guard
@@ -4597,6 +4632,65 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
   match parseArgs ["--interactive", "--norandom"] with
   | .ok opt => opt.norandom && opt.interactive
   | _ => false
+
+#guard
+  match parseArgs [] with
+  | .ok opt => !opt.constructed
+  | _ => false
+
+#guard
+  match parseArgs ["--constructed"] with
+  | .ok opt => opt.constructed && !opt.interactive
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive", "--constructed"] with
+  | .ok opt => opt.constructed && opt.interactive
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--constructed"] ["--constructed"] with
+  | .ok opt => opt.constructed
+  | _ => false
+
+#guard
+  match parseArgsWithFlags [] ["--constructed"] with
+  | .ok opt => opt.constructed
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--constructed", "--input", "foo.txt"] with
+  | .ok opt =>
+    opt.constructed &&
+      match checkCompleteGame opt demoSeats ["first Chandra", "keep", "keep", "concede"] with
+      | .error msg => msg == "Chandra: Deck has 40 cards; minimum is 60"
+      | .ok _ => false
+  | _ => false
+
+#guard (demoConfig 1).format == .limited
+#guard (demoConfig 1 (constructed := true)).format == .constructed
+
+#guard
+  match Start.start (demoConfig 1) with
+  | .ok g => g.format == .limited
+  | .error _ => false
+
+#guard
+  match Start.start (demoConfig 1 (constructed := true)) with
+  | .error msg => msg == "Chandra: Deck has 40 cards; minimum is 60"
+  | .ok _ => false
+
+#guard
+  match Start.start {
+      seats := #[
+        { name := "Alice", deck := Catalog.copies 60 Catalog.mountain },
+        { name := "Bob", deck := Catalog.copies 60 Catalog.forest }
+      ]
+      format := demoFormat true
+      seed := 1
+      startingPlayer := some 0 } with
+  | .ok g => g.format == .constructed
+  | .error _ => false
 
 #guard
   match parseArgs ["--norandom", "--input", "opening.txt"] with
@@ -4736,7 +4830,8 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
 
 #guard
   match parseArgs [] with
-  | .ok opt => opt.players == defaultDemoPlayers && opt.decides.isNone
+  | .ok opt =>
+    opt.players == defaultDemoPlayers && opt.decides.isNone && !opt.constructed
   | _ => false
 
 #guard
@@ -5107,6 +5202,7 @@ def main (args : List String) : IO UInt32 := do
                   | none => return 0
                   | some (startIdx, pending) =>
                     let g ← startGame opt.seed (some startIdx) seats opt.norandom
+                      opt.constructed
                     printOpening g (currentView g opt.playerView opt.multiplayer)
                     interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
                     return 0
@@ -5114,5 +5210,6 @@ def main (args : List String) : IO UInt32 := do
                   let g ←
                     startDemo opt.seed (some decider) (seats := seats)
                       (norandom := opt.norandom)
+                      (constructed := opt.constructed)
                   runAuto g opt.fuel pending output sameFile
                   return 0
