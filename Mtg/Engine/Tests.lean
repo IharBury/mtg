@@ -1488,7 +1488,6 @@ def threeOgreAttacksNissa : Game :=
 
 #guard (namedPermanent threeOgreAttacksNissa "Gray Ogre").status.attackingWhom == some ⟨1⟩
 #guard threeOgreAttacksNissa.defendingPlayer == ⟨1⟩
-#guard threeOgreAttacksNissa.actor == some ⟨1⟩
 
 /-- Chandra can choose to attack Liliana instead of Nissa (CR 508.1). -/
 def threeOgreAttacksLiliana : Game :=
@@ -1497,7 +1496,6 @@ def threeOgreAttacksLiliana : Game :=
 
 #guard (namedPermanent threeOgreAttacksLiliana "Gray Ogre").status.attackingWhom == some ⟨2⟩
 #guard threeOgreAttacksLiliana.defendingPlayer == ⟨2⟩
-#guard threeOgreAttacksLiliana.actor == some ⟨2⟩
 
 #guard
   match threeReadyToAttack.declareAttackers ⟨0⟩
@@ -1505,11 +1503,19 @@ def threeOgreAttacksLiliana : Game :=
   | .error msg => mentions msg "cannot attack yourself"
   | .ok _ => false
 
+/-- Liliana, not Nissa, declares blockers when she is being attacked. -/
+def threeLilianaToBlock : Game :=
+  skipToPending threeOgreAttacksLiliana .declareBlockers 80
+
+#guard threeLilianaToBlock.pending == .declareBlockers
+#guard threeLilianaToBlock.actor == some ⟨2⟩
+#guard threeLilianaToBlock.defendingPlayer == ⟨2⟩
+
 /-- Unblocked combat damage goes to the chosen defending player. -/
 def threeLilianaTookCombat : Game :=
   skipTo threeOgreAttacksLiliana .postcombatMain 80
 
-#guard (threeLilianaTookCombat.player ⟨2⟩).life == 17
+#guard (threeLilianaTookCombat.player ⟨2⟩).life == 18
 #guard (threeLilianaTookCombat.player ⟨1⟩).life == 20
 #guard (threeLilianaTookCombat.player ⟨0⟩).life == 20
 

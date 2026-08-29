@@ -855,9 +855,10 @@ def parseAttackDefender (g : Game) (p : PlayerId) (token : String) : Except Stri
   let lower := token.map Char.toLower
   if lower == "opponent" then
     return g.opponent p
-  match g.players.find? (fun pl => pl.name.map Char.toLower == lower) with
-  | none => throw attackUsage
-  | some pl => g.resolveAttackDestination p (some pl.id)
+  else
+    match g.players.find? (fun pl => pl.name.map Char.toLower == lower) with
+    | none => throw attackUsage
+    | some pl => g.resolveAttackDestination p (some pl.id)
 
 /-- Attackers for an interactive `attack` command. Omitted ids mean every
 creature that currently can attack. -/
@@ -973,7 +974,7 @@ def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String
   match applyAttack Tests.threeReadyToAttack ⟨0⟩ ["Liliana"] with
   | .ok g' =>
     (Tests.namedPermanent g' "Gray Ogre").status.attackingWhom == some ⟨2⟩ &&
-      g'.defendingPlayer == ⟨2⟩ && g'.actor == some ⟨2⟩
+      g'.defendingPlayer == ⟨2⟩
   | .error _ => false
 
 #guard
