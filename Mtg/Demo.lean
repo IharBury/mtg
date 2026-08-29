@@ -2365,7 +2365,9 @@ def canPayProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) : Bool :=
     (g.proposedAllowsInstRestricted prop)
 
 /-- Activate mana abilities chosen by the heuristic, then pay (CR 601.2g–h).
-Fails without changing the game if the cost cannot be paid. -/
+Taps noncreatures before creatures when both help, and prefers colorless
+when that type can be spent. Fails without changing the game if the cost
+cannot be paid. -/
 def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array String) :
     Except String AutopayResult := do
   match fuel with
@@ -2398,7 +2400,8 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
     | .chooseAdditionalCost _ => throw "Choose an additional cost first (CR 601.2b)"
     | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
-/-- Tap necessary mana sources (heuristic colors) and pay the current cost. -/
+/-- Tap necessary mana sources (noncreatures first; colorless if usable) and
+pay the current cost. -/
 def applyAutopay (g : Game) (p : PlayerId) (tokens : List String) :
     Except String AutopayResult :=
   match commandTokens tokens with
@@ -2514,6 +2517,27 @@ def applyAutopayAsActor (g : Game) (tokens : List String) : Except String Autopa
     Tests.mentions msg "cannot pay" &&
       !(Tests.namedPermanent Tests.delightedHalflingGrowth "Delighted Halfling").status.tapped
   | .ok _ => false
+
+#guard
+  match applyAutopay Tests.elvesFirstGrowth ⟨0⟩ [] with
+  | .ok r =>
+    let forest := Tests.namedPermanent Tests.elvesFirstGrowth "Forest"
+    r.commands == #[tapCommand forest.id (.colored .green), "pay"] &&
+      (Tests.namedPermanent r.game "Llanowar Elves").status.tapped == false &&
+      r.game.log.any (fun s => Tests.mentions s "casts Giant Growth")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.mountainThenPassageBauble ⟨0⟩ [] with
+  | .ok r =>
+    let passage := Tests.namedPermanent Tests.mountainThenPassageBauble "Rogue's Passage"
+    let mountain := Tests.namedPermanent Tests.mountainThenPassageBauble "Mountain"
+    r.commands ==
+      #[tapCommand passage.id .colorless,
+        tapCommand mountain.id (.colored .red), "pay"] &&
+      r.game.pending == .none &&
+      r.game.log.any (fun s => Tests.mentions s "activates Wayfarer's Bauble")
+  | .error _ => false
 
 def shuffleUsage : String := "usage: shuffle [id ...]"
 def orderUsage : String := "usage: order [id ...]"
