@@ -120,9 +120,9 @@ def textForStackedAbility (c : CardDef) (abilityText : String) : String :=
           (0, abilityText)
       if bestScore > 0 then bestLine else abilityText
 
-/-- Extras after a stack object's name. An ability on the stack shows only
-that ability, not other abilities printed on the source card. Spells still
-show their full printed extras. -/
+/-- Extras after a stack object's name (and, for a creature spell, types and
+P/T). An ability on the stack shows only that ability, not other abilities
+printed on the source card. Spells still show their full printed extras. -/
 def stackFaceExtras (o : GameObject) : String :=
   let s :=
     match o.triggeredAbility, o.abilityEffect with
@@ -131,14 +131,21 @@ def stackFaceExtras (o : GameObject) : String :=
     | none, none => o.printed.keywordsAndAbilities
   spacedSuffix s
 
+/-- Type line and current P/T of a creature spell on the stack (CR 205.1a /
+208.2). Characteristic-defining abilities still apply (CR 604.3). Abilities
+and noncreature spells omit this. -/
+def stackCreatureStats (g : Game) (o : GameObject) : String :=
+  if o.isCreature then s!" {o.typeLine} {g.power o}/{g.toughness o}" else ""
+
 /-- One object on the stack, including announced targets (CR 115 / 601.2c).
-`withId` prefixes the object id, matching zone listings and `state`. -/
+A creature spell also prints its types and P/T. `withId` prefixes the object
+id, matching zone listings and `state`. -/
 def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String :=
   match g.findObject? e.objectId with
   | none => if withId then s!"{e.objectId} (missing)" else "(missing)"
   | some o =>
     let id := if withId then s!"{o.id} " else ""
-    s!"{id}{o.name}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
+    s!"{id}{o.name}{stackCreatureStats g o}{stackFaceExtras o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
 
 /-- Like `faceExtras`, but includes keywords granted by other permanents. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
@@ -768,7 +775,8 @@ and summoning sickness on creatures (CR 302.6). -/
 def battlefieldView (g : Game) : Array String :=
   g.battlefield.map (objectLine g)
 
-/-- Visible stack lines, including announced targets (CR 115 / 601.2c). -/
+/-- Visible stack lines, including announced targets (CR 115 / 601.2c) and
+creature types and P/T. -/
 def stackView (g : Game) : Array String :=
   g.stack.map (fun e => stackObjectLine g e true)
 
@@ -800,7 +808,7 @@ def zoneLine (g : Game) (z : Zone) (id : ObjectId) : String :=
     | .stack =>
       match g.stack.find? (fun e => e.objectId == o.id) with
       | some e => stackObjectLine g e true
-      | none => s!"{o.id} {o.name}{stackFaceExtras o}{sourceClause g o}"
+      | none => s!"{o.id} {o.name}{stackCreatureStats g o}{stackFaceExtras o}{sourceClause g o}"
     | .exile => exileLine g o
     | _ => s!"{o.id} {o.name}{faceExtras o.printed}"
 
