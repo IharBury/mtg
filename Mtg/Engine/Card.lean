@@ -2614,6 +2614,12 @@ inductive TriggeredAbility where
   | onTheRingTemptsYouDraw (n : Nat)
   /-- Whenever you choose a creature as your Ring-bearer, draw a card. -/
   | onChooseRingBearerDraw
+  /-- Whenever a token you control enters, reward by how many times this has
+  resolved this turn (e.g. Belladonna Took). -/
+  | onTokenYouControlEntersBelladonna
+  /-- Whenever you activate an ability of a creature, draw a card. Triggers
+  only once each turn (e.g. Elrond, Moon-Reader). -/
+  | onActivateCreatureAbilityDrawOnce
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2699,6 +2705,11 @@ inductive TriggerEvent where
   | youChooseRingBearer
   /-- Equipped creature is the only attacker declared this combat. -/
   | equippedAttacksAlone
+  /-- A token you control enters (CR 603.6a). -/
+  | tokenYouControlEnters
+  /-- You activate an ability of a creature, including a mana ability
+  (CR 605.3b / 603.2). -/
+  | youActivateCreatureAbility
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2826,6 +2837,12 @@ def spec : TriggerEvent → Spec
   | .equippedAttacksAlone =>
     { clause := "equipped creature attacks alone",
       label := "attacks-alone trigger", checkTargets := false }
+  | .tokenYouControlEnters =>
+    { clause := "a token you control enters", label := "token-enters trigger",
+      checkTargets := false }
+  | .youActivateCreatureAbility =>
+    { clause := "you activate an ability of a creature",
+      label := "activate-creature trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -3009,6 +3026,9 @@ inductive TriggerResolution where
   | honeEachEquipment
   /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
   | cascade
+  /-- First resolve: gain 1 life. Second: draw. Third: +1/+1 each creature.
+  Later resolves this turn do nothing (Belladonna Took). -/
+  | belladonnaTokenReward
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3308,6 +3328,11 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.theRingTemptsYou], resolution := .draw n }
   | .onChooseRingBearerDraw =>
     { events := #[.youChooseRingBearer], resolution := .draw 1 }
+  | .onTokenYouControlEntersBelladonna =>
+    { events := #[.tokenYouControlEnters], resolution := .belladonnaTokenReward }
+  | .onActivateCreatureAbilityDrawOnce =>
+    { events := #[.youActivateCreatureAbility], resolution := .draw 1,
+      onceEachTurn := true }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3557,6 +3582,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "put a hone counter on each Equipment you control"
   | .cascade =>
     "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
+  | .belladonnaTokenReward =>
+    "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3750,6 +3777,9 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
+  /-- If a creature an opponent controls would die, exile it instead
+  (e.g. Head of the Hunt). -/
+  exileOppCreaturesInstead : Bool := false
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
@@ -3788,6 +3818,13 @@ def isAura (c : CardDef) : Bool :=
 /-- Equipment subtype on an Artifact (CR 301.5). -/
 def isEquipment (c : CardDef) : Bool :=
   c.isArtifact && c.hasSubtype "Equipment"
+
+/-- Names a player may choose for “choose a card name”, including an
+Adventure face (Gatherer ruling on adventurer cards). -/
+def choosableNames (c : CardDef) : Array String :=
+  match c.adventure with
+  | some adv => #[c.name, adv.name]
+  | none => #[c.name]
 
 /-- Timing of a sorcery: also the default for permanent spells without flash (CR 302.1, 307.1). -/
 def hasSorcerySpeed (c : CardDef) : Bool :=
@@ -4589,5 +4626,25 @@ def isLandTypeCard (c : CardDef) (landType : String) : Bool :=
 /-- A card with the Forest land type (CR 205.3i / 305.7). -/
 def isForestCard (c : CardDef) : Bool :=
   isLandTypeCard c "Forest"
+
+#guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
+  "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
+#guard TriggeredAbility.toNotation .onActivateCreatureAbilityDrawOnce ==
+  "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn."
+#guard TriggeredAbility.firesOn .onTokenYouControlEntersBelladonna .tokenYouControlEnters
+#guard TriggeredAbility.firesOn .onActivateCreatureAbilityDrawOnce .youActivateCreatureAbility
+#guard TriggeredAbility.onceEachTurn .onActivateCreatureAbilityDrawOnce
+#guard
+  let c : CardDef := {
+    name := "Smaug, the Great Calamity"
+    types := #[.creature]
+    adventure := some {
+      name := "Spew Flame"
+      manaCost := ManaCost.ofGenericAndColor 4 .red
+      oracleText := ""
+      spellEffect := some (.dealDamageToCreature 5)
+    }
+  }
+  c.choosableNames == #["Smaug, the Great Calamity", "Spew Flame"]
 
 end Mtg.Engine

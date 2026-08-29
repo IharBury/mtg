@@ -943,7 +943,7 @@ def bejeweledWarg : CardDef :=
 
 def belladonnaTook : CardDef :=
   legendaryCreature "Belladonna Took" (ManaCost.ofGenericAndColor 1 .white) #["Halfling", "Citizen"] 2 2 (oracleText := "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.")
-    (triggeredAbilities := #[.printed "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."])
+    (triggeredAbilities := #[.onTokenYouControlEntersBelladonna])
 
 def beornTheFierce : CardDef :=
   legendaryCreature "Beorn the Fierce" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Bear", "Shapeshifter", "Warrior"] 6 6 (oracleText := "Trample\nOther Bears you control get +2/+2.\nAt the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards.")
@@ -1018,7 +1018,7 @@ def dainIronfoot : CardDef :=
 def elrondMoonReader : CardDef :=
   legendaryCreature "Elrond, Moon-Reader" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Noble"] 3 3 (oracleText := "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step.")
     (staticAbilities := #[.printed "{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step."])
-    (triggeredAbilities := #[.printed "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn."])
+    (triggeredAbilities := #[.onActivateCreatureAbilityDrawOnce])
 
 def elvenPassage : CardDef :=
   land "Elven Passage" "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"
@@ -1044,9 +1044,11 @@ def gollumRiddleMaster : CardDef :=
     (triggeredAbilities := #[.printed "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."])
 
 def headOfTheHunt : CardDef :=
-  creature "Head of the Hunt" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Wolf"] 4 3 (oracleText := "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.")
-    (keywords := Keyword.flash)
-    (staticAbilities := #[.printed "If a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."])
+  let c :=
+    creature "Head of the Hunt" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Wolf"] 4 3 (oracleText := "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.")
+      (keywords := Keyword.flash)
+      (staticAbilities := #[.printed "If a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."])
+  { c with exileOppCreaturesInstead := true }
 
 def insideInformation : CardDef :=
   sorcery "Inside Information" ({ symbols := #[.x, .colored .black, .colored .black] }) "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost." (some (.printed "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost."))

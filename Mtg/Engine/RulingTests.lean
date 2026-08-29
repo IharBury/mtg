@@ -113,6 +113,22 @@ def amassMentorSeesZeroOk : Bool :=
 
 #guard amassMentorSeesZeroOk
 
+/-- Ruling 51: the Orc Army also enters as 0/0 before counters. -/
+def amassOrcMentorSeesZero : Game :=
+  let g := addPermanent started mentorOfTheMeek ⟨0⟩ ⟨0⟩
+  let g := g.amassOrcs ⟨0⟩ 3
+  g.receivePriority ⟨0⟩
+
+def amassOrcMentorSeesZeroOk : Bool :=
+  let army := namedPermanent amassOrcMentorSeesZero "Orc Army"
+  army.status.plusOnePlusOne == 3 && amassOrcMentorSeesZero.power army == 3 &&
+    amassOrcMentorSeesZero.stack.any (fun e =>
+      (amassOrcMentorSeesZero.object! e.objectId).triggeredAbility ==
+        some (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1)) &&
+    (ruling 51).comment.contains "Orc Army token you create enters"
+
+#guard amassOrcMentorSeesZeroOk
+
 /-- A 3-power creature entering after counters would not trigger Mentor. -/
 def mentorIgnoresGiant : Game :=
   let g := addPermanent started mentorOfTheMeek ⟨0⟩ ⟨0⟩
@@ -137,6 +153,19 @@ def twoArmiesThenAmassOk : Bool :=
     (namedPermanent twoArmiesThenAmass "Goblin Army").status.plusOnePlusOne == 0
 
 #guard twoArmiesThenAmassOk
+
+/-- Ruling 52: with several Armies, amass Orcs chooses one and makes it an Orc. -/
+def twoArmiesThenAmassOrcs : Game :=
+  let (g, _) := started.createToken ⟨0⟩ Game.goblinArmyToken
+  let (g, _) := g.createToken ⟨0⟩ Game.zombieArmyToken
+  g.amassOrcs ⟨0⟩ 1
+
+def twoArmiesThenAmassOrcsOk : Bool :=
+  let z := namedPermanent twoArmiesThenAmassOrcs "Zombie Army"
+  z.status.plusOnePlusOne == 1 && twoArmiesThenAmassOrcs.hasSubtype z "Orc" &&
+    (ruling 52).comment.contains "multiple Army creatures"
+
+#guard twoArmiesThenAmassOrcsOk
 
 /-- Ruling 18: untargeted amass still creates the Army. -/
 def untargetedAmass : Game := started.applyEffect ⟨0⟩ (.amassGoblins 1) #[]
@@ -187,7 +216,8 @@ def smaugAdventureExileOk : Bool :=
   smaugExiledFromAdventure &&
     resolvedSpewFlame.mayPlayFromExile ⟨0⟩ (exiledSmaug resolvedSpewFlame) &&
     !(resolvedSpewFlame.canCastAdventure ⟨0⟩ (exiledSmaug resolvedSpewFlame)) &&
-    resolvedSpewFlame.adventureExileForbidsRecast (exiledSmaug resolvedSpewFlame)
+    resolvedSpewFlame.adventureExileForbidsRecast (exiledSmaug resolvedSpewFlame) &&
+    (ruling 13).comment.contains "timing restrictions and permissions"
 
 #guard smaugAdventureExileOk
 
@@ -213,6 +243,10 @@ def spewFlameIsSorcery : Bool :=
   | none => false
 
 #guard spewFlameIsSorcery
+#guard (ruling 11).comment.contains "use only its alternative characteristics"
+#guard (ruling 8).comment.contains "alternative Adventure name"
+#guard smaugTheGreatCalamity.choosableNames.contains "Spew Flame"
+#guard !smaugTheGreatCalamity.choosableNames.contains "Burglar's Plot"
 
 def canCastSpewFlame : Bool :=
   smaugSetup.canCastAdventure ⟨0⟩
@@ -1167,7 +1201,9 @@ def amassIfLegal (g : Game) (p : PlayerId) (targetsLegal : Bool) (n : Nat) : Gam
 def amassFailedOk : Bool :=
   let g := amassIfLegal started ⟨0⟩ false 2
   !(g.battlefield.any (fun o => g.hasSubtype o "Army")) &&
-    g.log.any (fun s => mentions s "won't amass")
+    g.log.any (fun s => mentions s "won't amass") &&
+    (ruling 17).comment.contains "won't amass" &&
+    (ruling 53).comment.contains "won't amass Orcs"
 
 #guard amassFailedOk
 
@@ -1210,7 +1246,8 @@ def galionCountersAfterBaseOk : Bool :=
   galionOnCounteredElves.basePower
       (namedPermanent galionOnCounteredElves "Llanowar Elves") == 4 &&
     galionOnCounteredElves.power
-      (namedPermanent galionOnCounteredElves "Llanowar Elves") == 5
+      (namedPermanent galionOnCounteredElves "Llanowar Elves") == 5 &&
+    (ruling 127).comment.contains "overwrites all previous effects"
 
 #guard galionCountersAfterBaseOk
 
@@ -2206,5 +2243,193 @@ def exiledLandTimingOk : Bool :=
     (ruling 64).comment.contains "only during your main phase"
 
 #guard exiledLandTimingOk
+
+/-- Ruling 10: a copy of an adventurer object has an Adventure; a token copy
+that leaves the battlefield ceases to exist. -/
+def adventureCopyHasAdventureOk : Bool :=
+  let printed := { bilboLuckwearer with isToken := true }
+  let (g, tok) := started.createToken ⟨0⟩ printed
+  let hasAdv := tok.printed.adventure.isSome
+  let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none
+  let g := g.checkSBA
+  hasAdv &&
+    !g.objects.any (fun o => o.name == "Bilbo, Luckwearer") &&
+    (ruling 10).comment.contains "the copy also has an Adventure"
+
+#guard adventureCopyHasAdventureOk
+
+/-- Ruling 75: activating a creature mana ability triggers Elrond. -/
+def elrondManaAbility : Except String Game :=
+  let g := addPermanent afterDraw elrondMoonReader ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  g.tapForMana ⟨0⟩ (namedPermanent g "Llanowar Elves").id (.colored .green)
+
+def elrondManaAbilityOk : Bool :=
+  match elrondManaAbility with
+  | .error _ => false
+  | .ok g =>
+    countWaiting g .onActivateCreatureAbilityDrawOnce == 1 &&
+      (ruling 75).comment.contains "mana ability"
+
+#guard elrondManaAbilityOk
+
+/-- Ruling 86: Great Gilded Boat triggers when you attack, even if it is not
+among the attackers. -/
+def boatRecruitOnAttack : Game :=
+  let g := addPermanent afterDraw greatGildedBoat ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  g.putControlledTriggers ⟨0⟩ .youAttack
+
+def boatRecruitOnAttackOk : Bool :=
+  countWaiting boatRecruitOnAttack .onYouAttackRecruit == 1 &&
+    greatGildedBoat.triggeredAbilities == #[.onYouAttackRecruit] &&
+    (ruling 86).comment.contains "doesn't have to be among them"
+
+#guard boatRecruitOnAttackOk
+
+/-- Ruling 96: Belladonna's fourth resolve in a turn does nothing. -/
+def belladonnaFourResolves : Game :=
+  let g := addPermanent afterDraw belladonnaTook ⟨0⟩ ⟨0⟩
+  let src := some (namedPermanent g "Belladonna Took").id
+  let g := g.applyTriggeredAbility ⟨0⟩ .onTokenYouControlEntersBelladonna src
+  let g := g.applyTriggeredAbility ⟨0⟩ .onTokenYouControlEntersBelladonna src
+  let g := g.applyTriggeredAbility ⟨0⟩ .onTokenYouControlEntersBelladonna src
+  g.applyTriggeredAbility ⟨0⟩ .onTokenYouControlEntersBelladonna src
+
+def belladonnaFourResolvesOk : Bool :=
+  let g := belladonnaFourResolves
+  (g.player ⟨0⟩).life == 21 &&
+    (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (namedPermanent g "Belladonna Took").status.plusOnePlusOne == 1 &&
+    (g.player ⟨0⟩).belladonnaResolvesThisTurn == 4 &&
+    g.log.any (fun s => mentions s "no effect") &&
+    (ruling 96).comment.contains "no effect each time beyond the third"
+
+#guard belladonnaFourResolvesOk
+
+/-- Ruling 96: a token entering actually queues the ability. -/
+def belladonnaSeesToken : Game :=
+  let g := addPermanent afterDraw belladonnaTook ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ Game.humanSoldierToken
+  g.afterPermanentEnters (g.object! tok.id)
+
+#guard countWaiting belladonnaSeesToken .onTokenYouControlEntersBelladonna == 1
+
+/-- Ruling 100: mill and discard still go to the graveyard. -/
+def headDoesNotExileMill : Game :=
+  let g := addPermanent afterDraw headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addToHand g shock ⟨1⟩
+  let id := (handCardNamed g ⟨1⟩ "Shock").id
+  (g.move id (.graveyard ⟨1⟩) none).1
+
+def headDoesNotExileMillOk : Bool :=
+  headDoesNotExileMill.objects.any (fun o =>
+    o.name == "Shock" && o.zone == .graveyard ⟨1⟩) &&
+    !(headDoesNotExileMill.objects.any (fun o =>
+      o.name == "Shock" && o.zone == .exile)) &&
+    (ruling 100).comment.contains "will not be exiled instead"
+
+#guard headDoesNotExileMillOk
+
+/-- Ruling 100 / 140: an opposing creature that would die is exiled instead,
+and a simultaneous death of Head of the Hunt still exiles it. -/
+def headExilesInstead : Game :=
+  let g := addPermanent afterDraw headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  (g.move bears.id (.graveyard ⟨1⟩) none).1
+
+def headExilesInsteadOk : Bool :=
+  headExilesInstead.objects.any (fun o =>
+    o.name == "Grizzly Bears" && o.zone == .exile) &&
+    headExilesInstead.battlefield.any (fun o => o.name == "Wolf") &&
+    (ruling 100).comment.contains "discarded or milled"
+
+#guard headExilesInsteadOk
+
+def headDiesWithPrey : Game :=
+  let g := addPermanent afterDraw headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let head := namedPermanent g "Head of the Hunt"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { head with status := { head.status with damage := 10 } }
+  let g := g.setObject { bears with status := { bears.status with damage := 10 } }
+  g.checkSBA
+
+def headDiesWithPreyOk : Bool :=
+  headDiesWithPrey.objects.any (fun o =>
+    o.name == "Grizzly Bears" && o.zone == .exile) &&
+    headDiesWithPrey.objects.any (fun o =>
+      o.name == "Head of the Hunt" &&
+        match o.zone with
+        | .graveyard _ => true
+        | _ => false) &&
+    (ruling 140).comment.contains "still be exiled"
+
+#guard headDiesWithPreyOk
+
+/-- Ruling 80: Ori counts destroyed permanents even if they are exiled. -/
+def oriCountsExiled : Game :=
+  let g := addPermanent afterDraw oriPlateStacker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g dwarvenShortsword ⟨1⟩ ⟨1⟩
+  let sw := namedPermanent g "Dwarven Shortsword"
+  let g := g.setObject { sw with status := { sw.status with
+    untilEotExileIfDies := true } }
+  g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOppArtifactsEnchantmentsGainLife
+    (some (namedPermanent g "Ori, Plate Stacker").id)
+
+def oriCountsExiledOk : Bool :=
+  (oriCountsExiled.player ⟨0⟩).life == 21 &&
+    oriCountsExiled.objects.any (fun o =>
+      o.name == "Dwarven Shortsword" && o.zone == .exile) &&
+    (ruling 80).comment.contains "zone other than a graveyard"
+
+#guard oriCountsExiledOk
+
+/-- Ruling 139: Great Fierce Bee still triggers if it dies with other creatures. -/
+def beeDiesWithOthers : Game :=
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bee := namedPermanent g "Great Fierce Bee"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bee with status := { bee.status with damage := 20 } }
+  let g := g.setObject { bears with status := { bears.status with damage := 10 } }
+  g.checkSBA
+
+def beeDiesWithOthersOk : Bool :=
+  countWaiting beeDiesWithOthers (.onOneOrMoreOtherCreaturesDieScry 1) == 1 &&
+    (ruling 139).comment.contains "dies at the same time"
+
+#guard beeDiesWithOthersOk
+
+/-- Ruling 141: an untapped Minas Tirith Garrison may tap itself. -/
+def garrisonTapsSelf : Except String Game :=
+  let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
+  let g := { g with pending := .tapHumans ⟨0⟩ }
+  g.choosePermanents ⟨0⟩ #[(namedPermanent g "Minas Tirith Garrison").id]
+
+def garrisonTapsSelfOk : Bool :=
+  match garrisonTapsSelf with
+  | .error _ => false
+  | .ok g =>
+    (namedPermanent g "Minas Tirith Garrison").status.tapped &&
+      (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
+      (ruling 141).comment.contains "tapped for its own last ability"
+
+#guard garrisonTapsSelfOk
+
+/-- Ruling 142: Smite's extra effects apply even if no damage is marked. -/
+def smiteZeroDamage : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  g.dealDamageLoseIndestructibleExileTo (namedPermanent g "Grizzly Bears") 0
+
+def smiteZeroDamageOk : Bool :=
+  let b := namedPermanent smiteZeroDamage "Grizzly Bears"
+  b.status.untilEotLosesIndestructible &&
+    b.status.untilEotExileIfDies &&
+    b.status.damage == 0 &&
+    (ruling 142).comment.contains "additional effects will still apply"
+
+#guard smiteZeroDamageOk
 
 end Mtg.Engine.RulingTests

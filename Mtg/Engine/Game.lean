@@ -585,6 +585,8 @@ structure Player where
   /-- Combined color identity of this player's commander(s). Empty when they
   have no commander or the commander is colorless (CR 903.4). -/
   commanderColorIdentity : ColorSet := {}
+  /-- Times Belladonna Took's token-enters ability has resolved this turn. -/
+  belladonnaResolvesThisTurn : Nat := 0
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -726,6 +728,12 @@ structure Game where
   pendingRegularCombatDamage : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
+  /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
+  batch, so simultaneous deaths still see those sources (Gatherer). -/
+  lockedDeathReplacements : Option (Array (PlayerId × ObjectId)) := none
+  /-- While an SBA death batch is applying, `move` skips per-object
+  “other creatures die” triggers; the batch queues them from the snapshot. -/
+  suppressOthersDie : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -1465,6 +1473,25 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
   (g.snapshotPT o).2
 
+/-- Permanents that exile opposing creatures that would die. -/
+def deathReplacementSources (g : Game) : Array (PlayerId × ObjectId) :=
+  match g.lockedDeathReplacements with
+  | some xs => xs
+  | none =>
+    g.battlefield.filterMap (fun o =>
+      if o.printed.exileOppCreaturesInstead then
+        o.controller.map (fun p => (p, o.id))
+      else none)
+
+/-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
+opposing creature that would go to a graveyard. -/
+def exileInsteadController? (g : Game) (dying : GameObject) : Option PlayerId :=
+  (g.deathReplacementSources.find? (fun (p, id) =>
+    id != dying.id &&
+      match dying.controller with
+      | some q => p != q
+      | none => false)).map (fun (p, _) => p)
+
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
 (CR 700.4 / 603.6c). -/
 def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
@@ -1479,11 +1506,18 @@ def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTri
 partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (controller : Option PlayerId := none) : Game × ObjectId :=
   let old := g.object! id
-  let exileInstead :=
-    old.zone == .battlefield && old.status.untilEotExileIfDies &&
-      match dest with
-      | .graveyard _ => true
-      | _ => false
+  let wouldGoToGy :=
+    match dest with
+    | .graveyard _ => true
+    | _ => false
+  let headCtrl :=
+    if old.zone == .battlefield && old.isCreature && wouldGoToGy then
+      g.exileInsteadController? old
+    else none
+  let headExile := headCtrl.isSome
+  let smiteExile :=
+    old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
+  let exileInstead := headExile || smiteExile
   let dest := if exileInstead then Zone.exile else dest
   let died :=
     old.zone == .battlefield && old.isCreature &&
@@ -1498,7 +1532,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
   let othersDie :=
-    if died then
+    if died && !g.suppressOthersDie then
       g.battlefield.foldl (fun acc o =>
         if o.id == old.id then acc
         else
@@ -1558,6 +1592,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | none => pure ()
         return g
     else g
+  let g :=
+    match headCtrl with
+    | some p =>
+      let (g, _) := g.createToken p wolfToken
+      g.logMsg s!"{(g.player p).name} creates a Wolf (exiled instead of dying)"
+    | none => g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
@@ -2109,24 +2149,49 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := { g with pending := .none }
       | _ => pure ()
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
+      -- Snapshot exile-instead replacements first so a simultaneous death
+      -- of Head of the Hunt still exiles opposing creatures.
+      let snap :=
+        g.battlefield.filterMap (fun o =>
+          if o.printed.exileOppCreaturesInstead then
+            o.controller.map (fun p => (p, o.id))
+          else none)
+      let victims :=
+        g.battlefield.filterMap (fun o =>
+          if !o.isCreature then none
+          else
+            let t := g.toughness o
+            if t ≤ 0 then some (o, s!"{o.name} dies (toughness {t})")
+            else if o.status.damage ≥ t && !g.hasIndestructible o then
+              some (o, s!"{o.name} dies from lethal damage")
+            else if o.status.dealtDeathtouch && !g.hasIndestructible o then
+              some (o, s!"{o.name} dies from deathtouch")
+            else none)
+      if !victims.isEmpty then
+        g := { g with
+          lockedDeathReplacements := some snap
+          suppressOthersDie := true }
+        for o in g.battlefield do
+          if victims.any (fun pair => pair.1.id != o.id) then
+            match o.controller with
+            | some p =>
+              g := { g with waitingTriggers :=
+                g.waitingTriggers ++
+                  o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
+            | none => pure ()
+      for pair in victims do
+        let o := pair.1
+        let reason := pair.2
+        match g.findObject? o.id with
+        | some o =>
+          if o.isOnBattlefield && o.isCreature then
+            g := g.moveToOwnerGraveyard o reason
+            changed := true
+        | none => pure ()
+      g := { g with lockedDeathReplacements := none, suppressOthersDie := false }
       for o in g.battlefield do
-        if o.isCreature then
-          let t := g.toughness o
-          if t ≤ 0 then
-            g := g.moveToOwnerGraveyard o s!"{o.name} dies (toughness {t})"
-            changed := true
-          else if o.status.damage ≥ t && !g.hasIndestructible o then
-            g := g.moveToOwnerGraveyard o s!"{o.name} dies from lethal damage"
-            changed := true
-          else if o.status.dealtDeathtouch then
-            -- CR 704.5h: any damage from a deathtouch source since the last
-            -- SBA check is lethal. The flag is then cleared even if the
-            -- creature survives (e.g. indestructible).
-            if !g.hasIndestructible o then
-              g := g.moveToOwnerGraveyard o s!"{o.name} dies from deathtouch"
-              changed := true
-            else
-              g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
+        if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
+          g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
       -- Legend rule (CR 704.5j): pause so the controller chooses one to keep.
       match g.firstLegendRuleChoice? with
       | some (p, name, ids) =>
@@ -2799,6 +2864,10 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.putControlledTriggersWithPrompt p .thisOrNontokenSubtypeYouControlEnters
   match (g.object! o.id).controller with
   | some p =>
+    let g :=
+      if (g.object! o.id).printed.isToken then
+        g.putControlledTriggers p .tokenYouControlEnters
+      else g
     if (g.object! o.id).printed.isArtifact then
       g.putControlledTriggersWithPrompt p .artifactYouControlEnters
     else g
@@ -2931,7 +3000,12 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
     | none => g
-  -- Mana abilities don't use the stack (CR 605.3b).
+  -- Mana abilities don't use the stack (CR 605.3b), but they still activate
+  -- and can cause Elrond-style triggers.
+  let g :=
+    if o.isCreature then
+      g.putControlledTriggers p .youActivateCreatureAbility
+    else g
   return { g with consecutivePasses := 0 }
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
@@ -3494,8 +3568,12 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     | some sid =>
       match g.findObject? sid with
       | some src =>
-        g.setObject { src with status := { src.status with
+        let g := g.setObject { src with status := { src.status with
           activationsThisTurn := src.status.activationsThisTurn + 1 } }
+        let src := g.object! sid
+        if src.isCreature then
+          g.putControlledTriggers p .youActivateCreatureAbility
+        else g
       | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
@@ -5859,6 +5937,25 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         | none => 0
       | none => 0
     g.resolveCascade controller maxMv
+  | .belladonnaTokenReward =>
+    let n := (g.player controller).belladonnaResolvesThisTurn + 1
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with belladonnaResolvesThisTurn := n })
+    if n == 1 then
+      g.gainLife controller 1
+    else if n == 2 then
+      g.draw controller 1
+    else if n == 3 then
+      Id.run do
+        let mut g := g
+        for o in g.battlefield do
+          if o.isCreature && o.controlledBy controller then
+            g := g.addPlusOnePlusOneTo o 1
+        return g.logMsg
+          s!"{(g.player controller).name} puts a +1/+1 counter on each creature they control"
+    else
+      g.logMsg
+        s!"Belladonna Took's ability has no effect (resolved {n} times this turn)"
   | .printed text =>
     g.logMsg text
 
@@ -6294,13 +6391,14 @@ def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with creatureDiedThisTurn := false }
     for pl in g.players do
-      if pl.cardsDrawnThisTurn != 0 then
+      if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
           spellsCastThisTurn := 0
           noncreatureSpellsCastThisTurn := 0
-          castManaValuesThisTurn := #[] }
+          castManaValuesThisTurn := #[]
+          belladonnaResolvesThisTurn := 0 }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn then
         g := g.setObject { o with status := { o.status with
