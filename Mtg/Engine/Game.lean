@@ -564,6 +564,8 @@ structure Player where
   graveyard : Array ObjectId := #[]
   /-- Cards drawn this turn (for “second card each turn” triggers). -/
   cardsDrawnThisTurn : Nat := 0
+  /-- Cards drawn during your current draw step (Bard, King of Dale). -/
+  cardsDrawnThisDrawStep : Nat := 0
   /-- Spells cast this turn (for “second spell each turn” triggers). -/
   spellsCastThisTurn : Nat := 0
   /-- Noncreature spells cast this turn. -/
@@ -1103,10 +1105,10 @@ def humanSoldierToken : CardDef := {
   isToken := true
 }
 
-/-- Create a token under `controller` (CR 111.2 / 608.2c). Callers that must
-let enters-the-battlefield triggers see the token (amass, recruit) invoke
-`afterPermanentEnters` after this returns. -/
-def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
+/-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
+that must let enters-the-battlefield triggers see the token (amass, recruit)
+invoke `afterPermanentEnters` after this returns. -/
+def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) : Game × GameObject :=
   let printed := { printed with isToken := true }
   let sick := printed.isCreature && !printed.keywords.haste
@@ -1116,6 +1118,37 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
   -- Storied is not a trigger; an artifact token can be the third permanent.
   let g := g.refreshEnduringStory
   (g, g.object! obj.id)
+
+/-- How many times a token-creating event is replaced (`2^n` for `n`
+token-doublers such as Bard, King of Dale). -/
+def tokenCreateMultiplier (g : Game) (controller : PlayerId) : Nat :=
+  let n := (g.permanentsOf controller).filter (fun o => o.printed.tokenDoubling) |>.size
+  Nat.pow 2 n
+
+/-- Extra Treasures created alongside each Food (Bilbo, Fellow Conspirator). -/
+def foodTreasureReplacements (g : Game) (controller : PlayerId) : Nat :=
+  (g.permanentsOf controller).filter (fun o => o.printed.foodAlsoCreatesTreasure) |>.size
+
+/-- Create a token under `controller`, applying token-doubling and
+Food-and-Treasure replacement effects. -/
+def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
+    (tapped := false) : Game × GameObject :=
+  let copies := g.tokenCreateMultiplier controller
+  let extraTreasure :=
+    if printed.hasSubtype "Food" then g.foodTreasureReplacements controller else 0
+  Id.run do
+    let mut g := g
+    let mut last : Option GameObject := none
+    for _ in [0:copies] do
+      let (g', obj) := g.createOneToken controller printed (tapped := tapped)
+      g := g'
+      last := some obj
+    for _ in [0:copies * extraTreasure] do
+      let (g', _) := g.createOneToken controller treasureToken (tapped := tapped)
+      g := g'
+    match last with
+    | some obj => (g, g.object! obj.id)
+    | none => (g, g.object! ⟨0⟩)
 
 /-- Create `n` Treasure tokens, optionally tapped. -/
 def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
@@ -1536,33 +1569,60 @@ def emptyManaPools (g : Game) : Game :=
         g := g.setPlayer { pl with manaPool := ManaPool.empty }
     return g
 
-/-- Draw `n` cards for `p` (CR 121). -/
+/-- Draw one card with no replacement effects (CR 121). -/
+def drawOneCard (g : Game) (p : PlayerId) : Game :=
+  let pl := g.player p
+  if pl.library.isEmpty then
+    let g := g.setPlayer { pl with drewFromEmpty := true }
+    g.logMsg s!"{pl.name} tries to draw from an empty library"
+  else
+    let top := pl.library.back!
+    let cardName := (g.object! top).name
+    let rest := pl.library.pop
+    let g := g.setPlayer { pl with library := rest }
+    let (g, _) := g.move top (.hand p) none
+    let pl := g.player p
+    let drawn := pl.cardsDrawnThisTurn + 1
+    let drawStepDrawn :=
+      if g.step == .draw && g.activePlayer == p then
+        pl.cardsDrawnThisDrawStep + 1
+      else pl.cardsDrawnThisDrawStep
+    let g := g.setPlayer { pl with
+      cardsDrawnThisTurn := drawn
+      cardsDrawnThisDrawStep := drawStepDrawn }
+    let g := g.logMsg s!"{pl.name} draws {cardName}"
+    Id.run do
+      let mut g := g
+      for o in g.permanentsOf p do
+        g := { g with waitingTriggers :=
+          g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
+        if drawn == 2 then
+          g := { g with waitingTriggers :=
+            g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+      return g
+
+/-- How many cards replace one draw (`2^n` Bard effects, except the first
+card of your draw step). -/
+def drawMultiplier (g : Game) (p : PlayerId) : Nat :=
+  let pl := g.player p
+  let firstOfYourDrawStep :=
+    g.step == .draw && g.activePlayer == p && pl.cardsDrawnThisDrawStep == 0
+  if firstOfYourDrawStep then 1
+  else
+    let n := (g.permanentsOf p).filter (fun o =>
+      o.printed.drawTwoExceptFirstDrawStep) |>.size
+    Nat.pow 2 n
+
 def draw (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let pl := g.player p
-      if pl.library.isEmpty then
-        g := g.setPlayer { pl with drewFromEmpty := true }
-        g := g.logMsg s!"{pl.name} tries to draw from an empty library"
-        return g
-      else
-        let top := pl.library.back!
-        let cardName := (g.object! top).name
-        let rest := pl.library.pop
-        g := g.setPlayer { pl with library := rest }
-        let (g', _) := g.move top (.hand p) none
-        g := g'
+      let copies := g.drawMultiplier p
+      for _ in [0:copies] do
         let pl := g.player p
-        let drawn := pl.cardsDrawnThisTurn + 1
-        g := g.setPlayer { pl with cardsDrawnThisTurn := drawn }
-        g := g.logMsg s!"{pl.name} draws {cardName}"
-        for o in g.permanentsOf p do
-          g := { g with waitingTriggers :=
-            g.waitingTriggers ++ o.waitingTriggersFor p .youDraw }
-          if drawn == 2 then
-            g := { g with waitingTriggers :=
-              g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+        if pl.drewFromEmpty then
+          return g
+        g := g.drawOneCard p
     return g
 
 /-- Draw, then discard; if the discarded card is not a land, create a
@@ -6064,6 +6124,7 @@ def clearTurnActivations (g : Game) : Game :=
       if pl.cardsDrawnThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
+          cardsDrawnThisDrawStep := 0
           spellsCastThisTurn := 0
           noncreatureSpellsCastThisTurn := 0
           castManaValuesThisTurn := #[] }

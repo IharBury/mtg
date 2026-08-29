@@ -1180,4 +1180,187 @@ def adventureCopyCannotRecast : Bool :=
 
 #guard adventureCopyCannotRecast
 
+/-!
+## 79, 81, 127 — Galion sets base P/T
+-/
+
+/-- Ruling 81: Galion copies its actual power and toughness, not its base. -/
+def galionSetsActualPtOk : Bool :=
+  galionResolved.basePower (namedPermanent galionResolved "Llanowar Elves") == 4 &&
+    galionResolved.baseToughness (namedPermanent galionResolved "Llanowar Elves") == 4 &&
+    galionPumpedResolved.power
+      (namedPermanent galionPumpedResolved "Galion, Elvenking's Butler") == 6 &&
+    galionPumpedResolved.power (namedPermanent galionPumpedResolved "Llanowar Elves") == 6
+
+#guard galionSetsActualPtOk
+
+/-- Ruling 81: later changes to Galion do not update the other creature. -/
+def galionLaterPumpOk : Bool :=
+  galionPumpedAfterResolve.power
+      (namedPermanent galionPumpedAfterResolve "Galion, Elvenking's Butler") == 7 &&
+    galionPumpedAfterResolve.power
+      (namedPermanent galionPumpedAfterResolve "Llanowar Elves") == 4
+
+#guard galionLaterPumpOk
+
+/-- Ruling 79 / 127: counters and other modifiers apply after the new base;
+later set-P/T effects overwrite Galion's. -/
+def galionCountersAfterBaseOk : Bool :=
+  galionOnCounteredElves.basePower
+      (namedPermanent galionOnCounteredElves "Llanowar Elves") == 4 &&
+    galionOnCounteredElves.power
+      (namedPermanent galionOnCounteredElves "Llanowar Elves") == 5
+
+#guard galionCountersAfterBaseOk
+
+/-!
+## 91–92, 123, 169, 203, 265 — Bard token doubling
+## 204, 219 — Bilbo Food also creates Treasure
+-/
+
+def withBard : Game := addPermanent afterDraw bardKingOfDale ⟨0⟩ ⟨0⟩
+
+/-- Ruling 91: Bard doubles created tokens, not nontoken permanents that
+happen to become tokens when a copy of a permanent spell resolves. -/
+def bardCreatesTwoTreasures : Game :=
+  (withBard.createToken ⟨0⟩ Game.treasureToken).1
+
+def bardDoesNotDoubleNontoken : Game :=
+  addPermanent withBard grizzlyBears ⟨0⟩ ⟨0⟩
+
+def bardTokenNotNontokenOk : Bool :=
+  (bardCreatesTwoTreasures.battlefield.filter (fun o => o.name == "Treasure")).size == 2 &&
+    (bardDoesNotDoubleNontoken.battlefield.filter (fun o =>
+      o.name == "Grizzly Bears")).size == 1 &&
+    !(namedPermanent bardDoesNotDoubleNontoken "Grizzly Bears").printed.isToken &&
+    (ruling 91).comment.contains "will not be doubled"
+
+#guard bardTokenNotNontokenOk
+
+/-- Ruling 123: the doubled tokens enter with the same characteristics. -/
+def bardTokensSame : Bool :=
+  let ts := bardCreatesTwoTreasures.battlefield.filter (fun o => o.name == "Treasure")
+  ts.size == 2 &&
+    ts[0]!.printed.types == ts[1]!.printed.types &&
+    ts[0]!.printed.subtypes == ts[1]!.printed.subtypes &&
+    ts[0]!.printed.isToken && ts[1]!.printed.isToken &&
+    (ruling 123).comment.contains "same name"
+
+#guard bardTokensSame
+
+/-- Ruling 92: two Bards multiply draws by four (skip legend-rule SBA). -/
+def twoBards : Game :=
+  addPermanent withBard bardKingOfDale ⟨0⟩ ⟨0⟩
+
+def twoBardsDraw : Game := twoBards.draw ⟨0⟩ 1
+
+def twoBardsDrawOk : Bool :=
+  (twoBards.battlefield.filter (fun o => o.name == "Bard, King of Dale")).size == 2 &&
+    (twoBardsDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 4 &&
+    (ruling 92).comment.contains "multiplied by four"
+
+#guard twoBardsDrawOk
+
+/-- Ruling 92: one Bard doubles a draw that is not the first of your draw step. -/
+def oneBardMainDraw : Game := withBard.draw ⟨0⟩ 1
+
+#guard (oneBardMainDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 2
+
+/-- Ruling 92: the first card of your draw step is not replaced. -/
+def bardOnNissaUpkeep : Game :=
+  addPermanent afterSilentCleanup bardKingOfDale ⟨1⟩ ⟨1⟩
+
+def bardFirstDrawStep : Game := skipTo bardOnNissaUpkeep .draw 80
+
+def bardFirstDrawStepOk : Bool :=
+  bardFirstDrawStep.step == .draw &&
+    bardFirstDrawStep.activePlayer == ⟨1⟩ &&
+    (bardFirstDrawStep.player ⟨1⟩).hand.size ==
+      (afterSilentCleanup.player ⟨1⟩).hand.size + 1
+
+#guard bardFirstDrawStepOk
+
+/-- A later draw in the same draw step is replaced. -/
+def bardSecondDrawStep : Game := bardFirstDrawStep.draw ⟨1⟩ 1
+
+#guard
+  (bardSecondDrawStep.player ⟨1⟩).hand.size ==
+    (afterSilentCleanup.player ⟨1⟩).hand.size + 3
+
+/-- Ruling 265: two Bards create four times as many tokens. -/
+def twoBardsFourTreasures : Game :=
+  (twoBards.createToken ⟨0⟩ Game.treasureToken).1
+
+#guard
+  (twoBardsFourTreasures.battlefield.filter (fun o => o.name == "Treasure")).size == 4
+#guard (ruling 265).comment.contains "four times"
+
+/-- Ruling 203: amass with Bard creates two Armies; counters go on one;
+the other dies as a 0/0. -/
+def bardAmass : Game := withBard.amassGoblins ⟨0⟩ 3
+
+def bardAmassBeforeSbaOk : Bool :=
+  let armies := bardAmass.battlefield.filter (fun o => o.name == "Goblin Army")
+  armies.size == 2 &&
+    armies.any (fun o => o.status.plusOnePlusOne == 3) &&
+    armies.any (fun o => o.status.plusOnePlusOne == 0)
+
+#guard bardAmassBeforeSbaOk
+
+def bardAmassAfterSba : Game := bardAmass.checkSBA
+
+def bardAmassAfterSbaOk : Bool :=
+  let armies := bardAmassAfterSba.battlefield.filter (fun o => o.name == "Goblin Army")
+  armies.size == 1 && armies[0]!.status.plusOnePlusOne == 3
+
+#guard bardAmassAfterSbaOk
+
+/-- Ruling 204: creating N Food with Bilbo also creates N Treasure. -/
+def withBilbo : Game := addPermanent afterDraw bilboFellowConspirator ⟨0⟩ ⟨0⟩
+
+def bilboOneFood : Game := (withBilbo.createToken ⟨0⟩ Game.foodToken).1
+
+def bilboOneFoodOk : Bool :=
+  (bilboOneFood.battlefield.filter (fun o => o.name == "Food")).size == 1 &&
+    (bilboOneFood.battlefield.filter (fun o => o.name == "Treasure")).size == 1
+
+#guard bilboOneFoodOk
+
+def bilboTwoFood : Game := withBilbo.createKindTokens ⟨0⟩ .food 2
+
+def bilboTwoFoodOk : Bool :=
+  (bilboTwoFood.battlefield.filter (fun o => o.name == "Food")).size == 2 &&
+    (bilboTwoFood.battlefield.filter (fun o => o.name == "Treasure")).size == 2 &&
+    (ruling 204).comment.contains "that many Treasure"
+
+#guard bilboTwoFoodOk
+
+/-- Ruling 219: two Bilbos add two Treasures per Food (skip legend-rule SBA). -/
+def twoBilbos : Game :=
+  addPermanent withBilbo bilboFellowConspirator ⟨0⟩ ⟨0⟩
+
+def twoBilbosFood : Game := (twoBilbos.createToken ⟨0⟩ Game.foodToken).1
+
+def twoBilbosFoodOk : Bool :=
+  (twoBilbos.battlefield.filter (fun o => o.name == "Bilbo, Fellow Conspirator")).size == 2 &&
+    (twoBilbosFood.battlefield.filter (fun o => o.name == "Food")).size == 1 &&
+    (twoBilbosFood.battlefield.filter (fun o => o.name == "Treasure")).size == 2 &&
+    (ruling 219).comment.contains "twice that many Treasure"
+
+#guard twoBilbosFoodOk
+
+/-- Ruling 169: Bard plus Bilbo on one Food yields two Food and two Treasure
+regardless of replacement order. -/
+def bardAndBilbo : Game :=
+  addPermanent withBard bilboFellowConspirator ⟨0⟩ ⟨0⟩
+
+def bardAndBilboFood : Game := (bardAndBilbo.createToken ⟨0⟩ Game.foodToken).1
+
+def bardAndBilboFoodOk : Bool :=
+  (bardAndBilboFood.battlefield.filter (fun o => o.name == "Food")).size == 2 &&
+    (bardAndBilboFood.battlefield.filter (fun o => o.name == "Treasure")).size == 2 &&
+    (ruling 169).comment.contains "two Food tokens and two Treasure tokens"
+
+#guard bardAndBilboFoodOk
+
 end Mtg.Engine.RulingTests

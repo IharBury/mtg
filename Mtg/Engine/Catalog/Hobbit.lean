@@ -933,8 +933,8 @@ def bardTheBowman : CardDef :=
 def bardKingOfDale : CardDef :=
   legendaryCreature "Bard, King of Dale" (ManaCost.ofGenericAndColors 4 [.white, .blue]) #["Human", "Noble", "Archer"] 3 5 (oracleText := "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.")
     (keywords := Keyword.reach.merge Keyword.vigilance)
-    (staticAbilities := #[.printed "If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.",
-      .printed "If one or more tokens would be created under your control, twice that many of those tokens are created instead."])
+    (tokenDoubling := true)
+    (drawTwoExceptFirstDrawStep := true)
 
 def bejeweledWarg : CardDef :=
   creature "Bejeweled Warg" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 3 2 (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")

@@ -3705,6 +3705,12 @@ structure CardDef where
   cascade : Nat := 0
   /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
   kicker : Option ManaCost := none
+  /-- If one or more tokens would be created under your control, twice that
+  many of those tokens are created instead (e.g. Bard, King of Dale). -/
+  tokenDoubling : Bool := false
+  /-- If you would draw a card except the first one you draw in each of your
+  draw steps, draw two cards instead. -/
+  drawTwoExceptFirstDrawStep : Bool := false
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]

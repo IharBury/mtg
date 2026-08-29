@@ -436,6 +436,12 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.foodAlsoCreatesTreasure then
     ["If you would create a Food token, instead create a Food token and a Treasure token."]
    else []) ++
+  (if c.drawTwoExceptFirstDrawStep then
+    ["If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead."]
+   else []) ++
+  (if c.tokenDoubling then
+    ["If one or more tokens would be created under your control, twice that many of those tokens are created instead."]
+   else []) ++
   (if c.othersEnterWithPlusOneEqualToughness then
     ["Each other creature you control enters with a number of additional +1/+1 counters on it equal to this toughness."]
    else []) ++
