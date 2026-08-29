@@ -15,3 +15,21 @@ jobs:
         with:
           # Fail if Lean or Lake logs any warning (e.g. deprecations).
           build-args: "--wfail"
+      - name: Check example games
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(examples/*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No example game files found in examples/"
+            exit 1
+          fi
+          status=0
+          for f in "${files[@]}"; do
+            echo "Checking $f"
+            if ! lake exe mtg-demo -- --check --input "$f"; then
+              echo "FAIL: $f is not a valid complete game"
+              status=1
+            fi
+          done
+          exit "$status"
