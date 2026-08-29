@@ -587,6 +587,9 @@ structure Player where
   commanderColorIdentity : ColorSet := {}
   /-- Times Belladonna Took's token-enters ability has resolved this turn. -/
   belladonnaResolvesThisTurn : Nat := 0
+  /-- Protection from everything until this player's next turn
+  (e.g. The One Ring). -/
+  protectionFromEverything : Bool := false
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -768,9 +771,11 @@ def forEachOpponent (g : Game) (controller : PlayerId) (f : Game → PlayerId �
     Game :=
   g.livingOpponents controller |>.foldl (fun g pl => f g pl.id) g
 
-/-- Player targets for every member of `ps`. -/
+/-- Player targets for every member of `ps` who does not have protection
+from everything. -/
 def playerTargets (ps : Array Player) : Array Target :=
-  ps.map (fun pl => Target.player pl.id)
+  ps.filter (fun pl => !pl.protectionFromEverything) |>.map (fun pl =>
+    Target.player pl.id)
 
 /-- Living players in turn order from `start` who satisfy `eligible`. -/
 def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool) :
@@ -4293,9 +4298,13 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
-def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int) : Game :=
+def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
+    (preventable := true) : Game :=
   let pl := g.player pid
-  g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
+  if preventable && pl.protectionFromEverything then
+    g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"
+  else
+    g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
 
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/
@@ -6529,6 +6538,12 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority g.activePlayer
 
 def beginTurn (g : Game) : Game :=
+  let p := g.activePlayer
+  let g :=
+    if (g.player p).protectionFromEverything then
+      g.setPlayer { (g.player p) with protectionFromEverything := false }
+        |>.logMsg s!"{(g.player p).name}'s protection from everything ends"
+    else g
   -- No player receives priority during untap (CR 502.4).
   (g.beginStep .untap).beginStep .upkeep
 

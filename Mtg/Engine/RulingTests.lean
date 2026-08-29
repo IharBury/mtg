@@ -2432,4 +2432,82 @@ def smiteZeroDamageOk : Bool :=
 
 #guard smiteZeroDamageOk
 
+/-- Ruling 149 / 159–162: an exiled token ceases to exist and does not return. -/
+def exiledTokenCeases : Game :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ Game.humanSoldierToken
+  let (g, _) := g.move tok.id .exile none
+  g.checkSBA
+
+def exiledTokenCeasesOk : Bool :=
+  !exiledTokenCeases.objects.any (fun o => o.name == "Human Soldier") &&
+    (ruling 149).comment.contains "ceases to exist" &&
+    ((ruling 159).comment.contains "won't return" ||
+      (ruling 159).comment.contains "won't be returned") &&
+    ((ruling 160).comment.contains "won't return" ||
+      (ruling 160).comment.contains "won’t return") &&
+    (ruling 161).comment.contains "won't return" &&
+    (ruling 162).comment.contains "won't be returned"
+
+#guard exiledTokenCeasesOk
+
+/-- Ruling 151 / 126 / 256: protection from everything blocks targeting and
+preventable damage, but not unpreventable damage. -/
+def withProtection : Game :=
+  afterDraw.modifyPlayer ⟨1⟩ (fun pl => { pl with protectionFromEverything := true })
+
+def protectionFromEverythingOk : Bool :=
+  let ts := withProtection.legalTargets ⟨0⟩ (.dealDamage 3)
+  !ts.any (fun t => t == Target.player ⟨1⟩) &&
+    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5
+     (g.player ⟨1⟩).life == 20 &&
+       g.log.any (fun s => mentions s "prevented")) &&
+    (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5 (preventable := false)
+     (g.player ⟨1⟩).life == 15) &&
+    (ruling 151).comment.contains "can't be the target" &&
+    (ruling 126).comment.contains "illegal target" &&
+    (ruling 256).comment.contains "can't be prevented"
+
+#guard protectionFromEverythingOk
+
+/-- Ruling 167: tapping an attacking Human for Garrison leaves it attacking. -/
+def garrisonTapAttackerOk : Bool :=
+  let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let human :=
+    creature "Townsfolk" (ManaCost.ofGeneric 1) #["Human"] 1 1
+  let g := addPermanent g human ⟨0⟩ ⟨0⟩
+  let h := namedPermanent g "Townsfolk"
+  let g := g.setObject { h with status := { h.status with attacking := true } }
+  let g := { g with pending := .tapHumans ⟨0⟩ }
+  match g.choosePermanents ⟨0⟩ #[(namedPermanent g "Townsfolk").id] with
+  | .error _ => false
+  | .ok g =>
+    (namedPermanent g "Townsfolk").status.tapped &&
+      (namedPermanent g "Townsfolk").status.attacking &&
+      (ruling 167).comment.contains "remains an attacking creature"
+
+#guard garrisonTapAttackerOk
+
+/-- Ruling 170: Elven Chorus is not an Elf card. -/
+def elvenChorusNotElfOk : Bool :=
+  !elvenChorus.hasSubtype "Elf" &&
+    !elvenChorus.isCreature &&
+    (ruling 170).comment.contains "Elven Chorus is not an Elf"
+
+#guard elvenChorusNotElfOk
+
+/-- Ruling 206: if Executioner is your only creature, you sacrifice it. -/
+def executionerSacrificesSelf : Game :=
+  let g := addPermanent afterDraw mercilessExecutioner ⟨0⟩ ⟨0⟩
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterEachPlayerSacrificesCreature
+    (some (namedPermanent g "Merciless Executioner").id)
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Merciless Executioner").id)
+
+def executionerSacrificesSelfOk : Bool :=
+  !executionerSacrificesSelf.battlefield.any (fun o =>
+      o.name == "Merciless Executioner") &&
+    (ruling 206).comment.contains "sacrifice Merciless Executioner"
+
+#guard executionerSacrificesSelfOk
+
 end Mtg.Engine.RulingTests
