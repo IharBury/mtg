@@ -11163,6 +11163,30 @@ open Catalog.HobbitSet
 #guard ironHillsStalwart.matchesOracleText
 #guard oldFatSpider.matchesOracleText
 #guard greatGildedBoat.matchesOracleText
+#guard minasTirith.matchesOracleText
+#guard theShire.matchesOracleText
+#guard thranduilTheStrategist.matchesOracleText
+#guard desolationOfSmaug.matchesOracleText
+#guard moxAmber.matchesOracleText
+#guard filiAndKiliJoyous.matchesOracleText
+#guard dwarvenMauler.matchesOracleText
+#guard myPrecious.matchesOracleText
+#guard troopOfPonies.matchesOracleText
+#guard arcaneSignet.matchesOracleText
+#guard theGaffer.matchesOracleText
+#guard witchKingBringerOfRuin.matchesOracleText
+#guard elvenRaftSteerer.matchesOracleText
+#guard mirkwoodMeditator.matchesOracleText
+#guard mirkwoodNurturer.matchesOracleText
+#guard necklaceOfGirion.matchesOracleText
+#guard kiliTheResourceful.matchesOracleText
+#guard dainsCompany.matchesOracleText
+#guard sauronTheLidlessEye.matchesOracleText
+#guard bolgEreborsReckoning.matchesOracleText
+#guard smaugWickedWorm.matchesOracleText
+#guard glamdringFoeHammer.matchesOracleText
+#guard settleTheWreckage.matchesOracleText
+#guard anUnexpectedParty.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3

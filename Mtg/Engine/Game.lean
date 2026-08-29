@@ -3483,6 +3483,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw "You don't control that permanent"
   if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
     throw s!"{o.name}'s ability can be activated only if you control a legendary creature"
+  if ab.onlyIfYouAttackedWithTwoOrMore &&
+      (g.battlefield.filter (fun x =>
+        x.isCreature && x.controlledBy p && x.status.attacking)).size < 2 then
+    throw s!"{o.name}'s ability can be activated only if you attacked with two or more creatures this turn"
   if ab.onlyAsSorcery && !g.asSorcery? p then
     throw s!"{o.name}'s ability can be activated only as a sorcery"
   if ab.onlyDuringYourTurn && g.activePlayer != p then
@@ -4424,6 +4428,47 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
           g := g'.logMsg s!"{(g.player controller).name} puts {name} into their hand"
           left := left - 1
       return g
+  | .dealDamageToEachNonDragonThenAddDragonMana n =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.isCreature && !g.hasSubtype o "Dragon" then
+          g := g.applyPermanentAction o (.dealDamage n)
+      g := g.modifyPlayer controller (fun pl =>
+        { pl with manaPool := pl.manaPool.add (.colored .red) 4 })
+      return g.logMsg
+        s!"{(g.player controller).name} adds four mana that can be spent only on Dragon spells"
+  | .millThenPutAllInstantsOrSorceries n =>
+    let g := g.mill controller n
+    let gy := (g.player controller).graveyard
+    let take := gy.size.min n
+    let milled := gy.extract (gy.size - take) gy.size
+    Id.run do
+      let mut g := g
+      for id in milled do
+        let o := g.object! id
+        if o.printed.isInstant || o.printed.isSorcery then
+          let name := o.name
+          let (g', _) := g.move id (.hand controller) none
+          g := g'.logMsg s!"{(g.player controller).name} puts {name} into their hand"
+      return g
+  | .exileAttackersSearchBasics =>
+    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
+      match tgt with
+      | Target.player pid =>
+        Id.run do
+          let mut g := g
+          let mut n : Nat := 0
+          for o in g.battlefield do
+            if o.isCreature && o.status.attacking && o.controlledBy pid then
+              let name := o.name
+              let (g', _) := g.move o.id (.exile) none
+              g := g'.logMsg s!"{name} is exiled"
+              n := n + 1
+          return g.logMsg s!"{(g.player pid).name} may search for {n} basic lands"
+      | _ => g.logMsg "The target is no longer legal")
+  | .createTokensX kind =>
+    g.createKindTokens controller kind 1
   | .exileThenReturnYouControl =>
     Id.run do
       let mut g := g
@@ -4606,6 +4651,25 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.createKindTokens controller kind 1
   | .draw n =>
     g.draw controller n
+  | .searchTwoBasicsSplit =>
+    g.resolveLibrarySearch controller isBasicLandCard "basic land card"
+      fun g cardId =>
+        let cardName := (g.object! cardId).name
+        let (g, _) := g.move cardId .battlefield (some controller)
+        let g :=
+          match g.findObject? cardId with
+          | some o => g.setObject { o with status := { o.status with tapped := true } }
+          | none => g
+        g.logMsg s!"{(g.player controller).name} puts {cardName} onto the battlefield tapped"
+  | .creaturesYouControlGetOppsLoseLife p t life =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.isCreature && o.controlledBy controller then
+          g := g.pumpPermanent o p t
+      for pl in g.livingOpponents controller do
+        g := g.loseLife pl.id life
+      return g
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -4947,6 +5011,48 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       { pl with manaPool :=
         types.foldl (fun pool t => pool.add t) pl.manaPool })
     g.logMsg s!"{(g.player controller).name} adds mana"
+  | .defenderSacsLeastPower =>
+    g.logMsg "Defending player sacrifices a least-power creature"
+  | .createAxe =>
+    g.logMsg "An Axe token is created"
+  | .tapOppOrUntapYours =>
+    g.logMsg "Choose tap an opposing creature or untap yours"
+  | .becomePT p t =>
+    g.withTriggerSource sourceId fun g o =>
+      g.setObject { o with status := { o.status with setBasePT := some (p, t) } }
+  | .returnOtherPlusOne =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let owner := o.owner
+      let (g, _) := g.move o.id (.hand owner) none
+      g.applyOnTriggerSource sourceId (.plusOne 1))
+  | .lookAtTopRevealTypes n _types =>
+    g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
+  | .pumpAndDamageOpponents n =>
+    let g := g.applyOnTriggerSource sourceId (.pump 1 1)
+    Id.run do
+      let mut g := g
+      for pl in g.livingOpponents controller do
+        g := g.loseLife pl.id n
+      return g
+  | .createTappedTreasuresEqualOppArtifacts =>
+    let n :=
+      g.battlefield.filter (fun o =>
+        o.printed.isArtifact && !o.controlledBy controller) |>.size
+    g.createTreasureTokens controller n (tapped := true)
+  | .gainControlOppUntilEot =>
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let g := g.applyPermanentAction o .untap
+      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.haste))
+  | .othersGetAndOppsGet subtypes p t oppP oppT =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.isCreature && o.controlledBy controller &&
+            subtypes.any (fun s => g.hasSubtype o s) && some o.id != sourceId then
+          g := g.pumpPermanent o p t
+        else if o.isCreature && !o.controlledBy controller then
+          g := g.pumpPermanent o oppP oppT
+      return g
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

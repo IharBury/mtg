@@ -259,9 +259,13 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
 sentences, not parentheticals, so they survive reminder-text stripping. -/
 def activatedOracleLine (ab : ActivatedAbility) : String :=
   if isEquipAbility ab then
+    let pay :=
+      if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     match ab.equipSubtype with
-    | some t => s!"Equip {t} {ab.cost.mana}"
-    | none => s!"Equip {ab.cost.mana}"
+    | some t => s!"Equip {t} {ab.cost.mana}{pay}"
+    | none =>
+      if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
+      else s!"Equip {ab.cost.mana}"
   else
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
@@ -280,7 +284,9 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
           (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
         (if ab.onlyIfYouControlLegendary then
-          " Activate only if you control a legendary creature." else "")
+          " Activate only if you control a legendary creature." else "") ++
+        (if ab.onlyIfYouAttackedWithTwoOrMore then
+          " Activate only if you attacked with two or more creatures this turn." else "")
       let body :=
         if ab.isModal then
           let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -311,7 +317,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionEqualFlyingPower then
     ["This spell costs {X} less to cast, where X is the total power of creatures you control with flying."]
    else []) ++
-  (if c.additionalCostSacrificeArtifactOrCreature then
+  (if c.additionalCostSacrificeCreature then
+    ["As an additional cost to cast this spell, sacrifice a creature"]
+   else if c.additionalCostSacrificeArtifactOrCreature then
     match c.additionalCostOrPayGeneric with
     | some n =>
       [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
@@ -337,6 +345,23 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.tapAddAnyColorForLegendary then
     ["{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered."]
    else []) ++
+  (if c.tapAddAnyColorAmongLegendaries then
+    ["{T}: Add one mana of any color among legendary creatures and planeswalkers you control."]
+   else []) ++
+  (if c.tapAddCommanderIdentity then
+    ["{T}: Add one mana of any color in your commander's color identity."]
+   else []) ++
+  (match c.tapAddRestricted with
+   | some (types, restriction) =>
+     let parts := types.toList.map (fun t => s!"\{{t.letter}}")
+     [s!"\{T}: Add {String.intercalate "" parts}. Spend this mana only to cast {restriction}."]
+   | none => []) ++
+  (match c.tapPayLifeAddOneOf with
+   | some (life, types) =>
+     let add :=
+       String.intercalate " or " (types.toList.map (fun t => s!"\{{t.letter}}"))
+     [s!"\{T}, Pay {life} life: Add {add}."]
+   | none => []) ++
   (if c.tapAddTwoAmong.size >= 2 then
     let letters := c.tapAddTwoAmong.toList.map (fun t => s!"\{{t.letter}}")
     let joined :=
@@ -380,6 +405,13 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.entersTappedUnlessEquipment then
     ["This land enters tapped unless you control an Equipment."]
    else []) ++
+  (match c.entersTappedUnlessPayLife with
+   | some n =>
+     [s!"As {c.name} enters, you may pay {n} life. If you don't, it enters tapped."]
+   | none => []) ++
+  (if c.asEntersChooseCreatureType then
+    ["As this enchantment enters, choose a creature type."]
+   else []) ++
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
    else []) ++
@@ -407,6 +439,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.returnCreatureFromGyThenAmass n) =>
       ["Return up to one target creature card from your graveyard to your hand.",
         s!"Amass Goblins {n}."]
+    | some (.dealDamageToEachNonDragonThenAddDragonMana n) =>
+      [s!"{c.name} deals {n} damage to each non-Dragon creature.",
+        "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -416,7 +451,12 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
       match adv.spellEffect with
       | some e => spellEffectLine adv.name e
       | none => adv.oracleText
-    [s!"{adv.name} {adv.manaCost} {formatTypeLine #[] adv.types adv.subtypes} {effect}"]
+    let typeLine := formatTypeLine #[] adv.types adv.subtypes
+    if adv.additionalCostSacrificeCreature then
+      [s!"{adv.name} {adv.manaCost} {typeLine} As an additional cost to cast this spell, sacrifice a creature.",
+        effect]
+    else
+      [s!"{adv.name} {adv.manaCost} {typeLine} {effect}"]
 
 /-- Split a unit into modeled keywords or a normalized leftover line. -/
 def classifyUnit (cardName : String) (unit : String) : Sum (List String) String :=
