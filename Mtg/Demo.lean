@@ -33,9 +33,10 @@ commands such as `state` and `quit` are omitted. When `--input` and
 accepted console commands are appended. `autopay` is recorded as the individual
 `tap` and `pay` commands it performs. `your turn`, `my turn`, `main phase`,
 and `attack step` keep passing until the named step (or until a player must
-take a non-pass action) and are recorded as the individual `pass` commands
-they perform (`noattack` / `noblock` when those are the only legal
-declarations). `attach <id>` attaches an Equipment
+take a non-pass action). `ignore` keeps passing until your next main phase
+even if other players take actions. Those shortcuts are recorded as the
+individual `pass` commands they perform (`noattack` / `noblock` when those
+are the only legal declarations). `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -82,7 +83,7 @@ Options:
                   The same path as --input replays that file and appends
                   new commands. Unique automatic cost payments are written
                   as tap, pay, and sacrifice commands. Pass-until shortcuts
-                  (your turn, my turn, main phase, attack step) are written
+                  (your turn, my turn, main phase, attack step, ignore) are written
                   as the individual pass commands they perform
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
@@ -661,6 +662,7 @@ def helpInteractive (controlAll : Bool := false)
   my turn              Pass until the main phase of the next turn if that turn is yours
   main phase           Pass until the next main phase
   attack step          Pass until the next combat phase
+  ignore               Pass until your next main phase (other players may still act)
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
@@ -726,6 +728,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "my turn").length > 1
 #guard ((helpInteractive false).splitOn "main phase").length > 1
 #guard ((helpInteractive false).splitOn "attack step").length > 1
+#guard ((helpInteractive false).splitOn "ignore").length > 1
+#guard ((helpInteractive false).splitOn "other players may still act").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2g").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
@@ -2796,6 +2800,58 @@ def applyAttackStep (g : Game) (tokens : List String) :
   | ["step"] => applyPassUntil g .nextCombat
   | _ => throw attackStepUsage
 
+/-- Goal for `ignore`: the issuer's next main phase after this snapshot. -/
+structure IgnoreGoal where
+  issuer : PlayerId
+  startTurn : Nat
+  startStep : Step
+deriving DecidableEq, Repr
+
+def ignoreUsage : String := "usage: ignore"
+
+def ignoreGoalAt (g : Game) (p : PlayerId) : IgnoreGoal :=
+  { issuer := p, startTurn := g.turnNumber, startStep := g.step }
+
+/-- True when `g` is a main phase of the issuer that is not the starting step. -/
+def reachedIgnore (g : Game) (goal : IgnoreGoal) : Bool :=
+  g.step.isMainPhase && g.activePlayer == goal.issuer &&
+    !(g.turnNumber == goal.startTurn && g.step == goal.startStep)
+
+/-- `ignore` only issues commands as the issuer; other players may still act. -/
+def ignoreCommand? (g : Game) (issuer : PlayerId) : Option String :=
+  match g.actor with
+  | some p =>
+    if p == issuer then passUntilCommand? g else none
+  | none => none
+
+/-- Pass as the issuer until their next main phase, another player must act,
+or the issuer must take a non-pass action. -/
+def applyIgnoreSteps (g : Game) (goal : IgnoreGoal) (fuel : Nat) (cmds : Array String) :
+    Except String PassUntilResult :=
+  match fuel with
+  | 0 => throw "Could not finish passing to your next main phase"
+  | n + 1 =>
+    if g.over || reachedIgnore g goal then
+      .ok { game := g, commands := cmds }
+    else
+      match ignoreCommand? g goal.issuer with
+      | none => .ok { game := g, commands := cmds }
+      | some line =>
+        match applyPassUntilLine g line with
+        | .error e =>
+          if cmds.isEmpty then .error e
+          else .ok { game := g, commands := cmds }
+        | .ok g' => applyIgnoreSteps g' goal n (cmds.push line)
+
+/-- `ignore`: pass until the issuer's next main phase. Stops when another
+player must act so they can take that action; the console loop resumes
+passing for the issuer afterward. -/
+def applyIgnore (g : Game) (p : PlayerId) (tokens : List String) :
+    Except String PassUntilResult := do
+  match commandTokens tokens with
+  | [] => applyIgnoreSteps g (ignoreGoalAt g p) passUntilFuel #[]
+  | _ => throw ignoreUsage
+
 /-- Two-word shortcuts that expand to `pass` (and empty combat declarations). -/
 def isPassShortcut (cmd : String) (args : List String) : Bool :=
   match cmd, commandTokens args with
@@ -2803,12 +2859,13 @@ def isPassShortcut (cmd : String) (args : List String) : Bool :=
   | "my", ["turn"] => true
   | "main", ["phase"] => true
   | "attack", ["step"] => true
+  | "ignore", [] => true
   | _, _ => false
 
 /-- First word of a pass-until shortcut, including incomplete `your` / `my` /
 `main` so usage errors are reported. `attack` is only a shortcut with `step`. -/
 def isPassShortcutCmd (cmd : String) (args : List String) : Bool :=
-  cmd == "your" || cmd == "my" || cmd == "main" ||
+  cmd == "your" || cmd == "my" || cmd == "main" || cmd == "ignore" ||
     (cmd == "attack" && commandTokens args == ["step"])
 
 def applyPassShortcut (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
@@ -2818,6 +2875,7 @@ def applyPassShortcut (g : Game) (p : PlayerId) (cmd : String) (args : List Stri
   | "my" => applyMyTurn g p args
   | "main" => applyMainPhase g args
   | "attack" => applyAttackStep g args
+  | "ignore" => applyIgnore g p args
   | _ => throw s!"Unknown command: {cmd}"
 
 /-- Issue a pass-until shortcut as the player who currently must act. -/
@@ -2832,10 +2890,13 @@ def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
 #guard isPassShortcut "my" ["turn"]
 #guard isPassShortcut "main" ["phase"]
 #guard isPassShortcut "attack" ["step"]
+#guard isPassShortcut "ignore" []
 #guard !isPassShortcut "your" []
 #guard !isPassShortcut "attack" []
 #guard !isPassShortcut "pass" []
+#guard !isPassShortcut "ignore" ["now"]
 #guard isPassShortcutCmd "your" []
+#guard isPassShortcutCmd "ignore" []
 #guard isPassShortcutCmd "attack" ["step"]
 #guard !isPassShortcutCmd "attack" []
 #guard reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
@@ -2844,6 +2905,14 @@ def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
   Tests.afterDraw.step .nextMain
 #guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
   Tests.afterDraw.turnNumber Tests.afterDraw.step .nextMain
+#guard
+  let goal := ignoreGoalAt Tests.afterDraw ⟨0⟩
+  !reachedIgnore Tests.afterDraw goal &&
+    reachedIgnore { Tests.afterDraw with step := .postcombatMain } goal &&
+    !reachedIgnore { Tests.afterDraw with
+      turnNumber := 2, activePlayer := ⟨1⟩, step := .precombatMain } goal &&
+    reachedIgnore { Tests.afterDraw with
+      turnNumber := 3, activePlayer := ⟨0⟩, step := .precombatMain } goal
 
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
@@ -2856,6 +2925,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "your" => applyYourTurn g p args |>.map (·.game)
   | "my" => applyMyTurn g p args |>.map (·.game)
   | "main" => applyMainPhase g args |>.map (·.game)
+  | "ignore" => applyIgnore g p args |>.map (·.game)
   | "pay" => g.apply p .pay
   | "autopay" => applyAutopay g p args |>.map (·.game)
   | "pay-extra" => applyPayExtra g p args
@@ -3636,6 +3706,34 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .error _ => false
 
 #guard
+  match applyIgnore Tests.afterDraw ⟨0⟩ ["now"] with
+  | .error msg => msg == ignoreUsage
+  | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.afterDraw "ignore" [] "ignore" with
+  | .ok (g', cmds) =>
+    cmds == #["pass"] &&
+      !cmds.contains "ignore" &&
+      g'.step == .precombatMain &&
+      g'.hasPriority ⟨1⟩ &&
+      !(reachedIgnore g' (ignoreGoalAt Tests.afterDraw ⟨0⟩))
+  | .error _ => false
+
+#guard
+  match applyIgnore Tests.afterDraw ⟨0⟩ [] with
+  | .error _ => false
+  | .ok r =>
+    match r.game.apply ⟨1⟩ .pass with
+    | .error _ => false
+    | .ok g2 =>
+      g2.step == .beginningOfCombat &&
+        match applyIgnore g2 ⟨0⟩ [] with
+        | .ok r2 =>
+          r2.commands == #["pass"] && r2.game.hasPriority ⟨1⟩
+        | .error _ => false
+
+#guard
   match applyShuffle Tests.norandomOpening [] with
   | .ok g' =>
     match g'.pendingRandom? with
@@ -3831,26 +3929,81 @@ def takeStartingPlayer (seats : Array Seat) (humanChooses : Bool) (decider : Nat
   | _ => false
 
 /-- Replay scripted game-state commands. Fails on an illegal command, leftover
+commands after the game ends, `quit`, or an unfinished game. `ignore` stays
+active so the issuer keeps passing after other players take actions. -/
+def replayCompleteGameGo (g : Game) (commands : List String)
+    (ignore : Option IgnoreGoal) (fuel : Nat) : Except String Game :=
+  match fuel with
+  | 0 => .error "Could not finish replay"
+  | n + 1 =>
+    let ignore :=
+      match ignore with
+      | some goal =>
+        if g.over || reachedIgnore g goal then none else some goal
+      | none => none
+    if g.over then
+      match commands with
+      | [] => .ok g
+      | line :: rest =>
+        if isCheckSkipCommand ((line.splitOn " ").headD "") then
+          replayCompleteGameGo g rest ignore n
+        else
+          .error s!"Unused command after the game ended: {line}"
+    else
+      match ignore with
+      | some goal =>
+        match ignoreCommand? g goal.issuer with
+        | some line =>
+          match applyPassUntilLine g line with
+          | .error e => .error s!"Invalid command `{line}`: {e}"
+          | .ok g' => replayCompleteGameGo g' commands ignore n
+        | none =>
+          match commands with
+          | [] => .error "Game is not complete"
+          | line :: rest =>
+            let cmd := (line.splitOn " ").headD ""
+            if isCheckSkipCommand cmd then
+              replayCompleteGameGo g rest ignore n
+            else if cmd == "quit" || cmd == "exit" then
+              .error "Game is not complete"
+            else if cmd == "first" then
+              .error "Starting player already chosen (CR 103.1)"
+            else if cmd == "ignore" then
+              match commandTokens ((line.splitOn " ").drop 1), actingPlayer g with
+              | [], .ok p =>
+                replayCompleteGameGo g rest (some (ignoreGoalAt g p)) n
+              | [], .error e => .error s!"Invalid command `{line}`: {e}"
+              | _, _ => .error s!"Invalid command `{line}`: {ignoreUsage}"
+            else
+              match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
+              | .error e => .error s!"Invalid command `{line}`: {e}"
+              | .ok (g', _) => replayCompleteGameGo g' rest ignore n
+      | none =>
+        match commands with
+        | [] => .error "Game is not complete"
+        | line :: rest =>
+          let cmd := (line.splitOn " ").headD ""
+          if isCheckSkipCommand cmd then
+            replayCompleteGameGo g rest none n
+          else if cmd == "quit" || cmd == "exit" then
+            .error "Game is not complete"
+          else if cmd == "first" then
+            .error "Starting player already chosen (CR 103.1)"
+          else if cmd == "ignore" then
+            match commandTokens ((line.splitOn " ").drop 1), actingPlayer g with
+            | [], .ok p =>
+              replayCompleteGameGo g rest (some (ignoreGoalAt g p)) n
+            | [], .error e => .error s!"Invalid command `{line}`: {e}"
+            | _, _ => .error s!"Invalid command `{line}`: {ignoreUsage}"
+          else
+            match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
+            | .error e => .error s!"Invalid command `{line}`: {e}"
+            | .ok (g', _) => replayCompleteGameGo g' rest none n
+
+/-- Replay scripted game-state commands. Fails on an illegal command, leftover
 commands after the game ends, `quit`, or an unfinished game. -/
 def replayCompleteGame (g : Game) (commands : List String) : Except String Game :=
-  match commands with
-  | [] =>
-    if g.over then .ok g
-    else .error "Game is not complete"
-  | line :: rest =>
-    let cmd := (line.splitOn " ").headD ""
-    if isCheckSkipCommand cmd then
-      replayCompleteGame g rest
-    else if g.over then
-      .error s!"Unused command after the game ended: {line}"
-    else if cmd == "quit" || cmd == "exit" then
-      .error "Game is not complete"
-    else if cmd == "first" then
-      .error "Starting player already chosen (CR 103.1)"
-    else
-      match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
-      | .error e => .error s!"Invalid command `{line}`: {e}"
-      | .ok (g', _) => replayCompleteGame g' rest
+  replayCompleteGameGo g commands none (commands.length * 8 + passUntilFuel)
 
 #guard
   match replayCompleteGame Tests.started ["concede"] with
@@ -3889,6 +4042,39 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
   match replayCompleteGame Tests.started ["not-a-command"] with
   | .error msg => msg == "Invalid command `not-a-command`: Unknown command: not-a-command"
   | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["ignore", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) => p == ⟨0⟩ && g'.log.any (fun s => Tests.mentions s "Nissa concedes")
+    | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["ignore", "pass", "concede"] with
+  | .ok g' =>
+    g'.over &&
+      g'.log.any (fun s => Tests.mentions s "beginning of combat") &&
+      match g'.result with
+      | some (.won p) => p == ⟨0⟩
+      | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["ignore now"] with
+  | .error msg => msg == s!"Invalid command `ignore now`: {ignoreUsage}"
+  | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw
+      ["ignore", "pass", "pass", "pass", "pass", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) =>
+      p == ⟨1⟩ && g'.log.any (fun s => Tests.mentions s "postcombat main")
+    | _ => false
+  | .error _ => false
 
 /-- One-line result used by `--check`. -/
 def describeCheckResult (g : Game) : String :=
@@ -4390,6 +4576,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   let mut playerView := startVisible
   let mut lastActor : Option PlayerId := g.actor
   let mut pending := pending
+  let mut ignoreGoal : Option IgnoreGoal := none
   let you : PlayerId := ⟨0⟩
   let youName := (g.player you).name
   IO.println (helpInteractive controlAll youName)
@@ -4450,6 +4637,21 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noblock"]
         g := g'
       continue
+    match ignoreGoal with
+    | some goal =>
+      if reachedIgnore g goal then
+        ignoreGoal := none
+      else
+        match ignoreCommand? g goal.issuer with
+        | some line =>
+          match applyPassUntilLine g line with
+          | .error e => IO.println s!"! {e}"
+          | .ok g' =>
+            seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #[line]
+            g := g'
+          continue
+        | none => pure ()
+    | none => pure ()
     if shouldAutoPass g pending then
       let some p := g.actor | continue
       match applyAutoAction g p .pass "pass" with
@@ -4500,6 +4702,12 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         else
           IO.println "Showing full game information."
     | _ =>
+      let ignoreStart : Option IgnoreGoal :=
+        if cmd == "ignore" && commandTokens (parts.drop 1) == [] then
+          match actingPlayer g with
+          | .ok p => some (ignoreGoalAt g p)
+          | .error _ => none
+        else none
       match applyLoggedAction g cmd (parts.drop 1) line with
       | .error e => IO.println s!"! {e}"
       | .ok (g', recorded) =>
@@ -4507,6 +4715,11 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
           recordAcceptedCommand output sameFile fromInput rec
         seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
         g := g'
+        match ignoreStart with
+        | some goal =>
+          if !g.over && !reachedIgnore g goal then
+            ignoreGoal := some goal
+        | none => pure ()
         if g.over then
           printState g (currentView g playerView controlAll)
   match g.result with
