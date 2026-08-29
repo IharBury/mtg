@@ -4624,6 +4624,7 @@ def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List 
     match checkCompleteGame opt demoSeats ["first Chandra", "keep", "keep"] with
     | .error msg => msg == "Game is not complete"
     | .ok _ => false
+  | _ => false
 
 #guard
   match parseArgs ["--interactive", "--input"] with
