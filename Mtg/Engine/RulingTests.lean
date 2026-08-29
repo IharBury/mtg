@@ -1680,4 +1680,443 @@ def glamdringReductionOk : Bool :=
 
 #guard glamdringReductionOk
 
+/-!
+## Extra triggers, Arwen enter-counters, Mox / Signet, and related comments
+-/
+
+/-- A Wolf used only to test extra-trigger rulings. -/
+def testWolf : CardDef :=
+  creature "Test Wolf" ManaCost.empty #["Wolf"] 1 1
+    (triggeredAbilities := #[.onEnterDraw 1])
+
+/-- Put `card` onto the battlefield through `putOntoBattlefield` so enter
+replacements (Arwen) apply. -/
+def enterPermanent (g : Game) (card : CardDef) (p : PlayerId) : Game :=
+  let g := addToHand g card p
+  let id := (handCardNamed g p card.name).id
+  let (g, newId) := g.putOntoBattlefield id p (summoningSick := false)
+  g.afterPermanentEnters (g.object! newId)
+
+/-- Arwen and another creature enter as one event (same `asOf` cutoff). -/
+def enterTogether (g : Game) (a b : CardDef) (p : PlayerId) : Game :=
+  let g := addToHand g a p
+  let g := addToHand g b p
+  let idA := (handCardNamed g p a.name).id
+  let idB := (handCardNamed g p b.name).id
+  let asOf := g.timestamp
+  let (g, newA) := g.putOntoBattlefield idA p (summoningSick := false)
+    (applyHope := false)
+  let (g, newB) := g.putOntoBattlefield idB p (summoningSick := false)
+    (applyHope := false)
+  let g := g.applyHopeEnterCounters (g.object! newA) asOf
+  g.applyHopeEnterCounters (g.object! newB) asOf
+
+def countWaiting (g : Game) (ab : TriggeredAbility) : Nat :=
+  g.waitingTriggers.filter (fun wt => wt.ability == ab) |>.size
+
+/-- Ruling 135: Bifur entering as the third storied permanent extra-triggers
+his own enters-or-attacks ability. -/
+def bifurEntersWithStory : Game :=
+  let g := addPermanent started moxAmber ⟨0⟩ ⟨0⟩
+  let g := addPermanent g arcaneSignet ⟨0⟩ ⟨0⟩
+  enterPermanent g bifurMelodicRider ⟨0⟩
+
+def bifurExtraTriggerOk : Bool :=
+  (bifurEntersWithStory.player ⟨0⟩).enduringStory &&
+    countWaiting bifurEntersWithStory .onEnterOrAttackPlusOneOnCreature == 2 &&
+    (ruling 135).comment.contains "triggers an additional time" &&
+    (ruling 97).comment.contains "doesn't copy the triggered ability" &&
+    (ruling 63).comment.contains "when,\" \"whenever,\" or \"at"
+
+#guard bifurExtraTriggerOk
+
+/-- Without an enduring story, Bifur's ETB fires only once. -/
+def bifurEntersAlone : Game := enterPermanent started bifurMelodicRider ⟨0⟩
+
+#guard countWaiting bifurEntersAlone .onEnterOrAttackPlusOneOnCreature == 1
+#guard !(bifurEntersAlone.player ⟨0⟩).enduringStory
+
+/-- Ruling 106: Chief extras another Wolf's trigger; not a copy. -/
+def chiefExtrasWolf : Game :=
+  let g := addPermanent started chiefOfTheWilds ⟨0⟩ ⟨0⟩
+  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
+  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+
+def chiefExtraOk : Bool :=
+  countWaiting chiefExtrasWolf (.onEnterDraw 1) == 2 &&
+    (ruling 106).comment.contains "doesn't copy the triggered ability"
+
+#guard chiefExtraOk
+
+/-- Ruling 297: two extra abilities both apply (two Chiefs, skip legend SBA). -/
+def twoChiefsExtraWolf : Game :=
+  let g := addPermanent started chiefOfTheWilds ⟨0⟩ ⟨0⟩
+  let g := addPermanent g chiefOfTheWilds ⟨0⟩ ⟨0⟩
+  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
+  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+
+def twoExtrasOk : Bool :=
+  countWaiting twoChiefsExtraWolf (.onEnterDraw 1) == 3 &&
+    (ruling 297).comment.contains "doesn't copy the triggered ability"
+
+#guard twoExtrasOk
+
+/-- Wizard's Staff extras the equipped creature's trigger. -/
+def staffExtrasEquipped : Game :=
+  let g := addPermanent started wizardSStaff ⟨0⟩ ⟨0⟩
+  let g := addPermanent g testWolf ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Wizard's Staff")
+    (namedPermanent g "Test Wolf")
+  g.afterPermanentEnters (namedPermanent g "Test Wolf")
+
+#guard countWaiting staffExtrasEquipped (.onEnterDraw 1) == 2
+
+/-- Ruling 261: replacements are unaffected by the extra-trigger ability. -/
+def staffDoesNotDoubleTokens : Game :=
+  let g := addPermanent started wizardSStaff ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Wizard's Staff")
+    (namedPermanent g "Grizzly Bears")
+  (g.createToken ⟨0⟩ Game.treasureToken).1
+
+def staffReplacementOk : Bool :=
+  (staffDoesNotDoubleTokens.battlefield.filter
+      (fun o => o.name == "Treasure")).size == 1 &&
+    (ruling 261).comment.contains "Replacement effects are unaffected"
+
+#guard staffReplacementOk
+
+/-- Ruling 133 / 308: Arwen's toughness is used as the other creature enters;
+simultaneous enters get no counters. -/
+def arwenThenBears : Game :=
+  let g := addPermanent afterDraw arwenWeaverOfHope ⟨0⟩ ⟨0⟩
+  enterPermanent g grizzlyBears ⟨0⟩
+
+def arwenSequentialOk : Bool :=
+  let bears := namedPermanent arwenThenBears "Grizzly Bears"
+  bears.status.plusOnePlusOne == 1 &&
+    arwenThenBears.power bears == 3 &&
+    arwenThenBears.toughness bears == 3 &&
+    (ruling 308).comment.contains "toughness as that creature is entering"
+
+#guard arwenSequentialOk
+
+def arwenSimultaneous : Game :=
+  enterTogether afterDraw arwenWeaverOfHope grizzlyBears ⟨0⟩
+
+def arwenSimultaneousOk : Bool :=
+  let bears := namedPermanent arwenSimultaneous "Grizzly Bears"
+  bears.status.plusOnePlusOne == 0 &&
+    (ruling 133).comment.contains "won't cause that creature to enter"
+
+#guard arwenSimultaneousOk
+
+/-- Ruling 205 / 222 / 234: Mox Amber can activate with no (or colorless)
+legendary creature/planeswalker colors and adds no mana. -/
+def moxNoLegendaries : Game := addPermanent afterDraw moxAmber ⟨0⟩ ⟨0⟩
+
+def moxEmptyOk : Bool :=
+  match moxNoLegendaries.tapForMana ⟨0⟩
+      (namedPermanent moxNoLegendaries "Mox Amber").id (.colored .red) with
+  | .error _ => false
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.isEmpty &&
+      (namedPermanent g "Mox Amber").status.tapped &&
+      g.log.any (fun s => mentions s "adds no mana") &&
+      (ruling 205).comment.contains "won't add any mana" &&
+      (ruling 222).comment.contains "Colorless is not a color" &&
+      (ruling 234).comment.contains "doesn't add one mana of each"
+
+#guard moxEmptyOk
+
+def moxWithSmaug : Game :=
+  let g := addPermanent afterDraw moxAmber ⟨0⟩ ⟨0⟩
+  addPermanent g smaugWickedWorm ⟨0⟩ ⟨0⟩
+
+def moxSmaugOk : Bool :=
+  let id := (namedPermanent moxWithSmaug "Mox Amber").id
+  match moxWithSmaug.tapForMana ⟨0⟩ id (.colored .red) with
+  | .error _ => false
+  | .ok g =>
+    !(g.player ⟨0⟩).manaPool.isEmpty &&
+      match moxWithSmaug.tapForMana ⟨0⟩ id (.colored .white) with
+      | .error _ => false
+      | .ok g2 => (g2.player ⟨0⟩).manaPool.isEmpty
+
+#guard moxSmaugOk
+
+/-- Ruling 211 / 215 / 221: Arcane Signet uses commander color identity;
+no commander or a colorless commander adds no mana, not `{C}`. -/
+def signetOn (g : Game) : Game := addPermanent g arcaneSignet ⟨0⟩ ⟨0⟩
+
+def tapSignet (g : Game) (c : Color) : Except String Game :=
+  g.tapForMana ⟨0⟩ (namedPermanent g "Arcane Signet").id (.colored c)
+
+def signetNoCommanderOk : Bool :=
+  let g := signetOn afterDraw
+  match tapSignet g .green with
+  | .error _ => false
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.isEmpty &&
+      (ruling 211).comment.contains "produces no mana"
+
+#guard signetNoCommanderOk
+
+def signetColorlessCommander : Game :=
+  let g := signetOn afterDraw
+  let pl := g.player ⟨0⟩
+  g.setPlayer { pl with hasCommander := true, commanderColorIdentity := {} }
+
+def signetColorlessOk : Bool :=
+  match tapSignet signetColorlessCommander .green with
+  | .error _ => false
+  | .ok g =>
+    (g.player ⟨0⟩).manaPool.isEmpty &&
+      (ruling 221).comment.contains "doesn't produce {C}"
+
+#guard signetColorlessOk
+
+def signetTwoCommanders : Game :=
+  let g := signetOn afterDraw
+  let pl := g.player ⟨0⟩
+  g.setPlayer { pl with
+    hasCommander := true
+    commanderColorIdentity := ColorSet.ofList [.green, .white] }
+
+def signetTwoOk : Bool :=
+  match tapSignet signetTwoCommanders .green, tapSignet signetTwoCommanders .blue with
+  | .ok gOk, .ok gNo =>
+    !(gOk.player ⟨0⟩).manaPool.isEmpty &&
+      (gNo.player ⟨0⟩).manaPool.isEmpty &&
+      (ruling 215).comment.contains "combined color identities"
+  | _, _ => false
+
+#guard signetTwoOk
+
+/-- Ruling 90 / 119: mana abilities do not use the stack. -/
+def banquetMana : Except String Game :=
+  let g := addPermanent afterDraw bagEndBanquet ⟨0⟩ ⟨0⟩
+  let (g, _) := g.createToken ⟨0⟩ Game.foodToken
+  g.tapForMana ⟨0⟩ (namedPermanent g "Bag End Banquet").id .colorless
+
+def banquetManaOk : Bool :=
+  match banquetMana with
+  | .error _ => false
+  | .ok g =>
+    g.stack.isEmpty &&
+      !(g.player ⟨0⟩).manaPool.isEmpty &&
+      (ruling 90).comment.contains "doesn't use the stack"
+
+#guard banquetManaOk
+
+/-- Ruling 119 / 120: Archdruid mana counts all Elves including itself;
+the lord does not pump itself. -/
+def archdruidBoard : Game :=
+  let g := addPermanent afterDraw elvishArchdruid ⟨0⟩ ⟨0⟩
+  addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+
+def archdruidOk : Bool :=
+  let arch := namedPermanent archdruidBoard "Elvish Archdruid"
+  let elf := namedPermanent archdruidBoard "Llanowar Elves"
+  archdruidBoard.power arch == 2 &&
+    archdruidBoard.power elf == 2 &&
+    archdruidBoard.manaFromTap arch (.colored .green) == 2 &&
+    match archdruidBoard.tapForMana ⟨0⟩ arch.id (.colored .green) with
+    | .error _ => false
+    | .ok g =>
+      g.stack.isEmpty &&
+        (ruling 119).comment.contains "doesn't use the stack" &&
+        (ruling 120).comment.contains "including itself"
+
+#guard archdruidOk
+
+/-- Ruling 94: a characteristic search may find nothing. -/
+def woodElvesSkipFind : Game :=
+  let g := addToLibraryTop afterDraw forest ⟨0⟩
+  g.resolveSearchForest ⟨0⟩ (find := false)
+
+def optionalSearchOk : Bool :=
+  woodElvesSkipFind.log.any (fun s => mentions s "chooses not to find") &&
+    (woodElvesSkipFind.player ⟨0⟩).library.any (fun id =>
+      (woodElvesSkipFind.object! id).name == "Forest") &&
+    (ruling 94).comment.contains "don't have to find"
+
+#guard optionalSearchOk
+
+/-- Ruling 36: the legendary creature must already be present. -/
+def rivendellNeedsLegendOk : Bool :=
+  afterDraw.entersTapped ⟨0⟩ rivendell &&
+    !(addPermanent afterDraw arwenWeaverOfHope ⟨0⟩ ⟨0⟩).entersTapped ⟨0⟩
+      rivendell &&
+    (ruling 36).comment.contains "already be on the battlefield"
+
+#guard rivendellNeedsLegendOk
+
+/-- Ruling 188: illegal target means the whole spell does not resolve. -/
+def knotsIllegal : Game :=
+  afterDraw.applyEffect ⟨0⟩ (.tapScryDraw 1 1) #[.player ⟨1⟩]
+
+def knotsAlreadyTapped : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with tapped := true } }
+  g.applyEffect ⟨0⟩ (.tapScryDraw 1 1) #[.permanent (namedPermanent g "Grizzly Bears").id]
+
+def knotsOk : Bool :=
+  knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
+    (knotsIllegal.player ⟨0⟩).cardsDrawnThisTurn ==
+      (afterDraw.player ⟨0⟩).cardsDrawnThisTurn &&
+    (match knotsAlreadyTapped.pending with
+     | .scry _ _ => true
+     | _ => knotsAlreadyTapped.log.any (fun s => mentions s "scries")) &&
+    (ruling 188).comment.contains "spell doesn't resolve"
+
+#guard knotsOk
+
+/-- Ruling 154: returning a spell works against can't-be-countered. -/
+def returnUncounterable : Game :=
+  let g := insertObject afterDraw giganticBigBear ⟨0⟩ .stack (some ⟨0⟩)
+  let id := (g.objects.back!).id
+  let g := g.putStackEntry ⟨0⟩ id
+  g.returnStackSpell id
+
+def reprieveVsUncounterableOk : Bool :=
+  giganticBigBear.cantBeCountered &&
+    returnUncounterable.stack.isEmpty &&
+    (returnUncounterable.handObjects ⟨0⟩).any (fun o =>
+      o.name == "Gigantic Big Bear") &&
+    (ruling 154).comment.contains "works against a spell that can't be countered"
+
+#guard reprieveVsUncounterableOk
+
+/-- Ruling 149 / 159: an exiled token ceases to exist. -/
+def exileTokenCeases : Game :=
+  let (g, tok) := started.createToken ⟨0⟩ Game.humanSoldierToken
+  let (g, _) := g.move tok.id .exile none
+  g.checkSBA
+
+def tokenExileOk : Bool :=
+  !(exileTokenCeases.objects.any (fun o =>
+      o.printed.isToken && o.zone == .exile)) &&
+    (ruling 149).comment.contains "ceases to exist" &&
+    (ruling 159).comment.contains "won't return"
+
+#guard tokenExileOk
+
+/-- Ruling 153 / 158: `{X}` is 0 when casting without paying the mana cost. -/
+def xWithoutPayingAlsoOk : Bool :=
+  xWithoutPaying == ManaCost.zero &&
+    (ruling 153).comment.contains "choose 0" &&
+    (ruling 158).comment.contains "choose 0"
+
+#guard xWithoutPayingAlsoOk
+
+/-- Ruling 104: Celeborn scries once for one or more attacking Elves. -/
+def celebornScryOnceOk : Bool :=
+  celebornAttackDeclared.stack.size == 1 &&
+    (ruling 104).comment.contains "scry 1 just once"
+
+#guard celebornScryOnceOk
+
+/-- Ruling 109: Colossal Whale's attack trigger is an attacking-step trigger. -/
+def whaleAttackTimingOk : Bool :=
+  TriggeredAbility.firesOn .onAttackMayExileDefenderUntilLeaves .attacking &&
+    (ruling 109).comment.contains "declare attackers step"
+
+#guard whaleAttackTimingOk
+
+/-- Ruling 115: Eagles pump only creatures you control as it resolves. -/
+def eaglesPumpThenLatecomer : Game :=
+  let g := addPermanent afterDraw eaglesOfTheNorth ⟨0⟩ ⟨0⟩
+  let eagles := namedPermanent g "Eagles of the North"
+  let g := g.putMatchingSourceTriggers ⟨0⟩ eagles .entering
+  let g := g.receivePriority ⟨0⟩
+  let g := g.resolveTop
+  addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+
+def eaglesPumpOk : Bool :=
+  let eagles := namedPermanent eaglesPumpThenLatecomer "Eagles of the North"
+  let late := namedPermanent eaglesPumpThenLatecomer "Grizzly Bears"
+  eaglesPumpThenLatecomer.power eagles == 4 &&
+    eaglesPumpThenLatecomer.power late == 2 &&
+    (ruling 115).comment.contains "at the time it resolves"
+
+#guard eaglesPumpOk
+
+/-- Ruling 93 / 116: Mirkwood Meditator base-PT change; damage can become lethal. -/
+def meditatorDamageThenShrink : Game :=
+  let g := addPermanent afterDraw mirkwoodMeditator ⟨0⟩ ⟨0⟩
+  let m := namedPermanent g "Mirkwood Meditator"
+  let g := g.setObject { m with status := { m.status with damage := 3 } }
+  let m := namedPermanent g "Mirkwood Meditator"
+  g.setObject { m with status := { m.status with
+    damage := 3, setBasePT := some (4, 2) } }
+
+def meditatorBaseOk : Bool :=
+  let m := namedPermanent meditatorDamageThenShrink "Mirkwood Meditator"
+  meditatorDamageThenShrink.toughness m == 2 &&
+    m.status.damage == 3 &&
+    (ruling 93).comment.contains "may become lethal" &&
+    (ruling 116).comment.contains "new base power and toughness"
+
+#guard meditatorBaseOk
+
+/-- Ruling 232: Mentor checks power only as the other creature enters. -/
+def mentorSeesEnterPowerOk : Bool :=
+  amassMentorSeesZeroOk &&
+    (ruling 232).comment.contains "only as it enters"
+
+#guard mentorSeesEnterPowerOk
+
+/-- Ruling 55 / 59 / 262: Settle the Wreckage targets a player; tokens count. -/
+def settleExilesAttackers : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let (g, tok) := g.createToken ⟨1⟩ Game.humanSoldierToken
+  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears")
+    (fun s => { s with attacking := true })
+  let g := g.mapObjectStatus (g.object! tok.id)
+    (fun s => { s with attacking := true })
+  g.applyEffect ⟨0⟩ .exileAttackersSearchBasics #[.player ⟨1⟩]
+
+def settleOk : Bool :=
+  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
+    settleExilesAttackers.log.any (fun s => mentions s "may search for 2") &&
+    !(settleExilesAttackers.battlefield.any (·.status.attacking)) &&
+    (ruling 55).comment.contains "find fewer basic land cards" &&
+    (ruling 59).comment.contains "tokens" &&
+    (ruling 262).comment.contains "targets only the player"
+
+#guard settleOk
+
+/-- Ruling 192: apply cost increases before reductions. -/
+def sevenElvesAndKeepers : Game :=
+  (List.range 5).foldl (init := twoElvesAndKeepers) fun g _ =>
+    addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+
+def increasesBeforeReductionsOk : Bool :=
+  let card := handCardNamed sevenElvesAndKeepers ⟨0⟩ "Cantankerous Keepers"
+  let kicked :=
+    sevenElvesAndKeepers.playManaCost card cantankerousKeepers
+      (ManaCost.ofGeneric 2)
+  kicked.coloredCount .green == 1 &&
+    kicked.manaValue == 1 &&
+    (ruling 192).comment.contains "increases before applying cost reductions"
+
+#guard increasesBeforeReductionsOk
+
+/-- Ruling 195 / 198: without paying the mana cost you still pay additional
+costs such as kicker. -/
+def withoutPayingStillPaysKickerOk : Bool :=
+  let g := addToHand afterDraw insideInformation ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Inside Information"
+  let card := { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  let cost := g.playManaCost card insideInformation (ManaCost.ofGeneric 2)
+  cost.manaValue == 2 && cost.colors.isColorless &&
+    improvisedClub.additionalCostSacrificeArtifactOrCreature &&
+    (ruling 195).comment.contains "mandatory additional costs" &&
+    (ruling 198).comment.contains "must be paid"
+
+#guard withoutPayingStillPaysKickerOk
+
 end Mtg.Engine.RulingTests

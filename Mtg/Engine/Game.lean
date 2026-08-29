@@ -580,6 +580,11 @@ structure Player where
   citysBlessing : Bool := false
   /-- Mana value of each spell this player has cast this turn. -/
   castManaValuesThisTurn : Array Nat := #[]
+  /-- True when this player has a commander (Commander / Oathbreaker). -/
+  hasCommander : Bool := false
+  /-- Combined color identity of this player's commander(s). Empty when they
+  have no commander or the commander is colorless (CR 903.4). -/
+  commanderColorIdentity : ColorSet := {}
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -1105,6 +1110,30 @@ def humanSoldierToken : CardDef := {
   isToken := true
 }
 
+/-- Additional +1/+1 counters from Arwen, Weaver of Hope as `entering` enters.
+Only weavers already on the battlefield before timestamp `asOf` apply
+(simultaneous enters do not see each other). -/
+def hopeCountersOnEnter (g : Game) (entering : GameObject) (asOf : Nat) : Nat :=
+  match entering.controller with
+  | none => 0
+  | some p =>
+    if !entering.isCreature then 0
+    else
+      (g.permanentsOf p).foldl (fun acc weaver =>
+        if weaver.id == entering.id then acc
+        else if !weaver.printed.othersEnterWithPlusOneEqualToughness then acc
+        else if weaver.timestamp >= asOf then acc
+        else acc + weaver.toughness.toNat) 0
+
+/-- Put `n` additional +1/+1 counters on `o` as it enters from hope-weaver
+replacements. -/
+def applyHopeEnterCounters (g : Game) (o : GameObject) (asOf : Nat) : Game :=
+  let n := g.hopeCountersOnEnter o asOf
+  if n == 0 then g
+  else
+    let o := { o with status := o.status.addPlusOnePlusOne n }
+    (g.setObject o).logMsg s!"{o.name} enters with {n} additional +1/+1 counter(s)"
+
 /-- Create one token without replacement effects (CR 111.2 / 608.2c). Callers
 that must let enters-the-battlefield triggers see the token (amass, recruit)
 invoke `afterPermanentEnters` after this returns. -/
@@ -1112,9 +1141,11 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) : Game × GameObject :=
   let printed := { printed with isToken := true }
   let sick := printed.isCreature && !printed.keywords.haste
+  let asOf := g.timestamp
   let (g, obj) := g.allocObject printed controller .battlefield (some controller)
     (status := { tapped := tapped, summoningSick := sick })
   let g := g.logMsg s!"{(g.player controller).name} creates {obj.name}"
+  let g := g.applyHopeEnterCounters (g.object! obj.id) asOf
   -- Storied is not a trigger; an artifact token can be the third permanent.
   let g := g.refreshEnduringStory
   (g, g.object! obj.id)
@@ -1536,10 +1567,12 @@ def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   (g.move o.id (.graveyard o.owner) none).1
 
 /-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
-and optional attachment. -/
+and optional attachment. `applyHope` applies Arwen-style enter-with-counters
+using weavers that were already present. -/
 def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (tapped := false) (summoningSick := true)
-    (attachedTo : Option ObjectId := none) : Game × ObjectId :=
+    (attachedTo : Option ObjectId := none) (applyHope := true) : Game × ObjectId :=
+  let asOf := g.timestamp
   let (g, newId) := g.move id .battlefield (some controller)
   let o := g.object! newId
   let o := { o with
@@ -1548,7 +1581,9 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     match attachedTo with
     | some host => { o with attachedTo := some host }
     | none => o
-  (g.setObject o, newId)
+  let g := g.setObject o
+  let g := if applyHope then g.applyHopeEnterCounters (g.object! newId) asOf else g
+  (g, newId)
 
 /-- If 0 or 1 living players remain, set the game result (CR 104). -/
 def decideGameIfFinished (g : Game) : Option Game :=
@@ -2442,6 +2477,25 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
 def enqueueWaitingTriggers (g : Game) (wts : Array WaitingTrigger) : Game :=
   if wts.isEmpty then g else { g with waitingTriggers := g.waitingTriggers ++ wts }
 
+/-- Extra times a trigger of `source` fires from Bifur / Chief / Wizard's Staff
+statics. Each such ability adds one additional instance; they stack. -/
+def extraTriggerCopies (g : Game) (controller : PlayerId) (source : GameObject) : Nat :=
+  let story := (g.player controller).enduringStory
+  (g.permanentsOf controller).foldl (fun acc o =>
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .extraTriggerIfEnduringStorySubtype subtype =>
+        if story && g.hasSubtype source subtype then acc + 1 else acc
+      | .extraTriggerAnotherYouControl subtypes includeBattles =>
+        if o.id == source.id then acc
+        else
+          let matchSubtype := subtypes.any (fun s => g.hasSubtype source s)
+          let matchBattle := includeBattles && source.printed.isBattle
+          if matchSubtype || matchBattle then acc + 1 else acc
+      | .equippedTriggersAgain =>
+        if o.attachedTo == some source.id then acc + 1 else acc
+      | _ => acc) acc) 0
+
 /-- Queue `ab` until a player would receive priority (CR 603.3 / 603.4). The
 intervening condition is checked when the event occurs. -/
 def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
@@ -2457,8 +2511,14 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         | some o => g.setObject { o with status := { o.status with firedOnceEachTurn := true } }
         | none => g
       else g
-    g.enqueueWaitingTriggers #[{
-      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }]
+    let copies := g.extraTriggerCopies controller source + 1
+    let wt : WaitingTrigger := {
+      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }
+    Id.run do
+      let mut g := g
+      for _ in [0:copies] do
+        g := g.enqueueWaitingTriggers #[wt]
+      return g
 
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
@@ -2778,15 +2838,34 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
 def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
   (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
 
+/-- Colors among legendary creatures and planeswalkers `p` controls (Mox Amber).
+Colorless is not a color; a colorless legend contributes nothing. -/
+def legendaryManaColors (g : Game) (p : PlayerId) : ColorSet :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.isLegendary && (o.isCreature || o.printed.isPlaneswalker) then
+      ColorSet.union acc o.printed.colors
+    else acc) ColorSet.empty
+
 /-- Mana added by tapping `o` for `mana` (CR 106.4 / 605.3b). A
 `tapAddManaForEach` ability counts permanents the controller currently
 controls with the listed subtype. `tapAddAnyColorEqualToPower` adds this
-creature's current power (CR 208.2). -/
+creature's current power (CR 208.2). Mox Amber and Arcane Signet may
+produce 0 when no matching color is available. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
   if o.printed.tapAddAnyColorEqualToPower then
     match mana with
     | .colored _ => (g.power o).toNat
     | .colorless => 0
+  else if o.printed.tapAddAnyColorAmongLegendaries then
+    match mana, o.controller with
+    | .colored c, some p => if (g.legendaryManaColors p).contains c then 1 else 0
+    | _, _ => 0
+  else if o.printed.tapAddCommanderIdentity then
+    match mana, o.controller with
+    | .colored c, some p =>
+      let pl := g.player p
+      if pl.hasCommander && pl.commanderColorIdentity.contains c then 1 else 0
+    | _, _ => 0
   else
     match o.printed.tapAddManaForEach.find? (fun a => a.mana == mana) with
     | some a =>
@@ -2836,12 +2915,18 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     { pl with manaPool :=
       ManaPool.add pl.manaPool mana amount elfRestricted instRestricted })
   let produced :=
-    if amount == 1 then toString mana else s!"{mana} ×{amount}"
+    if amount == 0 then "no mana"
+    else if amount == 1 then toString mana
+    else s!"{mana} ×{amount}"
   let restrictNote :=
     if elfRestricted then " (Elf spells and abilities)"
     else if instRestricted then " (instant or sorcery spells)"
     else ""
-  let g := g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}{restrictNote}"
+  let g :=
+    if amount == 0 then
+      g.logMsg s!"{g.player p |>.name} taps {o.name} but adds no mana"
+    else
+      g.logMsg s!"{g.player p |>.name} taps {o.name} for {produced}{restrictNote}"
   let g :=
     match g.proposedSpell with
     | some prop => { g with proposedSpell := some { prop with tapped := prop.tapped.push id } }
@@ -3538,16 +3623,17 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 
-/-- Mana to pay for `face` after alternative costs and pre-target reductions
-(CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
-mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
-Target-based reductions lock in after CR 601.2c. -/
-def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
+/-- Starting mana cost of `face` before increases and reductions (CR 118.7). -/
+def playCostStart (card : GameObject) (face : CardDef) : ManaCost :=
+  if card.castFromGraveyard || card.zone == .graveyard card.owner then
+    face.flashback.getD face.manaCost
+  else face.manaCost
+
+/-- Apply cost reductions to `start` (CR 118.7 / 601.2f). Increases such as
+kicker must already be included in `start`. -/
+def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
+    (start : ManaCost) : ManaCost :=
   let caster := card.controller.getD card.owner
-  let start :=
-    if card.castFromGraveyard || card.zone == .graveyard card.owner then
-      face.flashback.getD face.manaCost
-    else face.manaCost
   let afterDied :=
     if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
       start.reduceGeneric face.costReductionIfCreatureDied
@@ -3577,27 +3663,38 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
             max acc arts) 0
       afterAff.reduceGeneric n
     else afterAff
-  let afterEquip :=
-    if face.isInstant || face.isSorcery then
-      let n :=
-        (g.permanentsOf caster).foldl (fun acc o =>
-          let reduces :=
-            o.staticAbilities.any (fun ab =>
-              match ab with
-              | .instantSorceryCostReductionEqualEquippedPower => true
-              | _ => false)
-          if !reduces then acc
-          else
-            match o.attachedTo.bind g.findObject? with
-            | some host =>
-              if host.isOnBattlefield then acc + (g.power host).toNat else acc
-            | none => acc) 0
-      afterOpp.reduceGeneric n
-    else afterOpp
+  if face.isInstant || face.isSorcery then
+    let n :=
+      (g.permanentsOf caster).foldl (fun acc o =>
+        let reduces :=
+          o.staticAbilities.any (fun ab =>
+            match ab with
+            | .instantSorceryCostReductionEqualEquippedPower => true
+            | _ => false)
+        if !reduces then acc
+        else
+          match o.attachedTo.bind g.findObject? with
+          | some host =>
+            if host.isOnBattlefield then acc + (g.power host).toNat else acc
+          | none => acc) 0
+    afterOpp.reduceGeneric n
+  else afterOpp
+
+/-- Mana to pay for `face` after alternative costs and pre-target reductions
+(CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
+mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
+Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
+are applied before these reductions. -/
+def playManaCost (g : Game) (card : GameObject) (face : CardDef)
+    (increase : ManaCost := ManaCost.empty) : ManaCost :=
+  let start := playCostStart card face
+  let afterIncrease := start.addCost increase
+  let afterEquip := g.applyCastCostReductions card face afterIncrease
   let cost :=
     match card.playPermission with
     | some perm =>
-      if perm.withoutManaCost then ManaCost.zero
+      if perm.withoutManaCost then
+        g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
       else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
       else afterEquip
     | none => afterEquip
@@ -4233,20 +4330,23 @@ def findLibraryCard? (g : Game) (p : PlayerId) (pred : CardDef → Bool) : Optio
 miss, then shuffle (CR 701.19). Picks the first matching card in library
 order (bottom first). -/
 def resolveLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool)
-    (kind : String) (onFound : Game → ObjectId → Game) : Game :=
+    (kind : String) (onFound : Game → ObjectId → Game) (find := true) : Game :=
   let pl := g.player p
   let g :=
-    match g.findLibraryCard? p pred with
-    | none => g.logMsg s!"{pl.name} searches their library and finds no {kind}"
-    | some id => onFound g id
+    if !find then
+      g.logMsg s!"{pl.name} chooses not to find a {kind}"
+    else
+      match g.findLibraryCard? p pred with
+      | none => g.logMsg s!"{pl.name} searches their library and finds no {kind}"
+      | some id => onFound g id
   g.shuffleLibrary p
 
 /-- Search `p`'s library for a card matching `pred`, put it onto the battlefield
 (tapped if `tapped`), then shuffle (CR 701.19). Picks the first matching card
 in library order (bottom first). -/
 def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
-    (tapped : Bool) (kind : String) : Game :=
-  g.resolveLibrarySearch p pred kind fun g landId =>
+    (tapped : Bool) (kind : String) (find := true) : Game :=
+  g.resolveLibrarySearch p pred kind (find := find) fun g landId =>
     let landName := (g.object! landId).name
     let (g, newId) := g.putOntoBattlefield landId p (tapped := tapped)
       (summoningSick := false)
@@ -4262,8 +4362,8 @@ def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
 
 /-- Search `p`'s library for a Forest card, put it onto the battlefield, then
 shuffle (CR 701.19 / 305.7). -/
-def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
-  g.resolveSearchLibrary p isForestCard false "Forest card"
+def resolveSearchForest (g : Game) (p : PlayerId) (find := true) : Game :=
+  g.resolveSearchLibrary p isForestCard false "Forest card" (find := find)
 
 /-- Search `p`'s library for a card with land type `landType`, reveal it, put
 it into their hand, then shuffle (CR 701.19 / 702.29). Picks the first matching
@@ -4621,14 +4721,21 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .scry n =>
     g.beginScry controller n
   | .tapScryDraw scryN drawN =>
-    let g := g.applyOnPermanent controller effect.targetKind targets .tap
-    let g := { g with pendingDrawAfterScry := some (controller, drawN) }
-    let g := g.beginScry controller scryN
-    if g.pendingDrawAfterScry.isSome &&
-        (match g.pending with | .scry _ _ => false | _ => true) then
-      let g := { g with pendingDrawAfterScry := none }
-      g.draw controller drawN
-    else g
+    let legal := g.legalTargetsForKind controller effect.targetKind
+    match targets[0]? with
+    | some t =>
+      if legal.contains t then
+        let g := g.applyOnPermanent controller effect.targetKind targets .tap
+        let g := { g with pendingDrawAfterScry := some (controller, drawN) }
+        let g := g.beginScry controller scryN
+        if g.pendingDrawAfterScry.isSome &&
+            (match g.pending with | .scry _ _ => false | _ => true) then
+          let g := { g with pendingDrawAfterScry := none }
+          g.draw controller drawN
+        else g
+      else
+        g.logMsg "The spell doesn't resolve"
+    | none => g.logMsg "The spell doesn't resolve"
   | .tapTargets =>
     Id.run do
       let mut g := g
@@ -5299,10 +5406,18 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   | none => throw "That spell has no kicker"
   | some kicker =>
     let g := g.setObject { spell with kicked := true }
+    let face := spell.printed
+    let start :=
+      if !prop.cost.includesManaPayment && (playCostStart spell face).includesManaPayment then
+        ManaCost.empty
+      else playCostStart spell face
+    let cost :=
+      ManaCost.afterReduction face.manaCost
+        (g.applyCastCostReductions spell face (start.addCost kicker))
     return { g with proposedSpell := some { prop with
       kicked := true
       kickerAnnounced := true
-      cost := prop.cost.addCost kicker } }
+      cost } }
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/
 def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game := do

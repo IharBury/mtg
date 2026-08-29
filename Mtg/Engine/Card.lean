@@ -1764,6 +1764,9 @@ inductive StaticAbility where
   | otherSubtypeGetPowerPerArtifactToken (subtype : String)
   /-- As long as you have an enduring story, Dwarf triggers go twice. -/
   | extraTriggerIfEnduringStorySubtype (subtype : String)
+  /-- If a triggered ability of another matching permanent you control
+  triggers, it triggers an additional time (e.g. Chief of the Wilds). -/
+  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
   /-- Enchanted creature loses all abilities and doesn't untap. -/
   | enchantedLosesAbilitiesDoesntUntap
   /-- During your turn, equipped creature has hexproof and can't be blocked. -/
@@ -1866,6 +1869,7 @@ inductive StaticShape where
   /-- Other matching creatures get +P/+0 per artifact token. -/
   | otherSubtypePowerPerArtifactToken (subtype : String)
   | extraTriggerIfEnduringStorySubtype (subtype : String)
+  | extraTriggerAnotherYouControl (subtypes : Array String) (includeBattles : Bool)
   | enchantedLosesAbilitiesDoesntUntap
   | equippedHexproofUnblockableDuringYourTurn
   | equippedTriggersAgain
@@ -1988,6 +1992,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .instantSorceryCostReductionEqualEquippedPower => {}
   | .otherSubtypePowerPerArtifactToken _ => {}
   | .extraTriggerIfEnduringStorySubtype _ => {}
+  | .extraTriggerAnotherYouControl _ _ => {}
   | .enchantedLosesAbilitiesDoesntUntap => {}
   | .equippedHexproofUnblockableDuringYourTurn => {}
   | .equippedTriggersAgain => {}
@@ -2044,6 +2049,8 @@ def shape : StaticAbility → StaticShape
     .otherSubtypePowerPerArtifactToken subtype
   | .extraTriggerIfEnduringStorySubtype subtype =>
     .extraTriggerIfEnduringStorySubtype subtype
+  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+    .extraTriggerAnotherYouControl subtypes includeBattles
   | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
   | .equippedHexproofUnblockableDuringYourTurn =>
     .equippedHexproofUnblockableDuringYourTurn
@@ -2175,6 +2182,15 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Other {plural} you control get +1/+0 for each artifact token you control."
   | .extraTriggerIfEnduringStorySubtype subtype =>
     s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
+  | .extraTriggerAnotherYouControl subtypes includeBattles =>
+    let parts :=
+      subtypes.toList ++ (if includeBattles then ["battle"] else [])
+    let joined :=
+      match parts with
+      | [a] => a
+      | [a, b] => s!"{a} or {b}"
+      | xs => String.intercalate ", " xs
+    s!"If a triggered ability of another {joined} you control triggers, that ability triggers an additional time."
   | .enchantedLosesAbilitiesDoesntUntap =>
     "Enchanted creature loses all abilities and doesn't untap during its controller's untap step."
   | .equippedHexproofUnblockableDuringYourTurn =>
@@ -3763,6 +3779,8 @@ def isInstant (c : CardDef) : Bool := c.hasType .instant
 def isSorcery (c : CardDef) : Bool := c.hasType .sorcery
 def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
 def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
+def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
+def isBattle (c : CardDef) : Bool := c.hasType .battle
 def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
 /-- Aura subtype on an Enchantment (CR 303.4). -/
 def isAura (c : CardDef) : Bool :=
@@ -3827,7 +3845,8 @@ def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
-        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 then
+        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
+        c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity then
       (Color.all.map ManaType.colored).toArray
      else #[])
 
@@ -4253,6 +4272,10 @@ instance : ToString CardDef where
   "Other Orcs and Goblins you control have trample."
 #guard StaticAbility.toNotation (.otherCreaturesGet #["Elf"] 1 1) ==
   "Other Elf creatures you control get +1/+1."
+#guard StaticAbility.toNotation (.extraTriggerAnotherYouControl #["Wolf"] true) ==
+  "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
+#guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype "Dwarf") ==
+  "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
 #guard TapAddForEach.toNotation { mana := .colored .green, subtype := "Elf" } ==
   "{T}: Add {G} for each Elf you control"
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==

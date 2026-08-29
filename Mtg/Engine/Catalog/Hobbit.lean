@@ -955,7 +955,7 @@ def bifurMelodicRider : CardDef :=
   legendaryCreature "Bifur, Melodic Rider" (ManaCost.ofGenericAndHybrids 4 .red .white 2) #["Dwarf", "Bard"] 4 5 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Bifur enters or attacks, put a +1/+1 counter on target creature.\nAs long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time.")
     (keywords := Keyword.storied)
     (staticAbilities := #[.extraTriggerIfEnduringStorySubtype "Dwarf"])
-    (triggeredAbilities := #[.printed "Whenever Bifur enters or attacks, put a +1/+1 counter on target creature."])
+    (triggeredAbilities := #[.onEnterOrAttackPlusOneOnCreature])
 
 def bilboSGambit : CardDef :=
   instant "Bilbo's Gambit" (ManaCost.ofGenericAndColor 1 .white) "Gift a Treasure (You may promise an opponent a gift as you cast this spell. If you do, they create a Treasure token before its other effects. It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")\nReturn target spell to its owner's hand. If the gift was promised, players can't cast spells this turn." (some (.printed "Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn."))

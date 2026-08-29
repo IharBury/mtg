@@ -619,7 +619,7 @@ def cavernHoardDragon : CardDef :=
 def chiefOfTheWilds : CardDef :=
   legendaryCreature "Chief of the Wilds" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Wolf"] 4 4 (oracleText := "Menace\nWhenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds.\nIf a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time.")
     (keywords := Keyword.menace)
-    (staticAbilities := #[.printed "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."])
+    (staticAbilities := #[.extraTriggerAnotherYouControl #["Wolf"] true])
     (triggeredAbilities := #[.printed "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."])
 
 def dragonCursedHalls : CardDef :=
