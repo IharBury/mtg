@@ -571,7 +571,7 @@ def andurilNarsilReforged : CardDef :=
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (keywords := Keyword.ascend)
-    (triggeredAbilities := #[.printed "Whenever equipped creature attacks, put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead."])
+    (triggeredAbilities := #[.onEquippedAttacksPlusOneEachIfCityBlessing])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def aragornTheUniter : CardDef :=
@@ -584,7 +584,8 @@ def aragornTheUniter : CardDef :=
 def arwenMortalQueen : CardDef :=
   let c :=
     legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
-      (staticAbilities := #[.printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+      (activatedAbilities := #[
+        activated .arwenShare (ManaCost.ofGeneric 1) (removeIndestructibleCounter := true)])
   { c with entersWithIndestructibleCounter := true }
 
 def arwenWeaverOfHope : CardDef :=
@@ -592,7 +593,7 @@ def arwenWeaverOfHope : CardDef :=
     (othersEnterWithPlusOneEqualToughness := true)
 
 def bilboSBurglaring : CardDef :=
-  sorcery "Bilbo's Burglaring" (ManaCost.ofGenericAndColors 4 [.blue, .blue]) "For each opponent, gain control of up to one target artifact that player controls." (some (.printed "For each opponent, gain control of up to one target artifact that player controls."))
+  sorcery "Bilbo's Burglaring" (ManaCost.ofGenericAndColors 4 [.blue, .blue]) "For each opponent, gain control of up to one target artifact that player controls." (some .gainControlOppArtifacts)
 
 def bilboSRing : CardDef :=
   artifact "Bilbo's Ring" (ManaCost.ofGeneric 3) "During your turn, equipped creature has hexproof and can't be blocked.\nWhenever equipped creature attacks alone, you draw a card and you lose 1 life.\nEquip Halfling {1} ({1}: Attach to target Halfling you control. Equip only as a sorcery.)\nEquip {4} ({4}: Attach to target creature you control. Equip only as a sorcery.)"
@@ -608,7 +609,7 @@ def bilboFellowConspirator : CardDef :=
     (foodAlsoCreatesTreasure := true)
 
 def callForthTheTempest : CardDef :=
-  sorcery "Call Forth the Tempest" (ManaCost.ofGenericAndColors 5 [.red, .red, .red]) "Cascade, cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order. Then do it again.)\nCall Forth the Tempest deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn." (some (.printed "Call Forth the Tempest deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn."))
+  sorcery "Call Forth the Tempest" (ManaCost.ofGenericAndColors 5 [.red, .red, .red]) "Cascade, cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order. Then do it again.)\nCall Forth the Tempest deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn." (some .damageOppCreaturesEqualOtherSpellsMv)
     (cascade := 2)
 
 def cavernHoardDragon : CardDef :=
@@ -621,12 +622,13 @@ def chiefOfTheWilds : CardDef :=
   legendaryCreature "Chief of the Wilds" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Wolf"] 4 4 (oracleText := "Menace\nWhenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds.\nIf a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time.")
     (keywords := Keyword.menace)
     (staticAbilities := #[.extraTriggerAnotherYouControl #["Wolf"] true])
-    (triggeredAbilities := #[.printed "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."])
+    (triggeredAbilities := #[.onAnotherSubtypeEntersPlusOneOnSource "Wolf" 2])
 
 def dragonCursedHalls : CardDef :=
   land "Dragon-Cursed Halls" "{T}: Add {C}.\n{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
     (tapAddMana := #[.colorless])
-    (staticAbilities := #[.printed "{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""])
+    (activatedAbilities := #[
+      activated .grantCombatDamageCreateTreasure (ManaCost.ofGeneric 1) (tap := true)])
 
 def elvenChorus : CardDef :=
   let c :=
@@ -637,7 +639,7 @@ def elvenChorus : CardDef :=
     grantCreaturesTapAddAnyColor := true }
 
 def galadrielSDismissal : CardDef :=
-  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead."))
+  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some .phaseOutKicker)
     (kicker := some (ManaCost.ofGenericAndColor 2 .white))
 
 def galadrielLightOfValinor : CardDef :=
@@ -646,38 +648,42 @@ def galadrielLightOfValinor : CardDef :=
 
 def gandalfPartyGuest : CardDef :=
   legendaryCreature "Gandalf, Party Guest" (ManaCost.ofGenericAndColors 1 [.blue, .red, .white]) #["Avatar", "Wizard"] 3 4 (oracleText := "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control.")
-    (triggeredAbilities := #[.printed "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control."])
+    (triggeredAbilities := #[.onYourBeginCombatCastInstantSorceryFromHand])
 
 def gandalfShadowSFoe : CardDef :=
   legendaryCreature "Gandalf, Shadow's Foe" (ManaCost.ofGenericAndColors 5 [.blue, .blue]) #["Avatar", "Wizard"] 3 4 (oracleText := "Vigilance\nWhen Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control.\nLandfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf.")
     (keywords := Keyword.vigilance)
-    (staticAbilities := #[.printed "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."])
-    (triggeredAbilities := #[.printed "When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control."])
+    (triggeredAbilities := #[.onEnterExileLandsThenReturnTapped,
+      .onLandYouControlEntersDrawPlusOneSource])
 
 def glamdring : CardDef :=
   artifact "Glamdring" (ManaCost.ofGeneric 2) "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard.\nWhenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost.\nEquip {3}"
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (staticAbilities := #[.equippedFirstStrikePlusPerInstantSorcery])
-    (triggeredAbilities := #[.printed "Whenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost."])
+    (triggeredAbilities := #[.onEquippedCombatDamageCastInstantSorcery])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def grimaSarumanSFootman : CardDef :=
   legendaryCreature "Gríma, Saruman's Footman" (ManaCost.ofGenericAndColors 2 [.blue, .black]) #["Human", "Advisor"] 1 4 (oracleText := "Gríma can't be blocked.\nWhenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order.")
-    (staticAbilities := #[.printed "Gríma can't be blocked."])
-    (triggeredAbilities := #[.printed "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."])
+    (keywords := Keyword.cantBeBlocked)
+    (triggeredAbilities := #[.onCombatDamageImpulseInstantSorcery])
 
 def minasMorgulDarkFortress : CardDef :=
   legendaryLand "Minas Morgul, Dark Fortress" "Minas Morgul enters tapped.\n{T}: Add {B}.\n{3}{B}, {T}: Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types. (A creature with shadow can block or be blocked by only creatures with shadow.)"
     (entersTapped := true)
     (tapAddMana := #[.colored .black])
-    (staticAbilities := #[.printed "{3}{B}, {T}: Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types. (A creature with shadow can block or be blocked by only creatures with shadow.)"])
+    (activatedAbilities := #[
+      activated .putShadowCounter (ManaCost.ofGenericAndColor 3 .black) (tap := true)])
 
 def mountDoom : CardDef :=
   legendaryLand "Mount Doom" "{T}, Pay 1 life: Add {B} or {R}.\n{1}{B}{R}, {T}: Mount Doom deals 1 damage to each opponent.\n{5}{B}{R}, {T}, Sacrifice Mount Doom and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery."
     (tapPayLifeAddOneOf := some (1, #[.colored .black, .colored .red]))
-    (staticAbilities := #[.printed "{1}{B}{R}, {T}: Mount Doom deals 1 damage to each opponent.",
-      .printed "{5}{B}{R}, {T}, Sacrifice Mount Doom and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery."])
+    (activatedAbilities := #[
+      activated (.damageEachOpponent 1) (ManaCost.ofGenericAndColors 1 [.black, .red]) (tap := true),
+      activated .chooseTwoDestroyRest (ManaCost.ofGenericAndColors 5 [.black, .red])
+        (tap := true) (sacrificeSource := true) (sacrificeLegendaryArtifact := true)
+        (onlyAsSorcery := true)])
 
 def orcishBowmasters : CardDef :=
   creature "Orcish Bowmasters" (ManaCost.ofGenericAndColor 1 .black) #["Orc", "Archer"] 1 1 (oracleText := "Flash\nWhen this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1.")
@@ -687,63 +693,65 @@ def orcishBowmasters : CardDef :=
 def palantirOfOrthanc : CardDef :=
   artifact "Palantír of Orthanc" (ManaCost.ofGeneric 3) "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
     (supertypes := #[.legendary])
-    (triggeredAbilities := #[.printed "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."])
+    (triggeredAbilities := #[.onYourEndStepPalantir])
 
 def sarumanOfManyColors : CardDef :=
   legendaryCreature "Saruman of Many Colors" (ManaCost.ofGenericAndColors 3 [.white, .blue, .black]) #["Avatar", "Wizard"] 5 4 (oracleText := "Ward—Discard an enchantment, instant, or sorcery card.\nWhenever you cast your second spell each turn, each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost.")
-    (staticAbilities := #[.printed "Ward—Discard an enchantment, instant, or sorcery card."])
-    (triggeredAbilities := #[.printed "Whenever you cast your second spell each turn, each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost."])
+    (staticAbilities := #[.wardDiscardEnchantmentInstantOrSorcery])
+    (triggeredAbilities := #[.onCastSecondSpellMillThenCopy])
 
 def sauronTheDarkLord : CardDef :=
   legendaryCreature "Sauron, the Dark Lord" (ManaCost.ofGenericAndColors 3 [.blue, .black, .red]) #["Avatar", "Horror"] 7 6 (oracleText := "Ward—Sacrifice a legendary artifact or legendary creature.\nWhenever an opponent casts a spell, amass Orcs 1.\nWhenever an Army you control deals combat damage to a player, the Ring tempts you.\nWhenever the Ring tempts you, you may discard your hand. If you do, draw four cards.")
-    (staticAbilities := #[.printed "Ward—Sacrifice a legendary artifact or legendary creature."])
-    (triggeredAbilities := #[.printed "Whenever an opponent casts a spell, amass Orcs 1.",
-      .printed "Whenever an Army you control deals combat damage to a player, the Ring tempts you.",
-      .printed "Whenever the Ring tempts you, you may discard your hand. If you do, draw four cards."])
+    (staticAbilities := #[.wardSacrificeLegendary])
+    (triggeredAbilities := #[.onOpponentCastsAmassOrcs 1,
+      .onArmyCombatDamageRingTempts,
+      .onRingTemptsMayDiscardDraw 4])
 
 def smaugTheImpenetrable : CardDef :=
   legendaryCreature "Smaug the Impenetrable" (ManaCost.ofGenericAndColors 5 [.black, .red]) #["Dragon"] 8 7 (oracleText := "Flying, indestructible, haste\nWhenever Smaug is dealt noncombat damage, create that many Treasure tokens.")
     (keywords := Keyword.flying.merge Keyword.indestructible |>.merge Keyword.haste)
-    (triggeredAbilities := #[.printed "Whenever Smaug is dealt noncombat damage, create that many Treasure tokens."])
+    (triggeredAbilities := #[.onDealtNoncombatDamageCreateTreasures])
 
 def theBlackGate : CardDef :=
   legendaryLand "The Black Gate" "As The Black Gate enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {B}.\n{1}{B}, {T}: Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn."
     (entersTappedUnlessPayLife := some 3)
     (tapAddMana := #[.colored .black])
     (subtypes := #["Gate"])
-    (staticAbilities := #[.printed "{1}{B}, {T}: Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn."])
+    (activatedAbilities := #[
+      activated .blackGateUnblockable (ManaCost.ofGenericAndColor 1 .black) (tap := true)])
 
 def theOneRing : CardDef :=
   artifact "The One Ring" (ManaCost.ofGeneric 4) "Indestructible\nWhen The One Ring enters, if you cast it, you gain protection from everything until your next turn.\nAt the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring.\n{T}: Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring."
     (supertypes := #[.legendary])
     (keywords := Keyword.indestructible)
-    (staticAbilities := #[.printed "{T}: Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring."])
-    (triggeredAbilities := #[.printed "When The One Ring enters, if you cast it, you gain protection from everything until your next turn.",
-      .printed "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."])
+    (activatedAbilities := #[activated .burdenThenDraw (tap := true)])
+    (triggeredAbilities := #[.onEnterIfCastProtectionEverything,
+      .onYourUpkeepLoseLifePerBurden])
 
 def theReaverCleaver : CardDef :=
   artifact "The Reaver Cleaver" (ManaCost.ofGenericAndColor 2 .red) "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\"\nEquip {3}"
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
-    (staticAbilities := #[.printed "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\""])
+    (staticAbilities := #[.equippedGetsTrampleAndCombatTreasures 1 1])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def thorinCompanySLeader : CardDef :=
   legendaryCreature "Thorin, Company's Leader" (ManaCost.ofGenericAndColor 4 .red) #["Dwarf", "Warrior"] 4 5 (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
-    (staticAbilities := #[.printed "{10}: Creatures you control gain double strike until end of turn."])
+    (activatedAbilities := #[activated .teamGainDoubleStrike (ManaCost.ofGeneric 10)])
     (triggeredAbilities := #[.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2])
 
 def tomBombadil : CardDef :=
   let c :=
     legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
-      (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+      (triggeredAbilities := #[.onFinalSagaChapterRevealSaga])
   { c with hexproofIndestructibleIfLore := some 4 }
 
 def witchKingOfAngmar : CardDef :=
   legendaryCreature "Witch-king of Angmar" (ManaCost.ofGenericAndColors 3 [.black, .black]) #["Wraith", "Noble"] 5 3 (oracleText := "Flying\nWhenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you.\nDiscard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him.")
     (keywords := Keyword.flying)
-    (staticAbilities := #[.printed "Discard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him."])
-    (triggeredAbilities := #[.printed "Whenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you."])
+    (activatedAbilities := #[
+      activated .sourceGainsIndestructibleTap (discardACard := true)])
+    (triggeredAbilities := #[.onCombatDamageToYouSacRingTempts])
 
 /-- Every unique card in The Hobbit Eternal (HOC), including reprints
 that also appear in other sets. -/
