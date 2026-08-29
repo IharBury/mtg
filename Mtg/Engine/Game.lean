@@ -2958,6 +2958,51 @@ def putControlledTriggers (g : Game) (p : PlayerId)
   g.foldControlledPermanents p excludeId fun g o =>
     g.putMatchingSourceTriggers p o event
 
+/-- Queue “whenever you sacrifice a token” if `o` was a token when sacrificed. -/
+def queueYouSacrificeToken (g : Game) (o : GameObject) : Game :=
+  if !o.printed.isToken then g
+  else
+    match o.controller with
+    | some p => g.putControlledTriggers p .youSacrificeToken
+    | none => g.putControlledTriggers o.owner .youSacrificeToken
+
+/-- Sacrifice `o` to its owner's graveyard and fire token-sacrifice triggers. -/
+def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
+  let g := g.moveToOwnerGraveyard o reason
+  g.queueYouSacrificeToken o
+
+/-- Cards of `subtype` in `p`'s graveyard (Thranduil-style copies). -/
+def graveyardCardsOfSubtype (g : Game) (p : PlayerId) (subtype : String) :
+    Array GameObject :=
+  (g.player p).graveyard.filterMap (fun id =>
+    match g.findObject? id with
+    | some card =>
+      if card.printed.hasSubtype subtype then some card else none
+    | none => none)
+
+/-- Collect `sel` from graveyard cards named by `copyActivatedFromGySubtype`. -/
+def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Array α) :
+    Array α :=
+  if !o.isOnBattlefield then #[]
+  else
+    match o.controller with
+    | none => #[]
+    | some p =>
+      o.staticAbilities.foldl (fun acc sa =>
+        match sa with
+        | .copyActivatedFromGySubtype subtype =>
+          (g.graveyardCardsOfSubtype p subtype).foldl
+            (fun acc card => acc ++ sel card.printed) acc
+        | _ => acc) #[]
+
+/-- Printed activated abilities plus those copied from the graveyard. -/
+def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
+  o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
+
+/-- Printed mana abilities plus those copied from the graveyard. -/
+def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
+  o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities)
+
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
 def promptTriggerTargetsIfNeeded (g : Game) : Game :=
@@ -3291,7 +3336,7 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
 
 def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType) :=
   g.permanentsOf p |>.filterMap (fun o =>
-    let types := o.printed.manaAbilities
+    let types := g.manaAbilitiesOf o
     if types.isEmpty || o.status.tapped then none
     else if o.hasSummoningSickness then none
     else some (o, types))
@@ -3362,7 +3407,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw s!"{o.name} is needed to pay \{T}"
   if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
-  if !o.printed.manaAbilities.contains mana then
+  if !(g.manaAbilitiesOf o).contains mana then
     throw s!"{o.name} cannot produce {mana}"
   let amount := g.manaFromTap o mana
   let elfRestricted := o.printed.tapAddAnyColorEqualToPower
@@ -3371,7 +3416,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let g :=
     if o.printed.tapSacrificeAddAnyColor then
       let o := g.object! o.id
-      g.moveToOwnerGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
+      g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     else g
   let g := g.modifyPlayer p (fun pl =>
     { pl with manaPool :=
@@ -4055,7 +4100,7 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
       | none => if tied.size == 1 then some tied[0]! else none
     match pick with
     | some o =>
-      g.moveToOwnerGraveyard o
+      g.sacrificeToGraveyard o
         s!"{(g.player p).name} sacrifices {o.name} (least power)"
     | none =>
       g.logMsg
@@ -4524,32 +4569,28 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
           !(sacrificeSource && o.id == sourceId)) with
       | none => throw "No legendary artifact to sacrifice"
       | some art =>
-        g := g.logMsg s!"{(g.player p).name} sacrifices {art.name}"
-        let (g', _) := g.move art.id (.graveyard art.owner) none
-        g := g'
+        g := g.sacrificeToGraveyard art
+          s!"{(g.player p).name} sacrifices {art.name}"
     if a.cost.sacrificeArtifact then
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
       | none => throw "No artifact to sacrifice"
       | some art =>
-        g := g.logMsg s!"{(g.player p).name} sacrifices {art.name}"
-        let (g', _) := g.move art.id (.graveyard art.owner) none
-        g := g'
+        g := g.sacrificeToGraveyard art
+          s!"{(g.player p).name} sacrifices {art.name}"
     if let some t := a.cost.sacrificeAnotherSubtype then
       match (g.permanentsOf p).find? (fun o =>
         o.id != sourceId && g.hasSubtype o t) with
       | none => throw s!"No other {t} to sacrifice"
       | some o =>
-        g := g.logMsg s!"{(g.player p).name} sacrifices {o.name}"
-        let (g', _) := g.move o.id (.graveyard o.owner) none
-        g := g'
+        g := g.sacrificeToGraveyard o
+          s!"{(g.player p).name} sacrifices {o.name}"
   | none => pure ()
   if sacrificeSource then
     match g.findObject? sourceId with
     | none => pure ()
     | some src =>
-      g := g.logMsg s!"{(g.player p).name} sacrifices {src.name}"
-      let (g', _) := g.move sourceId (.graveyard src.owner) none
-      g := g'
+      g := g.sacrificeToGraveyard src
+        s!"{(g.player p).name} sacrifices {src.name}"
   return g
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
@@ -5035,9 +5076,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if !g.hasPriority p then
     throw "You don't have priority"
   let some o := g.findObject? id | throw "no such object"
-  if o.printed.activatedAbilities.isEmpty then
+  let abs := g.activatedAbilitiesOf o
+  if abs.isEmpty then
     throw s!"{o.name} has no activated ability"
-  let some ab := o.printed.activatedAbilities[abilityIdx]?
+  let some ab := abs[abilityIdx]?
     | throw s!"{o.name} has no such activated ability"
   g.validateActivation p o ab
   let pl := g.player p
@@ -5107,7 +5149,7 @@ def finishChosenSacrifices (g : Game) (chosen : Array ObjectId) : Game :=
       | some o =>
         if o.isOnBattlefield && o.isCreature then
           let who := o.controller.getD o.owner
-          g := g.moveToOwnerGraveyard o
+          g := g.sacrificeToGraveyard o
             s!"{(g.player who).name} sacrifices {o.name}"
       | none => pure ()
     return g.receivePriority g.activePlayer
@@ -5150,7 +5192,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeAsCreatureOrArtifact p sourceId sac then
       throw s!"Can't sacrifice {sac.name}"
-    let g := g.moveToOwnerGraveyard sac
+    let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
     match g.proposedSpell with
     | some prop =>
@@ -5175,7 +5217,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !g.canSacrificeCreature p sac then
       throw s!"Can't sacrifice {sac.name}"
-    let g := g.moveToOwnerGraveyard sac
+    let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name}"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
@@ -5187,7 +5229,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         sac.id == bolgId then
       throw s!"Can't sacrifice {sac.name} to Bolg"
     let pw := g.power sac
-    let g := g.moveToOwnerGraveyard sac
+    let g := g.sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
     let g := { g with pending := .none }
     match g.findObject? bolgId with
@@ -7722,7 +7764,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       (o.isCreature || o.printed.isArtifact) && some o.id != sourceId) with
     | none => g.logMsg "Nothing to sacrifice"
     | some sac =>
-      let (g, _) := g.move sac.id (.graveyard sac.owner) none
+      let g := g.sacrificeToGraveyard sac
+        s!"{(g.player controller).name} sacrifices {sac.name}"
       let g := g.draw controller 1
       g.createTreasureTokens controller 1
   | .targetOpponentLosesLife n =>

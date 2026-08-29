@@ -1163,13 +1163,13 @@ def tapUsage : String := "usage: tap <id> [id ...] [color]"
 
 /-- Color to tap `o` for when the player did not name one. -/
 def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType :=
-  match o.printed.manaAbilities[0]? with
+  match (g.manaAbilitiesOf o)[0]? with
   | none => none
   | some first =>
     if o.printed.tapAddAnyColorEqualToPower then
       match g.proposedSpell with
       | some prop =>
-        some ((g.preferredManaType p o.printed.manaAbilities prop.cost
+        some ((g.preferredManaType p (g.manaAbilitiesOf o) prop.cost
           (g.proposedAllowsElfRestricted prop)).getD (.colored .green))
       | none => some (.colored .green)
     else some first
@@ -1192,7 +1192,7 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
     | some o =>
       match chosen with
       | some m =>
-        if !o.printed.manaAbilities.contains m then
+        if !(g.manaAbilitiesOf o).contains m then
           throw s!"{o.name} cannot produce {m}"
         jobs := jobs.push (id, m)
       | none =>
@@ -3136,7 +3136,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
         | some adv => available.canPay adv.manaCost
         | none => false)
     let canActivate := g.objects.any (fun o =>
-      o.printed.activatedAbilities.any (fun ab =>
+      (g.activatedAbilitiesOf o).any (fun ab =>
         g.canActivate p o ab &&
           (g.availableManaExcept p (if ab.cost.tap then some o.id else none)).canPay
             ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf")))
