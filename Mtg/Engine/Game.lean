@@ -3820,14 +3820,20 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   g.legalTargetsForFace p o.printed (g.chosenModeOf o)
 
-/-- Legal mode indices for a modal spell (CR 700.2d). -/
+/-- True when this mode can be announced: it needs no target, or a legal one
+exists (CR 700.2d). -/
+def spellModeIsChoosable (g : Game) (p : PlayerId) (e : SpellEffect) : Bool :=
+  !e.requiresTarget || !(g.legalTargets p e).isEmpty
+
+/-- Legal mode indices for a modal spell (CR 700.2d). Untargeted modes stay
+choosable even when another mode has no legal target. -/
 def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
   if !o.printed.isModal then #[]
   else
     Id.run do
       let mut acc : Array Nat := #[]
       for i in [0:o.printed.spellModes.size] do
-        if !(g.legalTargets p o.printed.spellModes[i]!).isEmpty then
+        if g.spellModeIsChoosable p o.printed.spellModes[i]! then
           acc := acc.push i
       return acc
 
@@ -5194,7 +5200,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     throw "Lands are played, not cast (CR 305)"
   if face.hasSorcerySpeed && !g.asSorcery? p then
     throw s!"{face.name} has sorcery speed"
-  if (face.requiresTarget || face.isModal) &&
+  if face.isModal then
+    if !face.spellModes.any (g.spellModeIsChoosable p) && !face.allowsZeroTargets then
+      throw s!"{face.name} requires a target"
+  else if face.requiresTarget &&
       (g.legalCastTargets p face).isEmpty && !face.allowsZeroTargets then
     throw s!"{face.name} requires a target"
   if face.additionalCostSacrificeArtifactOrCreature &&
@@ -5286,7 +5295,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if !spell.printed.isModal then
         throw "That spell is not modal (CR 700.2)"
       let some effect := spell.printed.spellModes[mode]? | throw "No such mode (CR 700.2)"
-      if (g.legalTargets p effect).isEmpty then
+      if !g.spellModeIsChoosable p effect then
         throw "That mode has no legal target (CR 700.2d)"
       let g := g.setProposedMode mode
       let g := g.logMsg

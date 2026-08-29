@@ -2423,6 +2423,10 @@ def proposedDecree : Game :=
     (proposedDecree.object! id).name == "Lightning Bolt"
   | _ => false
 
+/-- Empty `p`'s hand and mark a land already played this turn. -/
+def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
+  g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
+
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
   let g := clearHandPlayedLand paidBolt ⟨0⟩
@@ -2485,6 +2489,10 @@ def proposedConfusticateOwnBolt : Game :=
   match Agent.choose proposedConfusticateOwnBolt ⟨0⟩ with
   | some (.chooseMode 1) => true
   | _ => false
+#guard
+  match proposedConfusticateOwnBolt.apply ⟨0⟩ (.chooseMode 1) with
+  | .ok g' => g'.log.any (fun s => mentions s "chooses mode 2")
+  | .error _ => false
 
 /-- Nissa proposes Confusticate with Chandra's Bolt on the stack. -/
 def proposedConfusticateOppBolt : Game :=
@@ -2497,10 +2505,6 @@ def proposedConfusticateOppBolt : Game :=
   match Agent.choose proposedConfusticateOppBolt ⟨1⟩ with
   | some (.chooseMode 0) => true
   | _ => false
-
-/-- Empty `p`'s hand and mark a land already played this turn. -/
-def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
-  g.modifyPlayer p (fun pl => { pl with hand := #[], landsPlayedThisTurn := 1 })
 
 /-- Pay the proposed spell or ability, then both players pass (resolve). -/
 def payAndResolve (g : Game) (p : PlayerId) : Game :=
