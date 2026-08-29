@@ -11,7 +11,7 @@ name = "Mtg.Engine"
 
 [[lean_lib]]
 name = "MtgDemo"
-roots = ["Mtg.Demo.WelcomeDecks", "Mtg.Demo.Render", "Mtg.Demo.RenderTests"]
+roots = ["Mtg.Demo.WelcomeDecks", "Mtg.Demo.DeckList", "Mtg.Demo.Render", "Mtg.Demo.RenderTests"]
 globs = ["Mtg.Demo.*"]
 
 [[lean_exe]]

@@ -1,4 +1,5 @@
 import Mtg.Engine
+import Mtg.Demo.DeckList
 import Mtg.Demo.Render
 import Mtg.Demo.RenderTests
 import Mtg.Demo.WelcomeDecks
@@ -8,8 +9,10 @@ import Mtg.Demo.WelcomeDecks
 
 Console demonstration of `Mtg.Engine`. Default mode runs a scripted game with a
 heuristic agent using The Hobbit Welcome Decks. Repeat `--name NAME` and
-`--deck COLOR` once per player (paired in order; default Chandra red and Nissa
-green). Pass `--interactive` to play as the first named player against
+`--deck COLOR` or `--deck FILE` once per player (paired in order; default
+Chandra red and Nissa green). COLOR is a Welcome Deck; FILE is a text deck
+list whose card names are in the supported catalog. Pass `--interactive` to
+play as the first named player against
 heuristic-controlled opponents, or `--multiplayer` to issue every player's
 actions from the console. `--decides NAME` names the player who chooses who
 takes the first turn (CR 103.1); by default one player is chosen at random
@@ -43,7 +46,7 @@ Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
                     [--decides NAME] [--input FILE] [--output FILE]
                     [--seed N] [--fuel N]
-                    [--name NAME --deck COLOR]...
+                    [--name NAME --deck COLOR|FILE]...
 
 Options:
   --auto          Run a heuristic game (default)
@@ -68,12 +71,15 @@ Options:
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
   --deck COLOR    That player's Hobbit Welcome Deck (repeat once per player)
+  --deck FILE     Deck list of supported catalog cards (repeat once per player)
   --help          Show this help
 
-COLOR is white, blue, black, red, or green (also W, U, B, R, G). Repeat
-`--name` and `--deck` the same number of times; they pair in order. Default
-is Chandra (red) and Nissa (green). A game needs at least two players
-(CR 100.1). Decklists:
+COLOR is white, blue, black, red, or green (also W, U, B, R, G). FILE is a
+text file of card names from the supported catalog (optional `N` or `Nx`
+counts; `#` comments; `Sideboard` lines ignored). Repeat `--name` and
+`--deck` the same number of times; they pair in order. Default is Chandra
+(red) and Nissa (green). A game needs at least two players (CR 100.1).
+Decklists:
 https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 
 The engine follows the Magic: The Gathering Comprehensive Rules
@@ -88,21 +94,33 @@ the deciding player chooses with `first <name>`. In --auto, the
 deciding player (heuristic) chooses to go first.
 "
 
-/-- A named player and the Hobbit Welcome Deck they sit with. -/
+/-- A Welcome Deck color or a path to a text deck list. -/
+inductive DemoDeck where
+  | welcome (color : Color)
+  | file (path : String)
+deriving Repr, Inhabited, DecidableEq
+
+/-- A named player and the deck they sit with. -/
 structure DemoPlayer where
   name : String
-  color : Color
+  deck : DemoDeck
 deriving Repr, Inhabited, DecidableEq
 
 /-- Default table: Chandra (red) and Nissa (green). -/
 def defaultDemoPlayers : Array DemoPlayer := #[
-  { name := "Chandra", color := .red },
-  { name := "Nissa", color := .green }
+  { name := "Chandra", deck := .welcome .red },
+  { name := "Nissa", deck := .welcome .green }
 ]
 
-/-- Seat list from named players and their Welcome Deck colors. -/
+/-- Cards for a Welcome Deck. File decks are empty until `loadSeats`. -/
+def cardsFor (d : DemoDeck) : Array CardDef :=
+  match d with
+  | .welcome c => hobbitDeck c
+  | .file _ => #[]
+
+/-- Seat list from named players. File decks resolve later via `loadSeats`. -/
 def seatsFromPlayers (players : Array DemoPlayer) : Array Seat :=
-  players.map (fun p => { name := p.name, deck := hobbitDeck p.color })
+  players.map (fun p => { name := p.name, deck := cardsFor p.deck })
 
 /-- Default seats: Chandra red, Nissa green. -/
 def demoSeats : Array Seat := seatsFromPlayers defaultDemoPlayers
@@ -118,7 +136,7 @@ def duplicatePlayerName? (players : Array DemoPlayer) : Option String :=
     return none
 
 /-- Pair `--name` / `--deck` flags into seats, or the default two-player table. -/
-def playersFromFlags (names : Array String) (decks : Array Color) :
+def playersFromFlags (names : Array String) (decks : Array DemoDeck) :
     Except String (Array DemoPlayer) := do
   if names.isEmpty && decks.isEmpty then
     return defaultDemoPlayers
@@ -126,7 +144,7 @@ def playersFromFlags (names : Array String) (decks : Array Color) :
     throw s!"--name and --deck must be given the same number of times (got {names.size} names and {decks.size} decks)"
   if names.size < 2 then
     throw "A game needs at least two players (CR 100.1)"
-  let players := names.mapIdx (fun i n => { name := n, color := decks[i]! })
+  let players := names.mapIdx (fun i n => { name := n, deck := decks[i]! })
   match duplicatePlayerName? players with
   | some name => throw s!"Duplicate player name: {name}"
   | none => return players
@@ -291,14 +309,14 @@ def printFirstChooser (players : Array DemoPlayer) (decider : Nat)
 #guard demoSeats[1]!.deck.any (fun c => c.name == "Elvish Archdruid")
 
 def elspethJace : Array DemoPlayer := #[
-  { name := "Elspeth", color := .white },
-  { name := "Jace", color := .blue }
+  { name := "Elspeth", deck := .welcome .white },
+  { name := "Jace", deck := .welcome .blue }
 ]
 
 def elspethJaceLiliana : Array DemoPlayer := #[
-  { name := "Elspeth", color := .white },
-  { name := "Jace", color := .blue },
-  { name := "Liliana", color := .black }
+  { name := "Elspeth", deck := .welcome .white },
+  { name := "Jace", deck := .welcome .blue },
+  { name := "Liliana", deck := .welcome .black }
 ]
 
 #guard (seatsFromPlayers elspethJace)[0]!.name == "Elspeth"
@@ -306,16 +324,16 @@ def elspethJaceLiliana : Array DemoPlayer := #[
 #guard (seatsFromPlayers elspethJace)[0]!.deck.any (fun c => c.name == "Bofur, Reliable Guardian")
 #guard (seatsFromPlayers elspethJace)[1]!.deck.any (fun c => c.name == "Bilbo Baggins, Burglar")
 #guard (seatsFromPlayers #[
-    { name := "Liliana", color := .black },
-    { name := "Chandra", color := .red }])[0]!.deck.any
+    { name := "Liliana", deck := .welcome .black },
+    { name := "Chandra", deck := .welcome .red }])[0]!.deck.any
   (fun c => c.name == "Gollum, Silent Slinker")
 #guard (seatsFromPlayers #[
-    { name := "Liliana", color := .black },
-    { name := "Chandra", color := .red }])[1]!.deck.any
+    { name := "Liliana", deck := .welcome .black },
+    { name := "Chandra", deck := .welcome .red }])[1]!.deck.any
   (fun c => c.name == "Smaug, the Great Calamity")
 #guard (seatsFromPlayers #[
-    { name := "Nissa", color := .green },
-    { name := "Elspeth", color := .white }])[0]!.deck.any
+    { name := "Nissa", deck := .welcome .green },
+    { name := "Elspeth", deck := .welcome .white }])[0]!.deck.any
   (fun c => c.name == "Elvish Archdruid")
 #guard firstUsage (seatsFromPlayers elspethJaceLiliana) ==
   "usage: first <name> (Elspeth or Jace or Liliana)"
@@ -330,8 +348,8 @@ def elspethJaceLiliana : Array DemoPlayer := #[
     picks.any (fun i => i == 2)
 #guard (duplicatePlayerName? defaultDemoPlayers).isNone
 #guard duplicatePlayerName? #[
-    { name := "Jace", color := .blue },
-    { name := "jace", color := .white }] == some "Jace"
+    { name := "Jace", deck := .welcome .blue },
+    { name := "jace", deck := .welcome .white }] == some "Jace"
 
 #guard
   match playersFromFlags #[] #[] with
@@ -339,25 +357,33 @@ def elspethJaceLiliana : Array DemoPlayer := #[
   | .error _ => false
 
 #guard
-  match playersFromFlags #["Elspeth", "Jace"] #[.white, .blue] with
+  match playersFromFlags #["Elspeth", "Jace"] #[.welcome .white, .welcome .blue] with
   | .ok ps => ps == elspethJace
   | .error _ => false
 
 #guard
-  match playersFromFlags #["Elspeth"] #[.white] with
+  match playersFromFlags #["Elspeth"] #[.welcome .white] with
   | .error msg => msg == "A game needs at least two players (CR 100.1)"
   | .ok _ => false
 
 #guard
-  match playersFromFlags #["Elspeth", "Jace"] #[.white] with
+  match playersFromFlags #["Elspeth", "Jace"] #[.welcome .white] with
   | .error msg =>
     msg == "--name and --deck must be given the same number of times (got 2 names and 1 decks)"
   | .ok _ => false
 
 #guard
-  match playersFromFlags #["Jace", "jace"] #[.blue, .white] with
+  match playersFromFlags #["Jace", "jace"] #[.welcome .blue, .welcome .white] with
   | .error msg => msg == "Duplicate player name: Jace"
   | .ok _ => false
+
+#guard
+  match playersFromFlags #["Alice", "Bob"] #[.file "alice.txt", .welcome .red] with
+  | .ok ps =>
+    ps.size == 2 &&
+    ps[0]!.name == "Alice" && ps[0]!.deck == .file "alice.txt" &&
+    ps[1]!.name == "Bob" && ps[1]!.deck == .welcome .red
+  | .error _ => false
 
 #guard
   match Start.start (demoConfig 1 (some 0) elspethJaceLiliana) with
@@ -374,8 +400,8 @@ def elspethJaceLiliana : Array DemoPlayer := #[
 
 #guard
   match Start.start (demoConfig 1 (some 0) #[
-      { name := "Elspeth", color := .white },
-      { name := "Liliana", color := .black }]) with
+      { name := "Elspeth", deck := .welcome .white },
+      { name := "Liliana", deck := .welcome .black }]) with
   | .ok g =>
     g.objects.any (fun o => o.name == "Bofur, Reliable Guardian") &&
     g.objects.any (fun o => o.name == "Gollum, Silent Slinker") &&
@@ -461,16 +487,35 @@ def printEngineBanner : IO Unit := do
   IO.println s!"Rules source: {Rules.sourceUrl}"
   IO.println ""
 
-/-- Announce which Hobbit Welcome Deck each player is using. -/
+/-- Announce which deck each player is using. -/
+def deckAssignmentLine (p : DemoPlayer) : String :=
+  match p.deck with
+  | .welcome c => s!"{p.name} uses the {c.englishName} Hobbit Welcome Deck."
+  | .file path => s!"{p.name} uses the deck list {path}."
+
 def printDeckAssignments (players : Array DemoPlayer) : IO Unit := do
   for p in players do
-    IO.println s!"{p.name} uses the {p.color.englishName} Hobbit Welcome Deck."
+    IO.println (deckAssignmentLine p)
   IO.println ""
+
+/-- Load Welcome Decks and any `--deck` files into seats. -/
+def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := do
+  let mut seats : Array Seat := #[]
+  for p in players do
+    match p.deck with
+    | .welcome c =>
+      seats := seats.push { name := p.name, deck := hobbitDeck c }
+    | .file path =>
+      match (← loadDeckListFile path) with
+      | .error e => return .error e
+      | .ok cards =>
+        seats := seats.push { name := p.name, deck := cards }
+  return .ok seats
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
 def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (players : Array DemoPlayer := defaultDemoPlayers) : IO Game := do
-  match Start.start (demoConfig seed startingPlayer players) with
+    (seats : Array Seat := demoSeats) : IO Game := do
+  match Start.start { seats, format := .limited, seed, startingPlayer } with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
@@ -486,8 +531,8 @@ the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
-    (players : Array DemoPlayer := defaultDemoPlayers) : IO Game := do
-  let g ← startGame seed startingPlayer players
+    (seats : Array Seat := demoSeats) : IO Game := do
+  let g ← startGame seed startingPlayer seats
   printOpening g viewer
   return g
 
@@ -599,6 +644,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "such as state and quit").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
 #guard (usage.splitOn "--deck COLOR").length > 1
+#guard (usage.splitOn "--deck FILE").length > 1
+#guard (usage.splitOn "supported catalog").length > 1
 #guard (usage.splitOn "--decides NAME").length > 1
 #guard (usage.splitOn "random player").length > 1
 #guard (usage.splitOn "white, blue, black, red, or green").length > 1
@@ -3831,6 +3878,46 @@ def parseWelcomeDeck (token : String) : Except String Color :=
   | .error msg => msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green)"
   | .ok _ => false
 
+/-- A path token: has an extension or a directory separator. -/
+def looksLikeDeckFile (token : String) : Bool :=
+  token.contains '.' || token.contains '/' || token.contains '\\'
+
+/-- A Welcome Deck color, or a deck list file path. -/
+def parseDemoDeck (token : String) : Except String DemoDeck :=
+  match parseWelcomeDeck token with
+  | .ok c => .ok (.welcome c)
+  | .error _ =>
+    if looksLikeDeckFile token then .ok (.file token)
+    else
+      .error s!"Unknown Welcome Deck: {token} (white, blue, black, red, or green, or a deck list file)"
+
+#guard looksLikeDeckFile "alice.txt"
+#guard looksLikeDeckFile "decks/nissa.txt"
+#guard looksLikeDeckFile "./red"
+#guard !looksLikeDeckFile "gold"
+#guard !looksLikeDeckFile "red"
+
+#guard
+  match parseDemoDeck "red" with
+  | .ok (.welcome .red) => true
+  | _ => false
+
+#guard
+  match parseDemoDeck "decks/nissa.txt" with
+  | .ok (.file "decks/nissa.txt") => true
+  | _ => false
+
+#guard
+  match parseDemoDeck "gold" with
+  | .error msg =>
+    msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green, or a deck list file)"
+  | .ok _ => false
+
+#guard deckAssignmentLine { name := "Chandra", deck := .welcome .red } ==
+  "Chandra uses the red Hobbit Welcome Deck."
+#guard deckAssignmentLine { name := "Alice", deck := .file "alice.txt" } ==
+  "Alice uses the deck list alice.txt."
+
 structure DemoOptions where
   interactive : Bool
   multiplayer : Bool
@@ -3854,7 +3941,7 @@ structure DemoFlagValues where
   inputFile : Option String
   outputFile : Option String
   names : Array String
-  decks : Array Color
+  decks : Array DemoDeck
   decidesName : Option String
   /-- True when `--auto`, `--interactive`, or `--multiplayer` was given. -/
   modeSet : Bool
@@ -3870,7 +3957,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
     let mut inputFile : Option String := none
     let mut outputFile : Option String := none
     let mut names : Array String := #[]
-    let mut decks : Array Color := #[]
+    let mut decks : Array DemoDeck := #[]
     let mut decidesName : Option String := none
     let mut modeSet := false
     let mut rest := args
@@ -3937,16 +4024,16 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
           names := names.push name
           rest := xs
       | "--name" :: [] => return .error "Missing player name"
-      | "--deck" :: color :: xs =>
-        if color.startsWith "--" then
-          return .error "Missing Welcome Deck color"
+      | "--deck" :: token :: xs =>
+        if token.startsWith "--" then
+          return .error "Missing Welcome Deck color or deck list file"
         else
-          match parseWelcomeDeck color with
+          match parseDemoDeck token with
           | .error e => return .error e
-          | .ok c =>
-            decks := decks.push c
+          | .ok d =>
+            decks := decks.push d
             rest := xs
-      | "--deck" :: [] => return .error "Missing Welcome Deck color"
+      | "--deck" :: [] => return .error "Missing Welcome Deck color or deck list file"
       | x :: _ => return .error s!"Unknown argument: {x}"
       | [] => break
     return .ok {
@@ -4194,8 +4281,8 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
   match parseArgs ["--name", "Nissa", "--deck", "green", "--name", "Chandra", "--deck", "r"] with
   | .ok opt =>
     opt.players.size == 2 &&
-    opt.players[0]!.name == "Nissa" && opt.players[0]!.color == .green &&
-    opt.players[1]!.name == "Chandra" && opt.players[1]!.color == .red
+    opt.players[0]!.name == "Nissa" && opt.players[0]!.deck == .welcome .green &&
+    opt.players[1]!.name == "Chandra" && opt.players[1]!.deck == .welcome .red
   | _ => false
 
 #guard
@@ -4203,8 +4290,8 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
       "--name", "Nissa", "--deck", "green"] with
   | .ok opt =>
     !opt.interactive &&
-    opt.players[0]!.name == "Liliana" && opt.players[0]!.color == .black &&
-    opt.players[1]!.name == "Nissa" && opt.players[1]!.color == .green
+    opt.players[0]!.name == "Liliana" && opt.players[0]!.deck == .welcome .black &&
+    opt.players[1]!.name == "Nissa" && opt.players[1]!.deck == .welcome .green
   | _ => false
 
 #guard
@@ -4212,14 +4299,39 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
       "--name", "Chandra", "--deck", "r"] with
   | .ok opt =>
     opt.interactive &&
-    opt.players[0]!.name == "Elspeth" && opt.players[0]!.color == .white &&
-    opt.players[1]!.name == "Chandra" && opt.players[1]!.color == .red
+    opt.players[0]!.name == "Elspeth" && opt.players[0]!.deck == .welcome .white &&
+    opt.players[1]!.name == "Chandra" && opt.players[1]!.deck == .welcome .red
   | _ => false
 
 #guard
   match parseArgs ["--deck", "gold", "--name", "Elspeth", "--name", "Jace", "--deck", "blue"] with
-  | .error msg => msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green)"
+  | .error msg =>
+    msg == "Unknown Welcome Deck: gold (white, blue, black, red, or green, or a deck list file)"
   | .ok _ => false
+
+#guard
+  match parseArgs [
+      "--name", "Alice", "--deck", "alice.txt",
+      "--name", "Bob", "--deck", "red"] with
+  | .ok opt =>
+    opt.players[0]!.name == "Alice" && opt.players[0]!.deck == .file "alice.txt" &&
+    opt.players[1]!.name == "Bob" && opt.players[1]!.deck == .welcome .red
+  | _ => false
+
+#guard
+  match parseArgs [
+      "--name", "Alice", "--deck", "decks/a.txt",
+      "--name", "Bob", "--deck", "./b"] with
+  | .ok opt =>
+    opt.players[0]!.deck == .file "decks/a.txt" &&
+    opt.players[1]!.deck == .file "./b"
+  | _ => false
+
+#guard
+  match parseDeckList (hobbitRed.map (·.name)) with
+  | .ok cards =>
+    cards.size == 40 && cards.map (·.name) == hobbitRed.map (·.name)
+  | .error _ => false
 
 #guard
   match parseArgs ["--name"] with
@@ -4228,7 +4340,7 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
 
 #guard
   match parseArgs ["--deck"] with
-  | .error msg => msg == "Missing Welcome Deck color"
+  | .error msg => msg == "Missing Welcome Deck color or deck list file"
   | .ok _ => false
 
 #guard
@@ -4238,7 +4350,7 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
 
 #guard
   match parseArgs ["--deck", "--seed", "1"] with
-  | .error msg => msg == "Missing Welcome Deck color"
+  | .error msg => msg == "Missing Welcome Deck color or deck list file"
   | .ok _ => false
 
 #guard
@@ -4430,26 +4542,31 @@ def main (args : List String) : IO UInt32 := do
           IO.eprintln e
           return 1
         | .ok output =>
-          recordInputFlags output sameFile script.flags
-          printEngineBanner
-          printDeckAssignments opt.players
-          let decider := assignDecider opt.players opt.seed opt.decides
-          let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
-          printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
-          if opt.interactive then
-            match (←
-              if humanChooses then
-                chooseStartingPlayer (seatsFromPlayers opt.players) decider
-                  opt.multiplayer pending output sameFile
-              else
-                pure (some (decider, pending))) with
-            | none => return 0
-            | some (startIdx, pending) =>
-              let g ← startGame opt.seed (some startIdx) opt.players
-              printOpening g (currentView g opt.playerView opt.multiplayer)
-              interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+          match (← loadSeats opt.players) with
+          | .error e =>
+            IO.eprintln e
+            return 1
+          | .ok seats =>
+            recordInputFlags output sameFile script.flags
+            printEngineBanner
+            printDeckAssignments opt.players
+            let decider := assignDecider opt.players opt.seed opt.decides
+            let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
+            printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
+            if opt.interactive then
+              match (←
+                if humanChooses then
+                  chooseStartingPlayer seats decider
+                    opt.multiplayer pending output sameFile
+                else
+                  pure (some (decider, pending))) with
+              | none => return 0
+              | some (startIdx, pending) =>
+                let g ← startGame opt.seed (some startIdx) seats
+                printOpening g (currentView g opt.playerView opt.multiplayer)
+                interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                return 0
+            else
+              let g ← startDemo opt.seed (some decider) (seats := seats)
+              runAuto g opt.fuel
               return 0
-          else
-            let g ← startDemo opt.seed (some decider) (players := opt.players)
-            runAuto g opt.fuel
-            return 0

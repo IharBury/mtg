@@ -31,13 +31,16 @@ lake build
 `Mtg.Demo` is a console application that starts a game using the
 [Hobbit Welcome Decks](https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks)
 (40-card limited) and either runs a heuristic demonstration or lets you play
-interactively. Repeat `--name NAME` and `--deck COLOR` once per player (paired
-in order). COLOR is white, blue, black, red, or green (also W, U, B, R, G).
+interactively. Repeat `--name NAME` and `--deck COLOR` or `--deck FILE` once
+per player (paired in order). COLOR is white, blue, black, red, or green
+(also W, U, B, R, G). FILE is a text deck list of supported catalog card
+names (optional `N` or `Nx` counts; `#` comments; `Sideboard` ignored).
 Default is Chandra (red) and Nissa (green). A game needs at least two players:
 
 ```sh
 lake exe mtg-demo
 lake exe mtg-demo -- --name Elspeth --deck white --name Jace --deck blue
+lake exe mtg-demo -- --name Alice --deck alice.txt --name Bob --deck bob.txt
 lake exe mtg-demo -- --name Elspeth --deck white --name Jace --deck blue --name Liliana --deck black
 lake exe mtg-demo -- --name Liliana --deck black --name Chandra --deck red --interactive
 lake exe mtg-demo -- --interactive
@@ -95,7 +98,7 @@ player view. With `--interactive`, that player is the first named player; with
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
 | `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
-| `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, and Welcome Deck lists. |
+| `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
 
 ## Current coverage
 
