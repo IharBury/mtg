@@ -514,17 +514,12 @@ def loadSeats (players : Array DemoPlayer) : IO (Except String (Array Seat)) := 
 
 /-- Create the demo game after the starting player is known (CR 103.1). -/
 def startGame (seed : UInt64) (startingPlayer : Option Nat := some 0)
-    (players : Array DemoPlayer := defaultDemoPlayers) : IO Game := do
-  match (← loadSeats players) with
+    (seats : Array Seat := demoSeats) : IO Game := do
+  match Start.start { seats, format := .limited, seed, startingPlayer } with
   | .error e =>
     IO.eprintln s!"Failed to start game: {e}"
     throw (IO.userError e)
-  | .ok seats =>
-    match Start.start { demoConfig seed startingPlayer players with seats } with
-    | .error e =>
-      IO.eprintln s!"Failed to start game: {e}"
-      throw (IO.userError e)
-    | .ok g => return g
+  | .ok g => return g
 
 /-- Print the opening log and board after the game has started. -/
 def printOpening (g : Game) (viewer : Option PlayerId := none) : IO Unit := do
@@ -536,8 +531,8 @@ the seat chosen under CR 103.1. Banner, decks, and the chooser announcement
 are printed first. -/
 def startDemo (seed : UInt64) (startingPlayer : Option Nat := some 0)
     (viewer : Option PlayerId := none)
-    (players : Array DemoPlayer := defaultDemoPlayers) : IO Game := do
-  let g ← startGame seed startingPlayer players
+    (seats : Array Seat := demoSeats) : IO Game := do
+  let g ← startGame seed startingPlayer seats
   printOpening g viewer
   return g
 
@@ -4547,26 +4542,31 @@ def main (args : List String) : IO UInt32 := do
           IO.eprintln e
           return 1
         | .ok output =>
-          recordInputFlags output sameFile script.flags
-          printEngineBanner
-          printDeckAssignments opt.players
-          let decider := assignDecider opt.players opt.seed opt.decides
-          let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
-          printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
-          if opt.interactive then
-            match (←
-              if humanChooses then
-                chooseStartingPlayer (seatsFromPlayers opt.players) decider
-                  opt.multiplayer pending output sameFile
-              else
-                pure (some (decider, pending))) with
-            | none => return 0
-            | some (startIdx, pending) =>
-              let g ← startGame opt.seed (some startIdx) opt.players
-              printOpening g (currentView g opt.playerView opt.multiplayer)
-              interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+          match (← loadSeats opt.players) with
+          | .error e =>
+            IO.eprintln e
+            return 1
+          | .ok seats =>
+            recordInputFlags output sameFile script.flags
+            printEngineBanner
+            printDeckAssignments opt.players
+            let decider := assignDecider opt.players opt.seed opt.decides
+            let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
+            printFirstChooser opt.players decider opt.decides.isNone (!humanChooses)
+            if opt.interactive then
+              match (←
+                if humanChooses then
+                  chooseStartingPlayer seats decider
+                    opt.multiplayer pending output sameFile
+                else
+                  pure (some (decider, pending))) with
+              | none => return 0
+              | some (startIdx, pending) =>
+                let g ← startGame opt.seed (some startIdx) seats
+                printOpening g (currentView g opt.playerView opt.multiplayer)
+                interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                return 0
+            else
+              let g ← startDemo opt.seed (some decider) (seats := seats)
+              runAuto g opt.fuel
               return 0
-          else
-            let g ← startDemo opt.seed (some decider) (players := opt.players)
-            runAuto g opt.fuel
-            return 0
