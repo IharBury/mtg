@@ -2,6 +2,7 @@ import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
+import Mtg.Engine.Catalog.Marvel
 import Mtg.Engine.Game
 import Mtg.Engine.Oracle
 
@@ -772,6 +773,19 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.scry (g.scryLookedIds p n) #[])
   | .mayDiscardDraw _ _, some p =>
     mustApply g p .decline
+  | .chooseTeamwork _, some p =>
+    mustApply g p (.announceTeamwork false)
+  | .chooseTeamworkCreatures _ need, some p =>
+    let rec pick (cs : List GameObject) (acc : Array ObjectId) (total : Int) :
+        Array ObjectId :=
+      if total >= (need : Int) then acc
+      else
+        match cs with
+        | [] => acc
+        | o :: rest =>
+          if o.status.tapped then pick rest acc total
+          else pick rest (acc.push o.id) (total + g.power o)
+    mustApply g p (.choosePermanents (pick (g.creaturesControlledBy p).toList #[] 0))
   | .chooseAdditionalCost _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
@@ -12826,6 +12840,89 @@ def loreAfterFirstMain : Game :=
 #guard
   loreAfterFirstMain.battlefield.any (fun o =>
     o.name == "Burn, Burn, Tree and Fern" && o.status.lore ≥ 2)
+
+/-! ## Marvel Super Heroes (MSH) -/
+
+#guard mshCards.size == 286
+#guard mshCards.all (·.matchesOracleText)
+#guard !mshCards.any usesPrintedStub
+#guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
+#guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
+#guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
+
+/-- Put `card` onto the battlefield and run enters replacements (shield, power-up). -/
+def mshEnter (g : Game) (card : CardDef) : Game :=
+  let g := addPermanent g card ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g card.name
+  (g.afterPermanentEnters o).receivePriority ⟨0⟩
+
+/-- Power-up costs are reduced by the creature's mana cost if it entered this turn
+(CR 702.193b). `{4}{W}` minus Brave Brawler's `{1}{W}` is `{3}`. -/
+def brawlerEntered : Game := mshEnter afterDraw braveBrawler
+
+#guard (namedPermanent brawlerEntered "Brave Brawler").status.enteredThisTurn
+#guard
+  let o := namedPermanent brawlerEntered "Brave Brawler"
+  let ab := o.printed.activatedAbilities[0]!
+  ab.powerUp &&
+    brawlerEntered.activationManaCost ⟨0⟩ ab (some o) ==
+      ({ symbols := #[.generic 3] } : ManaCost)
+
+/-- Without the enters-this-turn flag the power-up cost is printed. -/
+def brawlerNoEnterFlag : Game := addPermanent afterDraw braveBrawler ⟨0⟩ ⟨0⟩
+
+#guard !(namedPermanent brawlerNoEnterFlag "Brave Brawler").status.enteredThisTurn
+#guard
+  let o := namedPermanent brawlerNoEnterFlag "Brave Brawler"
+  let ab := o.printed.activatedAbilities[0]!
+  brawlerNoEnterFlag.activationManaCost ⟨0⟩ ab (some o) ==
+    ({ symbols := #[.generic 4, .colored .white] } : ManaCost)
+
+/-- Captain America enters with a shield counter (CR 122.1 / 702.193-adjacent). -/
+def capEntered : Game := mshEnter afterDraw captainAmericaSuperSoldier
+
+#guard (namedPermanent capEntered "Captain America, Super-Soldier").status.shield == 1
+#guard capEntered.log.any (fun s => mentions s "shield counter")
+
+/-- A.I.M. Scientists connives on enter: draw, then discard. -/
+def scientistsConnive : Game := settle (mshEnter afterDraw aIMScientists) 24
+
+#guard scientistsConnive.log.any (fun s => mentions s "draws")
+#guard (scientistsConnive.player ⟨0⟩).hand.size == 7
+
+/-- Agent 13 investigates when a creature you control attacks alone. -/
+def agentAttacksAlone : Game :=
+  let g := mshEnter afterDraw agent13SharonCarter
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  settle (passBoth g) 40
+
+#guard agentAttacksAlone.battlefield.any (fun o => o.name == "Clue")
+#guard agentAttacksAlone.log.any (fun s => mentions s "investigates")
+
+/-- Claim the Kingdom puts a plan counter when a land enters. -/
+def planFromLandfall : Game :=
+  let g := mshEnter afterDraw claimTheKingdom
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨0⟩ ⟨0⟩
+  settle ((g.afterPermanentEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
+
+#guard (namedPermanent planFromLandfall "Claim the Kingdom").status.plan == 1
+#guard (namedPermanent planFromLandfall "Grizzly Bears").status.plusOnePlusOne == 1
+
+/-- Helicarrier Strike announces teamwork and taps a creature of enough power. -/
+def teamworkPaidStrike : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addToHand g helicarrierStrike ⟨0⟩
+  let g := withMana g ⟨0⟩ .white 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)
+  let g := mustApply g ⟨0⟩ (.announceTeamwork true)
+  mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
+
+#guard (namedPermanent teamworkPaidStrike "Grizzly Bears").status.tapped
+#guard teamworkPaidStrike.log.any (fun s => mentions s "pays a teamwork cost")
 
 end Mtg.Engine.Tests
 

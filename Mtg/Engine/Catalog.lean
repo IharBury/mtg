@@ -8,7 +8,8 @@ card-agnostic; these definitions just exercise the rules we model.
 
 Cards from Magic: The Gathering | The Hobbit (HOB) live in
 `Mtg.Engine.Catalog.Hobbit`. Cards from The Hobbit Eternal (HOC) live in
-`Mtg.Engine.Catalog.HobbitEternal`. Decklists that use them live in `Mtg.Demo`.
+`Mtg.Engine.Catalog.HobbitEternal`. Cards from Marvel Super Heroes (MSH) live
+in `Mtg.Engine.Catalog.Marvel`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -77,7 +78,11 @@ def card (name : String) (types : Array CardType)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (adventure : Option AdventureFace := none) : CardDef := {
+    (adventure : Option AdventureFace := none)
+    (teamwork : Option Nat := none)
+    (chooseBothIfTeamwork : Bool := false)
+    (entersWithShield : Nat := 0)
+    (otherFace : Option CardDef := none) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
   supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
   additionalCostOrPayGeneric, costReductionIfCreatureDied, costReductionIfTargetDamaged,
@@ -96,7 +101,8 @@ def card (name : String) (types : Array CardType)
   foodAlsoCreatesTreasure, othersEnterWithPlusOneEqualToughness, powerPerMountain,
   extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade, kicker,
   tokenDoubling, drawTwoExceptFirstDrawStep,
-  staticAbilities, triggeredAbilities, activatedAbilities, adventure
+  staticAbilities, triggeredAbilities, activatedAbilities, adventure,
+  teamwork, chooseBothIfTeamwork, entersWithShield, otherFace
 }
 
 /-- A basic land whose name is also its land type (CR 305.6). -/
@@ -142,7 +148,10 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
     (tokenDoubling : Bool := false)
-    (drawTwoExceptFirstDrawStep : Bool := false) : CardDef :=
+    (drawTwoExceptFirstDrawStep : Bool := false)
+    (teamwork : Option Nat := none)
+    (entersWithShield : Nat := 0)
+    (otherFace : Option CardDef := none) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -169,6 +178,9 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (cascade := cascade)
     (tokenDoubling := tokenDoubling)
     (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
+    (teamwork := teamwork)
+    (entersWithShield := entersWithShield)
+    (otherFace := otherFace)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -196,7 +208,10 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (costReductionEqualOppArtifacts : Bool := false)
     (cascade : Nat := 0)
     (tokenDoubling : Bool := false)
-    (drawTwoExceptFirstDrawStep : Bool := false) : CardDef :=
+    (drawTwoExceptFirstDrawStep : Bool := false)
+    (teamwork : Option Nat := none)
+    (entersWithShield : Nat := 0)
+    (otherFace : Option CardDef := none) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords) (tapAddMana := tapAddMana)
     (supertypes := #[.legendary] ++ supertypes)
@@ -220,6 +235,9 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (cascade := cascade)
     (tokenDoubling := tokenDoubling)
     (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
+    (teamwork := teamwork)
+    (entersWithShield := entersWithShield)
+    (otherFace := otherFace)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
@@ -242,7 +260,9 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
-    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[])
+    (teamwork : Option Nat := none)
+    (chooseBothIfTeamwork : Bool := false) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -264,6 +284,8 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
+    (teamwork := teamwork)
+    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -286,7 +308,9 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
-    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[])
+    (teamwork : Option Nat := none)
+    (chooseBothIfTeamwork : Bool := false) : CardDef :=
   spellCard .instant name manaCost oracleText
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -309,6 +333,8 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
+    (teamwork := teamwork)
+    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -331,7 +357,9 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (giftTreasure : Bool := false)
     (cascade : Nat := 0)
     (kicker : Option ManaCost := none)
-    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[])
+    (teamwork : Option Nat := none)
+    (chooseBothIfTeamwork : Bool := false) : CardDef :=
   spellCard .sorcery name manaCost oracleText
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -354,6 +382,8 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (cascade := cascade)
     (kicker := kicker)
     (staticAbilities := staticAbilities)
+    (teamwork := teamwork)
+    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -542,7 +572,8 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (removeIndestructibleCounter : Bool := false)
     (sacrificeLegendaryArtifact : Bool := false)
     (discardLegendarySameName : Bool := false)
-    (sacrificeArtifact : Bool := false) :
+    (sacrificeArtifact : Bool := false)
+    (powerUp : Bool := false) :
     ActivatedAbility := {
   cost := {
     mana := mana
@@ -562,7 +593,7 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-  onlyIfYouAttackedWithTwoOrMore
+  onlyIfYouAttackedWithTwoOrMore, powerUp
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
@@ -641,6 +672,21 @@ def giantGrowth : CardDef :=
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
+
+/-- Oracle-faithful trigger used by the MSH catalog. -/
+def mshTrig (text : String) : TriggeredAbility :=
+  .catalog text
+
+/-- Oracle-faithful static used by the MSH catalog. -/
+def mshStatic (text : String) : StaticAbility :=
+  .catalog text
+
+/-- Oracle-faithful activation used by the MSH catalog. -/
+def mshAct (text : String) (mana : ManaCost := ManaCost.empty)
+    (tap : Bool := false) (powerUp : Bool := false)
+    (onlyAsSorcery : Bool := false) : ActivatedAbility :=
+  activated (.catalog text) mana (tap := tap) (powerUp := powerUp)
+    (onlyAsSorcery := onlyAsSorcery)
 
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard mountain.colors.isColorless

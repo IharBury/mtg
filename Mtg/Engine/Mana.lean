@@ -152,6 +152,63 @@ def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
     | s :: rest => s :: go rest left
   { symbols := (go cost.symbols.toList n).toArray }
 
+/-- Remove up to `n` symbols of color `c`. Returns the leftover count. -/
+def stripColored (cost : ManaCost) (c : Color) (n : Nat) : ManaCost × Nat :=
+  Id.run do
+    let mut left := n
+    let mut out : Array ManaSymbol := #[]
+    for s in cost.symbols do
+      match s with
+      | .colored d =>
+        if d == c && left > 0 then
+          left := left - 1
+        else
+          out := out.push s
+      | _ => out := out.push s
+    return ({ symbols := out }, left)
+
+/-- Remove up to `n` `{C}` symbols. Returns the leftover count. -/
+def stripColorless (cost : ManaCost) (n : Nat) : ManaCost × Nat :=
+  Id.run do
+    let mut left := n
+    let mut out : Array ManaSymbol := #[]
+    for s in cost.symbols do
+      match s with
+      | .colorless =>
+        if left > 0 then
+          left := left - 1
+        else
+          out := out.push s
+      | _ => out := out.push s
+    return ({ symbols := out }, left)
+
+/-- Reduce `cost` by `byCost` as a power-up discount (CR 702.193b). Generic
+mana in `byCost` reduces generic mana. Colored and colorless mana reduce the
+same type; leftover amounts reduce generic. -/
+def reduceByCost (cost byCost : ManaCost) : ManaCost :=
+  let original := cost
+  let rec stripColors (cost : ManaCost) (cs : List Color) (extra : Nat) : ManaCost × Nat :=
+    match cs with
+    | [] => (cost, extra)
+    | c :: rest =>
+      let n := byCost.coloredCount c
+      let (cost, leftover) := cost.stripColored c n
+      stripColors cost rest (extra + leftover)
+  let (cost, extraColored) := stripColors cost Color.all 0
+  let colorlessN :=
+    byCost.symbols.foldl (fun acc s =>
+      match s with
+      | .colorless => acc + 1
+      | _ => acc) 0
+  let (cost, extraColorless) := cost.stripColorless colorlessN
+  let generic :=
+    byCost.symbols.foldl (fun acc s =>
+      match s with
+      | .generic n => acc + n
+      | .hybrid _ _ => acc + 1
+      | _ => acc) 0
+  afterReduction original (cost.reduceGeneric (generic + extraColored + extraColorless))
+
 /-- Concatenate two mana costs (additional costs such as kicker, CR 601.2f). -/
 def addCost (a b : ManaCost) : ManaCost :=
   { symbols := a.symbols ++ b.symbols }
@@ -192,6 +249,9 @@ instance : BEq ManaCost where
 #guard toString (ofGeneric 0) == ""
 #guard toString ({ symbols := #[.generic 0] } : ManaCost) == "{0}"
 #guard toString (ofGeneric 1) == "{1}"
+#guard toString ((ofGenericAndColor 6 .red).reduceByCost (ofGenericAndColor 2 .red)) == "{4}"
+#guard toString ((ofColors [.white, .blue, .black, .red, .green]).reduceByCost
+  (ofColor .white)) == "{U}{B}{R}{G}"
 #guard toString (ofColor .red) == "{R}"
 #guard (ofGenericAndColor 4 .black).reduceGeneric 3 == ofGenericAndColor 1 .black
 #guard (ofGenericAndColor 3 .black).reduceGeneric 3 == ofColor .black

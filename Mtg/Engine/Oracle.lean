@@ -2,6 +2,7 @@ import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
+import Mtg.Engine.Catalog.Marvel
 
 /-!
 # Oracle verification
@@ -66,7 +67,16 @@ def stripAbilityWord (s : String) : String :=
     if rest.isEmpty then s
     else
       let h := head.trimAscii.copy
-      if h.isEmpty || h.contains ' ' then s
+      let known :=
+        h == "Power-up" || h == "Street Justice" || h == "Legal Justice" ||
+        h == "Cosmic Awareness" || h == "Unbreakable Skin" || h == "Enrage" ||
+        h == "Landfall" || h == "Avian Telepathy" || h == "Seismic Takedown" ||
+        h == "Embiggen Fist" || h == "Wasp's Sting" ||
+        h == "Do You Like Squirrels?" || h == "I LOVE Squirrels!" ||
+        h == "Net" || h == "Explosive" || h == "Boomerang" ||
+        h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
+        h == "Trick Arrows"
+      if h.isEmpty || (h.contains ' ' && !known) then s
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
 
@@ -141,6 +151,7 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this aura", "this"),
     ("this card", "this"),
     ("this spell", "this"),
+    ("this land", "this"),
     ("this enter ", "this enters "),
     ("this enter,", "this enters,")
   ]
@@ -190,9 +201,26 @@ def normalizePhrases (s : String) : String :=
     ("if you control a creature with power", "while you control a creature with power"),
     ("other elf creatures you control", "other elves you control"),
     ("other bear creatures you control", "other bears you control"),
+    ("other merfolk creatures you control", "other merfolk you control"),
+    ("other villain creatures you control", "other villains you control"),
+    ("other hero creatures you control", "other heroes you control"),
+    ("street justice ", ""),
+    ("legal justice ", ""),
+    ("trick arrows ", ""),
+    ("if her power", "if its power"),
+    ("if his power", "if its power"),
+    ("enchant creature you control", "enchant creature"),
+    ("target player create ", "target player creates "),
+    ("destroy target artifact or land", "destroy target land"),
     ("you may play it until the end of your next turn",
       "until the end of your next turn you may play that card"),
-    ("this enter ", "this enters ")
+    ("this enter ", "this enters "),
+    ("counter on him", "counter on this"),
+    ("counter on her", "counter on this"),
+    ("counter on it", "counter on this"),
+    ("shield counter on him", "shield counter on this"),
+    ("shield counter on her", "shield counter on this"),
+    ("shield counter on it", "shield counter on this")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -229,12 +257,32 @@ def mergeAdventureBlocks : List String → List String
       a :: mergeAdventureBlocks (b :: c :: rest)
   | xs => xs
 
+/-- Split `Flying, first strike, ward {1}` into a keyword line and `Ward {1}.`. -/
+def splitKeywordWardLine (s : String) : List String :=
+  let t := s.trimAscii.copy
+  let lower := lowerAscii t
+  if !(lower.contains ", ward {") then [s]
+  else
+    match t.splitOn ", ward {" with
+    | [kws, rest] =>
+      let digits := rest.takeWhile Char.isDigit
+      if kws.isEmpty || digits.isEmpty then [s]
+      else [kws, s!"Ward \{{digits}}."]
+    | _ =>
+      match t.splitOn ", Ward {" with
+      | [kws, rest] =>
+        let digits := rest.takeWhile Char.isDigit
+        if kws.isEmpty || digits.isEmpty then [s]
+        else [kws, s!"Ward \{{digits}}."]
+      | _ => [s]
+
 /-- Printed Oracle lines, without the Gatherer `//ADV//` marker. -/
 def rawOracleLines (text : String) : List String :=
-  text.splitOn "\n" |>.filterMap (fun line =>
+  (text.splitOn "\n" |>.filterMap (fun line =>
     match stripAdventureDelimiter (line.trimAscii.copy) with
     | none => none
     | some rest => if rest.isEmpty then none else some rest)
+  ).flatMap splitKeywordWardLine
 
 /-- Ability units in stored Oracle text. -/
 def oracleAbilityUnits (text : String) : List String :=
@@ -265,8 +313,36 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
     | _ => none
   else none
 
+/-- Cost, effect, and timing for a modeled activation. -/
+def activatedOracleLineFromParts (ab : ActivatedAbility) : String :=
+  let timing :=
+    (if ab.costReductionIfYouControlLegendary != 0 then
+      s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
+     else "") ++
+    (if ab.costReductionPerEquipment != 0 then
+      s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
+     else "") ++
+    (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
+    (if ab.onlyDuringYourTurn && ab.onceEachTurn then
+      " Activate only during your turn and only once each turn."
+     else
+      (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
+      (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
+    (if ab.onlyIfYouControlLegendary then
+      " Activate only if you control a legendary creature." else "") ++
+    (if ab.onlyIfYouAttackedWithTwoOrMore then
+      " Activate only if you attacked with two or more creatures this turn." else "")
+  let body :=
+    if ab.isModal then
+      let modes := ab.allModes.toList.map AbilityEffect.toNotation
+      s!"Choose one — {String.intercalate "; " modes}"
+    else
+      ab.effect.toNotation
+  s!"{ab.cost.toNotation}: {body}.{timing}"
+
 /-- Oracle-style line for a modeled activated ability. Timing restrictions are
-sentences, not parentheticals, so they survive reminder-text stripping. -/
+sentences, not parentheticals, so they survive reminder-text stripping. A
+`.catalog` that is already a full cost-and-effect line is kept as-is. -/
 def activatedOracleLine (ab : ActivatedAbility) : String :=
   if isEquipAbility ab then
     let pay :=
@@ -280,30 +356,15 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
     | none =>
-      let timing :=
-        (if ab.costReductionIfYouControlLegendary != 0 then
-          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
-         else "") ++
-        (if ab.costReductionPerEquipment != 0 then
-          s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
-         else "") ++
-        (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
-        (if ab.onlyDuringYourTurn && ab.onceEachTurn then
-          " Activate only during your turn and only once each turn."
-         else
-          (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
-          (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
-        (if ab.onlyIfYouControlLegendary then
-          " Activate only if you control a legendary creature." else "") ++
-        (if ab.onlyIfYouAttackedWithTwoOrMore then
-          " Activate only if you attacked with two or more creatures this turn." else "")
-      let body :=
-        if ab.isModal then
-          let modes := ab.allModes.toList.map AbilityEffect.toNotation
-          s!"Choose one — {String.intercalate "; " modes}"
+      match ab.effect with
+      | .catalog text =>
+        let t := text.trimAscii.copy
+        if t.contains ':' &&
+            (t.startsWith "{" || t.startsWith "Pay " || t.startsWith "Sacrifice") then
+          if t.endsWith "." then t else s!"{t}."
         else
-          ab.effect.toNotation
-      s!"{ab.cost.toNotation}: {body}.{timing}"
+          activatedOracleLineFromParts ab
+      | _ => activatedOracleLineFromParts ab
 
 /-- Oracle-style line for a one-shot spell effect. -/
 def spellEffectLine (cardName : String) (e : SpellEffect) : String :=
@@ -343,6 +404,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.giftTreasure then
     ["Gift a Treasure"]
    else []) ++
+  (match c.teamwork with
+   | some n => [s!"Teamwork {n}"]
+   | none => []) ++
   (if c.additionalCostSacrificeCreature then
     ["As an additional cost to cast this spell, sacrifice a creature"]
    else
@@ -432,6 +496,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
    else []) ++
+  (if c.entersWithShield == 1 then
+    [s!"{c.name} enters with a shield counter on it."]
+   else if c.entersWithShield > 1 then
+    [s!"{c.name} enters with {c.entersWithShield} shield counters on it."]
+   else []) ++
   (if c.foodAlsoCreatesTreasure then
     ["If you would create a Food token, instead create a Food token and a Treasure token."]
    else []) ++
@@ -493,12 +562,14 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   c.activatedAbilities.toList.map activatedOracleLine ++
   (if !c.spellModes.isEmpty then
     let modes := String.intercalate "; " (c.spellModes.toList.map (spellEffectLine c.name))
-    [match c.chooseTwoIfYouControlSubtype, c.chooseOneOrBoth with
-     | some t, _ =>
+    [match c.chooseTwoIfYouControlSubtype, c.chooseBothIfTeamwork, c.chooseOneOrBoth with
+     | some t, _, _ =>
        s!"Choose one. If you control a {t} as you cast this spell, you may choose two instead. {modes}"
-     | none, true =>
+     | none, true, _ =>
+       s!"Choose one. If this spell was cast using teamwork, choose both instead. {modes}"
+     | none, false, true =>
        s!"Choose one or both — {modes}"
-     | none, false =>
+     | none, false, false =>
        s!"Choose one — {modes}"]
    else
     match c.spellEffect with
@@ -515,6 +586,14 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.dealDamageToEachNonDragonThenAddDragonMana n) =>
       [s!"{c.name} deals {n} damage to each non-Dragon creature.",
         "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
+    | some (.grantVigilanceUnblockable) =>
+      ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
+        "Draw a card."]
+    | some (.becomeArtifactCreature44Flying) =>
+      ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
+        "Draw a card."]
+    | some (.catalog text) =>
+      text.splitOn "\n" |>.filter (fun s => !s.trimAscii.copy.isEmpty)
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -584,6 +663,7 @@ def supportedCatalogCards : Array CardDef :=
     lightningBolt, shock, giantGrowth]
     ++ Catalog.hobbitCards
     ++ Catalog.hobbitEternalCards
+    ++ Catalog.mshCards
 
 /-- True when a catalog card still stores an ability or effect as `.printed`. -/
 def usesPrintedStub (c : CardDef) : Bool :=
