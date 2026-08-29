@@ -1565,4 +1565,78 @@ def honeAnyEquipmentOk : Bool :=
 
 #guard honeAnyEquipmentOk
 
+/-!
+## 49, 176–178, 185–186 — {X} is 0 without paying the mana cost
+-/
+
+def xWithoutPaying : ManaCost :=
+  let g := addToHand afterDraw insideInformation ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Inside Information"
+  let card := { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  g.playManaCost card insideInformation
+
+def xWithoutPayingOk : Bool :=
+  xWithoutPaying == ManaCost.zero &&
+    insideInformation.manaValue == 2 &&
+    (ruling 49).comment.contains "choose 0" &&
+    (ruling 176).comment.contains "choose 0" &&
+    (ruling 177).comment.contains "choose 0"
+
+#guard xWithoutPayingOk
+
+/-!
+## 72, 102, 183 — cost reduction reduces only generic mana
+-/
+
+def twoElvesAndKeepers : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  addToHand g cantankerousKeepers ⟨0⟩
+
+def affinityKeepersCost : ManaCost :=
+  let card := handCardNamed twoElvesAndKeepers ⟨0⟩ "Cantankerous Keepers"
+  twoElvesAndKeepers.playManaCost card cantankerousKeepers
+
+def affinityKeepersOk : Bool :=
+  affinityKeepersCost.coloredCount .green == 1 &&
+    affinityKeepersCost.manaValue == 4 &&
+    (afterDraw.playManaCost
+        (handCardNamed (addToHand afterDraw cantankerousKeepers ⟨0⟩) ⟨0⟩
+          "Cantankerous Keepers")
+        cantankerousKeepers).manaValue == 6 &&
+    (ruling 72).comment.contains "colored mana must still be paid"
+
+#guard affinityKeepersOk
+
+def cavernWithOppArtifacts (n : Nat) : Game :=
+  let g := addToHand afterDraw cavernHoardDragon ⟨0⟩
+  (List.range n).foldl (init := g) fun g _ =>
+    (g.createToken ⟨1⟩ Game.treasureToken).1
+
+def cavernCost (n : Nat) : ManaCost :=
+  let g := cavernWithOppArtifacts n
+  let card := handCardNamed g ⟨0⟩ "Cavern-Hoard Dragon"
+  g.playManaCost card cavernHoardDragon
+
+def cavernCostsOk : Bool :=
+  cavernHoardDragon.manaValue == 9 &&
+    (cavernCost 0).manaValue == 9 &&
+    (cavernCost 3).manaValue == 6 &&
+    (cavernCost 3).coloredCount .red == 2 &&
+    (cavernCost 7).manaValue == 2 &&
+    (cavernCost 7).coloredCount .red == 2 &&
+    (ruling 102).comment.contains "greatest number of artifacts" &&
+    (ruling 183).comment.contains "{R}{R}"
+
+#guard cavernCostsOk
+
+/-- Ruling 58 / 61 / 65: already-modeled kicker, amass Orcs, and gift wording. -/
+def sharedReminderOk : Bool :=
+  (ruling 58).comment.contains "more than once" &&
+    (ruling 61).comment.contains "Orc Army" &&
+    (ruling 65).comment.contains "Treasure token"
+
+#guard sharedReminderOk
+
 end Mtg.Engine.RulingTests

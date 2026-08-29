@@ -3543,27 +3543,47 @@ def finishProposedSpell (g : Game) : Except String Game := do
 mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
 Target-based reductions lock in after CR 601.2c. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
-  let printedCost :=
+  let caster := card.controller.getD card.owner
+  let start :=
     if card.castFromGraveyard || card.zone == .graveyard card.owner then
       face.flashback.getD face.manaCost
-    else if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
-      face.manaCost.reduceGeneric face.costReductionIfCreatureDied
-    else if face.costReductionEqualFlyingPower then
-      let n :=
-        match card.controller with
-        | none => 0
-        | some p =>
-          (g.permanentsOf p).foldl (fun acc o =>
-            if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
-      face.manaCost.reduceGeneric n
     else face.manaCost
+  let afterDied :=
+    if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
+      start.reduceGeneric face.costReductionIfCreatureDied
+    else start
+  let afterFly :=
+    if face.costReductionEqualFlyingPower then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
+      afterDied.reduceGeneric n
+    else afterDied
+  let afterAff :=
+    match face.affinityForSubtype with
+    | some t =>
+      let st := if t == "Elves" then "Elf" else t
+      let n := (g.permanentsOf caster).filter (fun o => g.hasSubtype o st) |>.size
+      afterFly.reduceGeneric n
+    | none => afterFly
+  let afterOpp :=
+    if face.costReductionEqualOppArtifacts then
+      let n :=
+        g.players.foldl (fun acc pl =>
+          if pl.id == caster || pl.lost then acc
+          else
+            let arts :=
+              (g.permanentsOf pl.id).filter (fun o => o.printed.isArtifact) |>.size
+            max acc arts) 0
+      afterAff.reduceGeneric n
+    else afterAff
   let cost :=
     match card.playPermission with
     | some perm =>
       if perm.withoutManaCost then ManaCost.zero
-      else if perm.anyMana then ManaCost.ofGeneric printedCost.manaValue
-      else printedCost
-    | none => printedCost
+      else if perm.anyMana then ManaCost.ofGeneric afterOpp.manaValue
+      else afterOpp
+    | none => afterOpp
   ManaCost.afterReduction face.manaCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/
