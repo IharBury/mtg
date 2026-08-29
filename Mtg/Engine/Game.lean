@@ -3577,13 +3577,30 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef) : ManaCost :=
             max acc arts) 0
       afterAff.reduceGeneric n
     else afterAff
+  let afterEquip :=
+    if face.isInstant || face.isSorcery then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          let reduces :=
+            o.staticAbilities.any (fun ab =>
+              match ab with
+              | .instantSorceryCostReductionEqualEquippedPower => true
+              | _ => false)
+          if !reduces then acc
+          else
+            match o.attachedTo.bind g.findObject? with
+            | some host =>
+              if host.isOnBattlefield then acc + (g.power host).toNat else acc
+            | none => acc) 0
+      afterOpp.reduceGeneric n
+    else afterOpp
   let cost :=
     match card.playPermission with
     | some perm =>
       if perm.withoutManaCost then ManaCost.zero
-      else if perm.anyMana then ManaCost.ofGeneric afterOpp.manaValue
-      else afterOpp
-    | none => afterOpp
+      else if perm.anyMana then ManaCost.ofGeneric afterEquip.manaValue
+      else afterEquip
+    | none => afterEquip
   ManaCost.afterReduction face.manaCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/

@@ -1639,4 +1639,45 @@ def sharedReminderOk : Bool :=
 
 #guard sharedReminderOk
 
+/-!
+## 128, 311–313 — cost reductions leave colored mana and mana value
+-/
+
+def lordWithFlyer : Game :=
+  let g := addPermanent afterDraw eaglesOfTheNorth ⟨0⟩ ⟨0⟩
+  addToHand g theLordOfTheEagles ⟨0⟩
+
+def lordOfEaglesCost : ManaCost :=
+  let card := handCardNamed lordWithFlyer ⟨0⟩ "The Lord of the Eagles"
+  lordWithFlyer.playManaCost card theLordOfTheEagles
+
+def lordOfEaglesCostOk : Bool :=
+  theLordOfTheEagles.manaValue == 9 &&
+    lordOfEaglesCost.manaValue == 6 &&
+    lordOfEaglesCost.coloredCount .blue == 2 &&
+    (ruling 313).comment.contains "mana value of the spell remains unchanged"
+
+#guard lordOfEaglesCostOk
+
+def glamdringAndBolt : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g glamdringFoeHammer ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Glamdring, Foe-hammer")
+    (namedPermanent g "Grizzly Bears")
+  addToHand g hithlainKnots ⟨0⟩
+
+def glamdringReducedCost : ManaCost :=
+  let card := handCardNamed glamdringAndBolt ⟨0⟩ "Hithlain Knots"
+  glamdringAndBolt.playManaCost card hithlainKnots
+
+def glamdringReductionOk : Bool :=
+  hithlainKnots.manaValue == 2 &&
+    glamdringReducedCost.manaValue == 1 &&
+    glamdringReducedCost.coloredCount .blue == 1 &&
+    (ruling 128).comment.contains "colored mana must still be paid" &&
+    (ruling 312).comment.contains "mana value of the spell remains unchanged" &&
+    (ruling 311).comment.contains "mana value of the spell is determined only by its mana cost"
+
+#guard glamdringReductionOk
+
 end Mtg.Engine.RulingTests
