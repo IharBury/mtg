@@ -8173,6 +8173,66 @@ def delightedHalflingCeleborn : Game :=
     (delightedHalflingCeleborn.object! id).name == "Delighted Halfling"
   | _ => false
 
+/-- Llanowar Elves is listed before the Forest; autopay should still tap the
+land and leave the creature untapped. -/
+def elvesFirstGrowth : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addUntappedLand g forest
+  let g := addToHand g giantGrowth ⟨0⟩
+  proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Giant Growth").id
+    (Target.permanent (namedPermanent g "Llanowar Elves").id)
+
+#guard
+  let sources := elvesFirstGrowth.manaSources ⟨0⟩
+  sources.size == 2 && sources[0]!.1.name == "Llanowar Elves"
+
+#guard
+  match Agent.chooseManaPayment elvesFirstGrowth ⟨0⟩ with
+  | some (.tapForMana id (.colored .green)) =>
+    (elvesFirstGrowth.object! id).name == "Forest"
+  | _ => false
+
+/-- Mountain is listed before Rogue's Passage; `{2}` can use colorless, so
+tap the Passage first and leave the Mountain. -/
+def mountainThenPassageBauble : Game :=
+  let g := skipTo started .precombatMain 80
+  let g := addUntappedLand g mountain
+  let g := addPermanent g roguesPassage ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wayfarersBauble ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  mustApply g ⟨0⟩ (.activate (namedPermanent g "Wayfarer's Bauble").id 0)
+
+#guard
+  match mountainThenPassageBauble.proposedSpell with
+  | some prop =>
+    let sources := mountainThenPassageBauble.manaSourcesForProposed ⟨0⟩ prop
+    sources.size == 2 && sources[0]!.1.name == "Mountain"
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment mountainThenPassageBauble ⟨0⟩ with
+  | some (.tapForMana id .colorless) =>
+    (mountainThenPassageBauble.object! id).name == "Rogue's Passage"
+  | _ => false
+
+/-- A source that lists green before colorless still taps for `{C}` when the
+remaining cost is generic. -/
+def greenThenColorlessLand : CardDef :=
+  land "Silent Caves" "{T}: Add {C} or {G}."
+    (tapAddOneOf := #[.colored .green, .colorless])
+
+def silentCavesReady : Game :=
+  addPermanent afterDraw greenThenColorlessLand ⟨0⟩ ⟨0⟩
+
+#guard
+  let src := namedPermanent silentCavesReady "Silent Caves"
+  let types := silentCavesReady.manaAbilitiesOf src
+  types[0]? == some (.colored .green) &&
+    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofGeneric 1)
+      false false == some .colorless &&
+    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofColor .green)
+      false false == some (.colored .green)
+
 /- Mirkwood Pathmaker: power and toughness equal lands you control in all
 zones (CR 208.2a / 604.3). -/
 

@@ -4129,8 +4129,8 @@ def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
     after.coveredMana cost allowElfRestricted allowInstRestricted > before
 
 /-- A mana type among `types` that helps pay remaining symbols of `cost`.
-Prefers an unmet colored requirement; returns none when no type can be spent
-on the pending payment. -/
+Prefers an unmet colored requirement, then colorless if it can be spent;
+returns none when no type can be spent on the pending payment. -/
 def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
     (types : Array ManaType) (cost : ManaCost) (allowElfRestricted : Bool)
     (allowInstRestricted : Bool := false) : Option ManaType :=
@@ -4145,7 +4145,32 @@ def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
       let held := pool.usable (.colored c) allowElfRestricted allowInstRestricted
       held < req && helpful.contains (.colored c)) with
     | some c => some (.colored c)
-    | none => some first
+    | none =>
+      if helpful.contains .colorless then some .colorless
+      else some first
+
+/-- Whether `(src, t)` is a better next tap than `(bestSrc, bestT)`: avoid
+creatures when another source helps, then prefer colorless. Equal ranks keep
+the earlier source. -/
+def betterManaTap (src : GameObject) (t : ManaType)
+    (bestSrc : GameObject) (bestT : ManaType) : Bool :=
+  (!src.isCreature && bestSrc.isCreature) ||
+    (src.isCreature == bestSrc.isCreature && t == .colorless && bestT != .colorless)
+
+/-- Next source to tap for `prop`. Noncreatures are chosen before creatures
+when both help, and colorless is preferred when that type can be spent. -/
+def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Option (GameObject × ManaType) :=
+  let allowElf := g.proposedAllowsElfRestricted prop
+  let allowInst := g.proposedAllowsInstRestricted prop
+  (g.manaSourcesForProposed p prop).foldl (fun acc (src, types) =>
+    match g.preferredManaType p src types prop.cost allowElf allowInst with
+    | none => acc
+    | some t =>
+      match acc with
+      | none => some (src, t)
+      | some (bestSrc, bestT) =>
+        if betterManaTap src t bestSrc bestT then some (src, t) else acc) none
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false) :
