@@ -1,7 +1,6 @@
 import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
-import Mtg.Engine.Catalog.HobbitSet
 
 /-!
 # Oracle verification
@@ -546,31 +545,8 @@ def supportedCatalogCards : Array CardDef :=
   #[plains, island, swamp, mountain, forest,
     grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
     llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
-    lightningBolt, shock, giantGrowth,
-    bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-    magnificentEnd, mentorOfTheMeek, fiendHunter, errandRiderOfGondor,
-    landrovalHorizonWitness, roguesPassage, soldierOfTheGreyHost,
-    eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
-    banishingLight, dawnOfANewAge, vowToErebor, westfoldRider, esquireOfTheKing,
-    bilboBagginsBurglar, pelargirSurvivor, lakeshoreApothecary,
-    confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
-    knightsOfDolAmroth, greyHavensNavigator, ithilienKingfisher, hithlainKnots,
-    captainOfUmbar, minasTirithGarrison, colossalWhale, willowWind,
-    bilboLuckwearer, uneasyPartings, nimrodelWatcher, sternScolding,
-    frontPorchSentries, greatFierceBee, stirUpTrouble,
-    hauntOfTheDeadMarshes, desolationProwler, raveningWarg, gollumSilentSlinker,
-    bilbosDeadlySlice, dreadedBatCloud, crudeBentBlade, languish, shadowOfTheEnemy,
-    gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
-    bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins,
-    wayfarersBauble, battleScarredGoblin, improvisedClub, smaugTheGreatCalamity,
-    ologHaiCrusher, gandalfSparkStarter, raggedShortSpear, smiteTheDeathless,
-    goblinFireleaper, oliphaunt, goblinCratermaker, infernoTitan, guttersnipe,
-    orcishSiegemaster, snowslopeHunter, fireOfOrthanc, guardianOfTheHalls,
-    quarrel, galadhrimGuide, galionElvenkingsButler, elvishVisionary,
-    wargTactics, beornsHospitality, mirkwoodElk, celebornTheWise, giftOfStrands,
-    elvishArchdruid, lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
-    beornReluctantHost, woodElves, elvishMystic, attercop]
-    ++ Catalog.HobbitSet.allCards
+    lightningBolt, shock, giantGrowth]
+    ++ Catalog.allCards
 
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=

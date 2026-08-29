@@ -1,7 +1,6 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
-import Mtg.Engine.Catalog.HobbitSet
 import Mtg.Engine.Game
 import Mtg.Engine.Oracle
 
@@ -11067,9 +11066,6 @@ def gazeResolvedOne : Game :=
 #guard lorienRevealed.matchesOracleText
 #guard sternScolding.matchesOracleText
 #guard dunedainBlade.matchesOracleText
-
-open Catalog.HobbitSet
-
 #guard ordinaryBear.matchesOracleText
 #guard largeBear.matchesOracleText
 #guard littleBear.matchesOracleText
