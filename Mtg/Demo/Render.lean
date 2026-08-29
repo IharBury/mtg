@@ -487,7 +487,11 @@ def combatDamageTargetRefs (g : Game) (source : GameObject) (forAttackers : Bool
     (g.legalCombatDamageRecipients source forAttackers).toList.map (fun o =>
       objectRef g o.id)
   if g.canAssignCombatDamageToDefendingPlayer source forAttackers then
-    creatures ++ [(g.player g.defendingPlayer).name]
+    let dest :=
+      match source.status.attackingWhom with
+      | some pid => pid
+      | none => g.defendingPlayer
+    creatures ++ [(g.player dest).name]
   else creatures
 
 /-- One assigning creature: how much damage it must assign and to whom. -/

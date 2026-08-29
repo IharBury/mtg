@@ -1519,6 +1519,47 @@ def threeLilianaTookCombat : Game :=
 #guard (threeLilianaTookCombat.player ⟨1⟩).life == 20
 #guard (threeLilianaTookCombat.player ⟨0⟩).life == 20
 
+/-- Two Gray Ogres so each can attack a different opponent (CR 508.1). -/
+def threeTwoOgresReady : Game :=
+  skipToPending
+    (addPermanent (addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩)
+    .declareAttackers 200
+
+#guard threeTwoOgresReady.pending == .declareAttackers
+#guard (threeTwoOgresReady.battlefield.filter (·.name == "Gray Ogre")).size == 2
+
+def threeSplitAttack : Game :=
+  let ogres := threeTwoOgresReady.battlefield.filter (·.name == "Gray Ogre")
+  mustApply threeTwoOgresReady ⟨0⟩
+    (.declareAttackers #[ogres[0]!.id, ogres[1]!.id] none #[some ⟨1⟩, some ⟨2⟩])
+
+#guard
+  let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
+  ogres[0]!.status.attackingWhom == some ⟨1⟩ &&
+    ogres[1]!.status.attackingWhom == some ⟨2⟩
+
+/-- Nissa declares blockers first (APNAP), then Liliana. -/
+def threeSplitNissaToBlock : Game :=
+  skipToPending threeSplitAttack .declareBlockers 80
+
+#guard threeSplitNissaToBlock.pending == .declareBlockers
+#guard threeSplitNissaToBlock.actor == some ⟨1⟩
+#guard threeSplitNissaToBlock.defendingPlayers == #[⟨1⟩, ⟨2⟩]
+
+def threeSplitLilianaToBlock : Game :=
+  mustApply threeSplitNissaToBlock ⟨1⟩ (.declareBlockers #[])
+
+#guard threeSplitLilianaToBlock.pending == .declareBlockers
+#guard threeSplitLilianaToBlock.actor == some ⟨2⟩
+
+/-- Each unblocked ogre deals 2 to its own defending player. -/
+def threeSplitCombatDone : Game :=
+  skipTo threeSplitAttack .postcombatMain 80
+
+#guard (threeSplitCombatDone.player ⟨1⟩).life == 18
+#guard (threeSplitCombatDone.player ⟨2⟩).life == 18
+#guard (threeSplitCombatDone.player ⟨0⟩).life == 20
+
 #guard
   let g := threeDrawnHands.modifyPlayer ⟨0⟩ (fun pl => { pl with mulligansTaken := 8 })
   match g.apply ⟨0⟩ .takeMulligan with
@@ -10212,7 +10253,7 @@ def agentNightsWhisperOnly : Game :=
 #guard
   let g := passBoth (skipTo wargAndBaloth .beginningOfCombat 80)
   match Agent.choose g ⟨0⟩ with
-  | some (.declareAttackers ids _) =>
+  | some (.declareAttackers ids _ _) =>
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
 

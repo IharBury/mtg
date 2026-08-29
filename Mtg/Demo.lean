@@ -685,6 +685,7 @@ def helpInteractive (controlAll : Bool := false)
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
+  attack <id> [at] <name> <id> [at] <name> ...  Each listed creature attacks that player
   noattack             Declare no attackers
   block                Block each attacker with a legal unused blocker
   block <b> <a> [...]  Assign listed blocker/attacker pairs
@@ -730,6 +731,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "main phase").length > 1
 #guard ((helpInteractive false).splitOn "attack step").length > 1
 #guard ((helpInteractive false).splitOn "attack [id...] [at] <name|opponent>").length > 1
+#guard ((helpInteractive false).splitOn "Each listed creature attacks that player").length > 1
 #guard ((helpInteractive false).splitOn "ignore").length > 1
 #guard ((helpInteractive false).splitOn "other players may still act").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2g").length > 1
@@ -843,7 +845,7 @@ where
 #guard splitAtKeyword "bottom" ["1", "2"] == (["1", "2"], none)
 #guard splitAtKeyword "bottom" ["bottom", "3"] == ([], some ["3"])
 
-def attackUsage : String := "usage: attack [id ...] [at] <name|opponent>"
+def attackUsage : String := "usage: attack [id ...] [at] <name|opponent> ..."
 
 /-- True when `token` names a player or `opponent`. -/
 def isAttackDefenderToken (g : Game) (token : String) : Bool :=
@@ -869,42 +871,61 @@ def attackerIdsForCommand (g : Game) (tokens : List String) : Except String (Arr
   else
     parseObjectIds tokens attackUsage
 
-/-- Split `attack` tokens into attacker ids and an optional defender. `at`
-names the player being attacked; a player name or `opponent` at the start
-or end is also accepted. -/
+/-- Split `attack` tokens into per-creature destinations. A player name or
+`at <name|opponent>` applies to the preceding ids (or to every creature
+that can attack if none were listed). Later pairs may name a different
+player (CR 508.1). -/
 def parseAttackCommand (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String (Array ObjectId × Option PlayerId) := do
+    Except String (Array (ObjectId × Option PlayerId)) :=
   let tokens := commandTokens tokens
-  let (pre, afterAt) := splitAtKeyword "at" tokens
-  if afterAt == some [] then throw attackUsage
-  let (idToks, defenderTok) :=
-    match afterAt with
-    | some (name :: rest) => (pre ++ rest, some name)
-    | some [] => (pre, none)
-    | none =>
-      match pre with
-      | [] => ([], none)
-      | t :: ts =>
-        if isAttackDefenderToken g t then (ts, some t)
-        else
-          match pre.getLast? with
-          | some last =>
-            if isAttackDefenderToken g last then (pre.dropLast, some last)
-            else (pre, none)
-          | none => (pre, none)
-  let ids ← attackerIdsForCommand g idToks
-  match defenderTok with
-  | none => .ok (ids, none)
-  | some name =>
-    let dest ← parseAttackDefender g p name
-    .ok (ids, some dest)
+  go tokens #[] #[] none
+where
+  flush (ids : Array ObjectId) (dest : Option PlayerId)
+      (acc : Array (ObjectId × Option PlayerId)) :
+      Array (ObjectId × Option PlayerId) :=
+    ids.foldl (fun a id => a.push (id, dest)) acc
+  go : List String → Array ObjectId → Array (ObjectId × Option PlayerId) →
+      Option PlayerId → Except String (Array (ObjectId × Option PlayerId))
+    | [], pending, acc, defaultDest =>
+      if pending.isEmpty && acc.isEmpty then
+        .ok ((g.battlefield.filter (g.canAttack) |>.map (·.id)).map (fun id =>
+          (id, defaultDest)))
+      else if pending.isEmpty then
+        .ok acc
+      else
+        .ok (flush pending defaultDest acc)
+    | "at" :: rest, pending, acc, defaultDest =>
+      match rest with
+      | [] => .error attackUsage
+      | name :: rest' =>
+        match parseAttackDefender g p name with
+        | .error e => .error e
+        | .ok dest =>
+          if pending.isEmpty then
+            if acc.isEmpty then go rest' #[] acc (some dest)
+            else .error attackUsage
+          else
+            go rest' #[] (flush pending (some dest) acc) defaultDest
+    | t :: rest, pending, acc, defaultDest =>
+      if isAttackDefenderToken g t then
+        match parseAttackDefender g p t with
+        | .error e => .error e
+        | .ok dest =>
+          if pending.isEmpty then go rest #[] acc (some dest)
+          else go rest #[] (flush pending (some dest) acc) defaultDest
+      else
+        match parseObjectId? t with
+        | none => .error attackUsage
+        | some id => go rest (pending.push id) acc defaultDest
 
 def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
-  let (ids, dest) ← parseAttackCommand g p tokens
+  let attacks ← parseAttackCommand g p tokens
+  let ids := attacks.map (·.1)
+  let each := attacks.map (·.2)
   for id in ids do
     if (g.findObject? id).isNone then
       throw "no such object"
-  g.apply p (.declareAttackers ids dest)
+  g.apply p (.declareAttackers ids none each)
 
 #guard parseObjectId? "12" == some ⟨12⟩
 #guard parseObjectId? "#12" == some ⟨12⟩
@@ -984,14 +1005,37 @@ def applyAttack (g : Game) (p : PlayerId) (tokens : List String) : Except String
   | .ok g' => (Tests.namedPermanent g' "Gray Ogre").status.attackingWhom == some ⟨2⟩
   | .error _ => false
 
+#guard
+  let g := Tests.threeTwoOgresReady
+  let ogres := g.battlefield.filter (·.name == "Gray Ogre")
+  match applyAttack g ⟨0⟩
+      [toString ogres[0]!.id, "Nissa", toString ogres[1]!.id, "Liliana"] with
+  | .ok g' =>
+    let after := g'.battlefield.filter (·.name == "Gray Ogre")
+    after[0]!.status.attackingWhom == some ⟨1⟩ &&
+      after[1]!.status.attackingWhom == some ⟨2⟩
+  | .error _ => false
+
+#guard
+  let g := Tests.threeTwoOgresReady
+  let ogres := g.battlefield.filter (·.name == "Gray Ogre")
+  match applyAttack g ⟨0⟩
+      [toString ogres[0]!.id, "at", "Nissa", toString ogres[1]!.id, "at", "Liliana"] with
+  | .ok g' =>
+    let after := g'.battlefield.filter (·.name == "Gray Ogre")
+    after[0]!.status.attackingWhom == some ⟨1⟩ &&
+      after[1]!.status.attackingWhom == some ⟨2⟩
+  | .error _ => false
+
 /-- Pair unused legal blockers with attackers. A creature with menace is
 covered only when two blockers can be assigned (CR 702.111b); leftover
 blockers then cover attackers that do not have menace. A bare `block`
 covers as many attacks as possible. -/
 def greedyBlockAssignments (g : Game) : Array (ObjectId × ObjectId) :=
   Id.run do
-    let attackers := g.battlefield.filter (·.status.attacking)
-    let defender := g.defendingPlayer
+    let defender := g.currentBlockersPlayer
+    let attackers := g.battlefield.filter (fun a =>
+      a.status.attacking && a.status.attackingWhom.getD defender == defender)
     let mut unused := g.battlefield.filter (fun b =>
       b.isCreature && b.controlledBy defender && !b.status.tapped)
     let mut blocked : Array ObjectId := #[]
@@ -1154,8 +1198,10 @@ def pushCombatPlayerAmount (acc : Array CreatureCombatAssignment) (src : ObjectI
 attacking player is assigning (CR 510.1a / 702.19). -/
 def isDefendingPlayerToken (g : Game) (p : PlayerId) (token : String) : Bool :=
   let lower := token.map Char.toLower
-  let defender := g.defendingPlayer
-  lower == (g.player defender).name.map Char.toLower ||
+  let dests :=
+    let ps := g.defendingPlayers
+    if ps.isEmpty then #[g.defendingPlayer] else ps
+  dests.any (fun d => lower == (g.player d).name.map Char.toLower) ||
     (p == g.activePlayer && lower == "opponent")
 
 /-- Parse source/target/amount triples. An empty list means the default legal

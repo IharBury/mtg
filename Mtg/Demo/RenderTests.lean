@@ -506,6 +506,10 @@ def mountainLine (g : Game) : String :=
   mentions (objectLine threeOgreAttacksLiliana
       (namedPermanent threeOgreAttacksLiliana "Gray Ogre"))
     "*attacking Liliana*"
+#guard
+  let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
+  mentions (objectLine threeSplitAttack ogres[0]!) "*attacking Nissa*" &&
+    mentions (objectLine threeSplitAttack ogres[1]!) "*attacking Liliana*"
 
 #guard (changedManaPools started started).isEmpty
 #guard (changedManaPools started afterDraw).isEmpty
