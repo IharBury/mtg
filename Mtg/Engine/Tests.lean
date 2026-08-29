@@ -11450,5 +11450,138 @@ def tidingsFromGraveyardAmass3 : Bool :=
 #guard tidingsFromHandAmass1
 #guard tidingsFromGraveyardAmass3
 
+/- The Sackville-Bagginses: sacrificing a token targets an opponent for 1 life. -/
+
+def sackvilleWithTreasure : Game :=
+  let g := addPermanent afterDraw theSackvilleBagginses ⟨0⟩ ⟨0⟩
+  (g.createToken ⟨0⟩ Game.treasureToken).1
+
+def sackvilleTreasure (g : Game) : GameObject :=
+  match g.battlefield.find? (fun o => o.name == "Treasure" && o.printed.isToken) with
+  | some o => o
+  | none => panic! "expected a Treasure token"
+
+#guard
+  (sackvilleWithTreasure.battlefield.filter (fun o => o.name == "Treasure")).size == 1 &&
+    (namedPermanent sackvilleWithTreasure "The Sackville-Bagginses").printed.triggeredAbilities.contains
+      .onYouSacrificeTokenOppLosesLife
+
+def sackvilleAfterTreasureTap : Game :=
+  match sackvilleWithTreasure.tapForMana ⟨0⟩ (sackvilleTreasure sackvilleWithTreasure).id
+      (.colored .black) with
+  | .ok g => g.receivePriority ⟨0⟩
+  | .error e => panic! e
+
+#guard !(sackvilleAfterTreasureTap.battlefield.any (fun o => o.name == "Treasure"))
+
+#guard
+  match sackvilleAfterTreasureTap.pending with
+  | .chooseTargets ⟨0⟩ => true
+  | _ => false
+
+def sackvilleTokenTriggerOnStack : Game :=
+  sackvilleAfterTreasureTap
+
+#guard
+  (sackvilleTokenTriggerOnStack.legalTriggerTargets ⟨0⟩
+    .onYouSacrificeTokenOppLosesLife).contains (Target.player ⟨1⟩)
+
+def sackvilleTokenTriggerResolved : Game :=
+  passBoth (mustApply sackvilleTokenTriggerOnStack ⟨0⟩ (.target (Target.player ⟨1⟩)))
+
+#guard
+  (sackvilleTokenTriggerResolved.player ⟨1⟩).life == 19 &&
+    sackvilleTokenTriggerResolved.stack.isEmpty &&
+    sackvilleTokenTriggerResolved.log.any (fun s => mentions s "loses 1 life")
+
+/-- Sacrificing a nontoken does not fire the token-sacrifice trigger. -/
+def sackvilleNontokenSac : Game :=
+  let g := addPermanent afterDraw theSackvilleBagginses ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  (g.sacrificeToGraveyard bears "Chandra sacrifices Grizzly Bears").receivePriority ⟨0⟩
+
+#guard
+  !(sackvilleNontokenSac.stack.any (fun e =>
+    (sackvilleNontokenSac.object! e.objectId).triggeredAbility ==
+      some .onYouSacrificeTokenOppLosesLife)) &&
+    !sackvilleNontokenSac.waitingTriggers.any (fun wt =>
+      wt.ability == .onYouSacrificeTokenOppLosesLife)
+
+/- Thranduil, the Elvenking copies activated abilities of Elves in the graveyard. -/
+
+def thranduilWithGuardianGy : Game :=
+  let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
+  addToGraveyard g guardianOfTheHalls ⟨0⟩
+
+def thranduilSource (g : Game) : GameObject :=
+  namedPermanent g "Thranduil, the Elvenking"
+
+#guard
+  let o := thranduilSource thranduilWithGuardianGy
+  let abs := thranduilWithGuardianGy.activatedAbilitiesOf o
+  o.printed.activatedAbilities.isEmpty &&
+    abs.size == 1 &&
+    abs[0]!.effect == .putPlusOnePlusOneOnSource 3 &&
+    abs[0]!.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
+
+#guard
+  let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
+  (g.activatedAbilitiesOf (namedPermanent g "Thranduil, the Elvenking")).isEmpty
+
+def thranduilReady : Game :=
+  withGreenMana
+    (thranduilWithGuardianGy.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 }))
+    ⟨0⟩ 7
+
+#guard thranduilReady.canActivate ⟨0⟩ (thranduilSource thranduilReady)
+  (thranduilReady.activatedAbilitiesOf (thranduilSource thranduilReady))[0]!
+
+#guard
+  match Agent.choose thranduilReady ⟨0⟩ with
+  | some (.activate id 0) => id == (thranduilSource thranduilReady).id
+  | _ => false
+
+def paidThranduilCopy : Game :=
+  mustApply (mustApply thranduilReady ⟨0⟩ (.activate (thranduilSource thranduilReady).id 0))
+    ⟨0⟩ .pay
+
+def thranduilCopyResolved : Game := passBoth paidThranduilCopy
+
+#guard
+  (namedPermanent thranduilCopyResolved "Thranduil, the Elvenking").status.plusOnePlusOne == 3 &&
+    thranduilCopyResolved.power (namedPermanent thranduilCopyResolved "Thranduil, the Elvenking") == 8 &&
+    thranduilCopyResolved.toughness
+      (namedPermanent thranduilCopyResolved "Thranduil, the Elvenking") == 9 &&
+    thranduilCopyResolved.log.any (fun s =>
+      mentions s "Thranduil, the Elvenking gets 3 +1/+1 counters")
+
+/- A non-Elf in the graveyard is not copied. -/
+#guard
+  let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g ragingGoblin ⟨0⟩
+  (g.activatedAbilitiesOf (namedPermanent g "Thranduil, the Elvenking")).isEmpty
+
+/-- Thranduil copies `{T}: Add {G}` from Llanowar Elves in the graveyard. -/
+def thranduilWithLlanowarGy : Game :=
+  let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
+  addToGraveyard g llanowarElves ⟨0⟩
+
+#guard
+  let o := namedPermanent thranduilWithLlanowarGy "Thranduil, the Elvenking"
+  (thranduilWithLlanowarGy.manaAbilitiesOf o).contains (.colored .green) &&
+    !o.printed.manaAbilities.contains (.colored .green)
+
+def thranduilTappedForCopiedGreen : Game :=
+  match thranduilWithLlanowarGy.tapForMana ⟨0⟩
+      (namedPermanent thranduilWithLlanowarGy "Thranduil, the Elvenking").id
+      (.colored .green) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard
+  (thranduilTappedForCopiedGreen.player ⟨0⟩).manaPool.get (.colored .green) == 1 &&
+    (namedPermanent thranduilTappedForCopiedGreen "Thranduil, the Elvenking").status.tapped
+
 end Mtg.Engine.Tests
 

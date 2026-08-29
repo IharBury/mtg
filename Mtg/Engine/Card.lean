@@ -139,6 +139,7 @@ inductive TokenKind where
   | elf
   | spirit
   | birdSoldier
+  | wall
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -153,6 +154,7 @@ def oracleNoun : TokenKind → String
   | .elf => "1/1 green Elf creature token"
   | .spirit => "1/1 white Spirit creature token with flying"
   | .birdSoldier => "4/4 white Bird Soldier creature token with flying"
+  | .wall => "3/1 colorless Wall artifact creature token with defender named Stone Boulder"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -164,6 +166,7 @@ def pluralNoun : TokenKind → String
   | .elf => "1/1 green Elf creature tokens"
   | .spirit => "1/1 white Spirit creature tokens with flying"
   | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
+  | .wall => "3/1 colorless Wall artifact creature tokens with defender named Stone Boulder"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -263,6 +266,8 @@ inductive EffectTargetKind where
   | twoCreaturesOrLandsYouControl
   /-- Target Equipment you control, then up to one target creature you control. -/
   | equipmentYouControlThenCreatureYouControl
+  /-- Two target players (Gleaming Splendor). -/
+  | twoPlayers
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -403,6 +408,11 @@ def spec : EffectTargetKind → Spec
       noun := "target Equipment you control and up to one target creature you control"
       prefer := .own
       slots := #[.equipmentYouControl, .creatureYouControl] }
+  | .twoPlayers =>
+    { count := 2
+      noun := "two target players"
+      prefer := .ownThenOpponent
+      slots := #[.player, .player] }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -630,6 +640,27 @@ inductive SpellEffect where
   | createTokensX (kind : TokenKind)
   /-- Exile the top `n` cards face down; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
+  /-- Return target spell to its owner's hand. If a gift was promised,
+  players can't cast spells this turn. -/
+  | returnSpellCantCastIfGift
+  /-- Exile the top X of target opponent's library; play them this turn,
+  paying life equal to mana value. -/
+  | exileTopXOppPlayForLife
+  /-- Look at the top four; an opponent chooses a pile. -/
+  | riddlesInTheDark
+  /-- Return this-turn dies-from-battlefield creature cards as Food artifacts. -/
+  | supperForSpiders
+  /-- Return owned creatures to hand; delayed Bird Soldiers next upkeep. -/
+  | eaglesAreComing
+  /-- Look at the top `n` cards, put any number of lands onto the battlefield
+  tapped, then gain `life` life. -/
+  | lookAtTopLandsGainLife (n life : Nat)
+  /-- For each opponent, gain control of up to one target artifact they control. -/
+  | gainControlOppArtifacts
+  /-- Deal damage to each opposing creature equal to other spells' mana value. -/
+  | damageOppCreaturesEqualOtherSpellsMv
+  /-- Phase out the target, or each of a player's creatures if kicked. -/
+  | phaseOutKicker
   /-- Unique printed spell wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -857,6 +888,24 @@ inductive SpellResolution where
   | createTokensX (kind : TokenKind)
   /-- Exile the top `n`; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
+  /-- Return the targeted spell; if a gift was promised, lock casts. -/
+  | returnSpellCantCastIfGift
+  /-- Exile the top X of the targeted opponent; play them for life. -/
+  | exileTopXOppPlayForLife
+  /-- Riddles in the Dark piles. -/
+  | riddlesInTheDark
+  /-- Return this-turn battlefield-to-gy creatures as Food. -/
+  | supperForSpiders
+  /-- Bounce owned creatures; delayed Bird Soldiers. -/
+  | eaglesAreComing
+  /-- Look at the top `n`; put lands onto the battlefield tapped; gain life. -/
+  | lookAtTopLandsGainLife (n life : Nat)
+  /-- Gain control of targeted opposing artifacts. -/
+  | gainControlOppArtifacts
+  /-- Damage opposing creatures equal to other spells cast this turn. -/
+  | damageOppCreaturesEqualOtherSpellsMv
+  /-- Phase out the target, or each of a player's creatures if kicked. -/
+  | phaseOutKicker
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1058,6 +1107,30 @@ def spec : SpellEffect → SpellMeta
   | .exileTopPlayIfYouControlSubtype n subtype =>
     { targeting := .of .none, castKind := .draw,
       resolution := .exileTopPlayIfYouControlSubtype n subtype }
+  | .returnSpellCantCastIfGift =>
+    { targeting := .of .spell, castKind := .counter,
+      resolution := .returnSpellCantCastIfGift }
+  | .exileTopXOppPlayForLife =>
+    { targeting := .of .opponent, castKind := .draw,
+      resolution := .exileTopXOppPlayForLife }
+  | .riddlesInTheDark =>
+    { targeting := .of .none, castKind := .draw, resolution := .riddlesInTheDark }
+  | .supperForSpiders =>
+    { targeting := .of .none, castKind := .draw, resolution := .supperForSpiders }
+  | .eaglesAreComing =>
+    { targeting := .of .creatureYouControl, castKind := .draw,
+      resolution := .eaglesAreComing }
+  | .lookAtTopLandsGainLife n life =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .lookAtTopLandsGainLife n life }
+  | .gainControlOppArtifacts =>
+    { targeting := .of .artifact, castKind := .counter,
+      allowsZeroTargets := true, resolution := .gainControlOppArtifacts }
+  | .damageOppCreaturesEqualOtherSpellsMv =>
+    { targeting := .of .none, castKind := .creatureDamage,
+      resolution := .damageOppCreaturesEqualOtherSpellsMv }
+  | .phaseOutKicker =>
+    { targeting := .of .creature, castKind := .counter, resolution := .phaseOutKicker }
   | .printed text =>
     { targeting := .of .none, castKind := .extraLand, resolution := .printed text }
 
@@ -1196,6 +1269,24 @@ def toNotation (e : SpellEffect) : String :=
     s!"create X {kind.pluralNoun}"
   | .exileTopPlayIfYouControlSubtype n subtype =>
     s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
+  | .returnSpellCantCastIfGift =>
+    "return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn"
+  | .exileTopXOppPlayForLife =>
+    "exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost"
+  | .riddlesInTheDark =>
+    "look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
+  | .supperForSpiders =>
+    "put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\""
+  | .eaglesAreComing =>
+    "choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+  | .lookAtTopLandsGainLife n life =>
+    s!"look at the top {n} cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain {life} life"
+  | .gainControlOppArtifacts =>
+    "for each opponent, gain control of up to one target artifact that player controls"
+  | .damageOppCreaturesEqualOtherSpellsMv =>
+    "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
+  | .phaseOutKicker =>
+    "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
   | .printed text => text
 
 end SpellEffect
@@ -1284,6 +1375,39 @@ inductive AbilityEffect where
   | searchTwoBasicsSplit
   /-- Creatures you control get +P/+T. Each opponent loses `life` life. -/
   | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Goblins and Orcs you control gain menace until end of turn. -/
+  | goblinsAndOrcsGainMenace
+  /-- Exile up to two other nonlands you control; return them next end step. -/
+  | exileThenReturnNextEnd
+  /-- Search a basic land onto the battlefield tapped, then maybe behold an Elf. -/
+  | searchBasicBeholdElfUntap
+  /-- Two target players each draw a card. -/
+  | twoPlayersDraw
+  /-- Discard a legendary card with the same name as a legendary you control;
+  draw two cards. -/
+  | discardLegendarySameNameDraw
+  /-- This deals `n` damage to any target. -/
+  | dealDamageToAny (n : Nat)
+  /-- Draw cards equal to a sacrificed creature's power, then discard a card. -/
+  | drawEqualSacrificedPowerThenDiscard
+  /-- Arwen: another creature gains indestructible; share +1/+1 and lifelink. -/
+  | arwenShare
+  /-- Target creature gains a combat-damage-creates-Treasure trigger. -/
+  | grantCombatDamageCreateTreasure
+  /-- Put a shadow counter on target creature. -/
+  | putShadowCounter
+  /-- Deal `n` damage to each opponent. -/
+  | damageEachOpponent (n : Nat)
+  /-- Choose up to two creatures, then destroy the rest. -/
+  | chooseTwoDestroyRest
+  /-- Target creature can't be blocked by the most-life player's creatures. -/
+  | blackGateUnblockable
+  /-- Put a burden counter on the source, then draw that many. -/
+  | burdenThenDraw
+  /-- Creatures you control gain double strike until end of turn. -/
+  | teamGainDoubleStrike
+  /-- The source gains indestructible until end of turn and becomes tapped. -/
+  | sourceGainsIndestructibleTap
   /-- Unique printed activated wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -1359,6 +1483,38 @@ inductive AbilityResolution where
   | searchTwoBasicsSplit
   /-- Team pump and opponents lose life. -/
   | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Goblins and Orcs you control gain menace. -/
+  | goblinsAndOrcsGainMenace
+  /-- Exile then return at the next end step. -/
+  | exileThenReturnNextEnd
+  /-- Search a basic tapped, then behold an Elf to untap it. -/
+  | searchBasicBeholdElfUntap
+  /-- Two players each draw. -/
+  | twoPlayersDraw
+  /-- Discard a same-name legendary; draw two. -/
+  | discardLegendarySameNameDraw
+  /-- Deal `n` to any target. -/
+  | dealDamageToAny (n : Nat)
+  /-- Draw equal to sacrificed power, then discard. -/
+  | drawEqualSacrificedPowerThenDiscard
+  /-- Arwen share. -/
+  | arwenShare
+  /-- Grant a combat-damage Treasure trigger. -/
+  | grantCombatDamageCreateTreasure
+  /-- Put a shadow counter. -/
+  | putShadowCounter
+  /-- Damage each opponent. -/
+  | damageEachOpponent (n : Nat)
+  /-- Choose two, destroy the rest. -/
+  | chooseTwoDestroyRest
+  /-- Black Gate unblockable. -/
+  | blackGateUnblockable
+  /-- Burden then draw. -/
+  | burdenThenDraw
+  /-- Team double strike. -/
+  | teamGainDoubleStrike
+  /-- Source gains indestructible and taps. -/
+  | sourceGainsIndestructibleTap
   /-- Unique printed activated wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -1458,6 +1614,40 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .searchTwoBasicsSplit }
   | .creaturesYouControlGetOppsLoseLife p t life =>
     { resolution := .creaturesYouControlGetOppsLoseLife p t life }
+  | .goblinsAndOrcsGainMenace =>
+    { resolution := .goblinsAndOrcsGainMenace }
+  | .exileThenReturnNextEnd =>
+    { targeting := .of .twoCreaturesOrLandsYouControl,
+      resolution := .exileThenReturnNextEnd }
+  | .searchBasicBeholdElfUntap =>
+    { resolution := .searchBasicBeholdElfUntap }
+  | .twoPlayersDraw =>
+    { targeting := .of .twoPlayers, resolution := .twoPlayersDraw }
+  | .discardLegendarySameNameDraw =>
+    { resolution := .discardLegendarySameNameDraw }
+  | .dealDamageToAny n =>
+    { targeting := .of .playerOrCreature, castKind := .creatureDamage,
+      resolution := .dealDamageToAny n }
+  | .drawEqualSacrificedPowerThenDiscard =>
+    { resolution := .drawEqualSacrificedPowerThenDiscard }
+  | .arwenShare =>
+    { targeting := .of .anotherCreature, resolution := .arwenShare }
+  | .grantCombatDamageCreateTreasure =>
+    { targeting := .of .creature, resolution := .grantCombatDamageCreateTreasure }
+  | .putShadowCounter =>
+    { targeting := .of .creature, resolution := .putShadowCounter }
+  | .damageEachOpponent n =>
+    { resolution := .damageEachOpponent n }
+  | .chooseTwoDestroyRest =>
+    { targeting := .of .creature, resolution := .chooseTwoDestroyRest }
+  | .blackGateUnblockable =>
+    { targeting := .of .creature, resolution := .blackGateUnblockable }
+  | .burdenThenDraw =>
+    { resolution := .burdenThenDraw }
+  | .teamGainDoubleStrike =>
+    { resolution := .teamGainDoubleStrike }
+  | .sourceGainsIndestructibleTap =>
+    { resolution := .sourceGainsIndestructibleTap }
   | .printed text =>
     { resolution := .printed text }
 
@@ -1552,6 +1742,38 @@ def toNotation (e : AbilityEffect) : String :=
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .creaturesYouControlGetOppsLoseLife p t life =>
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn. Each opponent loses {life} life"
+  | .goblinsAndOrcsGainMenace =>
+    "Goblins and Orcs you control gain menace until end of turn"
+  | .exileThenReturnNextEnd =>
+    "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
+  | .searchBasicBeholdElfUntap =>
+    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land"
+  | .twoPlayersDraw =>
+    "Two target players each draw a card"
+  | .discardLegendarySameNameDraw =>
+    "Draw two cards"
+  | .dealDamageToAny n =>
+    s!"This creature deals {n} damage to any target"
+  | .drawEqualSacrificedPowerThenDiscard =>
+    "Draw cards equal to the sacrificed creature's power, then discard a card"
+  | .arwenShare =>
+    "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
+  | .grantCombatDamageCreateTreasure =>
+    "Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
+  | .putShadowCounter =>
+    "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
+  | .damageEachOpponent n =>
+    s!"This deals {n} damage to each opponent"
+  | .chooseTwoDestroyRest =>
+    "Choose up to two creatures, then destroy the rest"
+  | .blackGateUnblockable =>
+    "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
+  | .burdenThenDraw =>
+    "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring"
+  | .teamGainDoubleStrike =>
+    "Creatures you control gain double strike until end of turn"
+  | .sourceGainsIndestructibleTap =>
+    "Witch-king of Angmar gains indestructible until end of turn. Tap him"
   | .printed text => text
 
 instance : ToString AbilityEffect where
@@ -1576,6 +1798,14 @@ structure ActivationCost where
   discardACard : Bool := false
   /-- Tap an untapped creature you control. -/
   tapAnUntappedCreatureYouControl : Bool := false
+  /-- Remove an indestructible counter from the source (Arwen). -/
+  removeIndestructibleCounter : Bool := false
+  /-- Sacrifice a legendary artifact you control (Mount Doom). -/
+  sacrificeLegendaryArtifact : Bool := false
+  /-- Discard a legendary card with the same name as a legendary you control. -/
+  discardLegendarySameName : Bool := false
+  /-- Sacrifice an artifact you control (Stone-Giant). -/
+  sacrificeArtifact : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -1586,16 +1816,29 @@ def toNotation (c : ActivationCost) : String :=
     (if c.tap then ["{T}"] else []) ++
     (if c.payLife != 0 then [s!"Pay {c.payLife} life"] else []) ++
     (if c.discardSource then ["Discard this card"] else []) ++
-    (if c.sacrificeSource then ["Sacrifice"] else []) ++
+    (if c.sacrificeSource && c.sacrificeLegendaryArtifact then
+      ["Sacrifice Mount Doom and a legendary artifact"]
+     else if c.sacrificeSource then ["Sacrifice"]
+     else []) ++
     (if c.sacrificeAnotherCreatureOrArtifact then
       ["Sacrifice another creature or artifact"]
+     else []) ++
+    (if c.sacrificeArtifact && !(c.sacrificeSource && c.sacrificeLegendaryArtifact) then
+      ["Sacrifice an artifact"]
      else []) ++
     (match c.sacrificeAnotherSubtype with
      | some t => [s!"Sacrifice another {t}"]
      | none => []) ++
     (if c.discardACard then ["Discard a card"] else []) ++
     (if c.tapAnUntappedCreatureYouControl then
-      ["Tap an untapped creature you control"] else [])
+      ["Tap an untapped creature you control"] else []) ++
+    (if c.removeIndestructibleCounter then
+      ["Remove an indestructible counter from Arwen"] else []) ++
+    (if c.sacrificeLegendaryArtifact && !c.sacrificeSource then
+      ["Sacrifice a legendary artifact"] else []) ++
+    (if c.discardLegendarySameName then
+      ["Discard a legendary card with the same name as a legendary permanent you control"]
+     else [])
   String.intercalate ", " parts
 
 instance : ToString ActivationCost where
@@ -1782,6 +2025,20 @@ inductive StaticAbility where
   /-- Equipped creature has first strike and gets +1/+0 per instant/sorcery
   in your graveyard. -/
   | equippedFirstStrikePlusPerInstantSorcery
+  /-- This gets +P/+0 for each graveyard with seven or more cards. -/
+  | powerPerFatGraveyard (power : Int)
+  /-- If an opposing creature would die, exile it and create a Wolf. -/
+  | exileOppDeathCreateWolf
+  /-- This has all activated abilities of cards of this subtype in your
+  graveyard. -/
+  | copyActivatedFromGySubtype (subtype : String)
+  /-- Equipped creature gets +P/+T and has trample and a combat Treasure
+  trigger. -/
+  | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
+  /-- Ward — discard an enchantment, instant, or sorcery card. -/
+  | wardDiscardEnchantmentInstantOrSorcery
+  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
+  | wardSacrificeLegendary
   /-- Unique printed static wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -1880,6 +2137,12 @@ inductive StaticShape where
   | equippedHexproofUnblockableDuringYourTurn
   | equippedTriggersAgain
   | equippedFirstStrikePlusPerInstantSorcery
+  | powerPerFatGraveyard (power : Int)
+  | exileOppDeathCreateWolf
+  | copyActivatedFromGySubtype (subtype : String)
+  | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
+  | wardDiscardEnchantmentInstantOrSorcery
+  | wardSacrificeLegendary
   | printed (text : String)
 deriving Repr, Inhabited, BEq
 
@@ -2003,6 +2266,13 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .equippedHexproofUnblockableDuringYourTurn => {}
   | .equippedTriggersAgain => {}
   | .equippedFirstStrikePlusPerInstantSorcery => {}
+  | .powerPerFatGraveyard _ => {}
+  | .exileOppDeathCreateWolf => {}
+  | .copyActivatedFromGySubtype _ => {}
+  | .equippedGetsTrampleAndCombatTreasures p t =>
+    { hostBonus := (p, t) }
+  | .wardDiscardEnchantmentInstantOrSorcery => {}
+  | .wardSacrificeLegendary => {}
   | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
@@ -2063,6 +2333,14 @@ def shape : StaticAbility → StaticShape
   | .equippedTriggersAgain => .equippedTriggersAgain
   | .equippedFirstStrikePlusPerInstantSorcery =>
     .equippedFirstStrikePlusPerInstantSorcery
+  | .powerPerFatGraveyard n => .powerPerFatGraveyard n
+  | .exileOppDeathCreateWolf => .exileOppDeathCreateWolf
+  | .copyActivatedFromGySubtype subtype => .copyActivatedFromGySubtype subtype
+  | .equippedGetsTrampleAndCombatTreasures p t =>
+    .equippedGetsTrampleAndCombatTreasures p t
+  | .wardDiscardEnchantmentInstantOrSorcery =>
+    .wardDiscardEnchantmentInstantOrSorcery
+  | .wardSacrificeLegendary => .wardSacrificeLegendary
   | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
@@ -2205,6 +2483,18 @@ def toNotation (ab : StaticAbility) : String :=
     "If a triggered ability of equipped creature triggers, that ability triggers an additional time."
   | .equippedFirstStrikePlusPerInstantSorcery =>
     "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard."
+  | .powerPerFatGraveyard n =>
+    s!"This creature gets {signedStat n}/+0 for each graveyard with seven or more cards in it."
+  | .exileOppDeathCreateWolf =>
+    "If a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."
+  | .copyActivatedFromGySubtype subtype =>
+    s!"This has all activated abilities of all {subtype} cards in your graveyard."
+  | .equippedGetsTrampleAndCombatTreasures p t =>
+    s!"Equipped creature gets {signedStat p}/{signedStat t} and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\""
+  | .wardDiscardEnchantmentInstantOrSorcery =>
+    "Ward—Discard an enchantment, instant, or sorcery card."
+  | .wardSacrificeLegendary =>
+    "Ward—Sacrifice a legendary artifact or legendary creature."
   | .printed text => text
 
 instance : ToString StaticAbility where
@@ -2674,6 +2964,115 @@ inductive TriggeredAbility where
   | onCastColorDamageOpponent (color : Color) (n : Nat)
   /-- Whenever you cast a spell of this color, target creature gets +P/+T. -/
   | onCastColorPump (color : Color) (power toughness : Int)
+  /-- When this enters, return a creature card from your graveyard to hand. -/
+  | onEnterReturnCreatureFromGyToHand
+  /-- Whenever a creature card leaves your graveyard, amass Goblins `n`. -/
+  | onCreatureCardLeavesYourGyAmassGoblins (n : Nat)
+  /-- Whenever this or another of this subtype enters, you may discard your
+  hand and draw that many; if enduring story, damage opponents. -/
+  | onThisOrAnotherSubtypeEntersDiscardHand (subtype : String)
+  /-- Whenever you draw your second card, +1/+1 and lifelink on a creature. -/
+  | onDrawSecondPlusOneLifelink
+  /-- Combat damage: +1/+1 on a Wolf or create a Treasure. -/
+  | onCombatDamageWolfPlusOneOrTreasure
+  /-- Begin combat: trample counter, become a Bear, maybe draw. -/
+  | onYourBeginCombatTrampleCounterBecomeBear
+  /-- Whenever this attacks, you may cast from the graveyard. -/
+  | onAttackCastFromGyArtifactInstantSorcery
+  /-- When this enters, mill `n` then put matching cards into hand. -/
+  | onEnterMillThenSubtypeToHand (n : Nat) (subtype : String)
+  /-- When this enters, exile up to one opposing nonland per opponent. -/
+  | onEnterExileOppNonlandEachUntilLeaves
+  /-- Whenever you cast a creature, +X/+X counters equal to its mana value. -/
+  | onCastCreaturePlusOneEqualMv
+  /-- When this enters, create an Axe and attach it. -/
+  | onEnterCreateAxeAttach
+  /-- Whenever this attacks, equipped attackers gain double strike. -/
+  | onAttackEquippedGainDoubleStrike
+  /-- When this Aura enters, tap the enchanted creature and remove counters. -/
+  | onEnterTapEnchantedRemoveCounters
+  /-- When this dies, reveal the top `n` and put a random creature in. -/
+  | onDiesRevealTopPutRandomCreature (n : Nat)
+  /-- Begin combat: if you drew two or more, pump and first strike. -/
+  | onYourBeginCombatIfDrawnTwoPumpFirstStrike
+  /-- Whenever a Mountain you control enters, quest then maybe find a Dragon. -/
+  | onMountainEntersQuestThenDragon
+  /-- Whenever you draw your second card, target player mills `n`. -/
+  | onDrawSecondMillPlayer (n : Nat)
+  /-- Equipped combat damage: Treasures per chosen creature type. -/
+  | onEquippedCombatDamageTreasuresPerChosenType
+  /-- Whenever a nontoken you control dies, reveal until a creature. -/
+  | onNontokenYouControlDiesRevealCreature
+  /-- Whenever this attacks, you may sacrifice another for +1/+1s. -/
+  | onAttackMaySacAnotherPlusOneEqualPower
+  /-- When this dies, amass Goblins equal to its power. -/
+  | onDiesAmassGoblinsEqualPower
+  /-- Landfall from the graveyard: pay to return this to hand. -/
+  | onLandYouControlEntersPayReturnFromGy
+  /-- When this enters, loot; a discarded land enters tapped. -/
+  | onEnterLootLandEntersTapped
+  /-- When this enters, hone per opposing creatures and attach. -/
+  | onEnterHonePerOppCreaturesAttach
+  /-- Whenever this enters or attacks, create a Wall token. -/
+  | onEnterOrAttackCreateWall
+  /-- Whenever you put counters on a Goblin, Orc, or Army, damage an opponent. -/
+  | onPutCountersOnGoblinOrcArmyDamageOpp
+  /-- Whenever another Goblin, Orc, or Army you control dies, exile the top. -/
+  | onAnotherGoblinOrcArmyDiesExileTop
+  /-- Whenever a player loses life, that player mills that many. -/
+  | onPlayerLosesLifeMillThatMany
+  /-- When this dies, draw per fat graveyard. -/
+  | onDiesDrawPerFatGraveyard
+  /-- When this enters, if not a token, create two nonlegendary copies. -/
+  | onEnterIfNotTokenCopySelf
+  /-- When this enters, you may sacrifice another for a card and a Treasure. -/
+  | onEnterMaySacDrawTreasure
+  /-- Whenever you sacrifice a token, an opponent loses 1 life. -/
+  | onYouSacrificeTokenOppLosesLife
+  /-- When this enters, attach Equipment then the host fights. -/
+  | onEnterAttachEquipmentThenFight
+  /-- Landfall: two +1/+1s and vigilance. -/
+  | onLandYouControlEntersPlusOneVigilance
+  /-- Whenever another legendary of this subtype enters, loot two. -/
+  | onAnotherLegendarySubtypeEntersLoot (subtype : String)
+  /-- When this dies as a creature, return it as an artifact. -/
+  | onDiesReturnAsArtifact
+  /-- Whenever you cast a noncreature, you may draw X then discard two. -/
+  | onCastNoncreatureMayDrawXDiscard2
+  /-- Equipped attacks: +1/+1 each, or two with the city's blessing. -/
+  | onEquippedAttacksPlusOneEachIfCityBlessing
+  /-- Whenever another of this subtype enters, +n/+n counters on the source. -/
+  | onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat)
+  /-- Begin combat: you may cast an instant or sorcery from hand. -/
+  | onYourBeginCombatCastInstantSorceryFromHand
+  /-- Landfall: draw and +1/+1 on the source. -/
+  | onLandYouControlEntersDrawPlusOneSource
+  /-- When this enters, exile up to three lands you control, then return tapped. -/
+  | onEnterExileLandsThenReturnTapped
+  /-- Equipped combat damage: you may cast an instant or sorcery. -/
+  | onEquippedCombatDamageCastInstantSorcery
+  /-- Combat damage: impulse until an instant or sorcery. -/
+  | onCombatDamageImpulseInstantSorcery
+  /-- End step: Palantír influence, scry, then optional draw or mill. -/
+  | onYourEndStepPalantir
+  /-- Whenever you cast your second spell, mill then maybe copy. -/
+  | onCastSecondSpellMillThenCopy
+  /-- Whenever an opponent casts a spell, amass Orcs `n`. -/
+  | onOpponentCastsAmassOrcs (n : Nat)
+  /-- Whenever an Army you control deals combat damage, the Ring tempts you. -/
+  | onArmyCombatDamageRingTempts
+  /-- Whenever the Ring tempts you, you may discard and draw `n`. -/
+  | onRingTemptsMayDiscardDraw (n : Nat)
+  /-- Whenever this is dealt noncombat damage, create that many Treasures. -/
+  | onDealtNoncombatDamageCreateTreasures
+  /-- When this enters, if you cast it, protection from everything. -/
+  | onEnterIfCastProtectionEverything
+  /-- Upkeep: lose 1 life per burden counter. -/
+  | onYourUpkeepLoseLifePerBurden
+  /-- Whenever a final Saga chapter you control resolves, find a Saga. -/
+  | onFinalSagaChapterRevealSaga
+  /-- Whenever creatures deal combat damage to you, sac and the Ring tempts. -/
+  | onCombatDamageToYouSacRingTempts
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2780,6 +3179,36 @@ inductive TriggerEvent where
   | youCastColor (color : Color)
   /-- An opponent casts a spell whose mana value matches a chosen odd/even. -/
   | opponentCastsMatchingParity
+  /-- A creature card leaves your graveyard. -/
+  | creatureCardLeavesYourGy
+  /-- You cast a creature spell. -/
+  | youCastCreature
+  /-- A Mountain you control enters. -/
+  | mountainYouControlEnters
+  /-- This was dealt noncombat damage. -/
+  | sourceDealtNoncombatDamage
+  /-- An opponent casts a spell. -/
+  | opponentCastsSpell
+  /-- An Army you control deals combat damage to a player. -/
+  | armyYouControlCombatDamage
+  /-- The final chapter of a Saga you control resolves. -/
+  | finalSagaChapterResolves
+  /-- One or more creatures deal combat damage to you. -/
+  | combatDamageToYou
+  /-- You cast your second spell this turn. -/
+  | youCastSecondSpell
+  /-- You sacrifice a token. -/
+  | youSacrificeToken
+  /-- A player loses life. -/
+  | playerLosesLife
+  /-- You put one or more counters on a Goblin, Orc, or Army you control. -/
+  | youPutCountersOnGoblinOrcArmy
+  /-- Another Goblin, Orc, or Army you control dies. -/
+  | anotherGoblinOrcArmyDies
+  /-- A nontoken creature you control dies. -/
+  | nontokenYouControlDies
+  /-- Equipped creature deals combat damage to a player. -/
+  | equippedDealsCombatDamageToPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2937,6 +3366,48 @@ def spec : TriggerEvent → Spec
   | .opponentCastsMatchingParity =>
     { clause := "an opponent casts a spell with mana value of the chosen quality",
       label := "parity-cast trigger", checkTargets := false }
+  | .creatureCardLeavesYourGy =>
+    { clause := "a creature card leaves your graveyard",
+      label := "leaves-graveyard trigger", checkTargets := false }
+  | .youCastCreature =>
+    { clause := "you cast a creature spell", label := "cast-creature trigger" }
+  | .mountainYouControlEnters =>
+    { clause := "a Mountain you control enters", label := "mountain-enters trigger" }
+  | .sourceDealtNoncombatDamage =>
+    { clause := "this is dealt noncombat damage",
+      label := "noncombat-damage trigger", checkTargets := false }
+  | .opponentCastsSpell =>
+    { clause := "an opponent casts a spell", label := "opponent-cast trigger",
+      checkTargets := false }
+  | .armyYouControlCombatDamage =>
+    { clause := "an Army you control deals combat damage to a player",
+      label := "army-combat-damage trigger", checkTargets := false }
+  | .finalSagaChapterResolves =>
+    { clause := "the final chapter ability of a Saga you control resolves",
+      label := "saga-chapter trigger", checkTargets := false }
+  | .combatDamageToYou =>
+    { clause := "one or more creatures deal combat damage to you",
+      label := "combat-damage-to-you trigger", checkTargets := false }
+  | .youCastSecondSpell =>
+    { clause := "you cast your second spell each turn",
+      label := "second-spell trigger", checkTargets := false }
+  | .youSacrificeToken =>
+    { clause := "you sacrifice a token", label := "sacrifice-token trigger" }
+  | .playerLosesLife =>
+    { clause := "a player loses life", label := "lose-life trigger",
+      checkTargets := false }
+  | .youPutCountersOnGoblinOrcArmy =>
+    { clause := "you put one or more counters on a Goblin, Orc, or Army you control",
+      label := "put-counters trigger" }
+  | .anotherGoblinOrcArmyDies =>
+    { clause := "another Goblin, Orc, or Army you control dies",
+      label := "army-dies trigger", checkTargets := false }
+  | .nontokenYouControlDies =>
+    { clause := "a nontoken creature you control dies",
+      label := "nontoken-dies trigger", checkTargets := false }
+  | .equippedDealsCombatDamageToPlayer =>
+    { clause := "equipped creature deals combat damage to a player",
+      label := "equipped-combat-damage trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -3146,6 +3617,106 @@ inductive TriggerResolution where
   | destroyOtherAmassControllerPower
   /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
   | gollumMode
+  /-- Return a creature card from your graveyard to your hand. -/
+  | returnCreatureFromGyToHand
+  /-- Discard your hand, draw that many, and maybe damage opponents. -/
+  | discardHandDrawDamageIfStory
+  /-- +1/+1 and lifelink on the targeted creature. -/
+  | plusOneAndLifelink
+  /-- +1/+1 on a Wolf you control, or create a Treasure. -/
+  | wolfPlusOneOrTreasure
+  /-- Trample counter, become a Bear, maybe draw two. -/
+  | trampleCounterBecomeBear
+  /-- You may cast an artifact, instant, or sorcery from your graveyard. -/
+  | castFromGyArtifactInstantSorcery
+  /-- Mill `n`, then put cards of this subtype into hand. -/
+  | millThenSubtypeToHand (n : Nat) (subtype : String)
+  /-- Exile up to one opposing nonland per opponent until this leaves. -/
+  | exileOppNonlandEachUntilLeaves
+  /-- +1/+1 counters equal to the last-known mana value. -/
+  | plusOneEqualLastKnownMv
+  /-- Create an Axe and attach it to a creature you control. -/
+  | createAxeAttach
+  /-- Equipped attacking creatures gain double strike. -/
+  | equippedAttackersGainDoubleStrike
+  /-- Tap the enchanted creature and remove its counters. -/
+  | tapEnchantedRemoveCounters
+  /-- Reveal the top `n`; put a random creature onto the battlefield. -/
+  | revealTopPutRandomCreature (n : Nat)
+  /-- If you drew two or more, pump and first strike. -/
+  | beginCombatIfDrawnTwoPump
+  /-- Quest counter; at six, sacrifice and find a Dragon. -/
+  | mountainQuestDragon
+  /-- Target player mills `n`. -/
+  | millPlayer (n : Nat)
+  /-- Treasures equal to permanents of a chosen type. -/
+  | treasuresPerChosenType
+  /-- Reveal until a creature; put it onto the battlefield or into hand. -/
+  | revealUntilCreature
+  /-- You may sacrifice another creature for +1/+1s equal to its power. -/
+  | attackSacPlusOneEqualPower
+  /-- Amass Goblins equal to last-known power. -/
+  | amassGoblinsEqualPower
+  /-- You may pay to return this from the graveyard to your hand. -/
+  | payReturnFromGy
+  /-- Draw, discard; a discarded land enters tapped. -/
+  | lootLandEntersTapped
+  /-- Hone per opposing creatures, then attach. -/
+  | honePerOppAttach
+  /-- Deal 2 to target opponent. -/
+  | damageTargetOpponent (n : Nat)
+  /-- Each player who lost life mills that much. -/
+  | millThatManyLost
+  /-- Draw per graveyard with seven or more cards. -/
+  | drawPerFatGraveyard
+  /-- Create two nonlegendary token copies of the source. -/
+  | copySelfNonlegendary
+  /-- You may sacrifice another for a card and a Treasure. -/
+  | maySacDrawTreasure
+  /-- Target opponent loses 1 life. -/
+  | targetOpponentLosesLife (n : Nat)
+  /-- Attach any number of Equipment, then the host fights. -/
+  | attachEquipmentThenFight
+  /-- Two +1/+1 counters and vigilance. -/
+  | plusOneVigilance (n : Nat)
+  /-- Draw two, then discard a card. -/
+  | drawThenDiscardN (n : Nat)
+  /-- Return the source as an artifact. -/
+  | returnAsArtifact
+  /-- You may draw X (mana spent), then discard two. -/
+  | mayDrawXDiscard2
+  /-- +1/+1 each, or two with the city's blessing. -/
+  | plusOneEachIfCityBlessing
+  /-- You may cast an instant or sorcery from hand without paying. -/
+  | castInstantSorceryFromHand
+  /-- Draw a card and put a +1/+1 counter on the source. -/
+  | drawPlusOneSource
+  /-- Exile up to three lands you control, then return them tapped. -/
+  | exileLandsThenReturnTapped
+  /-- You may cast an instant or sorcery of MV at most last-known power. -/
+  | castInstantSorceryMvAtMost
+  /-- Exile until an instant or sorcery; you may cast it. -/
+  | grimaImpulse
+  /-- Palantír of Orthanc. -/
+  | palantir
+  /-- Each opponent mills two; then maybe copy a card. -/
+  | millThenCopy
+  /-- Amass Orcs `n`. -/
+  | amassOrcs (n : Nat)
+  /-- The Ring tempts you. -/
+  | ringTempts
+  /-- You may discard your hand and draw `n`. -/
+  | mayDiscardHandDraw (n : Nat)
+  /-- Create Treasures equal to last-known damage. -/
+  | treasuresEqualLastKnown
+  /-- You gain protection from everything until your next turn. -/
+  | protectionEverything
+  /-- Lose 1 life per burden counter. -/
+  | loseLifePerBurden
+  /-- Reveal until a Saga and put it onto the battlefield. -/
+  | revealSaga
+  /-- Each opponent sacrifices a creature that damaged you; the Ring tempts you. -/
+  | sacDamagersRingTempts
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3490,6 +4061,135 @@ def timing : TriggeredAbility → TriggerTiming
   | .onCastColorPump c p t =>
     { events := #[.youCastColor c], targeting := .of .creature,
       resolution := .onPermanent (.pump p t) }
+  | .onEnterReturnCreatureFromGyToHand =>
+    { events := #[.entering], targeting := .of .creatureCardInYourGraveyard,
+      resolution := .returnCreatureFromGyToHand }
+  | .onCreatureCardLeavesYourGyAmassGoblins n =>
+    { events := #[.creatureCardLeavesYourGy], resolution := .amassGoblins n }
+  | .onThisOrAnotherSubtypeEntersDiscardHand subtype =>
+    { events := #[.thisOrAnotherSubtypeYouControlEnters],
+      resolution := .discardHandDrawDamageIfStory, thisOrAnotherSubtype := some subtype }
+  | .onDrawSecondPlusOneLifelink =>
+    { events := #[.youDrawSecondCard], targeting := .of .creature,
+      resolution := .plusOneAndLifelink }
+  | .onCombatDamageWolfPlusOneOrTreasure =>
+    { events := #[.dealsCombatDamageToPlayer], resolution := .wolfPlusOneOrTreasure }
+  | .onYourBeginCombatTrampleCounterBecomeBear =>
+    { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
+      allowsZeroTargets := true, resolution := .trampleCounterBecomeBear }
+  | .onAttackCastFromGyArtifactInstantSorcery =>
+    { events := #[.attacking], resolution := .castFromGyArtifactInstantSorcery }
+  | .onEnterMillThenSubtypeToHand n subtype =>
+    { events := #[.entering], resolution := .millThenSubtypeToHand n subtype }
+  | .onEnterExileOppNonlandEachUntilLeaves =>
+    { events := #[.entering], targeting := .of .oppNonland, allowsZeroTargets := true,
+      resolution := .exileOppNonlandEachUntilLeaves }
+  | .onCastCreaturePlusOneEqualMv =>
+    { events := #[.youCastCreature], targeting := .of .creatureYouControl,
+      resolution := .plusOneEqualLastKnownMv }
+  | .onEnterCreateAxeAttach =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      resolution := .createAxeAttach }
+  | .onAttackEquippedGainDoubleStrike =>
+    { events := #[.attacking], resolution := .equippedAttackersGainDoubleStrike }
+  | .onEnterTapEnchantedRemoveCounters =>
+    { events := #[.entering], resolution := .tapEnchantedRemoveCounters }
+  | .onDiesRevealTopPutRandomCreature n =>
+    { events := #[.dying], resolution := .revealTopPutRandomCreature n }
+  | .onYourBeginCombatIfDrawnTwoPumpFirstStrike =>
+    { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
+      resolution := .beginCombatIfDrawnTwoPump }
+  | .onMountainEntersQuestThenDragon =>
+    { events := #[.mountainYouControlEnters], resolution := .mountainQuestDragon }
+  | .onDrawSecondMillPlayer n =>
+    { events := #[.youDrawSecondCard], targeting := .of .player,
+      resolution := .millPlayer n }
+  | .onEquippedCombatDamageTreasuresPerChosenType =>
+    { events := #[.equippedDealsCombatDamageToPlayer],
+      resolution := .treasuresPerChosenType }
+  | .onNontokenYouControlDiesRevealCreature =>
+    { events := #[.nontokenYouControlDies], resolution := .revealUntilCreature,
+      onceEachTurn := true }
+  | .onAttackMaySacAnotherPlusOneEqualPower =>
+    { events := #[.attacking], resolution := .attackSacPlusOneEqualPower }
+  | .onDiesAmassGoblinsEqualPower =>
+    { events := #[.dying], resolution := .amassGoblinsEqualPower }
+  | .onLandYouControlEntersPayReturnFromGy =>
+    { events := #[.landYouControlEnters], resolution := .payReturnFromGy }
+  | .onEnterLootLandEntersTapped =>
+    { events := #[.entering], resolution := .lootLandEntersTapped }
+  | .onEnterHonePerOppCreaturesAttach =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      allowsZeroTargets := true, resolution := .honePerOppAttach }
+  | .onEnterOrAttackCreateWall =>
+    { events := #[.entering, .attacking], resolution := .createTokens .wall 1 false }
+  | .onPutCountersOnGoblinOrcArmyDamageOpp =>
+    { events := #[.youPutCountersOnGoblinOrcArmy], targeting := .of .opponent,
+      resolution := .damageTargetOpponent 2 }
+  | .onAnotherGoblinOrcArmyDiesExileTop =>
+    { events := #[.anotherGoblinOrcArmyDies], resolution := .exileTop }
+  | .onPlayerLosesLifeMillThatMany =>
+    { events := #[.playerLosesLife], resolution := .millThatManyLost }
+  | .onDiesDrawPerFatGraveyard =>
+    { events := #[.dying], resolution := .drawPerFatGraveyard }
+  | .onEnterIfNotTokenCopySelf =>
+    { events := #[.entering], resolution := .copySelfNonlegendary }
+  | .onEnterMaySacDrawTreasure =>
+    { events := #[.entering], resolution := .maySacDrawTreasure }
+  | .onYouSacrificeTokenOppLosesLife =>
+    { events := #[.youSacrificeToken], targeting := .of .opponent,
+      resolution := .targetOpponentLosesLife 1 }
+  | .onEnterAttachEquipmentThenFight =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      resolution := .attachEquipmentThenFight }
+  | .onLandYouControlEntersPlusOneVigilance =>
+    { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
+      resolution := .plusOneVigilance 2 }
+  | .onAnotherLegendarySubtypeEntersLoot subtype =>
+    { events := #[.anotherCreatureYouControlEnters],
+      resolution := .drawThenDiscardN 2, thisOrAnotherSubtype := some subtype }
+  | .onDiesReturnAsArtifact =>
+    { events := #[.dying], resolution := .returnAsArtifact }
+  | .onCastNoncreatureMayDrawXDiscard2 =>
+    { events := #[.youCastNoncreature], resolution := .mayDrawXDiscard2 }
+  | .onEquippedAttacksPlusOneEachIfCityBlessing =>
+    { events := #[.equippedAttacks], resolution := .plusOneEachIfCityBlessing }
+  | .onAnotherSubtypeEntersPlusOneOnSource subtype n =>
+    { events := #[.anotherCreatureYouControlEnters],
+      resolution := .onSource (.plusOne n), thisOrAnotherSubtype := some subtype }
+  | .onYourBeginCombatCastInstantSorceryFromHand =>
+    { events := #[.yourBeginCombat], resolution := .castInstantSorceryFromHand }
+  | .onLandYouControlEntersDrawPlusOneSource =>
+    { events := #[.landYouControlEnters], resolution := .drawPlusOneSource }
+  | .onEnterExileLandsThenReturnTapped =>
+    { events := #[.entering], targeting := .of .creatureOrLandYouControl,
+      allowsZeroTargets := true, resolution := .exileLandsThenReturnTapped }
+  | .onEquippedCombatDamageCastInstantSorcery =>
+    { events := #[.equippedDealsCombatDamageToPlayer],
+      resolution := .castInstantSorceryMvAtMost }
+  | .onCombatDamageImpulseInstantSorcery =>
+    { events := #[.dealsCombatDamageToPlayer], resolution := .grimaImpulse }
+  | .onYourEndStepPalantir =>
+    { events := #[.yourEndStep], targeting := .of .opponent, resolution := .palantir }
+  | .onCastSecondSpellMillThenCopy =>
+    { events := #[.youCastSecondSpell], resolution := .millThenCopy }
+  | .onOpponentCastsAmassOrcs n =>
+    { events := #[.opponentCastsSpell], resolution := .amassOrcs n }
+  | .onArmyCombatDamageRingTempts =>
+    { events := #[.armyYouControlCombatDamage], resolution := .ringTempts }
+  | .onRingTemptsMayDiscardDraw n =>
+    { events := #[.theRingTemptsYou], resolution := .mayDiscardHandDraw n }
+  | .onDealtNoncombatDamageCreateTreasures =>
+    { events := #[.sourceDealtNoncombatDamage], resolution := .treasuresEqualLastKnown }
+  | .onEnterIfCastProtectionEverything =>
+    { events := #[.entering], resolution := .protectionEverything }
+  | .onYourUpkeepLoseLifePerBurden =>
+    { events := #[.yourUpkeep], resolution := .loseLifePerBurden }
+  | .onFinalSagaChapterRevealSaga =>
+    { events := #[.finalSagaChapterResolves], resolution := .revealSaga,
+      onceEachTurn := true }
+  | .onCombatDamageToYouSacRingTempts =>
+    { events := #[.combatDamageToYou], resolution := .sacDamagersRingTempts }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3761,6 +4461,106 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .gollumMode =>
     "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
+  | .returnCreatureFromGyToHand =>
+    s!"return {noun} to your hand"
+  | .discardHandDrawDamageIfStory =>
+    "you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, this deals X damage to each opponent"
+  | .plusOneAndLifelink =>
+    s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
+  | .wolfPlusOneOrTreasure =>
+    "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
+  | .trampleCounterBecomeBear =>
+    s!"put a trample counter on up to one {noun}. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards"
+  | .castFromGyArtifactInstantSorcery =>
+    "you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead"
+  | .millThenSubtypeToHand n subtype =>
+    s!"mill {n} cards, then put all {subtype} cards from among them into your hand"
+  | .exileOppNonlandEachUntilLeaves =>
+    "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
+  | .plusOneEqualLastKnownMv =>
+    s!"put X +1/+1 counters on {noun}, where X is that spell's mana value"
+  | .createAxeAttach =>
+    "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
+  | .equippedAttackersGainDoubleStrike =>
+    "each equipped attacking creature gains double strike until end of turn"
+  | .tapEnchantedRemoveCounters =>
+    "tap enchanted creature and remove all counters from it"
+  | .revealTopPutRandomCreature n =>
+    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order"
+  | .beginCombatIfDrawnTwoPump =>
+    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains first strike until end of turn"
+  | .mountainQuestDragon =>
+    "put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle"
+  | .millPlayer n =>
+    s!"{noun} mills {n} cards"
+  | .treasuresPerChosenType =>
+    "choose a creature type. Create a Treasure token for each creature you control of that type"
+  | .revealUntilCreature =>
+    "reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order"
+  | .attackSacPlusOneEqualPower =>
+    "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+  | .amassGoblinsEqualPower =>
+    "amass Goblins X, where X is this creature's power"
+  | .payReturnFromGy =>
+    "you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand"
+  | .lootLandEntersTapped =>
+    "draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped"
+  | .honePerOppAttach =>
+    "put a hone counter on this for each creature target opponent controls. Attach this to up to one target creature you control"
+  | .damageTargetOpponent n =>
+    s!"this deals {n} damage to {noun}"
+  | .millThatManyLost =>
+    "that player mills that many cards"
+  | .drawPerFatGraveyard =>
+    "draw a card for each graveyard with seven or more cards in it"
+  | .copySelfNonlegendary =>
+    "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
+  | .maySacDrawTreasure =>
+    "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
+  | .targetOpponentLosesLife n =>
+    s!"{noun} loses {n} life"
+  | .attachEquipmentThenFight =>
+    "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
+  | .plusOneVigilance n =>
+    s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
+  | .drawThenDiscardN n =>
+    s!"draw {cardPhrase n}, then discard a card"
+  | .returnAsArtifact =>
+    "if they were a creature, return them to the battlefield. They're an artifact"
+  | .mayDrawXDiscard2 =>
+    "you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards"
+  | .plusOneEachIfCityBlessing =>
+    "put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead"
+  | .castInstantSorceryFromHand =>
+    "you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control"
+  | .drawPlusOneSource =>
+    "draw a card and put a +1/+1 counter on this"
+  | .exileLandsThenReturnTapped =>
+    "exile up to three target lands you control, then return them to the battlefield tapped under their owner's control"
+  | .castInstantSorceryMvAtMost =>
+    "you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost"
+  | .grimaImpulse =>
+    "that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order"
+  | .palantir =>
+    "put an influence counter on this and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on this, and that player loses life equal to the total mana value of those cards"
+  | .millThenCopy =>
+    "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
+  | .amassOrcs n =>
+    s!"amass Orcs {n}"
+  | .ringTempts =>
+    "the Ring tempts you"
+  | .mayDiscardHandDraw n =>
+    s!"you may discard your hand. If you do, draw {cardPhrase n}"
+  | .treasuresEqualLastKnown =>
+    "create that many Treasure tokens"
+  | .protectionEverything =>
+    "if you cast it, you gain protection from everything until your next turn"
+  | .loseLifePerBurden =>
+    "you lose 1 life for each burden counter on this"
+  | .revealSaga =>
+    "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
+  | .sacDamagersRingTempts =>
+    "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3801,6 +4601,52 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
   | .onCastColorPump .green 4 4 =>
     "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."
+  | .onEnterReturnCreatureFromGyToHand =>
+    "When this enchantment enters, return target creature card from your graveyard to your hand."
+  | .onThisOrAnotherSubtypeEntersDiscardHand "Dwarf" =>
+    "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
+  | .onAttackCastFromGyArtifactInstantSorcery =>
+    "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."
+  | .onEnterCreateAxeAttach =>
+    "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control."
+  | .onAttackEquippedGainDoubleStrike =>
+    "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
+  | .onEnterTapEnchantedRemoveCounters =>
+    "When this Aura enters, tap enchanted creature and remove all counters from it."
+  | .onDiesRevealTopPutRandomCreature n =>
+    s!"When this artifact is put into a graveyard from the battlefield, reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
+  | .onYourBeginCombatIfDrawnTwoPumpFirstStrike =>
+    "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
+  | .onEnterHonePerOppCreaturesAttach =>
+    "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
+  | .onEnterIfNotTokenCopySelf =>
+    "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary."
+  | .onEnterAttachEquipmentThenFight =>
+    "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."
+  | .onAnotherLegendarySubtypeEntersLoot "Elf" =>
+    "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
+  | .onDiesReturnAsArtifact =>
+    "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
+  | .onAnotherSubtypeEntersPlusOneOnSource "Wolf" 2 =>
+    "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
+  | .onLandYouControlEntersDrawPlusOneSource =>
+    "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
+  | .onEnterExileLandsThenReturnTapped =>
+    "When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control."
+  | .onCombatDamageImpulseInstantSorcery =>
+    "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+  | .onYourEndStepPalantir =>
+    "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
+  | .onDealtNoncombatDamageCreateTreasures =>
+    "Whenever Smaug is dealt noncombat damage, create that many Treasure tokens."
+  | .onEnterIfCastProtectionEverything =>
+    "When The One Ring enters, if you cast it, you gain protection from everything until your next turn."
+  | .onYourUpkeepLoseLifePerBurden =>
+    "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
+  | .onLandYouControlEntersPayReturnFromGy =>
+    "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
+  | .onPutCountersOnGoblinOrcArmyDamageOpp =>
+    "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
   | .printed text => text
   | _ =>
     match ab.resolution with

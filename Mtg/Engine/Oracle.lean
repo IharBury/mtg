@@ -140,15 +140,20 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this artifact", "this"),
     ("this aura", "this"),
     ("this card", "this"),
-    ("this spell", "this")
+    ("this spell", "this"),
+    ("this enter ", "this enters "),
+    ("this enter,", "this enters,")
   ]
 
 /-- English number words that appear in Oracle (`two cards`, `three or more`). -/
 def replaceNumberWords (s : String) : String :=
   let words : List (String × String) := [
-    ("ten", "10"), ("nine", "9"), ("eight", "8"), ("seven", "7"),
-    ("six", "6"), ("five", "5"), ("four", "4"), ("three", "3"),
-    ("two", "2"), ("one", "1")
+    ("twenty", "20"), ("nineteen", "19"), ("eighteen", "18"),
+    ("seventeen", "17"), ("sixteen", "16"), ("fifteen", "15"),
+    ("fourteen", "14"), ("thirteen", "13"), ("twelve", "12"),
+    ("eleven", "11"), ("ten", "10"), ("nine", "9"), ("eight", "8"),
+    ("seven", "7"), ("six", "6"), ("five", "5"), ("four", "4"),
+    ("three", "3"), ("two", "2"), ("one", "1")
   ]
   words.foldl (fun acc p => replaceWord acc p.fst p.snd) s
 
@@ -184,7 +189,10 @@ def normalizePhrases (s : String) : String :=
     ("activate only from your hand", ""),
     ("if you control a creature with power", "while you control a creature with power"),
     ("other elf creatures you control", "other elves you control"),
-    ("other bear creatures you control", "other bears you control")
+    ("other bear creatures you control", "other bears you control"),
+    ("you may play it until the end of your next turn",
+      "until the end of your next turn you may play that card"),
+    ("this enter ", "this enters ")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -586,6 +594,28 @@ def supportedCatalogCards : Array CardDef :=
     ++ Catalog.hobbitCards
     ++ Catalog.hobbitEternalCards
 
+/-- True when a catalog card still stores an ability or effect as `.printed`. -/
+def usesPrintedStub (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  c.triggeredAbilities.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  (match c.spellEffect with
+   | some (.printed _) => true
+   | _ => false) ||
+  c.spellModes.any (fun
+    | .printed _ => true
+    | _ => false) ||
+  c.activatedAbilities.any (fun ab =>
+    (match ab.effect with
+     | .printed _ => true
+     | _ => false) ||
+    ab.otherModes.any (fun
+      | .printed _ => true
+      | _ => false))
+
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
   supportedCatalogCards.all (·.matchesOracleText)
@@ -624,5 +654,6 @@ def supportedOracleFailures : List String :=
 #guard magnificentEnd.matchesOracleText
 #guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
+#guard !supportedCatalogCards.any usesPrintedStub
 
 end Mtg.Engine

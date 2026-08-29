@@ -158,7 +158,7 @@ def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
         " (may be cast without paying its mana cost)"
       else ""
   let activate :=
-    if o.printed.activatedAbilities.any (g.activatesWithoutPayingManaCost (abilityActivator o))
+    if (g.activatedAbilitiesOf o).any (g.activatesWithoutPayingManaCost (abilityActivator o))
     then " (may be activated without paying its mana cost)"
     else ""
   play ++ activate

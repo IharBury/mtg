@@ -520,7 +520,11 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (discardACard : Bool := false)
     (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
-    (onlyIfYouAttackedWithTwoOrMore : Bool := false) :
+    (onlyIfYouAttackedWithTwoOrMore : Bool := false)
+    (removeIndestructibleCounter : Bool := false)
+    (sacrificeLegendaryArtifact : Bool := false)
+    (discardLegendarySameName : Bool := false)
+    (sacrificeArtifact : Bool := false) :
     ActivatedAbility := {
   cost := {
     mana := mana
@@ -532,6 +536,10 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     sacrificeAnotherSubtype := sacrificeAnotherSubtype
     discardACard := discardACard
     tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
+    removeIndestructibleCounter := removeIndestructibleCounter
+    sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
+    discardLegendarySameName := discardLegendarySameName
+    sacrificeArtifact := sacrificeArtifact
   }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary

@@ -211,7 +211,7 @@ where
         (g.availableMana p).canPay o.printed.manaCost
           (allowElfRestricted := o.hasSubtype "Elf"))
     let firstAbility (o : GameObject) : Option Nat :=
-      o.printed.activatedAbilities.findIdx? (shouldActivate o)
+      (g.activatedAbilitiesOf o).findIdx? (shouldActivate o)
     let gy := (g.player p).graveyard.filterMap (fun id => g.findObject? id)
     let candidate :=
       (g.permanentsOf p).find? (fun o => (firstAbility o).isSome) <|>
