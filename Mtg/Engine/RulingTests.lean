@@ -2913,4 +2913,653 @@ def spiderDoubleTargetOk : Bool :=
 
 #guard spiderDoubleTargetOk
 
+/-!
+## 9 — an Adventure on the stack does not “have an Adventure”
+-/
+
+def adventureOnStackNotHasAdventureOk : Bool :=
+  spewOnStack.isAdventureSpell &&
+    spewOnStack.printed.adventure.isNone &&
+    !(spewOnStack.printed.hasAdventure) &&
+    (ruling 9).comment.contains "won't find an instant or sorcery spell on the stack"
+
+#guard adventureOnStackNotHasAdventureOk
+
+/-!
+## 34, 35 — extra linked-exile instances share “the exiled card”
+-/
+
+def linkedExileTwoCards : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let (g, bEx) := g.move bear.id .exile none
+  let (g, oEx) := g.move ogre.id .exile none
+  g.setObject { (namedPermanent g "Fiend Hunter") with
+    linkedExile := #[bEx, oEx] }
+
+def linkedExileTwoCardsOk : Bool :=
+  let hunter := namedPermanent linkedExileTwoCards "Fiend Hunter"
+  hunter.linkedExile.size == 2 &&
+    (let g := linkedExileTwoCards.returnLinkedExile hunter
+     g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+       g.battlefield.any (fun o => o.name == "Gray Ogre")) &&
+    (ruling 34).comment.contains "additional instances" &&
+    (ruling 35).comment.contains "the sum is used"
+
+#guard linkedExileTwoCardsOk
+
+/-!
+## 136 — Celebrate leaves before exile resolves
+-/
+
+def celebrateLeavesBeforeExile : Game :=
+  let g := addPermanent afterDraw celebrateTheMountainKing ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let sid := (namedPermanent g "Celebrate the Mountain-king").id
+  let (g, _) := g.move sid (.graveyard ⟨0⟩) none
+  g.applyTriggeredAbility ⟨0⟩ .onEnterExileOppNonlandUntilLeaves (some sid)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+def celebrateLeavesBeforeExileOk : Bool :=
+  celebrateLeavesBeforeExile.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    celebrateLeavesBeforeExile.log.any (fun s =>
+      mentions s "left the battlefield" || mentions s "Nothing is exiled") &&
+    (ruling 136).comment.contains "no nonland permanents will be exiled"
+
+#guard celebrateLeavesBeforeExileOk
+
+/-!
+## 147 — a copy of a permanent is not kicked
+-/
+
+def copyOfKickedPermanentOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bear with kicked := true }
+  let src := namedPermanent g "Grizzly Bears"
+  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  src.kicked && !tok.kicked && tok.printed.isToken &&
+    (ruling 147).comment.contains "isn't kicked"
+
+#guard copyOfKickedPermanentOk
+
+/-!
+## 163, 172, 231, 294 — Galadriel Alliance modes
+-/
+
+def galadrielInPlay : Game :=
+  addPermanent afterDraw galadrielLightOfValinor ⟨0⟩ ⟨0⟩
+
+def galadrielAllModesSpent : Game :=
+  let sid := (namedPermanent galadrielInPlay "Galadriel, Light of Valinor").id
+  let g := galadrielInPlay.applyAllianceMode sid 0
+  let g := g.applyAllianceMode sid 1
+  g.applyAllianceMode sid 2
+
+def galadrielFourthDoesNothing : Game :=
+  let sid := (namedPermanent galadrielAllModesSpent "Galadriel, Light of Valinor").id
+  galadrielAllModesSpent.applyTriggeredAbility ⟨0⟩
+    .onAnotherCreatureYouControlEntersAlliance (some sid)
+
+def galadrielModesExhaustedOk : Bool :=
+  galadrielFourthDoesNothing.log.any (fun s =>
+    mentions s "all three modes have been chosen") &&
+    (ruling 163).comment.contains "removed from the stack with no effect"
+
+#guard galadrielModesExhaustedOk
+
+def galadrielSimultaneousModesOk : Bool :=
+  let sid := (namedPermanent galadrielInPlay "Galadriel, Light of Valinor").id
+  let g := galadrielInPlay.applyAllianceMode sid 0
+  let g := g.applyAllianceMode sid 1
+  let used := (namedPermanent g "Galadriel, Light of Valinor").status.allianceModesChosen
+  used.contains 0 && used.contains 1 && !used.contains 2 &&
+    (g.unusedAllianceModes (namedPermanent g "Galadriel, Light of Valinor")).size == 1 &&
+    (ruling 172).comment.contains "different modes"
+
+#guard galadrielSimultaneousModesOk
+
+def galadrielStolenKeepsModesOk : Bool :=
+  let sid := (namedPermanent galadrielInPlay "Galadriel, Light of Valinor").id
+  let g := galadrielInPlay.applyAllianceMode sid 0
+  let g := g.applyAllianceMode sid 1
+  let gala := namedPermanent g "Galadriel, Light of Valinor"
+  let g := g.setObject { gala with controller := some ⟨1⟩ }
+  let left := g.unusedAllianceModes (namedPermanent g "Galadriel, Light of Valinor")
+  left == #[2] &&
+    (ruling 231).comment.contains "that player can choose only the third mode"
+
+#guard galadrielStolenKeepsModesOk
+
+def galadrielLeavesAndReturnsOk : Bool :=
+  let sid := (namedPermanent galadrielInPlay "Galadriel, Light of Valinor").id
+  let g := galadrielInPlay.applyAllianceMode sid 0
+  let g := g.applyAllianceMode sid 1
+  let (g, _) := g.move (namedPermanent g "Galadriel, Light of Valinor").id
+    (.exile) none
+  let g := addPermanent g galadrielLightOfValinor ⟨0⟩ ⟨0⟩
+  (namedPermanent g "Galadriel, Light of Valinor").status.allianceModesChosen.isEmpty &&
+    (ruling 294).comment.contains "new object with no memory"
+
+#guard galadrielLeavesAndReturnsOk
+
+/-!
+## 171 — Thorin triggers once per damaging Dwarf
+-/
+
+def thorinTwoDwarfTriggersOk : Bool :=
+  let g := addPermanent afterDraw thorinCompanySLeader ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let thorin := namedPermanent g "Thorin, Company's Leader"
+  let g := g.queueTrigger ⟨0⟩ thorin
+    (.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)
+    .dealsCombatDamageToPlayerOrBattle
+  let g := g.queueTrigger ⟨0⟩ thorin
+    (.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)
+    .dealsCombatDamageToPlayerOrBattle
+  (g.waitingTriggers.filter (fun wt =>
+    wt.ability == .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2)).size
+    == 2 &&
+    (ruling 171).comment.contains "once for each of those Dwarves"
+
+#guard thorinTwoDwarfTriggersOk
+
+/-!
+## 173, 317 — Azog: no target means no amass; last-known power
+-/
+
+def azogNoTarget : Game :=
+  let g := addPermanent afterDraw azogMoriaSRuin ⟨0⟩ ⟨0⟩
+  g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOtherAmassControllerPower
+    (some (namedPermanent g "Azog, Moria's Ruin").id)
+
+def azogNoTargetOk : Bool :=
+  !azogNoTarget.battlefield.any (fun o => azogNoTarget.hasSubtype o "Army") &&
+    azogNoTarget.log.any (fun s => mentions s "no player amasses") &&
+    (ruling 173).comment.contains "no player amasses Goblins"
+
+#guard azogNoTargetOk
+
+def azogDestroysOpp : Game :=
+  let g := addPermanent afterDraw azogMoriaSRuin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let ogre := namedPermanent g "Gray Ogre"
+  g.applyTriggeredAbility ⟨0⟩ .onEnterDestroyOtherAmassControllerPower
+    (some (namedPermanent g "Azog, Moria's Ruin").id)
+    #[Target.permanent ogre.id] (lastKnownPower := some (g.power ogre))
+
+def azogDestroysOppOk : Bool :=
+  !azogDestroysOpp.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    azogDestroysOpp.battlefield.any (fun o => azogDestroysOpp.hasSubtype o "Army") &&
+    (namedPermanent azogDestroysOpp "Goblin Army").status.plusOnePlusOne == 2 &&
+    (ruling 317).comment.contains "last existed on the battlefield"
+
+#guard azogDestroysOppOk
+
+/-!
+## 174, 340, 342 — divided damage keeps the original split
+-/
+
+def gandalfDividedIllegal : Game :=
+  let g := addPermanent afterDraw gandalfSparkStarter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bearId := (namedPermanent g "Grizzly Bears").id
+  let (g, _) := g.move bearId (.graveyard ⟨1⟩) none
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDividedDamage 3 3)
+    (some (namedPermanent g "Gandalf, Spark Starter").id)
+    #[Target.permanent bearId,
+      Target.permanent (namedPermanent g "Gray Ogre").id]
+    #[2, 1]
+
+def gandalfDividedIllegalOk : Bool :=
+  (namedPermanent gandalfDividedIllegal "Gray Ogre").status.damage == 1 &&
+    !gandalfDividedIllegal.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    (ruling 174).comment.contains "original division of damage still applies" &&
+    (ruling 340).comment.contains "Each target must receive at least 1" &&
+    (ruling 342).comment.contains "divide the damage as you put"
+
+#guard gandalfDividedIllegalOk
+
+/-!
+## 179 — Witch-king: tied least power is a choice
+-/
+
+def witchKingTiedLeast : Game :=
+  let g := addPermanent afterDraw witchKingBringerOfRuin ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+
+def witchKingTiedApply : Game :=
+  witchKingTiedLeast.applyTriggeredAbility ⟨0⟩ .onAttackDefenderSacsLeastPower
+    (some (namedPermanent witchKingTiedLeast "Witch-king, Bringer of Ruin").id)
+
+def witchKingTiedLeastOk : Bool :=
+  witchKingTiedApply.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    witchKingTiedApply.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    witchKingTiedApply.log.any (fun s => mentions s "tied for least power") &&
+    (ruling 179).comment.contains "that player chooses one of them"
+
+#guard witchKingTiedLeastOk
+
+def witchKingChoosesBear : Game :=
+  witchKingTiedApply.sacrificeLeastPowerCreature ⟨1⟩
+    (some (namedPermanent witchKingTiedApply "Grizzly Bears").id)
+
+def witchKingChoosesBearOk : Bool :=
+  !witchKingChoosesBear.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    witchKingChoosesBear.battlefield.any (fun o => o.name == "Gray Ogre")
+
+#guard witchKingChoosesBearOk
+
+/-!
+## 182, 257–259, 282, 292 — Radagast first-creature cost
+-/
+
+def radagastInPlay : Game :=
+  addPermanent afterDraw radagastOfRhosgobel ⟨0⟩ ⟨0⟩
+
+def xGreenCreature : CardDef :=
+  creature "X Beast" { symbols := #[.x, .colored .green] } #["Beast"] 0 1
+
+def radagastReducesFirstCreatureOk : Bool :=
+  let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
+  let cost := g.playManaCost card grizzlyBears
+  cost == ManaCost.ofColor .green &&
+    grizzlyBears.manaValue == 2 &&
+    (ruling 257).comment.contains "changes only the total cost" &&
+    (ruling 259).comment.contains "reduces only the generic"
+
+#guard radagastReducesFirstCreatureOk
+
+def radagastXChosenBeforeReductionOk : Bool :=
+  let g := addToHand radagastInPlay xGreenCreature ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "X Beast"
+  let face : CardDef :=
+    { xGreenCreature with manaCost := { symbols := #[.generic 2, .colored .green] } }
+  let cost := g.playManaCost card face
+  cost == ManaCost.ofColor .green &&
+    (ruling 182).comment.contains "choose the value of X before calculating"
+
+#guard radagastXChosenBeforeReductionOk
+
+def radagastCastIsFirstOk : Bool :=
+  let g := addToHand afterDraw grizzlyBears ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with creatureSpellsCastThisTurn := 1 })
+  let cost := g.playManaCost card grizzlyBears
+  cost == ManaCost.ofGeneric 2 &&
+    (ruling 258).comment.contains "no other creature spell you cast that turn can be your first"
+
+#guard radagastCastIsFirstOk
+
+def radagastFlashOk : Bool :=
+  let g := { radagastInPlay with step := .end }
+  g.timingAllowsCast ⟨0⟩ grizzlyBears &&
+    !(let g := { afterDraw with step := .end }
+      g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
+    (ruling 292).comment.contains "doesn't necessarily have to be the first spell"
+
+#guard radagastFlashOk
+
+def radagastAltCostOk : Bool :=
+  let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
+  let card :=
+    let o := handCardNamed g ⟨0⟩ "Grizzly Bears"
+    { o with playPermission := some {
+      player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  let cost := g.playManaCost card grizzlyBears (ManaCost.ofGeneric 2)
+  cost == ManaCost.empty &&
+    (ruling 282).comment.contains "can apply to alternative costs"
+
+#guard radagastAltCostOk
+
+/-!
+## 184, 293 — Delighted Halfling: copies can be countered
+-/
+
+def delightedCopyCanBeCounteredOk : Bool :=
+  let g := addToHand afterDraw tomBombadil ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Tom Bombadil"
+  let (g, sid) := g.move card.id .stack (some ⟨0⟩)
+  let g := g.setObject { (g.object! sid) with uncounterableThisCast := true }
+  let spell := g.object! sid
+  let g := g.copyStackSpell spell ⟨0⟩
+  let copy :=
+    match g.objects.find? (fun o => o.isCopy && o.name == "Tom Bombadil") with
+    | some o => o
+    | none => panic! "expected copied Tom Bombadil"
+  spell.uncounterableThisCast && !copy.uncounterableThisCast &&
+    (let g := g.counterStackSpell copy.id
+     g.log.any (fun s => mentions s "is countered")) &&
+    (ruling 184).comment.contains "the copy can be countered" &&
+    (ruling 293).comment.contains "can't be countered if the mana produced"
+
+#guard delightedCopyCanBeCounteredOk
+
+/-!
+## 187, 233 — Mithril Coat enters unattached; illegal target stays unattached
+-/
+
+def mithrilEntersUnattachedOk : Bool :=
+  let g := addPermanent afterDraw mithrilCoat ⟨0⟩ ⟨0⟩
+  (namedPermanent g "Mithril Coat").attachedTo.isNone &&
+    mithrilCoat.triggeredAbilities == #[.onEnterAttachToLegendary] &&
+    (ruling 233).comment.contains "doesn't enter the battlefield attached"
+
+#guard mithrilEntersUnattachedOk
+
+def mithrilIllegalStaysUnattached : Game :=
+  let g := addPermanent afterDraw mithrilCoat ⟨0⟩ ⟨0⟩
+  let sid := (namedPermanent g "Mithril Coat").id
+  g.applyTriggeredAbility ⟨0⟩ .onEnterAttachToLegendary (some sid)
+
+def mithrilIllegalStaysUnattachedOk : Bool :=
+  (namedPermanent mithrilIllegalStaysUnattached "Mithril Coat").attachedTo.isNone &&
+    mithrilIllegalStaysUnattached.battlefield.any (fun o => o.name == "Mithril Coat") &&
+    (ruling 187).comment.contains "remains on the battlefield unattached"
+
+#guard mithrilIllegalStaysUnattachedOk
+
+/-!
+## 207, 218, 223, 251 — city's blessing and not-cast kicker
+-/
+
+def tenPermanentsNoAscendOk : Bool :=
+  let g :=
+    (List.range 10).foldl (fun acc _ => addPermanent acc grizzlyBears ⟨0⟩ ⟨0⟩) afterDraw
+  !g.hasCitysBlessing ⟨0⟩ &&
+    (ruling 207).comment.contains "don't control a permanent or resolving spell with ascend"
+
+#guard tenPermanentsNoAscendOk
+
+def tenPermanentsWithAscend : Game :=
+  let g :=
+    (List.range 9).foldl (fun acc _ => addPermanent acc grizzlyBears ⟨0⟩ ⟨0⟩) afterDraw
+  let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
+  g.refreshCitysBlessing
+
+def cityBlessingPersistsOk : Bool :=
+  tenPermanentsWithAscend.hasCitysBlessing ⟨0⟩ &&
+    (let g :=
+      tenPermanentsWithAscend.battlefield.foldl (fun acc o =>
+        if o.name == "Grizzly Bears" then
+          (acc.move o.id (.graveyard ⟨0⟩) none).1
+        else acc) tenPermanentsWithAscend
+     g.hasCitysBlessing ⟨0⟩) &&
+    (ruling 251).comment.contains "for the rest of the game" &&
+    (ruling 223).comment.contains "before it leaves the battlefield"
+
+#guard cityBlessingPersistsOk
+
+def notCastCannotKickOk : Bool :=
+  !(namedPermanent (addPermanent afterDraw galadrielSDismissal ⟨0⟩ ⟨0⟩)
+      "Galadriel's Dismissal").kicked &&
+    (ruling 218).comment.contains "you can't kick it"
+
+#guard notCastCannotKickOk
+
+/-!
+## 209 — copy of a kicked permanent spell is kicked
+-/
+
+def kickedCopyAlsoKickedOk : Bool :=
+  (kickerCopied.object! kickerCopied.stack.back!.objectId).kicked &&
+    (ruling 209).comment.contains "the copy is also kicked"
+
+#guard kickedCopyAlsoKickedOk
+
+/-!
+## 216, 269, 346 — The Gaffer
+-/
+
+def gafferInPlay : Game :=
+  addPermanent afterDraw theGaffer ⟨0⟩ ⟨0⟩
+
+def gafferNoLifeNoTrigger : Game :=
+  gafferInPlay.putControlledTriggers ⟨0⟩ .eachEndStep
+
+def gafferNoLifeOk : Bool :=
+  !gafferNoLifeNoTrigger.waitingTriggers.any (fun wt =>
+    wt.ability == .onEachEndStepDrawIfGainedLife 3) &&
+    (ruling 216).comment.contains "won't trigger at all"
+
+#guard gafferNoLifeOk
+
+def gafferGainedBeforeEnter : Game :=
+  let g := afterDraw.gainLife ⟨0⟩ 3
+  let g := addPermanent g theGaffer ⟨0⟩ ⟨0⟩
+  g.putControlledTriggers ⟨0⟩ .eachEndStep
+
+def gafferGainedBeforeEnterOk : Bool :=
+  gafferGainedBeforeEnter.waitingTriggers.any (fun wt =>
+    wt.ability == .onEachEndStepDrawIfGainedLife 3) &&
+    (ruling 269).comment.contains "even if it wasn't on the battlefield"
+
+#guard gafferGainedBeforeEnterOk
+
+def gafferOneCardPastThree : Game :=
+  let g := gafferInPlay.gainLife ⟨0⟩ 5
+  g.applyTriggeredAbility ⟨0⟩ (.onEachEndStepDrawIfGainedLife 3)
+    (some (namedPermanent g "The Gaffer").id)
+
+def gafferOneCardOk : Bool :=
+  (gafferOneCardPastThree.player ⟨0⟩).hand.size ==
+      (gafferInPlay.player ⟨0⟩).hand.size + 1 &&
+    (ruling 346).comment.contains "just one card"
+
+#guard gafferOneCardOk
+
+/-!
+## 235, 245 — shadow is redundant; blocked stays blocked
+-/
+
+def twoShadowCountersOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.putShadowCounter (namedPermanent g "Grizzly Bears")
+  let g := g.putShadowCounter (namedPermanent g "Grizzly Bears")
+  g.hasShadow (namedPermanent g "Grizzly Bears") &&
+    (namedPermanent g "Grizzly Bears").status.shadow >= 1 &&
+    (ruling 235).comment.contains "redundant"
+
+#guard twoShadowCountersOk
+
+def blockedKeepsShadowOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bear with status := { bear.status with blocked := true } }
+  let g := g.putShadowCounter (namedPermanent g "Grizzly Bears")
+  (namedPermanent g "Grizzly Bears").status.blocked &&
+    (ruling 245).comment.contains "remains blocked"
+
+#guard blockedKeepsShadowOk
+
+/-!
+## 236, 237, 260, 268, 320, 328 — Ferocious intervening vs not
+-/
+
+def ferociousBeginCombatRecheckOk : Bool :=
+  let g := addPermanent afterDraw nastyLittleRabbit ⟨0⟩ ⟨0⟩
+  let g := addPermanent g rumblingBaloth ⟨0⟩ ⟨0⟩
+  g.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne &&
+    !(let g := addPermanent afterDraw nastyLittleRabbit ⟨0⟩ ⟨0⟩
+      g.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne) &&
+    (let g := addPermanent afterDraw nastyLittleRabbit ⟨0⟩ ⟨0⟩
+     let g := addPermanent g rumblingBaloth ⟨0⟩ ⟨0⟩
+     let (g, _) := g.move (namedPermanent g "Rumbling Baloth").id (.graveyard ⟨0⟩) none
+     !g.interveningStillHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne) &&
+    (ruling 236).comment.contains "won't resolve"
+
+#guard ferociousBeginCombatRecheckOk
+
+def ferociousAttackNoRecheckOk : Bool :=
+  let g := addPermanent afterDraw nighthowlPursuer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g rumblingBaloth ⟨0⟩ ⟨0⟩
+  g.triggerConditionHolds ⟨0⟩ (.onAttackFerociousSourceGets 2 2) &&
+    (let (g, _) := g.move (namedPermanent g "Rumbling Baloth").id (.graveyard ⟨0⟩) none
+     g.interveningStillHolds ⟨0⟩ (.onAttackFerociousSourceGets 2 2)) &&
+    (ruling 237).comment.contains "will not check again" &&
+    (ruling 260).comment.contains "will not check again" &&
+    (ruling 268).comment.contains "will not check again" &&
+    (ruling 320).comment.contains "will not check again" &&
+    (ruling 328).comment.contains "will not check again"
+
+#guard ferociousAttackNoRecheckOk
+
+/-!
+## 239 — protection from everything still allows attacking
+-/
+
+def protectionStillAttackableOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨1⟩ (fun pl =>
+    { pl with protectionFromEverything := true })
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  (g.player ⟨1⟩).protectionFromEverything &&
+    (let g := g.dealDamageToPlayer ⟨1⟩ 2
+     (g.player ⟨1⟩).life == 20) &&
+    (ruling 239).comment.contains "Creatures can still attack you"
+
+#guard protectionStillAttackableOk
+
+/-!
+## 240 — Old Fat Spider resolves before the causing spell
+-/
+
+def spiderResolvesBeforeSpellOk : Bool :=
+  let g := addPermanent afterDraw oldFatSpider ⟨0⟩ ⟨0⟩
+  let sid := (namedPermanent g "Old Fat Spider").id
+  let g := g.queueBecomesTargetTriggers ⟨1⟩ #[Target.permanent sid]
+  g.waitingTriggers.any (fun wt => wt.event == .becomesTarget) &&
+    (ruling 240).comment.contains "resolves before the spell or ability"
+
+#guard spiderResolvesBeforeSpellOk
+
+/-!
+## 253 — phased-in creatures can attack and keep counters
+-/
+
+def phaseInKeepsCountersOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bear (fun s => { s with plusOnePlusOne := 2 })
+  let g := g.phaseOut (namedPermanent g "Grizzly Bears")
+  let g := g.phaseIn (namedObject g "Grizzly Bears")
+  let bear := namedPermanent g "Grizzly Bears"
+  bear.status.plusOnePlusOne == 2 && !bear.status.phasedOut &&
+    (ruling 253).comment.contains "will have those counters"
+
+#guard phaseInKeepsCountersOk
+
+/-!
+## 276 — Battle-Scarred Goblin stays blocked
+-/
+
+def battleScarredStaysBlockedOk : Bool :=
+  battleScarredGoblin.triggeredAbilities == #[.onBecomesBlockedDeal1ToBlockers] &&
+    (ruling 276).comment.contains "doesn't become unblocked"
+
+#guard battleScarredStaysBlockedOk
+
+/-!
+## 280 — Lord of the Eagles reduces only generic
+-/
+
+def lordOfEaglesGenericOnlyOk : Bool :=
+  theLordOfTheEagles.costReductionEqualFlyingPower &&
+    theLordOfTheEagles.manaCost.coloredCount .blue == 2 &&
+    (ruling 280).comment.contains "colored mana must still be paid"
+
+#guard lordOfEaglesGenericOnlyOk
+
+/-!
+## 285, 332 — Smite exile-if-dies is not damage-only
+-/
+
+def smiteExileAnyDeathOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.dealDamageLoseIndestructibleExileTo (namedPermanent g "Grizzly Bears") 0
+  (namedPermanent g "Grizzly Bears").status.untilEotExileIfDies &&
+    (ruling 285).comment.contains "not just if it dies due to damage" &&
+    (ruling 332).comment.contains "doesn't have indestructible"
+
+#guard smiteExileAnyDeathOk
+
+/-!
+## 296, 335 — Bolg last-known power; cannot sacrifice multiple
+-/
+
+def bolgLastKnownAndOnceOk : Bool :=
+  (ruling 296).comment.contains "last known existence" &&
+    (ruling 335).comment.contains "can't sacrifice multiple creatures" &&
+    bolgOfTheNorth.triggeredAbilities == #[.onEnterBolgMaySacrifice]
+
+#guard bolgLastKnownAndOnceOk
+
+/-!
+## 298, 331 — Elven Chorus top card is not in hand
+-/
+
+def elvenChorusTopNotInHandOk : Bool :=
+  chorusInPlay.canLookAtLibraryTop ⟨0⟩ &&
+    !(chorusInPlay.handObjects ⟨0⟩).any (fun o =>
+      (chorusInPlay.player ⟨0⟩).library.back? == some o.id) &&
+    (ruling 298).comment.contains "isn't in your hand" &&
+    (ruling 331).comment.contains "whenever you want"
+
+#guard elvenChorusTopNotInHandOk
+
+/-!
+## 305, 321, 322 — flavor judge comments (no extra engine action)
+-/
+
+def flavorJudgeCommentsOk : Bool :=
+  (ruling 305).comment.contains "card preview was provided to Scryfall" &&
+    (ruling 321).comment.contains "don't eat the delicious cards" &&
+    (ruling 322).comment.contains "don't eat your opponents" &&
+    goblinCratermaker.name == "Goblin Cratermaker" &&
+    theShire.name == "The Shire" &&
+    supperForSpiders.name == "Supper for Spiders"
+
+#guard flavorJudgeCommentsOk
+
+/-!
+## 325 — Head of the Hunt exiles instead of dying
+-/
+
+def headOfHuntExilesOk : Bool :=
+  headOfTheHunt.exileOppCreaturesInstead &&
+    (ruling 325).comment.contains "exiled instead of dying"
+
+#guard headOfHuntExilesOk
+
+/-!
+## 326 — Mentor of the Meek: pay {1} only once
+-/
+
+def mentorPayOnceOk : Bool :=
+  let g := addPermanent afterDraw mentorOfTheMeek ⟨0⟩ ⟨0⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1)
+    (some (namedPermanent g "Mentor of the Meek").id)
+  g.pending == .mayPayGeneric ⟨0⟩ 1 &&
+    (ruling 326).comment.contains "can't pay {1} multiple times"
+
+#guard mentorPayOnceOk
+
+/-!
+## 334 — a Food cannot pay two costs
+-/
+
+def foodPaysOneCostOk : Bool :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ Game.foodToken
+  tok.printed.isToken && g.hasSubtype tok "Food" &&
+    (ruling 334).comment.contains "can't sacrifice a Food to pay multiple costs"
+
+#guard foodPaysOneCostOk
+
 end Mtg.Engine.RulingTests

@@ -454,7 +454,13 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.grantCreaturesTapAddAnyColor then
     ["Creatures you control have \"{T}: Add one mana of any color.\""]
    else []) ++
-  (if c.powerPerMountain != 0 then
+  (if c.firstCreatureCostsLess > 0 then
+    [if c.firstCreatureHasFlash then
+      s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast and can be cast as though it had flash."
+     else
+      s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast."]
+   else []) ++
+  (if c.powerPerMountain != 0 then)
     [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
    else []) ++
   (match c.extraLandIfOtherSubtype with

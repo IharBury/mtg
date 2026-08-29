@@ -148,6 +148,9 @@ structure Status where
   phasedWith : Option ObjectId := none
   /-- This creature is its controller's Ring-bearer. -/
   ringBearer : Bool := false
+  /-- Alliance modes chosen this turn (0 = add GGG, 1 = +1/+1 each, 2 = scry
+  then draw). Reset as the turn ends. -/
+  allianceModesChosen : Array Nat := #[]
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -278,6 +281,9 @@ structure GameObject where
   giftPromisedTo : Option PlayerId := none
   /-- This object is a copy (CR 706). Copies of spells are not cast. -/
   isCopy : Bool := false
+  /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
+  legendary spell, so it can't be countered. Copies do not inherit this. -/
+  uncounterableThisCast : Bool := false
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -595,6 +601,10 @@ structure Player where
   /-- Bird Soldier tokens to create at the beginning of the next upkeep
   (The Eagles Are Coming!). -/
   eaglesBirdsNextUpkeep : Nat := 0
+  /-- Life gained this turn (The Gaffer and similar “if you gained” triggers). -/
+  lifeGainedThisTurn : Nat := 0
+  /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
+  creatureSpellsCastThisTurn : Nat := 0
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -2614,7 +2624,11 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       match cause with
       | some o => g.power o ≤ n
       | none => true
-  powerOk && otherOk
+  let lifeOk :=
+    match ab.timing.gainedLifeAtLeast with
+    | none => true
+    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+  powerOk && otherOk && lifeOk
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -2874,10 +2888,14 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let nonc :=
     if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
     else pl.noncreatureSpellsCastThisTurn + 1
+  let creat :=
+    if spell.printed.isCreature then pl.creatureSpellsCastThisTurn + 1
+    else pl.creatureSpellsCastThisTurn
   let g := g.modifyPlayer caster (fun p =>
     { p with
       spellsCastThisTurn := spells
       noncreatureSpellsCastThisTurn := nonc
+      creatureSpellsCastThisTurn := creat
       castManaValuesThisTurn :=
         p.castManaValuesThisTurn.push spell.printed.manaCost.manaValue })
   let g :=
@@ -3405,8 +3423,12 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     match face.flashIfYouControlSubtype with
     | some t => g.controlsAnySubtype p #[t]
     | none => false
+  let radagastFlash :=
+    face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
+      (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
-  (if face.hasSorcerySpeed && !hasConditionalFlash then g.asSorcery? p else true)
+  (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash then
+    g.asSorcery? p else true)
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
 pool is not required; mana abilities are activated at CR 601.2g. Additional
@@ -3721,6 +3743,81 @@ def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : Objec
 def canSacrificeCreature (g : Game) (p : PlayerId) (sac : GameObject) : Bool :=
   (g.sacrificeCreatureChoices p).any (·.id == sac.id)
 
+/-- Creatures `p` controls that are tied for least power. -/
+def leastPowerCreatures (g : Game) (p : PlayerId) : Array GameObject :=
+  let cs := g.sacrificeCreatureChoices p
+  match cs[0]? with
+  | none => #[]
+  | some first =>
+    let minP := cs.foldl (fun acc o => min acc (g.power o)) (g.power first)
+    cs.filter (fun o => g.power o == minP)
+
+/-- Sacrifice a least-power creature `p` controls. If several are tied and
+`chosen` is none, the player still chooses (logged; no sacrifice yet). -/
+def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
+    (chosen : Option ObjectId := none) : Game :=
+  let tied := g.leastPowerCreatures p
+  if tied.isEmpty then
+    g.logMsg s!"{(g.player p).name} controls no creatures to sacrifice"
+  else
+    let pick :=
+      match chosen with
+      | some id => tied.find? (fun o => o.id == id)
+      | none => if tied.size == 1 then some tied[0]! else none
+    match pick with
+    | some o =>
+      g.moveToOwnerGraveyard o
+        s!"{(g.player p).name} sacrifices {o.name} (least power)"
+    | none =>
+      g.logMsg
+        s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
+
+/-- Unused Alliance modes on `src` (0 = add GGG, 1 = +1/+1 each, 2 = scry 2
+then draw). -/
+def unusedAllianceModes (g : Game) (src : GameObject) : Array Nat :=
+  #[0, 1, 2].filter (fun m => !src.status.allianceModesChosen.contains m)
+
+/-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
+If every mode was already chosen, the ability is removed with no effect. -/
+def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if src.status.allianceModesChosen.size >= 3 ||
+        g.unusedAllianceModes src |>.isEmpty then
+      g.logMsg
+        "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+    else if src.status.allianceModesChosen.contains mode then
+      g.logMsg "That Alliance mode has already been chosen this turn"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with allianceModesChosen := src.status.allianceModesChosen.push mode } }
+      match src.controller, mode with
+      | some c, 0 =>
+        let g := g.modifyPlayer c (fun pl =>
+          { pl with manaPool :=
+            pl.manaPool.add (.colored .green) 3 })
+        g.logMsg ((g.player c).name ++ " adds {G}{G}{G}")
+      | some c, 1 =>
+        Id.run do
+          let mut g := g
+          for o in g.battlefield do
+            if o.isCreature && o.controlledBy c then
+              g := g.addPlusOnePlusOneTo o 1
+          return g.logMsg
+            s!"{(g.player c).name} puts a +1/+1 counter on each creature they control"
+      | some c, 2 =>
+        (g.beginScry c 2).draw c 1
+      | _, _ => g
+
+/-- A token copy of a battlefield permanent. The copy is not kicked. -/
+def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
+    : Game × GameObject :=
+  let (g, tok) := g.createToken controller src.printed
+  let tok := { tok with kicked := false }
+  (g.setObject tok, tok)
+
 /-- Whether the source of a proposed activated ability can still pay tap/sacrifice/discard. -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
@@ -3866,22 +3963,29 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
             max acc arts) 0
       afterAff.reduceGeneric n
     else afterAff
-  if face.isInstant || face.isSorcery then
+  let afterSpell :=
+    if face.isInstant || face.isSorcery then
+      let n :=
+        (g.permanentsOf caster).foldl (fun acc o =>
+          let reduces :=
+            o.staticAbilities.any (fun ab =>
+              match ab with
+              | .instantSorceryCostReductionEqualEquippedPower => true
+              | _ => false)
+          if !reduces then acc
+          else
+            match o.attachedTo.bind g.findObject? with
+            | some host =>
+              if host.isOnBattlefield then acc + (g.power host).toNat else acc
+            | none => acc) 0
+      afterOpp.reduceGeneric n
+    else afterOpp
+  if face.isCreature && (g.player caster).creatureSpellsCastThisTurn == 0 then
     let n :=
       (g.permanentsOf caster).foldl (fun acc o =>
-        let reduces :=
-          o.staticAbilities.any (fun ab =>
-            match ab with
-            | .instantSorceryCostReductionEqualEquippedPower => true
-            | _ => false)
-        if !reduces then acc
-        else
-          match o.attachedTo.bind g.findObject? with
-          | some host =>
-            if host.isOnBattlefield then acc + (g.power host).toNat else acc
-          | none => acc) 0
-    afterOpp.reduceGeneric n
-  else afterOpp
+        acc + o.printed.firstCreatureCostsLess) 0
+    afterSpell.reduceGeneric n
+  else afterSpell
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -4826,7 +4930,7 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
   | some o =>
     if o.zone != .stack then
       g.logMsg s!"{o.name} is no longer on the stack"
-    else if o.printed.cantBeCountered then
+    else if o.printed.cantBeCountered || o.uncounterableThisCast then
       g.logMsg s!"{o.name} can't be countered"
     else
       let dest :=
@@ -5314,7 +5418,10 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if n == 0 then g
   else
     let pl := g.player p
-    g.setLife p (pl.life + (n : Int)) s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    let g := g.setLife p (pl.life + (n : Int))
+      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    g.modifyPlayer p (fun pl =>
+      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -5716,11 +5823,29 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
   | _ => throw "Not time to choose a Ring-bearer"
 
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
+/-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
+“While you control” attack triggers are not rechecked. -/
+def interveningStillHolds (g : Game) (controller : PlayerId)
+    (ab : TriggeredAbility) : Bool :=
+  let lifeOk :=
+    match ab.timing.gainedLifeAtLeast with
+    | none => true
+    | some n => (g.player controller).lifeGainedThisTurn ≥ n
+  let beginCombatFerocious :=
+    match ab with
+    | .onYourBeginCombatFerociousPlusOne =>
+      g.greatestPowerAmongCreatures controller ≥ 4
+    | _ => true
+  lifeOk && beginCombatFerocious
+
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
     (sourceName : String := "This creature") : Game :=
+  if !g.interveningStillHolds controller ab then
+    g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
+  else
   match ab.resolution with
   | .pumpGreatestPower =>
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
@@ -6032,7 +6157,12 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         types.foldl (fun pool t => pool.add t) pl.manaPool })
     g.logMsg s!"{(g.player controller).name} adds mana"
   | .defenderSacsLeastPower =>
-    g.logMsg "Defending player sacrifices a least-power creature"
+    let defn := g.opponent controller
+    let chosen :=
+      match targets[0]? with
+      | some (Target.permanent id) => some id
+      | _ => none
+    g.sacrificeLeastPowerCreature defn chosen
   | .createAxe =>
     g.logMsg "An Axe token is created"
   | .tapOppOrUntapYours =>
@@ -6167,6 +6297,46 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     let n := lastKnownPower.getD 0
     g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
       s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
+  | .allianceMode =>
+    match sourceId with
+    | none =>
+      g.logMsg "The ability is removed from the stack with no effect"
+    | some sid =>
+      match g.findObject? sid with
+      | none =>
+        g.logMsg "The ability is removed from the stack with no effect"
+      | some src =>
+        match (g.unusedAllianceModes src)[0]? with
+        | none =>
+          g.logMsg
+            "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
+        | some mode =>
+          g.applyAllianceMode sid mode
+  | .destroyOtherAmassControllerPower =>
+    match targets[0]? with
+    | none =>
+      g.logMsg
+        "No target was chosen. Its controller is undefined and no player amasses Goblins."
+    | some (Target.permanent oid) =>
+      match g.findObject? oid with
+      | none =>
+        g.logMsg "The target is no longer legal"
+      | some o =>
+        if !o.isOnBattlefield then
+          g.logMsg "The target is no longer legal"
+        else
+          let pw := lastKnownPower.getD (g.power o)
+          let ctrl := o.controller
+          let youControlled := ctrl == some controller
+          let g := g.destroyPermanent o
+          match ctrl with
+          | none => g
+          | some pid =>
+            let n := if pw > 0 then pw.toNat else 0
+            let g := g.amassGoblins pid n
+            if youControlled then g.draw controller 1 else g
+    | _ =>
+      g.logMsg "No target was chosen. Its controller is undefined and no player amasses Goblins."
   | .printed text =>
     g.logMsg text
 
@@ -6517,6 +6687,15 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | some pid =>
           g := { g with lastCombatDamagePlayer := some defn }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
+          g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
+          if src.isCreature then
+            for o in g.permanentsOf pid do
+              for ab in o.triggeredAbilities do
+                match ab with
+                | .onSubtypeYouControlCombatDamageCreateTokens subtype _ _ =>
+                  if o.id != src.id && g.hasSubtype src subtype then
+                    g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
+                | _ => pure ()
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone
@@ -6614,19 +6793,25 @@ def clearTurnActivations (g : Game) : Game :=
   Id.run do
     let mut g := { g with creatureDiedThisTurn := false }
     for pl in g.players do
-      if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 then
+      if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
+          pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
+          pl.spellsCastThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
           spellsCastThisTurn := 0
           noncreatureSpellsCastThisTurn := 0
+          creatureSpellsCastThisTurn := 0
           castManaValuesThisTurn := #[]
-          belladonnaResolvesThisTurn := 0 }
+          belladonnaResolvesThisTurn := 0
+          lifeGainedThisTurn := 0 }
     for o in g.battlefield do
-      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn then
+      if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
+          !o.status.allianceModesChosen.isEmpty then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
-          firedOnceEachTurn := false } }
+          firedOnceEachTurn := false
+          allianceModesChosen := #[] } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -6734,6 +6919,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
     g.receivePriority ap
   | .end =>
     let ap := g.activePlayer
+    let g :=
+      g.livingPlayers.foldl (fun acc pl =>
+        acc.putControlledTriggers pl.id .eachEndStep) g
     let g := g.putControlledTriggers ap .yourEndStep
     g.receivePriority ap
   | .cleanup =>

@@ -2652,6 +2652,17 @@ inductive TriggeredAbility where
   | onAttackWithTotalPowerUntapExtraCombat (n : Int)
   /-- Delayed: create `n` Bird Soldier tokens (The Eagles Are Coming!). -/
   | onDelayedEaglesCreateBirds
+  /-- Alliance — whenever another creature you control enters, choose one
+  that hasn't been chosen this turn (e.g. Galadriel, Light of Valinor). -/
+  | onAnotherCreatureYouControlEntersAlliance
+  /-- When this enters, destroy up to one other target creature. Its
+  controller amasses Goblins X equal to that creature's last-known power
+  (e.g. Azog, Moria's Ruin). -/
+  | onEnterDestroyOtherAmassControllerPower
+  /-- Whenever a permanent you control of this subtype deals combat damage
+  to a player or battle, create `n` tokens (e.g. Thorin, Company's Leader). -/
+  | onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
+      (n : Nat)
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3107,6 +3118,11 @@ inductive TriggerResolution where
   | untapAttackersExtraCombat
   /-- Create Bird Soldier tokens equal to last-known count. -/
   | eaglesCreateBirds
+  /-- Apply an unused Alliance mode, or do nothing if all were chosen. -/
+  | allianceMode
+  /-- Destroy the targeted creature if any; that controller amasses equal
+  to last-known power. No target means no player amasses. -/
+  | destroyOtherAmassControllerPower
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3431,6 +3447,14 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .untapAttackersExtraCombat, onceEachTurn := true }
   | .onDelayedEaglesCreateBirds =>
     { events := #[.eaglesCreateBirds], resolution := .eaglesCreateBirds }
+  | .onAnotherCreatureYouControlEntersAlliance =>
+    { events := #[.anotherCreatureYouControlEnters], resolution := .allianceMode }
+  | .onEnterDestroyOtherAmassControllerPower =>
+    { events := #[.entering], targeting := .of .anotherCreature,
+      allowsZeroTargets := true, resolution := .destroyOtherAmassControllerPower }
+  | .onSubtypeYouControlCombatDamageCreateTokens _subtype kind n =>
+    { events := #[.dealsCombatDamageToPlayerOrBattle],
+      resolution := .createTokens kind n false }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3696,6 +3720,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "untap all attacking creatures. After this phase, there is an additional combat phase"
   | .eaglesCreateBirds =>
     "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+  | .allianceMode =>
+    "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
+  | .destroyOtherAmassControllerPower =>
+    s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3720,6 +3748,12 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
   | .onAttackWithTotalPowerUntapExtraCombat n =>
     s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
+  | .onAnotherCreatureYouControlEntersAlliance =>
+    "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
+  | .onEnterDestroyOtherAmassControllerPower =>
+    "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+  | .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2 =>
+    "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
   | .printed text => text
   | _ =>
     match ab.resolution with
@@ -3916,6 +3950,12 @@ structure CardDef where
   /-- Creatures you control have `{T}: Add one mana of any color`
   (e.g. Elven Chorus). -/
   grantCreaturesTapAddAnyColor : Bool := false
+  /-- The first creature spell you cast each turn costs this much generic
+  less (e.g. Radagast of Rhosgobel). -/
+  firstCreatureCostsLess : Nat := 0
+  /-- The first creature spell you cast each turn can be cast as though it
+  had flash (e.g. Radagast of Rhosgobel). -/
+  firstCreatureHasFlash : Bool := false
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
