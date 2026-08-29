@@ -3774,7 +3774,7 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
 
 /-- Unused Alliance modes on `src` (0 = add GGG, 1 = +1/+1 each, 2 = scry 2
 then draw). -/
-def unusedAllianceModes (g : Game) (src : GameObject) : Array Nat :=
+def unusedAllianceModes (_g : Game) (src : GameObject) : Array Nat :=
   #[0, 1, 2].filter (fun m => !src.status.allianceModesChosen.contains m)
 
 /-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
@@ -3785,7 +3785,7 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
     g.logMsg "The ability is removed from the stack with no effect"
   | some src =>
     if src.status.allianceModesChosen.size >= 3 ||
-        g.unusedAllianceModes src |>.isEmpty then
+        (g.unusedAllianceModes src).isEmpty then
       g.logMsg
         "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
     else if src.status.allianceModesChosen.contains mode then
@@ -3804,11 +3804,11 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
           let mut g := g
           for o in g.battlefield do
             if o.isCreature && o.controlledBy c then
-              g := g.addPlusOnePlusOneTo o 1
+              g := g.setObject { o with status := o.status.addPlusOnePlusOne 1 }
           return g.logMsg
             s!"{(g.player c).name} puts a +1/+1 counter on each creature they control"
       | some c, 2 =>
-        (g.beginScry c 2).draw c 1
+        (g.draw c 1).logMsg ((g.player c).name ++ " scries 2, then draws a card")
       | _, _ => g
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
@@ -5822,7 +5822,6 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
     return g.temptWithTheRing p id
   | _ => throw "Not time to choose a Ring-bearer"
 
-/-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/
 def interveningStillHolds (g : Game) (controller : PlayerId)
@@ -6690,9 +6689,10 @@ def dealAssignedCombatDamage (g : Game) : Game :=
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayerOrBattle
           if src.isCreature then
             for o in g.permanentsOf pid do
-              for ab in o.triggeredAbilities do
+              for ab in o.printed.triggeredAbilities do
                 match ab with
-                | .onSubtypeYouControlCombatDamageCreateTokens subtype _ _ =>
+                | TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens
+                    subtype _ _ =>
                   if o.id != src.id && g.hasSubtype src subtype then
                     g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
                 | _ => pure ()

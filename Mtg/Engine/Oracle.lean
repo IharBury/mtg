@@ -460,7 +460,7 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
      else
       s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast."]
    else []) ++
-  (if c.powerPerMountain != 0 then)
+  (if c.powerPerMountain != 0 then
     [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
    else []) ++
   (match c.extraLandIfOtherSubtype with

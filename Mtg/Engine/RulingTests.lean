@@ -2931,7 +2931,6 @@ def adventureOnStackNotHasAdventureOk : Bool :=
 
 def linkedExileTwoCards : Game :=
   let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
-  let hunter := namedPermanent g "Fiend Hunter"
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
@@ -2981,7 +2980,7 @@ def copyOfKickedPermanentOk : Bool :=
   let bear := namedPermanent g "Grizzly Bears"
   let g := g.setObject { bear with kicked := true }
   let src := namedPermanent g "Grizzly Bears"
-  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  let (_g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
   src.kicked && !tok.kicked && tok.printed.isToken &&
     (ruling 147).comment.contains "isn't kicked"
 
@@ -3189,11 +3188,11 @@ def radagastXChosenBeforeReductionOk : Bool :=
 #guard radagastXChosenBeforeReductionOk
 
 def radagastCastIsFirstOk : Bool :=
-  let g := addToHand afterDraw grizzlyBears ⟨0⟩
+  let g := addToHand radagastInPlay grizzlyBears ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with creatureSpellsCastThisTurn := 1 })
   let cost := g.playManaCost card grizzlyBears
-  cost == ManaCost.ofGeneric 2 &&
+  cost == ManaCost.ofGenericAndColor 1 .green &&
     (ruling 258).comment.contains "no other creature spell you cast that turn can be your first"
 
 #guard radagastCastIsFirstOk
@@ -3214,7 +3213,7 @@ def radagastAltCostOk : Bool :=
     { o with playPermission := some {
       player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   let cost := g.playManaCost card grizzlyBears (ManaCost.ofGeneric 2)
-  cost == ManaCost.empty &&
+  cost == ManaCost.zero &&
     (ruling 282).comment.contains "can apply to alternative costs"
 
 #guard radagastAltCostOk
