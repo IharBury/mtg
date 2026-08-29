@@ -445,6 +445,15 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.othersEnterWithPlusOneEqualToughness then
     ["Each other creature you control enters with a number of additional +1/+1 counters on it equal to this toughness."]
    else []) ++
+  (if c.mayLookAtTopAnytime then
+    ["You may look at the top card of your library any time."]
+   else []) ++
+  (if c.mayCastCreaturesFromTop then
+    ["You may cast creature spells from the top of your library."]
+   else []) ++
+  (if c.grantCreaturesTapAddAnyColor then
+    ["Creatures you control have \"{T}: Add one mana of any color.\""]
+   else []) ++
   (if c.powerPerMountain != 0 then
     [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
    else []) ++

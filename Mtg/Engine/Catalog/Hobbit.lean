@@ -968,7 +968,7 @@ def bilboThiefInTheNight : CardDef :=
 
 def bolgOfTheNorth : CardDef :=
   legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.printed "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"])
+    (triggeredAbilities := #[.onEnterBolgMaySacrifice])
 
 def boughsideWanderers : CardDef :=
   creature "Boughside Wanderers" (ManaCost.ofGenericAndColors 4 [.green, .green]) #["Elf", "Scout"] 4 4 (oracleText := "When this creature enters, look at the top four cards of your library. You may reveal a permanent card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.\nLandfall — Whenever a land you control enters, this creature gets +2/+2 until end of turn.")
@@ -996,7 +996,7 @@ def dancingFromDarkToDawn : CardDef :=
 def desertWereWorm : CardDef :=
   creature "Desert Were-Worm" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Dragon", "Wurm"] 0 5 (oracleText := "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase.")
     (powerPerMountain := 2)
-    (triggeredAbilities := #[.printed "Whenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."])
+    (triggeredAbilities := #[.onAttackWithTotalPowerUntapExtraCombat 12])
 
 def downInTheValley : CardDef :=
   saga "Down in the Valley" (ManaCost.ofGenericAndColor 2 .green) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"\nIII, IV — Elves you control get +1/+0 and gain vigilance until end of turn." "IV" #[{ roman := "I", effect := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle." }, { roman := "II", effect := "This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"" }, { roman := "III, IV", effect := "Elves you control get +1/+0 and gain vigilance until end of turn." }]
@@ -1036,7 +1036,7 @@ def getawayBarrel : CardDef :=
 def gleamingSplendor : CardDef :=
   enchantment "Gleaming Splendor" (ManaCost.ofGenericAndColor 1 .white) "Whenever an opponent draws their second card each turn, you create a Treasure token.\n{2}{W}: Two target players each draw a card."
     (staticAbilities := #[.printed "{2}{W}: Two target players each draw a card."])
-    (triggeredAbilities := #[.printed "Whenever an opponent draws their second card each turn, you create a Treasure token."])
+    (triggeredAbilities := #[.onOpponentDrawsSecondCreateTreasure])
 
 def gollumRiddleMaster : CardDef :=
   legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")

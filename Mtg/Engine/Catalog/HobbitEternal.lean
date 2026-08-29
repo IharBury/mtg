@@ -563,7 +563,7 @@ def andurilFlameOfTheWest : CardDef :=
     (subtypes := #["Equipment"])
     (supertypes := #[.legendary])
     (staticAbilities := #[.equippedCreatureGets 3 1])
-    (triggeredAbilities := #[.printed "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."])
+    (triggeredAbilities := #[.onEquippedAttacksCreateSpirits])
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def andurilNarsilReforged : CardDef :=
@@ -614,7 +614,7 @@ def cavernHoardDragon : CardDef :=
   creature "Cavern-Hoard Dragon" (ManaCost.ofGenericAndColors 7 [.red, .red]) #["Dragon"] 6 6 (oracleText := "This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls.\nFlying, trample, haste\nWhenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls.")
     (costReductionEqualOppArtifacts := true)
     (keywords := Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
-    (triggeredAbilities := #[.printed "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."])
+    (triggeredAbilities := #[.onCombatDamageCreateTreasuresEqualPlayerArtifacts])
 
 def chiefOfTheWilds : CardDef :=
   legendaryCreature "Chief of the Wilds" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Wolf"] 4 4 (oracleText := "Menace\nWhenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds.\nIf a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time.")
@@ -628,10 +628,12 @@ def dragonCursedHalls : CardDef :=
     (staticAbilities := #[.printed "{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""])
 
 def elvenChorus : CardDef :=
-  enchantment "Elven Chorus" (ManaCost.ofGenericAndColor 3 .green) "You may look at the top card of your library any time.\nYou may cast creature spells from the top of your library.\nCreatures you control have \"{T}: Add one mana of any color.\""
-    (staticAbilities := #[.printed "You may look at the top card of your library any time.",
-      .printed "You may cast creature spells from the top of your library.",
-      .printed "Creatures you control have \"{T}: Add one mana of any color.\""])
+  let c :=
+    enchantment "Elven Chorus" (ManaCost.ofGenericAndColor 3 .green) "You may look at the top card of your library any time.\nYou may cast creature spells from the top of your library.\nCreatures you control have \"{T}: Add one mana of any color.\""
+  { c with
+    mayLookAtTopAnytime := true
+    mayCastCreaturesFromTop := true
+    grantCreaturesTapAddAnyColor := true }
 
 def galadrielSDismissal : CardDef :=
   instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead."))
@@ -679,7 +681,7 @@ def mountDoom : CardDef :=
 def orcishBowmasters : CardDef :=
   creature "Orcish Bowmasters" (ManaCost.ofGenericAndColor 1 .black) #["Orc", "Archer"] 1 1 (oracleText := "Flash\nWhen this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[.printed "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."])
+    (triggeredAbilities := #[.onEnterOrOpponentDrawsDeal1AmassOrcs])
 
 def palantirOfOrthanc : CardDef :=
   artifact "Palantír of Orthanc" (ManaCost.ofGeneric 3) "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."

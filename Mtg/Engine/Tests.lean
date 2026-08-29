@@ -759,6 +759,8 @@ def applyIdle (g : Game) : Game :=
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"
     | some id => mustApply g p (.discard id)
+  | .maySacrificeAnotherBolg _ _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

@@ -533,6 +533,8 @@ inductive Pending where
   | chooseGift (player : PlayerId)
   /-- Choose a creature you control as your Ring-bearer. -/
   | chooseRingBearer (player : PlayerId)
+  /-- You may sacrifice another creature to Bolg's enters instruction. -/
+  | maySacrificeAnotherBolg (player : PlayerId) (bolgId : ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -590,6 +592,9 @@ structure Player where
   /-- Protection from everything until this player's next turn
   (e.g. The One Ring). -/
   protectionFromEverything : Bool := false
+  /-- Bird Soldier tokens to create at the beginning of the next upkeep
+  (The Eagles Are Coming!). -/
+  eaglesBirdsNextUpkeep : Nat := 0
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -737,6 +742,12 @@ structure Game where
   /-- While an SBA death batch is applying, `move` skips per-object
   “other creatures die” triggers; the batch queues them from the snapshot. -/
   suppressOthersDie : Bool := false
+  /-- Player most recently dealt combat damage by a creature whose
+  combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
+  lastCombatDamagePlayer : Option PlayerId := none
+  /-- True while a spell is being cast from the top of a library
+  (Elven Chorus cannot show the new top until that finishes). -/
+  castingFromTop : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -1277,6 +1288,30 @@ def elfToken : CardDef := {
   isToken := true
 }
 
+/-- A 1/1 white Spirit creature token with flying. -/
+def spiritToken : CardDef := {
+  name := "Spirit"
+  types := #[.creature]
+  subtypes := #["Spirit"]
+  power := some 1
+  toughness := some 1
+  colorIndicator := some (ColorSet.singleton .white)
+  keywords := Keyword.flying
+  isToken := true
+}
+
+/-- A 4/4 white Bird Soldier creature token with flying. -/
+def birdSoldierToken : CardDef := {
+  name := "Bird Soldier"
+  types := #[.creature]
+  subtypes := #["Bird", "Soldier"]
+  power := some 4
+  toughness := some 4
+  colorIndicator := some (ColorSet.singleton .white)
+  keywords := Keyword.flying
+  isToken := true
+}
+
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
@@ -1287,15 +1322,20 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .dwarf => dwarfToken
   | .bear => bearToken
   | .elf => elfToken
+  | .spirit => spiritToken
+  | .birdSoldier => birdSoldierToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
-    (n : Nat) (tapped := false) : Game :=
+    (n : Nat) (tapped := false) (attacking := false) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let (g', _) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
+      let (g', obj) := g.createToken controller (tokenPrinted kind) (tapped := tapped)
       g := g'
+      if attacking then
+        g := g.setObject { (g.object! obj.id) with
+          status := { (g.object! obj.id).status with attacking := true } }
     return g
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4). -/
@@ -1460,14 +1500,19 @@ def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
             | none => acc)
           Keywords.none
 
-/-- Power and toughness of `o`, including pumps, counters, land-count setting
-effects, until-EOT base setting, attached bonuses, lord bonuses, and enduring
-story bonuses (CR 208.2). Also last-known information before `o` leaves the
-battlefield (CR 113.7a). -/
+/-- +P/+0 from `powerPerMountain` (e.g. Desert Were-Worm). -/
+def mountainPowerBonus (g : Game) (o : GameObject) : Int :=
+  if o.printed.powerPerMountain == 0 then 0
+  else
+    let n :=
+      (g.permanentsOf o.you).filter (fun p => g.hasSubtype p "Mountain") |>.size
+    Int.ofNat (o.printed.powerPerMountain * n)
+
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let n : Int := o.status.plusOnePlusOne
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
-      g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o].foldl
+      g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
+      (g.mountainPowerBonus o, (0 : Int))].foldl
     addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
@@ -1671,6 +1716,8 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
       cardsDrawnThisTurn := drawn
       cardsDrawnThisDrawStep := drawStepDrawn }
     let g := g.logMsg s!"{pl.name} draws {cardName}"
+    let firstOfTheirDrawStep :=
+      g.step == .draw && g.activePlayer == p && drawStepDrawn == 1
     Id.run do
       let mut g := g
       for o in g.permanentsOf p do
@@ -1679,6 +1726,16 @@ def drawOneCard (g : Game) (p : PlayerId) : Game :=
         if drawn == 2 then
           g := { g with waitingTriggers :=
             g.waitingTriggers ++ o.waitingTriggersFor p .youDrawSecondCard }
+      for opp in g.livingOpponents p do
+        for o in g.permanentsOf opp.id do
+          if !firstOfTheirDrawStep then
+            g := { g with waitingTriggers :=
+              g.waitingTriggers ++
+                o.waitingTriggersFor opp.id .opponentDrawsExceptFirstDrawStep }
+          if drawn == 2 then
+            g := { g with waitingTriggers :=
+              g.waitingTriggers ++
+                o.waitingTriggersFor opp.id .opponentDrawsSecondCard }
       return g
 
 /-- How many cards replace one draw (`2^n` Bard effects, except the first
@@ -2293,15 +2350,44 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
 def mayPlayFromGraveyard (_g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p && o.printed.flashback.isSome
 
+/-- True when `p` controls a permanent that lets them look at the library top. -/
+def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.mayLookAtTopAnytime)
+
+/-- True when `p` may look at the top card of their library right now.
+Elven Chorus does not reveal a new top while a spell from that top is
+still being cast. -/
+def canLookAtLibraryTop (g : Game) (p : PlayerId) : Bool :=
+  g.controlsLookAtTop p && !g.castingFromTop
+
+/-- True when `p` controls a permanent that lets them cast creatures from
+the top of their library. Does not grant flash or change timing. -/
+def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.mayCastCreaturesFromTop)
+
+/-- The top card of `p`'s library, if any. -/
+def libraryTop? (g : Game) (p : PlayerId) : Option GameObject :=
+  (g.player p).library.back?.bind g.findObject?
+
+/-- True when `o` is the top card of `p`'s library and they may cast it as
+a creature spell from there. Timing is still checked by `canCast`. -/
+def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.printed.isCreature &&
+    o.zone == .library p &&
+    (g.player p).library.back? == some o.id &&
+    g.controlsCastCreaturesFromTop p
+
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (g.player p).hand.contains o.id || g.mayPlayFromExile p o ||
-    g.mayPlayFromGraveyard p o
+    g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
   if o.zone == .exile && !g.mayPlayFromExile p o then
     "You may not play that card from exile"
   else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
     "You may not play that card from your graveyard"
+  else if o.zone == .library p && !g.mayPlayFromLibraryTop p o then
+    "You may not play that card from the top of your library"
   else
     "That card is not in your hand"
 
@@ -3439,7 +3525,8 @@ def reverseProposedSpell (g : Game) : Game :=
         objects := objects
         stack := prop.stackBefore
         pending := .none
-        proposedSpell := none }
+        proposedSpell := none
+        castingFromTop := false }
       g := g.modifyPlayer prop.caster (fun pl =>
         { pl with hand := prop.handBefore, manaPool := prop.manaBefore })
       for id in prop.tapped do
@@ -3453,8 +3540,37 @@ def reverseProposedSpell (g : Game) : Game :=
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
 
+/-- Queue “becomes the target” triggers once per unique targeted permanent
+(CR 603.2 / 601.2c). A spell or ability that targets the same permanent
+more than once still triggers only once. -/
+def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
+    (targets : Array Target) : Game :=
+  Id.run do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for t in targets do
+      match t with
+      | Target.permanent oid =>
+        if !seen.contains oid then
+          seen := seen.push oid
+          match g.findObject? oid with
+          | some o =>
+            if o.controller != some caster then
+              match o.controller with
+              | some c =>
+                g := g.putMatchingSourceTriggers c o .becomesTarget
+              | none => pure ()
+          | none => pure ()
+      | _ => pure ()
+    return g
+
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
+  let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
+  let g :=
+    match g.stackEntry? spell.id with
+    | some e => g.queueBecomesTargetTriggers p e.targets
+    | none => g
   let g := g.putCastTriggersOnStack p spell
   g.receivePriority p
 
@@ -3580,6 +3696,10 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           g.putControlledTriggers p .youActivateCreatureAbility
         else g
       | none => g
+  let g :=
+    match g.stack.back? with
+    | some e => g.queueBecomesTargetTriggers p e.targets
+    | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
 /-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
@@ -3871,7 +3991,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let handBefore := pl.hand
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
+  let fromTop :=
+    original.zone == .library p && (g.player p).library.back? == some id
   let (g, newId) := g.move id .stack (some p)
+  let g := { g with castingFromTop := fromTop || g.castingFromTop }
   let g :=
     if asAdventure then
       let o := g.object! newId
@@ -4267,6 +4390,27 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
       s!"{(g.player p).name} sacrifices {sac.name}"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .maySacrificeAnotherBolg q bolgId =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !sac.isOnBattlefield || !sac.isCreature || !sac.controlledBy p ||
+        sac.id == bolgId then
+      throw s!"Can't sacrifice {sac.name} to Bolg"
+    let pw := g.power sac
+    let g := g.moveToOwnerGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name} (Bolg)"
+    let g := { g with pending := .none }
+    match g.findObject? bolgId with
+    | none =>
+      return g.receivePriority g.activePlayer
+    | some bolg =>
+      match bolg.controller with
+      | none => return g.receivePriority g.activePlayer
+      | some c =>
+        let g := g.queueTrigger c bolg .onBolgDealSacrificedPower
+          .bolgSacrificedForReflexive (lastKnownPower := some pw)
+        return g.receivePriority g.activePlayer
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
@@ -5965,6 +6109,64 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     else
       g.logMsg
         s!"Belladonna Took's ability has no effect (resolved {n} times this turn)"
+  | .bolgMaySacrifice =>
+    match sourceId with
+    | some sid =>
+      { g with pending := .maySacrificeAnotherBolg controller sid }.logMsg
+        s!"{(g.player controller).name} may sacrifice another creature (Bolg reflexive trigger)"
+    | none => g.logMsg "Bolg is no longer in play"
+  | .bolgDealSacrificedPower =>
+    let amt := lastKnownPower.getD 0
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      let remain := g.toughness o - o.status.damage
+      let raw := amt - remain
+      let excess : Nat := if raw > 0 then raw.toNat else 0
+      let g := g.dealDamageFrom sourceName o amt
+      if excess > 0 then
+        g.amassGoblins controller excess |>.logMsg
+          s!"excess damage {excess} — amass Goblins {excess}"
+      else g) "The target is no longer legal"
+  | .createSpiritsForEquipped =>
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The Equipment is no longer in play"
+    | some eq =>
+      let hostOk :=
+        match eq.attachedTo.bind g.findObject? with
+        | some host =>
+          host.isOnBattlefield && host.isLegendary &&
+            host.controller == some controller
+        | none => false
+      let attacking := hostOk
+      let g :=
+        g.createKindTokens controller .spirit 2 (tapped := true) (attacking := attacking)
+      if attacking then
+        g.logMsg
+          s!"{(g.player controller).name} creates two tapped and attacking Spirit tokens"
+      else
+        g.logMsg
+          s!"{(g.player controller).name} creates two tapped Spirit tokens"
+  | .createTreasuresEqualDamagedPlayerArtifacts =>
+    let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
+    let n :=
+      g.battlefield.filter (fun o =>
+        o.printed.isArtifact && o.controlledBy pid) |>.size
+    g.createTreasureTokens controller n |>.logMsg
+      s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
+  | .deal1ThenAmassOrcs =>
+    let g := g.applyEffect controller (.dealDamage 1) targets
+    g.amassOrcs controller 1
+  | .untapAttackersExtraCombat =>
+    Id.run do
+      let mut g := g
+      for o in g.battlefield do
+        if o.status.attacking then
+          g := g.applyPermanentAction o .untap
+      return g.logMsg
+        "Attacking creatures untap. An additional combat phase will occur"
+  | .eaglesCreateBirds =>
+    let n := lastKnownPower.getD 0
+    g.createKindTokens controller .birdSoldier n.toNat |>.logMsg
+      s!"{(g.player controller).name} creates {n} Bird Soldier token(s)"
   | .printed text =>
     g.logMsg text
 
@@ -5989,6 +6191,17 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       for o in g.permanentsOf p do
         if o.attachedTo == some aid then
           g := g.putMatchingSourceTriggers p o .equippedAttacksAlone
+    let totalPower :=
+      attackerIds.foldl (fun acc id => acc + g.snapshotPower (g.object! id)) 0
+    if totalPower >= 12 then
+      g := g.putControlledTriggers p .youAttackWithTotalPower
+    for id in attackerIds do
+      for eq in g.battlefield do
+        if eq.attachedTo == some id then
+          match eq.controller with
+          | some c =>
+            g := g.putMatchingSourceTriggers c eq .equippedAttacks
+          | none => pure ()
     return g
 
 /-- Put becomes-blocked triggers for unique attackers in `assignments` (CR 509.5c). -/
@@ -6302,6 +6515,7 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       if asgn.toPlayer > 0 then
         match src.controller with
         | some pid =>
+          g := { g with lastCombatDamagePlayer := some defn }
           g := g.putMatchingSourceTriggers pid src .dealsCombatDamageToPlayer
         | none => pure ()
     let pendingRegular :=
@@ -6502,6 +6716,16 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       g.beginCombatDamageAssignment
   | .upkeep =>
     let ap := g.activePlayer
+    let g := Id.run do
+      let mut g := g
+      for pl in g.players do
+        if pl.eaglesBirdsNextUpkeep > 0 then
+          let n := pl.eaglesBirdsNextUpkeep
+          g := g.setPlayer { pl with eaglesBirdsNextUpkeep := 0 }
+          g := g.createKindTokens pl.id .birdSoldier n
+          g := g.logMsg
+            s!"{pl.name}'s delayed triggered ability creates {n} Bird Soldier token(s)"
+      return g
     let g := g.putControlledTriggers ap .yourUpkeep
     g.receivePriority ap
   | .beginningOfCombat =>
@@ -7033,6 +7257,13 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.logMsg s!"{(g.player p).name} declines to put a +1/+1 counter"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .maySacrificeAnotherBolg q _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to sacrifice"
+    let g := g.logMsg
+      s!"{(g.player p).name} declines to sacrifice a creature to Bolg"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
@@ -7228,8 +7459,52 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseKicker p => some p
     | .chooseGift p => some p
     | .chooseRingBearer p => some p
+    | .maySacrificeAnotherBolg p _ => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
+
+/-- Return owned creatures to hand and schedule that many Bird Soldiers
+for the next upkeep (The Eagles Are Coming!). Tokens returned this way
+are counted; they later cease in hand (CR 704.5d). -/
+def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
+    (ids : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let mut n : Nat := 0
+    for id in ids do
+      match g.findObject? id with
+      | none => pure ()
+      | some o =>
+        if o.isOnBattlefield && o.isCreature && o.owner == p then
+          let name := o.name
+          let owner := o.owner
+          let (g', _) := g.move o.id (.hand owner) none
+          g := g'.logMsg s!"{name} is returned to {(g'.player owner).name}'s hand"
+          n := n + 1
+    if n > 0 then
+      g := g.modifyPlayer p (fun pl =>
+        { pl with eaglesBirdsNextUpkeep := pl.eaglesBirdsNextUpkeep + n })
+      g := g.logMsg
+        s!"At the beginning of the next upkeep, {n} Bird Soldier token(s) will be created"
+    return g
+
+/-- Choose up to two creatures (they are not targets) and destroy the rest
+(Mount Doom). Shroud and hexproof do not stop the choice. -/
+def chooseCreaturesDestroyRest (g : Game) (keep : Array ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    for o in g.battlefield do
+      if o.isCreature && !keep.contains o.id then
+        g := g.destroyPermanent o
+    return g.logMsg "Chosen creatures are kept; the rest are destroyed"
+
+/-- Two different players each draw a card (Gleaming Splendor). The same
+player cannot be chosen twice. -/
+def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
+  if a == b then
+    throw "Two target players must be different"
+  let g := g.draw a 1
+  return g.draw b 1
 
 end Game
 

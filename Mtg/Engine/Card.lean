@@ -137,6 +137,8 @@ inductive TokenKind where
   | dwarf
   | bear
   | elf
+  | spirit
+  | birdSoldier
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -149,6 +151,8 @@ def oracleNoun : TokenKind → String
   | .dwarf => "2/2 red Dwarf creature token"
   | .bear => "2/2 green Bear creature token"
   | .elf => "1/1 green Elf creature token"
+  | .spirit => "1/1 white Spirit creature token with flying"
+  | .birdSoldier => "4/4 white Bird Soldier creature token with flying"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -158,6 +162,8 @@ def pluralNoun : TokenKind → String
   | .dwarf => "2/2 red Dwarf creature tokens"
   | .bear => "2/2 green Bear creature tokens"
   | .elf => "1/1 green Elf creature tokens"
+  | .spirit => "1/1 white Spirit creature tokens with flying"
+  | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -2620,6 +2626,32 @@ inductive TriggeredAbility where
   /-- Whenever you activate an ability of a creature, draw a card. Triggers
   only once each turn (e.g. Elrond, Moon-Reader). -/
   | onActivateCreatureAbilityDrawOnce
+  /-- When this enters, you may sacrifice another creature. If you do, a
+  reflexive trigger deals that creature's power as damage (e.g. Bolg of the
+  North). -/
+  | onEnterBolgMaySacrifice
+  /-- Reflexive trigger after Bolg's sacrifice instruction. -/
+  | onBolgDealSacrificedPower
+  /-- Whenever equipped creature attacks, create two tapped Spirits; they
+  enter attacking if that creature is legendary and you control it
+  (e.g. Andúril, Flame of the West). -/
+  | onEquippedAttacksCreateSpirits
+  /-- Whenever this deals combat damage to a player, create a Treasure for
+  each artifact that player controls (e.g. Cavern-Hoard Dragon). -/
+  | onCombatDamageCreateTreasuresEqualPlayerArtifacts
+  /-- When this enters and whenever an opponent draws a card except the first
+  one they draw in each of their draw steps, deal 1 then amass Orcs 1
+  (e.g. Orcish Bowmasters). -/
+  | onEnterOrOpponentDrawsDeal1AmassOrcs
+  /-- Whenever an opponent draws their second card each turn, create a
+  Treasure (e.g. Gleaming Splendor). -/
+  | onOpponentDrawsSecondCreateTreasure
+  /-- Whenever you attack with creatures with total power `n` or greater
+  for the first time each turn, untap attackers and take an extra combat
+  (e.g. Desert Were-Worm). -/
+  | onAttackWithTotalPowerUntapExtraCombat (n : Int)
+  /-- Delayed: create `n` Bird Soldier tokens (The Eagles Are Coming!). -/
+  | onDelayedEaglesCreateBirds
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2710,6 +2742,18 @@ inductive TriggerEvent where
   /-- You activate an ability of a creature, including a mana ability
   (CR 605.3b / 603.2). -/
   | youActivateCreatureAbility
+  /-- Equipped creature attacks (CR 508.2). -/
+  | equippedAttacks
+  /-- An opponent draws a card that is not the first card of their draw step. -/
+  | opponentDrawsExceptFirstDrawStep
+  /-- An opponent draws their second card this turn. -/
+  | opponentDrawsSecondCard
+  /-- You attack with creatures whose total power meets a threshold. -/
+  | youAttackWithTotalPower
+  /-- Delayed trigger: create Bird Soldiers at the next upkeep. -/
+  | eaglesCreateBirds
+  /-- You sacrificed a creature to Bolg's enters instruction. -/
+  | bolgSacrificedForReflexive
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2843,6 +2887,24 @@ def spec : TriggerEvent → Spec
   | .youActivateCreatureAbility =>
     { clause := "you activate an ability of a creature",
       label := "activate-creature trigger", checkTargets := false }
+  | .equippedAttacks =>
+    { clause := "equipped creature attacks",
+      label := "equipped-attacks trigger", checkTargets := false }
+  | .opponentDrawsExceptFirstDrawStep =>
+    { clause := "an opponent draws a card except the first one they draw in each of their draw steps",
+      label := "opponent-draw trigger" }
+  | .opponentDrawsSecondCard =>
+    { clause := "an opponent draws their second card each turn",
+      label := "opponent-second-card trigger", checkTargets := false }
+  | .youAttackWithTotalPower =>
+    { clause := "you attack with creatures with total power 12 or greater",
+      label := "total-power-attack trigger", checkTargets := false }
+  | .eaglesCreateBirds =>
+    { clause := "the beginning of the next upkeep", isWhenever := false,
+      label := "delayed Bird Soldier trigger", checkTargets := false }
+  | .bolgSacrificedForReflexive =>
+    { clause := "you sacrifice a creature this way", isWhenever := false,
+      label := "reflexive trigger" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -3029,6 +3091,22 @@ inductive TriggerResolution where
   /-- First resolve: gain 1 life. Second: draw. Third: +1/+1 each creature.
   Later resolves this turn do nothing (Belladonna Took). -/
   | belladonnaTokenReward
+  /-- You may sacrifice another creature you control (Bolg). -/
+  | bolgMaySacrifice
+  /-- Deal last-known sacrificed power to the target; amass Goblins equal to
+  excess damage. -/
+  | bolgDealSacrificedPower
+  /-- Create two tapped Spirits; they enter attacking if the equipped
+  creature is legendary and you control it. -/
+  | createSpiritsForEquipped
+  /-- Create a Treasure for each artifact the damaged player controls. -/
+  | createTreasuresEqualDamagedPlayerArtifacts
+  /-- Deal 1 damage to any target, then amass Orcs 1. -/
+  | deal1ThenAmassOrcs
+  /-- Untap attacking creatures; an additional combat phase follows. -/
+  | untapAttackersExtraCombat
+  /-- Create Bird Soldier tokens equal to last-known count. -/
+  | eaglesCreateBirds
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3333,6 +3411,26 @@ def timing : TriggeredAbility → TriggerTiming
   | .onActivateCreatureAbilityDrawOnce =>
     { events := #[.youActivateCreatureAbility], resolution := .draw 1,
       onceEachTurn := true }
+  | .onEnterBolgMaySacrifice =>
+    { events := #[.entering], resolution := .bolgMaySacrifice }
+  | .onBolgDealSacrificedPower =>
+    { events := #[.bolgSacrificedForReflexive], targeting := .of .anotherCreature,
+      resolution := .bolgDealSacrificedPower }
+  | .onEquippedAttacksCreateSpirits =>
+    { events := #[.equippedAttacks], resolution := .createSpiritsForEquipped }
+  | .onCombatDamageCreateTreasuresEqualPlayerArtifacts =>
+    { events := #[.dealsCombatDamageToPlayer],
+      resolution := .createTreasuresEqualDamagedPlayerArtifacts }
+  | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
+    { events := #[.entering, .opponentDrawsExceptFirstDrawStep],
+      targeting := .of .playerOrCreature, resolution := .deal1ThenAmassOrcs }
+  | .onOpponentDrawsSecondCreateTreasure =>
+    { events := #[.opponentDrawsSecondCard], resolution := .createTreasure }
+  | .onAttackWithTotalPowerUntapExtraCombat _n =>
+    { events := #[.youAttackWithTotalPower],
+      resolution := .untapAttackersExtraCombat, onceEachTurn := true }
+  | .onDelayedEaglesCreateBirds =>
+    { events := #[.eaglesCreateBirds], resolution := .eaglesCreateBirds }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3584,6 +3682,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
   | .belladonnaTokenReward =>
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
+  | .bolgMaySacrifice =>
+    "you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+  | .bolgDealSacrificedPower =>
+    s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
+  | .createSpiritsForEquipped =>
+    "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
+  | .createTreasuresEqualDamagedPlayerArtifacts =>
+    "you create a Treasure token for each artifact that player controls"
+  | .deal1ThenAmassOrcs =>
+    s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
+  | .untapAttackersExtraCombat =>
+    "untap all attacking creatures. After this phase, there is an additional combat phase"
+  | .eaglesCreateBirds =>
+    "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3595,16 +3707,31 @@ def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
 
 def toNotation (ab : TriggeredAbility) : String :=
-  match ab.resolution with
+  match ab with
+  | .onEnterBolgMaySacrifice =>
+    "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage."
+  | .onEquippedAttacksCreateSpirits =>
+    "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."
+  | .onCombatDamageCreateTreasuresEqualPlayerArtifacts =>
+    "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."
+  | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
+    "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
+  | .onOpponentDrawsSecondCreateTreasure =>
+    "Whenever an opponent draws their second card each turn, you create a Treasure token."
+  | .onAttackWithTotalPowerUntapExtraCombat n =>
+    s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
   | .printed text => text
   | _ =>
-    let t := ab.timing
-    if t.events.contains .equippedAttacksAlone then
-      "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
-    else
-      let once :=
-        if t.onceEachTurn then " This ability triggers only once each turn." else ""
-      s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+    match ab.resolution with
+    | .printed text => text
+    | _ =>
+      let t := ab.timing
+      if t.events.contains .equippedAttacksAlone then
+        "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+      else
+        let once :=
+          if t.onceEachTurn then " This ability triggers only once each turn." else ""
+        s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -3780,6 +3907,15 @@ structure CardDef where
   /-- If a creature an opponent controls would die, exile it instead
   (e.g. Head of the Hunt). -/
   exileOppCreaturesInstead : Bool := false
+  /-- You may look at the top card of your library any time
+  (e.g. Elven Chorus). -/
+  mayLookAtTopAnytime : Bool := false
+  /-- You may cast creature spells from the top of your library
+  (e.g. Elven Chorus). Does not grant flash or change timing. -/
+  mayCastCreaturesFromTop : Bool := false
+  /-- Creatures you control have `{T}: Add one mana of any color`
+  (e.g. Elven Chorus). -/
+  grantCreaturesTapAddAnyColor : Bool := false
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none

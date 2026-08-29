@@ -143,6 +143,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.ringBearerChoices p)[0]? with
       | some o => some (.chooseRingBearer (some o.id))
       | none => some (.chooseRingBearer none)
+    | .maySacrificeAnotherBolg _ bolgId =>
+      match (g.permanentsOf p).find? (fun o => o.isCreature && o.id != bolgId) with
+      | some o => some (.sacrifice o.id)
+      | none => some .decline
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=

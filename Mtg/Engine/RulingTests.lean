@@ -2510,4 +2510,407 @@ def executionerSacrificesSelfOk : Bool :=
 
 #guard executionerSacrificesSelfOk
 
+/-!
+## 78 — The Eagles Are Coming! counts tokens returned to hand
+-/
+
+def eaglesReturnToken : Game :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ Game.humanSoldierToken
+  g.returnOwnedCreaturesScheduleBirds ⟨0⟩ #[tok.id]
+
+def eaglesTokenCountedOk : Bool :=
+  (eaglesReturnToken.player ⟨0⟩).eaglesBirdsNextUpkeep == 1 &&
+    eaglesReturnToken.objects.any (fun o =>
+      o.name == "Human Soldier" && o.zone == .hand ⟨0⟩) &&
+    (ruling 78).comment.contains "creature tokens that were returned"
+
+#guard eaglesTokenCountedOk
+
+def eaglesBirdsAfterUpkeep : Game :=
+  let g := { eaglesReturnToken.checkSBA with waitingTriggers := #[] }
+  { g with step := .untap, activePlayer := ⟨1⟩ }.beginStep .upkeep
+
+def eaglesBirdsAfterUpkeepOk : Bool :=
+  eaglesBirdsAfterUpkeep.battlefield.any (fun o =>
+    o.name == "Bird Soldier" && o.printed.isToken &&
+      eaglesBirdsAfterUpkeep.hasSubtype o "Bird") &&
+    !eaglesBirdsAfterUpkeep.objects.any (fun o =>
+      o.name == "Human Soldier" && o.zone == .hand ⟨0⟩) &&
+    (ruling 78).comment.contains "Bird Soldier token"
+
+#guard eaglesBirdsAfterUpkeepOk
+
+/-!
+## 98, 99, 121 — Bolg reflexive trigger and excess damage
+-/
+
+def bolgReady : Game :=
+  let g := addPermanent afterDraw bolgOfTheNorth ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+
+def bolgMaySacPending : Game :=
+  bolgReady.applyTriggeredAbility ⟨0⟩ .onEnterBolgMaySacrifice
+    (some (namedPermanent bolgReady "Bolg of the North").id)
+
+def bolgReflexivePendingOk : Bool :=
+  (match bolgMaySacPending.pending with
+   | .maySacrificeAnotherBolg p _ => p == ⟨0⟩
+   | _ => false) &&
+    (ruling 98).comment.contains "reflexive triggered ability" &&
+    (ruling 98).comment.contains "without a target"
+
+#guard bolgReflexivePendingOk
+
+def bolgAfterSacrifice : Game :=
+  mustApply bolgMaySacPending ⟨0⟩
+    (.sacrifice (namedPermanent bolgMaySacPending "Hill Giant").id)
+
+def bolgAfterSacrificeOk : Bool :=
+  let onStack :=
+    bolgAfterSacrifice.stack.any (fun e =>
+      (bolgAfterSacrifice.object! e.objectId).triggeredAbility ==
+        some .onBolgDealSacrificedPower)
+  let waiting :=
+    bolgAfterSacrifice.waitingTriggers.any (fun wt =>
+      wt.ability == .onBolgDealSacrificedPower &&
+        wt.lastKnownPower == some 3)
+  (onStack || waiting) &&
+    !bolgAfterSacrifice.battlefield.any (fun o => o.name == "Hill Giant") &&
+    (ruling 98).comment.contains "second ability triggers"
+
+#guard bolgAfterSacrificeOk
+
+def bolgDeclineNoDamage : Game :=
+  mustApply bolgMaySacPending ⟨0⟩ .decline
+
+def bolgDeclineOk : Bool :=
+  !bolgDeclineNoDamage.waitingTriggers.any (fun wt =>
+    wt.ability == .onBolgDealSacrificedPower) &&
+    bolgDeclineNoDamage.battlefield.any (fun o => o.name == "Hill Giant")
+
+#guard bolgDeclineOk
+
+def bolgOtherSac : Game :=
+  let g := bolgReady.beginSacrificeCreature ⟨0⟩
+  mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Hill Giant").id)
+
+def bolgOtherSacOk : Bool :=
+  !bolgOtherSac.waitingTriggers.any (fun wt =>
+    wt.ability == .onBolgDealSacrificedPower) &&
+    (ruling 99).comment.contains "won't trigger if you sacrifice a creature for any other reason"
+
+#guard bolgOtherSacOk
+
+def bolgDeal (g : Game) (amt : Int) (tid : ObjectId) : Game :=
+  g.applyTriggeredAbility ⟨0⟩ .onBolgDealSacrificedPower
+    (some (namedPermanent g "Bolg of the North").id)
+    #[Target.permanent tid] #[] (some amt)
+
+def bolgExcessDamage : Game :=
+  bolgDeal bolgAfterSacrifice 3 (namedPermanent bolgAfterSacrifice "Gray Ogre").id
+
+def bolgExcessOk : Bool :=
+  (namedPermanent bolgExcessDamage "Gray Ogre").status.damage == 3 &&
+    bolgExcessDamage.battlefield.any (fun o =>
+      bolgExcessDamage.hasSubtype o "Army" && o.status.plusOnePlusOne == 1) &&
+    (ruling 121).comment.contains "damage already marked"
+
+#guard bolgExcessOk
+
+def bolgMarkedExcess : Game :=
+  let g := addPermanent afterDraw bolgOfTheNorth ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.mapObjectStatus giant (fun s => { s with damage := 2 })
+  bolgDeal g 3 giant.id
+
+def bolgMarkedExcessOk : Bool :=
+  bolgMarkedExcess.battlefield.any (fun o =>
+    bolgMarkedExcess.hasSubtype o "Army" && o.status.plusOnePlusOne == 2) &&
+    (ruling 121).comment.contains "greater than lethal damage"
+
+#guard bolgMarkedExcessOk
+
+/-!
+## 103 — Cavern-Hoard counts artifacts as the ability resolves
+-/
+
+def cavernHoardResolveCount : Game :=
+  let g := addPermanent afterDraw cavernHoardDragon ⟨0⟩ ⟨0⟩
+  let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
+  let (g, _) := g.createToken ⟨1⟩ Game.treasureToken
+  let g := { g with lastCombatDamagePlayer := some ⟨1⟩ }
+  let t := namedPermanent g "Treasure"
+  let g := (g.move t.id (.graveyard ⟨1⟩) none).1
+  g.applyTriggeredAbility ⟨0⟩
+    .onCombatDamageCreateTreasuresEqualPlayerArtifacts
+    (some (namedPermanent g "Cavern-Hoard Dragon").id)
+
+def cavernHoardResolveCountOk : Bool :=
+  (cavernHoardResolveCount.battlefield.filter (fun o =>
+    o.name == "Treasure" && o.controlledBy ⟨0⟩)).size == 1 &&
+    (cavernHoardResolveCount.battlefield.filter (fun o =>
+      o.name == "Treasure" && o.controlledBy ⟨1⟩)).size == 1 &&
+    (ruling 103).comment.contains "as the ability resolves"
+
+#guard cavernHoardResolveCountOk
+
+/-!
+## 112 — Desert Were-Worm checks power at attack time
+-/
+
+def wereWormMountains (n : Nat) : Game :=
+  let g := addPermanent afterDraw desertWereWorm ⟨0⟩ ⟨0⟩
+  (List.range n).foldl (init := g) fun g _ =>
+    addPermanent g mountain ⟨0⟩ ⟨0⟩
+
+def wereWormTenPower : Game := wereWormMountains 5
+
+def wereWormTenPowerOk : Bool :=
+  wereWormTenPower.power (namedPermanent wereWormTenPower "Desert Were-Worm") == 10
+
+#guard wereWormTenPowerOk
+
+def wereWormTenAttacks : Game :=
+  let g := wereWormTenPower
+  let w := namedPermanent g "Desert Were-Worm"
+  let g := g.setObject { w with status := { w.status with attacking := true } }
+  g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
+
+def wereWormTenAttacksOk : Bool :=
+  !wereWormTenAttacks.waitingTriggers.any (fun wt =>
+    wt.event == .youAttackWithTotalPower) &&
+    (ruling 112).comment.contains "at the time you attacked"
+
+#guard wereWormTenAttacksOk
+
+def wereWormTwelveAttacks : Game :=
+  let g := wereWormMountains 6
+  let w := namedPermanent g "Desert Were-Worm"
+  let g := g.setObject { w with status := { w.status with attacking := true } }
+  g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Desert Were-Worm").id]
+
+def wereWormTwelveAttacksOk : Bool :=
+  wereWormTwelveAttacks.power
+      (namedPermanent wereWormTwelveAttacks "Desert Were-Worm") == 12 &&
+    wereWormTwelveAttacks.waitingTriggers.any (fun wt =>
+      wt.event == .youAttackWithTotalPower) &&
+    (ruling 112).comment.contains "will not contribute"
+
+#guard wereWormTwelveAttacksOk
+
+/-!
+## 118, 191 — Elven Chorus timing and looking at the top
+-/
+
+def chorusInPlay : Game := addPermanent afterDraw elvenChorus ⟨0⟩ ⟨0⟩
+
+def elvenChorusTimingOk : Bool :=
+  chorusInPlay.canLookAtLibraryTop ⟨0⟩ &&
+    chorusInPlay.controlsCastCreaturesFromTop ⟨0⟩ &&
+    chorusInPlay.asSorcery? ⟨0⟩ &&
+    !(let g := { chorusInPlay with step := .end }
+      g.timingAllowsCast ⟨0⟩ grizzlyBears) &&
+    (ruling 118).comment.contains "doesn't change when you can cast"
+
+#guard elvenChorusTimingOk
+
+def chorusCastingFromTop : Game := { chorusInPlay with castingFromTop := true }
+
+def elvenChorusNewTopHiddenOk : Bool :=
+  !chorusCastingFromTop.canLookAtLibraryTop ⟨0⟩ &&
+    chorusInPlay.canLookAtLibraryTop ⟨0⟩ &&
+    (ruling 191).comment.contains "can't look at the new top card"
+
+#guard elvenChorusNewTopHiddenOk
+
+/-!
+## 125 — Mount Doom last ability does not target
+-/
+
+def mountDoomChooseKeep : Game :=
+  let g := addPermanent afterDraw mountDoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  g.chooseCreaturesDestroyRest #[(namedPermanent g "Grizzly Bears").id]
+
+def mountDoomChooseKeepOk : Bool :=
+  mountDoomChooseKeep.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    !mountDoomChooseKeep.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    (ruling 125).comment.contains "none of the chosen creatures are targets"
+
+#guard mountDoomChooseKeepOk
+
+/-!
+## 129, 130 — Gleaming Splendor second-card trigger and two players
+-/
+
+def gleamingReady : Game :=
+  let g := addPermanent afterDraw gleamingSplendor ⟨0⟩ ⟨0⟩
+  g.modifyPlayer ⟨1⟩ (fun pl => { pl with cardsDrawnThisTurn := 0 })
+
+def gleamingSecondDraw : Game :=
+  (gleamingReady.draw ⟨1⟩ 1).draw ⟨1⟩ 1
+
+def gleamingFirstDraw : Game :=
+  gleamingReady.draw ⟨1⟩ 1
+
+def gleamingSecondDrawOk : Bool :=
+  gleamingFirstDraw.waitingTriggers.all (fun wt =>
+    wt.event != .opponentDrawsSecondCard) &&
+    gleamingSecondDraw.waitingTriggers.any (fun wt =>
+      wt.event == .opponentDrawsSecondCard) &&
+    (ruling 129).comment.contains "second card" &&
+    (ruling 129).comment.contains "only once each turn"
+
+#guard gleamingSecondDrawOk
+
+def gleamingTwoDifferentPlayersOk : Bool :=
+  (match afterDraw.twoPlayersEachDraw ⟨0⟩ ⟨0⟩ with
+   | .error e => e.contains "different"
+   | .ok _ => false) &&
+    (match afterDraw.twoPlayersEachDraw ⟨0⟩ ⟨1⟩ with
+     | .ok g =>
+       (g.player ⟨0⟩).cardsDrawnThisTurn ==
+         (afterDraw.player ⟨0⟩).cardsDrawnThisTurn + 1 &&
+         (g.player ⟨1⟩).cardsDrawnThisTurn ==
+           (afterDraw.player ⟨1⟩).cardsDrawnThisTurn + 1
+     | .error _ => false) &&
+    (ruling 130).comment.contains "two different target players"
+
+#guard gleamingTwoDifferentPlayersOk
+
+/-!
+## 132, 181 — Andúril, Flame of the West
+-/
+
+def andurilOnOppLegend : Game :=
+  let g := addPermanent afterDraw andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
+  let g := addPermanent g tomBombadil ⟨1⟩ ⟨1⟩
+  let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
+    (namedPermanent g "Tom Bombadil")
+  let tom := namedPermanent g "Tom Bombadil"
+  let g := g.setObject { tom with status := { tom.status with attacking := true } }
+  g.putAttackTriggersOnStack ⟨1⟩ #[(namedPermanent g "Tom Bombadil").id]
+
+def andurilOnOppLegendOk : Bool :=
+  andurilOnOppLegend.waitingTriggers.any (fun wt =>
+    wt.ability == .onEquippedAttacksCreateSpirits &&
+      wt.controller == ⟨0⟩) &&
+    (ruling 132).comment.contains "opponent controls"
+
+#guard andurilOnOppLegendOk
+
+def andurilOppSpirits : Game :=
+  andurilOnOppLegend.applyTriggeredAbility ⟨0⟩
+    .onEquippedAttacksCreateSpirits
+    (some (namedPermanent andurilOnOppLegend "Andúril, Flame of the West").id)
+
+def andurilOppSpiritsOk : Bool :=
+  let spirits :=
+    andurilOppSpirits.battlefield.filter (fun o => o.name == "Spirit")
+  spirits.size == 2 &&
+    spirits.all (fun o => o.status.tapped && !o.status.attacking &&
+      o.controlledBy ⟨0⟩) &&
+    (ruling 132).comment.contains "would not enter the battlefield attacking"
+
+#guard andurilOppSpiritsOk
+
+def andurilOnOwnLegend : Game :=
+  let g := addPermanent afterDraw andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
+  let g := addPermanent g tomBombadil ⟨0⟩ ⟨0⟩
+  let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
+    (namedPermanent g "Tom Bombadil")
+  let tom := namedPermanent g "Tom Bombadil"
+  let g := g.setObject { tom with status := { tom.status with attacking := true } }
+  let g := g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Tom Bombadil").id]
+  g.applyTriggeredAbility ⟨0⟩ .onEquippedAttacksCreateSpirits
+    (some (namedPermanent g "Andúril, Flame of the West").id)
+
+def andurilOnOwnLegendOk : Bool :=
+  let spirits :=
+    andurilOnOwnLegend.battlefield.filter (fun o => o.name == "Spirit")
+  spirits.size == 2 &&
+    spirits.all (fun o => o.status.tapped && o.status.attacking) &&
+    (ruling 181).comment.contains "Andúril's controller chooses"
+
+#guard andurilOnOwnLegendOk
+
+/-!
+## 150 — Queen of Dale misses a prior first noncreature
+-/
+
+def queenAfterFirstNoncreature : Game :=
+  let g := addPermanent afterDraw theQueenOfDale ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨1⟩ (fun pl =>
+    { pl with noncreatureSpellsCastThisTurn := 1 })
+  let g := addToHand g lightningBolt ⟨1⟩
+  let bolt :=
+    match (g.player ⟨1⟩).hand.back?.bind g.findObject? with
+    | some o => o
+    | none => panic! "expected Lightning Bolt"
+  g.putCastTriggersOnStack ⟨1⟩ bolt
+
+def queenAfterFirstNoncreatureOk : Bool :=
+  !queenAfterFirstNoncreature.waitingTriggers.any (fun wt =>
+    wt.ability == .onOpponentCastsFirstNoncreatureRecruit) &&
+    (ruling 150).comment.contains "already cast their first noncreature"
+
+#guard queenAfterFirstNoncreatureOk
+
+/-!
+## 155 — Orcish Bowmasters: putting into hand is not a draw
+-/
+
+def bowmastersInPlay : Game :=
+  addPermanent afterDraw orcishBowmasters ⟨0⟩ ⟨0⟩
+
+def bowmastersPutInHand : Game :=
+  addToHand bowmastersInPlay lightningBolt ⟨1⟩
+
+def bowmastersPutInHandOk : Bool :=
+  !bowmastersPutInHand.waitingTriggers.any (fun wt =>
+    wt.event == .opponentDrawsExceptFirstDrawStep) &&
+    (ruling 155).comment.contains "without specifically using the word"
+
+#guard bowmastersPutInHandOk
+
+def bowmastersAfterDraw : Game :=
+  bowmastersInPlay.draw ⟨1⟩ 1
+
+def bowmastersAfterDrawOk : Bool :=
+  bowmastersAfterDraw.waitingTriggers.any (fun wt =>
+    wt.event == .opponentDrawsExceptFirstDrawStep) &&
+    (ruling 155).comment.contains "not a card drawn"
+
+#guard bowmastersAfterDrawOk
+
+def bowmastersFirstDrawStep : Game :=
+  let g := { bowmastersInPlay with step := .draw, activePlayer := ⟨1⟩ }
+  g.draw ⟨1⟩ 1
+
+def bowmastersFirstDrawStepOk : Bool :=
+  !bowmastersFirstDrawStep.waitingTriggers.any (fun wt =>
+    wt.event == .opponentDrawsExceptFirstDrawStep)
+
+#guard bowmastersFirstDrawStepOk
+
+/-!
+## 156 — Old Fat Spider triggers once per spell even if targeted twice
+-/
+
+def spiderDoubleTarget : Game :=
+  let g := addPermanent afterDraw oldFatSpider ⟨0⟩ ⟨0⟩
+  let sid := (namedPermanent g "Old Fat Spider").id
+  g.queueBecomesTargetTriggers ⟨1⟩
+    #[Target.permanent sid, Target.permanent sid]
+
+def spiderDoubleTargetOk : Bool :=
+  (spiderDoubleTarget.waitingTriggers.filter (fun wt =>
+    wt.event == .becomesTarget)).size == 1 &&
+    (ruling 156).comment.contains "targets Old Fat Spider more than once"
+
+#guard spiderDoubleTargetOk
+
 end Mtg.Engine.RulingTests
