@@ -177,7 +177,9 @@ The first slice of the engine models the two-player game:
   creatures without flying can't block this turn), mass until-end-of-turn P/T
   changes, drawing and losing life (Night's Whisper), +1/+1 counters, hexproof, indestructible, deathtouch, lifelink, menace, vigilance, until-end-of-turn
   keyword grants including can't be blocked, until-end-of-turn loss of
-  indestructible, replacing death with exile this turn, destroying permanents or dealing damage with activated
+  indestructible, replacing death with exile this turn (CR 614.6: the die
+  event never happens; the modified exile may trigger leaves-the-battlefield
+  abilities; impossible return instructions are ignored), destroying permanents or dealing damage with activated
   abilities, a creature you control dealing damage equal to its power to a
   creature an opponent controls, enters triggers that make each player
   sacrifice a creature, a target opponent sacrifice a creature, or each

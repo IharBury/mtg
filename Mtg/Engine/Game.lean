@@ -38,7 +38,7 @@ discard (CR 701.9), destroy (CR 701.8), including a target artifact or land or
 creature (and its controller losing life), mass until-end-of-turn P/T changes,
 drawing and losing life, +1/+1 counters (CR 122), until-end-of-turn
 keyword grants and losses, replacement effects that exile a creature instead of
-dying this turn (CR 614.1 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
+dying this turn (CR 614.1 / 614.6 / 700.4), attack triggers (CR 508.2 / 603), including scrying, copying this
 creature's P/T onto another creature you control, giving another creature
 +2/+0 and trample, or gaining life while you control a creature with power 4
 or greater (Ferocious), becomes-blocked triggers
@@ -118,7 +118,8 @@ structure Status where
   untilEotKeywords : Keywords := {}
   /-- This creature loses indestructible until end of turn (e.g. Smite). -/
   untilEotLosesIndestructible : Bool := false
-  /-- If this creature would die this turn, exile it instead (CR 614.1). -/
+  /-- If this creature would die this turn, exile it instead
+  (CR 614.1 / 614.6). -/
   untilEotExileIfDies : Bool := false
   /-- Until-end-of-turn layer-7b setting of base P/T (e.g. Galion). -/
   setBasePT : Option (Int × Int) := none
@@ -872,10 +873,12 @@ structure Game where
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
-  batch, so simultaneous deaths still see those sources (Gatherer). -/
-  lockedDeathReplacements : Option (Array (PlayerId × ObjectId)) := none
+  batch, so simultaneous deaths still see those sources (Gatherer).
+  Objects are stored so a source that also dies still applies (CR 614.6). -/
+  lockedDeathReplacements : Option (Array GameObject) := none
   /-- While an SBA death batch is applying, `move` skips per-object
-  “other creatures die” triggers; the batch queues them from the snapshot. -/
+  “other creatures die” triggers; the batch queues them only for creatures
+  that actually die (CR 614.6). -/
   suppressOthersDie : Bool := false
   /-- Player most recently dealt combat damage by a creature whose
   combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
@@ -1720,30 +1723,49 @@ def snapshotPower (g : Game) (o : GameObject) : Int :=
 def snapshotToughness (g : Game) (o : GameObject) : Int :=
   (g.snapshotPT o).2
 
-/-- Permanents that exile opposing creatures that would die. -/
-def deathReplacementSources (g : Game) : Array (PlayerId × ObjectId) :=
+/-- True when `o` replaces an opposing creature dying with exile. -/
+def exilesOppDeath? (o : GameObject) : Bool :=
+  o.printed.exileOppCreaturesInstead ||
+    o.staticAbilities.any (fun
+      | .exileOppDeathCreateWolf => true
+      | _ => false)
+
+/-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
+def createsWolfOnOppExileDeath? (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .exileOppDeathCreateWolf => true
+    | _ => false)
+
+/-- Permanents that exile opposing creatures that would die. Uses the SBA
+snapshot when one is locked so a simultaneous death of the source still
+applies (CR 614.4 / 614.6). -/
+def deathReplacementObjects (g : Game) : Array GameObject :=
   match g.lockedDeathReplacements with
   | some xs => xs
-  | none =>
-    g.battlefield.filterMap (fun o =>
-      if o.printed.exileOppCreaturesInstead ||
-          o.staticAbilities.any (fun
-            | .exileOppDeathCreateWolf => true
-            | _ => false) then
-        o.controller.map (fun p => (p, o.id))
-      else none)
+  | none => g.battlefield.filter exilesOppDeath?
+
+/-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
+opposing creature that would go to a graveyard. -/
+def exileInsteadSource? (g : Game) (dying : GameObject) : Option GameObject :=
+  g.deathReplacementObjects.find? (fun o =>
+    o.id != dying.id &&
+      match o.controller, dying.controller with
+      | some p, some q => p != q
+      | _, _ => false)
 
 /-- Controller of a Head-of-the-Hunt-style replacement, if `dying` is an
 opposing creature that would go to a graveyard. -/
 def exileInsteadController? (g : Game) (dying : GameObject) : Option PlayerId :=
-  (g.deathReplacementSources.find? (fun (p, id) =>
-    id != dying.id &&
-      match dying.controller with
-      | some q => p != q
-      | none => false)).map (fun (p, _) => p)
+  (g.exileInsteadSource? dying).bind (·.controller)
+
+/-- CR 614.6: if this death would be replaced with exile, the die event
+never happens. -/
+def wouldExileInsteadOfDying (g : Game) (dying : GameObject) : Bool :=
+  dying.status.untilEotExileIfDies || (g.exileInsteadSource? dying).isSome
 
 /-- Dies triggers of a creature leaving the battlefield for a graveyard
-(CR 700.4 / 603.6c). -/
+(CR 700.4 / 603.6c). A replaced death never happens (CR 614.6), so this
+is empty when `dest` is not a graveyard. -/
 def dyingTriggers (g : Game) (old : GameObject) (dest : Zone) : Array WaitingTrigger :=
   if old.zone == .battlefield && old.isCreature then
     match dest, old.controller with
@@ -1760,14 +1782,17 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     match dest with
     | .graveyard _ => true
     | _ => false
-  let headCtrl :=
+  -- Snapshot the replacement source before the object leaves so a
+  -- simultaneous death of Head of the Hunt still applies (CR 614.6).
+  let headSource :=
     if old.zone == .battlefield && old.isCreature && wouldGoToGy then
-      g.exileInsteadController? old
+      g.exileInsteadSource? old
     else none
-  let headExile := headCtrl.isSome
+  let headExile := headSource.isSome
   let smiteExile :=
     old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
   let exileInstead := headExile || smiteExile
+  -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
   let died :=
     old.zone == .battlefield && old.isCreature &&
@@ -1866,16 +1891,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     else g
   let g :=
     if exileInstead then
-      let g := g.logMsg s!"{old.name} is exiled instead of dying"
-      match headCtrl with
-      | some p =>
-        if (g.permanentsOf p).any (fun o =>
-            o.staticAbilities.any (fun
-              | .exileOppDeathCreateWolf => true
-              | _ => false)) then
-          g.createKindTokens p .wolf 1
-        else g
-      | none => g
+      g.logMsg s!"{old.name} is exiled instead of dying (CR 614.6)"
     else g
   let g :=
     if old.zone == .battlefield && !old.linkedExile.isEmpty then
@@ -1890,7 +1906,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 match g.battlefield.find? (fun h => h.isCreature) with
                 | none =>
                   g := g.logMsg
-                    s!"{name} remains in exile (can't be attached legally)"
+                    s!"{name} remains in exile (can't be attached legally; CR 614.6)"
                 | some host =>
                   let hostId := host.id
                   let (g', returnedId) := g.move o.id .battlefield (some o.owner)
@@ -1922,16 +1938,23 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           | none => pure ()
         return g
     else g
+  -- The modified exile event may include creating a Wolf (Head of the Hunt).
+  -- Use the snapshot source: the original die event never happened (CR 614.6).
   let g :=
-    match headCtrl with
-    | some p =>
-      let (g, _) := g.createToken p wolfToken
-      g.logMsg s!"{(g.player p).name} creates a Wolf (exiled instead of dying)"
+    match headSource with
+    | some src =>
+      if createsWolfOnOppExileDeath? src then
+        match src.controller with
+        | some p =>
+          let (g, _) := g.createToken p wolfToken
+          g.logMsg s!"{(g.player p).name} creates a Wolf (exiled instead of dying)"
+        | none => g
+      else g
     | none => g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
-replacements are applied by `move` (CR 614.1). -/
+replacements are applied by `move` (CR 614.1 / 614.6). -/
 def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   let g := g.logMsg reason
   (g.move o.id (.graveyard o.owner) none).1
@@ -2607,14 +2630,7 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
       -- Creatures with 0 toughness or lethal damage (CR 704.5f–g).
       -- Snapshot exile-instead replacements first so a simultaneous death
       -- of Head of the Hunt still exiles opposing creatures.
-      let snap :=
-        g.battlefield.filterMap (fun o =>
-          if o.printed.exileOppCreaturesInstead ||
-              o.staticAbilities.any (fun
-                | .exileOppDeathCreateWolf => true
-                | _ => false) then
-            o.controller.map (fun p => (p, o.id))
-          else none)
+      let snap := g.battlefield.filter exilesOppDeath?
       let victims :=
         g.battlefield.filterMap (fun o =>
           if !o.isCreature then none
@@ -2630,14 +2646,21 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
         g := { g with
           lockedDeathReplacements := some snap
           suppressOthersDie := true }
-        for o in g.battlefield do
-          if victims.any (fun pair => pair.1.id != o.id) then
-            match o.controller with
-            | some p =>
-              g := { g with waitingTriggers :=
-                g.waitingTriggers ++
-                  o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
-            | none => pure ()
+        -- CR 614.6: a replaced death never happens, so only creatures that
+        -- will actually go to a graveyard cause “die” triggers. A Bee that
+        -- dies at the same time as another creature that *does* die still
+        -- sees that event (ruling 139).
+        let actualDeaths := victims.filter (fun pair =>
+          !g.wouldExileInsteadOfDying pair.1)
+        if !actualDeaths.isEmpty then
+          for o in g.battlefield do
+            if actualDeaths.any (fun pair => pair.1.id != o.id) then
+              match o.controller with
+              | some p =>
+                g := { g with waitingTriggers :=
+                  g.waitingTriggers ++
+                    o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
+              | none => pure ()
       for pair in victims do
         let o := pair.1
         let reason := pair.2
@@ -6139,7 +6162,7 @@ def returnExiledId (g : Game) (id : ObjectId) : Game :=
       if o.printed.isAura then
         match g.battlefield.find? (fun h => h.isCreature) with
         | none =>
-          g.logMsg s!"{name} remains in exile (can't be attached legally)"
+          g.logMsg s!"{name} remains in exile (can't be attached legally; CR 614.6)"
         | some host =>
           let hostId := host.id
           let hostName := host.name

@@ -9525,7 +9525,8 @@ def smiteFlyerThenDestroy : Game :=
 #guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is destroyed")
 #guard smiteFlyerThenDestroy.log.any (fun s => mentions s "is exiled instead of dying")
 
-/-- Exile-instead-of-dying means dies triggers do not go on the stack (CR 700.4). -/
+/-- Exile-instead-of-dying means dies triggers do not go on the stack
+(CR 700.4 / 614.6). -/
 def smiteOnFireleaper : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -9544,6 +9545,115 @@ def resolvedSmiteOnFireleaper : Game :=
 #guard !resolvedSmiteOnFireleaper.log.any (fun s => mentions s "dies trigger")
 #guard resolvedSmiteOnFireleaper.battlefield.any (fun o => o.name == "Grizzly Bears")
 #guard (namedPermanent resolvedSmiteOnFireleaper "Grizzly Bears").status.damage == 0
+
+/-- How many Wolf tokens are on the battlefield. -/
+def wolfCount (g : Game) : Nat :=
+  g.battlefield.filter (fun o => o.name == "Wolf") |>.size
+
+/-- How many waiting copies of `ab` are pending. -/
+def countWaitingAbility (g : Game) (ab : TriggeredAbility) : Nat :=
+  g.waitingTriggers.filter (fun wt => wt.ability == ab) |>.size
+
+/-- Mark `name` with lethal damage so the next SBA check will try to make it die. -/
+def withLethal (g : Game) (name : String) : Game :=
+  let o := namedPermanent g name
+  g.setObject { o with status := { o.status with damage := 20 } }
+
+/-!
+CR 614.6: if an event is replaced, it never happens. A modified event occurs
+instead, which may in turn trigger abilities. Impossible instructions of that
+modified event are ignored.
+-/
+
+/-- Head of the Hunt replaces an opposing death: the die event never happens,
+so Great Fierce Bee does not trigger, and `creatureDiedThisTurn` stays false. -/
+def headExilesPreyBeeSilent : Game :=
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  (withLethal g "Grizzly Bears").checkSBA
+
+#guard headExilesPreyBeeSilent.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard !(headExilesPreyBeeSilent.objects.any (fun o =>
+  o.name == "Grizzly Bears" &&
+    match o.zone with | .graveyard _ => true | _ => false))
+#guard headExilesPreyBeeSilent.battlefield.any (fun o => o.name == "Great Fierce Bee")
+#guard countWaitingAbility headExilesPreyBeeSilent
+  (.onOneOrMoreOtherCreaturesDieScry 1) == 0
+#guard !headExilesPreyBeeSilent.creatureDiedThisTurn
+#guard wolfCount headExilesPreyBeeSilent == 1
+#guard headExilesPreyBeeSilent.log.any (fun s => mentions s "CR 614.6")
+
+/-- Bee itself dying does not see an opposing creature that was exiled instead
+of dying. The Bee did die, so `creatureDiedThisTurn` is true. -/
+def beeDiesWhileHeadExilesPrey : Game :=
+  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withLethal g "Great Fierce Bee"
+  (withLethal g "Grizzly Bears").checkSBA
+
+#guard beeDiesWhileHeadExilesPrey.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard beeDiesWhileHeadExilesPrey.objects.any (fun o =>
+  o.name == "Great Fierce Bee" &&
+    match o.zone with | .graveyard _ => true | _ => false)
+#guard countWaitingAbility beeDiesWhileHeadExilesPrey
+  (.onOneOrMoreOtherCreaturesDieScry 1) == 0
+#guard beeDiesWhileHeadExilesPrey.creatureDiedThisTurn
+#guard wolfCount beeDiesWhileHeadExilesPrey == 1
+
+/-- Simultaneous death of Head of the Hunt still replaces the opposing death
+and creates exactly one Wolf from the snapshot source. -/
+def headDiesWithPreyOneWolf : Game :=
+  let g := addPermanent afterDraw headOfTheHunt ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withLethal g "Head of the Hunt"
+  (withLethal g "Grizzly Bears").checkSBA
+
+#guard headDiesWithPreyOneWolf.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard headDiesWithPreyOneWolf.objects.any (fun o =>
+  o.name == "Head of the Hunt" &&
+    match o.zone with | .graveyard _ => true | _ => false)
+#guard wolfCount headDiesWithPreyOneWolf == 1
+
+/-- The modified exile/leave event still triggers leaves-the-battlefield
+abilities (CR 614.6). Fiend Hunter's return is a trigger, not an immediate
+one-shot. -/
+def hunterExiledInsteadLeaves : Game :=
+  let g := addPermanent afterDraw fiendHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.exileForLeaveTrigger (some hunter.id) (namedPermanent g "Grizzly Bears")
+  let hunter := namedPermanent g "Fiend Hunter"
+  let g := g.setObject { hunter with status :=
+    { hunter.status with untilEotExileIfDies := true } }
+  (g.move (namedPermanent g "Fiend Hunter").id (.graveyard ⟨0⟩) none).1
+
+#guard hunterExiledInsteadLeaves.objects.any (fun o =>
+  o.name == "Fiend Hunter" && o.zone == .exile)
+#guard hunterExiledInsteadLeaves.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .exile)
+#guard countWaitingAbility hunterExiledInsteadLeaves .onLeaveReturnExiled == 1
+#guard !hunterExiledInsteadLeaves.creatureDiedThisTurn
+
+/-- CR 614.6: an impossible instruction of a modified event is ignored. An
+Aura that cannot attach legally stays in exile. -/
+def auraReturnImpossibleIgnored : Game :=
+  let g := addPermanent afterDraw banishingLight ⟨0⟩ ⟨0⟩
+  let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
+  let light := namedPermanent g "Banishing Light"
+  let g := g.exileUntilSourceLeaves (some light.id)
+    (namedPermanent g "Fog on the Barrow-Downs")
+  (g.move (namedPermanent g "Banishing Light").id (.graveyard ⟨0⟩) none).1
+
+#guard auraReturnImpossibleIgnored.objects.any (fun o =>
+  o.name == "Fog on the Barrow-Downs" && o.zone == .exile)
+#guard !auraReturnImpossibleIgnored.battlefield.any (fun o =>
+  o.name == "Fog on the Barrow-Downs")
+#guard auraReturnImpossibleIgnored.log.any (fun s => mentions s "CR 614.6")
 
 /-- The heuristic casts Smite when it is the playable spell. -/
 def agentSmite : Game :=
