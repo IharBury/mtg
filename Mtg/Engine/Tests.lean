@@ -11771,8 +11771,8 @@ def roadsChapterIII : Game :=
   addSagaLore roadsReturn "Roads Go Ever, Ever On"
 
 #guard
-  (roadsChapterIII.player ⟨0⟩).hand.filter (fun id =>
-    (roadsChapterIII.object! id).name == "Plains") |>.size == 2 &&
+  ((roadsChapterIII.player ⟨0⟩).hand.filter (fun id =>
+    (roadsChapterIII.object! id).name == "Plains")).size == 2 &&
     (namedPermanent roadsChapterIII "Roads Go Ever, Ever On").linkedExile.isEmpty
 
 def roadsChapterIV : Game :=
