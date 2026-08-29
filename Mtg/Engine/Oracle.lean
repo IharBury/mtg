@@ -345,26 +345,17 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    else []) ++
   (if c.additionalCostSacrificeCreature then
     ["As an additional cost to cast this spell, sacrifice a creature"]
-   else if c.additionalCostSacrificeArtifactOrCreature then
-    match c.additionalCostOrPayGeneric with
-    | some n =>
-      [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
-    | none =>
-      ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
-   else []) ++
+   else
+    c.additionalCostSacrificeArtifactOrCreatureLine) ++
   (if c.isAura then ["Enchant creature"] else []) ++
-  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  c.simpleTapAddLines ++
   (if c.tapAddOneOf.size >= 2 then
     [s!"\{T}: Add {String.intercalate " or " (c.tapAddOneOf.toList.map (fun t => s!"\{{t.letter}}"))}"]
    else
     c.tapAddOneOf.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")) ++
-  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
-  (if c.tapAddAnyColorEqualToPower then
-    ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
-   else []) ++
-  (if c.tapAddAnyColorForInstantOrSorcery then
-    ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
-   else []) ++
+  c.tapAddForEachLines ++
+  c.tapAddAnyColorEqualToPowerLine ++
+  c.tapAddAnyColorForInstantOrSorceryLine ++
   (if c.tapAddAnyColor then
     ["{T}: Add one mana of any color."]
    else []) ++

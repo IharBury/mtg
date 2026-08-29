@@ -5224,23 +5224,43 @@ def leftoverOracleLines (c : CardDef) : List String :=
     | some rest =>
       if rest.isEmpty || isKeywordRestatement c.keywords rest then none else some rest)
 
-/-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
-def structuredAbilityLines (c : CardDef) : List String :=
-  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
-  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
-  (if c.tapAddAnyColorEqualToPower then
+/-- `{T}: Add {C}` lines from `simpleTapAddMana`. -/
+def simpleTapAddLines (c : CardDef) : List String :=
+  c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
+
+/-- `{T}: Add` for each permanent of a listed type. -/
+def tapAddForEachLines (c : CardDef) : List String :=
+  c.tapAddManaForEach.toList.map TapAddForEach.toNotation
+
+/-- Elf-restricted `{T}: Add` X mana of any color equal to power. -/
+def tapAddAnyColorEqualToPowerLine (c : CardDef) : List String :=
+  if c.tapAddAnyColorEqualToPower then
     ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
-   else []) ++
-  (if c.tapAddAnyColorForInstantOrSorcery then
+  else []
+
+/-- Instant/sorcery-restricted `{T}: Add` one mana of any color. -/
+def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
+  if c.tapAddAnyColorForInstantOrSorcery then
     ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
-   else []) ++
-  (if c.additionalCostSacrificeArtifactOrCreature then
+  else []
+
+/-- Additional cost that sacrifices an artifact or creature (optionally or pay `{n}`). -/
+def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
+  if c.additionalCostSacrificeArtifactOrCreature then
     match c.additionalCostOrPayGeneric with
     | some n =>
       [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
     | none =>
       ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
-   else []) ++
+  else []
+
+/-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
+def structuredAbilityLines (c : CardDef) : List String :=
+  c.simpleTapAddLines ++
+  c.tapAddForEachLines ++
+  c.tapAddAnyColorEqualToPowerLine ++
+  c.tapAddAnyColorForInstantOrSorceryLine ++
+  c.additionalCostSacrificeArtifactOrCreatureLine ++
   c.activatedAbilities.toList.map ActivatedAbility.toNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
