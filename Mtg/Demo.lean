@@ -60,11 +60,11 @@ Options:
   --decides NAME  Player who chooses who takes the first turn (CR 103.1);
                   default is a random player using --seed (or a prompt
                   with --norandom)
-  --input FILE    With --interactive or --multiplayer, run these commands
-                  first, then read from the console. Lines that start
-                  with -- are additional flags instead of commands
-  --output FILE   With --interactive or --multiplayer, write accepted
-                  game-state commands (from --input and from the console)
+  --input FILE    With --interactive, --multiplayer, or --norandom, run
+                  these commands first, then read from the console. Lines
+                  that start with -- are additional flags instead of commands
+  --output FILE   With --interactive, --multiplayer, or --norandom, write
+                  accepted game-state commands (from --input and from the console)
                   to this file. Flags from --input are written first when
                   this path is different from --input. Incorrect commands and session commands
                   such as state and quit are omitted.
