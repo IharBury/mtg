@@ -878,6 +878,470 @@ def anUnexpectedParty : CardDef :=
       "Create X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
       (.createTokensX .dwarf)))
 
+def alongTheCrookedWay : CardDef :=
+  enchantment "Along the Crooked Way" (ManaCost.ofGenericAndColor 2 .black) "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn."
+    (staticAbilities := #[.printed "{1}{B}: Goblins and Orcs you control gain menace until end of turn."])
+    (triggeredAbilities := #[.printed "When this enchantment enters, return target creature card from your graveyard to your hand.",
+      .printed "Whenever a creature card leaves your graveyard, amass Goblins 1."])
+
+def andurilFlameOfTheWest : CardDef :=
+  artifact "Andúril, Flame of the West" (ManaCost.ofGeneric 3) "Equipped creature gets +3/+1.\nWhenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking.\nEquip {2}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (staticAbilities := #[.equippedCreatureGets 3 1])
+    (triggeredAbilities := #[.printed "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
+
+def andurilNarsilReforged : CardDef :=
+  artifact "Andúril, Narsil Reforged" (ManaCost.ofGeneric 2) "Ascend (If you control ten or more permanents, you get the city's blessing for the rest of the game.)\nWhenever equipped creature attacks, put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead.\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (keywords := Keyword.ascend)
+    (triggeredAbilities := #[.printed "Whenever equipped creature attacks, put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead."])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def aragornTheUniter : CardDef :=
+  legendaryCreature "Aragorn, the Uniter" (ManaCost.ofColors [.red, .green, .white, .blue]) #["Human", "Noble"] 5 5 (oracleText := "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.\nWhenever you cast a blue spell, scry 2.\nWhenever you cast a red spell, Aragorn deals 3 damage to target opponent.\nWhenever you cast a green spell, target creature gets +4/+4 until end of turn.")
+    (triggeredAbilities := #[.printed "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.",
+      .printed "Whenever you cast a blue spell, scry 2.",
+      .printed "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent.",
+      .printed "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."])
+
+def arwenMortalQueen : CardDef :=
+  legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
+    (staticAbilities := #[.printed "Arwen enters with an indestructible counter on her.",
+      .printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+
+def arwenWeaverOfHope : CardDef :=
+  legendaryCreature "Arwen, Weaver of Hope" (ManaCost.ofGenericAndColors 1 [.green, .green]) #["Elf", "Noble"] 2 1 (oracleText := "Each other creature you control enters with a number of additional +1/+1 counters on it equal to Arwen's toughness.")
+    (othersEnterWithPlusOneEqualToughness := true)
+
+def azogMoriaSRuin : CardDef :=
+  legendaryCreature "Azog, Moria's Ruin" (ManaCost.ofGenericAndColor 2 .black) #["Goblin", "Soldier"] 1 3 (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.printed "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)"])
+
+def balinLoremaster : CardDef :=
+  legendaryCreature "Balin, Loremaster" (ManaCost.ofGenericAndColors 3 [.red, .red]) #["Dwarf", "Bard"] 4 4 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent.")
+    (keywords := Keyword.storied)
+    (triggeredAbilities := #[.printed "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."])
+
+def bardTheBowman : CardDef :=
+  legendaryCreature "Bard the Bowman" (ManaCost.ofGenericAndColors 1 [.white, .blue]) #["Human", "Archer"] 1 3 (oracleText := "Reach\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn.")
+    (keywords := Keyword.reach)
+    (triggeredAbilities := #[.printed "Whenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn."])
+
+def bardKingOfDale : CardDef :=
+  legendaryCreature "Bard, King of Dale" (ManaCost.ofGenericAndColors 4 [.white, .blue]) #["Human", "Noble", "Archer"] 3 5 (oracleText := "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.")
+    (keywords := Keyword.reach.merge Keyword.vigilance)
+    (staticAbilities := #[.printed "If you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.",
+      .printed "If one or more tokens would be created under your control, twice that many of those tokens are created instead."])
+
+def bejeweledWarg : CardDef :=
+  creature "Bejeweled Warg" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 3 2 (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
+    (keywords := Keyword.trample)
+    (triggeredAbilities := #[.printed "Whenever this creature deals combat damage to a player, choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"])
+
+def belladonnaTook : CardDef :=
+  legendaryCreature "Belladonna Took" (ManaCost.ofGenericAndColor 1 .white) #["Halfling", "Citizen"] 2 2 (oracleText := "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.")
+    (triggeredAbilities := #[.printed "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."])
+
+def beornTheFierce : CardDef :=
+  legendaryCreature "Beorn the Fierce" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Bear", "Shapeshifter", "Warrior"] 6 6 (oracleText := "Trample\nOther Bears you control get +2/+2.\nAt the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards.")
+    (keywords := Keyword.trample)
+    (staticAbilities := #[.otherCreaturesGet #["Bear"] 2 2])
+    (triggeredAbilities := #[.printed "At the beginning of combat on your turn, put a trample counter on up to one target creature you control. It becomes a Bear in addition to its other types. Then if you control three or more Bears, draw two cards."])
+
+def bifurMelodicRider : CardDef :=
+  legendaryCreature "Bifur, Melodic Rider" (ManaCost.ofGenericAndHybrids 4 .red .white 2) #["Dwarf", "Bard"] 4 5 (oracleText := "Storied (If you control three or more artifacts, legendaries, and/or Sagas, you have an enduring story for the rest of the game.)\nWhenever Bifur enters or attacks, put a +1/+1 counter on target creature.\nAs long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time.")
+    (keywords := Keyword.storied)
+    (staticAbilities := #[.extraTriggerIfEnduringStorySubtype "Dwarf"])
+    (triggeredAbilities := #[.printed "Whenever Bifur enters or attacks, put a +1/+1 counter on target creature."])
+
+def bilboSBurglaring : CardDef :=
+  sorcery "Bilbo's Burglaring" (ManaCost.ofGenericAndColors 4 [.blue, .blue]) "For each opponent, gain control of up to one target artifact that player controls." (some (.printed "For each opponent, gain control of up to one target artifact that player controls."))
+
+def bilboSGambit : CardDef :=
+  instant "Bilbo's Gambit" (ManaCost.ofGenericAndColor 1 .white) "Gift a Treasure (You may promise an opponent a gift as you cast this spell. If you do, they create a Treasure token before its other effects. It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")\nReturn target spell to its owner's hand. If the gift was promised, players can't cast spells this turn." (some (.printed "Return target spell to its owner's hand. If the gift was promised, players can't cast spells this turn."))
+    (giftTreasure := true)
+
+def bilboSRing : CardDef :=
+  artifact "Bilbo's Ring" (ManaCost.ofGeneric 3) "During your turn, equipped creature has hexproof and can't be blocked.\nWhenever equipped creature attacks alone, you draw a card and you lose 1 life.\nEquip Halfling {1} ({1}: Attach to target Halfling you control. Equip only as a sorcery.)\nEquip {4} ({4}: Attach to target creature you control. Equip only as a sorcery.)"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (staticAbilities := #[.equippedHexproofUnblockableDuringYourTurn])
+    (triggeredAbilities := #[.printed "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1) (subtype := some "Halfling"),
+      equipAbility (ManaCost.ofGeneric 4)])
+
+def bilboFellowConspirator : CardDef :=
+  legendaryCreature "Bilbo, Fellow Conspirator" (ManaCost.ofGenericAndColor 2 .green) #["Halfling", "Citizen"] 2 3 (oracleText := "If you would create a Food token, instead create a Food token and a Treasure token.")
+    (foodAlsoCreatesTreasure := true)
+
+def bilboThiefInTheNight : CardDef :=
+  legendaryCreature "Bilbo, Thief in the Night" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 2 2 (oracleText := "Spells you cast from anywhere other than your hand cost {1} less to cast.\nWhenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead.")
+    (staticAbilities := #[.printed "Spells you cast from anywhere other than your hand cost {1} less to cast."])
+    (triggeredAbilities := #[.printed "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."])
+
+def bolgOfTheNorth : CardDef :=
+  legendaryCreature "Bolg of the North" (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Soldier"] 5 5 (oracleText := "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.printed "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"])
+
+def boughsideWanderers : CardDef :=
+  creature "Boughside Wanderers" (ManaCost.ofGenericAndColors 4 [.green, .green]) #["Elf", "Scout"] 4 4 (oracleText := "When this creature enters, look at the top four cards of your library. You may reveal a permanent card from among them and put it into your hand. Put the rest on the bottom of your library in a random order.\nLandfall — Whenever a land you control enters, this creature gets +2/+2 until end of turn.")
+    (triggeredAbilities := #[.onLandYouControlEntersGets 2 2,
+      .printed "When this creature enters, look at the top four cards of your library. You may reveal a permanent card from among them and put it into your hand. Put the rest on the bottom of your library in a random order."])
+
+def burnBurnTreeAndFern : CardDef :=
+  saga "Burn, Burn, Tree and Fern" (ManaCost.ofGenericAndColor 3 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — This Saga deals 6 damage to target creature an opponent controls.\nII — Destroy target artifact an opponent controls.\nIII, IV — Add {R}." "IV" #[{ roman := "I", effect := "This Saga deals 6 damage to target creature an opponent controls." }, { roman := "II", effect := "Destroy target artifact an opponent controls." }, { roman := "III, IV", effect := "Add {R}." }]
+
+def callForthTheTempest : CardDef :=
+  sorcery "Call Forth the Tempest" (ManaCost.ofGenericAndColors 5 [.red, .red, .red]) "Cascade, cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom of your library in a random order. Then do it again.)\nCall Forth the Tempest deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn." (some (.printed "Call Forth the Tempest deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn."))
+    (cascade := 2)
+
+def cantankerousKeepers : CardDef :=
+  creature "Cantankerous Keepers" (ManaCost.ofGenericAndColor 5 .green) #["Elf", "Soldier"] 4 3 (oracleText := "Affinity for Elves (This spell costs {1} less to cast for each Elf you control.)\nWhen this creature enters, mill four cards, then put all Elf cards from among them into your hand.")
+    (affinityForSubtype := some "Elves")
+    (triggeredAbilities := #[.printed "When this creature enters, mill four cards, then put all Elf cards from among them into your hand."])
+
+def cavernHoardDragon : CardDef :=
+  creature "Cavern-Hoard Dragon" (ManaCost.ofGenericAndColors 7 [.red, .red]) #["Dragon"] 6 6 (oracleText := "This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls.\nFlying, trample, haste\nWhenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls.")
+    (costReductionEqualOppArtifacts := true)
+    (keywords := Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
+    (triggeredAbilities := #[.printed "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."])
+
+def celebrateTheMountainKing : CardDef :=
+  enchantment "Celebrate the Mountain-king" (ManaCost.ofGenericAndColor 3 .white) "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until this enchantment leaves the battlefield.\nWhen this enchantment enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+    (triggeredAbilities := #[.onEnterRecruit,
+      .printed "When this enchantment enters, for each opponent, exile up to one target nonland permanent that player controls until this enchantment leaves the battlefield."])
+
+def chiefOfTheWilds : CardDef :=
+  legendaryCreature "Chief of the Wilds" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Wolf"] 4 4 (oracleText := "Menace\nWhenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds.\nIf a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time.")
+    (keywords := Keyword.menace)
+    (staticAbilities := #[.printed "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."])
+    (triggeredAbilities := #[.printed "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."])
+
+def dancingFromDarkToDawn : CardDef :=
+  enchantment "Dancing from Dark to Dawn" (ManaCost.ofGenericAndColors 3 [.green, .green]) "Whenever you cast a creature spell, put X +1/+1 counters on target creature you control, where X is that spell's mana value.\nLandfall — Whenever a land you control enters, create a 2/2 green Bear creature token."
+    (staticAbilities := #[.printed "Landfall — Whenever a land you control enters, create a 2/2 green Bear creature token."])
+    (triggeredAbilities := #[.printed "Whenever you cast a creature spell, put X +1/+1 counters on target creature you control, where X is that spell's mana value."])
+
+def desertWereWorm : CardDef :=
+  creature "Desert Were-Worm" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Dragon", "Wurm"] 0 5 (oracleText := "This creature gets +2/+0 for each Mountain you control.\nWhenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase.")
+    (powerPerMountain := 2)
+    (triggeredAbilities := #[.printed "Whenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."])
+
+def downInTheValley : CardDef :=
+  saga "Down in the Valley" (ManaCost.ofGenericAndColor 2 .green) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"\nIII, IV — Elves you control get +1/+0 and gain vigilance until end of turn." "IV" #[{ roman := "I", effect := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle." }, { roman := "II", effect := "This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"" }, { roman := "III, IV", effect := "Elves you control get +1/+0 and gain vigilance until end of turn." }]
+
+def downDownToGoblinTown : CardDef :=
+  saga "Down, Down to Goblin-town" (ManaCost.ofGenericAndColor 2 .black) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nII — Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nIII, IV — Target opponent loses 1 life and you gain 1 life." "IV" #[{ roman := "I", effect := "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card." }, { roman := "II", effect := "Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" }, { roman := "III, IV", effect := "Target opponent loses 1 life and you gain 1 life." }]
+
+def dragonCursedHalls : CardDef :=
+  land "Dragon-Cursed Halls" "{T}: Add {C}.\n{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
+    (tapAddMana := #[.colorless])
+    (staticAbilities := #[.printed "{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""])
+
+def dwalinWeaponmaster : CardDef :=
+  legendaryCreature "Dwalin, Weaponmaster" (ManaCost.ofGenericAndHybrids 1 .red .white 1) #["Dwarf", "Warrior"] 2 1 (oracleText := "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)")
+    (keywords := Keyword.firstStrike)
+    (triggeredAbilities := #[.printed "Whenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)"])
+
+def dainIronfoot : CardDef :=
+  legendaryCreature "Dáin Ironfoot" (ManaCost.ofGenericAndColor 2 .red) #["Dwarf", "Warrior"] 1 4 (oracleText := "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.\nWhenever Dáin attacks, each equipped attacking creature gains double strike until end of turn.")
+    (triggeredAbilities := #[
+      .printed "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control.",
+      .printed "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."])
+
+def elrondMoonReader : CardDef :=
+  legendaryCreature "Elrond, Moon-Reader" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Noble"] 3 3 (oracleText := "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn.\n{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step.")
+    (staticAbilities := #[.printed "{5}{U}{U}: Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step."])
+    (triggeredAbilities := #[.printed "Whenever you activate an ability of a creature, draw a card. This ability triggers only once each turn."])
+
+def elvenChorus : CardDef :=
+  enchantment "Elven Chorus" (ManaCost.ofGenericAndColor 3 .green) "You may look at the top card of your library any time.\nYou may cast creature spells from the top of your library.\nCreatures you control have \"{T}: Add one mana of any color.\""
+    (staticAbilities := #[.printed "You may look at the top card of your library any time.",
+      .printed "You may cast creature spells from the top of your library.",
+      .printed "Creatures you control have \"{T}: Add one mana of any color.\""])
+
+def elvenPassage : CardDef :=
+  land "Elven Passage" "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"
+    (staticAbilities := #[.printed "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"])
+
+def enchantedRiverSGrasp : CardDef :=
+  aura "Enchanted River's Grasp" (ManaCost.ofGenericAndColor 2 .blue) "Enchant creature\nWhen this Aura enters, tap enchanted creature and remove all counters from it.\nEnchanted creature loses all abilities and doesn't untap during its controller's untap step."
+    (staticAbilities := #[.enchantedLosesAbilitiesDoesntUntap])
+    (triggeredAbilities := #[.printed "When this Aura enters, tap enchanted creature and remove all counters from it."])
+
+def galadrielSDismissal : CardDef :=
+  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)"))
+    (staticAbilities := #[.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)"])
+
+def galadrielLightOfValinor : CardDef :=
+  legendaryCreature "Galadriel, Light of Valinor" (ManaCost.ofGenericAndColors 2 [.green, .white, .blue]) #["Elf", "Noble"] 3 3 (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
+    (staticAbilities := #[.printed "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."])
+
+def gandalfPartyGuest : CardDef :=
+  legendaryCreature "Gandalf, Party Guest" (ManaCost.ofGenericAndColors 1 [.blue, .red, .white]) #["Avatar", "Wizard"] 3 4 (oracleText := "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control.")
+    (triggeredAbilities := #[.printed "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control."])
+
+def gandalfShadowSFoe : CardDef :=
+  legendaryCreature "Gandalf, Shadow's Foe" (ManaCost.ofGenericAndColors 5 [.blue, .blue]) #["Avatar", "Wizard"] 3 4 (oracleText := "Vigilance\nWhen Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control.\nLandfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf.")
+    (keywords := Keyword.vigilance)
+    (staticAbilities := #[.printed "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."])
+    (triggeredAbilities := #[.printed "When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control."])
+
+def getawayBarrel : CardDef :=
+  artifact "Getaway Barrel" (ManaCost.ofGenericAndColor 3 .red) "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
+    (triggeredAbilities := #[.printed "When this artifact is put into a graveyard from the battlefield, reveal the top thirteen cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."])
+
+def glamdring : CardDef :=
+  artifact "Glamdring" (ManaCost.ofGeneric 2) "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard.\nWhenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost.\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (staticAbilities := #[.equippedFirstStrikePlusPerInstantSorcery])
+    (triggeredAbilities := #[.printed "Whenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost."])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def gleamingSplendor : CardDef :=
+  enchantment "Gleaming Splendor" (ManaCost.ofGenericAndColor 1 .white) "Whenever an opponent draws their second card each turn, you create a Treasure token.\n{2}{W}: Two target players each draw a card."
+    (staticAbilities := #[.printed "{2}{W}: Two target players each draw a card."])
+    (triggeredAbilities := #[.printed "Whenever an opponent draws their second card each turn, you create a Treasure token."])
+
+def gollumRiddleMaster : CardDef :=
+  legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")
+    (staticAbilities := #[.printed "As Gollum enters, choose odd or even. (Zero is even.)"])
+    (triggeredAbilities := #[.printed "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."])
+
+def grimaSarumanSFootman : CardDef :=
+  legendaryCreature "Gríma, Saruman's Footman" (ManaCost.ofGenericAndColors 2 [.blue, .black]) #["Human", "Advisor"] 1 4 (oracleText := "Gríma can't be blocked.\nWhenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order.")
+    (staticAbilities := #[.printed "Gríma can't be blocked."])
+    (triggeredAbilities := #[.printed "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."])
+
+def headOfTheHunt : CardDef :=
+  creature "Head of the Hunt" (ManaCost.ofGenericAndColors 2 [.black, .black]) #["Wolf"] 4 3 (oracleText := "Flash\nIf a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token.")
+    (keywords := Keyword.flash)
+    (staticAbilities := #[.printed "If a creature an opponent controls would die, exile it instead. When you do, create a 2/2 green Wolf creature token."])
+
+def insideInformation : CardDef :=
+  sorcery "Inside Information" ({ symbols := #[.x, .colored .black, .colored .black] }) "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost." (some (.printed "Exile the top X cards of target opponent's library. You may play those cards this turn. If you cast a spell this way, pay life equal to its mana value rather than pay its mana cost."))
+
+def keyToTheSideDoor : CardDef :=
+  artifact "Key to the Side-Door" (ManaCost.ofGeneric 1) "{2}, {T}: Target creature can't be blocked this turn.\n{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."
+    (staticAbilities := #[.printed "{2}, {T}: Target creature can't be blocked this turn.",
+      .printed "{1}, {T}, Discard a legendary card with the same name as a legendary permanent you control: Draw two cards."])
+
+def lakeTownToymaker : CardDef :=
+  creature "Lake-town Toymaker" (ManaCost.ofGenericAndColor 3 .white) #["Human", "Artificer"] 3 4 (oracleText := "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn.")
+    (triggeredAbilities := #[.printed "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."])
+
+def lastLightOfDurinSDay : CardDef :=
+  enchantment "Last Light of Durin's Day" (ManaCost.ofGenericAndColor 1 .red) "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle.\nMountaincycling {2} ({2}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)"
+    (triggeredAbilities := #[.printed "Whenever a Mountain you control enters, put a quest counter on this enchantment. If it has six or more quest counters on it, sacrifice it. If you do, search your hand and/or library for a Dragon card and put it onto the battlefield. If you search your library this way, shuffle."])
+    (activatedAbilities := #[typecyclingAbility "Mountain" (ManaCost.ofGeneric 2)])
+
+def masterSCouncillors : CardDef :=
+  creature "Master's Councillors" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Advisor"] 1 3 (oracleText := "Vigilance\nThis creature gets +2/+0 for each graveyard with seven or more cards in it.\nWhenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)")
+    (keywords := Keyword.vigilance)
+    (staticAbilities := #[.printed "This creature gets +2/+0 for each graveyard with seven or more cards in it."])
+    (triggeredAbilities := #[.printed "Whenever you draw your second card each turn, target player mills three cards. (They put the top three cards of their library into their graveyard.)"])
+
+def minasMorgulDarkFortress : CardDef :=
+  legendaryLand "Minas Morgul, Dark Fortress" "Minas Morgul enters tapped.\n{T}: Add {B}.\n{3}{B}, {T}: Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types. (A creature with shadow can block or be blocked by only creatures with shadow.)"
+    (entersTapped := true)
+    (tapAddMana := #[.colored .black])
+    (staticAbilities := #[.printed "{3}{B}, {T}: Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types. (A creature with shadow can block or be blocked by only creatures with shadow.)"])
+
+def mountDoom : CardDef :=
+  legendaryLand "Mount Doom" "{T}, Pay 1 life: Add {B} or {R}.\n{1}{B}{R}, {T}: Mount Doom deals 1 damage to each opponent.\n{5}{B}{R}, {T}, Sacrifice Mount Doom and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery."
+    (tapPayLifeAddOneOf := some (1, #[.colored .black, .colored .red]))
+    (staticAbilities := #[.printed "{1}{B}{R}, {T}: Mount Doom deals 1 damage to each opponent.",
+      .printed "{5}{B}{R}, {T}, Sacrifice Mount Doom and a legendary artifact: Choose up to two creatures, then destroy the rest. Activate only as a sorcery."])
+
+def oldFatSpiderCanTSeeMe : CardDef :=
+  saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[{ roman := "I", effect := "Target creature you control gains hexproof for as long as this Saga remains on the battlefield." }, { roman := "II", effect := "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield." }, { roman := "III, IV", effect := "Draw a card." }]
+
+def orcishBowmasters : CardDef :=
+  creature "Orcish Bowmasters" (ManaCost.ofGenericAndColor 1 .black) #["Orc", "Archer"] 1 1 (oracleText := "Flash\nWhen this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1.")
+    (keywords := Keyword.flash)
+    (triggeredAbilities := #[.printed "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."])
+
+def orcristGoblinCleaver : CardDef :=
+  artifact "Orcrist, Goblin-cleaver" (ManaCost.ofGeneric 3) "Equipped creature gets +2/+2 and has trample.\nWhenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type.\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (staticAbilities := #[.printed "Equipped creature gets +2/+2 and has trample."])
+    (triggeredAbilities := #[.printed "Whenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type."])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def palantirOfOrthanc : CardDef :=
+  artifact "Palantír of Orthanc" (ManaCost.ofGeneric 3) "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
+    (supertypes := #[.legendary])
+    (triggeredAbilities := #[.printed "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."])
+
+def partInFriendship : CardDef :=
+  enchantment "Part in Friendship" (ManaCost.ofGenericAndColor 4 .green) "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
+    (triggeredAbilities := #[.printed "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+
+def radagastOfRhosgobel : CardDef :=
+  legendaryCreature "Radagast of Rhosgobel" (ManaCost.ofGenericAndColors 2 [.green, .green]) #["Avatar", "Wizard"] 2 5 (oracleText := "The first creature spell you cast each turn costs {2} less to cast and can be cast as though it had flash.")
+    (staticAbilities := #[.printed "The first creature spell you cast each turn costs {2} less to cast and can be cast as though it had flash."])
+
+def rhovanionRampager : CardDef :=
+  creature "Rhovanion Rampager" (ManaCost.ofGenericAndColor 2 .black) #["Wolf"] 3 2 (oracleText := "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.\nWhen this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
+    (triggeredAbilities := #[.printed "Whenever this creature attacks, you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power.",
+      .printed "When this creature dies, amass Goblins X, where X is this creature's power. (Put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"])
+
+def riddlesInTheDark : CardDef :=
+  instant "Riddles in the Dark" (ManaCost.ofGenericAndColor 2 .blue) "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard." (some (.printed "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard."))
+
+def roadsGoEverEverOn : CardDef :=
+  saga "Roads Go Ever, Ever On" (ManaCost.ofGenericAndColor 1 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life.\nII, III — Put a card exiled with this Saga into its owner's hand.\nIV — Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." "IV" #[{ roman := "I", effect := "Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life." }, { roman := "II, III", effect := "Put a card exiled with this Saga into its owner's hand." }, { roman := "IV", effect := "Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." }]
+
+def rollRollRollRoll : CardDef :=
+  saga "Roll-Roll-Roll-Roll" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." "IV" #[{ roman := "I, II, III, IV", effect := "Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." }]
+
+def sarumanOfManyColors : CardDef :=
+  legendaryCreature "Saruman of Many Colors" (ManaCost.ofGenericAndColors 3 [.white, .blue, .black]) #["Avatar", "Wizard"] 5 4 (oracleText := "Ward—Discard an enchantment, instant, or sorcery card.\nWhenever you cast your second spell each turn, each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost.")
+    (staticAbilities := #[.printed "Ward—Discard an enchantment, instant, or sorcery card."])
+    (triggeredAbilities := #[.printed "Whenever you cast your second spell each turn, each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost."])
+
+def sauronTheDarkLord : CardDef :=
+  legendaryCreature "Sauron, the Dark Lord" (ManaCost.ofGenericAndColors 3 [.blue, .black, .red]) #["Avatar", "Horror"] 7 6 (oracleText := "Ward—Sacrifice a legendary artifact or legendary creature.\nWhenever an opponent casts a spell, amass Orcs 1.\nWhenever an Army you control deals combat damage to a player, the Ring tempts you.\nWhenever the Ring tempts you, you may discard your hand. If you do, draw four cards.")
+    (staticAbilities := #[.printed "Ward—Sacrifice a legendary artifact or legendary creature."])
+    (triggeredAbilities := #[.printed "Whenever an opponent casts a spell, amass Orcs 1.",
+      .printed "Whenever an Army you control deals combat damage to a player, the Ring tempts you.",
+      .printed "Whenever the Ring tempts you, you may discard your hand. If you do, draw four cards."])
+
+def silvanReveler : CardDef :=
+  creature "Silvan Reveler" (ManaCost.ofGenericAndColors 2 [.green, .blue]) #["Elf", "Citizen"] 3 2 (oracleText := "When this creature enters, draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped.\nLandfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand.")
+    (staticAbilities := #[.printed "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."])
+    (triggeredAbilities := #[.printed "When this creature enters, draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped."])
+
+def smaugTheImpenetrable : CardDef :=
+  legendaryCreature "Smaug the Impenetrable" (ManaCost.ofGenericAndColors 5 [.black, .red]) #["Dragon"] 8 7 (oracleText := "Flying, indestructible, haste\nWhenever Smaug is dealt noncombat damage, create that many Treasure tokens.")
+    (keywords := Keyword.flying.merge Keyword.indestructible |>.merge Keyword.haste)
+    (triggeredAbilities := #[.printed "Whenever Smaug is dealt noncombat damage, create that many Treasure tokens."])
+
+def stingBilboSSword : CardDef :=
+  artifact "Sting, Bilbo's Sword" (ManaCost.ofGeneric 2) "Flash\nWhen Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (keywords := Keyword.flash)
+    (triggeredAbilities := #[.printed "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)"])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def stoneGiantOfHighPass : CardDef :=
+  creature "Stone-Giant of High Pass" (ManaCost.ofGenericAndColors 5 [.red, .red]) #["Giant"] 7 7 (oracleText := "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder.\n{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target.")
+    (staticAbilities := #[.printed "{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target."])
+    (triggeredAbilities := #[.printed "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder."])
+
+def supperForSpiders : CardDef :=
+  instant "Supper for Spiders" (ManaCost.ofGenericAndColor 1 .black) "Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\" (They lose all other types and subtypes.)" (some (.printed "Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield this turn. They are Food artifacts with \"{2}, {T}, Sacrifice this artifact: You gain 3 life.\" (They lose all other types and subtypes.)"))
+
+def theBlackGate : CardDef :=
+  legendaryLand "The Black Gate" "As The Black Gate enters, you may pay 3 life. If you don't, it enters tapped.\n{T}: Add {B}.\n{1}{B}, {T}: Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn."
+    (entersTappedUnlessPayLife := some 3)
+    (tapAddMana := #[.colored .black])
+    (subtypes := #["Gate"])
+    (staticAbilities := #[.printed "{1}{B}, {T}: Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn."])
+
+def theEaglesAreComing : CardDef :=
+  instant "The Eagles Are Coming!" (ManaCost.ofGenericAndColor 1 .white) "Kicker {2}{W}{W} (You may pay an additional {2}{W}{W} as you cast this spell.)\nChoose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way." (some (.printed "Kicker {2}{W}{W} (You may pay an additional {2}{W}{W} as you cast this spell.)"))
+    (staticAbilities := #[.printed "Choose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand. At the beginning of the next upkeep, create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way."])
+
+def theGreatGoblin : CardDef :=
+  legendaryCreature "The Great Goblin" (ManaCost.ofGenericAndHybrids 1 .black .red 2) #["Goblin", "Noble"] 3 2 (oracleText := "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent.\nWhenever another Goblin, Orc, or Army you control dies, exile the top card of your library. You may play it until the end of your next turn.")
+    (triggeredAbilities := #[.printed "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent.",
+      .printed "Whenever another Goblin, Orc, or Army you control dies, exile the top card of your library. You may play it until the end of your next turn."])
+
+def theMasterOfLakeTown : CardDef :=
+  legendaryCreature "The Master of Lake-town" (ManaCost.ofGenericAndColors 1 [.black, .black]) #["Human", "Advisor"] 3 2 (oracleText := "Deathtouch\nWhenever a player loses life, that player mills that many cards. (Damage causes loss of life.)\nWhen The Master of Lake-town dies, draw a card for each graveyard with seven or more cards in it.")
+    (keywords := Keyword.deathtouch)
+    (triggeredAbilities := #[.printed "Whenever a player loses life, that player mills that many cards. (Damage causes loss of life.)",
+      .printed "When The Master of Lake-town dies, draw a card for each graveyard with seven or more cards in it."])
+
+def theMistyMountainsCold : CardDef :=
+  saga "The Misty Mountains Cold" (ManaCost.ofGenericAndColor 2 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" "IV" #[{ roman := "I, II, III, IV", effect := "Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" }]
+
+def theMountainKingSReturn : CardDef :=
+  saga "The Mountain-king's Return" (ManaCost.ofGenericAndColor 2 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)\nII — Return target creature card with mana value 3 or less from your graveyard to the battlefield.\nIII — Put a +1/+1 counter on up to one target creature." "III" #[{ roman := "I", effect := "Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" }, { roman := "II", effect := "Return target creature card with mana value 3 or less from your graveyard to the battlefield." }, { roman := "III", effect := "Put a +1/+1 counter on up to one target creature." }]
+
+def theNotaryHobbits : CardDef :=
+  legendaryCreature "The Notary Hobbits" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Halfling", "Advisor"] 1 1 (oracleText := "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control.")
+    (tapAddColorlessPerSubtype := some "Halfling")
+    (triggeredAbilities := #[.printed "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary."])
+
+def theOneRing : CardDef :=
+  artifact "The One Ring" (ManaCost.ofGeneric 4) "Indestructible\nWhen The One Ring enters, if you cast it, you gain protection from everything until your next turn.\nAt the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring.\n{T}: Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring."
+    (supertypes := #[.legendary])
+    (keywords := Keyword.indestructible)
+    (staticAbilities := #[.printed "{T}: Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring."])
+    (triggeredAbilities := #[.printed "When The One Ring enters, if you cast it, you gain protection from everything until your next turn.",
+      .printed "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."])
+
+def theReaverCleaver : CardDef :=
+  artifact "The Reaver Cleaver" (ManaCost.ofGenericAndColor 2 .red) "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\"\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (supertypes := #[.legendary])
+    (staticAbilities := #[.printed "Equipped creature gets +1/+1 and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\""])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+
+def theSackvilleBagginses : CardDef :=
+  legendaryCreature "The Sackville-Bagginses" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Citizen"] 2 2 (oracleText := "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.")
+    (triggeredAbilities := #[.printed "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.",
+      .printed "Whenever you sacrifice a token, target opponent loses 1 life."])
+
+def thorinCompanySLeader : CardDef :=
+  legendaryCreature "Thorin, Company's Leader" (ManaCost.ofGenericAndColor 4 .red) #["Dwarf", "Warrior"] 4 5 (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
+    (staticAbilities := #[.printed "{10}: Creatures you control gain double strike until end of turn."])
+    (triggeredAbilities := #[.printed "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."])
+
+def thorinMountainKing : CardDef :=
+  legendaryCreature "Thorin, Mountain-king" (ManaCost.ofGenericAndColor 3 .red) #["Dwarf", "Noble"] 3 4 (oracleText := "Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature.")
+    (keywords := Keyword.trample)
+    (triggeredAbilities := #[.printed "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."])
+
+def thranduilSCompany : CardDef :=
+  creature "Thranduil's Company" (ManaCost.ofGenericAndColors 2 [.green, .blue]) #["Elf", "Soldier"] 3 4 (oracleText := "As long as you control another Elf, you may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn.")
+    (extraLandIfOtherSubtype := some "Elf")
+    (staticAbilities := #[.printed "Landfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn."])
+
+def thranduilTheElvenking : CardDef :=
+  legendaryCreature "Thranduil, the Elvenking" (ManaCost.ofGenericAndColors 2 [.black, .green, .blue]) #["Elf", "Noble"] 5 6 (oracleText := "Thranduil has all activated abilities of all Elf cards in your graveyard.\nWhenever another legendary Elf you control enters, draw two cards, then discard a card.")
+    (staticAbilities := #[.printed "Thranduil has all activated abilities of all Elf cards in your graveyard."])
+    (triggeredAbilities := #[.printed "Whenever another legendary Elf you control enters, draw two cards, then discard a card."])
+
+def throughTheForestGate : CardDef :=
+  sorcery "Through the Forest Gate" (ManaCost.ofGenericAndColors 6 [.green, .green]) "Look at the top twenty cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain 8 life." (some (.printed "Look at the top twenty cards of your library, put any number of land cards from among them onto the battlefield tapped, then shuffle. You gain 8 life."))
+
+def tomBombadil : CardDef :=
+  legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
+    (staticAbilities := #[.printed "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible."])
+    (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+
+def tomBertAndWilliam : CardDef :=
+  legendaryCreature "Tom, Bert, and William" (ManaCost.ofGenericAndColors 3 [.black, .green]) #["Troll"] 5 5 (oracleText := "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card.\nWhen Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)")
+    (staticAbilities := #[.printed "{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card."])
+    (triggeredAbilities := #[.printed "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact. (They're no longer a creature.)"])
+
+def uncoverTheMoonLetters : CardDef :=
+  enchantment "Uncover the Moon-Letters" (ManaCost.ofGenericAndColor 3 .blue) "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
+    (triggeredAbilities := #[.printed "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."])
+
+def witchKingOfAngmar : CardDef :=
+  legendaryCreature "Witch-king of Angmar" (ManaCost.ofGenericAndColors 3 [.black, .black]) #["Wraith", "Noble"] 5 3 (oracleText := "Flying\nWhenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you.\nDiscard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him.")
+    (keywords := Keyword.flying)
+    (staticAbilities := #[.printed "Discard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him."])
+    (triggeredAbilities := #[.printed "Whenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you."])
+
+def wizardSStaff : CardDef :=
+  artifact "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
+    (subtypes := #["Equipment"])
+    (staticAbilities := #[.equippedTriggersAgain,
+      .printed "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)"])
+    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1) (subtype := some "Wizard"),
+      equipAbility (ManaCost.ofGeneric 3)])
+
 def allCards : Array CardDef := #[
   ordinaryBear,
   largeBear,
@@ -999,7 +1463,99 @@ def allCards : Array CardDef := #[
   ironHillsBlacksmith,
   thorinKingOfDurinsFolk,
   gandalfGoblinsBane,
-  bilboUnexpectedAdventurer
+  bilboUnexpectedAdventurer,
+  alongTheCrookedWay,
+  andurilFlameOfTheWest,
+  andurilNarsilReforged,
+  aragornTheUniter,
+  arwenMortalQueen,
+  arwenWeaverOfHope,
+  azogMoriaSRuin,
+  balinLoremaster,
+  bardTheBowman,
+  bardKingOfDale,
+  bejeweledWarg,
+  belladonnaTook,
+  beornTheFierce,
+  bifurMelodicRider,
+  bilboSBurglaring,
+  bilboSGambit,
+  bilboSRing,
+  bilboFellowConspirator,
+  bilboThiefInTheNight,
+  bolgOfTheNorth,
+  boughsideWanderers,
+  burnBurnTreeAndFern,
+  callForthTheTempest,
+  cantankerousKeepers,
+  cavernHoardDragon,
+  celebrateTheMountainKing,
+  chiefOfTheWilds,
+  dancingFromDarkToDawn,
+  desertWereWorm,
+  downInTheValley,
+  downDownToGoblinTown,
+  dragonCursedHalls,
+  dwalinWeaponmaster,
+  dainIronfoot,
+  elrondMoonReader,
+  elvenChorus,
+  elvenPassage,
+  enchantedRiverSGrasp,
+  galadrielSDismissal,
+  galadrielLightOfValinor,
+  gandalfPartyGuest,
+  gandalfShadowSFoe,
+  getawayBarrel,
+  glamdring,
+  gleamingSplendor,
+  gollumRiddleMaster,
+  grimaSarumanSFootman,
+  headOfTheHunt,
+  insideInformation,
+  keyToTheSideDoor,
+  lakeTownToymaker,
+  lastLightOfDurinSDay,
+  masterSCouncillors,
+  minasMorgulDarkFortress,
+  mountDoom,
+  oldFatSpiderCanTSeeMe,
+  orcishBowmasters,
+  orcristGoblinCleaver,
+  palantirOfOrthanc,
+  partInFriendship,
+  radagastOfRhosgobel,
+  rhovanionRampager,
+  riddlesInTheDark,
+  roadsGoEverEverOn,
+  rollRollRollRoll,
+  sarumanOfManyColors,
+  sauronTheDarkLord,
+  silvanReveler,
+  smaugTheImpenetrable,
+  stingBilboSSword,
+  stoneGiantOfHighPass,
+  supperForSpiders,
+  theBlackGate,
+  theEaglesAreComing,
+  theGreatGoblin,
+  theMasterOfLakeTown,
+  theMistyMountainsCold,
+  theMountainKingSReturn,
+  theNotaryHobbits,
+  theOneRing,
+  theReaverCleaver,
+  theSackvilleBagginses,
+  thorinCompanySLeader,
+  thorinMountainKing,
+  thranduilSCompany,
+  thranduilTheElvenking,
+  throughTheForestGate,
+  tomBombadil,
+  tomBertAndWilliam,
+  uncoverTheMoonLetters,
+  witchKingOfAngmar,
+  wizardSStaff
 ]
 
 end Mtg.Engine.Catalog.HobbitSet

@@ -4509,6 +4509,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       let pl := g.player controller
       g.setLife controller (pl.life + (n : Int))
         s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+  | .printed text =>
+    g.logMsg text
+
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game)
     (missing := "The ability's source is no longer in play") : Game :=
@@ -4681,6 +4684,8 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       for pl in g.livingOpponents controller do
         g := g.loseLife pl.id life
       return g
+  | .printed text =>
+    g.logMsg text
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -5066,6 +5071,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .putNonlandMvAtMostFromGy _mv =>
     g.logMsg "A nonland permanent card may enter from a graveyard"
+  | .printed text =>
+    g.logMsg text
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

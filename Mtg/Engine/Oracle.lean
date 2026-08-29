@@ -79,7 +79,8 @@ def nameAliases (name : String) : List String :=
   let beforeComma := (trimmed.splitOn ",").headD trimmed |>.trimAscii.copy
   let first := (beforeComma.splitOn " ").headD beforeComma
   let skipFirst :=
-    first == "The" || first == "A" || first == "An" || first == "Of"
+    first == "The" || first == "A" || first == "An" || first == "Of" ||
+      first == "Enchanted"
   let aliases :=
     if skipFirst then [trimmed, beforeComma] else [trimmed, beforeComma, first]
   uniqueStrings (aliases.filter (fun s => s.length > 2))
@@ -182,7 +183,8 @@ def normalizePhrases (s : String) : String :=
     ("activate only from the graveyard", ""),
     ("activate only from your hand", ""),
     ("if you control a creature with power", "while you control a creature with power"),
-    ("other elf creatures you control", "other elves you control")
+    ("other elf creatures you control", "other elves you control"),
+    ("other bear creatures you control", "other bears you control")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -317,6 +319,19 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionEqualFlyingPower then
     ["This spell costs {X} less to cast, where X is the total power of creatures you control with flying."]
    else []) ++
+  (if c.costReductionEqualOppArtifacts then
+    ["This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls."]
+   else []) ++
+  (match c.affinityForSubtype with
+   | some t => [s!"Affinity for {t}"]
+   | none => []) ++
+  (if c.cascade == 1 then ["Cascade"]
+   else if c.cascade >= 2 then
+     [String.intercalate ", " (List.replicate c.cascade "Cascade")]
+   else []) ++
+  (if c.giftTreasure then
+    ["Gift a Treasure"]
+   else []) ++
   (if c.additionalCostSacrificeCreature then
     ["As an additional cost to cast this spell, sacrifice a creature"]
    else if c.additionalCostSacrificeArtifactOrCreature then
@@ -415,6 +430,28 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
    else []) ++
+  (if c.foodAlsoCreatesTreasure then
+    ["If you would create a Food token, instead create a Food token and a Treasure token."]
+   else []) ++
+  (if c.othersEnterWithPlusOneEqualToughness then
+    ["Each other creature you control enters with a number of additional +1/+1 counters on it equal to this toughness."]
+   else []) ++
+  (if c.powerPerMountain != 0 then
+    [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
+   else []) ++
+  (match c.extraLandIfOtherSubtype with
+   | some t =>
+     [s!"As long as you control another {t}, you may play an additional land on each of your turns."]
+   | none => []) ++
+  (match c.tapAddColorlessPerSubtype with
+   | some t =>
+     [s!"\{T}: Add \{C} for each {t} you control."]
+   | none => []) ++
+  (match c.saga with
+   | some s =>
+     [s!"(As this Saga enters and after your draw step, add a lore counter. Sacrifice after {s.sacrificeAfter}.)"] ++
+       s.chapters.toList.map (fun ch => s!"{ch.roman} — {ch.effect}")
+   | none => []) ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.activatedAbilities.toList.map activatedOracleLine ++

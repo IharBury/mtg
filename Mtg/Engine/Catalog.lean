@@ -60,6 +60,16 @@ def card (name : String) (types : Array CardType)
     (tapAddCommanderIdentity : Bool := false)
     (additionalCostSacrificeCreature : Bool := false)
     (asEntersChooseCreatureType : Bool := false)
+    (saga : Option SagaDef := none)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (giftTreasure : Bool := false)
+    (foodAlsoCreatesTreasure : Bool := false)
+    (othersEnterWithPlusOneEqualToughness : Bool := false)
+    (powerPerMountain : Nat := 0)
+    (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
+    (cascade : Nat := 0)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -78,6 +88,9 @@ def card (name : String) (types : Array CardType)
   tapAddAnyColorAmongLegendaries, tapAddRestricted, tapPayLifeAddOneOf,
   entersTappedUnlessPayLife, tapAddCommanderIdentity,
   additionalCostSacrificeCreature, asEntersChooseCreatureType,
+  saga, affinityForSubtype, costReductionEqualOppArtifacts, giftTreasure,
+  foodAlsoCreatesTreasure, othersEnterWithPlusOneEqualToughness, powerPerMountain,
+  extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure
 }
 
@@ -114,7 +127,15 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (ward : Option Nat := none)
     (tapAddAnyColorForLegendary : Bool := false)
     (costReductionEqualFlyingPower : Bool := false)
-    (tapAddRestricted : Option (Array ManaType × String) := none) : CardDef :=
+    (tapAddRestricted : Option (Array ManaType × String) := none)
+    (foodAlsoCreatesTreasure : Bool := false)
+    (othersEnterWithPlusOneEqualToughness : Bool := false)
+    (powerPerMountain : Nat := 0)
+    (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (cascade : Nat := 0) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -131,6 +152,14 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (tapAddAnyColorForLegendary := tapAddAnyColorForLegendary)
     (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
     (tapAddRestricted := tapAddRestricted)
+    (foodAlsoCreatesTreasure := foodAlsoCreatesTreasure)
+    (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
+    (powerPerMountain := powerPerMountain)
+    (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
+    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
+    (affinityForSubtype := affinityForSubtype)
+    (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
+    (cascade := cascade)
 
 /-- A legendary creature (CR 205.4 / 704.5j). -/
 def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -148,7 +177,15 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (costReductionIfCreatureDied : Nat := 0)
     (ward : Option Nat := none)
     (costReductionEqualFlyingPower : Bool := false)
-    (tapAddRestricted : Option (Array ManaType × String) := none) : CardDef :=
+    (tapAddRestricted : Option (Array ManaType × String) := none)
+    (foodAlsoCreatesTreasure : Bool := false)
+    (othersEnterWithPlusOneEqualToughness : Bool := false)
+    (powerPerMountain : Nat := 0)
+    (extraLandIfOtherSubtype : Option String := none)
+    (tapAddColorlessPerSubtype : Option String := none)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (cascade : Nat := 0) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords) (tapAddMana := tapAddMana)
     (supertypes := #[.legendary] ++ supertypes)
@@ -162,6 +199,14 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (ward := ward)
     (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
     (tapAddRestricted := tapAddRestricted)
+    (foodAlsoCreatesTreasure := foodAlsoCreatesTreasure)
+    (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
+    (powerPerMountain := powerPerMountain)
+    (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
+    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
+    (affinityForSubtype := affinityForSubtype)
+    (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
+    (cascade := cascade)
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
@@ -178,7 +223,12 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (cantBeCountered : Bool := false)
     (chooseOneOrBoth : Bool := false)
     (chooseTwoIfYouControlSubtype : Option String := none)
-    (additionalCostSacrificeCreature : Bool := false) : CardDef :=
+    (additionalCostSacrificeCreature : Bool := false)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (giftTreasure : Bool := false)
+    (cascade : Nat := 0)
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
@@ -194,6 +244,11 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (chooseOneOrBoth := chooseOneOrBoth)
     (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
+    (affinityForSubtype := affinityForSubtype)
+    (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
+    (giftTreasure := giftTreasure)
+    (cascade := cascade)
+    (staticAbilities := staticAbilities)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -210,7 +265,12 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (cantBeCountered : Bool := false)
     (chooseOneOrBoth : Bool := false)
     (chooseTwoIfYouControlSubtype : Option String := none)
-    (additionalCostSacrificeCreature : Bool := false) : CardDef :=
+    (additionalCostSacrificeCreature : Bool := false)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (giftTreasure : Bool := false)
+    (cascade : Nat := 0)
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
@@ -220,6 +280,11 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (chooseOneOrBoth := chooseOneOrBoth)
     (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
+    (affinityForSubtype := affinityForSubtype)
+    (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
+    (giftTreasure := giftTreasure)
+    (cascade := cascade)
+    (staticAbilities := staticAbilities)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -236,7 +301,12 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (cantBeCountered : Bool := false)
     (chooseOneOrBoth : Bool := false)
     (chooseTwoIfYouControlSubtype : Option String := none)
-    (additionalCostSacrificeCreature : Bool := false) : CardDef :=
+    (additionalCostSacrificeCreature : Bool := false)
+    (affinityForSubtype : Option String := none)
+    (costReductionEqualOppArtifacts : Bool := false)
+    (giftTreasure : Bool := false)
+    (cascade : Nat := 0)
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect spellModes
     additionalCostSacrificeArtifactOrCreature additionalCostOrPayGeneric
     costReductionIfCreatureDied costReductionIfTargetDamaged
@@ -246,6 +316,11 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (chooseOneOrBoth := chooseOneOrBoth)
     (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (additionalCostSacrificeCreature := additionalCostSacrificeCreature)
+    (affinityForSubtype := affinityForSubtype)
+    (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
+    (giftTreasure := giftTreasure)
+    (cascade := cascade)
+    (staticAbilities := staticAbilities)
 
 /-- A non-Aura enchantment. -/
 def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -259,7 +334,8 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (supertypes : Array Supertype := #[])
     (ward : Option Nat := none)
     (asEntersChooseCreatureType : Bool := false)
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option AdventureFace := none)
+    (saga : Option SagaDef := none) : CardDef :=
   card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
     (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
@@ -269,6 +345,14 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (ward := ward)
     (asEntersChooseCreatureType := asEntersChooseCreatureType)
     (adventure := adventure)
+    (saga := saga)
+
+/-- A Saga enchantment (CR 714). -/
+def saga (name : String) (manaCost : ManaCost) (oracleText : String)
+    (sacrificeAfter : String) (chapters : Array SagaChapter) : CardDef :=
+  enchantment name manaCost oracleText
+    (subtypes := #["Saga"])
+    (saga := some { sacrificeAfter, chapters })
 
 /-- An Aura enchantment (CR 303.4). -/
 def aura (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -346,12 +430,14 @@ def legendaryLand (name : String) (oracleText : String)
     (entersTapped : Bool := false)
     (entersTappedUnlessLegendary : Bool := false)
     (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
-    (entersTappedUnlessPayLife : Option Nat := none) : CardDef :=
+    (entersTappedUnlessPayLife : Option Nat := none)
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   land name oracleText tapAddMana tapAddOneOf activatedAbilities subtypes
     (supertypes := #[.legendary]) (entersTapped := entersTapped)
     (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
     (tapPayLifeAddOneOf := tapPayLifeAddOneOf)
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
+    (staticAbilities := staticAbilities)
 
 /-- A Treasure token (CR 111 / 701.42). -/
 def treasureToken : CardDef :=

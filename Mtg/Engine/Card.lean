@@ -41,6 +41,10 @@ structure Keywords where
   storied : Bool := false
   /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
   doubleStrike : Bool := false
+  /-- Prowess (CR 702.108). -/
+  prowess : Bool := false
+  /-- Ascend (CR 702.131). -/
+  ascend : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -72,7 +76,9 @@ def fields : List Field := [
   ⟨(·.firstStrike), fun k b => { k with firstStrike := b }, "first strike"⟩,
   ⟨(·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"⟩,
   ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
-  ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩
+  ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
+  ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
+  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -113,6 +119,8 @@ def firstStrike : Keywords := { Keywords.none with firstStrike := true }
 def islandwalk : Keywords := { Keywords.none with islandwalk := true }
 def storied : Keywords := { Keywords.none with storied := true }
 def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
+def prowess : Keywords := { Keywords.none with prowess := true }
+def ascend : Keywords := { Keywords.none with ascend := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -612,6 +620,8 @@ inductive SpellEffect where
   | createTokensX (kind : TokenKind)
   /-- Exile the top `n` cards face down; play them if you control this subtype. -/
   | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
+  /-- Unique printed spell wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -811,6 +821,8 @@ inductive SpellResolution where
   | targetPlayerDraw (n : Nat)
   /-- Deal `n` damage; if the creature would die this turn, exile it. -/
   | dealDamageToCreatureExileIfDies (n : Nat)
+  /-- Unique printed spell wording. -/
+  | printed (text : String)
   /-- Add {R} for each artifact opponents control. -/
   | addRedPerOppArtifacts
   /-- Deal `n` damage to each non-Dragon creature. -/
@@ -1036,6 +1048,8 @@ def spec : SpellEffect → SpellMeta
   | .exileTopPlayIfYouControlSubtype n subtype =>
     { targeting := .of .none, castKind := .draw,
       resolution := .exileTopPlayIfYouControlSubtype n subtype }
+  | .printed text =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .printed text }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1172,6 +1186,7 @@ def toNotation (e : SpellEffect) : String :=
     s!"create X {kind.pluralNoun}"
   | .exileTopPlayIfYouControlSubtype n subtype =>
     s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
+  | .printed text => text
 
 end SpellEffect
 
@@ -1259,6 +1274,8 @@ inductive AbilityEffect where
   | searchTwoBasicsSplit
   /-- Creatures you control get +P/+T. Each opponent loses `life` life. -/
   | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Unique printed activated wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1332,6 +1349,8 @@ inductive AbilityResolution where
   | searchTwoBasicsSplit
   /-- Team pump and opponents lose life. -/
   | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Unique printed activated wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -1429,6 +1448,8 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .searchTwoBasicsSplit }
   | .creaturesYouControlGetOppsLoseLife p t life =>
     { resolution := .creaturesYouControlGetOppsLoseLife p t life }
+  | .printed text =>
+    { resolution := .printed text }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -1521,6 +1542,7 @@ def toNotation (e : AbilityEffect) : String :=
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
   | .creaturesYouControlGetOppsLoseLife p t life =>
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn. Each opponent loses {life} life"
+  | .printed text => text
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -1736,6 +1758,19 @@ inductive StaticAbility where
   | instantSorceryCostReductionEqualEquippedPower
   /-- Other permanents of this subtype get +P/+0 for each artifact token. -/
   | otherSubtypeGetPowerPerArtifactToken (subtype : String)
+  /-- As long as you have an enduring story, Dwarf triggers go twice. -/
+  | extraTriggerIfEnduringStorySubtype (subtype : String)
+  /-- Enchanted creature loses all abilities and doesn't untap. -/
+  | enchantedLosesAbilitiesDoesntUntap
+  /-- During your turn, equipped creature has hexproof and can't be blocked. -/
+  | equippedHexproofUnblockableDuringYourTurn
+  /-- If a triggered ability of equipped creature triggers, it triggers again. -/
+  | equippedTriggersAgain
+  /-- Equipped creature has first strike and gets +1/+0 per instant/sorcery
+  in your graveyard. -/
+  | equippedFirstStrikePlusPerInstantSorcery
+  /-- Unique printed static wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1826,6 +1861,12 @@ inductive StaticShape where
   | instantSorceryCostReductionEqualEquippedPower
   /-- Other matching creatures get +P/+0 per artifact token. -/
   | otherSubtypePowerPerArtifactToken (subtype : String)
+  | extraTriggerIfEnduringStorySubtype (subtype : String)
+  | enchantedLosesAbilitiesDoesntUntap
+  | equippedHexproofUnblockableDuringYourTurn
+  | equippedTriggersAgain
+  | equippedFirstStrikePlusPerInstantSorcery
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1942,6 +1983,12 @@ def StaticShape.spec : StaticShape → StaticMeta
     { lordPump := some (#[], p, t), lordIncludesSelf := true }
   | .instantSorceryCostReductionEqualEquippedPower => {}
   | .otherSubtypePowerPerArtifactToken _ => {}
+  | .extraTriggerIfEnduringStorySubtype _ => {}
+  | .enchantedLosesAbilitiesDoesntUntap => {}
+  | .equippedHexproofUnblockableDuringYourTurn => {}
+  | .equippedTriggersAgain => {}
+  | .equippedFirstStrikePlusPerInstantSorcery => {}
+  | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1991,6 +2038,15 @@ def shape : StaticAbility → StaticShape
     .instantSorceryCostReductionEqualEquippedPower
   | .otherSubtypeGetPowerPerArtifactToken subtype =>
     .otherSubtypePowerPerArtifactToken subtype
+  | .extraTriggerIfEnduringStorySubtype subtype =>
+    .extraTriggerIfEnduringStorySubtype subtype
+  | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
+  | .equippedHexproofUnblockableDuringYourTurn =>
+    .equippedHexproofUnblockableDuringYourTurn
+  | .equippedTriggersAgain => .equippedTriggersAgain
+  | .equippedFirstStrikePlusPerInstantSorcery =>
+    .equippedFirstStrikePlusPerInstantSorcery
+  | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -2111,8 +2167,19 @@ def toNotation (ab : StaticAbility) : String :=
   | .instantSorceryCostReductionEqualEquippedPower =>
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power."
   | .otherSubtypePowerPerArtifactToken subtype =>
-    let plural := if subtype == "Dwarf" then "Dwarves" else StaticAbility.pluralSubtype subtype
+    let plural := if subtype == "Dwarf" then "Dwarves" else pluralSubtype subtype
     s!"Other {plural} you control get +1/+0 for each artifact token you control."
+  | .extraTriggerIfEnduringStorySubtype subtype =>
+    s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
+  | .enchantedLosesAbilitiesDoesntUntap =>
+    "Enchanted creature loses all abilities and doesn't untap during its controller's untap step."
+  | .equippedHexproofUnblockableDuringYourTurn =>
+    "During your turn, equipped creature has hexproof and can't be blocked."
+  | .equippedTriggersAgain =>
+    "If a triggered ability of equipped creature triggers, that ability triggers an additional time."
+  | .equippedFirstStrikePlusPerInstantSorcery =>
+    "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard."
+  | .printed text => text
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -2516,6 +2583,8 @@ inductive TriggeredAbility where
   permanent card with mana value `mv` or less from a graveyard onto the
   battlefield. -/
   | onCombatDamagePutNonlandMvAtMost (mv : Nat)
+  /-- Unique printed trigger wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -2888,6 +2957,8 @@ inductive TriggerResolution where
   /-- Put a nonland permanent card with mana value at most `mv` from a
   graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
+  /-- Unique printed trigger wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -3175,6 +3246,8 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.dealsCombatDamageToPlayerOrBattle],
       targeting := .of .nonland, allowsZeroTargets := true,
       resolution := .putNonlandMvAtMostFromGy mv }
+  | .printed text =>
+    { resolution := .printed text }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -3416,6 +3489,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+  | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -3426,10 +3500,13 @@ def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
 
 def toNotation (ab : TriggeredAbility) : String :=
-  let t := ab.timing
-  let once :=
-    if t.onceEachTurn then " This ability triggers only once each turn." else ""
-  s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+  match ab.resolution with
+  | .printed text => text
+  | _ =>
+    let t := ab.timing
+    let once :=
+      if t.onceEachTurn then " This ability triggers only once each turn." else ""
+    s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -3447,6 +3524,19 @@ structure AdventureFace where
   spellEffect : Option SpellEffect := none
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- One printed Saga chapter line (`I — …`, `III, IV — …`). -/
+structure SagaChapter where
+  roman : String
+  effect : String
+deriving Repr, Inhabited, BEq
+
+/-- Printed Saga (CR 714): reminder plus chapter abilities. -/
+structure SagaDef where
+  /-- Roman numeral in “Sacrifice after …”. -/
+  sacrificeAfter : String
+  chapters : Array SagaChapter
 deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card. -/
@@ -3553,6 +3643,27 @@ structure CardDef where
   additionalCostSacrificeCreature : Bool := false
   /-- As this enchantment enters, choose a creature type. -/
   asEntersChooseCreatureType : Bool := false
+  /-- Printed Saga chapters (CR 714). -/
+  saga : Option SagaDef := none
+  /-- Affinity for this subtype (CR 702.40). -/
+  affinityForSubtype : Option String := none
+  /-- This spell costs {X} less, where X is the greatest number of artifacts
+  an opponent controls. -/
+  costReductionEqualOppArtifacts : Bool := false
+  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
+  giftTreasure : Bool := false
+  /-- If you would create a Food token, also create a Treasure. -/
+  foodAlsoCreatesTreasure : Bool := false
+  /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
+  othersEnterWithPlusOneEqualToughness : Bool := false
+  /-- This gets +N/+0 for each Mountain you control. -/
+  powerPerMountain : Nat := 0
+  /-- You may play an additional land if you control another of this subtype. -/
+  extraLandIfOtherSubtype : Option String := none
+  /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
+  tapAddColorlessPerSubtype : Option String := none
+  /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
+  cascade : Nat := 0
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
