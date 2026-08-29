@@ -1,6 +1,7 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Game
 import Mtg.Engine.Oracle
 
@@ -754,6 +755,10 @@ def applyIdle (g : Game) : Game :=
     mustApply g p .decline
   | .mayPlusOneCreature _, some p =>
     mustApply g p .decline
+  | .recruitDiscard _, some p =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard for recruit"
+    | some id => mustApply g p (.discard id)
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -11062,6 +11067,383 @@ def gazeResolvedOne : Game :=
 #guard lorienRevealed.matchesOracleText
 #guard sternScolding.matchesOracleText
 #guard dunedainBlade.matchesOracleText
+#guard ordinaryBear.matchesOracleText
+#guard largeBear.matchesOracleText
+#guard littleBear.matchesOracleText
+#guard elvenkingsHarper.matchesOracleText
+#guard smaugsFury.matchesOracleText
+#guard wellWornSpatula.matchesOracleText
+#guard elvenkingsHalls.matchesOracleText
+#guard ironHills.matchesOracleText
+#guard lakeTown.matchesOracleText
+#guard nighthowlPursuer.matchesOracleText
+#guard wargling.matchesOracleText
+#guard wilderlandScrounger.matchesOracleText
+#guard nastyLittleRabbit.matchesOracleText
+#guard theChiefWarg.matchesOracleText
+#guard bardHeirOfGirion.matchesOracleText
+#guard reprieve.matchesOracleText
+#guard thorinsLastStand.matchesOracleText
+#guard stoneBySunlight.matchesOracleText
+#guard duskwatchHunter.matchesOracleText
+#guard patientInstructor.matchesOracleText
+#guard longLakeNuisance.matchesOracleText
+#guard laketownLookout.matchesOracleText
+#guard giantsBoulder.matchesOracleText
+#guard longBodiedGreyDog.matchesOracleText
+#guard doriBearerOfFriends.matchesOracleText
+#guard esgarothGarrison.matchesOracleText
+#guard gundabadOpportunist.matchesOracleText
+#guard giganticBigBear.matchesOracleText
+#guard bothersomeNoisemaker.matchesOracleText
+#guard fearsomeGoblinPair.matchesOracleText
+#guard goblinTownFlunkies.matchesOracleText
+#guard mistyMountainsRaider.matchesOracleText
+#guard greatGoblinFoulHearted.matchesOracleText
+#guard bardsCompany.matchesOracleText
+#guard dwarvenWarriors.matchesOracleText
+#guard goblinTown.matchesOracleText
+#guard mirkwood.matchesOracleText
+#guard hobbitHole.matchesOracleText
+#guard rageIntoTheValley.matchesOracleText
+#guard gatheringOfDarkness.matchesOracleText
+#guard soundTheTrumpets.matchesOracleText
+#guard fatefulDiscovery.matchesOracleText
+#guard chiefWargsCompany.matchesOracleText
+#guard dwarvenShortsword.matchesOracleText
+#guard goblinPlateMail.matchesOracleText
+#guard bagEndBanquet.matchesOracleText
+#guard floweringOfTheWhiteTree.matchesOracleText
+#guard momentOfGlory.matchesOracleText
+#guard plunderTheTrollshaws.matchesOracleText
+#guard tidingsOfWar.matchesOracleText
+#guard eaglesRescue.matchesOracleText
+#guard gandalfWanderingWizard.matchesOracleText
+#guard trollNegotiations.matchesOracleText
+#guard dwarvenMattock.matchesOracleText
+#guard mithrilCoat.matchesOracleText
+#guard greatUglyLookingGoblin.matchesOracleText
+#guard theArkenstone.matchesOracleText
+#guard bolgsCompany.matchesOracleText
+#guard noriTellerOfTales.matchesOracleText
+#guard theLordOfTheEagles.matchesOracleText
+#guard throrsMap.matchesOracleText
+#guard rivendell.matchesOracleText
+#guard delightedHalfling.matchesOracleText
+#guard relicOfSauron.matchesOracleText
+#guard longLostLances.matchesOracleText
+#guard theBlackArrow.matchesOracleText
+#guard smaugTheMagnificent.matchesOracleText
+#guard theQueenOfDale.matchesOracleText
+#guard lothoCorruptShirriff.matchesOracleText
+#guard oriKeeperOfSongs.matchesOracleText
+#guard oinTheBrave.matchesOracleText
+#guard bomburGentleDreamer.matchesOracleText
+#guard filiThePathfinder.matchesOracleText
+#guard thorinOakenshield.matchesOracleText
+#guard dainLordOfTheIronHills.matchesOracleText
+#guard oldThrush.matchesOracleText
+#guard mostDecrepitOldBird.matchesOracleText
+#guard lakeTownMariners.matchesOracleText
+#guard flameOfAnor.matchesOracleText
+#guard lastMarchOfTheEnts.matchesOracleText
+#guard raiseThePalisade.matchesOracleText
+#guard dragonsDesire.matchesOracleText
+#guard pineconeStrike.matchesOracleText
+#guard oriPlateStacker.matchesOracleText
+#guard dainOfTheAncientHalls.matchesOracleText
+#guard treasureVault.matchesOracleText
+#guard theLonelyMountain.matchesOracleText
+#guard thranduilSindarinLiege.matchesOracleText
+#guard aragornAndArwenWed.matchesOracleText
+#guard gloinTheMighty.matchesOracleText
+#guard ironHillsStalwart.matchesOracleText
+#guard oldFatSpider.matchesOracleText
+#guard greatGildedBoat.matchesOracleText
+#guard minasTirith.matchesOracleText
+#guard theShire.matchesOracleText
+#guard thranduilTheStrategist.matchesOracleText
+#guard desolationOfSmaug.matchesOracleText
+#guard moxAmber.matchesOracleText
+#guard filiAndKiliJoyous.matchesOracleText
+#guard dwarvenMauler.matchesOracleText
+#guard myPrecious.matchesOracleText
+#guard troopOfPonies.matchesOracleText
+#guard arcaneSignet.matchesOracleText
+#guard theGaffer.matchesOracleText
+#guard witchKingBringerOfRuin.matchesOracleText
+#guard elvenRaftSteerer.matchesOracleText
+#guard mirkwoodMeditator.matchesOracleText
+#guard mirkwoodNurturer.matchesOracleText
+#guard necklaceOfGirion.matchesOracleText
+#guard kiliTheResourceful.matchesOracleText
+#guard dainsCompany.matchesOracleText
+#guard sauronTheLidlessEye.matchesOracleText
+#guard bolgEreborsReckoning.matchesOracleText
+#guard smaugWickedWorm.matchesOracleText
+#guard glamdringFoeHammer.matchesOracleText
+#guard settleTheWreckage.matchesOracleText
+#guard anUnexpectedParty.matchesOracleText
+#guard ironHillsBlacksmith.matchesOracleText
+#guard thorinKingOfDurinsFolk.matchesOracleText
+#guard gandalfGoblinsBane.matchesOracleText
+#guard bilboUnexpectedAdventurer.matchesOracleText
+#guard alongTheCrookedWay.matchesOracleText
+#guard andurilFlameOfTheWest.matchesOracleText
+#guard andurilNarsilReforged.matchesOracleText
+#guard aragornTheUniter.matchesOracleText
+#guard arwenMortalQueen.matchesOracleText
+#guard arwenWeaverOfHope.matchesOracleText
+#guard azogMoriaSRuin.matchesOracleText
+#guard balinLoremaster.matchesOracleText
+#guard bardTheBowman.matchesOracleText
+#guard bardKingOfDale.matchesOracleText
+#guard bejeweledWarg.matchesOracleText
+#guard belladonnaTook.matchesOracleText
+#guard beornTheFierce.matchesOracleText
+#guard bifurMelodicRider.matchesOracleText
+#guard bilboSBurglaring.matchesOracleText
+#guard bilboSGambit.matchesOracleText
+#guard bilboSRing.matchesOracleText
+#guard bilboFellowConspirator.matchesOracleText
+#guard bilboThiefInTheNight.matchesOracleText
+#guard bolgOfTheNorth.matchesOracleText
+#guard boughsideWanderers.matchesOracleText
+#guard burnBurnTreeAndFern.matchesOracleText
+#guard callForthTheTempest.matchesOracleText
+#guard cantankerousKeepers.matchesOracleText
+#guard cavernHoardDragon.matchesOracleText
+#guard celebrateTheMountainKing.matchesOracleText
+#guard chiefOfTheWilds.matchesOracleText
+#guard dancingFromDarkToDawn.matchesOracleText
+#guard desertWereWorm.matchesOracleText
+#guard downInTheValley.matchesOracleText
+#guard downDownToGoblinTown.matchesOracleText
+#guard dragonCursedHalls.matchesOracleText
+#guard dwalinWeaponmaster.matchesOracleText
+#guard dainIronfoot.matchesOracleText
+#guard elrondMoonReader.matchesOracleText
+#guard elvenChorus.matchesOracleText
+#guard elvenPassage.matchesOracleText
+#guard enchantedRiverSGrasp.matchesOracleText
+#guard galadrielSDismissal.matchesOracleText
+#guard galadrielLightOfValinor.matchesOracleText
+#guard gandalfPartyGuest.matchesOracleText
+#guard gandalfShadowSFoe.matchesOracleText
+#guard getawayBarrel.matchesOracleText
+#guard glamdring.matchesOracleText
+#guard gleamingSplendor.matchesOracleText
+#guard gollumRiddleMaster.matchesOracleText
+#guard grimaSarumanSFootman.matchesOracleText
+#guard headOfTheHunt.matchesOracleText
+#guard insideInformation.matchesOracleText
+#guard keyToTheSideDoor.matchesOracleText
+#guard lakeTownToymaker.matchesOracleText
+#guard lastLightOfDurinSDay.matchesOracleText
+#guard masterSCouncillors.matchesOracleText
+#guard minasMorgulDarkFortress.matchesOracleText
+#guard mountDoom.matchesOracleText
+#guard oldFatSpiderCanTSeeMe.matchesOracleText
+#guard orcishBowmasters.matchesOracleText
+#guard orcristGoblinCleaver.matchesOracleText
+#guard palantirOfOrthanc.matchesOracleText
+#guard partInFriendship.matchesOracleText
+#guard radagastOfRhosgobel.matchesOracleText
+#guard rhovanionRampager.matchesOracleText
+#guard riddlesInTheDark.matchesOracleText
+#guard roadsGoEverEverOn.matchesOracleText
+#guard rollRollRollRoll.matchesOracleText
+#guard sarumanOfManyColors.matchesOracleText
+#guard sauronTheDarkLord.matchesOracleText
+#guard silvanReveler.matchesOracleText
+#guard smaugTheImpenetrable.matchesOracleText
+#guard stingBilboSSword.matchesOracleText
+#guard stoneGiantOfHighPass.matchesOracleText
+#guard supperForSpiders.matchesOracleText
+#guard theBlackGate.matchesOracleText
+#guard theEaglesAreComing.matchesOracleText
+#guard theGreatGoblin.matchesOracleText
+#guard theMasterOfLakeTown.matchesOracleText
+#guard theMistyMountainsCold.matchesOracleText
+#guard theMountainKingSReturn.matchesOracleText
+#guard theNotaryHobbits.matchesOracleText
+#guard theOneRing.matchesOracleText
+#guard theReaverCleaver.matchesOracleText
+#guard theSackvilleBagginses.matchesOracleText
+#guard thorinCompanySLeader.matchesOracleText
+#guard thorinMountainKing.matchesOracleText
+#guard thranduilSCompany.matchesOracleText
+#guard thranduilTheElvenking.matchesOracleText
+#guard throughTheForestGate.matchesOracleText
+#guard tomBombadil.matchesOracleText
+#guard tomBertAndWilliam.matchesOracleText
+#guard uncoverTheMoonLetters.matchesOracleText
+#guard witchKingOfAngmar.matchesOracleText
+#guard wizardSStaff.matchesOracleText
+#guard largeBear.manaCost.manaValue == 5
+#guard
+  let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .green) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .red) 2 |>.add .colorless 3
+  (p.pay? largeBear.manaCost).isNone
+
+/-- Dual lands enter tapped when played (CR 110.5b exception). -/
+def hallsInHand : Game :=
+  addToHand started elvenkingsHalls ⟨0⟩
+
+def hallsReady : Game := skipTo hallsInHand .precombatMain 40
+
+def hallsPlayed : Game :=
+  mustApply hallsReady ⟨0⟩ (.playLand (handCardNamed hallsReady ⟨0⟩ "Elvenking's Halls").id)
+
+#guard (namedPermanent hallsPlayed "Elvenking's Halls").status.tapped
+#guard (namedPermanent hallsPlayed "Elvenking's Halls").printed.tapAddOneOf ==
+  #[.colored .green, .colored .blue]
+
+/-- Recruit draws, then a nonland discard creates a Human Soldier token. -/
+def instructorEntered : Game :=
+  (addToHand started lightningBolt ⟨0⟩).beginRecruit ⟨0⟩
+
+#guard instructorEntered.pending == .recruitDiscard ⟨0⟩
+#guard (instructorEntered.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 2
+
+def instructorRecruited : Game :=
+  mustApply instructorEntered ⟨0⟩
+    (.discard (handCardNamed instructorEntered ⟨0⟩ "Lightning Bolt").id)
+
+#guard instructorRecruited.pending == .none
+#guard instructorRecruited.battlefield.any (fun o =>
+  o.name == "Human Soldier" && o.printed.isToken)
+
+/-- Ferocious on The Chief Warg fires when you attack with a 4-power creature. -/
+def chiefAndBaloth : Game :=
+  addPermanent (addPermanent started theChiefWarg ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
+
+#guard chiefAndBaloth.triggerConditionHolds ⟨0⟩ .onYouAttackFerociousDrawLoseLife
+
+def chiefReady : Game :=
+  passBoth (skipTo chiefAndBaloth .beginningOfCombat 80)
+
+def chiefAttackDeclared : Game :=
+  mustApply chiefReady ⟨0⟩ (.declareAttackers #[(namedPermanent chiefReady "Rumbling Baloth").id])
+
+#guard chiefAttackDeclared.stack.any (fun e =>
+  (chiefAttackDeclared.object! e.objectId).triggeredAbility ==
+    some .onYouAttackFerociousDrawLoseLife)
+
+def chiefAttackResolved : Game := passBoth chiefAttackDeclared
+
+#guard (chiefAttackResolved.player ⟨0⟩).life == 19
+#guard (chiefAttackResolved.player ⟨0⟩).hand.size ==
+  (chiefAttackDeclared.player ⟨0⟩).hand.size + 1
+
+/-- Dori creates an untapped Treasure; Long-Bodied Grey Dog creates a tapped one. -/
+def doriTreasure : Game :=
+  (addPermanent started doriBearerOfFriends ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ .onEnterCreateTreasure none
+
+#guard doriTreasure.battlefield.any (fun o =>
+  o.name == "Treasure" && o.printed.isToken && !o.status.tapped)
+
+def dogTreasure : Game :=
+  (addPermanent started longBodiedGreyDog ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ .onEnterCreateTreasureTapped none
+
+#guard dogTreasure.battlefield.any (fun o =>
+  o.name == "Treasure" && o.printed.isToken && o.status.tapped)
+
+/-- Tokens cannot block Duskwatch Hunter. -/
+def hunterVsToken : Game :=
+  let g := addPermanent started duskwatchHunter ⟨0⟩ ⟨0⟩
+  let (g, _) := g.createToken ⟨1⟩ Catalog.humanSoldierToken
+  let o := namedPermanent g "Duskwatch Hunter"
+  g.setObject { o with status := { o.status with attacking := true } }
+
+#guard
+  !hunterVsToken.canBlock (namedPermanent hunterVsToken "Human Soldier")
+    (namedPermanent hunterVsToken "Duskwatch Hunter")
+
+/-- Amass Goblins creates a 0/0 Goblin Army and puts +1/+1 counters on it. -/
+def flunkiesAmass : Game :=
+  (addPermanent started goblinTownFlunkies ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ (.onEnterAmassGoblins 1) none
+
+#guard
+  let army := namedPermanent flunkiesAmass "Goblin Army"
+  army.printed.isToken && flunkiesAmass.hasSubtype army "Goblin" &&
+    flunkiesAmass.hasSubtype army "Army" &&
+    army.status.plusOnePlusOne == 1
+
+/-- A second amass puts counters on the existing Army. -/
+def secondAmass : Game :=
+  flunkiesAmass.applyTriggeredAbility ⟨0⟩ (.onEnterAmassGoblins 1) none
+
+#guard
+  (secondAmass.battlefield.filter (fun o => o.name == "Goblin Army")).size == 1 &&
+    (namedPermanent secondAmass "Goblin Army").status.plusOnePlusOne == 2
+
+/-- Gigantic Big Bear cannot be countered. -/
+def giganticBigBearUncounterable : Game :=
+  let g := addToHand (skipTo started .precombatMain 40) giganticBigBear ⟨0⟩
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gigantic Big Bear").id)
+  g.counterStackSpell g.stack.back!.objectId
+
+#guard
+  (giganticBigBearUncounterable.object!
+    giganticBigBearUncounterable.stack.back!.objectId).name ==
+    "Gigantic Big Bear" &&
+    giganticBigBearUncounterable.log.any (fun s => mentions s "can't be countered")
+
+/-- Rage into the Valley draws, loses life, and amasses Goblins. -/
+def rageAmass : Game :=
+  started.applyEffect ⟨0⟩ (.drawLoseLifeThenAmass 2) #[]
+
+#guard
+  (rageAmass.player ⟨0⟩).life == 19 &&
+    (namedPermanent rageAmass "Goblin Army").status.plusOnePlusOne == 2
+
+/-- Chief Warg's Company cannot attack without two other Wolves. -/
+def loneWargCompany : Game :=
+  addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩
+
+#guard !loneWargCompany.canAttack (namedPermanent loneWargCompany "Chief Warg's Company")
+
+/-- Dwarven Shortsword enters, makes a Dwarf, and attaches. -/
+def shortswordEntered : Game :=
+  let g := addPermanent started dwarvenShortsword ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Dwarven Shortsword"
+  g.applyTriggeredAbility ⟨0⟩ (.onEnterCreateThenAttach .dwarf) (some src.id)
+
+#guard
+  let dwarf := namedPermanent shortswordEntered "Dwarf"
+  let sword := namedPermanent shortswordEntered "Dwarven Shortsword"
+  dwarf.printed.isToken && sword.attachedTo == some dwarf.id
+
+/-- Bag End Banquet creates three Foods. -/
+def banquetFoods : Game :=
+  (addPermanent started bagEndBanquet ⟨0⟩ ⟨0⟩).applyTriggeredAbility
+    ⟨0⟩ (.onEnterCreateTokens .food 3) none
+
+#guard
+  (banquetFoods.battlefield.filter (fun o => o.name == "Food")).size == 3
+
+/-- Tidings of War from hand amasses 1; from the graveyard it would amass 3. -/
+def tidingsFromHandAmass1 : Bool :=
+  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+    (castFromGraveyard := false)).battlefield.any (fun o =>
+      o.name == "Goblin Army" && o.status.plusOnePlusOne == 1)
+
+def tidingsFromGraveyardAmass3 : Bool :=
+  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+    (castFromGraveyard := true)).battlefield.any (fun o =>
+      o.name == "Goblin Army" && o.status.plusOnePlusOne == 3)
+
+#guard tidingsFromHandAmass1
+#guard tidingsFromGraveyardAmass3
 
 end Mtg.Engine.Tests
 

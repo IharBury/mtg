@@ -36,6 +36,15 @@ structure Keywords where
   /-- This creature can't be blocked as long as the defending player controls
   an Island (CR 702.14). -/
   islandwalk : Bool := false
+  /-- Storied (HOB): if you control three or more artifacts, legendaries,
+  and/or Sagas, you have an enduring story for the rest of the game. -/
+  storied : Bool := false
+  /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
+  doubleStrike : Bool := false
+  /-- Prowess (CR 702.108). -/
+  prowess : Bool := false
+  /-- Ascend (CR 702.131). -/
+  ascend : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -65,7 +74,11 @@ def fields : List Field := [
   ⟨(·.defender), fun k b => { k with defender := b }, "defender"⟩,
   ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩,
   ⟨(·.firstStrike), fun k b => { k with firstStrike := b }, "first strike"⟩,
-  ⟨(·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"⟩
+  ⟨(·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"⟩,
+  ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
+  ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
+  ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
+  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -104,7 +117,54 @@ def defender : Keywords := { Keywords.none with defender := true }
 def lifelink : Keywords := { Keywords.none with lifelink := true }
 def firstStrike : Keywords := { Keywords.none with firstStrike := true }
 def islandwalk : Keywords := { Keywords.none with islandwalk := true }
+def storied : Keywords := { Keywords.none with storied := true }
+def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
+def prowess : Keywords := { Keywords.none with prowess := true }
+def ascend : Keywords := { Keywords.none with ascend := true }
 end Keyword
+
+/-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
+cards reconstruct printed “create a …” lines. -/
+inductive TokenKind where
+  | treasure
+  | food
+  | humanSoldier
+  | wolf
+  | dwarf
+  | bear
+  | elf
+deriving Repr, Inhabited, BEq
+
+namespace TokenKind
+
+def oracleNoun : TokenKind → String
+  | .treasure => "Treasure token"
+  | .food => "Food token"
+  | .humanSoldier => "1/1 white Human Soldier creature token"
+  | .wolf => "2/2 green Wolf creature token"
+  | .dwarf => "2/2 red Dwarf creature token"
+  | .bear => "2/2 green Bear creature token"
+  | .elf => "1/1 green Elf creature token"
+
+def pluralNoun : TokenKind → String
+  | .treasure => "Treasure tokens"
+  | .food => "Food tokens"
+  | .humanSoldier => "1/1 white Human Soldier creature tokens"
+  | .wolf => "2/2 green Wolf creature tokens"
+  | .dwarf => "2/2 red Dwarf creature tokens"
+  | .bear => "2/2 green Bear creature tokens"
+  | .elf => "1/1 green Elf creature tokens"
+
+/-- Oracle “create …” clause for `n` tokens of this kind. -/
+def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
+  let tappedS := if tapped then "tapped " else ""
+  if n == 1 then
+    s!"create a {tappedS}{k.oracleNoun}"
+  else
+    let nWord := if n == 3 then "three" else toString n
+    s!"create {nWord} {tappedS}{k.pluralNoun}"
+
+end TokenKind
 
 /-- Whom a spell, activated ability, or triggered ability may target
 (CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
@@ -165,6 +225,34 @@ inductive EffectTargetKind where
   | defendingPlayerCreature
   /-- Two target nonland permanents that share a card type. -/
   | twoNonlandsSharingType
+  /-- Target creature with power `n` or greater. -/
+  | creaturePowerAtLeast (n : Int)
+  /-- Target creature with power `n` or less. -/
+  | creaturePowerAtMost (n : Int)
+  /-- Target creature you control with any of these subtypes. -/
+  | creatureYouControlAnySubtype (subtypes : Array String)
+  /-- Target permanent. -/
+  | permanent
+  /-- Target creature card in your graveyard. -/
+  | creatureCardInYourGraveyard
+  /-- Target legendary creature you control. -/
+  | legendaryCreatureYouControl
+  /-- Target creature you control with power `n` or less. -/
+  | creatureYouControlPowerAtMost (n : Int)
+  /-- Target artifact. -/
+  | artifact
+  /-- Target artifact token. -/
+  | artifactToken
+  /-- Target attacking creature. -/
+  | attackingCreature
+  /-- Target Equipment you control. -/
+  | equipmentYouControl
+  /-- Target creature or land you control. -/
+  | creatureOrLandYouControl
+  /-- Two target creatures and/or lands you control. -/
+  | twoCreaturesOrLandsYouControl
+  /-- Target Equipment you control, then up to one target creature you control. -/
+  | equipmentYouControlThenCreatureYouControl
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -262,6 +350,49 @@ def spec : EffectTargetKind → Spec
       noun := "two target nonland permanents that share a card type"
       prefer := .ownThenOpponent
       slots := #[.nonland, .nonland] }
+  | .creaturePowerAtLeast n =>
+    { noun := s!"target creature with power {n} or greater" }
+  | .creaturePowerAtMost n =>
+    { noun := s!"target creature with power {n} or less", prefer := .own }
+  | .creatureYouControlAnySubtype subtypes =>
+    { noun :=
+        match subtypes.toList with
+        | [] => "target creature you control"
+        | [a] => s!"target {a} you control"
+        | [a, b] => s!"target {a} or {b} you control"
+        | xs =>
+          let last := xs.getLast!
+          let init := String.intercalate ", " xs.dropLast
+          s!"target {init}, or {last} you control"
+      prefer := .own }
+  | .permanent =>
+    { noun := "target permanent", prefer := .ownThenOpponent }
+  | .creatureCardInYourGraveyard =>
+    { noun := "target creature card from your graveyard", prefer := .last }
+  | .legendaryCreatureYouControl =>
+    { noun := "target legendary creature you control", prefer := .own }
+  | .creatureYouControlPowerAtMost n =>
+    { noun := s!"target creature you control with power {n} or less", prefer := .own }
+  | .artifact =>
+    { noun := "target artifact" }
+  | .artifactToken =>
+    { noun := "target artifact token" }
+  | .attackingCreature =>
+    { noun := "target attacking creature", prefer := .own }
+  | .equipmentYouControl =>
+    { noun := "target Equipment you control", prefer := .own }
+  | .creatureOrLandYouControl =>
+    { noun := "target creature or land you control", prefer := .own }
+  | .twoCreaturesOrLandsYouControl =>
+    { count := 2
+      noun := "two target creatures and/or lands you control"
+      prefer := .own
+      slots := #[.creatureOrLandYouControl, .creatureOrLandYouControl] }
+  | .equipmentYouControlThenCreatureYouControl =>
+    { count := 2
+      noun := "target Equipment you control and up to one target creature you control"
+      prefer := .own
+      slots := #[.equipmentYouControl, .creatureYouControl] }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -417,6 +548,80 @@ inductive SpellEffect where
   | untapPumpMaybeAttach (power toughness : Int)
   /-- Exchange control of two target nonland permanents that share a card type. -/
   | exchangeControlSharingType
+  /-- Return target spell to its owner's hand, then draw a card (e.g. Reprieve). -/
+  | returnSpellDraw
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- Destroy target artifact or enchantment. You gain `life` life. -/
+  | destroyArtifactOrEnchantmentGainLife (life : Nat)
+  /-- Destroy target creature with power `n` or greater. -/
+  | destroyCreaturePowerAtLeast (n : Int)
+  /-- Until end of turn, target creature becomes an artifact in addition to
+  its other types and gains indestructible. -/
+  | becomeArtifactGainIndestructible
+  /-- Target creature gets +P/+T and gains these keywords until end of turn. -/
+  | pumpAndGrantKeywords (power toughness : Int) (k : Keywords)
+  /-- Amass Goblins `n` (CR 701.43). -/
+  | amassGoblins (n : Nat)
+  /-- You draw a card and lose 1 life, then amass Goblins `n`. -/
+  | drawLoseLifeThenAmass (n : Nat)
+  /-- Return up to one target creature card from your graveyard to your hand,
+  then amass Goblins `n`. -/
+  | returnCreatureFromGyThenAmass (n : Nat)
+  /-- Counter target spell. If its mana value was `n` or less, recruit. -/
+  | counterThenRecruitIfMvAtMost (n : Nat)
+  /-- Put `n` +1/+1 counters on target creature you control, then it fights. -/
+  | plusOneThenFight (n : Nat)
+  /-- Put a +1/+1 counter on target creature you control; if cast from a
+  graveyard, also each other creature you control. -/
+  | plusOneThenEachOtherIfFromGy
+  /-- Draw `n` cards, or `fromGy` if this spell was cast from a graveyard. -/
+  | drawIfFromGy (n fromGy : Nat)
+  /-- Amass Goblins `n`, or `fromGy` if cast from a graveyard. -/
+  | amassGoblinsOrFromGy (n fromGy : Nat)
+  /-- Search your library for a legendary creature card, reveal it, put it
+  into your hand, then shuffle. -/
+  | searchLegendaryCreatureToHand
+  /-- Deal `n` damage to each creature opponents control. -/
+  | dealDamageToEachOppCreature (n : Nat)
+  /-- Destroy target artifact. -/
+  | destroyTargetArtifact
+  /-- Target player draws `n` cards. -/
+  | targetPlayerDraw (n : Nat)
+  /-- Deal `n` damage to target creature. If it would die this turn, exile it. -/
+  | dealDamageToCreatureExileIfDies (n : Nat)
+  /-- Destroy target artifact token. -/
+  | destroyArtifactToken
+  /-- Add {R} for each artifact opponents control. -/
+  | addRedPerOppArtifacts
+  /-- Deal `n` damage to each non-Dragon creature. -/
+  | dealDamageToEachNonDragon (n : Nat)
+  /-- Choose a creature type. Return all creatures that aren't of that type. -/
+  | chooseTypeReturnOthers
+  /-- Draw cards equal to the greatest toughness among creatures you control,
+  then put any number of creature cards from your hand onto the battlefield. -/
+  | drawEqualToughnessThenPutCreatures
+  /-- Mill `n`, then put an instant or sorcery from among them into your hand. -/
+  | millThenPutInstantOrSorcery (n : Nat)
+  /-- Mill `n`, then put up to `max` land cards from among them into your hand. -/
+  | millThenPutLands (n max : Nat)
+  /-- Exile the targeted permanents you control, then return them. -/
+  | exileThenReturnYouControl
+  /-- Deal `n` damage to each non-Dragon, then add four mana that can be
+  spent only on Dragon spells. -/
+  | dealDamageToEachNonDragonThenAddDragonMana (n : Nat)
+  /-- Mill `n`, then put all instant and sorcery cards from among them
+  into your hand. -/
+  | millThenPutAllInstantsOrSorceries (n : Nat)
+  /-- Exile all attacking creatures target player controls. That player
+  may search for that many basic lands. -/
+  | exileAttackersSearchBasics
+  /-- Create X tokens of this kind. -/
+  | createTokensX (kind : TokenKind)
+  /-- Exile the top `n` cards face down; play them if you control this subtype. -/
+  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
+  /-- Unique printed spell wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -483,6 +688,11 @@ inductive PermanentAction where
   | tap
   /-- Untap the permanent. -/
   | untap
+  /-- Until end of turn, this becomes an artifact in addition to its other
+  types and gains indestructible. -/
+  | becomeArtifactIndestructible
+  /-- Until-end-of-turn +P/+T and these keywords. -/
+  | pumpAndGrant (power toughness : Int) (k : Keywords)
 deriving Repr, Inhabited, BEq
 
 namespace PermanentAction
@@ -519,6 +729,14 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"{noun} gains {joined} until end of turn"
     | .tap => s!"tap {noun}"
     | .untap => s!"untap {noun}"
+    | .becomeArtifactIndestructible =>
+      s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
+    | .pumpAndGrant p t k =>
+      let joined :=
+        match k.toList with
+        | [a, b] => s!"{a} and {b}"
+        | ks => String.intercalate ", " ks
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains {joined} until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction
@@ -573,6 +791,62 @@ inductive SpellResolution where
   | exchangeControl
   /-- Put a +1/+1 counter on an optional creature target; a player gains life. -/
   | plusOneAndPlayerGainsLife (life : Nat)
+  /-- Return the targeted spell to its owner's hand, then draw a card. -/
+  | returnSpellDraw
+  /-- Creatures you control get +P/+T until end of turn. -/
+  | creaturesYouControlPump (power toughness : Int)
+  /-- Destroy the targeted artifact or enchantment; you gain life. -/
+  | destroyArtifactOrEnchantmentGainLife (life : Nat)
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
+  /-- Draw a card, lose 1 life, then amass Goblins `n`. -/
+  | drawLoseLifeThenAmass (n : Nat)
+  /-- Return an optional graveyard creature card, then amass Goblins `n`. -/
+  | returnCreatureFromGyThenAmass (n : Nat)
+  /-- Counter the targeted spell; recruit if its mana value was `n` or less. -/
+  | counterThenRecruitIfMvAtMost (n : Nat)
+  /-- +1/+1 counters on the first target, then it fights the second. -/
+  | plusOneThenFight (n : Nat)
+  /-- +1/+1 on the target; if from the graveyard, also each other. -/
+  | plusOneThenEachOtherIfFromGy
+  /-- Draw `n`, or `fromGy` if cast from a graveyard. -/
+  | drawIfFromGy (n fromGy : Nat)
+  /-- Amass Goblins `n`, or `fromGy` if cast from a graveyard. -/
+  | amassGoblinsOrFromGy (n fromGy : Nat)
+  /-- Search the library for a legendary creature and put it into hand. -/
+  | searchLegendaryCreatureToHand
+  /-- Deal `n` damage to each creature opponents control. -/
+  | dealDamageToEachOppCreature (n : Nat)
+  /-- Target player draws `n` cards. -/
+  | targetPlayerDraw (n : Nat)
+  /-- Deal `n` damage; if the creature would die this turn, exile it. -/
+  | dealDamageToCreatureExileIfDies (n : Nat)
+  /-- Unique printed spell wording. -/
+  | printed (text : String)
+  /-- Add {R} for each artifact opponents control. -/
+  | addRedPerOppArtifacts
+  /-- Deal `n` damage to each non-Dragon creature. -/
+  | dealDamageToEachNonDragon (n : Nat)
+  /-- Choose a creature type and bounce the rest. -/
+  | chooseTypeReturnOthers
+  /-- Draw equal to greatest toughness, then put creatures onto the battlefield. -/
+  | drawEqualToughnessThenPutCreatures
+  /-- Mill `n`, then put an instant or sorcery into hand. -/
+  | millThenPutInstantOrSorcery (n : Nat)
+  /-- Mill `n`, then put up to `max` lands into hand. -/
+  | millThenPutLands (n max : Nat)
+  /-- Exile targeted permanents you control, then return them. -/
+  | exileThenReturnYouControl
+  /-- Deal `n` to each non-Dragon, then add Dragon-restricted mana. -/
+  | dealDamageToEachNonDragonThenAddDragonMana (n : Nat)
+  /-- Mill `n`, then put all instants and sorceries into hand. -/
+  | millThenPutAllInstantsOrSorceries (n : Nat)
+  /-- Exile attacking creatures; that player may search basics. -/
+  | exileAttackersSearchBasics
+  /-- Create X tokens of this kind. -/
+  | createTokensX (kind : TokenKind)
+  /-- Exile the top `n`; play them if you control this subtype. -/
+  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -587,6 +861,8 @@ structure SpellMeta where
   (required count equals the maximum). Gaze in Wonder uses `2` with a
   required count of `1` (“one or two”). -/
   maxTargets : Nat := 0
+  /-- Zero targets is a legal announcement (CR 115.1c), e.g. “up to one”. -/
+  allowsZeroTargets : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace SpellEffect
@@ -687,6 +963,93 @@ def spec : SpellEffect → SpellMeta
   | .exchangeControlSharingType =>
     { targeting := .of .twoNonlandsSharingType, castKind := .counter,
       resolution := .exchangeControl }
+  | .returnSpellDraw =>
+    { targeting := .of .spell, castKind := .counter, resolution := .returnSpellDraw }
+  | .creaturesYouControlGet p t =>
+    { targeting := .of .none, castKind := .massPump,
+      resolution := .creaturesYouControlPump p t }
+  | .destroyArtifactOrEnchantmentGainLife n =>
+    { targeting := .of .artifactOrEnchantment, castKind := .destroyArtifactOrLand,
+      resolution := .destroyArtifactOrEnchantmentGainLife n }
+  | .destroyCreaturePowerAtLeast n =>
+    { targeting := .of (.creaturePowerAtLeast n), castKind := .destroyCreature,
+      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
+  | .becomeArtifactGainIndestructible =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .onPermanent .becomeArtifactIndestructible }
+  | .pumpAndGrantKeywords p t k =>
+    { targeting := .of .creature .own, castKind := .pump,
+      resolution := .onPermanent (.pumpAndGrant p t k) }
+  | .amassGoblins n =>
+    { targeting := .of .none, castKind := .pump, resolution := .amassGoblins n }
+  | .drawLoseLifeThenAmass n =>
+    { targeting := .of .none, castKind := .draw, resolution := .drawLoseLifeThenAmass n }
+  | .returnCreatureFromGyThenAmass n =>
+    { targeting := .of .creatureCardInYourGraveyard, castKind := .draw,
+      allowsZeroTargets := true, resolution := .returnCreatureFromGyThenAmass n }
+  | .counterThenRecruitIfMvAtMost n =>
+    { targeting := .of .spell, castKind := .counter,
+      resolution := .counterThenRecruitIfMvAtMost n }
+  | .plusOneThenFight n =>
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      resolution := .plusOneThenFight n }
+  | .plusOneThenEachOtherIfFromGy =>
+    { targeting := .of .creatureYouControl, castKind := .pump,
+      resolution := .plusOneThenEachOtherIfFromGy }
+  | .drawIfFromGy n fromGy =>
+    { targeting := .of .none, castKind := .draw, resolution := .drawIfFromGy n fromGy }
+  | .amassGoblinsOrFromGy n fromGy =>
+    { targeting := .of .none, castKind := .pump, resolution := .amassGoblinsOrFromGy n fromGy }
+  | .searchLegendaryCreatureToHand =>
+    { targeting := .of .none, castKind := .draw, resolution := .searchLegendaryCreatureToHand }
+  | .dealDamageToEachOppCreature n =>
+    { targeting := .of .none, castKind := .creatureDamage,
+      resolution := .dealDamageToEachOppCreature n }
+  | .destroyTargetArtifact =>
+    { targeting := .of .artifact, castKind := .destroyArtifactOrLand,
+      resolution := .onPermanent .destroy }
+  | .targetPlayerDraw n =>
+    { targeting := .of .player .selfPlayer, castKind := .draw,
+      resolution := .targetPlayerDraw n }
+  | .dealDamageToCreatureExileIfDies n =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .dealDamageToCreatureExileIfDies n }
+  | .destroyArtifactToken =>
+    { targeting := .of .artifactToken, castKind := .destroyArtifactOrLand,
+      resolution := .onPermanent .destroy }
+  | .addRedPerOppArtifacts =>
+    { targeting := .of .none, castKind := .draw, resolution := .addRedPerOppArtifacts }
+  | .dealDamageToEachNonDragon n =>
+    { targeting := .of .none, castKind := .creatureDamage,
+      resolution := .dealDamageToEachNonDragon n }
+  | .chooseTypeReturnOthers =>
+    { targeting := .of .none, castKind := .counter, resolution := .chooseTypeReturnOthers }
+  | .drawEqualToughnessThenPutCreatures =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .drawEqualToughnessThenPutCreatures }
+  | .millThenPutInstantOrSorcery n =>
+    { targeting := .of .none, castKind := .draw, resolution := .millThenPutInstantOrSorcery n }
+  | .millThenPutLands n max =>
+    { targeting := .of .none, castKind := .draw, resolution := .millThenPutLands n max }
+  | .exileThenReturnYouControl =>
+    { targeting := .of .twoCreaturesOrLandsYouControl, castKind := .counter,
+      resolution := .exileThenReturnYouControl }
+  | .dealDamageToEachNonDragonThenAddDragonMana n =>
+    { targeting := .of .none, castKind := .creatureDamage,
+      resolution := .dealDamageToEachNonDragonThenAddDragonMana n }
+  | .millThenPutAllInstantsOrSorceries n =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .millThenPutAllInstantsOrSorceries n }
+  | .exileAttackersSearchBasics =>
+    { targeting := .of .player, castKind := .destroyCreature,
+      resolution := .exileAttackersSearchBasics }
+  | .createTokensX kind =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .createTokensX kind }
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .exileTopPlayIfYouControlSubtype n subtype }
+  | .printed text =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .printed text }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -707,6 +1070,10 @@ def targetCount (e : SpellEffect) : Nat :=
 unless `spec.maxTargets` is set (e.g. “one or two”). -/
 def maxTargetCount (e : SpellEffect) : Nat :=
   if e.spec.maxTargets == 0 then e.targetCount else e.spec.maxTargets
+
+/-- True when zero targets is a legal announcement (CR 115.1c). -/
+def allowsZeroTargets (e : SpellEffect) : Bool :=
+  e.spec.allowsZeroTargets
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
 def requiresTarget (e : SpellEffect) : Bool :=
@@ -764,9 +1131,62 @@ def toNotation (e : SpellEffect) : String :=
     "exchange control of two target nonland permanents that share a card type"
   | .plusOneAndPlayerGainsLife n =>
     s!"put a +1/+1 counter on up to one target creature. {capitalizeAscii noun} gains {n} life"
-
-instance : ToString SpellEffect where
-  toString := toNotation
+  | .returnSpellDraw =>
+    s!"return {noun} to its owner's hand. Draw a card"
+  | .creaturesYouControlPump p t =>
+    s!"creatures you control get {signedStat p}/{signedStat t} until end of turn"
+  | .destroyArtifactOrEnchantmentGainLife n =>
+    s!"destroy {noun}. You gain {n} life"
+  | .amassGoblins n =>
+    s!"amass Goblins {n}"
+  | .drawLoseLifeThenAmass n =>
+    s!"you draw a card and lose 1 life. Amass Goblins {n}"
+  | .returnCreatureFromGyThenAmass n =>
+    s!"return up to one {noun} to your hand. Amass Goblins {n}"
+  | .counterThenRecruitIfMvAtMost n =>
+    s!"counter {noun}. If that spell's mana value was {n} or less, recruit"
+  | .plusOneThenFight n =>
+    s!"put {plusOnePlusOneCountersPhrase n} on target creature you control. Then it fights target creature an opponent controls"
+  | .plusOneThenEachOtherIfFromGy =>
+    "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
+  | .drawIfFromGy n fromGy =>
+    s!"draw {cardPhrase n}. If this spell was cast from a graveyard, draw {cardPhrase fromGy} instead"
+  | .amassGoblinsOrFromGy n fromGy =>
+    s!"amass Goblins {n}. If this spell was cast from a graveyard, amass Goblins {fromGy} instead"
+  | .searchLegendaryCreatureToHand =>
+    "search your library for a legendary creature card, reveal it, put it into your hand, then shuffle"
+  | .dealDamageToEachOppCreature n =>
+    s!"deals {n} damage to each creature your opponents control"
+  | .targetPlayerDraw n =>
+    s!"{noun} draws {cardPhrase n}"
+  | .dealDamageToCreatureExileIfDies n =>
+    s!"deals {n} damage to {noun}. If that creature would die this turn, exile it instead"
+  | .addRedPerOppArtifacts =>
+    "add {R} for each artifact your opponents control"
+  | .dealDamageToEachNonDragon n =>
+    s!"deals {n} damage to each non-Dragon creature"
+  | .chooseTypeReturnOthers =>
+    "choose a creature type. Return all creatures that aren't of the chosen type to their owners' hands"
+  | .drawEqualToughnessThenPutCreatures =>
+    "draw cards equal to the greatest toughness among creatures you control, then put any number of creature cards from your hand onto the battlefield"
+  | .millThenPutInstantOrSorcery n =>
+    s!"mill {n} cards, then put an instant or sorcery card from among them into your hand"
+  | .millThenPutLands n max =>
+    let maxWord := if max == 2 then "two" else toString max
+    s!"mill {n} cards, then put up to {maxWord} land cards from among them into your hand"
+  | .exileThenReturnYouControl =>
+    "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
+  | .dealDamageToEachNonDragonThenAddDragonMana n =>
+    s!"deals {n} damage to each non-Dragon creature. Add four mana in any combination of colors. Spend this mana only to cast Dragon spells"
+  | .millThenPutAllInstantsOrSorceries n =>
+    s!"mill {n} cards, then put all instant and sorcery cards from among them into your hand"
+  | .exileAttackersSearchBasics =>
+    s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
+  | .createTokensX kind =>
+    s!"create X {kind.pluralNoun}"
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
+  | .printed text => text
 
 end SpellEffect
 
@@ -812,6 +1232,50 @@ inductive AbilityEffect where
   | millPlayer (n : Nat)
   /-- Draw a card, then discard a card. -/
   | drawThenDiscard
+  /-- Add one mana of any color (e.g. Treasure). -/
+  | addAnyColor
+  /-- Destroy target permanent. -/
+  | destroyTargetPermanent
+  /-- Put `n` +1/+1 counters on target creature you control. -/
+  | plusOneOnTarget (n : Nat)
+  /-- Put `n` +1/+1 counters on target creature you control of this subtype. -/
+  | plusOneOnTargetSubtype (n : Nat) (subtype : String)
+  /-- Put `n` +1/+1 counters on target creature you control of any listed subtype. -/
+  | plusOneOnTargetAnySubtype (n : Nat) (subtypes : Array String)
+  /-- Target creature with power `n` or less can't be blocked this turn. -/
+  | targetCantBeBlockedPowerAtMost (n : Int)
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscardN (n : Nat)
+  /-- Create `n` Treasure tokens. -/
+  | createTreasure (n : Nat)
+  /-- Recruit (draw, discard; if nonland, create a Human Soldier). -/
+  | recruit
+  /-- Scry `n`. -/
+  | scry (n : Nat)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
+  /-- The source's owner shuffles it into their library and draws `n` cards. -/
+  | ownerShuffleSourceDraw (n : Nat)
+  /-- Return this from the graveyard attached to a creature you control with
+  power `n` or less. -/
+  | returnFromGyAttachPowerAtMost (n : Int)
+  /-- Add these mana types (e.g. `{B}{R}`). -/
+  | addMana (types : Array ManaType)
+  /-- Search your library for a basic land card, reveal it, put it into your
+  hand, then shuffle. -/
+  | searchBasicLandToHand
+  /-- Create `n` tokens of this kind. `none` means X (as much as was paid). -/
+  | createTokensX (kind : TokenKind)
+  /-- Draw `n` cards. -/
+  | draw (n : Nat)
+  /-- Search for up to two basic lands; one enters tapped, one to hand. -/
+  | searchTwoBasicsSplit
+  /-- Creatures you control get +P/+T. Each opponent loses `life` life. -/
+  | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Unique printed activated wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -855,6 +1319,38 @@ inductive AbilityResolution where
   | mill (n : Nat)
   /-- Draw a card, then discard a card. -/
   | drawThenDiscard
+  /-- Add one mana of any color. -/
+  | addAnyColor
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscardN (n : Nat)
+  /-- Create `n` Treasure tokens. -/
+  | createTreasure (n : Nat)
+  /-- Recruit. -/
+  | recruit
+  /-- Scry `n`. -/
+  | scry (n : Nat)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
+  /-- Owner shuffles the source into their library and draws `n`. -/
+  | ownerShuffleSourceDraw (n : Nat)
+  /-- Return from the graveyard attached to the targeted creature. -/
+  | returnFromGyAttach
+  /-- Add these mana types. -/
+  | addMana (types : Array ManaType)
+  /-- Search for a basic land and put it into hand. -/
+  | searchBasicLandToHand
+  /-- Create X tokens of this kind. -/
+  | createTokensX (kind : TokenKind)
+  /-- Draw `n` cards. -/
+  | draw (n : Nat)
+  /-- Search two basics; one tapped, one to hand. -/
+  | searchTwoBasicsSplit
+  /-- Team pump and opponents lose life. -/
+  | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
+  /-- Unique printed activated wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -907,6 +1403,53 @@ def spec : AbilityEffect → AbilityMeta
     { targeting := .of .player, resolution := .mill n }
   | .drawThenDiscard =>
     { resolution := .drawThenDiscard }
+  | .addAnyColor =>
+    { resolution := .addAnyColor }
+  | .destroyTargetPermanent =>
+    { targeting := .of .permanent, castKind := .destroyColorless,
+      resolution := .onPermanent .destroy }
+  | .plusOneOnTarget n =>
+    { targeting := .of .creatureYouControl, resolution := .onPermanent (.plusOne n) }
+  | .plusOneOnTargetSubtype n subtype =>
+    { targeting := .of (.creatureYouControlSubtype subtype),
+      resolution := .onPermanent (.plusOne n) }
+  | .plusOneOnTargetAnySubtype n subtypes =>
+    { targeting := .of (.creatureYouControlAnySubtype subtypes),
+      resolution := .onPermanent (.plusOne n) }
+  | .targetCantBeBlockedPowerAtMost n =>
+    { targeting := .of (.creaturePowerAtMost n),
+      resolution := .onPermanent .cantBeBlocked }
+  | .drawThenDiscardN n =>
+    { resolution := .drawThenDiscardN n }
+  | .createTreasure n =>
+    { resolution := .createTreasure n }
+  | .recruit =>
+    { resolution := .recruit }
+  | .scry n =>
+    { resolution := .scry n }
+  | .gainLife n =>
+    { resolution := .gainLife n }
+  | .createTokens kind n =>
+    { resolution := .createTokens kind n }
+  | .ownerShuffleSourceDraw n =>
+    { resolution := .ownerShuffleSourceDraw n }
+  | .returnFromGyAttachPowerAtMost n =>
+    { targeting := .of (.creatureYouControlPowerAtMost n),
+      resolution := .returnFromGyAttach }
+  | .addMana types =>
+    { resolution := .addMana types }
+  | .searchBasicLandToHand =>
+    { resolution := .searchBasicLandToHand }
+  | .createTokensX kind =>
+    { resolution := .createTokensX kind }
+  | .draw n =>
+    { resolution := .draw n }
+  | .searchTwoBasicsSplit =>
+    { resolution := .searchTwoBasicsSplit }
+  | .creaturesYouControlGetOppsLoseLife p t life =>
+    { resolution := .creaturesYouControlGetOppsLoseLife p t life }
+  | .printed text =>
+    { resolution := .printed text }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -967,6 +1510,39 @@ def toNotation (e : AbilityEffect) : String :=
     s!"{noun} mills {n} cards"
   | .drawThenDiscard =>
     "Draw a card, then discard a card"
+  | .addAnyColor =>
+    "Add one mana of any color"
+  | .drawThenDiscardN n =>
+    s!"Draw {cardPhrase n}, then discard a card"
+  | .createTreasure n =>
+    if n == 1 then "Create a Treasure token"
+    else s!"Create {n} Treasure tokens"
+  | .recruit =>
+    "Recruit"
+  | .scry n =>
+    s!"Scry {n}"
+  | .gainLife n =>
+    s!"You gain {n} life"
+  | .createTokens kind n =>
+    capitalizeAscii (TokenKind.createPhrase kind n)
+  | .ownerShuffleSourceDraw n =>
+    s!"This owner shuffles him into their library and draws {cardPhrase n}"
+  | .returnFromGyAttach =>
+    s!"Return this card from your graveyard to the battlefield attached to {noun}"
+  | .addMana types =>
+    let parts := types.toList.map (fun t => s!"\{{t.letter}}")
+    s!"Add {String.intercalate "" parts}"
+  | .searchBasicLandToHand =>
+    "Search your library for a basic land card, reveal it, put it into your hand, then shuffle"
+  | .createTokensX kind =>
+    s!"Create X {kind.pluralNoun}"
+  | .draw n =>
+    s!"Draw {cardPhrase n}"
+  | .searchTwoBasicsSplit =>
+    "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
+  | .creaturesYouControlGetOppsLoseLife p t life =>
+    s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn. Each opponent loses {life} life"
+  | .printed text => text
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -984,6 +1560,12 @@ structure ActivationCost where
   payLife : Nat := 0
   /-- Discard this card from your hand (CR 701.9 / 702.29, e.g. cycling). -/
   discardSource : Bool := false
+  /-- Sacrifice another permanent you control of this subtype. -/
+  sacrificeAnotherSubtype : Option String := none
+  /-- Discard a card (not necessarily this card). -/
+  discardACard : Bool := false
+  /-- Tap an untapped creature you control. -/
+  tapAnUntappedCreatureYouControl : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -997,7 +1579,13 @@ def toNotation (c : ActivationCost) : String :=
     (if c.sacrificeSource then ["Sacrifice"] else []) ++
     (if c.sacrificeAnotherCreatureOrArtifact then
       ["Sacrifice another creature or artifact"]
-     else [])
+     else []) ++
+    (match c.sacrificeAnotherSubtype with
+     | some t => [s!"Sacrifice another {t}"]
+     | none => []) ++
+    (if c.discardACard then ["Discard a card"] else []) ++
+    (if c.tapAnUntappedCreatureYouControl then
+      ["Tap an untapped creature you control"] else [])
   String.intercalate ", " parts
 
 instance : ToString ActivationCost where
@@ -1034,6 +1622,11 @@ structure ActivatedAbility where
   costReductionIfYouControlLegendary : Nat := 0
   /-- Equip restricted to a creature subtype (e.g. Equip Human). -/
   equipSubtype : Option String := none
+  /-- This ability costs this much generic mana less for each Equipment you
+  control. -/
+  costReductionPerEquipment : Nat := 0
+  /-- “Activate only if you attacked with two or more creatures this turn.” -/
+  onlyIfYouAttackedWithTwoOrMore : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -1054,7 +1647,9 @@ def toNotation (ab : ActivatedAbility) : String :=
     (if ab.activateFromGraveyard then " (activate only from the graveyard)" else "") ++
     (if ab.activateFromHand then " (activate only from your hand)" else "") ++
     (if ab.onlyIfYouControlLegendary then
-      " (activate only if you control a legendary creature)" else "")
+      " (activate only if you control a legendary creature)" else "") ++
+    (if ab.onlyIfYouAttackedWithTwoOrMore then
+      " (activate only if you attacked with two or more creatures this turn)" else "")
   let body :=
     if ab.isModal then
       let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -1097,6 +1692,85 @@ inductive StaticAbility where
   /-- This creature's power is equal to the number of cards in your hand
   (e.g. Minas Tirith Garrison). -/
   | powerEqualCardsInHand
+  /-- Equipped creature has these keywords. -/
+  | equippedCreatureHasKeywords (k : Keywords)
+  /-- Enchanted creature gets +P/+T and has these keywords. -/
+  | enchantedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  /-- This creature can't be blocked by tokens. -/
+  | cantBeBlockedByTokens
+  /-- This creature's power is equal to the number of creatures you control. -/
+  | powerEqualCreaturesYouControl
+  /-- Armies you control have trample. -/
+  | armiesYouControlHaveTrample
+  /-- Creatures you control (including this) get +P/+T. -/
+  | creaturesYouControlGet (power toughness : Int)
+  /-- This has haste as long as you control another permanent of this subtype. -/
+  | hasteIfYouControlOtherSubtype (subtype : String)
+  /-- This can't attack unless you control `n` or more other permanents of
+  this subtype. -/
+  | cantAttackUnlessYouControlNOther (n : Nat) (subtype : String)
+  /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
+  | legendaryCreaturesGetAndWard (power toughness : Int) (ward : Nat)
+  /-- Nonlegendary creatures you control get +P/+T. -/
+  | nonlegendaryCreaturesGet (power toughness : Int)
+  /-- Equipped creature gets +P/+T and has these keywords. -/
+  | equippedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  /-- Equipped creature gets +P/+T and has ward `{w}`. -/
+  | equippedCreatureGetsAndWard (power toughness : Int) (ward : Nat)
+  /-- Each creature you control with a +1/+1 counter has menace. -/
+  | creaturesYouControlWithPlusOneHaveMenace
+  /-- This has lifelink as long as you control another of this subtype. -/
+  | lifelinkIfYouControlOtherSubtype (subtype : String)
+  /-- Threshold — this gets +P/+T if there are seven or more cards in your
+  graveyard. -/
+  | thresholdGets (power toughness : Int)
+  /-- This can't be blocked by creatures with power `n` or less. -/
+  | cantBeBlockedByPowerAtMost (n : Int)
+  /-- During your turn, equipped creatures you control have these keywords. -/
+  | equippedCreaturesHaveKeywordsDuringYourTurn (k : Keywords)
+  /-- As long as you have an enduring story, this gets +P/+T and has these
+  keywords. -/
+  | getsAndHasIfEnduringStory (power toughness : Int) (k : Keywords)
+  /-- As long as you have an enduring story, creatures you control get +P/+T. -/
+  | creaturesYouControlGetIfEnduringStory (power toughness : Int)
+  /-- This doesn't untap during your untap step unless you have an enduring
+  story. -/
+  | doesntUntapUnlessEnduringStory
+  /-- As long as you have an enduring story, artifacts and creatures you
+  control have ward `{w}`. -/
+  | artifactsAndCreaturesHaveWardIfEnduringStory (ward : Nat)
+  /-- As long as you have an enduring story, creatures can't attack you unless
+  their controller pays `{n}` for each. -/
+  | creaturesCantAttackYouUnlessPayIfEnduringStory (n : Nat)
+  /-- Other permanents of these subtypes have `{T}: Add one of these types`. -/
+  | otherSubtypeHaveTapAddOneOf (subtypes : Array String) (mana : Array ManaType)
+  /-- This can't be blocked by creatures with power `n` or greater. -/
+  | cantBeBlockedByPowerAtLeast (n : Int)
+  /-- Equipped creature has these keywords and can't be blocked. -/
+  | equippedCreatureHasKeywordsAndCantBeBlocked (k : Keywords)
+  /-- Equip abilities that target this cost `{n}` less. -/
+  | equipAbilitiesTargetingThisCostLess (n : Nat)
+  /-- As long as you have an enduring story, the first equip each turn is `{0}`. -/
+  | firstEquipFreeIfEnduringStory
+  /-- Creatures you control of the chosen type get +P/+T. -/
+  | chosenTypeCreaturesGet (power toughness : Int)
+  /-- Instant and sorcery spells cost {X} less, X = equipped creature's power. -/
+  | instantSorceryCostReductionEqualEquippedPower
+  /-- Other permanents of this subtype get +P/+0 for each artifact token. -/
+  | otherSubtypeGetPowerPerArtifactToken (subtype : String)
+  /-- As long as you have an enduring story, Dwarf triggers go twice. -/
+  | extraTriggerIfEnduringStorySubtype (subtype : String)
+  /-- Enchanted creature loses all abilities and doesn't untap. -/
+  | enchantedLosesAbilitiesDoesntUntap
+  /-- During your turn, equipped creature has hexproof and can't be blocked. -/
+  | equippedHexproofUnblockableDuringYourTurn
+  /-- If a triggered ability of equipped creature triggers, it triggers again. -/
+  | equippedTriggersAgain
+  /-- Equipped creature has first strike and gets +1/+0 per instant/sorcery
+  in your graveyard. -/
+  | equippedFirstStrikePlusPerInstantSorcery
+  /-- Unique printed static wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1133,6 +1807,66 @@ inductive StaticShape where
   | enchantedOnlySubtypeCantAttackOrBlock (subtype : String)
   /-- Characteristic-defining power equal to cards in your hand. -/
   | cardsInHandPower
+  /-- Equipped or enchanted host has these keywords, and optionally +P/+T. -/
+  | hostKeywords (host : String) (k : Keywords) (power toughness : Int)
+  /-- This creature can't be blocked by tokens. -/
+  | cantBeBlockedByTokens
+  /-- Characteristic-defining power equal to creatures you control. -/
+  | creaturesYouControlPower
+  /-- Creatures you control of this subtype have trample. -/
+  | youControlSubtypeTrample (subtype : String)
+  /-- Creatures you control get +P/+T (includes the source). -/
+  | teamPump (power toughness : Int) (legendaryOnly nonlegendaryOnly : Bool)
+  /-- This has haste while you control another of this subtype. -/
+  | hasteIfOtherSubtype (subtype : String)
+  /-- This can't attack unless you control `n` other permanents of this subtype. -/
+  | cantAttackUnlessNOther (n : Nat) (subtype : String)
+  /-- Legendary creatures you control get +P/+T and have ward `{w}`. -/
+  | legendaryTeamPumpWard (power toughness : Int) (ward : Nat)
+  /-- Equipped/enchanted host gets +P/+T and has ward `{w}`. -/
+  | hostGetsAndWard (host : String) (power toughness : Int) (ward : Nat)
+  /-- Creatures you control with a +1/+1 counter have menace. -/
+  | creaturesWithPlusOneHaveMenace
+  /-- This has lifelink while you control another of this subtype. -/
+  | lifelinkIfOtherSubtype (subtype : String)
+  /-- Threshold +P/+T. -/
+  | thresholdGets (power toughness : Int)
+  /-- Can't be blocked by creatures with power `n` or less. -/
+  | cantBeBlockedByPowerAtMost (n : Int)
+  /-- During your turn, equipped creatures you control have these keywords. -/
+  | equippedTeamKeywordsDuringYourTurn (k : Keywords)
+  /-- Enduring-story self pump and keywords. -/
+  | selfIfEnduringStory (power toughness : Int) (k : Keywords)
+  /-- Enduring-story team pump. -/
+  | teamIfEnduringStory (power toughness : Int)
+  /-- Doesn't untap unless enduring story. -/
+  | doesntUntapUnlessEnduringStory
+  /-- Artifacts and creatures you control have ward if enduring story. -/
+  | teamWardIfEnduringStory (ward : Nat)
+  /-- Attack tax if enduring story. -/
+  | attackTaxIfEnduringStory (n : Nat)
+  /-- Other matching permanents have a tap-add-one-of mana ability. -/
+  | otherSubtypeTapAddOneOf (subtypes : Array String) (mana : Array ManaType)
+  /-- Can't be blocked by creatures with power `n` or greater. -/
+  | cantBeBlockedByPowerAtLeast (n : Int)
+  /-- Equipped creature has keywords and can't be blocked. -/
+  | equippedKeywordsAndUnblockable (k : Keywords)
+  /-- Equip abilities targeting this cost less. -/
+  | equipTargetingThisCostLess (n : Nat)
+  /-- First equip each turn is free if enduring story. -/
+  | firstEquipFreeIfEnduringStory
+  /-- Chosen-type team pump. -/
+  | chosenTypePump (power toughness : Int)
+  /-- Instant/sorcery cost reduction equal to equipped power. -/
+  | instantSorceryCostReductionEqualEquippedPower
+  /-- Other matching creatures get +P/+0 per artifact token. -/
+  | otherSubtypePowerPerArtifactToken (subtype : String)
+  | extraTriggerIfEnduringStorySubtype (subtype : String)
+  | enchantedLosesAbilitiesDoesntUntap
+  | equippedHexproofUnblockableDuringYourTurn
+  | equippedTriggersAgain
+  | equippedFirstStrikePlusPerInstantSorcery
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1146,6 +1880,49 @@ structure StaticMeta where
   cantBeBlockedExcept : Option Nat := none
   enchantedOnlySubtype : Option String := none
   cardsInHandPower : Bool := false
+  hostKeywords : Keywords := Keywords.none
+  cantBeBlockedByTokens : Bool := false
+  creaturesYouControlPower : Bool := false
+  /-- Lord pump includes the source (not only other creatures). -/
+  lordIncludesSelf : Bool := false
+  /-- Lord pump applies only to legendary creatures. -/
+  lordLegendaryOnly : Bool := false
+  /-- Lord pump applies only to nonlegendary creatures. -/
+  lordNonlegendaryOnly : Bool := false
+  /-- Ward cost this ability grants matching creatures. -/
+  grantedWard : Option Nat := none
+  /-- This has haste while you control another of this subtype. -/
+  hasteIfOtherSubtype : Option String := none
+  /-- Can't attack unless you control this many other permanents of the subtype. -/
+  cantAttackUnlessNOther : Option (Nat × String) := none
+  /-- Creatures you control with a +1/+1 counter have menace. -/
+  creaturesWithPlusOneHaveMenace : Bool := false
+  /-- This has lifelink while you control another of this subtype. -/
+  lifelinkIfOtherSubtype : Option String := none
+  /-- Threshold +P/+T if seven or more cards in graveyard. -/
+  thresholdGets : Option (Int × Int) := none
+  /-- Can't be blocked by creatures with power at most this. -/
+  cantBeBlockedByPowerAtMost : Option Int := none
+  /-- During your turn, equipped creatures you control have these keywords. -/
+  equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
+  /-- Enduring-story self pump. -/
+  selfIfEnduringStory : Option (Int × Int × Keywords) := none
+  /-- Enduring-story team pump. -/
+  teamIfEnduringStory : Option (Int × Int) := none
+  /-- Doesn't untap unless enduring story. -/
+  doesntUntapUnlessEnduringStory : Bool := false
+  /-- Team ward if enduring story. -/
+  teamWardIfEnduringStory : Option Nat := none
+  /-- Attack tax `{n}` if enduring story. -/
+  attackTaxIfEnduringStory : Option Nat := none
+  /-- Can't be blocked by creatures with power at least this. -/
+  cantBeBlockedByPowerAtLeast : Option Int := none
+  /-- Equipped creature also can't be blocked. -/
+  equippedCantBeBlocked : Bool := false
+  /-- Equip abilities targeting this cost this much less. -/
+  equipTargetingThisCostLess : Option Nat := none
+  /-- First equip is free if enduring story. -/
+  firstEquipFreeIfEnduringStory : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -1159,6 +1936,59 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
     { enchantedOnlySubtype := some subtype }
   | .cardsInHandPower => { cardsInHandPower := true }
+  | .hostKeywords _ k p t => { hostKeywords := k, hostBonus := (p, t) }
+  | .cantBeBlockedByTokens => { cantBeBlockedByTokens := true }
+  | .creaturesYouControlPower => { creaturesYouControlPower := true }
+  | .youControlSubtypeTrample subtype => { trampleSubtypes := some #[subtype] }
+  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+    { lordPump := some (#[], p, t), lordIncludesSelf := true,
+      lordLegendaryOnly := legendaryOnly, lordNonlegendaryOnly := nonlegendaryOnly }
+  | .hasteIfOtherSubtype subtype => { hasteIfOtherSubtype := some subtype }
+  | .cantAttackUnlessNOther n subtype => { cantAttackUnlessNOther := some (n, subtype) }
+  | .legendaryTeamPumpWard p t w =>
+    { lordPump := some (#[], p, t), lordIncludesSelf := true, lordLegendaryOnly := true,
+      grantedWard := some w }
+  | .hostGetsAndWard _ p t w =>
+    { hostBonus := (p, t), grantedWard := some w }
+  | .creaturesWithPlusOneHaveMenace =>
+    { creaturesWithPlusOneHaveMenace := true }
+  | .lifelinkIfOtherSubtype subtype =>
+    { lifelinkIfOtherSubtype := some subtype }
+  | .thresholdGets p t =>
+    { thresholdGets := some (p, t) }
+  | .cantBeBlockedByPowerAtMost n =>
+    { cantBeBlockedByPowerAtMost := some n }
+  | .equippedTeamKeywordsDuringYourTurn k =>
+    { equippedTeamKeywordsDuringYourTurn := k }
+  | .selfIfEnduringStory p t k =>
+    { selfIfEnduringStory := some (p, t, k) }
+  | .teamIfEnduringStory p t =>
+    { teamIfEnduringStory := some (p, t) }
+  | .doesntUntapUnlessEnduringStory =>
+    { doesntUntapUnlessEnduringStory := true }
+  | .teamWardIfEnduringStory w =>
+    { teamWardIfEnduringStory := some w }
+  | .attackTaxIfEnduringStory n =>
+    { attackTaxIfEnduringStory := some n }
+  | .otherSubtypeTapAddOneOf _ _ => {}
+  | .cantBeBlockedByPowerAtLeast n =>
+    { cantBeBlockedByPowerAtLeast := some n }
+  | .equippedKeywordsAndUnblockable k =>
+    { hostKeywords := k, equippedCantBeBlocked := true }
+  | .equipTargetingThisCostLess n =>
+    { equipTargetingThisCostLess := some n }
+  | .firstEquipFreeIfEnduringStory =>
+    { firstEquipFreeIfEnduringStory := true }
+  | .chosenTypePump p t =>
+    { lordPump := some (#[], p, t), lordIncludesSelf := true }
+  | .instantSorceryCostReductionEqualEquippedPower => {}
+  | .otherSubtypePowerPerArtifactToken _ => {}
+  | .extraTriggerIfEnduringStorySubtype _ => {}
+  | .enchantedLosesAbilitiesDoesntUntap => {}
+  | .equippedHexproofUnblockableDuringYourTurn => {}
+  | .equippedTriggersAgain => {}
+  | .equippedFirstStrikePlusPerInstantSorcery => {}
+  | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1173,6 +2003,50 @@ def shape : StaticAbility → StaticShape
   | .enchantedIsOnlySubtypeCantAttackOrBlock subtype =>
     .enchantedOnlySubtypeCantAttackOrBlock subtype
   | .powerEqualCardsInHand => .cardsInHandPower
+  | .equippedCreatureHasKeywords k => .hostKeywords "Equipped creature" k 0 0
+  | .enchantedCreatureGetsAndHas p t k => .hostKeywords "Enchanted creature" k p t
+  | .cantBeBlockedByTokens => .cantBeBlockedByTokens
+  | .powerEqualCreaturesYouControl => .creaturesYouControlPower
+  | .armiesYouControlHaveTrample => .youControlSubtypeTrample "Army"
+  | .creaturesYouControlGet p t => .teamPump p t false false
+  | .hasteIfYouControlOtherSubtype subtype => .hasteIfOtherSubtype subtype
+  | .cantAttackUnlessYouControlNOther n subtype => .cantAttackUnlessNOther n subtype
+  | .legendaryCreaturesGetAndWard p t w => .legendaryTeamPumpWard p t w
+  | .nonlegendaryCreaturesGet p t => .teamPump p t false true
+  | .equippedCreatureGetsAndHas p t k => .hostKeywords "Equipped creature" k p t
+  | .equippedCreatureGetsAndWard p t w => .hostGetsAndWard "Equipped creature" p t w
+  | .creaturesYouControlWithPlusOneHaveMenace => .creaturesWithPlusOneHaveMenace
+  | .lifelinkIfYouControlOtherSubtype subtype => .lifelinkIfOtherSubtype subtype
+  | .thresholdGets p t => .thresholdGets p t
+  | .cantBeBlockedByPowerAtMost n => .cantBeBlockedByPowerAtMost n
+  | .equippedCreaturesHaveKeywordsDuringYourTurn k =>
+    .equippedTeamKeywordsDuringYourTurn k
+  | .getsAndHasIfEnduringStory p t k => .selfIfEnduringStory p t k
+  | .creaturesYouControlGetIfEnduringStory p t => .teamIfEnduringStory p t
+  | .doesntUntapUnlessEnduringStory => .doesntUntapUnlessEnduringStory
+  | .artifactsAndCreaturesHaveWardIfEnduringStory w => .teamWardIfEnduringStory w
+  | .creaturesCantAttackYouUnlessPayIfEnduringStory n => .attackTaxIfEnduringStory n
+  | .otherSubtypeHaveTapAddOneOf subtypes mana =>
+    .otherSubtypeTapAddOneOf subtypes mana
+  | .cantBeBlockedByPowerAtLeast n => .cantBeBlockedByPowerAtLeast n
+  | .equippedCreatureHasKeywordsAndCantBeBlocked k =>
+    .equippedKeywordsAndUnblockable k
+  | .equipAbilitiesTargetingThisCostLess n => .equipTargetingThisCostLess n
+  | .firstEquipFreeIfEnduringStory => .firstEquipFreeIfEnduringStory
+  | .chosenTypeCreaturesGet p t => .chosenTypePump p t
+  | .instantSorceryCostReductionEqualEquippedPower =>
+    .instantSorceryCostReductionEqualEquippedPower
+  | .otherSubtypeGetPowerPerArtifactToken subtype =>
+    .otherSubtypePowerPerArtifactToken subtype
+  | .extraTriggerIfEnduringStorySubtype subtype =>
+    .extraTriggerIfEnduringStorySubtype subtype
+  | .enchantedLosesAbilitiesDoesntUntap => .enchantedLosesAbilitiesDoesntUntap
+  | .equippedHexproofUnblockableDuringYourTurn =>
+    .equippedHexproofUnblockableDuringYourTurn
+  | .equippedTriggersAgain => .equippedTriggersAgain
+  | .equippedFirstStrikePlusPerInstantSorcery =>
+    .equippedFirstStrikePlusPerInstantSorcery
+  | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -1181,7 +2055,10 @@ def toNotation (ab : StaticAbility) : String :=
   | .lordTrample subtypes =>
     s!"Other {joinedSubtypes subtypes pluralSubtype} you control have trample."
   | .lordPump subtypes p t =>
-    s!"Other {joinedSubtypes subtypes} creatures you control get {signedStat p}/{signedStat t}."
+    if subtypes.isEmpty then
+      s!"Other creatures you control get {signedStat p}/{signedStat t}."
+    else
+      s!"Other {joinedSubtypes subtypes} creatures you control get {signedStat p}/{signedStat t}."
   | .hostGets host p t => hostGetsPhrase host p t
   | .landsYouControlPT =>
     "This creature's power and toughness are each equal to the number of lands you control."
@@ -1197,6 +2074,112 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Enchanted creature is a {subtype} and can't attack or block."
   | .cardsInHandPower =>
     "This power is equal to the number of cards in your hand."
+  | .hostKeywords host k p t =>
+    let kw :=
+      match k.toList with
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    if p == 0 && t == 0 then
+      s!"{host} has {kw}."
+    else
+      s!"{host} gets {signedStat p}/{signedStat t} and has {kw}."
+  | .cantBeBlockedByTokens =>
+    "This creature can't be blocked by tokens."
+  | .creaturesYouControlPower =>
+    "This power is equal to the number of creatures you control."
+  | .youControlSubtypeTrample subtype =>
+    let plural := if subtype == "Army" then "Armies" else pluralSubtype subtype
+    s!"{plural} you control have trample."
+  | .teamPump p t legendaryOnly nonlegendaryOnly =>
+    let who :=
+      if legendaryOnly then "Legendary creatures you control"
+      else if nonlegendaryOnly then "Nonlegendary creatures you control"
+      else "Creatures you control"
+    s!"{who} get {signedStat p}/{signedStat t}."
+  | .hasteIfOtherSubtype subtype =>
+    s!"This creature has haste as long as you control another {subtype}."
+  | .cantAttackUnlessNOther n subtype =>
+    let nWord := if n == 2 then "two" else toString n
+    let plural := if subtype == "Wolf" then "Wolves" else pluralSubtype subtype
+    s!"This creature can't attack unless you control {nWord} or more other {plural}."
+  | .legendaryTeamPumpWard p t w =>
+    s!"Legendary creatures you control get {signedStat p}/{signedStat t} and have ward \{{w}}."
+  | .hostGetsAndWard host p t w =>
+    s!"{host} gets {signedStat p}/{signedStat t} and has ward \{{w}}."
+  | .creaturesWithPlusOneHaveMenace =>
+    "Each creature you control with a +1/+1 counter on it has menace."
+  | .lifelinkIfOtherSubtype subtype =>
+    s!"This creature has lifelink as long as you control another {subtype}."
+  | .thresholdGets p t =>
+    s!"This creature gets {signedStat p}/{signedStat t} as long as there are seven or more cards in your graveyard."
+  | .cantBeBlockedByPowerAtMost n =>
+    s!"This creature can't be blocked by creatures with power {n} or less."
+  | .equippedTeamKeywordsDuringYourTurn k =>
+    let kw :=
+      if k.firstStrike && k.vigilance then "first strike and vigilance"
+      else
+        match k.toList with
+        | [a, b] => s!"{a} and {b}"
+        | ks => String.intercalate ", " ks
+    s!"During your turn, creatures you control that are equipped have {kw}."
+  | .selfIfEnduringStory p t k =>
+    let kw :=
+      match k.toList with
+      | [a] => a
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    if p == 0 && t == 0 then
+      s!"As long as you have an enduring story, this has {kw}."
+    else if k.toList.isEmpty then
+      s!"As long as you have an enduring story, this gets {signedStat p}/{signedStat t}."
+    else
+      s!"As long as you have an enduring story, this gets {signedStat p}/{signedStat t} and has {kw}."
+  | .teamIfEnduringStory p t =>
+    s!"As long as you have an enduring story, creatures you control get {signedStat p}/{signedStat t}."
+  | .doesntUntapUnlessEnduringStory =>
+    "This doesn't untap during your untap step unless you have an enduring story."
+  | .teamWardIfEnduringStory w =>
+    s!"As long as you have an enduring story, artifacts and creatures you control have ward \{{w}}."
+  | .attackTaxIfEnduringStory n =>
+    s!"As long as you have an enduring story, creatures can't attack you unless their controller pays \{{n}} for each of those creatures."
+  | .otherSubtypeTapAddOneOf subtypes mana =>
+    let who :=
+      if subtypes == #["Elf"] then "Other Elves you control"
+      else s!"Other {joinedSubtypes subtypes} you control"
+    let add :=
+      String.intercalate " or " (mana.toList.map (fun t => s!"\{{t.letter}}"))
+    s!"{who} have \"\{T}: Add {add}.\""
+  | .cantBeBlockedByPowerAtLeast n =>
+    s!"This creature can't be blocked by creatures with power {n} or greater."
+  | .equippedKeywordsAndUnblockable k =>
+    let kw :=
+      match k.toList with
+      | [a] => a
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    s!"Equipped creature has {kw} and can't be blocked."
+  | .equipTargetingThisCostLess n =>
+    s!"Equip abilities you activate that target this creature cost \{{n}} less to activate."
+  | .firstEquipFreeIfEnduringStory =>
+    "As long as you have an enduring story, you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn."
+  | .chosenTypePump p t =>
+    s!"Creatures you control of the chosen type get {signedStat p}/{signedStat t}."
+  | .instantSorceryCostReductionEqualEquippedPower =>
+    "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power."
+  | .otherSubtypePowerPerArtifactToken subtype =>
+    let plural := if subtype == "Dwarf" then "Dwarves" else pluralSubtype subtype
+    s!"Other {plural} you control get +1/+0 for each artifact token you control."
+  | .extraTriggerIfEnduringStorySubtype subtype =>
+    s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
+  | .enchantedLosesAbilitiesDoesntUntap =>
+    "Enchanted creature loses all abilities and doesn't untap during its controller's untap step."
+  | .equippedHexproofUnblockableDuringYourTurn =>
+    "During your turn, equipped creature has hexproof and can't be blocked."
+  | .equippedTriggersAgain =>
+    "If a triggered ability of equipped creature triggers, that ability triggers an additional time."
+  | .equippedFirstStrikePlusPerInstantSorcery =>
+    "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard."
+  | .printed text => text
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -1233,6 +2216,72 @@ def enchantedOnlySubtype? (ab : StaticAbility) : Option String :=
 /-- True for the cards-in-hand power characteristic-defining ability. -/
 def isCardsInHandPower (ab : StaticAbility) : Bool :=
   ab.shape.spec.cardsInHandPower
+
+/-- Keywords this ability grants its enchanted or equipped host. -/
+def hostKeywords (ab : StaticAbility) : Keywords :=
+  ab.shape.spec.hostKeywords
+
+/-- True when this creature can't be blocked by tokens. -/
+def blocksTokens (ab : StaticAbility) : Bool :=
+  ab.shape.spec.cantBeBlockedByTokens
+
+/-- True for the creatures-you-control power characteristic-defining ability. -/
+def isCreaturesYouControlPower (ab : StaticAbility) : Bool :=
+  ab.shape.spec.creaturesYouControlPower
+
+/-- True when this lord pump also applies to the source. -/
+def lordIncludesSelf (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordIncludesSelf
+
+/-- True when this lord pump applies only to legendary creatures. -/
+def lordLegendaryOnly (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordLegendaryOnly
+
+/-- True when this lord pump applies only to nonlegendary creatures. -/
+def lordNonlegendaryOnly (ab : StaticAbility) : Bool :=
+  ab.shape.spec.lordNonlegendaryOnly
+
+/-- Ward cost this ability grants matching creatures, if any. -/
+def grantedWard? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.grantedWard
+
+/-- Subtype that grants this creature haste while another is controlled. -/
+def hasteIfOtherSubtype? (ab : StaticAbility) : Option String :=
+  ab.shape.spec.hasteIfOtherSubtype
+
+/-- Attack restriction: need `n` other permanents of this subtype. -/
+def cantAttackUnlessNOther? (ab : StaticAbility) : Option (Nat × String) :=
+  ab.shape.spec.cantAttackUnlessNOther
+
+def creaturesWithPlusOneHaveMenace (ab : StaticAbility) : Bool :=
+  ab.shape.spec.creaturesWithPlusOneHaveMenace
+
+def lifelinkIfOtherSubtype? (ab : StaticAbility) : Option String :=
+  ab.shape.spec.lifelinkIfOtherSubtype
+
+def thresholdGets? (ab : StaticAbility) : Option (Int × Int) :=
+  ab.shape.spec.thresholdGets
+
+def cantBeBlockedByPowerAtMost? (ab : StaticAbility) : Option Int :=
+  ab.shape.spec.cantBeBlockedByPowerAtMost
+
+def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Keywords :=
+  ab.shape.spec.equippedTeamKeywordsDuringYourTurn
+
+def selfIfEnduringStory? (ab : StaticAbility) : Option (Int × Int × Keywords) :=
+  ab.shape.spec.selfIfEnduringStory
+
+def teamIfEnduringStory? (ab : StaticAbility) : Option (Int × Int) :=
+  ab.shape.spec.teamIfEnduringStory
+
+def doesntUntapUnlessEnduringStory? (ab : StaticAbility) : Bool :=
+  ab.shape.spec.doesntUntapUnlessEnduringStory
+
+def teamWardIfEnduringStory? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.teamWardIfEnduringStory
+
+def attackTaxIfEnduringStory? (ab : StaticAbility) : Option Nat :=
+  ab.shape.spec.attackTaxIfEnduringStory
 
 end StaticAbility
 
@@ -1378,6 +2427,164 @@ inductive TriggeredAbility where
   /-- Whenever this attacks, you may tap any number of untapped Humans you
   control. Draw a card for each Human tapped this way. -/
   | onAttackTapHumansDraw
+  /-- When this permanent enters, you gain `n` life. -/
+  | onEnterGainLife (n : Nat)
+  /-- When this permanent enters, untap another target creature you control.
+  If it has this subtype, put a +1/+1 counter on it. -/
+  | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
+  /-- When this permanent enters, put a +1/+1 counter on target creature. -/
+  | onEnterPlusOneOnCreature
+  /-- When this permanent enters, create a tapped Treasure token. -/
+  | onEnterCreateTreasureTapped
+  /-- When this permanent enters, create a Treasure token. -/
+  | onEnterCreateTreasure
+  /-- When this permanent enters, exile the top card; you may play it. -/
+  | onEnterExileTop
+  /-- When this permanent enters, recruit. -/
+  | onEnterRecruit
+  /-- When this creature dies, recruit. -/
+  | onDiesRecruit
+  /-- Ferocious — Whenever this creature attacks, it gets +P/+T. -/
+  | onAttackFerociousSourceGets (power toughness : Int)
+  /-- Ferocious — Whenever this creature attacks, put a +1/+1 counter on each
+  creature you control. -/
+  | onAttackFerociousPlusOneEach
+  /-- Ferocious — Whenever this creature attacks, it gets +P/+0 and creatures
+  you control gain trample. -/
+  | onAttackFerociousSourceGetsAndTeamTrample (power : Int)
+  /-- Ferocious — Whenever you attack, you draw a card and lose 1 life. -/
+  | onYouAttackFerociousDrawLoseLife
+  /-- Ferocious — At the beginning of combat on your turn, put a +1/+1
+  counter on this creature. -/
+  | onYourBeginCombatFerociousPlusOne
+  /-- Whenever you attack, draw a card. -/
+  | onYouAttackDraw
+  /-- Landfall — this creature gets +P/+T until end of turn. -/
+  | onLandYouControlEntersGets (power toughness : Int)
+  /-- When this permanent enters, amass Goblins `n`. -/
+  | onEnterAmassGoblins (n : Nat)
+  /-- When this creature dies, amass Goblins `n`. -/
+  | onDiesAmassGoblins (n : Nat)
+  /-- Whenever you attack, amass Goblins `n`. -/
+  | onYouAttackAmassGoblins (n : Nat)
+  /-- Whenever you cast a noncreature spell, amass Goblins `n`. -/
+  | onCastNoncreatureAmassGoblins (n : Nat)
+  /-- Whenever this creature enters or attacks, amass Goblins `n`. -/
+  | onEnterOrAttackAmassGoblins (n : Nat)
+  /-- Whenever this creature enters or attacks, recruit. -/
+  | onEnterOrAttackRecruit
+  /-- At the beginning of your upkeep, create `n` tokens. -/
+  | onYourUpkeepCreateTokens (kind : TokenKind) (n : Nat)
+  /-- When this permanent enters, create `n` tokens. -/
+  | onEnterCreateTokens (kind : TokenKind) (n : Nat)
+  /-- Landfall — create `n` tokens. -/
+  | onLandYouControlEntersCreateTokens (kind : TokenKind) (n : Nat)
+  /-- Whenever you attack, recruit. -/
+  | onYouAttackRecruit
+  /-- At the beginning of your end step, draw a card. -/
+  | onYourEndStepDraw
+  /-- Whenever an artifact you control enters, draw a card. -/
+  | onArtifactYouControlEntersDraw
+  /-- When this Equipment enters, create a token then attach this to it. -/
+  | onEnterCreateThenAttach (kind : TokenKind)
+  /-- When this Equipment enters, amass Goblins `n` then attach to the Army. -/
+  | onEnterAmassThenAttach (n : Nat)
+  /-- When this Equipment enters, attach it to target creature you control of
+  this subtype. -/
+  | onEnterAttachToSubtype (subtype : String)
+  /-- When this Equipment enters, attach it to target legendary creature. -/
+  | onEnterAttachToLegendary
+  /-- Whenever this creature enters or attacks, put a +1/+1 counter on target
+  creature. -/
+  | onEnterOrAttackPlusOneOnCreature
+  /-- Whenever this attacks, target attacking creature gains these keywords. -/
+  | onAttackTargetGainsKeywords (k : Keywords)
+  /-- Whenever this or another nontoken permanent of this subtype you control
+  enters, create `n` tokens. -/
+  | onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind) (n : Nat)
+  /-- When this enters, search for a basic land and put it into your hand. -/
+  | onEnterSearchBasicToHand
+  /-- When this enters, you gain `n` life. You may search for a basic land,
+  reveal it, then shuffle and put that card on top. -/
+  | onEnterGainLifeSearchBasicOnTop (n : Nat)
+  /-- Whenever this enters or attacks, put a +1/+1 counter on each other
+  creature you control. You gain 1 life for each other creature you control. -/
+  | onEnterOrAttackPlusOneEachOtherGainLife
+  /-- When this enters, destroy all artifacts and enchantments opponents
+  control. You gain 1 life for each permanent destroyed this way. -/
+  | onEnterDestroyOppArtifactsEnchantmentsGainLife
+  /-- Whenever this attacks, it deals damage equal to the number of permanents
+  of this subtype you control to each opponent. -/
+  | onAttackDamageEqualSubtypeToEachOpponent (subtype : String)
+  /-- Whenever this attacks, it deals damage equal to the number of Treasures
+  you control to any target. -/
+  | onAttackDamageEqualTreasures
+  /-- Whenever an opponent casts their first noncreature spell each turn,
+  recruit. -/
+  | onOpponentCastsFirstNoncreatureRecruit
+  /-- Whenever a player casts their second spell each turn, you lose 1 life
+  and create a Treasure. -/
+  | onPlayerCastsSecondSpellLoseLifeCreateTreasure
+  /-- When this enters, it deals `n` damage to any target. If a permanent of
+  this subtype is dealt damage this way, destroy it. -/
+  | onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String)
+  /-- When this enters, attach target Equipment you control to up to one
+  target creature you control. -/
+  | onEnterAttachTargetEquipment
+  /-- At the beginning of your first main phase, add these mana types. -/
+  | onYourFirstMainAddMana (types : Array ManaType)
+  /-- Whenever this becomes the target of a spell or ability an opponent
+  controls, draw a card. -/
+  | onBecomesTargetDraw
+  /-- At the beginning of each end step, if you gained `n` or more life
+  this turn, draw a card. -/
+  | onEachEndStepDrawIfGainedLife (n : Nat)
+  /-- Whenever this attacks, defending player sacrifices a creature with
+  the least power. -/
+  | onAttackDefenderSacsLeastPower
+  /-- When this enters, create an Axe Equipment token. -/
+  | onEnterCreateAxe
+  /-- Landfall — choose tap an opposing creature or untap yours. -/
+  | onLandYouControlEntersTapOrUntap
+  /-- Landfall — this creature's base P/T becomes these values. -/
+  | onLandYouControlEntersBecomePT (power toughness : Int)
+  /-- When this enters, return up to one other permanent you control.
+  If you do, put a +1/+1 counter on this. -/
+  | onEnterReturnOtherPlusOne
+  /-- Whenever you cast a green spell and whenever a Forest you control enters,
+  +1/+1 on target creature you control. -/
+  | onCastGreenOrForestEntersPlusOne
+  /-- Whenever another permanent of this subtype or an Equipment you control
+  enters, draw a card. Once each turn. -/
+  | onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String)
+  /-- When this enters, look at the top `n` cards. You may reveal a card
+  of one of these types and put it into your hand. -/
+  | onEnterLookAtTopRevealTypes (n : Nat) (types : Array String)
+  /-- Whenever you cast a noncreature spell, this gets +1/+1 and deals
+  `n` damage to each opponent. -/
+  | onCastNoncreaturePumpAndDamageOpponents (n : Nat)
+  /-- When this enters, create X tapped Treasures, where X is artifacts
+  opponents control. -/
+  | onEnterCreateTappedTreasuresEqualOppArtifacts
+  /-- Whenever you cast a spell, if Treasure mana was spent, draw and lose 1. -/
+  | onCastWithTreasureDrawLoseLife
+  /-- When this enters, gain control of target opposing creature until
+  end of turn. Untap it. It gains haste. -/
+  | onEnterGainControlOppUntilEot
+  /-- At the beginning of each combat, other matching creatures get +P/+T
+  and opposing creatures get +oppP/+oppT. -/
+  | onEachCombatOthersGetAndOppsGet (subtypes : Array String)
+      (power toughness oppP oppT : Int)
+  /-- Whenever this or another permanent of this subtype you control enters,
+  create `n` tokens. -/
+  | onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+      (n : Nat)
+  /-- Whenever this deals combat damage to a player or battle, put a nonland
+  permanent card with mana value `mv` or less from a graveyard onto the
+  battlefield. -/
+  | onCombatDamagePutNonlandMvAtMost (mv : Nat)
+  /-- Unique printed trigger wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -1418,6 +2625,43 @@ inductive TriggerEvent where
   | yourEndStep
   /-- Another creature you control enters (CR 603.6a). -/
   | anotherCreatureYouControlEnters
+  /-- The beginning of combat on your turn (CR 507.1 / 603.1). -/
+  | yourBeginCombat
+  /-- You attack with one or more creatures (CR 508.2). -/
+  | youAttack
+  /-- You cast a noncreature spell (CR 601.2i / 603.3). -/
+  | youCastNoncreature
+  /-- The beginning of your upkeep (CR 503.1 / 603.1). -/
+  | yourUpkeep
+  /-- An artifact you control enters (CR 603.6a). -/
+  | artifactYouControlEnters
+  /-- An opponent casts their first noncreature spell this turn. -/
+  | opponentCastsFirstNoncreature
+  /-- A player casts their second spell this turn. -/
+  | anyPlayerCastsSecondSpell
+  /-- The beginning of your first main phase. -/
+  | yourFirstMain
+  /-- This or another nontoken permanent of a listed subtype you control
+  enters. The subtype is stored on the triggered ability. -/
+  | thisOrNontokenSubtypeYouControlEnters
+  /-- This becomes the target of a spell or ability an opponent controls. -/
+  | becomesTarget
+  /-- The beginning of each end step. -/
+  | eachEndStep
+  /-- The beginning of each combat. -/
+  | eachBeginCombat
+  /-- You cast a green spell. -/
+  | youCastGreen
+  /-- A Forest you control enters. -/
+  | forestYouControlEnters
+  /-- Another permanent of a listed subtype or an Equipment you control enters. -/
+  | anotherSubtypeOrEquipmentYouControlEnters
+  /-- You cast a spell that had Treasure mana spent. -/
+  | youCastWithTreasure
+  /-- This or another permanent of a listed subtype you control enters. -/
+  | thisOrAnotherSubtypeYouControlEnters
+  /-- This deals combat damage to a player or battle. -/
+  | dealsCombatDamageToPlayerOrBattle
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -1485,6 +2729,57 @@ def spec : TriggerEvent → Spec
   | .anotherCreatureYouControlEnters =>
     { clause := "another creature you control enters", label := "creature-enters trigger",
       checkTargets := false }
+  | .yourBeginCombat =>
+    { clause := "the beginning of combat on your turn", isWhenever := false,
+      label := "begin-combat trigger", checkTargets := false }
+  | .youAttack =>
+    { clause := "you attack", label := "attack trigger", checkTargets := false }
+  | .youCastNoncreature =>
+    { clause := "you cast a noncreature spell", label := "cast trigger",
+      checkTargets := false }
+  | .yourUpkeep =>
+    { clause := "the beginning of your upkeep", isWhenever := false,
+      label := "upkeep trigger", checkTargets := false }
+  | .artifactYouControlEnters =>
+    { clause := "an artifact you control enters", label := "artifact-enters trigger",
+      checkTargets := false }
+  | .opponentCastsFirstNoncreature =>
+    { clause := "an opponent casts their first noncreature spell each turn",
+      label := "opponent-cast trigger", checkTargets := false }
+  | .anyPlayerCastsSecondSpell =>
+    { clause := "a player casts their second spell each turn",
+      label := "second-spell trigger", checkTargets := false }
+  | .yourFirstMain =>
+    { clause := "the beginning of your first main phase", isWhenever := false,
+      label := "main-phase trigger", checkTargets := false }
+  | .thisOrNontokenSubtypeYouControlEnters =>
+    { clause := "this or another nontoken creature you control enters",
+      label := "subtype-enters trigger", checkTargets := false }
+  | .becomesTarget =>
+    { clause := "this creature becomes the target of a spell or ability an opponent controls",
+      label := "becomes-target trigger", checkTargets := false }
+  | .eachEndStep =>
+    { clause := "the beginning of each end step", isWhenever := false,
+      label := "end-step trigger", checkTargets := false }
+  | .eachBeginCombat =>
+    { clause := "the beginning of each combat", isWhenever := false,
+      label := "begin-combat trigger", checkTargets := false }
+  | .youCastGreen =>
+    { clause := "you cast a green spell", label := "cast trigger" }
+  | .forestYouControlEnters =>
+    { clause := "a Forest you control enters", label := "forest-enters trigger" }
+  | .anotherSubtypeOrEquipmentYouControlEnters =>
+    { clause := "another Dwarf or Equipment you control enters",
+      label := "dwarf-or-equipment trigger", checkTargets := false }
+  | .youCastWithTreasure =>
+    { clause := "you cast a spell, if mana from a Treasure was spent to cast it",
+      label := "treasure-cast trigger", checkTargets := false }
+  | .thisOrAnotherSubtypeYouControlEnters =>
+    { clause := "this or another creature you control enters",
+      label := "subtype-enters trigger", checkTargets := false }
+  | .dealsCombatDamageToPlayerOrBattle =>
+    { clause := "this deals combat damage to a player or battle",
+      label := "combat-damage trigger" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -1590,6 +2885,80 @@ inductive TriggerResolution where
   | tapHumansDraw
   /-- Pump the source +1/+0 and grant can't be blocked this turn. -/
   | pumpAndUnblockable
+  /-- Recruit. -/
+  | recruit
+  /-- You recruit. -/
+  | youRecruit
+  /-- Create a tapped Treasure token. -/
+  | createTreasureTapped
+  /-- Create a Treasure token. -/
+  | createTreasure
+  /-- Exile the top card; you may play it until the end of your next turn. -/
+  | exileTop
+  /-- Untap the target; if it has this subtype, put a +1/+1 counter on it. -/
+  | untapPlusOneIfSubtype (subtype : String)
+  /-- Put a +1/+1 counter on each creature you control. -/
+  | plusOneEachYouControl
+  /-- Pump the source +P/+0 and grant trample to creatures you control. -/
+  | sourceGetsAndTeamTrample (power : Int)
+  /-- Draw a card and lose 1 life. -/
+  | drawAndLoseLife
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool)
+  /-- Create a token, then attach the source to it. -/
+  | createThenAttach (kind : TokenKind)
+  /-- Amass Goblins `n`, then attach the source to the Army. -/
+  | amassThenAttach (n : Nat)
+  /-- Attach the source to the targeted permanent. -/
+  | attachSourceToTarget
+  /-- Search for a basic land and put it into hand. -/
+  | searchBasicToHand
+  /-- Gain `n` life, then search a basic land to the top. -/
+  | gainLifeSearchBasicOnTop (n : Nat)
+  /-- +1/+1 on each other creature you control; gain that much life. -/
+  | plusOneEachOtherGainLife
+  /-- Destroy opponents' artifacts and enchantments; gain 1 per destroyed. -/
+  | destroyOppArtifactsEnchantmentsGainLife
+  /-- Deal damage equal to the count of this subtype you control to each
+  opponent. -/
+  | damageEqualSubtypeToEachOpponent (subtype : String)
+  /-- Deal damage equal to Treasures you control to the target. -/
+  | damageEqualTreasures
+  /-- Lose 1 life and create a Treasure. -/
+  | loseLifeCreateTreasure
+  /-- Deal `n` damage to the target; destroy it if it has this subtype. -/
+  | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
+  /-- Attach the first target (Equipment) to the second (creature). -/
+  | attachEquipmentToCreature
+  /-- Add these mana types. -/
+  | addMana (types : Array ManaType)
+  /-- Defending player sacrifices a least-power creature. -/
+  | defenderSacsLeastPower
+  /-- Create an Axe Equipment token. -/
+  | createAxe
+  /-- Tap an opposing creature or untap yours. -/
+  | tapOppOrUntapYours
+  /-- Set the source's base P/T. -/
+  | becomePT (power toughness : Int)
+  /-- Return another permanent you control; if you do, +1 on the source. -/
+  | returnOtherPlusOne
+  /-- Look at the top `n` and reveal a listed type. -/
+  | lookAtTopRevealTypes (n : Nat) (types : Array String)
+  /-- Pump the source +1/+1 and deal `n` to each opponent. -/
+  | pumpAndDamageOpponents (n : Nat)
+  /-- Create tapped Treasures equal to opposing artifacts. -/
+  | createTappedTreasuresEqualOppArtifacts
+  /-- Gain control of the target until end of turn; untap; haste. -/
+  | gainControlOppUntilEot
+  /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT. -/
+  | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
+  /-- Put a nonland permanent card with mana value at most `mv` from a
+  graveyard onto the battlefield. -/
+  | putNonlandMvAtMostFromGy (mv : Nat)
+  /-- Unique printed trigger wording. -/
+  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -1613,6 +2982,14 @@ structure TriggerTiming where
   onceEachTurn : Bool := false
   /-- Intervening “another creature you control with power ≤ n”. -/
   anotherCreaturePowerAtMost : Option Int := none
+  /-- “This or another nontoken {subtype} you control enters”. -/
+  thisOrNontokenSubtype : Option String := none
+  /-- Intervening “if you gained `n` or more life this turn”. -/
+  gainedLifeAtLeast : Option Nat := none
+  /-- “Another {subtype} or Equipment you control enters”. -/
+  anotherSubtypeOrEquipment : Option String := none
+  /-- “This or another {subtype} you control enters”. -/
+  thisOrAnotherSubtype : Option String := none
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this triggered ability. Exhaustive so a new constructor
@@ -1720,6 +3097,157 @@ def timing : TriggeredAbility → TriggerTiming
       allowsZeroTargets := true, resolution := .exileUntilLeaves }
   | .onAttackTapHumansDraw =>
     { events := #[.attacking], resolution := .tapHumansDraw }
+  | .onEnterGainLife n =>
+    { events := #[.entering], resolution := .gainLife n }
+  | .onEnterUntapOtherPlusOneIfSubtype subtype =>
+    { events := #[.entering], targeting := .of .anotherCreatureYouControl,
+      resolution := .untapPlusOneIfSubtype subtype }
+  | .onEnterPlusOneOnCreature =>
+    { events := #[.entering], targeting := .of .creature,
+      resolution := .onPermanent (.plusOne 1) }
+  | .onEnterCreateTreasureTapped =>
+    { events := #[.entering], resolution := .createTreasureTapped }
+  | .onEnterCreateTreasure =>
+    { events := #[.entering], resolution := .createTreasure }
+  | .onEnterExileTop =>
+    { events := #[.entering], resolution := .exileTop }
+  | .onEnterRecruit =>
+    { events := #[.entering], resolution := .recruit }
+  | .onDiesRecruit =>
+    { events := #[.dying], resolution := .recruit }
+  | .onAttackFerociousSourceGets p t =>
+    { events := #[.attacking], resolution := .onSource (.pump p t),
+      youControlCreatureWithPower := some 4 }
+  | .onAttackFerociousPlusOneEach =>
+    { events := #[.attacking], resolution := .plusOneEachYouControl,
+      youControlCreatureWithPower := some 4 }
+  | .onAttackFerociousSourceGetsAndTeamTrample p =>
+    { events := #[.attacking], resolution := .sourceGetsAndTeamTrample p,
+      youControlCreatureWithPower := some 4 }
+  | .onYouAttackFerociousDrawLoseLife =>
+    { events := #[.youAttack], resolution := .drawAndLoseLife,
+      youControlCreatureWithPower := some 4 }
+  | .onYourBeginCombatFerociousPlusOne =>
+    { events := #[.yourBeginCombat], resolution := .onSource (.plusOne 1),
+      youControlCreatureWithPower := some 4 }
+  | .onYouAttackDraw =>
+    { events := #[.youAttack], resolution := .draw 1 }
+  | .onLandYouControlEntersGets p t =>
+    { events := #[.landYouControlEnters], resolution := .onSource (.pump p t) }
+  | .onEnterAmassGoblins n =>
+    { events := #[.entering], resolution := .amassGoblins n }
+  | .onDiesAmassGoblins n =>
+    { events := #[.dying], resolution := .amassGoblins n }
+  | .onYouAttackAmassGoblins n =>
+    { events := #[.youAttack], resolution := .amassGoblins n }
+  | .onCastNoncreatureAmassGoblins n =>
+    { events := #[.youCastNoncreature], resolution := .amassGoblins n }
+  | .onEnterOrAttackAmassGoblins n =>
+    { events := #[.entering, .attacking], resolution := .amassGoblins n }
+  | .onEnterOrAttackRecruit =>
+    { events := #[.entering, .attacking], resolution := .recruit }
+  | .onYourUpkeepCreateTokens kind n =>
+    { events := #[.yourUpkeep], resolution := .createTokens kind n false }
+  | .onEnterCreateTokens kind n =>
+    { events := #[.entering], resolution := .createTokens kind n false }
+  | .onLandYouControlEntersCreateTokens kind n =>
+    { events := #[.landYouControlEnters], resolution := .createTokens kind n false }
+  | .onYouAttackRecruit =>
+    { events := #[.youAttack], resolution := .recruit }
+  | .onYourEndStepDraw =>
+    { events := #[.yourEndStep], resolution := .draw 1 }
+  | .onArtifactYouControlEntersDraw =>
+    { events := #[.artifactYouControlEnters], resolution := .draw 1 }
+  | .onEnterCreateThenAttach kind =>
+    { events := #[.entering], resolution := .createThenAttach kind }
+  | .onEnterAmassThenAttach n =>
+    { events := #[.entering], resolution := .amassThenAttach n }
+  | .onEnterAttachToSubtype subtype =>
+    { events := #[.entering], targeting := .of (.creatureYouControlSubtype subtype),
+      resolution := .attachSourceToTarget }
+  | .onEnterAttachToLegendary =>
+    { events := #[.entering], targeting := .of .legendaryCreatureYouControl,
+      resolution := .attachSourceToTarget }
+  | .onEnterOrAttackPlusOneOnCreature =>
+    { events := #[.entering, .attacking], targeting := .of .creature,
+      resolution := .onPermanent (.plusOne 1) }
+  | .onAttackTargetGainsKeywords k =>
+    { events := #[.attacking], targeting := .of .attackingCreature,
+      resolution := .onPermanent (.grantKeywords k) }
+  | .onThisOrNontokenSubtypeEntersCreateTokens subtype kind n =>
+    { events := #[.thisOrNontokenSubtypeYouControlEnters],
+      resolution := .createTokens kind n false, thisOrNontokenSubtype := some subtype }
+  | .onEnterSearchBasicToHand =>
+    { events := #[.entering], resolution := .searchBasicToHand }
+  | .onEnterGainLifeSearchBasicOnTop n =>
+    { events := #[.entering], resolution := .gainLifeSearchBasicOnTop n }
+  | .onEnterOrAttackPlusOneEachOtherGainLife =>
+    { events := #[.entering, .attacking], resolution := .plusOneEachOtherGainLife }
+  | .onEnterDestroyOppArtifactsEnchantmentsGainLife =>
+    { events := #[.entering], resolution := .destroyOppArtifactsEnchantmentsGainLife }
+  | .onAttackDamageEqualSubtypeToEachOpponent subtype =>
+    { events := #[.attacking], resolution := .damageEqualSubtypeToEachOpponent subtype }
+  | .onAttackDamageEqualTreasures =>
+    { events := #[.attacking], targeting := .of .playerOrCreature,
+      resolution := .damageEqualTreasures }
+  | .onOpponentCastsFirstNoncreatureRecruit =>
+    { events := #[.opponentCastsFirstNoncreature], resolution := .youRecruit }
+  | .onPlayerCastsSecondSpellLoseLifeCreateTreasure =>
+    { events := #[.anyPlayerCastsSecondSpell], resolution := .loseLifeCreateTreasure }
+  | .onEnterDealDamageDestroyIfSubtype n subtype =>
+    { events := #[.entering], targeting := .of .playerOrCreature,
+      resolution := .dealDamageDestroyIfSubtype n subtype }
+  | .onEnterAttachTargetEquipment =>
+    { events := #[.entering],
+      targeting := .of .equipmentYouControlThenCreatureYouControl,
+      allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
+  | .onYourFirstMainAddMana types =>
+    { events := #[.yourFirstMain], resolution := .addMana types }
+  | .onBecomesTargetDraw =>
+    { events := #[.becomesTarget], resolution := .draw 1 }
+  | .onEachEndStepDrawIfGainedLife n =>
+    { events := #[.eachEndStep], resolution := .draw 1, gainedLifeAtLeast := some n }
+  | .onAttackDefenderSacsLeastPower =>
+    { events := #[.attacking], resolution := .defenderSacsLeastPower }
+  | .onEnterCreateAxe =>
+    { events := #[.entering], resolution := .createAxe }
+  | .onLandYouControlEntersTapOrUntap =>
+    { events := #[.landYouControlEnters], resolution := .tapOppOrUntapYours }
+  | .onLandYouControlEntersBecomePT p t =>
+    { events := #[.landYouControlEnters], resolution := .becomePT p t }
+  | .onEnterReturnOtherPlusOne =>
+    { events := #[.entering], targeting := .of .anotherCreatureYouControl,
+      allowsZeroTargets := true, resolution := .returnOtherPlusOne }
+  | .onCastGreenOrForestEntersPlusOne =>
+    { events := #[.youCastGreen, .forestYouControlEnters],
+      targeting := .of .creatureYouControl, resolution := .onPermanent (.plusOne 1) }
+  | .onAnotherSubtypeOrEquipmentEntersDrawOnce subtype =>
+    { events := #[.anotherSubtypeOrEquipmentYouControlEnters],
+      resolution := .draw 1, onceEachTurn := true,
+      anotherSubtypeOrEquipment := some subtype }
+  | .onEnterLookAtTopRevealTypes n types =>
+    { events := #[.entering], resolution := .lookAtTopRevealTypes n types }
+  | .onCastNoncreaturePumpAndDamageOpponents n =>
+    { events := #[.youCastNoncreature], resolution := .pumpAndDamageOpponents n }
+  | .onEnterCreateTappedTreasuresEqualOppArtifacts =>
+    { events := #[.entering], resolution := .createTappedTreasuresEqualOppArtifacts }
+  | .onCastWithTreasureDrawLoseLife =>
+    { events := #[.youCastWithTreasure], resolution := .drawAndLoseLife }
+  | .onEnterGainControlOppUntilEot =>
+    { events := #[.entering], targeting := .of .oppCreature,
+      resolution := .gainControlOppUntilEot }
+  | .onEachCombatOthersGetAndOppsGet subtypes p t oppP oppT =>
+    { events := #[.eachBeginCombat],
+      resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
+  | .onThisOrAnotherSubtypeEntersCreateTokens subtype kind n =>
+    { events := #[.thisOrAnotherSubtypeYouControlEnters],
+      resolution := .createTokens kind n false, thisOrAnotherSubtype := some subtype }
+  | .onCombatDamagePutNonlandMvAtMost mv =>
+    { events := #[.dealsCombatDamageToPlayerOrBattle],
+      targeting := .of .nonland, allowsZeroTargets := true,
+      resolution := .putNonlandMvAtMostFromGy mv }
+  | .printed text =>
+    { resolution := .printed text }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -1766,6 +3294,30 @@ def eventPrefix (t : TriggerTiming) : String :=
     "Whenever this creature enters or attacks"
   else if t.events.contains .yourEndStep then
     "At the beginning of your end step"
+  else if t.events.contains .yourBeginCombat then
+    "At the beginning of combat on your turn"
+  else if t.events.contains .yourUpkeep then
+    "At the beginning of your upkeep"
+  else if t.events.contains .yourFirstMain then
+    "At the beginning of your first main phase"
+  else if t.events.contains .eachEndStep then
+    "At the beginning of each end step"
+  else if t.events.contains .eachBeginCombat then
+    "At the beginning of each combat"
+  else if t.events.contains .youCastGreen && t.events.contains .forestYouControlEnters then
+    "Whenever you cast a green spell and whenever a Forest you control enters"
+  else if t.events.contains .thisOrAnotherSubtypeYouControlEnters then
+    match t.thisOrAnotherSubtype with
+    | some s => s!"Whenever this or another {s} you control enters"
+    | none => "Whenever this or another creature you control enters"
+  else if t.events.contains .anotherSubtypeOrEquipmentYouControlEnters then
+    match t.anotherSubtypeOrEquipment with
+    | some s => s!"Whenever another {s} or Equipment you control enters"
+    | none => "Whenever another creature or Equipment you control enters"
+  else if t.events.contains .thisOrNontokenSubtypeYouControlEnters then
+    match t.thisOrNontokenSubtype with
+    | some s => s!"Whenever this or another nontoken {s} you control enters"
+    | none => "Whenever this or another nontoken creature you control enters"
   else if t.events.contains .anotherCreatureYouControlEnters then
     match t.anotherCreaturePowerAtMost with
     | some n =>
@@ -1780,9 +3332,10 @@ def eventPrefix (t : TriggerTiming) : String :=
 
 /-- Intervening “while you control a creature with power ≥ n”, or empty. -/
 def interveningClause (t : TriggerTiming) : String :=
-  match t.youControlCreatureWithPower with
-  | some n => s!" while you control a creature with power {n} or greater"
-  | none => ""
+  match t.youControlCreatureWithPower, t.gainedLifeAtLeast with
+  | some n, _ => s!" while you control a creature with power {n} or greater"
+  | none, some n => s!", if you gained {n} or more life this turn"
+  | none, none => ""
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
@@ -1854,6 +3407,89 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
   | .pumpAndUnblockable =>
     "this gets +1/+0 until end of turn and can't be blocked this turn"
+  | .recruit =>
+    "recruit"
+  | .youRecruit =>
+    "you recruit"
+  | .createTreasureTapped =>
+    "create a tapped Treasure token"
+  | .createTreasure =>
+    "create a Treasure token"
+  | .exileTop =>
+    "exile the top card of your library. Until the end of your next turn, you may play that card"
+  | .sourceGetsAndTeamTrample p =>
+    s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
+  | .untapPlusOneIfSubtype subtype =>
+    s!"untap {noun}. If that creature is a {subtype}, put a +1/+1 counter on it"
+  | .plusOneEachYouControl =>
+    "put a +1/+1 counter on each creature you control"
+  | .drawAndLoseLife =>
+    "you draw a card and lose 1 life"
+  | .amassGoblins n =>
+    s!"amass Goblins {n}"
+  | .createTokens kind n tapped =>
+    TokenKind.createPhrase kind n (tapped := tapped)
+  | .createThenAttach kind =>
+    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .amassThenAttach n =>
+    s!"amass Goblins {n}, then attach this Equipment to the amassed Army"
+  | .attachSourceToTarget =>
+    s!"attach it to {noun}"
+  | .searchBasicToHand =>
+    "search your library for a basic land card, reveal it, put it into your hand, then shuffle"
+  | .gainLifeSearchBasicOnTop n =>
+    s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
+  | .plusOneEachOtherGainLife =>
+    "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
+  | .destroyOppArtifactsEnchantmentsGainLife =>
+    "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
+  | .damageEqualSubtypeToEachOpponent subtype =>
+    let plural :=
+      if subtype == "Dwarf" then "Dwarves"
+      else if subtype.endsWith "s" then subtype
+      else subtype ++ "s"
+    s!"it deals damage equal to the number of {plural} you control to each opponent"
+  | .damageEqualTreasures =>
+    s!"it deals damage equal to the number of Treasures you control to {noun}"
+  | .loseLifeCreateTreasure =>
+    "you lose 1 life and create a Treasure token"
+  | .dealDamageDestroyIfSubtype n subtype =>
+    s!"it deals {n} damage to {noun}. If a {subtype} is dealt damage this way, destroy it"
+  | .attachEquipmentToCreature =>
+    "attach target Equipment you control to up to one target creature you control"
+  | .addMana types =>
+    let parts := types.toList.map (fun t => s!"\{{t.letter}}")
+    s!"add {String.intercalate "" parts}"
+  | .defenderSacsLeastPower =>
+    "defending player sacrifices a creature with the least power among creatures they control"
+  | .createAxe =>
+    "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+  | .tapOppOrUntapYours =>
+    "choose one — tap target creature an opponent controls; untap target creature you control"
+  | .becomePT p t =>
+    s!"you may have this creature's base power and toughness become {p}/{t} until end of turn"
+  | .returnOtherPlusOne =>
+    "return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature"
+  | .lookAtTopRevealTypes n types =>
+    let joined :=
+      match types.toList with
+      | [a, b] => s!"a {a} or {b} card"
+      | xs => s!"a {String.intercalate " or " xs} card"
+    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
+  | .pumpAndDamageOpponents n =>
+    s!"this gets +1/+1 until end of turn and deals {n} damage to each opponent"
+  | .createTappedTreasuresEqualOppArtifacts =>
+    "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
+  | .gainControlOppUntilEot =>
+    s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
+  | .othersGetAndOppsGet subtypes p t oppP oppT =>
+    let who :=
+      if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
+      else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+    s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+  | .putNonlandMvAtMostFromGy mv =>
+    s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+  | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -1864,10 +3500,13 @@ def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
 
 def toNotation (ab : TriggeredAbility) : String :=
-  let t := ab.timing
-  let once :=
-    if t.onceEachTurn then " This ability triggers only once each turn." else ""
-  s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+  match ab.resolution with
+  | .printed text => text
+  | _ =>
+    let t := ab.timing
+    let once :=
+      if t.onceEachTurn then " This ability triggers only once each turn." else ""
+    s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -1883,6 +3522,21 @@ structure AdventureFace where
   subtypes : Array Subtype := #["Adventure"]
   oracleText : String := ""
   spellEffect : Option SpellEffect := none
+  /-- Additional cost: sacrifice a creature. -/
+  additionalCostSacrificeCreature : Bool := false
+deriving Repr, Inhabited, BEq
+
+/-- One printed Saga chapter line (`I — …`, `III, IV — …`). -/
+structure SagaChapter where
+  roman : String
+  effect : String
+deriving Repr, Inhabited, BEq
+
+/-- Printed Saga (CR 714): reminder plus chapter abilities. -/
+structure SagaDef where
+  /-- Roman numeral in “Sacrifice after …”. -/
+  sacrificeAfter : String
+  chapters : Array SagaChapter
 deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card. -/
@@ -1937,6 +3591,79 @@ structure CardDef where
   /-- This enchantment enters with a hope counter for each creature you control
   (e.g. Dawn of a New Age). -/
   entersWithHopePerCreature : Bool := false
+  /-- This permanent enters tapped (CR 110.5b exception). -/
+  entersTapped : Bool := false
+  /-- `{T}: Add one of these mana types` as a single choice ability
+  (e.g. `{T}: Add {G} or {U}`). -/
+  tapAddOneOf : Array ManaType := #[]
+  /-- `{T}: Add one mana of any color` with no spending restriction. -/
+  tapAddAnyColor : Bool := false
+  /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
+  tapSacrificeAddAnyColor : Bool := false
+  /-- This object is a token (CR 111). -/
+  isToken : Bool := false
+  /-- This spell can't be countered. -/
+  cantBeCountered : Bool := false
+  /-- You may cast this as though it had flash if you control this subtype. -/
+  flashIfYouControlSubtype : Option String := none
+  /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
+  ward : Option Nat := none
+  /-- Flashback cost (CR 702.34). -/
+  flashback : Option ManaCost := none
+  /-- This permanent enters tapped unless you control a legendary creature. -/
+  entersTappedUnlessLegendary : Bool := false
+  /-- This permanent enters tapped unless you control an Equipment. -/
+  entersTappedUnlessEquipment : Bool := false
+  /-- `{T}: Add one mana of any color. Spend this mana only to cast a
+  legendary spell, and that spell can't be countered.` -/
+  tapAddAnyColorForLegendary : Bool := false
+  /-- This spell costs {X} less to cast, where X is the total power of
+  creatures you control with flying. -/
+  costReductionEqualFlyingPower : Bool := false
+  /-- Crew `n` (CR 702.122). -/
+  crew : Option Nat := none
+  /-- `{T}: Add two mana in any combination of these types`. -/
+  tapAddTwoAmong : Array ManaType := #[]
+  /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
+  chooseOneOrBoth : Bool := false
+  /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
+  chooseTwoIfYouControlSubtype : Option String := none
+  /-- `{T}: Add one mana of any color among legendary creatures and
+  planeswalkers you control`. -/
+  tapAddAnyColorAmongLegendaries : Bool := false
+  /-- `{T}: Add these mana types. Spend this mana only to cast …`. -/
+  tapAddRestricted : Option (Array ManaType × String) := none
+  /-- `{T}, Pay n life: Add one of these types`. -/
+  tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
+  /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/
+  entersTappedUnlessPayLife : Option Nat := none
+  /-- `{T}: Add one mana of any color in your commander's color identity`. -/
+  tapAddCommanderIdentity : Bool := false
+  /-- Additional cost: sacrifice a creature. -/
+  additionalCostSacrificeCreature : Bool := false
+  /-- As this enchantment enters, choose a creature type. -/
+  asEntersChooseCreatureType : Bool := false
+  /-- Printed Saga chapters (CR 714). -/
+  saga : Option SagaDef := none
+  /-- Affinity for this subtype (CR 702.40). -/
+  affinityForSubtype : Option String := none
+  /-- This spell costs {X} less, where X is the greatest number of artifacts
+  an opponent controls. -/
+  costReductionEqualOppArtifacts : Bool := false
+  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
+  giftTreasure : Bool := false
+  /-- If you would create a Food token, also create a Treasure. -/
+  foodAlsoCreatesTreasure : Bool := false
+  /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
+  othersEnterWithPlusOneEqualToughness : Bool := false
+  /-- This gets +N/+0 for each Mountain you control. -/
+  powerPerMountain : Nat := 0
+  /-- You may play an additional land if you control another of this subtype. -/
+  extraLandIfOtherSubtype : Option String := none
+  /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
+  tapAddColorlessPerSubtype : Option String := none
+  /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
+  cascade : Nat := 0
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]
@@ -2003,6 +3730,12 @@ def requiresTarget (c : CardDef) : Bool :=
   | some e => e.requiresTarget
   | none => !c.spellModes.isEmpty && c.spellModes.all (·.requiresTarget)
 
+/-- True when the printed spell may be announced with zero targets. -/
+def allowsZeroTargets (c : CardDef) : Bool :=
+  match c.spellEffect with
+  | some e => e.allowsZeroTargets
+  | none => false
+
 /-- True when the printed effect or a mode is classified as `k`. -/
 def hasCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
   c.spellEffect.any (fun e => e.castKind == k)
@@ -2028,8 +3761,10 @@ def simpleTapAddMana (c : CardDef) : Array ManaType :=
 
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
-  c.simpleTapAddMana ++ c.tapAddManaForEach.map (·.mana) ++
-    (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery then
+  c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
+    (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
+        c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
+        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 then
       (Color.all.map ManaType.colored).toArray
      else #[])
 

@@ -36,6 +36,8 @@ inductive ManaSymbol where
   | colored (color : Color)
   /-- The colorless mana symbol `{C}` (CR 107.4c). -/
   | colorless
+  /-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
+  | hybrid (a b : Color)
   /-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
   | x
 deriving DecidableEq, Repr, Inhabited
@@ -46,11 +48,13 @@ def toNotation : ManaSymbol → String
   | .generic n => s!"\{{n}}"
   | .colored c => s!"\{{c.letter}}"
   | .colorless => "{C}"
+  | .hybrid a b => s!"\{{a.letter}/{b.letter}}"
   | .x => "{X}"
 
 /-- Color contributed by this symbol to an object’s color (CR 202.2). -/
 def colorContribution : ManaSymbol → ColorSet
   | .colored c => ColorSet.singleton c
+  | .hybrid a b => ColorSet.singleton a |>.union (ColorSet.singleton b)
   | .generic _ | .colorless | .x => ColorSet.empty
 
 instance : ToString ManaSymbol where
@@ -89,6 +93,16 @@ def ofGenericAndColors (n : Nat) (cs : List Color) : ManaCost :=
   if n == 0 then { symbols := colored }
   else { symbols := #[.generic n] ++ colored }
 
+/-- One monocolored hybrid symbol `{a/b}` (CR 107.4e). -/
+def ofHybrid (a b : Color) : ManaCost :=
+  { symbols := #[.hybrid a b] }
+
+/-- `{n}` followed by `count` copies of `{a/b}`. -/
+def ofGenericAndHybrids (n : Nat) (a b : Color) (count : Nat := 1) : ManaCost :=
+  let hybrids := Array.replicate count (ManaSymbol.hybrid a b)
+  if n == 0 then { symbols := hybrids }
+  else { symbols := #[.generic n] ++ hybrids }
+
 /-- Mana value is the total amount of mana in a mana cost (CR 202.3). `{X}` is 0. -/
 def manaValue (cost : ManaCost) : Nat :=
   cost.symbols.foldl
@@ -97,6 +111,7 @@ def manaValue (cost : ManaCost) : Nat :=
       | .generic n => acc + n
       | .colored _ => acc + 1
       | .colorless => acc + 1
+      | .hybrid _ _ => acc + 1
       | .x => acc)
     0
 
@@ -110,7 +125,7 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
     (fun n s =>
       match s with
       | .colored d => if d == c then n + 1 else n
-      | .generic _ | .colorless | .x => n)
+      | .generic _ | .colorless | .hybrid _ _ | .x => n)
     0
 
 /-- Color of an object from the colored mana symbols in its mana cost (CR 202.2). -/
@@ -181,6 +196,9 @@ instance : BEq ManaCost where
 #guard afterReduction empty empty == empty
 #guard (ofColor .black).addGeneric 4 == ofGenericAndColor 4 .black
 #guard (ofGenericAndColor 1 .black).addGeneric 4 == ofGenericAndColor 5 .black
+#guard toString (ofHybrid .black .green) == "{B/G}"
+#guard (ofGenericAndHybrids 3 .black .green 2).manaValue == 5
+#guard (ofGenericAndHybrids 3 .black .green 2).colors.isColorPair
 
 end ManaCost
 
@@ -342,6 +360,13 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
           match pool.spendAny? allowElfRestricted allowInstRestricted with
           | some p' => pool := p'
           | none => return none
+      | .hybrid a b =>
+        match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted with
+        | some p' => pool := p'
+        | none =>
+          match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted with
+          | some p' => pool := p'
+          | none => return none
       | .x => pure () -- CR 107.3g: X is 0 off the stack; we treat unpaid X as 0
     return some pool
 
@@ -393,6 +418,15 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
 #guard (ManaCost.ofGenericAndColor 1 .green).coloredCount .red == 0
 #guard toString (ManaPool.empty.add (.colored .green) 2 (elfRestricted := true)) ==
   "{G}×2 (Elf)"
+#guard
+  let p := ManaPool.empty.add (.colored .black) 1
+  (p.pay? (ManaCost.ofHybrid .black .green)).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .green) 1
+  (p.pay? (ManaCost.ofHybrid .black .green)).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .red) 1
+  (p.pay? (ManaCost.ofHybrid .black .green)).isNone
 
 end ManaPool
 

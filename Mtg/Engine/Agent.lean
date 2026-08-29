@@ -131,6 +131,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.permanentsOf p).find? (·.isCreature) with
       | some o => some (.choosePermanents #[o.id])
       | none => some .decline
+    | .recruitDiscard _ =>
+      match (g.player p).hand.back? with
+      | some id => some (.discard id)
+      | none => some .decline
     | .none =>
       -- Play a land if possible (from hand or from exile under a permission).
       let lands :=

@@ -1,6 +1,7 @@
 import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitEternal
 
 /-!
 # Oracle verification
@@ -69,16 +70,48 @@ def stripAbilityWord (s : String) : String :=
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
 
-/-- Printed-name variants used in Oracle (`Gandalf, Spark Starter` → `Gandalf`). -/
+/-- Printed-name variants used in Oracle (`Gandalf, Spark Starter` → `Gandalf`).
+The first word is skipped when it is an article so `The Lonely Mountain`
+does not treat `the` as the card name. Name replacement uses `replaceWord`
+so `Ori` does not rewrite `storied`. -/
 def nameAliases (name : String) : List String :=
   let trimmed := name.trimAscii.copy
   let beforeComma := (trimmed.splitOn ",").headD trimmed |>.trimAscii.copy
   let first := (beforeComma.splitOn " ").headD beforeComma
-  uniqueStrings ([trimmed, beforeComma, first].filter (fun s => s.length > 2))
+  let skipFirst :=
+    first == "The" || first == "A" || first == "An" || first == "Of" ||
+      first == "Enchanted"
+  let aliases :=
+    if skipFirst then [trimmed, beforeComma] else [trimmed, beforeComma, first]
+  uniqueStrings (aliases.filter (fun s => s.length > 2))
 
 /-- Replace each `old` with `new` in order. -/
 def applyReplacements (s : String) (pairs : List (String × String)) : String :=
   pairs.foldl (fun acc p => acc.replace p.fst p.snd) s
+
+/-- Replace an isolated word. Non-letters count as boundaries so `Gollum`
+still matches in `Gollum can't`. -/
+def replaceWord (s old new : String) : String :=
+  if old.isEmpty then s
+  else
+    Id.run do
+      let chars := s.toList
+      let needle := old.toList
+      let n := needle.length
+      let mut acc : List Char := []
+      let mut i : Nat := 0
+      while i < chars.length do
+        let slice := chars.drop i |>.take n
+        let beforeOk := i == 0 || !(chars[i - 1]!.isAlphanum)
+        let afterOk :=
+          i + n >= chars.length || !(chars[i + n]!.isAlphanum)
+        if slice == needle && beforeOk && afterOk then
+          acc := acc ++ new.toList
+          i := i + n
+        else
+          acc := acc ++ [chars[i]!]
+          i := i + 1
+      String.ofList acc
 
 /-- Lowercase, drop reminders, and replace the card's name with `this`. -/
 def prepareLine (cardName : String) (s : String) : String :=
@@ -87,10 +120,10 @@ def prepareLine (cardName : String) (s : String) : String :=
   let s := stripAbilityWord s
   let s := (lowerAscii s).trimAscii.copy
   let aliases := nameAliases cardName |>.map lowerAscii
-  let namePairs :=
-    aliases.map (fun a => (s!"{a}'s", "this")) ++
-    aliases.map (fun a => (a, "this"))
-  let s := applyReplacements s namePairs
+  let s :=
+    aliases.foldl (fun acc a =>
+      let acc := acc.replace s!"{a}'s" "this"
+      replaceWord acc a "this") s
   applyReplacements s [
     ("this creature's", "this"),
     ("this permanent's", "this"),
@@ -109,10 +142,6 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this card", "this"),
     ("this spell", "this")
   ]
-
-/-- Replace an isolated word. -/
-def replaceWord (s old new : String) : String :=
-  ((" " ++ s ++ " ").replace s!" {old} " s!" {new} ").drop 1 |>.dropEnd 1 |>.copy
 
 /-- English number words that appear in Oracle (`two cards`, `three or more`). -/
 def replaceNumberWords (s : String) : String :=
@@ -143,6 +172,7 @@ def normalizePhrases (s : String) : String :=
     ("put that card", "put it"),
     ("sacrifice this artifact", "sacrifice"),
     ("sacrifice this creature", "sacrifice"),
+    ("sacrifice this land", "sacrifice"),
     ("sacrifice this", "sacrifice"),
     ("sacrifice another creature or artifact", "sacrifice an artifact or creature"),
     ("sacrifice another artifact or creature", "sacrifice an artifact or creature"),
@@ -151,7 +181,10 @@ def normalizePhrases (s : String) : String :=
     ("it deals", "this deals"),
     ("and only once each turn", "activate only once each turn"),
     ("activate only from the graveyard", ""),
-    ("activate only from your hand", "")
+    ("activate only from your hand", ""),
+    ("if you control a creature with power", "while you control a creature with power"),
+    ("other elf creatures you control", "other elves you control"),
+    ("other bear creatures you control", "other bears you control")
   ]
 
 /-- Comparable form of one ability unit. -/
@@ -228,14 +261,24 @@ def typecyclingLand? (ab : ActivatedAbility) : Option String :=
 sentences, not parentheticals, so they survive reminder-text stripping. -/
 def activatedOracleLine (ab : ActivatedAbility) : String :=
   if isEquipAbility ab then
+    let pay :=
+      if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     match ab.equipSubtype with
-    | some t => s!"Equip {t} {ab.cost.mana}"
-    | none => s!"Equip {ab.cost.mana}"
+    | some t => s!"Equip {t} {ab.cost.mana}{pay}"
+    | none =>
+      if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
+      else s!"Equip {ab.cost.mana}"
   else
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
     | none =>
       let timing :=
+        (if ab.costReductionIfYouControlLegendary != 0 then
+          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
+         else "") ++
+        (if ab.costReductionPerEquipment != 0 then
+          s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
+         else "") ++
         (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
         (if ab.onlyDuringYourTurn && ab.onceEachTurn then
           " Activate only during your turn and only once each turn."
@@ -244,9 +287,8 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
         (if ab.onlyIfYouControlLegendary then
           " Activate only if you control a legendary creature." else "") ++
-        (if ab.costReductionIfYouControlLegendary != 0 then
-          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
-         else "")
+        (if ab.onlyIfYouAttackedWithTwoOrMore then
+          " Activate only if you attacked with two or more creatures this turn." else "")
       let body :=
         if ab.isModal then
           let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -274,7 +316,25 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionIfTargetAttackingNontoken != 0 then
     [s!"This spell costs \{{c.costReductionIfTargetAttackingNontoken}} less to cast if it targets an attacking nontoken creature."]
    else []) ++
-  (if c.additionalCostSacrificeArtifactOrCreature then
+  (if c.costReductionEqualFlyingPower then
+    ["This spell costs {X} less to cast, where X is the total power of creatures you control with flying."]
+   else []) ++
+  (if c.costReductionEqualOppArtifacts then
+    ["This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls."]
+   else []) ++
+  (match c.affinityForSubtype with
+   | some t => [s!"Affinity for {t}"]
+   | none => []) ++
+  (if c.cascade == 1 then ["Cascade"]
+   else if c.cascade >= 2 then
+     [String.intercalate ", " (List.replicate c.cascade "Cascade")]
+   else []) ++
+  (if c.giftTreasure then
+    ["Gift a Treasure"]
+   else []) ++
+  (if c.additionalCostSacrificeCreature then
+    ["As an additional cost to cast this spell, sacrifice a creature"]
+   else if c.additionalCostSacrificeArtifactOrCreature then
     match c.additionalCostOrPayGeneric with
     | some n =>
       [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
@@ -283,6 +343,10 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    else []) ++
   (if c.isAura then ["Enchant creature"] else []) ++
   c.simpleTapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}") ++
+  (if c.tapAddOneOf.size >= 2 then
+    [s!"\{T}: Add {String.intercalate " or " (c.tapAddOneOf.toList.map (fun t => s!"\{{t.letter}}"))}"]
+   else
+    c.tapAddOneOf.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")) ++
   c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
   (if c.tapAddAnyColorEqualToPower then
     ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
@@ -290,19 +354,131 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.tapAddAnyColorForInstantOrSorcery then
     ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
    else []) ++
+  (if c.tapAddAnyColor then
+    ["{T}: Add one mana of any color."]
+   else []) ++
+  (if c.tapAddAnyColorForLegendary then
+    ["{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered."]
+   else []) ++
+  (if c.tapAddAnyColorAmongLegendaries then
+    ["{T}: Add one mana of any color among legendary creatures and planeswalkers you control."]
+   else []) ++
+  (if c.tapAddCommanderIdentity then
+    ["{T}: Add one mana of any color in your commander's color identity."]
+   else []) ++
+  (match c.tapAddRestricted with
+   | some (types, restriction) =>
+     let parts := types.toList.map (fun t => s!"\{{t.letter}}")
+     [s!"\{T}: Add {String.intercalate "" parts}. Spend this mana only to cast {restriction}."]
+   | none => []) ++
+  (match c.tapPayLifeAddOneOf with
+   | some (life, types) =>
+     let add :=
+       String.intercalate " or " (types.toList.map (fun t => s!"\{{t.letter}}"))
+     [s!"\{T}, Pay {life} life: Add {add}."]
+   | none => []) ++
+  (if c.tapAddTwoAmong.size >= 2 then
+    let letters := c.tapAddTwoAmong.toList.map (fun t => s!"\{{t.letter}}")
+    let joined :=
+      match letters with
+      | [a, b] => s!"{a} and/or {b}"
+      | xs =>
+        let last := xs.getLast!
+        let init := String.intercalate ", " xs.dropLast
+        s!"{init}, and/or {last}"
+    [s!"\{T}: Add two mana in any combination of {joined}."]
+   else []) ++
+  (if c.tapSacrificeAddAnyColor then
+    ["{T}, Sacrifice this artifact: Add one mana of any color."]
+   else []) ++
+  (match c.crew with
+   | some n => [s!"Crew {n}"]
+   | none => []) ++
+  (if c.cantBeCountered then
+    ["This spell can't be countered."]
+   else []) ++
+  (match c.flashIfYouControlSubtype with
+   | some t =>
+     [s!"You may cast this spell as though it had flash if you control a {t}."]
+   | none => []) ++
+  (match c.ward with
+   | some n => [s!"Ward \{{n}}."]
+   | none => []) ++
+  (match c.flashback with
+   | some cost => [s!"Flashback {cost}"]
+   | none => []) ++
+  (if c.entersTapped then
+    [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
+     else "This land enters tapped."]
+   else []) ++
+  (if c.entersTappedUnlessLegendary then
+    [if c.hasSupertype .legendary then
+      s!"{c.name} enters tapped unless you control a legendary creature."
+     else
+      "This land enters tapped unless you control a legendary creature."]
+   else []) ++
+  (if c.entersTappedUnlessEquipment then
+    ["This land enters tapped unless you control an Equipment."]
+   else []) ++
+  (match c.entersTappedUnlessPayLife with
+   | some n =>
+     [s!"As {c.name} enters, you may pay {n} life. If you don't, it enters tapped."]
+   | none => []) ++
+  (if c.asEntersChooseCreatureType then
+    ["As this enchantment enters, choose a creature type."]
+   else []) ++
   (if c.entersWithHopePerCreature then
     ["This enchantment enters with a hope counter on it for each creature you control."]
    else []) ++
+  (if c.foodAlsoCreatesTreasure then
+    ["If you would create a Food token, instead create a Food token and a Treasure token."]
+   else []) ++
+  (if c.othersEnterWithPlusOneEqualToughness then
+    ["Each other creature you control enters with a number of additional +1/+1 counters on it equal to this toughness."]
+   else []) ++
+  (if c.powerPerMountain != 0 then
+    [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
+   else []) ++
+  (match c.extraLandIfOtherSubtype with
+   | some t =>
+     [s!"As long as you control another {t}, you may play an additional land on each of your turns."]
+   | none => []) ++
+  (match c.tapAddColorlessPerSubtype with
+   | some t =>
+     [s!"\{T}: Add \{C} for each {t} you control."]
+   | none => []) ++
+  (match c.saga with
+   | some s =>
+     [s!"(As this Saga enters and after your draw step, add a lore counter. Sacrifice after {s.sacrificeAfter}.)"] ++
+       s.chapters.toList.map (fun ch => s!"{ch.roman} — {ch.effect}")
+   | none => []) ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.activatedAbilities.toList.map activatedOracleLine ++
   (if !c.spellModes.isEmpty then
-    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map SpellEffect.toNotation)}"]
+    let modes := String.intercalate "; " (c.spellModes.toList.map (spellEffectLine c.name))
+    [match c.chooseTwoIfYouControlSubtype, c.chooseOneOrBoth with
+     | some t, _ =>
+       s!"Choose one. If you control a {t} as you cast this spell, you may choose two instead. {modes}"
+     | none, true =>
+       s!"Choose one or both — {modes}"
+     | none, false =>
+       s!"Choose one — {modes}"]
    else
     match c.spellEffect with
     | some (.tapScryDraw scryN drawN) =>
       [s!"Tap target creature. Scry {scryN}.",
         if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
+    | some .returnSpellDraw =>
+      ["Return target spell to its owner's hand.", "Draw a card."]
+    | some (.drawLoseLifeThenAmass n) =>
+      ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
+    | some (.returnCreatureFromGyThenAmass n) =>
+      ["Return up to one target creature card from your graveyard to your hand.",
+        s!"Amass Goblins {n}."]
+    | some (.dealDamageToEachNonDragonThenAddDragonMana n) =>
+      [s!"{c.name} deals {n} damage to each non-Dragon creature.",
+        "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -312,7 +488,12 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
       match adv.spellEffect with
       | some e => spellEffectLine adv.name e
       | none => adv.oracleText
-    [s!"{adv.name} {adv.manaCost} {formatTypeLine #[] adv.types adv.subtypes} {effect}"]
+    let typeLine := formatTypeLine #[] adv.types adv.subtypes
+    if adv.additionalCostSacrificeCreature then
+      [s!"{adv.name} {adv.manaCost} {typeLine} As an additional cost to cast this spell, sacrifice a creature.",
+        effect]
+    else
+      [s!"{adv.name} {adv.manaCost} {typeLine} {effect}"]
 
 /-- Split a unit into modeled keywords or a normalized leftover line. -/
 def classifyUnit (cardName : String) (unit : String) : Sum (List String) String :=
@@ -362,33 +543,11 @@ open Catalog
 /-- Every card in the engine catalog. Oracle text is fully represented by
 modeled fields; `supportedCardsMatchOracle` checks that mechanically. -/
 def supportedCatalogCards : Array CardDef :=
-  #[plains, island, swamp, mountain, forest,
-    grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
+  #[grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
     llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
-    lightningBolt, shock, giantGrowth,
-    bofurReliableGuardian, dwarvenProvisioner, velvetwingButterflies,
-    magnificentEnd, mentorOfTheMeek, fiendHunter, errandRiderOfGondor,
-    landrovalHorizonWitness, roguesPassage, soldierOfTheGreyHost,
-    eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
-    banishingLight, dawnOfANewAge, vowToErebor, westfoldRider, esquireOfTheKing,
-    bilboBagginsBurglar, pelargirSurvivor, lakeshoreApothecary,
-    confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
-    knightsOfDolAmroth, greyHavensNavigator, ithilienKingfisher, hithlainKnots,
-    captainOfUmbar, minasTirithGarrison, colossalWhale, willowWind,
-    bilboLuckwearer, uneasyPartings, nimrodelWatcher, sternScolding,
-    frontPorchSentries, greatFierceBee, stirUpTrouble,
-    hauntOfTheDeadMarshes, desolationProwler, raveningWarg, gollumSilentSlinker,
-    bilbosDeadlySlice, dreadedBatCloud, crudeBentBlade, languish, shadowOfTheEnemy,
-    gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
-    bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins,
-    wayfarersBauble, battleScarredGoblin, improvisedClub, smaugTheGreatCalamity,
-    ologHaiCrusher, gandalfSparkStarter, raggedShortSpear, smiteTheDeathless,
-    goblinFireleaper, oliphaunt, goblinCratermaker, infernoTitan, guttersnipe,
-    orcishSiegemaster, snowslopeHunter, fireOfOrthanc, guardianOfTheHalls,
-    quarrel, galadhrimGuide, galionElvenkingsButler, elvishVisionary,
-    wargTactics, beornsHospitality, mirkwoodElk, celebornTheWise, giftOfStrands,
-    elvishArchdruid, lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
-    beornReluctantHost, woodElves, elvishMystic, attercop]
+    lightningBolt, shock, giantGrowth]
+    ++ Catalog.hobbitCards
+    ++ Catalog.hobbitEternalCards
 
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
