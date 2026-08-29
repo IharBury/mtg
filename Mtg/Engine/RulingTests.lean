@@ -4705,8 +4705,6 @@ def oneRingBurdenDraw : Game :=
 #guard (namedPermanent oneRingBurdenDraw "The One Ring").status.burden == 1
 #guard (oneRingBurdenDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
 #guard oneRingBurdenDraw.log.any (fun s => mentions s "burden")
-
-/-- Grima is unblockable as a keyword, not a printed static stub. -/
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
 #guard grimaSarumanSFootman.staticAbilities.isEmpty
 
