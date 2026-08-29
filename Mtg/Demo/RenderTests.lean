@@ -1016,6 +1016,50 @@ def mountainLine (g : Game) : String :=
     (changedZones before after).contains (.library ⟨0⟩) &&
     !mentions (zoneBlock after (.library ⟨0⟩)) "looking at"
 
+-- Creature spells on the stack print types and P/T (CR 205.1a / 208.2).
+#guard
+  let g := paidGuide
+  let o := g.object! g.stack.back!.objectId
+  o.isCreature &&
+    o.typeLine == "Creature — Elf Scout" &&
+    g.power o == 3 && g.toughness o == 4 &&
+    mentions (stackBlock g) "Creature — Elf Scout" &&
+    mentions (stackBlock g) "3/4" &&
+    mentions (zoneBlock g .stack) "Creature — Elf Scout" &&
+    mentions (zoneBlock g .stack) "3/4" &&
+    mentions (snapshot g) "Creature — Elf Scout" &&
+    mentions (stackObjectLine g g.stack.back!) "Creature — Elf Scout 3/4"
+#guard
+  let g := proposedOgre
+  let o := g.object! g.stack.back!.objectId
+  o.typeLine == "Creature — Ogre" &&
+    g.power o == 2 && g.toughness o == 2 &&
+    mentions (stackBlock g) "Creature — Ogre" &&
+    mentions (stackBlock g) "2/2"
+#guard
+  let g := paidGandalf
+  let o := g.object! g.stack.back!.objectId
+  o.typeLine == "Legendary Creature — Avatar Wizard" &&
+    g.power o == 4 && g.toughness o == 3 &&
+    mentions (stackBlock g) "Legendary Creature — Avatar Wizard" &&
+    mentions (stackBlock g) "4/3" &&
+    mentions (stackBlock g) "reach"
+-- CDA power/toughness still apply on the stack (CR 604.3).
+#guard
+  let g := paidPathmaker
+  let o := g.object! g.stack.back!.objectId
+  o.typeLine == "Creature — Elf Ranger" &&
+    g.power o == 2 && g.toughness o == 2 &&
+    mentions (stackBlock g) "Creature — Elf Ranger" &&
+    mentions (stackBlock g) "2/2"
+-- Noncreature spells and stacked abilities omit creature types and P/T.
+#guard !mentions (stackBlock proposedBolt) "Creature"
+#guard !mentions (stackBlock proposedBauble) "Creature"
+#guard
+  let g := guideEntered
+  !mentions (stackBlock g) "Creature — Elf Scout" &&
+    !mentions (stackBlock g) "3/4"
+
 #guard mentions (stackBlock guideEntered) "Galadhrim Guide's ability"
 #guard mentions (stackBlock guideEntered) "When this creature enters, scry 2"
 #guard !mentions (stackBlock guideEntered) "When this permanent enters"
