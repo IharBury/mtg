@@ -33,7 +33,9 @@ accepted console commands are appended. `autopay` is recorded as the individual
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
-`target` command.
+`target` command. `--check` replays `--input FILE` without reading the
+console and exits successfully only when every command is legal and the
+game ends (a winner or a draw).
 -/
 
 open Mtg.Engine
@@ -47,7 +49,7 @@ def usage : String :=
 Usage:
   lake exe mtg-demo [--auto | --interactive | --multiplayer] [--visible]
                     [--norandom] [--decides NAME] [--input FILE] [--output FILE]
-                    [--seed N] [--fuel N]
+                    [--check] [--seed N] [--fuel N]
                     [--name NAME --deck COLOR|FILE]...
 
 Options:
@@ -71,6 +73,10 @@ Options:
                   The same path as --input replays that file and appends
                   new commands. Unique automatic cost payments are written
                   as tap, pay, and sacrifice commands
+  --check         With --input FILE, replay those commands without reading
+                  the console. Exit 0 only if every command is legal and
+                  the game ends (a winner or a draw). Unused commands
+                  after the game ends are an error
   --seed N        RNG seed (default 20260807); unused with --norandom
   --fuel N        Maximum heuristic actions (default 800)
   --name NAME     Player name (repeat once per player)
@@ -672,6 +678,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
 #guard (usage.splitOn "--input FILE").length > 1
 #guard (usage.splitOn "--output FILE").length > 1
+#guard (usage.splitOn "--check").length > 1
+#guard (usage.splitOn "the game ends (a winner or a draw)").length > 1
 #guard (usage.splitOn "additional flags instead of commands").length > 1
 #guard (usage.splitOn "Flags from --input are written first").length > 1
 #guard (usage.splitOn "replays that file and appends").length > 1
@@ -3371,6 +3379,135 @@ def isNonStateCommand (cmd : String) : Bool :=
 #guard !isNonStateCommand "first"
 #guard !isNonStateCommand "play"
 
+/-- Session commands that do not change the game and may appear in a check
+script. `quit` / `exit` stop a live session, so they fail a completeness check. -/
+def isCheckSkipCommand (cmd : String) : Bool :=
+  cmd == "help" || cmd == "state" || cmd == "visible"
+
+#guard isCheckSkipCommand "help"
+#guard isCheckSkipCommand "visible"
+#guard !isCheckSkipCommand "quit"
+#guard !isCheckSkipCommand "keep"
+
+/-- Consume `first <name>` when the console user would choose the starting
+player (CR 103.1). Session-only lines before that command are ignored. -/
+def takeStartingPlayer (seats : Array Seat) (humanChooses : Bool) (decider : Nat)
+    (commands : List String) : Except String (Nat × List String) :=
+  if !humanChooses then
+    .ok (decider, commands)
+  else
+    match commands with
+    | [] => .error "Missing first <name> (CR 103.1)"
+    | line :: rest =>
+      let parts := line.splitOn " "
+      let cmd := parts.headD ""
+      if isCheckSkipCommand cmd then
+        takeStartingPlayer seats humanChooses decider rest
+      else if cmd == "quit" || cmd == "exit" then
+        .error "Game is not complete"
+      else if cmd == "first" then
+        match parseFirstPlayer seats (parts.drop 1) with
+        | .error e => .error e
+        | .ok idx => .ok (idx, rest)
+      else
+        .error "Choose who takes the first turn (CR 103.1): first <name>"
+
+#guard
+  match takeStartingPlayer demoSeats false 1 ["keep"] with
+  | .ok (1, ["keep"]) => true
+  | _ => false
+
+#guard
+  match takeStartingPlayer demoSeats true 0 ["first Chandra", "keep"] with
+  | .ok (0, ["keep"]) => true
+  | _ => false
+
+#guard
+  match takeStartingPlayer demoSeats true 0 ["help", "first Nissa"] with
+  | .ok (1, []) => true
+  | _ => false
+
+#guard
+  match takeStartingPlayer demoSeats true 0 [] with
+  | .error msg => msg == "Missing first <name> (CR 103.1)"
+  | _ => false
+
+#guard
+  match takeStartingPlayer demoSeats true 0 ["keep"] with
+  | .error msg => msg == "Choose who takes the first turn (CR 103.1): first <name>"
+  | _ => false
+
+/-- Replay scripted game-state commands. Fails on an illegal command, leftover
+commands after the game ends, `quit`, or an unfinished game. -/
+def replayCompleteGame (g : Game) (commands : List String) : Except String Game :=
+  match commands with
+  | [] =>
+    if g.over then .ok g
+    else .error "Game is not complete"
+  | line :: rest =>
+    let cmd := (line.splitOn " ").headD ""
+    if isCheckSkipCommand cmd then
+      replayCompleteGame g rest
+    else if g.over then
+      .error s!"Unused command after the game ended: {line}"
+    else if cmd == "quit" || cmd == "exit" then
+      .error "Game is not complete"
+    else if cmd == "first" then
+      .error "Starting player already chosen (CR 103.1)"
+    else
+      match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
+      | .error e => .error s!"Invalid command `{line}`: {e}"
+      | .ok (g', _) => replayCompleteGame g' rest
+
+#guard
+  match replayCompleteGame Tests.started ["concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) => p == ⟨1⟩
+    | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.drawnHands ["keep", "keep", "concede"] with
+  | .ok g' => g'.over
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.started [] with
+  | .error msg => msg == "Game is not complete"
+  | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.started ["pass"] with
+  | .error msg => msg == "Game is not complete"
+  | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.started ["concede", "pass"] with
+  | .error msg => msg == "Unused command after the game ended: pass"
+  | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.started ["help", "state", "concede"] with
+  | .ok g' => g'.over
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.started ["not-a-command"] with
+  | .error msg => msg == "Invalid command `not-a-command`: Unknown command: not-a-command"
+  | .ok _ => false
+
+/-- One-line result used by `--check`. -/
+def describeCheckResult (g : Game) : String :=
+  match g.result with
+  | some (.won p) => s!"Winner: {g.player p |>.name}"
+  | some .draw => "The game is a draw."
+  | none => "Game is not complete"
+
+#guard describeCheckResult { Tests.started with result := some (.won ⟨0⟩) } == "Winner: Chandra"
+#guard describeCheckResult { Tests.started with result := some .draw } == "The game is a draw."
+#guard describeCheckResult Tests.started == "Game is not complete"
+
 /-- Write a command to `--output` only when it was accepted as a game action
 and is not already stored because `--input` is the same path. Incorrect
 commands and session commands such as `state` and `quit` are omitted. -/
@@ -4103,6 +4240,8 @@ structure DemoOptions where
   fuel : Nat
   inputFile : Option String
   outputFile : Option String
+  /-- Replay `--input` and require a finished legal game. -/
+  check : Bool
   players : Array DemoPlayer
   /-- Seat who chooses who takes the first turn (CR 103.1). `none` is random. -/
   decides : Option Nat
@@ -4118,6 +4257,7 @@ structure DemoFlagValues where
   fuel : Option Nat
   inputFile : Option String
   outputFile : Option String
+  check : Bool
   names : Array String
   decks : Array DemoDeck
   decidesName : Option String
@@ -4135,6 +4275,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
     let mut fuel : Option Nat := none
     let mut inputFile : Option String := none
     let mut outputFile : Option String := none
+    let mut check := false
     let mut names : Array String := #[]
     let mut decks : Array DemoDeck := #[]
     let mut decidesName : Option String := none
@@ -4187,6 +4328,9 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
           outputFile := some path
           rest := xs
       | "--output" :: [] => return .error "Missing output file path"
+      | "--check" :: xs =>
+        check := true
+        rest := xs
       | "--seed" :: n :: xs =>
         match n.toNat? with
         | none => return .error s!"Bad seed: {n}"
@@ -4227,6 +4371,7 @@ def parseFlagList (args : List String) : Except String DemoFlagValues :=
       fuel := fuel
       inputFile := inputFile
       outputFile := outputFile
+      check := check
       names := names
       decks := decks
       decidesName := decidesName
@@ -4252,6 +4397,7 @@ def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
       | none => cli.fuel
     inputFile := cli.inputFile
     outputFile := cli.outputFile
+    check := cli.check || file.check
     names := if file.names.isEmpty then cli.names else file.names
     decks := if file.decks.isEmpty then cli.decks else file.decks
     decidesName :=
@@ -4263,11 +4409,17 @@ def mergeFlagValues (cli file : DemoFlagValues) : DemoFlagValues :=
 
 /-- Apply defaults and reject illegal flag combinations. -/
 def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
-  if v.playerView && !v.interactive then
+  -- `--check` replays every player's commands, so it is multiplayer unless
+  -- `--interactive` or `--multiplayer` already selected a mode.
+  let interactive := if v.check && !v.interactive then true else v.interactive
+  let multiplayer := if v.check && !v.interactive then true else v.multiplayer
+  if v.check && v.inputFile.isNone then
+    .error "--check requires --input"
+  else if v.playerView && !interactive then
     .error "--visible requires --interactive or --multiplayer"
-  else if v.inputFile.isSome && !v.interactive && !v.norandom then
+  else if v.inputFile.isSome && !interactive && !v.norandom then
     .error "--input requires --interactive or --multiplayer"
-  else if v.outputFile.isSome && !v.interactive && !v.norandom then
+  else if v.outputFile.isSome && !interactive && !v.norandom then
     .error "--output requires --interactive or --multiplayer"
   else
     match playersFromFlags v.names v.decks with
@@ -4278,14 +4430,15 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
       match v.decidesName with
       | none =>
         .ok {
-          interactive := v.interactive
-          multiplayer := v.multiplayer
+          interactive := interactive
+          multiplayer := multiplayer
           playerView := v.playerView
           norandom := v.norandom
           seed := seed
           fuel := fuel
           inputFile := v.inputFile
           outputFile := v.outputFile
+          check := v.check
           players := players
           decides := none
         }
@@ -4294,14 +4447,15 @@ def finishOptions (v : DemoFlagValues) : Except String DemoOptions :=
         | .error e => .error e
         | .ok i =>
           .ok {
-            interactive := v.interactive
-            multiplayer := v.multiplayer
+            interactive := interactive
+            multiplayer := multiplayer
             playerView := v.playerView
             norandom := v.norandom
             seed := seed
             fuel := fuel
             inputFile := v.inputFile
             outputFile := v.outputFile
+            check := v.check
             players := players
             decides := some i
           }
@@ -4319,6 +4473,16 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
     match parseFlagList (flagTokens flagLines) with
     | .error e => .error e
     | .ok file => finishOptions (mergeFlagValues cli file)
+
+/-- Start a limited demo game from an `--input` script and require that the
+replay is a valid, complete game. -/
+def checkCompleteGame (opt : DemoOptions) (seats : Array Seat) (commands : List String) :
+    Except String Game := do
+  let decider := assignDecider opt.players opt.seed opt.decides
+  let humanChooses := humanChoosesFirst opt.interactive opt.multiplayer decider
+  let (startIdx, rest) ← takeStartingPlayer seats humanChooses decider commands
+  let g ← Start.start { seats, format := .limited, seed := opt.seed, startingPlayer := some startIdx, norandom := opt.norandom }
+  replayCompleteGame g rest
 
 #guard
   match parseArgs ["--interactive", "--visible"] with
@@ -4399,6 +4563,67 @@ def parseArgsWithFlags (args flagLines : List String) : Except String DemoOption
   match parseArgsWithFlags ["--norandom", "--input", "opening.txt"] ["--norandom"] with
   | .ok opt => opt.norandom
   | _ => false
+
+#guard
+  match parseArgs ["--check", "--input", "examples/foo.txt"] with
+  | .ok opt =>
+    opt.check && opt.interactive && opt.multiplayer &&
+      opt.inputFile == some "examples/foo.txt"
+  | _ => false
+
+#guard
+  match parseArgs ["--check"] with
+  | .error msg => msg == "--check requires --input"
+  | .ok _ => false
+
+#guard
+  match parseArgs ["--check", "--interactive", "--input", "foo.txt"] with
+  | .ok opt => opt.check && opt.interactive && !opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--multiplayer", "--input", "foo.txt"] with
+  | .ok opt => opt.check && opt.interactive && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--interactive"] with
+  | .ok opt => !opt.check
+  | _ => false
+
+#guard
+  match parseArgsWithFlags ["--check", "--input", "foo.txt"] ["--multiplayer"] with
+  | .ok opt => opt.check && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--norandom", "--input", "foo.txt"] with
+  | .ok opt => opt.check && opt.norandom && opt.interactive && opt.multiplayer
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--input", "foo.txt"] with
+  | .ok opt =>
+    match checkCompleteGame opt demoSeats ["first Chandra", "keep", "keep", "concede"] with
+    | .ok g => g.over && describeCheckResult g == "Winner: Nissa"
+    | .error _ => false
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--input", "foo.txt"] with
+  | .ok opt =>
+    match checkCompleteGame opt demoSeats ["keep"] with
+    | .error msg =>
+      msg == "Choose who takes the first turn (CR 103.1): first <name>"
+    | .ok _ => false
+  | _ => false
+
+#guard
+  match parseArgs ["--check", "--input", "foo.txt"] with
+  | .ok opt =>
+    match checkCompleteGame opt demoSeats ["first Chandra", "keep", "keep"] with
+    | .error msg => msg == "Game is not complete"
+    | .ok _ => false
 
 #guard
   match parseArgs ["--interactive", "--input"] with
@@ -4795,6 +5020,21 @@ def printUsageError (e : String) : IO UInt32 := do
     IO.println usage
     return 1
 
+/-- Replay `--input` and exit 0 only when it is a valid complete game. -/
+def runCheck (opt : DemoOptions) (commands : List String) : IO UInt32 := do
+  match (← loadSeats opt.players) with
+  | .error e =>
+    IO.eprintln e
+    return 1
+  | .ok seats =>
+    match checkCompleteGame opt seats commands with
+    | .error e =>
+      IO.eprintln e
+      return 1
+    | .ok g =>
+      IO.println (describeCheckResult g)
+      return 0
+
 def main (args : List String) : IO UInt32 := do
   match parseFlagList args with
   | .error e =>
@@ -4809,48 +5049,51 @@ def main (args : List String) : IO UInt32 := do
       | .error e =>
         printUsageError e
       | .ok opt =>
-        let pending := script.commands
-        let sameFile := sameInputOutput opt.inputFile opt.outputFile
-        match (← openOutputFile opt.outputFile sameFile) with
-        | .error e =>
-          IO.eprintln e
-          return 1
-        | .ok output =>
-          match (← loadSeats opt.players) with
+        if opt.check then
+          runCheck opt script.commands
+        else
+          let pending := script.commands
+          let sameFile := sameInputOutput opt.inputFile opt.outputFile
+          match (← openOutputFile opt.outputFile sameFile) with
           | .error e =>
             IO.eprintln e
             return 1
-          | .ok seats =>
-            recordInputFlags output sameFile script.flags
-            printEngineBanner
-            printDeckAssignments opt.players
-            match (←
-              if opt.norandom && opt.decides.isNone then
-                chooseDecider opt.players pending output sameFile
-              else
-                pure (some (assignDecider opt.players opt.seed opt.decides, pending))) with
-            | none => return 0
-            | some (decider, pending) =>
-              let humanChooses :=
-                humanChoosesFirst opt.interactive opt.multiplayer decider
-              let atRandom := opt.decides.isNone
-              printFirstChooser opt.players decider atRandom (!humanChooses)
-              if opt.interactive then
-                match (←
-                  if humanChooses then
-                    chooseStartingPlayer seats decider
-                      opt.multiplayer pending output sameFile
-                  else
-                    pure (some (decider, pending))) with
-                | none => return 0
-                | some (startIdx, pending) =>
-                  let g ← startGame opt.seed (some startIdx) seats opt.norandom
-                  printOpening g (currentView g opt.playerView opt.multiplayer)
-                  interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+          | .ok output =>
+            match (← loadSeats opt.players) with
+            | .error e =>
+              IO.eprintln e
+              return 1
+            | .ok seats =>
+              recordInputFlags output sameFile script.flags
+              printEngineBanner
+              printDeckAssignments opt.players
+              match (←
+                if opt.norandom && opt.decides.isNone then
+                  chooseDecider opt.players pending output sameFile
+                else
+                  pure (some (assignDecider opt.players opt.seed opt.decides, pending))) with
+              | none => return 0
+              | some (decider, pending) =>
+                let humanChooses :=
+                  humanChoosesFirst opt.interactive opt.multiplayer decider
+                let atRandom := opt.decides.isNone
+                printFirstChooser opt.players decider atRandom (!humanChooses)
+                if opt.interactive then
+                  match (←
+                    if humanChooses then
+                      chooseStartingPlayer seats decider
+                        opt.multiplayer pending output sameFile
+                    else
+                      pure (some (decider, pending))) with
+                  | none => return 0
+                  | some (startIdx, pending) =>
+                    let g ← startGame opt.seed (some startIdx) seats opt.norandom
+                    printOpening g (currentView g opt.playerView opt.multiplayer)
+                    interactiveLoop g opt.playerView opt.multiplayer pending output sameFile
+                    return 0
+                else
+                  let g ←
+                    startDemo opt.seed (some decider) (seats := seats)
+                      (norandom := opt.norandom)
+                  runAuto g opt.fuel pending output sameFile
                   return 0
-              else
-                let g ←
-                  startDemo opt.seed (some decider) (seats := seats)
-                    (norandom := opt.norandom)
-                runAuto g opt.fuel pending output sameFile
-                return 0
