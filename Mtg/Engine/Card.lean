@@ -2583,6 +2583,9 @@ inductive TriggeredAbility where
   permanent card with mana value `mv` or less from a graveyard onto the
   battlefield. -/
   | onCombatDamagePutNonlandMvAtMost (mv : Nat)
+  /-- Whenever this enters or attacks, put a hone counter on each Equipment
+  you control (e.g. Dwalin, Weaponmaster). -/
+  | onEnterOrAttackHoneEachEquipment
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2957,6 +2960,8 @@ inductive TriggerResolution where
   /-- Put a nonland permanent card with mana value at most `mv` from a
   graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
+  /-- Put a hone counter on each Equipment you control. -/
+  | honeEachEquipment
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3246,6 +3251,8 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.dealsCombatDamageToPlayerOrBattle],
       targeting := .of .nonland, allowsZeroTargets := true,
       resolution := .putNonlandMvAtMostFromGy mv }
+  | .onEnterOrAttackHoneEachEquipment =>
+    { events := #[.entering, .attacking], resolution := .honeEachEquipment }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3489,6 +3496,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
   | .putNonlandMvAtMostFromGy mv =>
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
+  | .honeEachEquipment =>
+    "put a hone counter on each Equipment you control"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/

@@ -137,6 +137,9 @@ structure Status where
   /-- This permanent is an artifact in addition to its other types until
   end of turn (e.g. Stone by Sunlight). -/
   additionalArtifactUntilEot : Bool := false
+  /-- Hone counters. Each grants +1/+0 to the equipped creature while this
+  Equipment is attached (judge rulings on Dwalin / Sting). -/
+  hone : Nat := 0
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -754,6 +757,37 @@ def battlefield (g : Game) : Array GameObject :=
 def permanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o => o.controlledBy p)
 
+/-- Whether `p` currently has an enduring story. -/
+def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).enduringStory
+
+/-- A permanent counts once toward Storied even if it is legendary, an
+artifact, and a Saga. -/
+def countsTowardStoried (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    (o.isLegendary || o.printed.isArtifact || o.printed.hasSubtype "Saga")
+
+/-- Number of legendary, Saga, and/or artifact permanents `p` controls. -/
+def storiedPermanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (g.countsTowardStoried) |>.size
+
+/-- Whether `p` controls a permanent with storied. -/
+def controlsStoried (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.storied)
+
+/-- Grant an enduring story if `p` now qualifies. The designation is on the
+player and is never removed. Not a triggered ability. -/
+def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
+  if (g.player p).enduringStory then g
+  else if g.controlsStoried p && g.storiedPermanentCount p ≥ 3 then
+    g.modifyPlayer p (fun pl => { pl with enduringStory := true })
+      |>.logMsg s!"{(g.player p).name} has an enduring story"
+  else g
+
+/-- Grant an enduring story to every player who now qualifies. -/
+def refreshEnduringStory (g : Game) : Game :=
+  g.players.foldl (fun g pl => g.grantEnduringStoryIfNeeded pl.id) g
+
 /-- Lands `p` currently controls (CR 305.1). -/
 def landsYouControl (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).filter (·.printed.isLand) |>.size
@@ -884,7 +918,9 @@ def humanSoldierToken : CardDef := {
   isToken := true
 }
 
-/-- Create a token under `controller` (CR 111.2 / 608.2c). -/
+/-- Create a token under `controller` (CR 111.2 / 608.2c). Callers that must
+let enters-the-battlefield triggers see the token (amass, recruit) invoke
+`afterPermanentEnters` after this returns. -/
 def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
     (tapped := false) : Game × GameObject :=
   let printed := { printed with isToken := true }
@@ -892,6 +928,8 @@ def createToken (g : Game) (controller : PlayerId) (printed : CardDef)
   let (g, obj) := g.allocObject printed controller .battlefield (some controller)
     (status := { tapped := tapped, summoningSick := sick })
   let g := g.logMsg s!"{(g.player controller).name} creates {obj.name}"
+  -- Storied is not a trigger; an artifact token can be the third permanent.
+  let g := g.refreshEnduringStory
   (g, g.object! obj.id)
 
 /-- Create `n` Treasure tokens, optionally tapped. -/
@@ -904,16 +942,25 @@ def createTreasureTokens (g : Game) (controller : PlayerId) (n : Nat)
       g := g'
     return g
 
-/-- A 0/0 black Goblin Army creature token (amass Goblins). -/
-def goblinArmyToken : CardDef := {
-  name := "Goblin Army"
+/-- A 0/0 black Army creature token of the given subtype (amass). -/
+def armyToken (subtype : String) : CardDef := {
+  name := s!"{subtype} Army"
   types := #[.creature]
-  subtypes := #["Goblin", "Army"]
+  subtypes := #[subtype, "Army"]
   power := some 0
   toughness := some 0
   colorIndicator := some (ColorSet.singleton .black)
   isToken := true
 }
+
+/-- A 0/0 black Goblin Army creature token (amass Goblins). -/
+def goblinArmyToken : CardDef := armyToken "Goblin"
+
+/-- A 0/0 black Orc Army creature token (amass Orcs). -/
+def orcArmyToken : CardDef := armyToken "Orc"
+
+/-- A 0/0 black Zombie Army creature token (amass Zombies). -/
+def zombieArmyToken : CardDef := armyToken "Zombie"
 
 /-- A Food token (CR 111 / 701.34). -/
 def foodToken : CardDef := {
@@ -1094,17 +1141,72 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
   else
     g.battlefield.foldl
       (fun acc aura =>
-        if aura.attachedTo == some o.id then addStats acc (auraStatBonus aura)
+        if aura.attachedTo == some o.id then
+          addStats acc (addStats (auraStatBonus aura) ((aura.status.hone : Int), 0))
         else acc)
       (0, 0)
 
+/-- Self +P/+T from “as long as you have an enduring story”. -/
+def enduringStorySelfBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (pw, tw, _) => addStats acc (pw, tw)
+            | none => acc)
+          (0, 0)
+
+/-- Team +P/+T from “as long as you have an enduring story, creatures you
+control get …”. -/
+def enduringStoryTeamBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield || !o.isCreature then (0, 0)
+  else
+    match o.controller with
+    | none => (0, 0)
+    | some p =>
+      if !g.hasEnduringStory p then (0, 0)
+      else
+        (g.permanentsOf p).foldl
+          (fun acc src =>
+            src.staticAbilities.foldl
+              (fun acc ab =>
+                match ab.teamIfEnduringStory? with
+                | some (pw, tw) => addStats acc (pw, tw)
+                | none => acc)
+              acc)
+          (0, 0)
+
+/-- Keywords granted while the controller has an enduring story. -/
+def enduringStoryKeywords (g : Game) (o : GameObject) : Keywords :=
+  if !o.isOnBattlefield then Keywords.none
+  else
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      if !g.hasEnduringStory p then Keywords.none
+      else
+        o.staticAbilities.foldl
+          (fun acc ab =>
+            match ab.selfIfEnduringStory? with
+            | some (_, _, k) => Keywords.merge acc k
+            | none => acc)
+          Keywords.none
+
 /-- Power and toughness of `o`, including pumps, counters, land-count setting
-effects, until-EOT base setting, attached bonuses, and lord bonuses (CR 208.2).
-Also last-known information before `o` leaves the battlefield (CR 113.7a). -/
+effects, until-EOT base setting, attached bonuses, lord bonuses, and enduring
+story bonuses (CR 208.2). Also last-known information before `o` leaves the
+battlefield (CR 113.7a). -/
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let n : Int := o.status.plusOnePlusOne
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
-      g.lordStatBonus o].foldl addStats (0, 0)
+      g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o].foldl
+    addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
 def snapshotPower (g : Game) (o : GameObject) : Int :=
@@ -1387,9 +1489,10 @@ def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
             Keywords.merge k ab.hostKeywords) Keywords.none)
       else acc) Keywords.none
 
-/-- Printed, until-end-of-turn, and attached-host keywords. -/
+/-- Printed, until-end-of-turn, attached-host, and enduring-story keywords. -/
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
-  Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o)
+  Keywords.merge (Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o))
+    (g.enduringStoryKeywords o)
 
 /-- Printed or until-end-of-turn keyword selected by `sel`. -/
 def hasPrintedOrEot (o : GameObject) (sel : Keywords → Bool) : Bool :=
@@ -2340,6 +2443,9 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
+  -- Storied is granted as the permanent enters, before SBA (legend rule /
+  -- 0 toughness) and before enters triggers use the stack.
+  let g := g.refreshEnduringStory
   let g :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
@@ -3730,21 +3836,45 @@ def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
   g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
 
-/-- Amass Goblins `n` (CR 701.43). -/
-def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+/-- Amass `[subtype]` `n` (CR 701.43). If you control no Army, the token
+enters as 0/0 and triggers see that power before counters are put on it. If
+you control more than one Army, the newest is chosen (the player would
+choose; tests use a single Army). -/
+def amass (g : Game) (controller : PlayerId) (subtype : String) (n : Nat) : Game :=
   let armies := (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Army")
+  let createdFresh := armies.isEmpty
   let (g, army) :=
-    match armies[0]? with
-    | some o => (g, o)
-    | none => g.createToken controller goblinArmyToken
+    match armies.toList with
+    | [] => g.createToken controller (armyToken subtype)
+    | x :: xs =>
+      (g, xs.foldl (fun best o => if o.timestamp ≥ best.timestamp then o else best) x)
   let g :=
-    if g.hasSubtype army "Goblin" then g
+    if createdFresh then
+      let g := g.afterPermanentEnters (g.object! army.id)
+      g.logMsg s!"the amassed Army entered as a 0/0 creature"
+    else g
+  let army := g.object! army.id
+  let g :=
+    if g.hasSubtype army subtype then g
     else
       g.mapObjectStatus army (fun s =>
-        { s with additionalSubtypes := s.additionalSubtypes.push "Goblin" })
+        { s with additionalSubtypes := s.additionalSubtypes.push subtype })
   let army := g.object! army.id
   let g := g.addPlusOnePlusOneTo army n
-  g.logMsg s!"{(g.player controller).name} amasses Goblins {n}"
+  g.logMsg
+    s!"{(g.player controller).name} amasses {subtype}s {n} ({army.name} is the amassed Army)"
+
+/-- Amass Goblins `n` (CR 701.43). -/
+def amassGoblins (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Goblin" n
+
+/-- Amass Orcs `n` (CR 701.43). -/
+def amassOrcs (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Orc" n
+
+/-- Amass Zombies `n` (CR 701.43). -/
+def amassZombies (g : Game) (controller : PlayerId) (n : Nat) : Game :=
+  g.amass controller "Zombie" n
 
 /-- +1/+1 counter plus trample and hexproof until end of turn. -/
 def grantPlusOnePlusOneTrampleHexproof (g : Game) (o : GameObject) : Game :=
@@ -5071,6 +5201,12 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .putNonlandMvAtMostFromGy _mv =>
     g.logMsg "A nonland permanent card may enter from a graveyard"
+  | .honeEachEquipment =>
+    let eqs :=
+      g.battlefield.filter (fun o => o.controlledBy controller && o.printed.isEquipment)
+    eqs.foldl (init := g) fun acc eq =>
+      acc.mapObjectStatus eq (fun s => { s with hone := s.hone + 1 })
+        |>.logMsg s!"{eq.name} received a hone counter"
   | .printed text =>
     g.logMsg text
 
@@ -5565,9 +5701,13 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         -- CR 502.2: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
-        if o.status.tapped then
+        let skipUntap :=
+          o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
+            !g.hasEnduringStory ap
+        if o.status.tapped && !skipUntap then
           g := g.logMsg s!"{apName} untaps {o.name}"
-        g := g.setObject { o with status := { o.status with tapped := false, summoningSick := false } }
+        let tapped := if skipUntap then o.status.tapped else false
+        g := g.setObject { o with status := { o.status with tapped := tapped, summoningSick := false } }
       -- No priority (CR 502.4). Immediately continue.
       return g
   | .draw =>
