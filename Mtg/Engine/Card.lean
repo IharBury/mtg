@@ -268,6 +268,8 @@ inductive EffectTargetKind where
   | equipmentYouControlThenCreatureYouControl
   /-- Two target players (Gleaming Splendor). -/
   | twoPlayers
+  /-- Up to one target creature, then target player (e.g. Meager Meal). -/
+  | upToOneCreatureThenPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -302,6 +304,9 @@ structure Spec where
   /-- Kind of each instance of the word “target”. Empty means this kind is
   itself the (one) instance. -/
   slots : Array EffectTargetKind := #[]
+  /-- 0-based slot indices that are optional (“up to one”). Announcing no
+  target for such a slot advances to the next instance (CR 115.1c / 601.2c). -/
+  optionalSlots : Array Nat := #[]
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this targeting shape. `targetCount`, `noun`, and
@@ -413,6 +418,12 @@ def spec : EffectTargetKind → Spec
       noun := "two target players"
       prefer := .ownThenOpponent
       slots := #[.player, .player] }
+  | .upToOneCreatureThenPlayer =>
+    { count := 2
+      noun := "up to one target creature and target player"
+      prefer := .own
+      slots := #[.creature, .player]
+      optionalSlots := #[0] }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -430,6 +441,17 @@ def defaultPreference (k : EffectTargetKind) : TargetPreference :=
 return themselves for every slot. -/
 def slotKind (k : EffectTargetKind) (i : Nat) : EffectTargetKind :=
   k.spec.slots[i]?.getD k
+
+/-- True when the `i`th instance of the word “target” is optional (“up to one”). -/
+def isOptionalSlot (k : EffectTargetKind) (i : Nat) : Bool :=
+  k.spec.optionalSlots.contains i
+
+/-- Oracle-style noun for the `i`th instance, with “up to one” when optional. -/
+def announcedNoun (k : EffectTargetKind) (i : Nat) : String :=
+  let n := (k.slotKind i).noun
+  if k.isOptionalSlot i && !n.startsWith "up to " then
+    s!"up to one {n}"
+  else n
 
 end EffectTargetKind
 
@@ -1001,7 +1023,7 @@ def spec : SpellEffect → SpellMeta
     { targeting := .of .artifactOrCreatureYouControl, castKind := .pump,
       resolution := .onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)) }
   | .plusOneUpToOneAndPlayerGainsLife n =>
-    { targeting := .of .player .selfPlayer, castKind := .pump,
+    { targeting := .of .upToOneCreatureThenPlayer, castKind := .pump,
       resolution := .plusOneAndPlayerGainsLife n }
   | .counterSpell =>
     { targeting := .of .spell, castKind := .counter, resolution := .counter }
@@ -1213,7 +1235,7 @@ def toNotation (e : SpellEffect) : String :=
   | .exchangeControl =>
     "exchange control of two target nonland permanents that share a card type"
   | .plusOneAndPlayerGainsLife n =>
-    s!"put a +1/+1 counter on up to one target creature. {capitalizeAscii noun} gains {n} life"
+    s!"put a +1/+1 counter on up to one target creature. Target player gains {n} life"
   | .returnSpellDraw =>
     s!"return {noun} to its owner's hand. Draw a card"
   | .creaturesYouControlPump p t =>
@@ -5178,6 +5200,20 @@ instance : ToString CardDef where
 #guard EffectTargetKind.slotKind .creatureYouControlThenOppCreature 1 ==
   .oppCreature
 #guard EffectTargetKind.slotKind .creature 0 == .creature
+#guard EffectTargetKind.spec .upToOneCreatureThenPlayer ==
+  { count := 2
+    noun := "up to one target creature and target player"
+    prefer := .own
+    slots := #[.creature, .player]
+    optionalSlots := #[0] }
+#guard EffectTargetKind.slotKind .upToOneCreatureThenPlayer 0 == .creature
+#guard EffectTargetKind.slotKind .upToOneCreatureThenPlayer 1 == .player
+#guard EffectTargetKind.isOptionalSlot .upToOneCreatureThenPlayer 0
+#guard !EffectTargetKind.isOptionalSlot .upToOneCreatureThenPlayer 1
+#guard EffectTargetKind.announcedNoun .upToOneCreatureThenPlayer 0 ==
+  "up to one target creature"
+#guard EffectTargetKind.announcedNoun .upToOneCreatureThenPlayer 1 ==
+  "target player"
 #guard TriggerEvent.spec .entering ==
   { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
 #guard TriggerEvent.spec .attacking ==
@@ -5221,6 +5257,10 @@ instance : ToString CardDef where
 #guard SpellEffect.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
 #guard SpellEffect.targetKind .creatureYouControlDealsPowerToOppCreature ==
   .creatureYouControlThenOppCreature
+#guard SpellEffect.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
+  .upToOneCreatureThenPlayer
+#guard SpellEffect.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
+#guard !SpellEffect.allowsZeroTargets (.plusOneUpToOneAndPlayerGainsLife 2)
 #guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
 #guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
 #guard SpellEffect.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature

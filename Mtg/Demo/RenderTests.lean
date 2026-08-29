@@ -1381,6 +1381,12 @@ def mountainLine (g : Game) : String :=
       s!"*targeting {elves.id} Llanowar Elves and {bears.id} Grizzly Bears*" &&
     (changedZones quarrelSourceChosen g).contains .stack
 #guard mentions (header gazeProposed) "choose targets of this \"target\" word together (CR 601.2c"
+#guard mentions (header proposedMeagerMeal) "first \"target\" word"
+#guard mentions (header proposedMeagerMeal) "up to one target creature"
+#guard mentions (header meagerMealCreatureChosen) "next \"target\" word"
+#guard mentions (header meagerMealCreatureChosen) "target player"
+#guard mentions (header meagerMealDeclinedCreature) "next \"target\" word"
+#guard mentions (header meagerMealDeclinedCreature) "target player"
 #guard
   let g := gazeOneTarget
   let bears := namedPermanent g "Grizzly Bears"

@@ -557,14 +557,12 @@ def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
         (kind.spec.slots.isEmpty && maxN > 1) then
       s!" [choose targets of this \"target\" word together (CR 601.2c, {name})]"
     else if !kind.spec.slots.isEmpty then
-      let already :=
-        match g.stackEntry? o.id with
-        | some e => e.targets.size
-        | none => 0
-      if already == 0 then
-        s!" [choose the first \"target\" word (CR 601.2c, {name})]"
+      let slotIdx := g.currentTargetSlot o
+      let slotNoun := kind.announcedNoun slotIdx
+      if slotIdx == 0 then
+        s!" [choose the first \"target\" word ({slotNoun}, CR 601.2c, {name})]"
       else
-        s!" [choose the next \"target\" word (CR 601.2c, {name})]"
+        s!" [choose the next \"target\" word ({slotNoun}, CR 601.2c, {name})]"
     else
       s!" [choose targets (CR 601.2c, {name})]"
 
@@ -623,8 +621,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [tap Humans ({g.player p |>.name})]"
     | .payOrLetCounter p n _ =>
       s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
-    | .mayPlusOneCreature p =>
-      s!" [may put a +1/+1 counter ({g.player p |>.name})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
