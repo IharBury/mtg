@@ -12907,7 +12907,7 @@ def planFromLandfall : Game :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
-  settle ((g.afterPermanentEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
+  settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
 
 #guard (namedPermanent planFromLandfall "Claim the Kingdom").status.plan == 1
 #guard (namedPermanent planFromLandfall "Grizzly Bears").status.plusOnePlusOne == 1
@@ -12915,6 +12915,8 @@ def planFromLandfall : Game :=
 /-- Helicarrier Strike announces teamwork and taps a creature of enough power. -/
 def teamworkPaidStrike : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := insertObject g grayOgre ⟨1⟩ .battlefield (some ⟨1⟩)
+    { attacking := true, summoningSick := false }
   let g := addToHand g helicarrierStrike ⟨0⟩
   let g := withMana g ⟨0⟩ .white 1
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)

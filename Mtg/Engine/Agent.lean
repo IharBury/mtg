@@ -134,6 +134,19 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.announceKicker false)
     | .chooseGift _ =>
       some (.announceGift none)
+    | .chooseTeamwork _ =>
+      some (.announceTeamwork false)
+    | .chooseTeamworkCreatures _ need =>
+      let rec pick (cs : List GameObject) (acc : Array ObjectId) (total : Int) :
+          Array ObjectId :=
+        if total >= (need : Int) then acc
+        else
+          match cs with
+          | [] => acc
+          | o :: rest =>
+            if o.status.tapped then pick rest acc total
+            else pick rest (acc.push o.id) (total + g.power o)
+      some (.choosePermanents (pick (g.creaturesControlledBy p).toList #[] 0))
     | .chooseRingBearer _ =>
       match (g.ringBearerChoices p)[0]? with
       | some o => some (.chooseRingBearer (some o.id))
