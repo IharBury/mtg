@@ -1198,8 +1198,8 @@ def onlyBearsAttack : Game :=
 #guard (namedPermanent onlyBearsAttack "Grizzly Bears").status.tapped
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.attacking
 #guard !(namedPermanent onlyBearsAttack "Gray Ogre").status.tapped
-#guard onlyBearsAttack.log.any (fun s => mentions s "attacks with Grizzly Bears")
-#guard !onlyBearsAttack.log.any (fun s => mentions s "attacks with Gray Ogre")
+#guard onlyBearsAttack.log.any (fun s => mentions s "attacks Nissa with Grizzly Bears")
+#guard !onlyBearsAttack.log.any (fun s => mentions s "with Gray Ogre")
 
 /-- Declaring both creatures still works; the demo's bare `attack` uses this. -/
 def bothAttack : Game :=
@@ -1496,6 +1496,7 @@ def threeOgreAttacksLiliana : Game :=
 
 #guard (namedPermanent threeOgreAttacksLiliana "Gray Ogre").status.attackingWhom == some ⟨2⟩
 #guard threeOgreAttacksLiliana.defendingPlayer == ⟨2⟩
+#guard threeOgreAttacksLiliana.log.any (fun s => mentions s "attacks Liliana with Gray Ogre")
 
 #guard
   match threeReadyToAttack.declareAttackers ⟨0⟩
@@ -1537,6 +1538,8 @@ def threeSplitAttack : Game :=
   let ogres := threeSplitAttack.battlefield.filter (·.name == "Gray Ogre")
   ogres[0]!.status.attackingWhom == some ⟨1⟩ &&
     ogres[1]!.status.attackingWhom == some ⟨2⟩
+#guard threeSplitAttack.log.any (fun s => mentions s "attacks Nissa with Gray Ogre")
+#guard threeSplitAttack.log.any (fun s => mentions s "attacks Liliana with Gray Ogre")
 
 /-- Nissa declares blockers first (APNAP), then Liliana. -/
 def threeSplitNissaToBlock : Game :=
@@ -8233,7 +8236,7 @@ def weavemasterAttackDeclared : Game :=
 #guard (namedPermanent weavemasterAttackDeclared "Woodland Weavemaster").status.attacking
 #guard !(namedPermanent weavemasterAttackDeclared "Woodland Weavemaster").status.tapped
 #guard weavemasterAttackDeclared.log.any (fun s =>
-  mentions s "attacks with Woodland Weavemaster")
+  mentions s "attacks Nissa with Woodland Weavemaster")
 
 /-- After attacking, Weavemaster can still block on the opponent's turn. -/
 def nissaAttacksAfterVigilance : Game :=

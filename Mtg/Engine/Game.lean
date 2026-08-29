@@ -8661,7 +8661,8 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       attacking := true
       attackingWhom := some dest
       tapped := o.status.tapped || !g.hasVigilance o } }
-    g := g.logMsg s!"{g.player p |>.name} attacks with {o.name}"
+    g := g.logMsg
+      s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
   g := g.putAttackTriggersOnStack p ids
