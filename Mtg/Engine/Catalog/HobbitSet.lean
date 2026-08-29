@@ -838,6 +838,36 @@ def settleTheWreckage : CardDef :=
     "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle."
     (some .exileAttackersSearchBasics)
 
+def ironHillsBlacksmith : CardDef :=
+  creature "Iron Hills Blacksmith" (ManaCost.ofGenericAndColor 1 .white)
+    #["Dwarf", "Artificer"] 1 1
+    (oracleText := "Double strike\nWhen this creature enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}.")
+    (keywords := Keyword.doubleStrike)
+    (triggeredAbilities := #[.onEnterCreateAxe])
+
+def thorinKingOfDurinsFolk : CardDef :=
+  legendaryCreature "Thorin, King of Durin's Folk" (ManaCost.ofGenericAndColors 3 [.red, .white])
+    #["Dwarf", "Noble"] 4 4
+    (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
+    (staticAbilities := #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"])
+    (triggeredAbilities := #[.onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1])
+
+def gandalfGoblinsBane : CardDef :=
+  legendaryCreature "Gandalf, Goblins' Bane" (ManaCost.ofGenericAndColor 2 .red)
+    #["Avatar", "Wizard"] 2 3
+    (oracleText := "Whenever you cast a noncreature spell, Gandalf gets +1/+1 until end of turn and deals 1 damage to each opponent.\n//ADV//\nFlameshape {1}{R}\nSorcery — Adventure\nLook at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)")
+    (triggeredAbilities := #[.onCastNoncreaturePumpAndDamageOpponents 1])
+    (adventure := some (adventure "Flameshape" (ManaCost.ofGenericAndColor 1 .red)
+      "Look at the top two cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a Wizard. (Then exile this card. You may cast the creature later from exile.)"
+      (.exileTopPlayIfYouControlSubtype 2 "Wizard")))
+
+def bilboUnexpectedAdventurer : CardDef :=
+  legendaryCreature "Bilbo, Unexpected Adventurer" (ManaCost.ofGenericAndColor 3 .white)
+    #["Halfling", "Rogue"] 2 2
+    (oracleText := "Bilbo can't be blocked by creatures with power 3 or greater.\nWhenever Bilbo deals combat damage to a player or battle, put up to one target nonland permanent card with mana value 3 or less from a graveyard onto the battlefield under its owner's control.")
+    (staticAbilities := #[.cantBeBlockedByPowerAtLeast 3])
+    (triggeredAbilities := #[.onCombatDamagePutNonlandMvAtMost 3])
+
 def anUnexpectedParty : CardDef :=
   enchantment "An Unexpected Party" (ManaCost.ofGenericAndColors 2 [.white, .white])
     "As this enchantment enters, choose a creature type.\nCreatures you control of the chosen type get +2/+2.\n//ADV//\nAt the Door {X}{2}{W}\nSorcery — Adventure\nCreate X 2/2 red Dwarf creature tokens. (Then exile this card. You may cast the enchantment later from exile.)"
@@ -965,7 +995,11 @@ def allCards : Array CardDef := #[
   smaugWickedWorm,
   glamdringFoeHammer,
   settleTheWreckage,
-  anUnexpectedParty
+  anUnexpectedParty,
+  ironHillsBlacksmith,
+  thorinKingOfDurinsFolk,
+  gandalfGoblinsBane,
+  bilboUnexpectedAdventurer
 ]
 
 end Mtg.Engine.Catalog.HobbitSet

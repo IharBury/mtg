@@ -11187,6 +11187,10 @@ open Catalog.HobbitSet
 #guard glamdringFoeHammer.matchesOracleText
 #guard settleTheWreckage.matchesOracleText
 #guard anUnexpectedParty.matchesOracleText
+#guard ironHillsBlacksmith.matchesOracleText
+#guard thorinKingOfDurinsFolk.matchesOracleText
+#guard gandalfGoblinsBane.matchesOracleText
+#guard bilboUnexpectedAdventurer.matchesOracleText
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3

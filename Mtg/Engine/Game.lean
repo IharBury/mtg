@@ -1409,7 +1409,11 @@ def hasFlying (g : Game) (o : GameObject) : Bool :=
 
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
 def hasFirstStrike (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.firstStrike)
+  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike)
+
+/-- Whether `o` has double strike (CR 702.4). -/
+def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
+  g.hasKeyword o (·.doubleStrike)
 
 /-- Whether `o` has islandwalk, printed or granted (CR 702.14). -/
 def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
@@ -1597,7 +1601,7 @@ def creaturesAssigningCombatDamage (g : Game) (forAttackers : Bool) : Array Game
       g.battlefield.filter (fun o => !o.status.blocking.isEmpty)
   if !g.combatHasFirstStrike then all
   else if !g.firstStrikeDamageDone then all.filter (g.hasFirstStrike)
-  else all.filter (fun o => !g.hasFirstStrike o)
+  else all.filter (fun o => !g.hasFirstStrike o || g.hasDoubleStrike o)
 
 /-- Legal creature recipients for `source`'s combat damage (CR 510.1c–d). -/
 def legalCombatDamageRecipients (g : Game) (source : GameObject) (forAttackers : Bool) :
@@ -4469,6 +4473,13 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _ => g.logMsg "The target is no longer legal")
   | .createTokensX kind =>
     g.createKindTokens controller kind 1
+  | .exileTopPlayIfYouControlSubtype n _subtype =>
+    let g := Id.run do
+      let mut g := g
+      for _ in List.range n do
+        g := g.resolveExileTopPlayUntilEndOfNextTurn controller
+      return g
+    g
   | .exileThenReturnYouControl =>
     Id.run do
       let mut g := g
@@ -5053,6 +5064,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else if o.isCreature && !o.controlledBy controller then
           g := g.pumpPermanent o oppP oppT
       return g
+  | .putNonlandMvAtMostFromGy _mv =>
+    g.logMsg "A nonland permanent card may enter from a graveyard"
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

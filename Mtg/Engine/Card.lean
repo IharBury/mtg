@@ -39,6 +39,8 @@ structure Keywords where
   /-- Storied (HOB): if you control three or more artifacts, legendaries,
   and/or Sagas, you have an enduring story for the rest of the game. -/
   storied : Bool := false
+  /-- This creature deals both first-strike and regular combat damage (CR 702.4). -/
+  doubleStrike : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -69,7 +71,8 @@ def fields : List Field := [
   ⟨(·.lifelink), fun k b => { k with lifelink := b }, "lifelink"⟩,
   ⟨(·.firstStrike), fun k b => { k with firstStrike := b }, "first strike"⟩,
   ⟨(·.islandwalk), fun k b => { k with islandwalk := b }, "islandwalk"⟩,
-  ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩
+  ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
+  ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -109,6 +112,7 @@ def lifelink : Keywords := { Keywords.none with lifelink := true }
 def firstStrike : Keywords := { Keywords.none with firstStrike := true }
 def islandwalk : Keywords := { Keywords.none with islandwalk := true }
 def storied : Keywords := { Keywords.none with storied := true }
+def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -606,6 +610,8 @@ inductive SpellEffect where
   | exileAttackersSearchBasics
   /-- Create X tokens of this kind. -/
   | createTokensX (kind : TokenKind)
+  /-- Exile the top `n` cards face down; play them if you control this subtype. -/
+  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -827,6 +833,8 @@ inductive SpellResolution where
   | exileAttackersSearchBasics
   /-- Create X tokens of this kind. -/
   | createTokensX (kind : TokenKind)
+  /-- Exile the top `n`; play them if you control this subtype. -/
+  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1025,6 +1033,9 @@ def spec : SpellEffect → SpellMeta
       resolution := .exileAttackersSearchBasics }
   | .createTokensX kind =>
     { targeting := .of .none, castKind := .extraLand, resolution := .createTokensX kind }
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .exileTopPlayIfYouControlSubtype n subtype }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1159,6 +1170,8 @@ def toNotation (e : SpellEffect) : String :=
     s!"exile all attacking creatures {noun} controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle"
   | .createTokensX kind =>
     s!"create X {kind.pluralNoun}"
+  | .exileTopPlayIfYouControlSubtype n subtype =>
+    s!"look at the top {n} cards of your library and exile them face down. For as long as they remain exiled, you may play them if you control a {subtype}"
 
 end SpellEffect
 
@@ -1721,6 +1734,8 @@ inductive StaticAbility where
   | chosenTypeCreaturesGet (power toughness : Int)
   /-- Instant and sorcery spells cost {X} less, X = equipped creature's power. -/
   | instantSorceryCostReductionEqualEquippedPower
+  /-- Other permanents of this subtype get +P/+0 for each artifact token. -/
+  | otherSubtypeGetPowerPerArtifactToken (subtype : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -1809,6 +1824,8 @@ inductive StaticShape where
   | chosenTypePump (power toughness : Int)
   /-- Instant/sorcery cost reduction equal to equipped power. -/
   | instantSorceryCostReductionEqualEquippedPower
+  /-- Other matching creatures get +P/+0 per artifact token. -/
+  | otherSubtypePowerPerArtifactToken (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -1924,6 +1941,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .chosenTypePump p t =>
     { lordPump := some (#[], p, t), lordIncludesSelf := true }
   | .instantSorceryCostReductionEqualEquippedPower => {}
+  | .otherSubtypePowerPerArtifactToken _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -1971,6 +1989,8 @@ def shape : StaticAbility → StaticShape
   | .chosenTypeCreaturesGet p t => .chosenTypePump p t
   | .instantSorceryCostReductionEqualEquippedPower =>
     .instantSorceryCostReductionEqualEquippedPower
+  | .otherSubtypeGetPowerPerArtifactToken subtype =>
+    .otherSubtypePowerPerArtifactToken subtype
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -2090,6 +2110,9 @@ def toNotation (ab : StaticAbility) : String :=
     s!"Creatures you control of the chosen type get {signedStat p}/{signedStat t}."
   | .instantSorceryCostReductionEqualEquippedPower =>
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power."
+  | .otherSubtypePowerPerArtifactToken subtype =>
+    let plural := if subtype == "Dwarf" then "Dwarves" else StaticAbility.pluralSubtype subtype
+    s!"Other {plural} you control get +1/+0 for each artifact token you control."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -2485,6 +2508,14 @@ inductive TriggeredAbility where
   and opposing creatures get +oppP/+oppT. -/
   | onEachCombatOthersGetAndOppsGet (subtypes : Array String)
       (power toughness oppP oppT : Int)
+  /-- Whenever this or another permanent of this subtype you control enters,
+  create `n` tokens. -/
+  | onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+      (n : Nat)
+  /-- Whenever this deals combat damage to a player or battle, put a nonland
+  permanent card with mana value `mv` or less from a graveyard onto the
+  battlefield. -/
+  | onCombatDamagePutNonlandMvAtMost (mv : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -2558,6 +2589,10 @@ inductive TriggerEvent where
   | anotherSubtypeOrEquipmentYouControlEnters
   /-- You cast a spell that had Treasure mana spent. -/
   | youCastWithTreasure
+  /-- This or another permanent of a listed subtype you control enters. -/
+  | thisOrAnotherSubtypeYouControlEnters
+  /-- This deals combat damage to a player or battle. -/
+  | dealsCombatDamageToPlayerOrBattle
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2670,6 +2705,12 @@ def spec : TriggerEvent → Spec
   | .youCastWithTreasure =>
     { clause := "you cast a spell, if mana from a Treasure was spent to cast it",
       label := "treasure-cast trigger", checkTargets := false }
+  | .thisOrAnotherSubtypeYouControlEnters =>
+    { clause := "this or another creature you control enters",
+      label := "subtype-enters trigger", checkTargets := false }
+  | .dealsCombatDamageToPlayerOrBattle =>
+    { clause := "this deals combat damage to a player or battle",
+      label := "combat-damage trigger" }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -2844,6 +2885,9 @@ inductive TriggerResolution where
   | gainControlOppUntilEot
   /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT. -/
   | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
+  /-- Put a nonland permanent card with mana value at most `mv` from a
+  graveyard onto the battlefield. -/
+  | putNonlandMvAtMostFromGy (mv : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -2873,6 +2917,8 @@ structure TriggerTiming where
   gainedLifeAtLeast : Option Nat := none
   /-- “Another {subtype} or Equipment you control enters”. -/
   anotherSubtypeOrEquipment : Option String := none
+  /-- “This or another {subtype} you control enters”. -/
+  thisOrAnotherSubtype : Option String := none
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this triggered ability. Exhaustive so a new constructor
@@ -3122,6 +3168,13 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEachCombatOthersGetAndOppsGet subtypes p t oppP oppT =>
     { events := #[.eachBeginCombat],
       resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
+  | .onThisOrAnotherSubtypeEntersCreateTokens subtype kind n =>
+    { events := #[.thisOrAnotherSubtypeYouControlEnters],
+      resolution := .createTokens kind n false, thisOrAnotherSubtype := some subtype }
+  | .onCombatDamagePutNonlandMvAtMost mv =>
+    { events := #[.dealsCombatDamageToPlayerOrBattle],
+      targeting := .of .nonland, allowsZeroTargets := true,
+      resolution := .putNonlandMvAtMostFromGy mv }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -3180,6 +3233,10 @@ def eventPrefix (t : TriggerTiming) : String :=
     "At the beginning of each combat"
   else if t.events.contains .youCastGreen && t.events.contains .forestYouControlEnters then
     "Whenever you cast a green spell and whenever a Forest you control enters"
+  else if t.events.contains .thisOrAnotherSubtypeYouControlEnters then
+    match t.thisOrAnotherSubtype with
+    | some s => s!"Whenever this or another {s} you control enters"
+    | none => "Whenever this or another creature you control enters"
   else if t.events.contains .anotherSubtypeOrEquipmentYouControlEnters then
     match t.anotherSubtypeOrEquipment with
     | some s => s!"Whenever another {s} or Equipment you control enters"
@@ -3357,6 +3414,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       if subtypes == #["Goblin", "Orc"] then "other Goblins and Orcs you control"
       else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
     s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
+  | .putNonlandMvAtMostFromGy mv =>
+    s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
