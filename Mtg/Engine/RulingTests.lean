@@ -3690,7 +3690,7 @@ def xOnStackUsesChosenOk : Bool :=
   let g := g.setObject spell
   let o := g.object! spell.id
   g.objectManaValue o == 4 &&
-    xGreenCreature.manaValue == 0 &&
+    xGreenCreature.manaValue == 1 &&
     (ruling 178).comment.contains "use the value chosen for X"
 
 #guard xOnStackUsesChosenOk
@@ -3698,8 +3698,9 @@ def xOnStackUsesChosenOk : Bool :=
 def xOffStackIsZeroOk : Bool :=
   let g := addToHand afterDraw xGreenCreature ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "X Beast"
-  g.objectManaValue card == 0 &&
+  g.objectManaValue card == 1 &&
     card.zone != .stack &&
+    card.chosenX.isNone &&
     (ruling 185).comment.contains "X is 0"
 
 #guard xOffStackIsZeroOk
@@ -3708,7 +3709,7 @@ def glamdringForcesXZeroOk : Bool :=
   let (g, spell) := afterDraw.allocObject xGreenCreature ⟨0⟩ .stack (some ⟨0⟩)
   let spell := { spell with chosenX := some 0 }
   let g := g.setObject spell
-  g.objectManaValue (g.object! spell.id) == 0 &&
+  g.objectManaValue (g.object! spell.id) == 1 &&
     (ruling 186).comment.contains "you must choose 0 as the value of X"
 
 #guard glamdringForcesXZeroOk
@@ -3940,7 +3941,7 @@ def spellsBeforeLothoCountOk : Bool :=
 -/
 
 def triggerWordingOk : Bool :=
-  (TriggerEvent.clause .youCastColor .white).contains "you cast a white spell" &&
+  (TriggerEvent.clause (.youCastColor .white)).contains "you cast a white spell" &&
     (ruling 314).comment.contains "when,\" \"whenever,\" or \"at"
 
 #guard triggerWordingOk

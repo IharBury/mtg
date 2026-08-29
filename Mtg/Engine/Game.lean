@@ -2020,7 +2020,6 @@ def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
     | some subtypes => subtypes.any (g.hasSubtype target)
     | none => false)
 
-/-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
 /-- Lore counters among Sagas `p` controls. -/
 def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
@@ -2975,8 +2974,8 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
         match o.status.chosenOdd with
         | none => acc
         | some odd =>
-          let matches := if odd then mv % 2 == 1 else mv % 2 == 0
-          if matches then
+          let parityOk := if odd then mv % 2 == 1 else mv % 2 == 0
+          if parityOk then
             acc.putMatchingSourceTriggers pl.id o .opponentCastsMatchingParity
           else acc) g
   let g :=
@@ -3959,7 +3958,7 @@ def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectI
               plusOnePlusOne := x.status.plusOnePlusOne + 1
               lifelinkCounters := x.status.lifelinkCounters + 1 } }
           g.logMsg s!"{x.name} gets a +1/+1 counter and a lifelink counter"
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
+      let g := g.setObject { o with status := o.status.grantUntilEot Keyword.indestructible }
       let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
       let g := putCounters g o.id
       putCounters g arwenId
