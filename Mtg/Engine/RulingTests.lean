@@ -752,7 +752,8 @@ def ringEmblemNotPermanent : Bool :=
 
 /-- Ruling 46 / 58: paying kicker marks the spell kicked; you cannot kick twice. -/
 def kickerProposed : Game :=
-  let g := withWhiteMana (addToHand afterDraw galadrielSDismissal ⟨0⟩) ⟨0⟩ 4
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := withWhiteMana (addToHand g galadrielSDismissal ⟨0⟩) ⟨0⟩ 4
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Galadriel's Dismissal").id)
 
 def kickerProposedOk : Bool :=
@@ -795,7 +796,8 @@ def kickerNotCast : Game := addPermanent started galadrielSDismissal ⟨0⟩ ⟨
 /-- Ruling 50 / 95 / 196 / 197: casting without paying the mana cost still
 allows kicker as an additional cost. -/
 def kickerWithoutManaCost : Game :=
-  let g := addToHand afterDraw galadrielSDismissal ⟨0⟩
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addToHand g galadrielSDismissal ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Galadriel's Dismissal"
   let g := g.setObject { card with
     playPermission := some {
@@ -830,7 +832,9 @@ def kickerCopied : Game :=
 /-- Ruling 83 / 333: gift is promised as an additional cost, not given yet,
 and cannot be promised twice. -/
 def giftProposed : Game :=
-  let g := withWhiteMana (addToHand afterDraw bilboSGambit ⟨0⟩) ⟨0⟩ 2
+  let (g, bolt) := afterDraw.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.putStackEntry ⟨1⟩ bolt.id
+  let g := withWhiteMana (addToHand g bilboSGambit ⟨0⟩) ⟨0⟩ 2
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Gambit").id)
 
 def giftProposedOk : Bool :=
