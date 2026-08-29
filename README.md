@@ -127,8 +127,12 @@ The first slice of the engine models the two-player game:
 - starting a game, choosing who takes the first turn, opening hands, London
   mulligans (including the free first mulligan in multiplayer and Brawl,
   CR 103.5c), first-turn skipped draw (CR 103, 103.1, 103.5, 103.8a)
-- ending a game via life, empty library, or concession (CR 104, 704.5), and
-  the legend rule (CR 704.5j)
+- ending a game via life, empty library, or concession (CR 104, 704.5), the
+  legend rule (CR 704.5j), and a player leaving a multiplayer game (CR 800.4
+  and 800.4a–p: owned objects leave, control effects end, leftover
+  controlled objects are exiled, leftover combat damage and costs are
+  skipped, the turn continues without an active player, and until-next-turn
+  effects expire when that turn would have begun)
 - playing lands, including additional land plays this turn (CR 305.2b), activating mana abilities (including `{T}: Add` for each
   permanent of a listed type, and `{T}: Add` X mana of any color equal to
   power that may be spent only on Elf spells and abilities), activating other abilities of
