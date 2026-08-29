@@ -2346,7 +2346,8 @@ def headExilesInstead : Game :=
 def headExilesInsteadOk : Bool :=
   headExilesInstead.objects.any (fun o =>
     o.name == "Grizzly Bears" && o.zone == .exile) &&
-    headExilesInstead.battlefield.any (fun o => o.name == "Wolf") &&
+    (headExilesInstead.battlefield.filter (fun o => o.name == "Wolf")).size == 1 &&
+    headExilesInstead.log.any (fun s => mentions s "CR 614.6") &&
     (ruling 100).comment.contains "discarded or milled"
 
 #guard headExilesInsteadOk
@@ -3536,7 +3537,13 @@ def flavorJudgeCommentsOk : Bool :=
 
 def headOfHuntExilesOk : Bool :=
   headOfTheHunt.exileOppCreaturesInstead &&
-    (ruling 325).comment.contains "exiled instead of dying"
+    headExilesPreyBeeSilent.objects.any (fun o =>
+      o.name == "Grizzly Bears" && o.zone == .exile) &&
+    countWaitingAbility headExilesPreyBeeSilent
+      (.onOneOrMoreOtherCreaturesDieScry 1) == 0 &&
+    !headExilesPreyBeeSilent.creatureDiedThisTurn &&
+    (ruling 325).comment.contains "exiled instead of dying" &&
+    (ruling 325).comment.contains "won't trigger"
 
 #guard headOfHuntExilesOk
 

@@ -5047,7 +5047,7 @@ structure CardDef where
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- If a creature an opponent controls would die, exile it instead
-  (e.g. Head of the Hunt). -/
+  (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
   exileOppCreaturesInstead : Bool := false
   /-- You may look at the top card of your library any time
   (e.g. Elven Chorus). -/
