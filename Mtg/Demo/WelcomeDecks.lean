@@ -2,6 +2,7 @@ import Mtg.Engine.Deck
 import Mtg.Engine.Color
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitEternal
 
 /-!
 # The Hobbit Welcome Decks

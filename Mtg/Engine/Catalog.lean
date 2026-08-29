@@ -6,8 +6,9 @@ import Mtg.Engine.Card
 A small Oracle-faithful catalog used by engine tests. The engine itself is
 card-agnostic; these definitions just exercise the rules we model.
 
-Cards from Magic: The Gathering | The Hobbit (HOB / HOC) live in
-`Mtg.Engine.Catalog.Hobbit`. Decklists that use them live in `Mtg.Demo`.
+Cards from Magic: The Gathering | The Hobbit (HOB) live in
+`Mtg.Engine.Catalog.Hobbit`. Cards from The Hobbit Eternal (HOC) live in
+`Mtg.Engine.Catalog.HobbitEternal`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog

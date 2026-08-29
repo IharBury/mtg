@@ -1,6 +1,7 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitEternal
 import Mtg.Engine.Game
 import Mtg.Engine.Oracle
 

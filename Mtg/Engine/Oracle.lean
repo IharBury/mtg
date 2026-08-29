@@ -1,6 +1,7 @@
 import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
+import Mtg.Engine.Catalog.HobbitEternal
 
 /-!
 # Oracle verification
@@ -542,11 +543,11 @@ open Catalog
 /-- Every card in the engine catalog. Oracle text is fully represented by
 modeled fields; `supportedCardsMatchOracle` checks that mechanically. -/
 def supportedCatalogCards : Array CardDef :=
-  #[plains, island, swamp, mountain, forest,
-    grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
+  #[grizzlyBears, grayOgre, hillGiant, canyonMinotaur, ragingGoblin,
     llanowarElves, crawWurm, centaurCourser, rumblingBaloth, giantSpider,
     lightningBolt, shock, giantGrowth]
-    ++ Catalog.allCards
+    ++ Catalog.hobbitCards
+    ++ Catalog.hobbitEternalCards
 
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
