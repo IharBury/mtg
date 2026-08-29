@@ -4362,7 +4362,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .createTreasure =>
     "create a Treasure token"
   | .exileTop =>
-    "exile the top card of your library. Until the end of your next turn, you may play that card"
+    "exile the top card of your library. You may play it until the end of your next turn"
   | .sourceGetsAndTeamTrample p =>
     s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
   | .untapPlusOneIfSubtype subtype =>

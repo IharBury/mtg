@@ -5258,6 +5258,16 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     g.livingPlayers.foldl (fun acc pl =>
       acc.putControlledTriggers pl.id .playerLosesLife) g
 
+/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
+def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  if n == 0 then g
+  else
+    let pl := g.player p
+    let g := g.setLife p (pl.life + (n : Int))
+      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
+    g.modifyPlayer p (fun pl =>
+      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
+
 /-- Deal `n` damage to an already-legal player or permanent target. -/
 def dealDamageToTarget (g : Game) (t : Target) (n : Int) : Game :=
   match t with
@@ -6217,7 +6227,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .returnSpellCantCastIfGift =>
     let g :=
       match targets[0]? with
-      | some (Target.spell sid) => g.returnStackSpell sid
+      | some (Target.card sid) => g.returnStackSpell sid
       | _ => g.logMsg "The target is no longer legal"
     if giftPromised then
       g.players.foldl (fun acc pl =>
@@ -6319,7 +6329,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       return g
   | .damageOppCreaturesEqualOtherSpellsMv =>
     let xs := (g.player controller).castManaValuesThisTurn
-    let n := xs.pop.foldl (· + ·) 0
+    let n := (xs.extract 0 xs.size.pred).foldl (· + ·) 0
     Id.run do
       let mut g := g
       for o in g.battlefield do
@@ -6359,16 +6369,6 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
     else g.logMsg s!"{o.name} is no longer on the battlefield"
   | none =>
     g.logMsg missing
-
-/-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
-def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if n == 0 then g
-  else
-    let pl := g.player p
-    let g := g.setLife p (pl.life + (n : Int))
-      s!"{pl.name} gains {n} life ({pl.life + (n : Int)} life)"
-    g.modifyPlayer p (fun pl =>
-      { pl with lifeGainedThisTurn := pl.lifeGainedThisTurn + n })
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
