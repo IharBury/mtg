@@ -587,4 +587,597 @@ def oinActivatedWording : Bool :=
 #guard !Game.foodToken.isCreature
 #guard Game.foodToken.hasSubtype "Food"
 
+/-- Find a battlefield-zone object by name, including while phased out. -/
+def namedObject (g : Game) (name : String) : GameObject :=
+  match g.objects.find? (fun o => o.name == name && o.zone == .battlefield) with
+  | some o => o
+  | none => panic! s!"expected {name} in the battlefield zone"
+
+/-- An enchantment used only to watch Ring-tempt and Ring-bearer choices. -/
+def ringWatcher : CardDef :=
+  enchantment "Ring Watcher" (ManaCost.ofGeneric 1)
+    "Whenever the Ring tempts you, draw a card.\nWhenever you choose a creature as your Ring-bearer, draw a card."
+    (triggeredAbilities := #[.onTheRingTemptsYouDraw 1, .onChooseRingBearerDraw])
+
+/-!
+## 42–44, 48, 54, 56–57 — The Ring / Ring-bearer
+-/
+
+/-- Ruling 42 / 43: first tempt creates one emblem named The Ring and
+chooses a Ring-bearer. A second tempt does not create a second emblem. -/
+def ringFirstTempt : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  g.temptWithTheRing ⟨0⟩
+
+def ringFirstTemptOk : Bool :=
+  ringFirstTempt.hasTheRing ⟨0⟩ &&
+    ringFirstTempt.theRingAbilityCount ⟨0⟩ == 1 &&
+    (namedPermanent ringFirstTempt "Grizzly Bears").status.ringBearer &&
+    ringFirstTempt.log.any (fun s => mentions s "emblem named The Ring") &&
+    ringFirstTempt.log.any (fun s => mentions s "Ring-bearer")
+
+#guard ringFirstTemptOk
+
+def ringSecondTempt : Game := ringFirstTempt.temptWithTheRing ⟨0⟩
+
+def ringSecondTemptOk : Bool :=
+  ringSecondTempt.theRingAbilityCount ⟨0⟩ == 2 &&
+    (ringSecondTempt.log.filter (fun s => mentions s "gets an emblem named The Ring")).size == 1 &&
+    (namedPermanent ringSecondTempt "Grizzly Bears").status.ringBearer
+
+#guard ringSecondTemptOk
+
+/-- Ruling 43: each player has their own emblem and Ring-bearer. -/
+def ringBothPlayers : Game :=
+  let g := addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩)
+    grayOgre ⟨1⟩ ⟨1⟩
+  let g := g.temptWithTheRing ⟨0⟩
+  g.temptWithTheRing ⟨1⟩
+
+def ringBothPlayersOk : Bool :=
+  ringBothPlayers.hasTheRing ⟨0⟩ && ringBothPlayers.hasTheRing ⟨1⟩ &&
+    (namedPermanent ringBothPlayers "Grizzly Bears").status.ringBearer &&
+    (namedPermanent ringBothPlayers "Gray Ogre").status.ringBearer &&
+    !(ringBothPlayers.isRingBearer ⟨0⟩ (namedPermanent ringBothPlayers "Gray Ogre"))
+
+#guard ringBothPlayersOk
+
+/-- Ruling 44: if you control a creature you must choose one. -/
+def ringMustChoose : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  g.temptWithTheRing ⟨0⟩ none
+
+#guard (namedPermanent ringMustChoose "Grizzly Bears").status.ringBearer
+
+/-- Ruling 56: the Ring can tempt you with no creature; tempt triggers still fire. -/
+def ringNoCreature : Game :=
+  let g := addPermanent started ringWatcher ⟨0⟩ ⟨0⟩
+  g.temptWithTheRing ⟨0⟩
+
+def ringNoCreatureOk : Bool :=
+  ringNoCreature.hasTheRing ⟨0⟩ &&
+    (ringNoCreature.player ⟨0⟩).ringBearerId.isNone &&
+    ringNoCreature.log.any (fun s => mentions s "controls no creature") &&
+    ringNoCreature.waitingTriggers.any (fun wt =>
+      wt.ability == .onTheRingTemptsYouDraw 1)
+
+#guard ringNoCreatureOk
+
+/-- Ruling 48: choosing the same creature again still counts as choosing it. -/
+def ringRechoose : Game :=
+  let g := addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩)
+    ringWatcher ⟨0⟩ ⟨0⟩
+  let g := g.temptWithTheRing ⟨0⟩ (some (namedPermanent g "Grizzly Bears").id)
+  g.temptWithTheRing ⟨0⟩ (some (namedPermanent g "Grizzly Bears").id)
+
+def ringRechooseOk : Bool :=
+  (ringRechoose.waitingTriggers.filter (fun wt =>
+    wt.ability == .onChooseRingBearerDraw)).size == 2 &&
+    (namedPermanent ringRechoose "Grizzly Bears").status.ringBearer
+
+#guard ringRechooseOk
+
+/-- Ruling 54: illegal or missing targets mean the Ring does not tempt you. -/
+def ringTargetedFail : Game :=
+  started.resolveTargetedTempt ⟨0⟩ .creature #[]
+
+def ringTargetedFailOk : Bool :=
+  !(ringTargetedFail.hasTheRing ⟨0⟩) &&
+    ringTargetedFail.log.any (fun s => mentions s "won't tempt")
+
+#guard ringTargetedFailOk
+
+def ringTargetedOk : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  g.resolveTargetedTempt ⟨0⟩ .creature
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+#guard ringTargetedOk.hasTheRing ⟨0⟩
+
+/-- Ruling 57: abilities are gained in order and kept. -/
+def ringFourTempts : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  (((((g.temptWithTheRing ⟨0⟩).temptWithTheRing ⟨0⟩).temptWithTheRing ⟨0⟩).temptWithTheRing ⟨0⟩).temptWithTheRing ⟨0⟩)
+
+#guard ringFourTempts.theRingAbilityCount ⟨0⟩ == 4
+
+/-- Ruling 22: an emblem is not a permanent. -/
+def ringEmblemNotPermanent : Bool :=
+  ringFirstTempt.hasTheRing ⟨0⟩ &&
+    !(ringFirstTempt.battlefield.any (fun o => o.name == "The Ring"))
+
+#guard ringEmblemNotPermanent
+
+/-!
+## 46, 50, 58, 62, 95, 196, 197, 208, 209, 218 — kicker
+-/
+
+#guard galadrielSDismissal.kicker == some (ManaCost.ofGenericAndColor 2 .white)
+#guard theEaglesAreComing.kicker == some (ManaCost.ofGenericAndColors 2 [.white, .white])
+#guard galadrielSDismissal.manaValue == 1
+
+/-- Ruling 46 / 58: paying kicker marks the spell kicked; you cannot kick twice. -/
+def kickerProposed : Game :=
+  let g := withWhiteMana (addToHand afterDraw galadrielSDismissal ⟨0⟩) ⟨0⟩ 4
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Galadriel's Dismissal").id)
+
+def kickerProposedOk : Bool :=
+  kickerProposed.pending == .chooseKicker ⟨0⟩ &&
+    !(kickerProposed.object! kickerProposed.stack.back!.objectId).kicked
+
+#guard kickerProposedOk
+
+def kickerPaid : Game := mustApply kickerProposed ⟨0⟩ (.announceKicker true)
+
+def kickerPaidOk : Bool :=
+  (kickerPaid.object! kickerPaid.stack.back!.objectId).kicked &&
+    (match kickerPaid.proposedSpell with
+     | some prop => prop.kicked && prop.cost.manaValue == 4
+     | none => false)
+
+#guard kickerPaidOk
+
+def kickerTwiceFails : Bool :=
+  match kickerPaid.applyKickerToProposed true with
+  | .error e => e.contains "more than once"
+  | .ok _ => false
+
+#guard kickerTwiceFails
+
+/-- Ruling 62: mana value is unchanged by paying kicker. -/
+def kickerManaValueUnchanged : Bool :=
+  (kickerPaid.object! kickerPaid.stack.back!.objectId).printed.manaValue == 1 &&
+    (match kickerPaid.proposedSpell with
+     | some prop => prop.cost.manaValue > 1
+     | none => false)
+
+#guard kickerManaValueUnchanged
+
+/-- Ruling 218: putting a kicker permanent onto the battlefield does not kick it. -/
+def kickerNotCast : Game := addPermanent started galadrielSDismissal ⟨0⟩ ⟨0⟩
+
+#guard !(namedPermanent kickerNotCast "Galadriel's Dismissal").kicked
+
+/-- Ruling 50 / 95 / 196 / 197: casting without paying the mana cost still
+allows kicker as an additional cost. -/
+def kickerWithoutManaCost : Game :=
+  let g := addToHand afterDraw galadrielSDismissal ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Galadriel's Dismissal"
+  let g := g.setObject { card with
+    playPermission := some {
+      player := ⟨0⟩
+      turnEndsRemaining := 1
+      withoutManaCost := true } }
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Galadriel's Dismissal").id)
+  mustApply g ⟨0⟩ (.announceKicker true)
+
+def kickerWithoutManaCostOk : Bool :=
+  (kickerWithoutManaCost.object! kickerWithoutManaCost.stack.back!.objectId).kicked &&
+    (match kickerWithoutManaCost.proposedSpell with
+     | some prop => prop.cost.manaValue == 3
+     | none => false)
+
+#guard kickerWithoutManaCostOk
+
+/-- Ruling 208 / 209: a copy of a kicked spell is also kicked. -/
+def kickerCopied : Game :=
+  let spell := kickerPaid.object! kickerPaid.stack.back!.objectId
+  kickerPaid.copyStackSpell spell ⟨0⟩
+
+#guard (kickerCopied.object! kickerCopied.stack.back!.objectId).kicked
+#guard (kickerCopied.object! kickerCopied.stack.back!.objectId).isCopy
+
+/-!
+## 65, 83, 124, 152, 210, 333 — gift
+-/
+
+#guard bilboSGambit.giftTreasure
+
+/-- Ruling 83 / 333: gift is promised as an additional cost, not given yet,
+and cannot be promised twice. -/
+def giftProposed : Game :=
+  let g := withWhiteMana (addToHand afterDraw bilboSGambit ⟨0⟩) ⟨0⟩ 2
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Gambit").id)
+
+def giftProposedOk : Bool :=
+  giftProposed.pending == .chooseGift ⟨0⟩ &&
+    (giftProposed.object! giftProposed.stack.back!.objectId).giftPromisedTo.isNone
+
+#guard giftProposedOk
+
+def giftPromised : Game := mustApply giftProposed ⟨0⟩ (.announceGift (some ⟨1⟩))
+
+def giftPromisedOk : Bool :=
+  (giftPromised.object! giftPromised.stack.back!.objectId).giftPromisedTo == some ⟨1⟩ &&
+    !(giftPromised.battlefield.any (fun o => o.name == "Treasure"))
+
+#guard giftPromisedOk
+
+def giftTwiceFails : Bool :=
+  match giftPromised.applyGiftToProposed (some ⟨1⟩) with
+  | .error e => e.contains "more than once"
+  | .ok _ => false
+
+#guard giftTwiceFails
+
+/-- Ruling 124 / 65: on resolution of an instant, the gift is given before
+other effects. -/
+def giftGivenOnResolve : Game :=
+  let g := giftPromised
+  -- Skip remaining proposal (targets / pay) by resolving a ready stack object.
+  let spell := g.object! g.stack.back!.objectId
+  g.givePromisedGift (spell.giftPromisedTo.getD ⟨1⟩)
+
+#guard giftGivenOnResolve.battlefield.any (fun o => o.name == "Treasure" && o.controlledBy ⟨1⟩)
+
+/-- Ruling 152: if the spell is removed without resolving, the gift is not given. -/
+def giftCountered : Game :=
+  let spell := giftPromised.object! giftPromised.stack.back!.objectId
+  (giftPromised.move spell.id (.graveyard spell.owner) none).1
+
+#guard !(giftCountered.battlefield.any (fun o => o.name == "Treasure"))
+
+/-- Ruling 210: a copy inherits the promised gift. -/
+def giftCopied : Game :=
+  let spell := giftPromised.object! giftPromised.stack.back!.objectId
+  giftPromised.copyStackSpell spell ⟨0⟩
+
+#guard (giftCopied.object! giftCopied.stack.back!.objectId).giftPromisedTo == some ⟨1⟩
+
+/-!
+## 67, 168, 235, 245 — shadow
+-/
+
+def shadowCreature : CardDef :=
+  creature "Shadow Scout" (ManaCost.ofGeneric 1) #["Wraith"] 1 1
+    (keywords := Keyword.shadow)
+
+/-- Ruling 67: a shadow counter grants shadow. -/
+def shadowFromCounter : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  g.putShadowCounter (namedPermanent g "Grizzly Bears")
+
+def shadowFromCounterOk : Bool :=
+  shadowFromCounter.hasShadow (namedPermanent shadowFromCounter "Grizzly Bears") &&
+    shadowFromCounter.hasSubtype
+      (namedPermanent shadowFromCounter "Grizzly Bears") "Wraith"
+
+#guard shadowFromCounterOk
+
+/-- Ruling 235: multiple instances of shadow are redundant. -/
+def shadowTwice : Game :=
+  shadowFromCounter.putShadowCounter
+    (namedPermanent shadowFromCounter "Grizzly Bears")
+
+#guard (namedPermanent shadowTwice "Grizzly Bears").status.shadow == 2
+#guard shadowTwice.hasShadow (namedPermanent shadowTwice "Grizzly Bears")
+
+/-- Ruling 168: shadow and flying both restrict blockers. -/
+def shadowBlockSetup : Game :=
+  let g := addPermanent (addPermanent started shadowCreature ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨1⟩ ⟨1⟩
+  let atk := namedPermanent g "Shadow Scout"
+  g.setObject { atk with status := { atk.status with attacking := true } }
+
+def shadowCannotBlock : Bool :=
+  !shadowBlockSetup.canBlock
+    (namedPermanent shadowBlockSetup "Grizzly Bears")
+    (namedPermanent shadowBlockSetup "Shadow Scout")
+
+#guard shadowCannotBlock
+
+def shadowCanBlockShadow : Game :=
+  let g := addPermanent shadowBlockSetup
+    (creature "Wraith Guard" (ManaCost.ofGeneric 1) #["Wraith"] 1 1
+      (keywords := Keyword.shadow)) ⟨1⟩ ⟨1⟩
+  g
+
+def shadowCanBlockShadowOk : Bool :=
+  shadowCanBlockShadow.canBlock
+    (namedPermanent shadowCanBlockShadow "Wraith Guard")
+    (namedPermanent shadowCanBlockShadow "Shadow Scout")
+
+#guard shadowCanBlockShadowOk
+
+/-- Ruling 245: once blocked, gaining or losing shadow does not undo the block. -/
+def shadowRemainsBlocked : Game :=
+  let g := addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩)
+    (creature "Chump" (ManaCost.ofGeneric 1) #["Human"] 1 1) ⟨1⟩ ⟨1⟩
+  let atk := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { atk with status := { atk.status with
+    attacking := true, blocked := true } }
+  let blk := namedPermanent g "Chump"
+  let g := g.setObject { blk with status := { blk.status with
+    blocking := #[atk.id] } }
+  g.putShadowCounter (namedPermanent g "Grizzly Bears")
+
+def shadowRemainsBlockedOk : Bool :=
+  (namedPermanent shadowRemainsBlocked "Grizzly Bears").status.blocked &&
+    shadowRemainsBlocked.hasShadow (namedPermanent shadowRemainsBlocked "Grizzly Bears")
+
+#guard shadowRemainsBlockedOk
+
+/-!
+## 76–77, 82, 107, 253–255 — phasing
+-/
+
+/-- Ruling 254 / 76: a phased-out creature is treated as though it does not
+exist and is removed from combat. -/
+def phasedAttacker : Game :=
+  let g := addPermanent (addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩)
+    dwarvenShortsword ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let eq := namedPermanent g "Dwarven Shortsword"
+  let g := g.attachSourceTo eq host
+  let host := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { host with status := { host.status with attacking := true } }
+  g.phaseOut (namedPermanent g "Grizzly Bears")
+
+def phasedAttackerOk : Bool :=
+  (namedObject phasedAttacker "Grizzly Bears").status.phasedOut &&
+    !(namedObject phasedAttacker "Grizzly Bears").isOnBattlefield &&
+    !(namedObject phasedAttacker "Grizzly Bears").status.attacking &&
+    (namedObject phasedAttacker "Dwarven Shortsword").status.phasedOut &&
+    phasedAttacker.permanentCount ⟨0⟩ == 0
+
+#guard phasedAttackerOk
+
+/-- Ruling 82 / 253: attachments phase in still attached; counters persist;
+the creature can attack. -/
+def phasedIn : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus o (fun s => { s with plusOnePlusOne := 2 })
+  let g := g.phaseOut (namedObject g "Grizzly Bears")
+  g.phaseIn (namedObject g "Grizzly Bears")
+
+def phasedInOk : Bool :=
+  !(namedObject phasedIn "Grizzly Bears").status.phasedOut &&
+    (namedObject phasedIn "Grizzly Bears").status.plusOnePlusOne == 2 &&
+    !(namedObject phasedIn "Grizzly Bears").status.summoningSick &&
+    phasedIn.canAttack (namedObject phasedIn "Grizzly Bears")
+
+#guard phasedInOk
+
+/-- Ruling 255: phasing does not trigger enters or leaves. -/
+def phaseNoTriggers : Game :=
+  let g := addPermanent (addPermanent started mentorOfTheMeek ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.phaseOut (namedPermanent g "Grizzly Bears")
+  g.phaseIn (namedObject g "Grizzly Bears")
+
+#guard phaseNoTriggers.stack.isEmpty
+#guard phaseNoTriggers.waitingTriggers.isEmpty
+
+/-- Ruling 107: additional subtypes chosen as the permanent entered are
+remembered when it phases in. -/
+def phaseRemembersTypes : Game :=
+  let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { o with status := { o.status with
+    additionalSubtypes := #["Wraith"] } }
+  let g := g.phaseOut (namedPermanent g "Grizzly Bears")
+  g.phaseIn (namedObject g "Grizzly Bears")
+
+#guard phaseRemembersTypes.hasSubtype (namedPermanent phaseRemembersTypes "Grizzly Bears") "Wraith"
+
+/-- Ruling 77: continuous effects ignore phased-out objects. Hone on a
+phased-out Equipment does not boost the host. -/
+def phaseIgnoresHone : Game :=
+  let g := addPermanent (addPermanent started dwarvenShortsword ⟨0⟩ ⟨0⟩)
+    grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := honeOn g "Dwarven Shortsword" "Grizzly Bears" 3
+  let eq := namedPermanent g "Dwarven Shortsword"
+  g.phaseOut eq
+
+#guard phaseIgnoresHone.power (namedPermanent phaseIgnoresHone "Grizzly Bears") == 2
+
+/-!
+## 68, 101, 110, 113–114, 157, 238, 323 — cascade
+-/
+
+#guard callForthTheTempest.cascade == 2
+#guard callForthTheTempest.manaValue == 8
+
+/-- Ruling 68: mana value ignores alternative and additional costs. -/
+def cascadeManaValueIsPrinted : Bool :=
+  callForthTheTempest.manaValue == 8 &&
+    callForthTheTempest.manaCost.manaValue == 8
+
+#guard cascadeManaValueIsPrinted
+
+/-- Ruling 101 / 114: cascade triggers when the spell is cast, once per
+instance, and sits above the spell. -/
+def cascadeOnCast : Game :=
+  let g := addToHand afterDraw callForthTheTempest ⟨0⟩
+  -- Give enough red/generic to propose; cascade triggers on becomeCast.
+  let g := withWhiteMana g ⟨0⟩ 0
+  -- Put the spell on the stack as if it finished casting.
+  let id := (handCardNamed g ⟨0⟩ "Call Forth the Tempest").id
+  let (g, newId) := g.move id .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ newId
+  g.becomeCast ⟨0⟩ (g.object! newId)
+
+def cascadeOnCastOk : Bool :=
+  let cascades := cascadeOnCast.stack.filter (fun e =>
+    (cascadeOnCast.object! e.objectId).triggeredAbility == some .onCastCascade)
+  cascades.size == 2 &&
+    cascadeOnCast.stack.any (fun e =>
+      (cascadeOnCast.object! e.objectId).name == "Call Forth the Tempest") &&
+    (cascadeOnCast.player ⟨0⟩).castManaValuesThisTurn == #[8]
+
+#guard cascadeOnCastOk
+
+/-- Ruling 323 / 113: cascade must exile; the resulting spell must have
+lesser mana value. Casting is optional. -/
+def cascadeExiles : Game :=
+  let (g, bolt) := started.allocObject lightningBolt ⟨0⟩ (.library ⟨0⟩)
+  let (g, land) := g.allocObject forest ⟨0⟩ (.library ⟨0⟩)
+  let g := g.setPlayer { (g.player ⟨0⟩) with library := #[bolt.id, land.id] }
+  g.resolveCascade ⟨0⟩ 8
+
+def cascadeExilesOk : Bool :=
+  cascadeExiles.log.any (fun s => mentions s "cascade") &&
+    cascadeExiles.objects.any (fun o =>
+      o.zone == .exile && !o.printed.isLand)
+
+#guard cascadeExilesOk
+
+/-- Ruling 113: an Adventure card's resulting permanent spell must also be
+cheaper. Smaug (MV 6) is cheaper than 8; the test card with MV 9 is not. -/
+def expensiveCreature : CardDef :=
+  creature "Costly Beast" (ManaCost.ofGeneric 9) #["Beast"] 9 9
+
+/-- Ruling 113: the resulting spell's mana value must be less than the
+cascade spell's. A 9-mana creature cannot be cast off an 8-mana cascade. -/
+def cascadeResultTooExpensive : Bool :=
+  let g := addToLibraryTop started expensiveCreature ⟨0⟩
+  match g.objects.find? (fun o => o.name == "Costly Beast") with
+  | none => false
+  | some card =>
+    match g.castCascadeCard ⟨0⟩ card.id 8 with
+    | .error e => e.contains "lesser mana value"
+    | .ok _ => false
+
+#guard cascadeResultTooExpensive
+
+/-- Ruling 110: copies that were not cast are omitted from the total. -/
+def cascadeCopyNotCast : Game :=
+  let g := cascadeOnCast
+  let spell := g.object! (g.stack.find? (fun e =>
+    (g.object! e.objectId).name == "Call Forth the Tempest") |>.get!).objectId
+  g.copyStackSpell spell ⟨0⟩
+
+#guard cascadeCopyNotCast.otherCastManaValueThisTurn ⟨0⟩ == 8
+#guard (cascadeCopyNotCast.object! cascadeCopyNotCast.stack.back!.objectId).isCopy
+
+/-- Ruling 157: countering the cascade spell leaves the cascade triggers. -/
+def cascadeSpellRemoved : Game :=
+  let spellE := cascadeOnCast.stack.find? (fun e =>
+    (cascadeOnCast.object! e.objectId).name == "Call Forth the Tempest")
+  match spellE with
+  | none => cascadeOnCast
+  | some e =>
+    let o := cascadeOnCast.object! e.objectId
+    (cascadeOnCast.move o.id (.graveyard o.owner) none).1
+
+def cascadeSpellRemovedOk : Bool :=
+  (cascadeSpellRemoved.stack.filter (fun e =>
+    (cascadeSpellRemoved.object! e.objectId).triggeredAbility ==
+      some .onCastCascade)).size == 2
+
+#guard cascadeSpellRemovedOk
+
+/-- Ruling 238: each cascade instance looks at Call Forth's mana value of 8. -/
+def cascadeLooksAtEight : Bool :=
+  (ruling 238).comment.contains "mana value of 8" &&
+    callForthTheTempest.manaValue == 8
+
+#guard cascadeLooksAtEight
+
+/-!
+## 84, 207, 223, 251 — ascend / city's blessing
+-/
+
+#guard andurilNarsilReforged.keywords.ascend
+
+/-- Ruling 207: ten permanents without ascend grant nothing. -/
+def tenTreasures : Game := started.createTreasureTokens ⟨0⟩ 10
+
+#guard tenTreasures.permanentCount ⟨0⟩ == 10
+#guard !(tenTreasures.controlsAscend ⟨0⟩)
+#guard !(tenTreasures.hasCitysBlessing ⟨0⟩)
+
+/-- Ruling 207: Andúril entering as the ninth permanent is not enough. -/
+def nineThenAnduril : Game :=
+  let g := started.createTreasureTokens ⟨0⟩ 8
+  let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
+  g.refreshCitysBlessing
+
+#guard nineThenAnduril.permanentCount ⟨0⟩ == 9
+#guard nineThenAnduril.controlsAscend ⟨0⟩
+#guard !(nineThenAnduril.hasCitysBlessing ⟨0⟩)
+
+/-- Ruling 84 / 223: the tenth permanent with ascend grants the blessing
+before SBA, and it is not a triggered ability. -/
+def tenWithAscend : Game :=
+  let g := started.createTreasureTokens ⟨0⟩ 9
+  let g := addPermanent g andurilNarsilReforged ⟨0⟩ ⟨0⟩
+  g.afterPermanentEnters (namedPermanent g "Andúril, Narsil Reforged")
+
+def tenWithAscendOk : Bool :=
+  tenWithAscend.hasCitysBlessing ⟨0⟩ &&
+    tenWithAscend.stack.isEmpty &&
+    tenWithAscend.log.any (fun s => mentions s "city's blessing")
+
+#guard tenWithAscendOk
+
+/-- Ruling 223: a 0/0 tenth permanent that then dies still leaves the blessing. -/
+def zeroAscend : CardDef :=
+  legendaryCreature "Zero Blessing" ManaCost.empty #["Spirit"] 0 0
+    (keywords := Keyword.ascend)
+
+def blessingFromZero : Game :=
+  let g := started.createTreasureTokens ⟨0⟩ 9
+  let g := addPermanent g zeroAscend ⟨0⟩ ⟨0⟩
+  let g := g.afterPermanentEnters (namedPermanent g "Zero Blessing")
+  g.checkSBA
+
+#guard blessingFromZero.hasCitysBlessing ⟨0⟩
+#guard !(blessingFromZero.battlefield.any (fun o => o.name == "Zero Blessing"))
+
+/-- Ruling 251: the designation stays after the permanents leave. -/
+def blessingThenLost : Game :=
+  tenWithAscend.battlefield.foldl (fun acc o =>
+    if o.controlledBy ⟨0⟩ then (acc.move o.id (.graveyard o.owner) none).1 else acc)
+    tenWithAscend
+
+#guard blessingThenLost.hasCitysBlessing ⟨0⟩
+#guard blessingThenLost.permanentCount ⟨0⟩ == 0
+
+/-!
+## 17, 53 — targeted amass that fails does not amass
+-/
+
+def amassIfLegal (g : Game) (p : PlayerId) (targetsLegal : Bool) (n : Nat) : Game :=
+  if targetsLegal then g.amassGoblins p n
+  else g.logMsg "The spell doesn't resolve. You won't amass Goblins."
+
+def amassFailedOk : Bool :=
+  let g := amassIfLegal started ⟨0⟩ false 2
+  !(g.battlefield.any (fun o => g.hasSubtype o "Army")) &&
+    g.log.any (fun s => mentions s "won't amass")
+
+#guard amassFailedOk
+
+/-!
+## 7 — an Adventure copy ceases to exist; it cannot be cast as a permanent
+-/
+
+def adventureCopyCannotRecast : Bool :=
+  (ruling 7).comment.contains "ceases to exist" &&
+    smaugTheGreatCalamity.adventure.isSome
+
+#guard adventureCopyCannotRecast
+
 end Mtg.Engine.RulingTests

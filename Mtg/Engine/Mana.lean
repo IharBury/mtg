@@ -152,6 +152,10 @@ def reduceGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
     | s :: rest => s :: go rest left
   { symbols := (go cost.symbols.toList n).toArray }
 
+/-- Concatenate two mana costs (additional costs such as kicker, CR 601.2f). -/
+def addCost (a b : ManaCost) : ManaCost :=
+  { symbols := a.symbols ++ b.symbols }
+
 /-- Add `n` generic mana to this cost (CR 601.2b / 601.2f). -/
 def addGeneric (cost : ManaCost) (n : Nat) : ManaCost :=
   if n == 0 then cost

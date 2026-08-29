@@ -140,6 +140,14 @@ structure Status where
   /-- Hone counters. Each grants +1/+0 to the equipped creature while this
   Equipment is attached (judge rulings on Dwalin / Sting). -/
   hone : Nat := 0
+  /-- Shadow counters. A permanent with a shadow counter has shadow. -/
+  shadow : Nat := 0
+  /-- Phased out (CR 702.26). Treated as though it does not exist. -/
+  phasedOut : Bool := false
+  /-- Host this Aura or Equipment phased out with. -/
+  phasedWith : Option ObjectId := none
+  /-- This creature is its controller's Ring-bearer. -/
+  ringBearer : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -264,6 +272,12 @@ structure GameObject where
   linkedExile : Array ObjectId := #[]
   /-- This spell was cast from a graveyard (flashback, CR 702.34). -/
   castFromGraveyard : Bool := false
+  /-- This spell's kicker cost was paid (CR 702.32). -/
+  kicked : Bool := false
+  /-- Opponent promised a gift as an additional cost. Given on resolution. -/
+  giftPromisedTo : Option PlayerId := none
+  /-- This object is a copy (CR 706). Copies of spells are not cast. -/
+  isCopy : Bool := false
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -309,7 +323,12 @@ def power (o : GameObject) : Int :=
 def toughness (o : GameObject) : Int :=
   (o.printed.toughness.getD 0) + o.status.pumpToughness + (o.status.plusOnePlusOne : Int)
 
-def isOnBattlefield (o : GameObject) : Bool := o.zone == .battlefield
+def isOnBattlefield (o : GameObject) : Bool :=
+  o.zone == .battlefield && !o.status.phasedOut
+
+/-- Still in the battlefield zone, including while phased out (CR 702.26d). -/
+def isBattlefieldObject (o : GameObject) : Bool :=
+  o.zone == .battlefield
 
 def controlledBy (o : GameObject) (p : PlayerId) : Bool :=
   o.controller == some p
@@ -441,6 +460,14 @@ structure ProposedSpell where
   abilityModes : Array AbilityEffect := #[]
   /-- Override the announced targeting shape (e.g. Equip Human). -/
   targetKindOverride : Option EffectTargetKind := none
+  /-- The proposed spell will be kicked if this is true. -/
+  kicked : Bool := false
+  /-- Kicker has been announced (paid or declined). -/
+  kickerAnnounced : Bool := false
+  /-- Opponent chosen for a promised gift, if any. -/
+  giftTo : Option PlayerId := none
+  /-- Gift has been announced (promised or declined). -/
+  giftAnnounced : Bool := false
 deriving Repr, Inhabited
 
 /-- Choice that must be made before priority proceeds. -/
@@ -500,6 +527,12 @@ inductive Pending where
   | mayPlusOneCreature (player : PlayerId)
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
+  /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
+  | chooseKicker (player : PlayerId)
+  /-- Announce whether to promise a gift to an opponent (CR 702.185 / 601.2b). -/
+  | chooseGift (player : PlayerId)
+  /-- Choose a creature you control as your Ring-bearer. -/
+  | chooseRingBearer (player : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 inductive GameResult where
@@ -537,6 +570,14 @@ structure Player where
   noncreatureSpellsCastThisTurn : Nat := 0
   /-- Storied: enduring story for the rest of the game. -/
   enduringStory : Bool := false
+  /-- Number of The Ring emblem abilities gained (0 = no emblem). Max 4. -/
+  theRingAbilities : Nat := 0
+  /-- Current Ring-bearer, if any. -/
+  ringBearerId : Option ObjectId := none
+  /-- Ascend: the city's blessing for the rest of the game. -/
+  citysBlessing : Bool := false
+  /-- Mana value of each spell this player has cast this turn. -/
+  castManaValuesThisTurn : Array Nat := #[]
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -619,6 +660,12 @@ inductive Action where
   | chooseBottom
   /-- Attach this Equipment, or tap these Humans. -/
   | choosePermanents (ids : Array ObjectId)
+  /-- Pay (`true`) or decline (`false`) the optional kicker cost. -/
+  | announceKicker (kick : Bool)
+  /-- Promise a gift to this opponent, or `none` to decline. -/
+  | announceGift (to : Option PlayerId)
+  /-- Choose this creature as your Ring-bearer, or `none` if you control none. -/
+  | chooseRingBearer (id : Option ObjectId)
   | concede
 deriving Repr
 
@@ -787,6 +834,144 @@ def grantEnduringStoryIfNeeded (g : Game) (p : PlayerId) : Game :=
 /-- Grant an enduring story to every player who now qualifies. -/
 def refreshEnduringStory (g : Game) : Game :=
   g.players.foldl (fun g pl => g.grantEnduringStoryIfNeeded pl.id) g
+
+/-- Whether `p` has an emblem named The Ring. -/
+def hasTheRing (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).theRingAbilities > 0
+
+/-- Number of The Ring abilities `p`'s emblem currently has. -/
+def theRingAbilityCount (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).theRingAbilities
+
+/-- Whether `o` is `p`'s Ring-bearer. -/
+def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  (g.player p).ringBearerId == some o.id && o.status.ringBearer
+
+/-- Creatures `p` controls that can be chosen as Ring-bearer. -/
+def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (fun o => o.isCreature)
+
+/-- Clear Ring-bearer marks, then mark `chosen` if present. -/
+def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId) : Game :=
+  let g :=
+    g.objects.foldl (fun acc o =>
+      if o.status.ringBearer && o.controlledBy p then
+        acc.setObject { o with status := { o.status with ringBearer := false } }
+      else acc) g
+  match chosen with
+  | none =>
+    g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
+  | some id =>
+    match g.findObject? id with
+    | none => g.modifyPlayer p (fun pl => { pl with ringBearerId := none })
+    | some o =>
+      let g := g.setObject { o with status := { o.status with ringBearer := true } }
+      g.modifyPlayer p (fun pl => { pl with ringBearerId := some id })
+
+/-- Whether `p` currently has the city's blessing. -/
+def hasCitysBlessing (g : Game) (p : PlayerId) : Bool :=
+  (g.player p).citysBlessing
+
+/-- Number of permanents `p` currently controls (phased-out objects do not
+count). -/
+def permanentCount (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).size
+
+/-- Whether `p` controls a permanent with ascend, or a resolving spell with
+ascend on the stack. -/
+def controlsAscend (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => o.printed.keywords.ascend) ||
+    g.stack.any (fun e =>
+      match g.findObject? e.objectId with
+      | some o =>
+        o.controller == some p && o.printed.keywords.ascend &&
+          o.triggeredAbility.isNone && o.abilityEffect.isNone
+      | none => false)
+
+/-- Grant the city's blessing if `p` now qualifies. The designation is on the
+player and is never removed. Not a triggered ability. -/
+def grantCitysBlessingIfNeeded (g : Game) (p : PlayerId) : Game :=
+  if (g.player p).citysBlessing then g
+  else if g.controlsAscend p && g.permanentCount p ≥ 10 then
+    g.modifyPlayer p (fun pl => { pl with citysBlessing := true })
+      |>.logMsg s!"{(g.player p).name} has the city's blessing"
+  else g
+
+/-- Grant the city's blessing to every player who now qualifies. -/
+def refreshCitysBlessing (g : Game) : Game :=
+  g.players.foldl (fun g pl => g.grantCitysBlessingIfNeeded pl.id) g
+
+/-- Put a shadow counter on `o`. It has shadow and is a Wraith. -/
+def putShadowCounter (g : Game) (o : GameObject) : Game :=
+  let extra :=
+    if o.status.additionalSubtypes.any (· == "Wraith") then o.status.additionalSubtypes
+    else o.status.additionalSubtypes.push "Wraith"
+  g.setObject { o with status := { o.status with
+    shadow := o.status.shadow + 1
+    additionalSubtypes := extra } }
+    |>.logMsg s!"{o.name} gets a shadow counter"
+
+/-- Attachments that should phase out or in with `host`. -/
+def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
+  g.objects.filter (fun o =>
+    o.zone == .battlefield && o.attachedTo == some host.id)
+
+/-- Remove `o` from combat (CR 506.4). -/
+def removeFromCombat (g : Game) (o : GameObject) : Game :=
+  let g := g.setObject { o with status := { o.status with
+    attacking := false
+    blocking := #[] } }
+  g.objects.foldl (fun acc x =>
+    if x.status.blocking.any (· == o.id) then
+      acc.setObject { x with status := { x.status with
+        blocking := x.status.blocking.filter (· != o.id) } }
+    else acc) g
+
+/-- Phase `o` out, along with Auras and Equipment attached to it. Does not
+trigger leaves-the-battlefield abilities. -/
+def phaseOut (g : Game) (o : GameObject) : Game :=
+  if o.status.phasedOut || o.zone != .battlefield then g
+  else
+    let g := g.removeFromCombat o
+    let o := g.object! o.id
+    let g := g.setObject { o with status := { o.status with
+      phasedOut := true, phasedWith := none } }
+    let g := g.logMsg s!"{o.name} phases out"
+    (g.attachmentsOf o).foldl (fun acc att =>
+      let att := acc.object! att.id
+      let acc := acc.removeFromCombat att
+      let att := acc.object! att.id
+      acc.setObject { att with status := { att.status with
+        phasedOut := true, phasedWith := some o.id } }
+        |>.logMsg s!"{att.name} phases out attached to {o.name}") g
+
+/-- Phase `o` in, along with anything that phased out attached to it.
+Counters and “as this enters” choices are kept. Does not trigger enters. -/
+def phaseIn (g : Game) (o : GameObject) : Game :=
+  if !o.status.phasedOut then g
+  else
+    let g := g.setObject { o with status := { o.status with
+      phasedOut := false, phasedWith := none, summoningSick := false } }
+    let g := g.logMsg s!"{o.name} phases in"
+    g.objects.foldl (fun acc att =>
+      if att.status.phasedOut && att.status.phasedWith == some o.id then
+        acc.setObject { att with status := { att.status with
+          phasedOut := false, summoningSick := false } }
+          |>.logMsg s!"{att.name} phases in still attached to {o.name}"
+      else acc) g
+
+/-- Phase in every phased-out permanent `p` controls (CR 502.1). -/
+def phaseInControlled (g : Game) (p : PlayerId) : Game :=
+  g.objects.foldl (fun acc o =>
+    if o.zone == .battlefield && o.status.phasedOut && o.controlledBy p &&
+        o.status.phasedWith.isNone then
+      acc.phaseIn (acc.object! o.id)
+    else acc) g
+
+/-- Mana value of other spells `p` has cast this turn. Copies that were not
+cast are not recorded. -/
+def otherCastManaValueThisTurn (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).castManaValuesThisTurn.foldl (· + ·) 0
 
 /-- Lands `p` currently controls (CR 305.1). -/
 def landsYouControl (g : Game) (p : PlayerId) : Nat :=
@@ -1491,8 +1676,15 @@ def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
 
 /-- Printed, until-end-of-turn, attached-host, and enduring-story keywords. -/
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
-  Keywords.merge (Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o))
-    (g.enduringStoryKeywords o)
+  let base :=
+    Keywords.merge (Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o))
+      (g.enduringStoryKeywords o)
+  if o.status.shadow > 0 then { base with shadow := true } else base
+
+/-- Whether `o` currently has shadow (printed, granted, or from a counter).
+Multiple instances are redundant. -/
+def hasShadow (g : Game) (o : GameObject) : Bool :=
+  (g.currentKeywords o).shadow
 
 /-- Printed or until-end-of-turn keyword selected by `sel`. -/
 def hasPrintedOrEot (o : GameObject) (sel : Keywords → Bool) : Bool :=
@@ -1591,7 +1783,9 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       | some n => g.snapshotPower blocker <= n
       | none => false)) &&
   (!g.hasFlying attacker ||
-    g.hasFlying blocker || (g.currentKeywords blocker).reach)
+    g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
+  (!(g.hasShadow attacker) || g.hasShadow blocker) &&
+  (!(g.hasShadow blocker) || g.hasShadow attacker)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
@@ -2399,7 +2593,17 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.printed.isCreature then pl.noncreatureSpellsCastThisTurn
     else pl.noncreatureSpellsCastThisTurn + 1
   let g := g.modifyPlayer caster (fun p =>
-    { p with spellsCastThisTurn := spells, noncreatureSpellsCastThisTurn := nonc })
+    { p with
+      spellsCastThisTurn := spells
+      noncreatureSpellsCastThisTurn := nonc
+      castManaValuesThisTurn :=
+        p.castManaValuesThisTurn.push spell.printed.manaCost.manaValue })
+  let g :=
+    Id.run do
+      let mut g := g
+      for _ in [0:spell.printed.cascade] do
+        g := g.putTriggeredAbilityOnStack caster spell .onCastCascade "cascade trigger"
+      return g
   let g :=
     if spell.printed.isInstantOrSorcery then
       g.putControlledTriggers caster .youCastInstantOrSorcery
@@ -2446,6 +2650,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   -- Storied is granted as the permanent enters, before SBA (legend rule /
   -- 0 toughness) and before enters triggers use the stack.
   let g := g.refreshEnduringStory
+  let g := g.refreshCitysBlessing
   let g :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
@@ -3321,13 +3526,20 @@ def activatesWithoutPayingManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbil
 costs (CR 601.2b), then targets (CR 601.2c), then mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
     (needsMode needsTarget : Bool) (modeCitation : String)
-    (needsAdditionalCost : Bool := false) : Game :=
+    (needsAdditionalCost : Bool := false) (needsKicker : Bool := false)
+    (needsGift : Bool := false) : Game :=
   if needsMode then
     let g := { g with pending := .chooseMode p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a mode ({modeCitation})"
   else if needsAdditionalCost then
     let g := { g with pending := .chooseAdditionalCost p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose an additional cost (CR 601.2b)"
+  else if needsKicker then
+    let g := { g with pending := .chooseKicker p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} may kick the spell (CR 702.32 / 601.2b)"
+  else if needsGift then
+    let g := { g with pending := .chooseGift p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} may promise a gift (CR 702.185 / 601.2b)"
   else if needsTarget then
     let g := { g with pending := .chooseTargets p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a target (CR 601.2c)"
@@ -3391,8 +3603,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
   let needsAdditionalCostChoice := face.additionalCostOrPayGeneric.isSome
+  let needsKicker := face.kicker.isSome
+  let needsGift := face.giftTreasure
   if !needsMode && !needsTarget && !cost.includesManaPayment && !needsSacrifice &&
-      !needsAdditionalCostChoice then
+      !needsAdditionalCostChoice && !needsKicker && !needsGift then
     return g.becomeCast p (g.object! newId)
   let prop : ProposedSpell := {
     caster := p
@@ -3407,6 +3621,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g := g.logMsg s!"{pl.name} begins casting {face.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
     (needsAdditionalCost := needsAdditionalCostChoice)
+    (needsKicker := needsKicker) (needsGift := needsGift)
 
 /-- Announce the chosen mode for a modal spell or activated ability
 (CR 601.2b / 700.2). -/
@@ -4852,6 +5067,205 @@ def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : Perma
     Game :=
   g.applyOnSource sourceId action "The triggered ability's source is no longer in play"
 
+/-- Queue “whenever the Ring tempts you” and “whenever you choose a
+Ring-bearer” triggers for `p`. -/
+def putRingTemptTriggers (g : Game) (p : PlayerId) (choseBearer : Bool) : Game :=
+  let g := g.putControlledTriggers p .theRingTemptsYou
+  if choseBearer then g.putControlledTriggers p .youChooseRingBearer else g
+
+/-- As the Ring tempts `p`: get The Ring emblem if needed, gain its next
+ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing
+the same creature still counts as choosing it. -/
+def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none) : Game :=
+  let pl := g.player p
+  let nextAbilities := min 4 (pl.theRingAbilities + 1)
+  let gainedEmblem := pl.theRingAbilities == 0
+  let g := g.modifyPlayer p (fun pl => { pl with theRingAbilities := nextAbilities })
+  let g :=
+    if gainedEmblem then
+      g.logMsg s!"{(g.player p).name} gets an emblem named The Ring"
+    else g
+  let g := g.logMsg
+    s!"{(g.player p).name}'s emblem named The Ring gains its next ability ({nextAbilities})"
+  let choices := g.ringBearerChoices p
+  let pick :=
+    match chosen with
+    | some id =>
+      if choices.any (fun o => o.id == id) then some id else choices[0]?.map (·.id)
+    | none => choices[0]?.map (·.id)
+  let g := g.setRingBearer p pick
+  let g :=
+    match pick with
+    | some id =>
+      g.logMsg s!"{(g.player p).name} chooses {(g.object! id).name} as their Ring-bearer"
+    | none =>
+      g.logMsg s!"{(g.player p).name} controls no creature to become Ring-bearer"
+  g.putRingTemptTriggers p pick.isSome
+
+/-- A targeted spell or ability that would tempt only does so if it resolves. -/
+def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) : Game :=
+  if kind != .none && targets.isEmpty then
+    g.logMsg "The spell doesn't resolve. The Ring won't tempt you."
+  else
+    g.withLegalKindTarget p kind targets (fun g _ => g.temptWithTheRing p)
+      (missing := some "The spell doesn't resolve. The Ring won't tempt you.")
+
+/-- Give the promised gift (a Treasure) to `to` before other effects. -/
+def givePromisedGift (g : Game) (to : PlayerId) : Game :=
+  let (g, _) := g.createToken to treasureToken
+  g.logMsg s!"{(g.player to).name} is given a Treasure (gift)"
+
+/-- Copy a spell on the stack. The copy is also kicked / has the same
+promised gift. It is not cast. -/
+def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  let (g, copy) := g.allocObject src.printed controller .stack (some controller)
+  let g := g.setObject { copy with
+    kicked := src.kicked
+    giftPromisedTo := src.giftPromisedTo
+    isCopy := true
+    adventurerCard := src.adventurerCard }
+  let g := g.putStackEntry controller copy.id
+  g.logMsg s!"A copy of {src.name} is created"
+
+/-- Exile from the top until a nonland with mana value less than `maxMv`.
+The resulting spell must also have lesser mana value. Casting is optional. -/
+def resolveCascade (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    let mut exiled : Array ObjectId := #[]
+    let mut found : Option GameObject := none
+    while found.isNone && !(g.player p).library.isEmpty do
+      match (g.player p).library.back? with
+      | none => pure ()
+      | some id =>
+        let (g', newId) := g.move id .exile none
+        g := g'
+        exiled := exiled.push newId
+        let card := g.object! newId
+        if !card.printed.isLand && card.printed.manaCost.manaValue < maxMv then
+          found := some card
+    g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+    match found with
+    | none =>
+      for id in exiled.reverse do
+        let (g', _) := g.move id (.library (g.object! id).owner) none
+        g := g'
+      return g.logMsg "No cheaper nonland card was exiled"
+    | some card =>
+      let others := exiled.filter (· != card.id)
+      for id in others.reverse do
+        let (g', _) := g.move id (.library (g.object! id).owner) none
+        g := g'
+      if card.printed.manaCost.manaValue < maxMv then
+        return g.logMsg
+          s!"{(g.player p).name} may cast {card.name} without paying its mana cost (cascade)"
+      else
+        let (g', _) := g.move card.id (.library card.owner) none
+        return g'.logMsg
+          s!"{card.name}'s resulting spell does not have lesser mana value"
+
+/-- Cast `cardId` from exile without paying its mana cost (cascade). -/
+def castCascadeCard (g : Game) (p : PlayerId) (cardId : ObjectId) (maxMv : Nat) :
+    Except String Game := do
+  let some card := g.findObject? cardId | throw "no such card"
+  if card.printed.isLand then
+    throw "A land cannot be cast"
+  if card.printed.manaCost.manaValue >= maxMv then
+    throw "The resulting spell must have lesser mana value than the cascade spell"
+  let (g, newId) := g.move cardId .stack (some p)
+  let o := g.object! newId
+  let g := g.setObject { o with
+    playPermission := some {
+      player := p
+      turnEndsRemaining := 0
+      withoutManaCost := true } }
+  let g := g.putStackEntry p newId
+  return g.becomeCast p (g.object! newId)
+
+/-- Mark the proposed spell kicked and add the kicker cost. Cannot kick twice. -/
+def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell is waiting for kicker"
+  if prop.kicked && kick then
+    throw "The kicker ability doesn't let you pay a kicker cost more than once"
+  if !kick then
+    return { g with proposedSpell := some { prop with
+      kicked := false, kickerAnnounced := true } }
+  let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  match spell.printed.kicker with
+  | none => throw "That spell has no kicker"
+  | some kicker =>
+    let g := g.setObject { spell with kicked := true }
+    return { g with proposedSpell := some { prop with
+      kicked := true
+      kickerAnnounced := true
+      cost := prop.cost.addCost kicker } }
+
+/-- Promise a gift to `to`. Cannot promise more than once. -/
+def applyGiftToProposed (g : Game) (to : Option PlayerId) : Except String Game := do
+  let some prop := g.proposedSpell | throw "No spell is waiting for a gift"
+  if prop.giftTo.isSome && to.isSome then
+    throw "You can't pay a gift cost more than once"
+  let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
+  let g := g.setObject { spell with giftPromisedTo := to }
+  return { g with proposedSpell := some { prop with
+    giftTo := to, giftAnnounced := true } }
+
+/-- Continue the proposal window after kicker / gift announcements. -/
+def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
+  match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+  | some prop, some spell =>
+    if spell.printed.giftTreasure && !prop.giftAnnounced then
+      let g := { g with pending := .chooseGift p }
+      g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.185)"
+    else if g.proposedNeedsTarget prop then
+      let g := { g with pending := .chooseTargets p }
+      g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
+    else
+      g.afterTargetsChosen
+  | _, _ => g
+
+def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game := do
+  match g.pending with
+  | .chooseKicker caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may announce kicker"
+    let g ← g.applyKickerToProposed kick
+    let g := g.logMsg
+      (if kick then s!"{(g.player p).name} kicks the spell"
+       else s!"{(g.player p).name} does not kick the spell")
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to announce kicker"
+
+def announceGift (g : Game) (p : PlayerId) (to : Option PlayerId) : Except String Game := do
+  match g.pending with
+  | .chooseGift caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may promise a gift"
+    if let some opp := to then
+      if opp == p then throw "You must promise the gift to an opponent"
+    let g ← g.applyGiftToProposed to
+    let g :=
+      match to with
+      | some opp =>
+        g.logMsg s!"{(g.player p).name} promises a gift to {(g.player opp).name}"
+      | none =>
+        g.logMsg s!"{(g.player p).name} does not promise a gift"
+    return g.afterOptionalAdditionalCost p
+  | _ => throw "Not time to promise a gift"
+
+def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except String Game := do
+  match g.pending with
+  | .chooseRingBearer caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose a Ring-bearer"
+    let choices := g.ringBearerChoices p
+    if id.isNone && !choices.isEmpty then
+      throw "You must choose a creature if you control one"
+    let g := { g with pending := .none }
+    return g.temptWithTheRing p id
+  | _ => throw "Not time to choose a Ring-bearer"
+
 /-- Resolve a triggered ability (CR 608). `sourceId` is the object that generated it. -/
 def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
@@ -5208,6 +5622,15 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     eqs.foldl (init := g) fun acc eq =>
       acc.mapObjectStatus eq (fun s => { s with hone := s.hone + 1 })
         |>.logMsg s!"{eq.name} received a hone counter"
+  | .cascade =>
+    let maxMv :=
+      match sourceId with
+      | some sid =>
+        match g.findObject? sid with
+        | some src => src.printed.manaCost.manaValue
+        | none => 0
+      | none => 0
+    g.resolveCascade controller maxMv
   | .printed text =>
     g.logMsg text
 
@@ -5301,6 +5724,10 @@ def resolveTop (g : Game) : Game :=
           entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
         g.ceaseToExist obj.id
       else
+        let g :=
+          match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
+          | some to, true => g.givePromisedGift to
+          | _, _ => g
         let g :=
           match spellEffectOf obj entry.chosenMode with
           | some e => g.applyEffect entry.controller e entry.targets
@@ -5638,7 +6065,8 @@ def clearTurnActivations (g : Game) : Game :=
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           spellsCastThisTurn := 0
-          noncreatureSpellsCastThisTurn := 0 }
+          noncreatureSpellsCastThisTurn := 0
+          castManaValuesThisTurn := #[] }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn then
         g := g.setObject { o with status := { o.status with
@@ -5696,6 +6124,8 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       let mut g := g
       let ap := g.activePlayer
       let apName := (g.player ap).name
+      -- CR 502.1: phased-out permanents phase in before the player untaps.
+      g := g.phaseInControlled ap
       g := g.modifyPlayer ap (fun pl =>
         { pl with landsPlayedThisTurn := 0, additionalLandsThisTurn := 0 })
       for o in g.permanentsOf ap do
@@ -6411,6 +6841,9 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .chooseTop => g.chooseLibrarySide p true
   | .chooseBottom => g.chooseLibrarySide p false
   | .choosePermanents ids => g.choosePermanents p ids
+  | .announceKicker kick => g.announceKicker p kick
+  | .announceGift to => g.announceGift p to
+  | .chooseRingBearer id => g.announceRingBearer p id
   | .concede => return g.concede p
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
@@ -6445,6 +6878,9 @@ def actor (g : Game) : Option PlayerId :=
     | .payOrLetCounter p _ _ => some p
     | .mayPlusOneCreature p => some p
     | .recruitDiscard p => some p
+    | .chooseKicker p => some p
+    | .chooseGift p => some p
+    | .chooseRingBearer p => some p
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 

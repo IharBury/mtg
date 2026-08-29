@@ -45,6 +45,8 @@ structure Keywords where
   prowess : Bool := false
   /-- Ascend (CR 702.131). -/
   ascend : Bool := false
+  /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
+  shadow : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -78,7 +80,8 @@ def fields : List Field := [
   ⟨(·.storied), fun k b => { k with storied := b }, "storied"⟩,
   ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
   ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
-  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩
+  ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
+  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -121,6 +124,7 @@ def storied : Keywords := { Keywords.none with storied := true }
 def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
 def prowess : Keywords := { Keywords.none with prowess := true }
 def ascend : Keywords := { Keywords.none with ascend := true }
+def shadow : Keywords := { Keywords.none with shadow := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -2586,6 +2590,12 @@ inductive TriggeredAbility where
   /-- Whenever this enters or attacks, put a hone counter on each Equipment
   you control (e.g. Dwalin, Weaponmaster). -/
   | onEnterOrAttackHoneEachEquipment
+  /-- Cascade on the spell that is being cast (CR 702.85). -/
+  | onCastCascade
+  /-- Whenever the Ring tempts you, draw `n` cards. -/
+  | onTheRingTemptsYouDraw (n : Nat)
+  /-- Whenever you choose a creature as your Ring-bearer, draw a card. -/
+  | onChooseRingBearerDraw
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2665,6 +2675,10 @@ inductive TriggerEvent where
   | thisOrAnotherSubtypeYouControlEnters
   /-- This deals combat damage to a player or battle. -/
   | dealsCombatDamageToPlayerOrBattle
+  /-- The Ring tempts you. -/
+  | theRingTemptsYou
+  /-- You choose a creature as your Ring-bearer. -/
+  | youChooseRingBearer
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2783,6 +2797,12 @@ def spec : TriggerEvent → Spec
   | .dealsCombatDamageToPlayerOrBattle =>
     { clause := "this deals combat damage to a player or battle",
       label := "combat-damage trigger" }
+  | .theRingTemptsYou =>
+    { clause := "the Ring tempts you", label := "Ring-tempts trigger",
+      checkTargets := false }
+  | .youChooseRingBearer =>
+    { clause := "you choose a creature as your Ring-bearer",
+      label := "Ring-bearer trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -2962,6 +2982,8 @@ inductive TriggerResolution where
   | putNonlandMvAtMostFromGy (mv : Nat)
   /-- Put a hone counter on each Equipment you control. -/
   | honeEachEquipment
+  /-- Cascade: exile until a cheaper nonland, then you may cast it. -/
+  | cascade
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3253,6 +3275,12 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .putNonlandMvAtMostFromGy mv }
   | .onEnterOrAttackHoneEachEquipment =>
     { events := #[.entering, .attacking], resolution := .honeEachEquipment }
+  | .onCastCascade =>
+    { events := #[], resolution := .cascade }
+  | .onTheRingTemptsYouDraw n =>
+    { events := #[.theRingTemptsYou], resolution := .draw n }
+  | .onChooseRingBearerDraw =>
+    { events := #[.youChooseRingBearer], resolution := .draw 1 }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3498,6 +3526,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"put up to one target nonland permanent card with mana value {mv} or less from a graveyard onto the battlefield under its owner's control"
   | .honeEachEquipment =>
     "put a hone counter on each Equipment you control"
+  | .cascade =>
+    "exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3673,6 +3703,8 @@ structure CardDef where
   tapAddColorlessPerSubtype : Option String := none
   /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
   cascade : Nat := 0
+  /-- Optional kicker cost (CR 702.32). Paid at most once as an additional cost. -/
+  kicker : Option ManaCost := none
   /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
   `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
   activatedAbilities : Array ActivatedAbility := #[]

@@ -329,6 +329,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    else if c.cascade >= 2 then
      [String.intercalate ", " (List.replicate c.cascade "Cascade")]
    else []) ++
+  (match c.kicker with
+   | some cost => [s!"Kicker {cost.toNotation}"]
+   | none => []) ++
   (if c.giftTreasure then
     ["Gift a Treasure"]
    else []) ++

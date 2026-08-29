@@ -634,8 +634,8 @@ def elvenChorus : CardDef :=
       .printed "Creatures you control have \"{T}: Add one mana of any color.\""])
 
 def galadrielSDismissal : CardDef :=
-  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)"))
-    (staticAbilities := #[.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)"])
+  instant "Galadriel's Dismissal" (ManaCost.ofColor .white) "Kicker {2}{W} (You may pay an additional {2}{W} as you cast this spell.)\nTarget creature phases out. If this spell was kicked, each creature target player controls phases out instead. (Treat phased-out creatures and anything attached to them as though they don't exist until their controller's next turn.)" (some (.printed "Target creature phases out. If this spell was kicked, each creature target player controls phases out instead."))
+    (kicker := some (ManaCost.ofGenericAndColor 2 .white))
 
 def galadrielLightOfValinor : CardDef :=
   legendaryCreature "Galadriel, Light of Valinor" (ManaCost.ofGenericAndColors 2 [.green, .white, .blue]) #["Elf", "Noble"] 3 3 (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
