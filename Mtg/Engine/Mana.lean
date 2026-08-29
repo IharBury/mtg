@@ -296,6 +296,13 @@ def setInst (p : ManaPool) (t : ManaType) (n : Nat) : ManaPool :=
 def unrestricted (p : ManaPool) (t : ManaType) : Nat :=
   p.get t - p.getElf t - p.getInst t
 
+/-- Amount of this type that may be spent under the given restrictions. -/
+def usable (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
+    (allowInstRestricted : Bool := false) : Nat :=
+  p.unrestricted t +
+    (if allowElfRestricted then p.getElf t else 0) +
+    (if allowInstRestricted then p.getInst t else 0)
+
 def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)
     (instRestricted : Bool := false) : ManaPool :=
   let p := p.set t (p.get t + n)
@@ -378,6 +385,48 @@ def canPay (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowInstRestricted : Bool := false) : Bool :=
   (p.pay? cost allowElfRestricted allowInstRestricted).isSome
 
+/-- How much of `cost` this pool can cover, in mana (CR 202.3). Unpayable
+symbols are skipped so leftover generic-capable mana still counts. -/
+def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
+    (allowInstRestricted : Bool := false) : Nat :=
+  Id.run do
+    let mut pool := p
+    let mut paid := 0
+    for s in cost.symbols do
+      match s with
+      | .colored c =>
+        match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none => pure ()
+      | .colorless =>
+        match pool.spendOne? .colorless allowElfRestricted allowInstRestricted with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none => pure ()
+      | .generic n =>
+        for _ in [0:n] do
+          match pool.spendAny? allowElfRestricted allowInstRestricted with
+          | some p' =>
+            pool := p'
+            paid := paid + 1
+          | none => pure ()
+      | .hybrid a b =>
+        match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none =>
+          match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted with
+          | some p' =>
+            pool := p'
+            paid := paid + 1
+          | none => pure ()
+      | .x => pure ()
+    return paid
+
 /-- One `{C}×n`, `{C}×n (Elf)`, or `{C}×n (instant/sorcery)` fragment. -/
 def poolPart (letter : String) (free elf inst : Nat) : List String :=
   (if free > 0 then [s!"\{{letter}}×{free}"] else []) ++
@@ -418,6 +467,15 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
     ((p.pay? (ManaCost.ofColor .green)).getD p).elfGreen == 1 &&
     (p.pay? (ManaCost.ofGeneric 2)).isNone &&
     (p.pay? (ManaCost.ofGeneric 2) true).isSome
+#guard (ManaPool.empty.add (.colored .green) 1).coveredMana (ManaCost.ofColor .red) == 0
+#guard (ManaPool.empty.add (.colored .green) 1).coveredMana (ManaCost.ofGenericAndColor 1 .red) == 1
+#guard (ManaPool.empty.add (.colored .red) 1).coveredMana (ManaCost.ofColor .red) == 1
+#guard
+  let p := ManaPool.empty.add (.colored .green) 1 (elfRestricted := true)
+  p.coveredMana (ManaCost.ofColor .green) == 0 &&
+    p.coveredMana (ManaCost.ofColor .green) true == 1 &&
+    p.usable (.colored .green) == 0 &&
+    p.usable (.colored .green) true == 1
 #guard (ManaCost.ofGenericAndColor 1 .green).coloredCount .green == 1
 #guard (ManaCost.ofGenericAndColor 1 .green).coloredCount .red == 0
 #guard toString (ManaPool.empty.add (.colored .green) 2 (elfRestricted := true)) ==

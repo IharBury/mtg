@@ -3982,32 +3982,70 @@ def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     | none => false
   | .activatedAbility => false
 
+/-- Whether paying this proposed spell may spend legendary-restricted mana. -/
+def proposedAllowsLegendaryRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.kind with
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o => o.isLegendary
+    | none => false
+  | .activatedAbility => false
+
+/-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
+def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
+    (prop : ProposedSpell) : Array ManaType :=
+  let allowElf := g.proposedAllowsElfRestricted prop
+  let allowInst := g.proposedAllowsInstRestricted prop
+  let allowLeg := g.proposedAllowsLegendaryRestricted prop
+  if src.printed.tapAddAnyColorEqualToPower && !allowElf then #[]
+  else if src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst then #[]
+  else if src.printed.tapAddAnyColorForLegendary && !allowLeg then
+    types.filter (fun t =>
+      src.printed.simpleTapAddMana.contains t || src.printed.tapAddOneOf.contains t)
+  else types
+
 /-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
 Sources reserved for `{T}`, or whose mana cannot be spent on this spell or
 ability, are omitted. -/
 def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Array (GameObject × Array ManaType) :=
-  let allowElf := g.proposedAllowsElfRestricted prop
-  let allowInst := g.proposedAllowsInstRestricted prop
-  (g.manaSources p).filter (fun (src, types) =>
-    !(prop.tapSource && prop.sourceId == some src.id) &&
-    !(src.printed.tapAddAnyColorEqualToPower && !allowElf) &&
-    !(src.printed.tapAddAnyColorForInstantOrSorcery && !allowInst) &&
-    !types.isEmpty)
+  (g.manaSources p).filterMap (fun (src, types) =>
+    if prop.tapSource && prop.sourceId == some src.id then none
+    else
+      let usable := g.usableManaTypesForProposed src types prop
+      if usable.isEmpty then none
+      else some (src, usable))
 
-/-- A mana type among `types` that helps pay an unmet colored requirement. -/
-def preferredManaType (g : Game) (p : PlayerId) (types : Array ManaType)
-    (cost : ManaCost) (allowElfRestricted : Bool) : Option ManaType :=
-  match types[0]? with
+/-- Whether tapping `src` for `t` covers more of `cost` than the current pool. -/
+def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
+    (cost : ManaCost) (allowElfRestricted : Bool) (allowInstRestricted : Bool) : Bool :=
+  let amount := g.manaFromTap src t
+  if amount == 0 then false
+  else
+    let pool := (g.player p).manaPool
+    let before := pool.coveredMana cost allowElfRestricted allowInstRestricted
+    let after :=
+      pool.add t amount
+        (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
+        (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
+    after.coveredMana cost allowElfRestricted allowInstRestricted > before
+
+/-- A mana type among `types` that helps pay remaining symbols of `cost`.
+Prefers an unmet colored requirement; returns none when no type can be spent
+on the pending payment. -/
+def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
+    (types : Array ManaType) (cost : ManaCost) (allowElfRestricted : Bool)
+    (allowInstRestricted : Bool := false) : Option ManaType :=
+  let helpful := types.filter (fun t =>
+    g.typeHelpsPay p src t cost allowElfRestricted allowInstRestricted)
+  match helpful[0]? with
   | none => none
   | some first =>
     let pool := (g.player p).manaPool
     match Color.all.find? (fun c =>
       let req := cost.coloredCount c
-      let held :=
-        if allowElfRestricted then pool.get (.colored c)
-        else pool.unrestricted (.colored c)
-      held < req && types.contains (.colored c)) with
+      let held := pool.usable (.colored c) allowElfRestricted allowInstRestricted
+      held < req && helpful.contains (.colored c)) with
     | some c => some (.colored c)
     | none => some first
 
