@@ -1,0 +1,426 @@
+--name Chandra --deck Red --name Nissa --deck Green --decides Chandra --seed 20260807 --multiplayer
+first Chandra
+keep
+keep
+pass
+pass
+play 80
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 87
+cast 91
+tap 96
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 85
+cast 82
+tap 94 100
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 88
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack 102
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 86
+tap 94 100
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 90
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 110
+cast 84
+tap 94 100 111
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 102 107
+pass
+pass
+block 98 102
+pass
+cast 89
+target 98
+tap 96 98 104 109
+pay
+pass
+pass
+pass
+pass
+scry top 62 bottom 72
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 92
+cast 119
+tap 96 104 109 120
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 99
+tap 94 100
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 107
+pass
+pass
+block 98 107 122 107
+pass
+pass
+pass
+pass
+assign 107 122 2
+activate 125
+mode 1
+target 122
+tap 111
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 93
+pass
+pass
+pass
+pass
+attack 98
+pass
+pass
+block 113 98
+cast 131
+mode 2
+target 98
+tap 104 109
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 136
+tap 94
+pay
+pass
+pass
+activate 138
+tap 100 111
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 95
+pass
+pass
+pass
+pass
+attack 98
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 142
+tap 104 109 120 132
+pay
+pass
+pass
+pass
+pass
+scry top 65 bottom 41
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 147
+cast 105
+tap 94 100
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 151
+tap 96 104
+pay
+pass
+pass
+play 103
+target 145
+pass
+pass
+pass
+pass
+pass
+pass
+attack 98 145
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 156
+cast 81
+tap 94 100
+pay
+pass
+pass
+pass
+pass
+discard 83
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+activate 159
+target 150
+tap 111 141 148
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 108
+target 145
+pass
+pass
+activate 153
+tap 96 104 109 120 132 143 154
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack 98 145 153
+pass
+pass
+block 150 153
+pass
+pass
