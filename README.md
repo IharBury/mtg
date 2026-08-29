@@ -88,7 +88,10 @@ writes accepted game-state commands from the input file and from the console
 is a different file, flags read from `--input` are written first. Incorrect
 commands and commands that do not change the game (`state`, `quit`, `help`,
 `visible`) are omitted. `autopay` is written as the individual `tap` and `pay`
-commands it performs. When `--input` and `--output` are the same file, the
+commands it performs. `your turn`, `my turn`, `main phase`, and `attack step`
+keep passing until the named step (or until a player must take a non-pass
+action) and are written as the individual `pass` commands they perform
+(`noattack` / `noblock` when those are the only legal declarations). When `--input` and `--output` are the same file, the
 existing flags and commands are replayed and new accepted console commands
 are appended. After those commands are exhausted (or when no input file is
 given), a cost with only one legal payment is paid automatically; the demo
@@ -199,5 +202,7 @@ The first slice of the engine models the two-player game:
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate
-  mana abilities and pay a locked-in cost (recorded as `tap` and `pay`), and
+  mana abilities and pay a locked-in cost (recorded as `tap` and `pay`),
+  pass-until shortcuts (`your turn`, `my turn`, `main phase`, `attack step`)
+  recorded as individual `pass` commands, and
   `attach` to attach an Equipment when asked (e.g. Vow to Erebor)

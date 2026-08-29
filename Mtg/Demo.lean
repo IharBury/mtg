@@ -31,7 +31,11 @@ written first. `--output FILE` writes accepted game-state commands
 commands such as `state` and `quit` are omitted. When `--input` and
 `--output` are the same file, those flags and commands are replayed and new
 accepted console commands are appended. `autopay` is recorded as the individual
-`tap` and `pay` commands it performs. `attach <id>` attaches an Equipment
+`tap` and `pay` commands it performs. `your turn`, `my turn`, `main phase`,
+and `attack step` keep passing until the named step (or until a player must
+take a non-pass action) and are recorded as the individual `pass` commands
+they perform (`noattack` / `noblock` when those are the only legal
+declarations). `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -77,7 +81,9 @@ Options:
                   such as state and quit are omitted.
                   The same path as --input replays that file and appends
                   new commands. Unique automatic cost payments are written
-                  as tap, pay, and sacrifice commands
+                  as tap, pay, and sacrifice commands. Pass-until shortcuts
+                  (your turn, my turn, main phase, attack step) are written
+                  as the individual pass commands they perform
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
                   the game ends (a winner or a draw). Unused commands
@@ -651,6 +657,10 @@ def helpInteractive (controlAll : Bool := false)
   mulligan             Declare a mulligan; taken after all declarations (CR 103.5 / 103.5c)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
+  your turn            Pass until combat of the next turn if that turn is not yours
+  my turn              Pass until the main phase of the next turn if that turn is yours
+  main phase           Pass until the next main phase
+  attack step          Pass until the next combat phase
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
@@ -712,6 +722,10 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
 #guard ((helpInteractive false).splitOn "autopay").length > 1
+#guard ((helpInteractive false).splitOn "your turn").length > 1
+#guard ((helpInteractive false).splitOn "my turn").length > 1
+#guard ((helpInteractive false).splitOn "main phase").length > 1
+#guard ((helpInteractive false).splitOn "attack step").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2g").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
@@ -723,6 +737,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "Flags from --input are written first").length > 1
 #guard (usage.splitOn "replays that file and appends").length > 1
 #guard (usage.splitOn "Unique automatic cost payments").length > 1
+#guard (usage.splitOn "Pass-until shortcuts").length > 1
+#guard (usage.splitOn "individual pass commands they perform").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
@@ -2643,6 +2659,192 @@ def applyFlip (g : Game) (tokens : List String) : Except String Game := do
   | ["tails"] | ["tail"] => applySupplyIndex g 1
   | _ => throw flipUsage
 
+/-- Whether the defending player has any legal non-empty blocker declaration.
+An attacker that requires multiple blockers can be blocked only when enough
+individually eligible creatures are available. -/
+def hasLegalBlock (g : Game) : Bool :=
+  g.battlefield.any (fun attacker =>
+    attacker.status.attacking &&
+      let eligible := g.battlefield.filter (fun blocker => g.canBlock blocker attacker) |>.size
+      eligible >= max 1 (g.minBlockersRequired attacker))
+
+/-- Target a pass-until shortcut stops at. -/
+inductive PassUntilTarget where
+  | nextTurnCombat
+  | nextTurnMain
+  | nextMain
+  | nextCombat
+deriving DecidableEq, Repr
+
+/-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
+structure PassUntilResult where
+  game : Game
+  commands : Array String
+
+def yourTurnUsage : String := "usage: your turn"
+def myTurnUsage : String := "usage: my turn"
+def mainPhaseUsage : String := "usage: main phase"
+def attackStepUsage : String := "usage: attack step"
+
+/-- The player who will be active on the next turn. -/
+def nextTurnPlayer (g : Game) : PlayerId :=
+  g.nextLiving g.activePlayer
+
+/-- Whether `g` has reached the snapshot target from `startTurn` / `startStep`. -/
+def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
+    PassUntilTarget → Bool
+  | .nextTurnCombat =>
+    g.turnNumber > startTurn && g.step.isCombatPhase
+  | .nextTurnMain =>
+    g.turnNumber > startTurn && g.step.isMainPhase
+  | .nextMain =>
+    g.step.isMainPhase && !(g.turnNumber == startTurn && g.step == startStep)
+  | .nextCombat =>
+    g.step.isCombatPhase &&
+      !(startStep.isCombatPhase && g.turnNumber == startTurn)
+
+/-- A primitive command the shortcut may issue without asking. `pass` when
+someone has priority; `noattack` / `noblock` only when that is the sole
+legal combat declaration (same rule as the automatic console steps). -/
+def passUntilCommand? (g : Game) : Option String :=
+  match g.pending, g.actor with
+  | .none, some p =>
+    if g.hasPriority p then some "pass" else none
+  | .declareAttackers, some _ =>
+    if !(g.battlefield.any g.canAttack) then some "noattack" else none
+  | .declareBlockers, some _ =>
+    if !hasLegalBlock g then some "noblock" else none
+  | _, _ => none
+
+/-- Apply one recorded pass-until line as the current actor. -/
+def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
+  let p ← actingPlayer g
+  match line with
+  | "pass" => g.apply p .pass
+  | "noattack" => g.apply p (.declareAttackers #[])
+  | "noblock" => g.apply p (.declareBlockers #[])
+  | _ => throw s!"Unknown pass-until command: {line}"
+
+/-- Keep issuing `pass` (and empty combat declarations when they are the
+only legal action) until `target`, the game ends, or a player must take a
+non-pass action. -/
+def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
+    (startTurn : Nat) (startStep : Step) (fuel : Nat) (cmds : Array String) :
+    Except String PassUntilResult :=
+  match fuel with
+  | 0 => throw "Could not finish passing to that step"
+  | n + 1 =>
+    if g.over || reachedPassUntil g startTurn startStep target then
+      .ok { game := g, commands := cmds }
+    else
+      match passUntilCommand? g with
+      | none =>
+        if cmds.isEmpty then
+          .error "A player must take an action other than pass"
+        else
+          .ok { game := g, commands := cmds }
+      | some line =>
+        match applyPassUntilLine g line with
+        | .error e =>
+          if cmds.isEmpty then .error e
+          else .ok { game := g, commands := cmds }
+        | .ok g' =>
+          applyPassUntilSteps g' target startTurn startStep n (cmds.push line)
+
+/-- Fuel for crossing a few turns of priority windows and empty combat. -/
+def passUntilFuel : Nat := 200
+
+def applyPassUntil (g : Game) (target : PassUntilTarget) :
+    Except String PassUntilResult :=
+  applyPassUntilSteps g target g.turnNumber g.step passUntilFuel #[]
+
+/-- `your turn`: pass until combat of the next turn, when that turn is not
+the issuer's. -/
+def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String) :
+    Except String PassUntilResult := do
+  match commandTokens tokens with
+  | ["turn"] =>
+    if nextTurnPlayer g == p then
+      throw "The next turn is yours"
+    else
+      applyPassUntil g .nextTurnCombat
+  | _ => throw yourTurnUsage
+
+/-- `my turn`: pass until the main phase of the next turn, when that turn
+is the issuer's. -/
+def applyMyTurn (g : Game) (p : PlayerId) (tokens : List String) :
+    Except String PassUntilResult := do
+  match commandTokens tokens with
+  | ["turn"] =>
+    if nextTurnPlayer g != p then
+      throw "The next turn is not yours"
+    else
+      applyPassUntil g .nextTurnMain
+  | _ => throw myTurnUsage
+
+/-- `main phase`: pass until the next main phase. -/
+def applyMainPhase (g : Game) (tokens : List String) :
+    Except String PassUntilResult := do
+  match commandTokens tokens with
+  | ["phase"] => applyPassUntil g .nextMain
+  | _ => throw mainPhaseUsage
+
+/-- `attack step`: pass until the next combat phase. -/
+def applyAttackStep (g : Game) (tokens : List String) :
+    Except String PassUntilResult := do
+  match commandTokens tokens with
+  | ["step"] => applyPassUntil g .nextCombat
+  | _ => throw attackStepUsage
+
+/-- Two-word shortcuts that expand to `pass` (and empty combat declarations). -/
+def isPassShortcut (cmd : String) (args : List String) : Bool :=
+  match cmd, commandTokens args with
+  | "your", ["turn"] => true
+  | "my", ["turn"] => true
+  | "main", ["phase"] => true
+  | "attack", ["step"] => true
+  | _, _ => false
+
+/-- First word of a pass-until shortcut, including incomplete `your` / `my` /
+`main` so usage errors are reported. `attack` is only a shortcut with `step`. -/
+def isPassShortcutCmd (cmd : String) (args : List String) : Bool :=
+  cmd == "your" || cmd == "my" || cmd == "main" ||
+    (cmd == "attack" && commandTokens args == ["step"])
+
+def applyPassShortcut (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
+    Except String PassUntilResult := do
+  match cmd with
+  | "your" => applyYourTurn g p args
+  | "my" => applyMyTurn g p args
+  | "main" => applyMainPhase g args
+  | "attack" => applyAttackStep g args
+  | _ => throw s!"Unknown command: {cmd}"
+
+/-- Issue a pass-until shortcut as the player who currently must act. -/
+def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
+    Except String PassUntilResult := do
+  let p ← actingPlayer g
+  applyPassShortcut g p cmd args
+
+#guard nextTurnPlayer Tests.afterDraw == ⟨1⟩
+#guard nextTurnPlayer Tests.nissaDraw == ⟨0⟩
+#guard isPassShortcut "your" ["turn"]
+#guard isPassShortcut "my" ["turn"]
+#guard isPassShortcut "main" ["phase"]
+#guard isPassShortcut "attack" ["step"]
+#guard !isPassShortcut "your" []
+#guard !isPassShortcut "attack" []
+#guard !isPassShortcut "pass" []
+#guard isPassShortcutCmd "your" []
+#guard isPassShortcutCmd "attack" ["step"]
+#guard !isPassShortcutCmd "attack" []
+#guard reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
+  Tests.afterDraw.turnNumber Tests.afterDraw.step .nextCombat
+#guard !reachedPassUntil Tests.afterDraw Tests.afterDraw.turnNumber
+  Tests.afterDraw.step .nextMain
+#guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
+  Tests.afterDraw.turnNumber Tests.afterDraw.step .nextMain
+
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
   match cmd with
@@ -2651,12 +2853,18 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "mulligan" => g.apply p .takeMulligan
   | "bottom" => applyBottom g p args
   | "pass" => g.apply p .pass
+  | "your" => applyYourTurn g p args |>.map (·.game)
+  | "my" => applyMyTurn g p args |>.map (·.game)
+  | "main" => applyMainPhase g args |>.map (·.game)
   | "pay" => g.apply p .pay
   | "autopay" => applyAutopay g p args |>.map (·.game)
   | "pay-extra" => applyPayExtra g p args
   | "sacrifice" => applySacrifice g p args
   | "concede" => g.apply p .concede
-  | "attack" => applyAttack g p args
+  | "attack" =>
+    match commandTokens args with
+    | ["step"] => applyAttackStep g args |>.map (·.game)
+    | _ => applyAttack g p args
   | "noattack" => g.apply p (.declareAttackers #[])
   | "block" => applyBlock g p args
   | "noblock" => g.apply p (.declareBlockers #[])
@@ -2684,11 +2892,16 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
   applyInteractiveAction g p cmd args
 
 /-- Apply a game-state command. `autopay` expands to the `tap`/`pay` lines
-that `--output` should record. -/
+that `--output` should record. Pass-until shortcuts expand to the `pass`
+lines (and `noattack` / `noblock` when those are the only legal
+declarations) rather than the shortcut text. -/
 def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : String) :
     Except String (Game × Array String) := do
   if cmd == "autopay" then
     let r ← applyAutopayAsActor g args
+    return (r.game, r.commands)
+  else if isPassShortcutCmd cmd args then
+    let r ← applyPassShortcutAsActor g cmd args
     return (r.game, r.commands)
   else
     let g' ← applyInteractiveAsActor g cmd args
@@ -3314,6 +3527,115 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok _ => false
 
 #guard
+  match applyYourTurn Tests.afterDraw ⟨0⟩ [] with
+  | .error msg => msg == yourTurnUsage
+  | .ok _ => false
+
+#guard
+  match applyMyTurn Tests.afterDraw ⟨0⟩ ["turn", "now"] with
+  | .error msg => msg == myTurnUsage
+  | .ok _ => false
+
+#guard
+  match applyMainPhase Tests.afterDraw ["phase", "now"] with
+  | .error msg => msg == mainPhaseUsage
+  | .ok _ => false
+
+#guard
+  match applyAttackStep Tests.afterDraw [] with
+  | .error msg => msg == attackStepUsage
+  | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.afterDraw "my" ["turn"] "my turn" with
+  | .error msg => msg == "The next turn is not yours"
+  | .ok _ => false
+
+#guard
+  match Tests.nissaDraw.apply ⟨1⟩ .pass with
+  | .error _ => false
+  | .ok g =>
+    match applyLoggedAction g "your" ["turn"] "your turn" with
+    | .error msg => msg == "The next turn is yours"
+    | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.readyToDeclareAttackers "your" ["turn"] "your turn" with
+  | .error msg => msg == "A player must take an action other than pass"
+  | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.started "main" ["phase"] "main phase" with
+  | .ok (g', cmds) =>
+    g'.step == .precombatMain &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      cmds == #["pass", "pass"] &&
+      g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.afterDraw "attack" ["step"] "attack step" with
+  | .ok (g', cmds) =>
+    g'.step == .beginningOfCombat &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      cmds == #["pass", "pass"] &&
+      g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.started "attack" ["step"] "attack step" with
+  | .ok (g', cmds) =>
+    g'.step == .beginningOfCombat &&
+      g'.turnNumber == 1 &&
+      cmds.all (fun c => c == "pass") &&
+      !cmds.contains "attack step"
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.afterDraw "main" ["phase"] "main phase" with
+  | .ok (g', cmds) =>
+    g'.step == .postcombatMain &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      cmds.all (fun c => c == "pass" || c == "noattack") &&
+      cmds.contains "noattack" &&
+      !cmds.contains "main phase" &&
+      g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.afterDraw "your" ["turn"] "your turn" with
+  | .ok (g', cmds) =>
+    g'.step == .beginningOfCombat &&
+      g'.turnNumber == 2 &&
+      g'.activePlayer == ⟨1⟩ &&
+      cmds.all (fun c => c == "pass" || c == "noattack") &&
+      !cmds.contains "your turn" &&
+      g'.hasPriority ⟨1⟩
+  | .error _ => false
+
+#guard
+  match Tests.nissaDraw.apply ⟨1⟩ .pass with
+  | .error _ => false
+  | .ok g =>
+    match applyLoggedAction g "my" ["turn"] "my turn" with
+    | .ok (g', cmds) =>
+      g'.step == .precombatMain &&
+        g'.turnNumber == 3 &&
+        g'.activePlayer == ⟨0⟩ &&
+        cmds.all (fun c => c == "pass" || c == "noattack") &&
+        !cmds.contains "my turn" &&
+        g'.hasPriority ⟨0⟩
+    | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.afterDraw "attack" ["step"] with
+  | .ok g' => g'.step == .beginningOfCombat && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
   match applyShuffle Tests.norandomOpening [] with
   | .ok g' =>
     match g'.pendingRandom? with
@@ -3880,15 +4202,6 @@ def shouldAutoNoAttack (g : Game) (pending : List String) : Bool :=
       { o with status := { o.status with tapped := true } }) }
   !shouldAutoNoAttack g ["noattack"]
 #guard !shouldAutoNoAttack Tests.readyToDeclareAttackers []
-
-/-- Whether the defending player has any legal non-empty blocker declaration.
-An attacker that requires multiple blockers can be blocked only when enough
-individually eligible creatures are available. -/
-def hasLegalBlock (g : Game) : Bool :=
-  g.battlefield.any (fun attacker =>
-    attacker.status.attacking &&
-      let eligible := g.battlefield.filter (fun blocker => g.canBlock blocker attacker) |>.size
-      eligible >= max 1 (g.minBlockersRequired attacker))
 
 /-- Automatically declare no blockers after scripted input is exhausted when
 that is the only legal declaration. -/
