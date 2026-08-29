@@ -576,15 +576,16 @@ def andurilNarsilReforged : CardDef :=
 
 def aragornTheUniter : CardDef :=
   legendaryCreature "Aragorn, the Uniter" (ManaCost.ofColors [.red, .green, .white, .blue]) #["Human", "Noble"] 5 5 (oracleText := "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.\nWhenever you cast a blue spell, scry 2.\nWhenever you cast a red spell, Aragorn deals 3 damage to target opponent.\nWhenever you cast a green spell, target creature gets +4/+4 until end of turn.")
-    (triggeredAbilities := #[.printed "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token.",
-      .printed "Whenever you cast a blue spell, scry 2.",
-      .printed "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent.",
-      .printed "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."])
+    (triggeredAbilities := #[.onCastColorCreateTokens .white .humanSoldier 1,
+      .onCastColorScry .blue 2,
+      .onCastColorDamageOpponent .red 3,
+      .onCastColorPump .green 4 4])
 
 def arwenMortalQueen : CardDef :=
-  legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
-    (staticAbilities := #[.printed "Arwen enters with an indestructible counter on her.",
-      .printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+  let c :=
+    legendaryCreature "Arwen, Mortal Queen" (ManaCost.ofGenericAndColors 1 [.green, .white]) #["Elf", "Noble"] 2 2 (oracleText := "Arwen enters with an indestructible counter on her.\n{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen.")
+      (staticAbilities := #[.printed "{1}, Remove an indestructible counter from Arwen: Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen."])
+  { c with entersWithIndestructibleCounter := true }
 
 def arwenWeaverOfHope : CardDef :=
   legendaryCreature "Arwen, Weaver of Hope" (ManaCost.ofGenericAndColors 1 [.green, .green]) #["Elf", "Noble"] 2 1 (oracleText := "Each other creature you control enters with a number of additional +1/+1 counters on it equal to Arwen's toughness.")
@@ -733,9 +734,10 @@ def thorinCompanySLeader : CardDef :=
     (triggeredAbilities := #[.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2])
 
 def tomBombadil : CardDef :=
-  legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
-    (staticAbilities := #[.printed "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible."])
-    (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+  let c :=
+    legendaryCreature "Tom Bombadil" (ManaCost.ofColors [.white, .blue, .black, .red, .green]) #["God", "Bard"] 4 4 (oracleText := "As long as there are four or more lore counters among Sagas you control, Tom Bombadil has hexproof and indestructible.\nWhenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn.")
+      (triggeredAbilities := #[.printed "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."])
+  { c with hexproofIndestructibleIfLore := some 4 }
 
 def witchKingOfAngmar : CardDef :=
   legendaryCreature "Witch-king of Angmar" (ManaCost.ofGenericAndColors 3 [.black, .black]) #["Wraith", "Noble"] 5 3 (oracleText := "Flying\nWhenever one or more creatures deal combat damage to you, each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you.\nDiscard a card: Witch-king of Angmar gains indestructible until end of turn. Tap him.")

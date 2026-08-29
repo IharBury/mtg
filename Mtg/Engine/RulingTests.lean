@@ -3561,4 +3561,408 @@ def foodPaysOneCostOk : Bool :=
 
 #guard foodPaysOneCostOk
 
+/-!
+## 74, 111, 291 — Tom Bombadil lore and final chapter timing
+-/
+
+def testSagaFourChapters : CardDef :=
+  enchantment "Test Saga" (ManaCost.ofGeneric 1)
+    "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Draw a card.\nII — Draw a card.\nIII — Return Tom Bombadil from your graveyard to the battlefield."
+    (subtypes := #["Saga"])
+    (saga := some {
+      sacrificeAfter := "III"
+      chapters := #[
+        { roman := "I", effect := "Draw a card." },
+        { roman := "II", effect := "Draw a card." },
+        { roman := "III",
+          effect := "Return Tom Bombadil from your graveyard to the battlefield." }]
+    })
+
+def tomWithFourLore : Game :=
+  let g := addPermanent afterDraw tomBombadil ⟨0⟩ ⟨0⟩
+  let g := addPermanent g testSagaFourChapters ⟨0⟩ ⟨0⟩
+  let saga := namedPermanent g "Test Saga"
+  g.setObject { saga with status := { saga.status with lore := 4 } }
+
+def tomLoreProtectionOk : Bool :=
+  let tom := namedPermanent tomWithFourLore "Tom Bombadil"
+  tomWithFourLore.loreAmongSagas ⟨0⟩ == 4 &&
+    tomWithFourLore.loreThresholdProtection tom &&
+    tomWithFourLore.hasHexproof tom &&
+    tomWithFourLore.hasIndestructible tom &&
+    (ruling 111).comment.contains "four or more lore counters" &&
+    (ruling 291).comment.contains "greatest chapter number"
+
+#guard tomLoreProtectionOk
+
+def tomSagaLeavesLethalOk : Bool :=
+  let tom := namedPermanent tomWithFourLore "Tom Bombadil"
+  let g := tomWithFourLore.mapObjectStatus tom (fun s => { s with damage := 4 })
+  let saga := namedPermanent g "Test Saga"
+  let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
+  let g := g.checkSBA
+  !g.battlefield.any (fun o => o.name == "Tom Bombadil") &&
+    (ruling 111).comment.contains "Tom Bombadil will be destroyed"
+
+#guard tomSagaLeavesLethalOk
+
+def tomSeesFinishedChapterOk : Bool :=
+  let g := tomWithFourLore.finishSagaFinalChapter ⟨0⟩
+  g.waitingTriggers.any (fun wt =>
+    wt.source.name == "Tom Bombadil") &&
+    (ruling 74).comment.contains "removed from the stack" &&
+    testSagaFourChapters.saga.isSome &&
+    match testSagaFourChapters.saga with
+    | some s => s.chapters.back?.map (·.roman) == some "III"
+    | none => false
+
+#guard tomSeesFinishedChapterOk
+
+/-!
+## 117, 146 — behold
+-/
+
+def beholdThenLeavesOk : Bool :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := g.beholdQuality ⟨0⟩ "Elf"
+  let elf := namedPermanent g "Llanowar Elves"
+  let (g, _) := g.move elf.id (.graveyard ⟨0⟩) none
+  g.qualityWasBeheld ⟨0⟩ "Elf" &&
+    !g.battlefield.any (fun o => o.name == "Llanowar Elves") &&
+    (ruling 117).comment.contains "it was still beheld"
+
+#guard beholdThenLeavesOk
+
+def beholdAlreadyRevealedOk : Bool :=
+  let g := addToHand afterDraw llanowarElves ⟨0⟩
+  let g := g.beholdQuality ⟨0⟩ "Elf"
+  let g := g.beholdQuality ⟨0⟩ "Elf"
+  (g.player ⟨0⟩).beheldQualities.size == 2 &&
+    (ruling 146).comment.contains "you may reveal it again"
+
+#guard beholdAlreadyRevealedOk
+
+/-!
+## 164 — Gollum modes exhausted
+-/
+
+def gollumModesSpent : Game :=
+  let g := addPermanent afterDraw gollumRiddleMaster ⟨0⟩ ⟨0⟩
+  let sid := (namedPermanent g "Gollum, Riddle Master").id
+  let g := g.chooseGollumParity sid false
+  let g := g.applyGollumMode sid 0
+  let g := g.applyGollumMode sid 1
+  g.applyGollumMode sid 2
+
+def gollumFourthDoesNothing : Game :=
+  let sid := (namedPermanent gollumModesSpent "Gollum, Riddle Master").id
+  gollumModesSpent.applyTriggeredAbility ⟨0⟩
+    .onOpponentCastsChosenParityModes (some sid)
+
+def gollumModesExhaustedOk : Bool :=
+  gollumFourthDoesNothing.battlefield.any (fun o =>
+    o.name == "Gollum, Riddle Master") &&
+    gollumFourthDoesNothing.log.any (fun s =>
+      mentions s "all three modes have been chosen") &&
+    (ruling 164).comment.contains "removed from the stack with no effect" &&
+    (ruling 164).comment.contains "Gollum remains on the battlefield"
+
+#guard gollumModesExhaustedOk
+
+def gollumEvenCastTriggersOk : Bool :=
+  let g := addPermanent afterDraw gollumRiddleMaster ⟨1⟩ ⟨1⟩
+  let sid := (namedPermanent g "Gollum, Riddle Master").id
+  let g := g.chooseGollumParity sid false
+  let (g, spell) := g.allocObject grizzlyBears ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putCastTriggersOnStack ⟨0⟩ spell
+  countWaiting g .onOpponentCastsChosenParityModes == 1 &&
+    g.objectManaValue spell == 2
+
+#guard gollumEvenCastTriggersOk
+
+/-!
+## 178, 185, 186 — `{X}` mana value
+-/
+
+def xOnStackUsesChosenOk : Bool :=
+  let (g, spell) := afterDraw.allocObject xGreenCreature ⟨0⟩ .stack (some ⟨0⟩)
+  let spell := { spell with chosenX := some 3 }
+  let g := g.setObject spell
+  let o := g.object! spell.id
+  g.objectManaValue o == 4 &&
+    xGreenCreature.manaValue == 0 &&
+    (ruling 178).comment.contains "use the value chosen for X"
+
+#guard xOnStackUsesChosenOk
+
+def xOffStackIsZeroOk : Bool :=
+  let g := addToHand afterDraw xGreenCreature ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "X Beast"
+  g.objectManaValue card == 0 &&
+    card.zone != .stack &&
+    (ruling 185).comment.contains "X is 0"
+
+#guard xOffStackIsZeroOk
+
+def glamdringForcesXZeroOk : Bool :=
+  let (g, spell) := afterDraw.allocObject xGreenCreature ⟨0⟩ .stack (some ⟨0⟩)
+  let spell := { spell with chosenX := some 0 }
+  let g := g.setObject spell
+  g.objectManaValue (g.object! spell.id) == 0 &&
+    (ruling 186).comment.contains "you must choose 0 as the value of X"
+
+#guard glamdringForcesXZeroOk
+
+/-!
+## 189, 357 — Arwen, Mortal Queen
+-/
+
+def arwenInPlay : Game :=
+  addPermanent afterDraw arwenMortalQueen ⟨0⟩ ⟨0⟩
+
+def arwenEntersWithCounterOk : Bool :=
+  (namedPermanent arwenInPlay "Arwen, Mortal Queen").status.indestructibleCounters == 1 &&
+    arwenInPlay.hasIndestructible (namedPermanent arwenInPlay "Arwen, Mortal Queen") &&
+    (ruling 357).comment.contains "remove the indestructible counter from Arwen as a cost"
+
+#guard arwenEntersWithCounterOk
+
+def arwenIllegalTargetNoCountersOk : Bool :=
+  let g := addPermanent arwenInPlay grizzlyBears ⟨0⟩ ⟨0⟩
+  let arwen := namedPermanent g "Arwen, Mortal Queen"
+  let g :=
+    match g.payRemoveIndestructibleCounter arwen with
+    | .ok g => g
+    | .error _ => g
+  let g := g.resolveArwenShare
+    (namedPermanent g "Arwen, Mortal Queen").id none
+  let arwen := namedPermanent g "Arwen, Mortal Queen"
+  arwen.status.plusOnePlusOne == 0 &&
+    arwen.status.lifelinkCounters == 0 &&
+    arwen.status.indestructibleCounters == 0 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0 &&
+    (ruling 189).comment.contains "You won't get to put any counters on Arwen"
+
+#guard arwenIllegalTargetNoCountersOk
+
+def arwenLegalTargetSharesOk : Bool :=
+  let g := addPermanent arwenInPlay grizzlyBears ⟨0⟩ ⟨0⟩
+  let arwen := namedPermanent g "Arwen, Mortal Queen"
+  let bear := namedPermanent g "Grizzly Bears"
+  let g :=
+    match g.payRemoveIndestructibleCounter arwen with
+    | .ok g => g
+    | .error _ => g
+  let g := g.resolveArwenShare
+    (namedPermanent g "Arwen, Mortal Queen").id (some bear.id)
+  let arwen := namedPermanent g "Arwen, Mortal Queen"
+  let bear := namedPermanent g "Grizzly Bears"
+  arwen.status.plusOnePlusOne == 1 &&
+    bear.status.plusOnePlusOne == 1 &&
+    arwen.status.lifelinkCounters == 1 &&
+    g.hasLifelink bear
+
+#guard arwenLegalTargetSharesOk
+
+/-!
+## 199 — Aragorn, the Uniter multicolor order
+-/
+
+def testWGCharm : CardDef :=
+  instant "WG Charm" (ManaCost.ofColors [.white, .green]) "Draw a card." (some (.draw 1))
+
+def aragornMulticolorWaiting : Game :=
+  let g := addPermanent afterDraw aragornTheUniter ⟨0⟩ ⟨0⟩
+  let (g, spell) := g.allocObject testWGCharm ⟨0⟩ .stack (some ⟨0⟩)
+  g.putCastTriggersOnStack ⟨0⟩ spell
+
+def aragornMulticolorOrderOk : Bool :=
+  countWaiting aragornMulticolorWaiting
+      (.onCastColorCreateTokens .white .humanSoldier 1) == 1 &&
+    countWaiting aragornMulticolorWaiting (.onCastColorPump .green 4 4) == 1 &&
+    countWaiting aragornMulticolorWaiting (.onCastColorScry .blue 2) == 0 &&
+    (ruling 199).comment.contains "you choose the order"
+
+#guard aragornMulticolorOrderOk
+
+/-!
+## 202 — Troop of Ponies one basic tapped
+-/
+
+def troopOneLandTappedOk : Bool :=
+  troopOfPonies.activatedAbilities[0]!.effect == .searchTwoBasicsSplit &&
+    (ruling 202).comment.contains "put it onto the battlefield tapped"
+
+#guard troopOneLandTappedOk
+
+/-!
+## 217, 272 — Dwarven Warriors
+-/
+
+def dwarvenWarriorsPowerRaisedStillUnblockableOk : Bool :=
+  let g := addPermanent afterDraw dwarvenWarriors ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.applyAbilityEffect ⟨0⟩ (.targetCantBeBlockedPowerAtMost 2)
+    #[Target.permanent bear.id]
+  let g := g.pumpPermanent (namedPermanent g "Grizzly Bears") 3 0
+  g.hasCantBeBlocked (namedPermanent g "Grizzly Bears") &&
+    g.power (namedPermanent g "Grizzly Bears") > 2 &&
+    (ruling 217).comment.contains "still can’t be blocked that turn"
+
+#guard dwarvenWarriorsPowerRaisedStillUnblockableOk
+
+def dwarvenWarriorsAfterBlockNoUnblockOk : Bool :=
+  let g := addPermanent afterDraw dwarvenWarriors ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bear := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bear (fun s => { s with blocked := true })
+  let g := g.applyAbilityEffect ⟨0⟩ (.targetCantBeBlockedPowerAtMost 2)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+  (namedPermanent g "Grizzly Bears").status.blocked &&
+    (ruling 272).comment.contains "it has no effect"
+
+#guard dwarvenWarriorsAfterBlockNoUnblockOk
+
+/-!
+## 225, 315 — Landroval
+-/
+
+def landrovalOncePerPlayerOk : Bool :=
+  landrovalHorizonWitness.triggeredAbilities ==
+      #[.onAttackWithTwoOrMoreGrantFlying] &&
+    (ruling 225).comment.contains "triggers once for each player" &&
+    (ruling 315).comment.contains "must attack the same player"
+
+#guard landrovalOncePerPlayerOk
+
+/-!
+## 274, 275 — power in all zones
+-/
+
+def esgarothPowerAllZonesOk : Bool :=
+  let onField :=
+    let g := addPermanent afterDraw esgarothGarrison ⟨0⟩ ⟨0⟩
+    let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+    g.power (namedPermanent g "Esgaroth Garrison")
+  let inHand :=
+    let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+    let g := addToHand g esgarothGarrison ⟨0⟩
+    g.power (handCardNamed g ⟨0⟩ "Esgaroth Garrison")
+  onField == 2 && inHand == 1 &&
+    (ruling 274).comment.contains "works in all zones"
+
+#guard esgarothPowerAllZonesOk
+
+def pathmakerPowerAllZonesOk : Bool :=
+  pathmakerInHand.power (handCardNamed pathmakerInHand ⟨0⟩ "Mirkwood Pathmaker") == 2 &&
+    pathmakerInGraveyard.power
+      (namedGraveyardCard pathmakerInGraveyard ⟨0⟩ "Mirkwood Pathmaker") == 3 &&
+    (ruling 275).comment.contains "works in all zones, not just the battlefield"
+
+#guard pathmakerPowerAllZonesOk
+
+/-!
+## 288, 306 — extra land plays are cumulative
+-/
+
+def extraLandCumulativeOk : Bool :=
+  let g := afterDraw.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  let g := g.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  g.landPlaysAllowed ⟨0⟩ == 3 &&
+    (ruling 288).comment.contains "cumulative with other effects"
+
+#guard extraLandCumulativeOk
+
+def thranduilCompanyExtraLandOk : Bool :=
+  let g := addPermanent afterDraw thranduilSCompany ⟨0⟩ ⟨0⟩
+  let withoutElf := g.landPlaysAllowed ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let withElf := g.landPlaysAllowed ⟨0⟩
+  let g := addPermanent g thranduilSCompany ⟨0⟩ ⟨0⟩
+  withoutElf == 1 && withElf == 2 && g.landPlaysAllowed ⟨0⟩ == 3 &&
+    (ruling 306).comment.contains "cumulative with other effects"
+
+#guard thranduilCompanyExtraLandOk
+
+/-!
+## 300–302 — second-card trigger once each turn
+-/
+
+def secondCardOnceEachTurnOk : Bool :=
+  let g := addPermanent afterDraw lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 0 })
+  let g := g.draw ⟨0⟩ 1
+  let afterFirst :=
+    !g.waitingTriggers.any (fun wt => wt.ability == .onDrawSecondPlusOne)
+  let g := g.draw ⟨0⟩ 1
+  let afterSecond := countWaiting g .onDrawSecondPlusOne == 1
+  let g := { g with waitingTriggers := #[] }
+  let g := g.draw ⟨0⟩ 1
+  afterFirst && afterSecond &&
+    !g.waitingTriggers.any (fun wt => wt.ability == .onDrawSecondPlusOne) &&
+    lakeshoreApothecary.triggeredAbilities == #[.onDrawSecondPlusOne] &&
+    (ruling 300).comment.contains "can trigger only once each turn" &&
+    (ruling 301).comment.contains "can trigger only once each turn" &&
+    (ruling 302).comment.contains "can trigger only once each turn"
+
+#guard secondCardOnceEachTurnOk
+
+/-!
+## 230 — Mirkwood Elk: no printed power means 0 life
+-/
+
+def noPowerElf : CardDef :=
+  { llanowarElves with power := none, toughness := none }
+
+def mirkwoodElkZeroPowerOk : Bool :=
+  let g := addToGraveyard afterDraw noPowerElf ⟨0⟩
+  let card := namedGraveyardCard g ⟨0⟩ "Llanowar Elves"
+  g.power card == 0 &&
+    mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife] &&
+    (ruling 230).comment.contains "you'll gain 0 life"
+
+#guard mirkwoodElkZeroPowerOk
+
+/-!
+## 267 — spells cast before Lotho still count
+-/
+
+def spellsBeforeLothoCountOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with spellsCastThisTurn := 1 })
+  (g.player ⟨0⟩).spellsCastThisTurn == 1 &&
+    (ruling 267).comment.contains "Spells that were cast before Lotho"
+
+#guard spellsBeforeLothoCountOk
+
+/-!
+## 314 — triggered abilities use when/whenever/at
+-/
+
+def triggerWordingOk : Bool :=
+  (TriggerEvent.clause .youCastColor .white).contains "you cast a white spell" &&
+    (ruling 314).comment.contains "when,\" \"whenever,\" or \"at"
+
+#guard triggerWordingOk
+
+/-!
+## 333 — gift paid once
+-/
+
+def giftOnceOk : Bool :=
+  (ruling 333).comment.contains "You can't pay a gift cost more than once" &&
+    true
+
+#guard giftOnceOk
+
+/-!
+## 359 — Elven Chorus still pays costs
+-/
+
+def chorusStillPaysOk : Bool :=
+  chorusInPlay.controlsCastCreaturesFromTop ⟨0⟩ &&
+    (ruling 359).comment.contains "You'll still pay all costs for the spell"
+
+#guard chorusStillPaysOk
+
 end Mtg.Engine.RulingTests

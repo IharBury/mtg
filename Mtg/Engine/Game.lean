@@ -151,6 +151,16 @@ structure Status where
   /-- Alliance modes chosen this turn (0 = add GGG, 1 = +1/+1 each, 2 = scry
   then draw). Reset as the turn ends. -/
   allianceModesChosen : Array Nat := #[]
+  /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
+  chosenModes : Array Nat := #[]
+  /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
+  chosenOdd : Option Bool := none
+  /-- Lore counters on a Saga (CR 714). -/
+  lore : Nat := 0
+  /-- Indestructible counters. -/
+  indestructibleCounters : Nat := 0
+  /-- Lifelink counters (Arwen, Mortal Queen). -/
+  lifelinkCounters : Nat := 0
 deriving Repr, Inhabited, BEq
 
 namespace Status
@@ -284,6 +294,9 @@ structure GameObject where
   /-- Mana produced by Delighted Halfling (or similar) was spent to cast this
   legendary spell, so it can't be countered. Copies do not inherit this. -/
   uncounterableThisCast : Bool := false
+  /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
+  Off the stack, `{X}` is 0. -/
+  chosenX : Option Nat := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -605,6 +618,9 @@ structure Player where
   lifeGainedThisTurn : Nat := 0
   /-- Creature spells cast this turn (Radagast of Rhosgobel). -/
   creatureSpellsCastThisTurn : Nat := 0
+  /-- Qualities beheld this game (Elven Passage and similar). A later zone
+  change of the revealed card or chosen permanent does not un-behold. -/
+  beheldQualities : Array String := #[]
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -1926,8 +1942,10 @@ def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.cantBeBlocked)
 
-/-- Whether `o` has lifelink, printed or granted until end of turn (CR 702.15). -/
+/-- Whether `o` has lifelink, printed, granted until end of turn, or from a
+lifelink counter (CR 702.15). -/
 def hasLifelink (g : Game) (o : GameObject) : Bool :=
+  o.status.lifelinkCounters > 0 ||
   g.hasKeyword o (·.lifelink) ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
@@ -2003,8 +2021,20 @@ def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
     | none => false)
 
 /-- Whether `o` has hexproof, printed or granted until end of turn (CR 702.11). -/
-def hasHexproof (_g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.hexproof)
+/-- Lore counters among Sagas `p` controls. -/
+def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.printed.saga.isSome then acc + o.status.lore else acc) 0
+
+/-- Whether `o` currently has hexproof and indestructible from Tom Bombadil's
+lore-threshold static. -/
+def loreThresholdProtection (g : Game) (o : GameObject) : Bool :=
+  match o.printed.hexproofIndestructibleIfLore, o.controller with
+  | some n, some p => g.loreAmongSagas p ≥ n
+  | _, _ => false
+
+def hasHexproof (g : Game) (o : GameObject) : Bool :=
+  hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
@@ -2012,9 +2042,18 @@ def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
-def hasIndestructible (_g : Game) (o : GameObject) : Bool :=
-  o.printedOrUntilEot.indestructible &&
+def hasIndestructible (g : Game) (o : GameObject) : Bool :=
+  (o.printedOrUntilEot.indestructible ||
+    o.status.indestructibleCounters > 0 ||
+    g.loreThresholdProtection o) &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
+
+/-- Mana value of `o` (CR 202.3). `{X}` is the chosen value while the object
+is on the stack and 0 otherwise (rulings 178 / 185 / 186). -/
+def objectManaValue (_g : Game) (o : GameObject) : Nat :=
+  let printed := o.printed.manaValue
+  if o.zone != .stack then printed
+  else printed + o.chosenX.getD 0
 
 /-- Whether `o` has trample, printed, granted until end of turn, or granted by
 a static ability (CR 702.19, 604.2). -/
@@ -2335,9 +2374,21 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
+/-- Extra land plays from permanents such as Thranduil's Company. Each such
+permanent is cumulative with other extra-land effects (rulings 288 / 306). -/
+def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    match o.printed.extraLandIfOtherSubtype with
+    | none => acc
+    | some t =>
+      if (g.permanentsOf p).any (fun other =>
+        other.id != o.id && g.hasSubtype other t) then
+        acc + 1
+      else acc) 0
+
 /-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
 def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
-  1 + (g.player p).additionalLandsThisTurn
+  1 + (g.player p).additionalLandsThisTurn + g.extraLandsFromPermanents p
 
 /-- Lands remaining this turn (CR 305.2 / 305.3 / 116.2a). -/
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
@@ -2897,7 +2948,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
       noncreatureSpellsCastThisTurn := nonc
       creatureSpellsCastThisTurn := creat
       castManaValuesThisTurn :=
-        p.castManaValuesThisTurn.push spell.printed.manaCost.manaValue })
+        p.castManaValuesThisTurn.push (g.objectManaValue spell) })
   let g :=
     Id.run do
       let mut g := g
@@ -2911,6 +2962,23 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let g :=
     if spell.printed.isCreature then g
     else g.putControlledTriggers caster .youCastNoncreature
+  let colors := spell.printed.colors
+  let g :=
+    Color.all.foldl (fun acc c =>
+      if colors.contains c then
+        acc.putControlledTriggers caster (.youCastColor c)
+      else acc) g
+  let mv := g.objectManaValue spell
+  let g :=
+    (g.livingOpponents caster).foldl (fun acc pl =>
+      acc.foldControlledPermanents pl.id none fun acc o =>
+        match o.status.chosenOdd with
+        | none => acc
+        | some odd =>
+          let matches := if odd then mv % 2 == 1 else mv % 2 == 0
+          if matches then
+            acc.putMatchingSourceTriggers pl.id o .opponentCastsMatchingParity
+          else acc) g
   let g :=
     if spells == 2 then
       g.livingPlayers.foldl (fun acc pl =>
@@ -2951,6 +3019,13 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   -- 0 toughness) and before enters triggers use the stack.
   let g := g.refreshEnduringStory
   let g := g.refreshCitysBlessing
+  let g :=
+    if o.printed.entersWithIndestructibleCounter then
+      let g := g.setObject { o with status :=
+        { o.status with indestructibleCounters := o.status.indestructibleCounters + 1 } }
+      g.logMsg s!"{o.name} enters with an indestructible counter"
+    else g
+  let o := g.object! o.id
   let g :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
@@ -3810,6 +3885,118 @@ def applyAllianceMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
       | some c, 2 =>
         (g.draw c 1).logMsg ((g.player c).name ++ " scries 2, then draws a card")
       | _, _ => g
+
+/-- Unused Gollum modes on `src` (0 = +1/+1, 1 = drain, 2 = draw). Modes last
+for the object's lifetime (ruling 164). -/
+def unusedGollumModes (_g : Game) (src : GameObject) : Array Nat :=
+  #[0, 1, 2].filter (fun m => !src.status.chosenModes.contains m)
+
+/-- Apply one unused Gollum mode. If every mode was already chosen, the
+ability is removed with no effect and Gollum remains. -/
+def applyGollumMode (g : Game) (sourceId : ObjectId) (mode : Nat) : Game :=
+  match g.findObject? sourceId with
+  | none =>
+    g.logMsg "The ability is removed from the stack with no effect"
+  | some src =>
+    if (g.unusedGollumModes src).isEmpty then
+      g.logMsg
+        "all three modes have been chosen. The ability is removed from the stack with no effect"
+    else if src.status.chosenModes.contains mode then
+      g.logMsg "That mode has already been chosen"
+    else
+      let g := g.setObject { src with status :=
+        { src.status with chosenModes := src.status.chosenModes.push mode } }
+      match src.controller, mode with
+      | some _, 0 =>
+        let src := g.object! sourceId
+        let g := g.setObject { src with status := src.status.addPlusOnePlusOne 1 }
+        g.logMsg s!"{src.name} gets a +1/+1 counter"
+      | some c, 1 =>
+        let g := g.forEachOpponent c (fun g pid =>
+          let pl := g.player pid
+          g.setLife pid (pl.life - 2)
+            s!"{pl.name} loses 2 life ({pl.life - 2} life)")
+        let pl := g.player c
+        g.setLife c (pl.life + 2)
+          s!"{pl.name} gains 2 life ({pl.life + 2} life)"
+      | some c, 2 =>
+        g.draw c 1
+      | _, _ => g
+
+/-- As Gollum enters, choose odd (`true`) or even (`false`). Zero is even. -/
+def chooseGollumParity (g : Game) (sourceId : ObjectId) (odd : Bool) : Game :=
+  match g.findObject? sourceId with
+  | none => g
+  | some src =>
+    let g := g.setObject { src with status := { src.status with chosenOdd := some odd } }
+    g.logMsg
+      (if odd then s!"{src.name}: odd is chosen" else s!"{src.name}: even is chosen")
+
+/-- Remove an indestructible counter as a cost (ruling 357). -/
+def payRemoveIndestructibleCounter (g : Game) (o : GameObject) : Except String Game := do
+  if o.status.indestructibleCounters == 0 then
+    throw s!"{o.name} has no indestructible counter"
+  let g := g.setObject { o with status :=
+    { o.status with indestructibleCounters := o.status.indestructibleCounters - 1 } }
+  return g.logMsg s!"{o.name} loses an indestructible counter"
+
+/-- Resolve Arwen, Mortal Queen's activated ability. An illegal target means
+no counters are put on Arwen or the target (ruling 189). -/
+def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectId) : Game :=
+  match targetId.bind g.findObject? with
+  | none =>
+    g.logMsg "The target is no longer legal. The ability does nothing."
+  | some o =>
+    if !o.isOnBattlefield || !o.isCreature || o.id == arwenId then
+      g.logMsg "The target is no longer legal. The ability does nothing."
+    else
+      let putCounters (g : Game) (oid : ObjectId) : Game :=
+        match g.findObject? oid with
+        | none => g
+        | some x =>
+          let g := g.setObject { x with status :=
+            { x.status with
+              plusOnePlusOne := x.status.plusOnePlusOne + 1
+              lifelinkCounters := x.status.lifelinkCounters + 1 } }
+          g.logMsg s!"{x.name} gets a +1/+1 counter and a lifelink counter"
+      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
+      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
+      let g := putCounters g o.id
+      putCounters g arwenId
+
+/-- Behold a quality: choose a matching permanent you control or reveal a
+matching card from your hand. Later zone changes do not un-behold (117). -/
+def beholdQuality (g : Game) (p : PlayerId) (quality : String) : Game :=
+  let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
+  let hasHand :=
+    (g.player p).hand.any (fun id =>
+      match g.findObject? id with
+      | some o => o.printed.hasSubtype quality
+      | none => false)
+  if hasPerm || hasHand then
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with beheldQualities := pl.beheldQualities.push quality })
+    g.logMsg s!"{(g.player p).name} beholds a {quality}"
+  else
+    g.logMsg s!"{(g.player p).name} does not behold a {quality}"
+
+/-- True when `p` has beheld `quality`, even if the card or permanent later left. -/
+def qualityWasBeheld (g : Game) (p : PlayerId) (quality : String) : Bool :=
+  (g.player p).beheldQualities.contains quality
+
+/-- Tom Bombadil is on the battlefield as a final chapter finishes resolving,
+so his last ability triggers (ruling 74). -/
+def finishSagaFinalChapter (g : Game) (controller : PlayerId) : Game :=
+  let g := g.logMsg "The final chapter ability is removed from the stack"
+  match (g.permanentsOf controller).find? (fun o =>
+    o.printed.hexproofIndestructibleIfLore.isSome) with
+  | none => g
+  | some tom =>
+    match tom.printed.triggeredAbilities[0]? with
+    | none => g
+    | some ab =>
+      g.queueTrigger controller tom ab .entering
+        |>.logMsg s!"{tom.name}'s last ability triggers"
 
 /-- A token copy of a battlefield permanent. The copy is not kicked. -/
 def copyBattlefieldPermanent (g : Game) (src : GameObject) (controller : PlayerId)
@@ -6311,6 +6498,21 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
             "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
         | some mode =>
           g.applyAllianceMode sid mode
+  | .gollumMode =>
+    match sourceId with
+    | none =>
+      g.logMsg "The ability is removed from the stack with no effect"
+    | some sid =>
+      match g.findObject? sid with
+      | none =>
+        g.logMsg "The ability is removed from the stack with no effect"
+      | some src =>
+        match (g.unusedGollumModes src)[0]? with
+        | none =>
+          g.logMsg
+            "all three modes have been chosen. The ability is removed from the stack with no effect"
+        | some mode =>
+          g.applyGollumMode sid mode
   | .destroyOtherAmassControllerPower =>
     match targets[0]? with
     | none =>

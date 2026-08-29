@@ -1039,9 +1039,10 @@ def gleamingSplendor : CardDef :=
     (triggeredAbilities := #[.onOpponentDrawsSecondCreateTreasure])
 
 def gollumRiddleMaster : CardDef :=
-  legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")
-    (staticAbilities := #[.printed "As Gollum enters, choose odd or even. (Zero is even.)"])
-    (triggeredAbilities := #[.printed "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."])
+  let c :=
+    legendaryCreature "Gollum, Riddle Master" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 3 1 (oracleText := "As Gollum enters, choose odd or even. (Zero is even.)\nWhenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen —\n• Put a +1/+1 counter on Gollum.\n• Each opponent loses 2 life and you gain 2 life.\n• Draw a card.")
+      (triggeredAbilities := #[.onOpponentCastsChosenParityModes])
+  { c with asEntersChooseOddEven := true }
 
 def headOfTheHunt : CardDef :=
   let c :=

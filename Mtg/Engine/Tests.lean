@@ -182,7 +182,10 @@ def insertObject (g : Game) (card : CardDef) (owner : PlayerId) (zone : Zone)
 
 /-- Put `card` onto the battlefield with explicit owner and controller. -/
 def addPermanent (g : Game) (card : CardDef) (owner controller : PlayerId) : Game :=
-  insertObject g card owner .battlefield (some controller) { summoningSick := false }
+  let status : Status :=
+    { summoningSick := false
+      indestructibleCounters := if card.entersWithIndestructibleCounter then 1 else 0 }
+  insertObject g card owner .battlefield (some controller) status
 
 /-- Drop a basic land onto the battlefield without using the play-land action. -/
 def addUntappedLand (g : Game) (card : CardDef) : Game :=

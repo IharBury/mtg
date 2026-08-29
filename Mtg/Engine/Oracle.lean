@@ -460,6 +460,16 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
      else
       s!"The first creature spell you cast each turn costs \{{c.firstCreatureCostsLess}} less to cast."]
    else []) ++
+  (if c.asEntersChooseOddEven then
+    ["As Gollum enters, choose odd or even. (Zero is even.)"]
+   else []) ++
+  (if c.entersWithIndestructibleCounter then
+    ["Arwen enters with an indestructible counter on her."]
+   else []) ++
+  (match c.hexproofIndestructibleIfLore with
+   | some n =>
+     [s!"As long as there are {n} or more lore counters among Sagas you control, {c.name} has hexproof and indestructible."]
+   | none => []) ++
   (if c.powerPerMountain != 0 then
     [s!"This creature gets +{c.powerPerMountain}/+0 for each Mountain you control."]
    else []) ++

@@ -2663,6 +2663,17 @@ inductive TriggeredAbility where
   to a player or battle, create `n` tokens (e.g. Thorin, Company's Leader). -/
   | onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
       (n : Nat)
+  /-- Alliance-style modes that last for the object's lifetime
+  (e.g. Gollum, Riddle Master). -/
+  | onOpponentCastsChosenParityModes
+  /-- Whenever you cast a spell of this color, create tokens. -/
+  | onCastColorCreateTokens (color : Color) (kind : TokenKind) (n : Nat)
+  /-- Whenever you cast a spell of this color, scry. -/
+  | onCastColorScry (color : Color) (n : Nat)
+  /-- Whenever you cast a spell of this color, deal damage to target opponent. -/
+  | onCastColorDamageOpponent (color : Color) (n : Nat)
+  /-- Whenever you cast a spell of this color, target creature gets +P/+T. -/
+  | onCastColorPump (color : Color) (power toughness : Int)
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -2765,6 +2776,10 @@ inductive TriggerEvent where
   | eaglesCreateBirds
   /-- You sacrificed a creature to Bolg's enters instruction. -/
   | bolgSacrificedForReflexive
+  /-- You cast a spell of this color. -/
+  | youCastColor (color : Color)
+  /-- An opponent casts a spell whose mana value matches a chosen odd/even. -/
+  | opponentCastsMatchingParity
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -2916,6 +2931,12 @@ def spec : TriggerEvent → Spec
   | .bolgSacrificedForReflexive =>
     { clause := "you sacrifice a creature this way", isWhenever := false,
       label := "reflexive trigger" }
+  | .youCastColor c =>
+    { clause := s!"you cast a {c} spell", label := "cast-color trigger",
+      checkTargets := false }
+  | .opponentCastsMatchingParity =>
+    { clause := "an opponent casts a spell with mana value of the chosen quality",
+      label := "parity-cast trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -3123,6 +3144,8 @@ inductive TriggerResolution where
   /-- Destroy the targeted creature if any; that controller amasses equal
   to last-known power. No target means no player amasses. -/
   | destroyOtherAmassControllerPower
+  /-- Apply an unused Gollum mode, or do nothing if all were chosen. -/
+  | gollumMode
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3455,6 +3478,18 @@ def timing : TriggeredAbility → TriggerTiming
   | .onSubtypeYouControlCombatDamageCreateTokens _subtype kind n =>
     { events := #[.dealsCombatDamageToPlayerOrBattle],
       resolution := .createTokens kind n false }
+  | .onOpponentCastsChosenParityModes =>
+    { events := #[.opponentCastsMatchingParity], resolution := .gollumMode }
+  | .onCastColorCreateTokens c kind n =>
+    { events := #[.youCastColor c], resolution := .createTokens kind n false }
+  | .onCastColorScry c n =>
+    { events := #[.youCastColor c], resolution := .scry n }
+  | .onCastColorDamageOpponent c n =>
+    { events := #[.youCastColor c], targeting := .of .opponent,
+      resolution := .damageEachOpponent n }
+  | .onCastColorPump c p t =>
+    { events := #[.youCastColor c], targeting := .of .creature,
+      resolution := .onPermanent (.pump p t) }
   | .printed text =>
     { resolution := .printed text }
 
@@ -3724,6 +3759,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
   | .destroyOtherAmassControllerPower =>
     s!"destroy {noun}. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
+  | .gollumMode =>
+    "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -3754,6 +3791,16 @@ def toNotation (ab : TriggeredAbility) : String :=
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
   | .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2 =>
     "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
+  | .onOpponentCastsChosenParityModes =>
+    "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
+  | .onCastColorCreateTokens .white .humanSoldier 1 =>
+    "Whenever you cast a white spell, create a 1/1 white Human Soldier creature token."
+  | .onCastColorScry .blue 2 =>
+    "Whenever you cast a blue spell, scry 2."
+  | .onCastColorDamageOpponent .red 3 =>
+    "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
+  | .onCastColorPump .green 4 4 =>
+    "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."
   | .printed text => text
   | _ =>
     match ab.resolution with
@@ -3956,6 +4003,13 @@ structure CardDef where
   /-- The first creature spell you cast each turn can be cast as though it
   had flash (e.g. Radagast of Rhosgobel). -/
   firstCreatureHasFlash : Bool := false
+  /-- Hexproof and indestructible while you control this many lore counters
+  among Sagas (e.g. Tom Bombadil). -/
+  hexproofIndestructibleIfLore : Option Nat := none
+  /-- This creature enters with an indestructible counter. -/
+  entersWithIndestructibleCounter : Bool := false
+  /-- As this permanent enters, choose odd or even (Gollum, Riddle Master). -/
+  asEntersChooseOddEven : Bool := false
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
