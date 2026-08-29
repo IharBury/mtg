@@ -141,7 +141,8 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this aura", "this"),
     ("this card", "this"),
     ("this spell", "this"),
-    ("this enter ", "this enters ")
+    ("this enter ", "this enters "),
+    ("this enter,", "this enters,")
   ]
 
 /-- English number words that appear in Oracle (`two cards`, `three or more`). -/
@@ -188,7 +189,10 @@ def normalizePhrases (s : String) : String :=
     ("activate only from your hand", ""),
     ("if you control a creature with power", "while you control a creature with power"),
     ("other elf creatures you control", "other elves you control"),
-    ("other bear creatures you control", "other bears you control")
+    ("other bear creatures you control", "other bears you control"),
+    ("you may play it until the end of your next turn",
+      "until the end of your next turn you may play that card"),
+    ("this enter ", "this enters ")
   ]
 
 /-- Comparable form of one ability unit. -/

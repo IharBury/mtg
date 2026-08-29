@@ -6329,12 +6329,12 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       return g
   | .damageOppCreaturesEqualOtherSpellsMv =>
     let xs := (g.player controller).castManaValuesThisTurn
-    let n := (xs.extract 0 xs.size.pred).foldl (· + ·) 0
+    let n : Nat := (xs.extract 0 xs.size.pred).foldl (fun a b => a + b) 0
     Id.run do
       let mut g := g
       for o in g.battlefield do
         if o.isCreature && !o.controlledBy controller then
-          g := g.dealDamageToPermanent o n
+          g := g.dealDamageToPermanent o (Int.ofNat n)
       return g.logMsg s!"deals {n} damage to each opposing creature"
   | .phaseOutKicker =>
     if kicked then
