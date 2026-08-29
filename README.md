@@ -171,6 +171,12 @@ The first slice of the engine models the two-player game:
   sacrifice a creature, a target opponent sacrifice a creature, or each
   opponent discard a card, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
+- Saga enchantments (CR 714): lore counters as a Saga enters and as the first
+  main phase begins, chapter abilities on the stack with the catalog effects
+  (damage, destroy, mana, tutor, landfall, pumps, discard, amass, life drain,
+  hexproof and damage prevention while the Saga remains, draw, linked exile,
+  delayed blink, Treasure-into-Dragon, recruit, and graveyard return), and
+  sacrificing a Saga after its final chapter leaves the stack (CR 714.4)
 - cleanup without priority except the CR 514.3a state-based-action window
 - a console demo with a heuristic opponent or multiplayer interactive play,
   including choosing the starting player (CR 103.1), `autopay` to activate

@@ -978,7 +978,12 @@ def boughsideWanderers : CardDef :=
       .onEnterLookAtTopRevealTypes 4 #["permanent"]])
 
 def burnBurnTreeAndFern : CardDef :=
-  saga "Burn, Burn, Tree and Fern" (ManaCost.ofGenericAndColor 3 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — This Saga deals 6 damage to target creature an opponent controls.\nII — Destroy target artifact an opponent controls.\nIII, IV — Add {R}." "IV" #[{ roman := "I", effect := "This Saga deals 6 damage to target creature an opponent controls." }, { roman := "II", effect := "Destroy target artifact an opponent controls." }, { roman := "III, IV", effect := "Add {R}." }]
+  saga "Burn, Burn, Tree and Fern" (ManaCost.ofGenericAndColor 3 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — This Saga deals 6 damage to target creature an opponent controls.\nII — Destroy target artifact an opponent controls.\nIII, IV — Add {R}." "IV" #[
+    chapter "I" "This Saga deals 6 damage to target creature an opponent controls."
+      (.dealDamageToOppCreature 6),
+    chapter "II" "Destroy target artifact an opponent controls."
+      .destroyOppArtifact,
+    chapter "III, IV" "Add {R}." (.addMana (.colored .red))]
 
 def cantankerousKeepers : CardDef :=
   creature "Cantankerous Keepers" (ManaCost.ofGenericAndColor 5 .green) #["Elf", "Soldier"] 4 3 (oracleText := "Affinity for Elves (This spell costs {1} less to cast for each Elf you control.)\nWhen this creature enters, mill four cards, then put all Elf cards from among them into your hand.")
@@ -1001,10 +1006,22 @@ def desertWereWorm : CardDef :=
     (triggeredAbilities := #[.onAttackWithTotalPowerUntapExtraCombat 12])
 
 def downInTheValley : CardDef :=
-  saga "Down in the Valley" (ManaCost.ofGenericAndColor 2 .green) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"\nIII, IV — Elves you control get +1/+0 and gain vigilance until end of turn." "IV" #[{ roman := "I", effect := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle." }, { roman := "II", effect := "This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"" }, { roman := "III, IV", effect := "Elves you control get +1/+0 and gain vigilance until end of turn." }]
+  saga "Down in the Valley" (ManaCost.ofGenericAndColor 2 .green) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"\nIII, IV — Elves you control get +1/+0 and gain vigilance until end of turn." "IV" #[
+    chapter "I" "Search your library for a basic land card, reveal it, put it into your hand, then shuffle."
+      .searchBasicLandToHand,
+    chapter "II" "This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\""
+      .gainLandfallCreateElf,
+    chapter "III, IV" "Elves you control get +1/+0 and gain vigilance until end of turn."
+      (.elvesGetVigilance 1)]
 
 def downDownToGoblinTown : CardDef :=
-  saga "Down, Down to Goblin-town" (ManaCost.ofGenericAndColor 2 .black) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nII — Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nIII, IV — Target opponent loses 1 life and you gain 1 life." "IV" #[{ roman := "I", effect := "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card." }, { roman := "II", effect := "Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)" }, { roman := "III, IV", effect := "Target opponent loses 1 life and you gain 1 life." }]
+  saga "Down, Down to Goblin-town" (ManaCost.ofGenericAndColor 2 .black) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nII — Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nIII, IV — Target opponent loses 1 life and you gain 1 life." "IV" #[
+    chapter "I" "Target opponent reveals their hand. You choose a nonland card from it. That player discards that card."
+      .opponentDiscardsNonland,
+    chapter "II" "Amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
+      (.amassGoblins 1),
+    chapter "III, IV" "Target opponent loses 1 life and you gain 1 life."
+      (.opponentLosesYouGain 1)]
 
 def dwalinWeaponmaster : CardDef :=
   legendaryCreature "Dwalin, Weaponmaster" (ManaCost.ofGenericAndHybrids 1 .red .white 1) #["Dwarf", "Warrior"] 2 1 (oracleText := "First strike\nWhenever Dwalin enters or attacks, put a hone counter on each Equipment you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)")
@@ -1081,7 +1098,12 @@ def masterSCouncillors : CardDef :=
     (triggeredAbilities := #[.onDrawSecondMillPlayer 3])
 
 def oldFatSpiderCanTSeeMe : CardDef :=
-  saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[{ roman := "I", effect := "Target creature you control gains hexproof for as long as this Saga remains on the battlefield." }, { roman := "II", effect := "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield." }, { roman := "III, IV", effect := "Draw a card." }]
+  saga "Old Fat Spider Can't See Me" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Target creature you control gains hexproof for as long as this Saga remains on the battlefield.\nII — Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield.\nIII, IV — Draw a card." "IV" #[
+    chapter "I" "Target creature you control gains hexproof for as long as this Saga remains on the battlefield."
+      .grantHexproofWhileRemains,
+    chapter "II" "Prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield."
+      .preventDamageWhileRemains,
+    chapter "III, IV" "Draw a card." (.draw 1)]
 
 def orcristGoblinCleaver : CardDef :=
   artifact "Orcrist, Goblin-cleaver" (ManaCost.ofGeneric 3) "Equipped creature gets +2/+2 and has trample.\nWhenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type.\nEquip {3}"
@@ -1109,10 +1131,18 @@ def riddlesInTheDark : CardDef :=
   instant "Riddles in the Dark" (ManaCost.ofGenericAndColor 2 .blue) "Look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard." (some .riddlesInTheDark)
 
 def roadsGoEverEverOn : CardDef :=
-  saga "Roads Go Ever, Ever On" (ManaCost.ofGenericAndColor 1 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life.\nII, III — Put a card exiled with this Saga into its owner's hand.\nIV — Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." "IV" #[{ roman := "I", effect := "Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life." }, { roman := "II, III", effect := "Put a card exiled with this Saga into its owner's hand." }, { roman := "IV", effect := "Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." }]
+  saga "Roads Go Ever, Ever On" (ManaCost.ofGenericAndColor 1 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life.\nII, III — Put a card exiled with this Saga into its owner's hand.\nIV — Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control." "IV" #[
+    chapter "I" "Search your library for up to two basic Plains cards, exile them, then shuffle. You gain 2 life."
+      (.searchBasicPlainsExileGainLife 2 2),
+    chapter "II, III" "Put a card exiled with this Saga into its owner's hand."
+      .returnLinkedExileToHand,
+    chapter "IV" "Whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control."
+      .grantAttackPumpPerPlainsThisTurn]
 
 def rollRollRollRoll : CardDef :=
-  saga "Roll-Roll-Roll-Roll" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." "IV" #[{ roman := "I, II, III, IV", effect := "Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." }]
+  saga "Roll-Roll-Roll-Roll" (ManaCost.ofGenericAndColor 2 .blue) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step." "IV" #[
+    chapter "I, II, III, IV" "Exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step."
+      .blinkUntilEndStep]
 
 def silvanReveler : CardDef :=
   creature "Silvan Reveler" (ManaCost.ofGenericAndColors 2 [.green, .blue]) #["Elf", "Citizen"] 3 2 (oracleText := "When this creature enters, draw a card, then discard a card. If you discard a land card this way, put it from your graveyard onto the battlefield tapped.\nLandfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand.")
@@ -1152,10 +1182,18 @@ def theMasterOfLakeTown : CardDef :=
     (triggeredAbilities := #[.onPlayerLosesLifeMillThatMany, .onDiesDrawPerFatGraveyard])
 
 def theMistyMountainsCold : CardDef :=
-  saga "The Misty Mountains Cold" (ManaCost.ofGenericAndColor 2 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" "IV" #[{ roman := "I, II, III, IV", effect := "Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" }]
+  saga "The Misty Mountains Cold" (ManaCost.ofGenericAndColor 2 .red) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI, II, III, IV — Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")" "IV" #[
+    chapter "I, II, III, IV" "Create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying. (A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")"
+      .treasureThenDragonIfFour]
 
 def theMountainKingSReturn : CardDef :=
-  saga "The Mountain-king's Return" (ManaCost.ofGenericAndColor 2 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)\nII — Return target creature card with mana value 3 or less from your graveyard to the battlefield.\nIII — Put a +1/+1 counter on up to one target creature." "III" #[{ roman := "I", effect := "Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)" }, { roman := "II", effect := "Return target creature card with mana value 3 or less from your graveyard to the battlefield." }, { roman := "III", effect := "Put a +1/+1 counter on up to one target creature." }]
+  saga "The Mountain-king's Return" (ManaCost.ofGenericAndColor 2 .white) "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)\nII — Return target creature card with mana value 3 or less from your graveyard to the battlefield.\nIII — Put a +1/+1 counter on up to one target creature." "III" #[
+    chapter "I" "Recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)"
+      .recruit,
+    chapter "II" "Return target creature card with mana value 3 or less from your graveyard to the battlefield."
+      (.returnCreatureFromGyMvAtMost 3),
+    chapter "III" "Put a +1/+1 counter on up to one target creature."
+      .plusOneUpToOne]
 
 def theNotaryHobbits : CardDef :=
   legendaryCreature "The Notary Hobbits" (ManaCost.ofGenericAndColors 3 [.green, .green]) #["Halfling", "Advisor"] 1 1 (oracleText := "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary.\n{T}: Add {C} for each Halfling you control.")

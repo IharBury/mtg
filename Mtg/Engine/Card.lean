@@ -140,6 +140,7 @@ inductive TokenKind where
   | spirit
   | birdSoldier
   | wall
+  | dragon
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -155,6 +156,7 @@ def oracleNoun : TokenKind → String
   | .spirit => "1/1 white Spirit creature token with flying"
   | .birdSoldier => "4/4 white Bird Soldier creature token with flying"
   | .wall => "3/1 colorless Wall artifact creature token with defender named Stone Boulder"
+  | .dragon => "6/6 red Dragon creature token with flying"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -167,6 +169,7 @@ def pluralNoun : TokenKind → String
   | .spirit => "1/1 white Spirit creature tokens with flying"
   | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
   | .wall => "3/1 colorless Wall artifact creature tokens with defender named Stone Boulder"
+  | .dragon => "6/6 red Dragon creature tokens with flying"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -248,12 +251,16 @@ inductive EffectTargetKind where
   | permanent
   /-- Target creature card in your graveyard. -/
   | creatureCardInYourGraveyard
+  /-- Target creature card with mana value `n` or less in your graveyard. -/
+  | creatureCardInYourGraveyardMvAtMost (n : Nat)
   /-- Target legendary creature you control. -/
   | legendaryCreatureYouControl
   /-- Target creature you control with power `n` or less. -/
   | creatureYouControlPowerAtMost (n : Int)
   /-- Target artifact. -/
   | artifact
+  /-- Target artifact an opponent controls. -/
+  | oppArtifact
   /-- Target artifact token. -/
   | artifactToken
   /-- Target attacking creature. -/
@@ -389,12 +396,17 @@ def spec : EffectTargetKind → Spec
     { noun := "target permanent", prefer := .ownThenOpponent }
   | .creatureCardInYourGraveyard =>
     { noun := "target creature card from your graveyard", prefer := .last }
+  | .creatureCardInYourGraveyardMvAtMost n =>
+    { noun := s!"target creature card with mana value {n} or less from your graveyard",
+      prefer := .last }
   | .legendaryCreatureYouControl =>
     { noun := "target legendary creature you control", prefer := .own }
   | .creatureYouControlPowerAtMost n =>
     { noun := s!"target creature you control with power {n} or less", prefer := .own }
   | .artifact =>
     { noun := "target artifact" }
+  | .oppArtifact =>
+    { noun := "target artifact an opponent controls" }
   | .artifactToken =>
     { noun := "target artifact token" }
   | .attackingCreature =>
@@ -2639,6 +2651,121 @@ instance : ToString TapAddForEach where
 
 end TapAddForEach
 
+/-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
+Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
+wording. -/
+inductive ChapterEffect where
+  /-- This Saga deals `n` damage to target creature an opponent controls. -/
+  | dealDamageToOppCreature (n : Nat)
+  /-- Destroy target artifact an opponent controls. -/
+  | destroyOppArtifact
+  /-- Add this mana (e.g. `{R}`). -/
+  | addMana (mana : ManaType)
+  /-- Search for a basic land, put it into your hand, then shuffle. -/
+  | searchBasicLandToHand
+  /-- This Saga gains landfall: create a 1/1 green Elf. -/
+  | gainLandfallCreateElf
+  /-- Elves you control get +P/+0 and vigilance until end of turn. -/
+  | elvesGetVigilance (power : Int)
+  /-- Target opponent reveals their hand; you choose a nonland; they discard it. -/
+  | opponentDiscardsNonland
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
+  /-- Target opponent loses `n` life and you gain `n` life. -/
+  | opponentLosesYouGain (n : Nat)
+  /-- Target creature you control gains hexproof while this Saga remains. -/
+  | grantHexproofWhileRemains
+  /-- Prevent damage that would be dealt by up to one target creature while
+  this Saga remains. -/
+  | preventDamageWhileRemains
+  /-- Draw `n` cards. -/
+  | draw (n : Nat)
+  /-- Search for up to `max` basic Plains, exile them, shuffle, gain `life`. -/
+  | searchBasicPlainsExileGainLife (max life : Nat)
+  /-- Put a card exiled with this Saga into its owner's hand. -/
+  | returnLinkedExileToHand
+  /-- Whenever you attack this turn, a target creature you control gets
+  +1/+1 per Plains you control. -/
+  | grantAttackPumpPerPlainsThisTurn
+  /-- Exile up to one target creature or land you control; return it at the
+  beginning of the next end step. -/
+  | blinkUntilEndStep
+  /-- Create a Treasure. Then if you control four or more, sacrifice this
+  Saga. If you do, create a 6/6 red Dragon with flying. -/
+  | treasureThenDragonIfFour
+  /-- Recruit. -/
+  | recruit
+  /-- Return target creature card with mana value `n` or less from your
+  graveyard to the battlefield. -/
+  | returnCreatureFromGyMvAtMost (n : Nat)
+  /-- Put a +1/+1 counter on up to one target creature. -/
+  | plusOneUpToOne
+deriving Repr, Inhabited, BEq
+
+namespace ChapterEffect
+
+/-- Targeting and “up to one” for this chapter. Exhaustive so a new
+constructor is a compile error here rather than silently targeting nothing. -/
+structure Spec where
+  targeting : EffectTargeting := .of .none
+  allowsZeroTargets : Bool := false
+  phrase : String := ""
+deriving Repr, Inhabited, BEq
+
+/-- Classification of this chapter effect. -/
+def spec : ChapterEffect → Spec
+  | .dealDamageToOppCreature n =>
+    { targeting := .of .oppCreature
+      phrase := s!"this Saga deals {n} damage to target creature an opponent controls" }
+  | .destroyOppArtifact =>
+    { targeting := .of .oppArtifact
+      phrase := "destroy target artifact an opponent controls" }
+  | .addMana mana =>
+    { phrase := s!"add {mana}" }
+  | .searchBasicLandToHand =>
+    { phrase := "search your library for a basic land card, reveal it, put it into your hand, then shuffle" }
+  | .gainLandfallCreateElf =>
+    { phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"" }
+  | .elvesGetVigilance p =>
+    { phrase := s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn" }
+  | .opponentDiscardsNonland =>
+    { targeting := .of .opponent
+      phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card" }
+  | .amassGoblins n =>
+    { phrase := s!"amass Goblins {n}" }
+  | .opponentLosesYouGain n =>
+    { targeting := .of .opponent
+      phrase := s!"target opponent loses {n} life and you gain {n} life" }
+  | .grantHexproofWhileRemains =>
+    { targeting := .of .creatureYouControl
+      phrase := "target creature you control gains hexproof for as long as this Saga remains on the battlefield" }
+  | .preventDamageWhileRemains =>
+    { targeting := .of .creature, allowsZeroTargets := true
+      phrase := "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield" }
+  | .draw n =>
+    { phrase := s!"draw {cardPhrase n}" }
+  | .searchBasicPlainsExileGainLife max life =>
+    { phrase := s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life" }
+  | .returnLinkedExileToHand =>
+    { phrase := "put a card exiled with this Saga into its owner's hand" }
+  | .grantAttackPumpPerPlainsThisTurn =>
+    { phrase := "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control" }
+  | .blinkUntilEndStep =>
+    { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
+      phrase := "exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step" }
+  | .treasureThenDragonIfFour =>
+    { phrase := "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying" }
+  | .recruit =>
+    { phrase := "recruit" }
+  | .returnCreatureFromGyMvAtMost n =>
+    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n)
+      phrase := s!"return target creature card with mana value {n} or less from your graveyard to the battlefield" }
+  | .plusOneUpToOne =>
+    { targeting := .of .creature, allowsZeroTargets := true
+      phrase := "put a +1/+1 counter on up to one target creature" }
+
+end ChapterEffect
+
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
@@ -3095,6 +3222,10 @@ inductive TriggeredAbility where
   | onFinalSagaChapterRevealSaga
   /-- Whenever creatures deal combat damage to you, sac and the Ring tempts. -/
   | onCombatDamageToYouSacRingTempts
+  /-- A Saga chapter ability (CR 714.3). -/
+  | sagaChapter (n : Nat) (effect : ChapterEffect)
+  /-- Whenever you attack this turn, pump a target per Plains (Roads Go Ever). -/
+  | onYouAttackPumpTargetPerPlains
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -3213,6 +3344,8 @@ inductive TriggerEvent where
   | opponentCastsSpell
   /-- An Army you control deals combat damage to a player. -/
   | armyYouControlCombatDamage
+  /-- A lore counter was put on this Saga (CR 714.3). -/
+  | sagaChapter
   /-- The final chapter of a Saga you control resolves. -/
   | finalSagaChapterResolves
   /-- One or more creatures deal combat damage to you. -/
@@ -3404,6 +3537,9 @@ def spec : TriggerEvent → Spec
   | .armyYouControlCombatDamage =>
     { clause := "an Army you control deals combat damage to a player",
       label := "army-combat-damage trigger", checkTargets := false }
+  | .sagaChapter =>
+    { clause := "a lore counter is put on this Saga", isWhenever := false,
+      label := "saga chapter", checkTargets := true }
   | .finalSagaChapterResolves =>
     { clause := "the final chapter ability of a Saga you control resolves",
       label := "saga-chapter trigger", checkTargets := false }
@@ -3739,6 +3875,10 @@ inductive TriggerResolution where
   | revealSaga
   /-- Each opponent sacrifices a creature that damaged you; the Ring tempts you. -/
   | sacDamagersRingTempts
+  /-- Resolve a printed Saga chapter. -/
+  | chapter (effect : ChapterEffect)
+  /-- Target creature you control gets +1/+1 per Plains you control. -/
+  | pumpTargetPerPlains
   /-- Unique printed trigger wording. -/
   | printed (text : String)
 deriving Repr, Inhabited, BEq
@@ -4212,6 +4352,12 @@ def timing : TriggeredAbility → TriggerTiming
       onceEachTurn := true }
   | .onCombatDamageToYouSacRingTempts =>
     { events := #[.combatDamageToYou], resolution := .sacDamagersRingTempts }
+  | .sagaChapter _n e =>
+    { events := #[.sagaChapter], targeting := e.spec.targeting,
+      allowsZeroTargets := e.spec.allowsZeroTargets, resolution := .chapter e }
+  | .onYouAttackPumpTargetPerPlains =>
+    { events := #[.youAttack], targeting := .of .creatureYouControl,
+      resolution := .pumpTargetPerPlains }
   | .printed text =>
     { resolution := .printed text }
 
@@ -4583,6 +4729,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
   | .sacDamagersRingTempts =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
+  | .chapter e => e.spec.phrase
+  | .pumpTargetPerPlains =>
+    "target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
@@ -4700,11 +4849,42 @@ structure AdventureFace where
   additionalCostSacrificeCreature : Bool := false
 deriving Repr, Inhabited, BEq
 
+/-- Parse one Roman chapter numeral (`I`–`VI`). -/
+def parseRomanNumeral (s : String) : Nat :=
+  match s.replace " " "" with
+  | "I" => 1
+  | "II" => 2
+  | "III" => 3
+  | "IV" => 4
+  | "V" => 5
+  | "VI" => 6
+  | _ => 0
+
+/-- Chapter numbers on a printed line (`I`, `III, IV`, `I, II, III, IV`). -/
+def parseChapterNumbers (roman : String) : Array Nat :=
+  (roman.splitOn ",").toArray |>.map parseRomanNumeral |>.filter (· != 0)
+
 /-- One printed Saga chapter line (`I — …`, `III, IV — …`). -/
 structure SagaChapter where
   roman : String
   effect : String
+  /-- Chapter numbers this line triggers on. Empty means parse `roman`. -/
+  numbers : Array Nat := #[]
+  /-- Structured resolution. `none` is reminder-only (tests). -/
+  chapterEffect : Option ChapterEffect := none
 deriving Repr, Inhabited, BEq
+
+namespace SagaChapter
+
+/-- Chapter numbers for triggering (CR 714.3a). -/
+def chapterNumbers (ch : SagaChapter) : Array Nat :=
+  if ch.numbers.isEmpty then parseChapterNumbers ch.roman else ch.numbers
+
+/-- A catalog chapter with parsed numerals and a real effect. -/
+def of (roman effect : String) (ce : ChapterEffect) : SagaChapter :=
+  { roman, effect, numbers := parseChapterNumbers roman, chapterEffect := some ce }
+
+end SagaChapter
 
 /-- Printed Saga (CR 714): reminder plus chapter abilities. -/
 structure SagaDef where
@@ -4712,6 +4892,19 @@ structure SagaDef where
   sacrificeAfter : String
   chapters : Array SagaChapter
 deriving Repr, Inhabited, BEq
+
+namespace SagaDef
+
+/-- Greatest chapter number among this Saga's chapter abilities (ruling 291). -/
+def finalChapterNumber (s : SagaDef) : Nat :=
+  s.chapters.foldl (fun acc ch =>
+    ch.chapterNumbers.foldl (fun acc n => max acc n) acc) 0
+
+/-- Chapter lines that trigger when lore becomes `lore` (CR 714.3a). -/
+def chaptersForLore (s : SagaDef) (lore : Nat) : Array SagaChapter :=
+  s.chapters.filter (fun ch => ch.chapterNumbers.contains lore)
+
+end SagaDef
 
 /-- Printed (Oracle) characteristics of a card. -/
 structure CardDef where
@@ -5737,6 +5930,12 @@ end AdventureFace
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/
 def isBasicLandCard (c : CardDef) : Bool :=
   c.isLand && c.hasSupertype .basic
+
+#guard parseChapterNumbers "I" == #[1]
+#guard parseChapterNumbers "III, IV" == #[3, 4]
+#guard parseChapterNumbers "I, II, III, IV" == #[1, 2, 3, 4]
+#guard (SagaChapter.of "III, IV" "Add {R}." (.addMana (.colored .red))).chapterNumbers ==
+  #[3, 4]
 
 /-- A land card with the given land type (CR 205.3i / 305.7). -/
 def isLandTypeCard (c : CardDef) (landType : String) : Bool :=

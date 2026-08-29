@@ -78,8 +78,10 @@ typecycling from hand (CR 702.29: discard this card, search for a land type,
 put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d, deathtouch as lethal for trample, CR 702.2c / 702.19b, and lifelink,
-CR 702.15b), cleanup (CR 514.3), and the state-based actions we implement
-(CR 704.5, including deathtouch, CR 704.5h, and the legend rule, CR 704.5j).
+CR 702.15b), Saga lore counters and chapter abilities (CR 714), cleanup
+(CR 514.3), and the state-based actions we implement
+(CR 704.5, including deathtouch, CR 704.5h, the legend rule, CR 704.5j,
+and sacrificing a Saga after its final chapter, CR 714.4).
 -/
 
 namespace Mtg.Engine
@@ -127,6 +129,13 @@ structure Status where
   additionalSubtypes : Array String := #[]
   /-- Static abilities granted by a lasting effect (CR 611.2a). -/
   grantedStaticAbilities : Array StaticAbility := #[]
+  /-- Triggered abilities granted by a lasting effect (e.g. a Saga chapter
+  that gives the Saga landfall). -/
+  grantedTriggeredAbilities : Array TriggeredAbility := #[]
+  /-- Objects granting this permanent hexproof while they remain. -/
+  hexproofGrantedBy : Array ObjectId := #[]
+  /-- Objects preventing damage this permanent would deal while they remain. -/
+  preventDamageGrantedBy : Array ObjectId := #[]
   /-- Dealt damage by a source with deathtouch since the last time
   state-based actions were checked (CR 704.5h). Cleared after that check. -/
   dealtDeathtouch : Bool := false
@@ -445,10 +454,11 @@ def canPayTapCost (o : GameObject) : Bool :=
 
 end GameObject
 
-/-- Printed triggers of `source` that fire on `event`. -/
+/-- Printed and granted triggers of `source` that fire on `event`. -/
 def GameObject.matchingTriggers (source : GameObject) (event : TriggerEvent) :
     Array TriggeredAbility :=
-  source.printed.triggeredAbilities.filter (·.firesOn event)
+  (source.printed.triggeredAbilities ++ source.status.grantedTriggeredAbilities).filter
+    (·.firesOn event)
 
 /-- A triggered ability waiting to be put onto the stack the next time a
 player would receive priority (CR 603.3 / 603.3b). `source` is a snapshot of
@@ -669,6 +679,9 @@ structure Player where
   beheldQualities : Array String := #[]
   /-- Players can't cast spells this turn (Bilbo's Gambit). -/
   cantCastSpellsThisTurn : Bool := false
+  /-- Delayed “whenever you attack this turn, pump per Plains” chapters
+  still waiting to fire (Roads Go Ever, Ever On). -/
+  attackPumpPerPlainsThisTurn : Nat := 0
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -829,6 +842,9 @@ structure Game where
   lastLifeLost : Option (PlayerId × Nat) := none
   /-- Most recent noncombat damage marked on a permanent. -/
   lastNoncombatDamage : Option (ObjectId × Nat) := none
+  /-- Cards in exile that return at the beginning of the next end step
+  (Roll-Roll-Roll-Roll and similar delayed blinks). -/
+  delayedEndStepReturns : Array ObjectId := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -1393,6 +1409,18 @@ def birdSoldierToken : CardDef := {
   isToken := true
 }
 
+/-- A 6/6 red Dragon creature token with flying. -/
+def dragonToken : CardDef := {
+  name := "Dragon"
+  types := #[.creature]
+  subtypes := #["Dragon"]
+  power := some 6
+  toughness := some 6
+  colorIndicator := some (ColorSet.singleton .red)
+  keywords := Keyword.flying
+  isToken := true
+}
+
 /-- A 3/1 colorless Wall artifact creature token with defender. -/
 def wallToken : CardDef := {
   name := "Stone Boulder"
@@ -1431,6 +1459,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .spirit => spiritToken
   | .birdSoldier => birdSoldierToken
   | .wall => wallToken
+  | .dragon => dragonToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
@@ -2205,6 +2234,26 @@ def loreAmongSagas (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
     if o.printed.saga.isSome then acc + o.status.lore else acc) 0
 
+/-- True when `id` is the source of a chapter ability waiting or on the stack
+(CR 714.4). -/
+def sagaChapterPending (g : Game) (id : ObjectId) : Bool :=
+  let waiting :=
+    g.waitingTriggers.any (fun wt =>
+      wt.source.id == id &&
+        match wt.ability with
+        | .sagaChapter _ _ => true
+        | _ => false)
+  let stacked :=
+    g.stack.any (fun e =>
+      match g.findObject? e.objectId with
+      | some o =>
+        o.sourceId == some id &&
+          match o.triggeredAbility with
+          | some (.sagaChapter _ _) => true
+          | _ => false
+      | none => false)
+  waiting || stacked
+
 /-- Whether `o` currently has hexproof and indestructible from Tom Bombadil's
 lore-threshold static. -/
 def loreThresholdProtection (g : Game) (o : GameObject) : Bool :=
@@ -2212,8 +2261,21 @@ def loreThresholdProtection (g : Game) (o : GameObject) : Bool :=
   | some n, some p => g.loreAmongSagas p ≥ n
   | _, _ => false
 
+/-- True when a grantor of hexproof or damage prevention is still on the
+battlefield. -/
+def grantorStillInPlay (g : Game) (id : ObjectId) : Bool :=
+  match g.findObject? id with
+  | some o => o.isOnBattlefield
+  | none => false
+
 def hasHexproof (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o
+  hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o ||
+    o.status.hexproofGrantedBy.any g.grantorStillInPlay
+
+/-- True when damage that would be dealt by `src` is prevented (Old Fat
+Spider chapter II). -/
+def sourceDamagePrevented (g : Game) (src : GameObject) : Bool :=
+  src.status.preventDamageGrantedBy.any g.grantorStillInPlay
 
 /-- Whether `o` has deathtouch, printed or granted until end of turn (CR 702.2). -/
 def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
@@ -2505,6 +2567,17 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
           g := g.ceaseToExist o.id
           g := g.logMsg s!"{o.name} ceases to exist (token left the battlefield)"
           changed := true
+      -- Saga with lore at or past its final chapter and no chapter on the
+      -- stack is sacrificed (CR 714.4 / 704.5s).
+      for o in g.battlefield do
+        match o.printed.saga, o.controller with
+        | some sdef, some _ =>
+          if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
+              !g.sagaChapterPending o.id then
+            g := g.moveToOwnerGraveyard o
+              s!"{o.name} is sacrificed (CR 714.4)"
+            changed := true
+        | _, _ => pure ()
       -- Unattached or illegally attached Auras (CR 704.5m).
       for o in g.battlefield do
         if o.printed.isAura then
@@ -2770,6 +2843,13 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.controlledBy caster && g.power o <= n)
   | .artifact =>
     g.legalPermanentTargets caster (fun o => o.isOnBattlefield && o.printed.isArtifact)
+  | .oppArtifact =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && o.printed.isArtifact &&
+        (g.livingOpponents caster).any (fun pl => o.controlledBy pl.id))
+  | .creatureCardInYourGraveyardMvAtMost n =>
+    g.legalGraveyardCardTargets caster (fun o =>
+      o.printed.isCreature && o.printed.manaValue ≤ n)
   | .artifactToken =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && o.printed.isToken)
@@ -2940,6 +3020,47 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       for _ in [0:copies] do
         g := g.enqueueWaitingTriggers #[wt]
       return g
+
+/-- Put one lore counter on `saga` and queue the matching chapter abilities
+(CR 714.2 / 714.3). Counters are added one at a time. -/
+def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
+  match saga.controller, saga.printed.saga with
+  | some p, some sdef =>
+    match g.findObject? saga.id with
+    | none => g
+    | some saga =>
+      if !saga.isOnBattlefield then g
+      else
+        let lore := saga.status.lore + 1
+        let g := g.setObject { saga with status := { saga.status with lore } }
+        let g := g.logMsg s!"{saga.name} gets a lore counter ({lore})"
+        let saga := g.object! saga.id
+        (sdef.chaptersForLore lore).foldl (fun g ch =>
+          match ch.chapterEffect with
+          | none => g
+          | some ce =>
+            g.queueTrigger p saga (.sagaChapter lore ce) .sagaChapter) g
+  | _, _ => g
+
+/-- Add `n` lore counters one at a time (CR 714.3c). -/
+def addLoreCounters (g : Game) (saga : GameObject) (n : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in [0:n] do
+      match g.findObject? saga.id with
+      | some o => g := g.addOneLoreCounter o
+      | none => pure ()
+    return g
+
+/-- As a Saga enters, put a lore counter on it (CR 714.2a). -/
+def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
+  if o.printed.saga.isSome then g.addOneLoreCounter o else g
+
+/-- After the draw step / as first main begins, add a lore counter to each
+Saga the active player controls (CR 714.2b). -/
+def addLoreAfterDrawStep (g : Game) : Game :=
+  (g.permanentsOf g.activePlayer).foldl (fun acc o =>
+    if o.printed.saga.isSome then acc.addOneLoreCounter o else acc) g
 
 /-- Queue each printed trigger of `source` that fires on `event` (CR 603.3). -/
 def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameObject)
@@ -3299,6 +3420,8 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
         g.logMsg s!"{o.name} enters with {n} hope counter(s)"
       | none => g
     else g
+  let o := g.object! o.id
+  let g := g.addLoreAsSagaEnters o
   let o := g.object! o.id
   let g := g.putEnterTriggersOnStack o
   let g := g.putAnotherElfYouControlEntersTriggers (g.object! o.id)
@@ -5310,8 +5433,15 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
 
 /-- Deal `n` damage from a named source (fight, dies trigger, blocked trigger). -/
 def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
-    (deathtouch := false) : Game :=
-  g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
+    (deathtouch := false) (source : Option GameObject := none) : Game :=
+  match source with
+  | some src =>
+    if g.sourceDamagePrevented src then
+      g.logMsg s!"damage from {src.name} is prevented"
+    else
+      g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
+  | none =>
+    g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
@@ -6969,6 +7099,191 @@ def announceRingBearer (g : Game) (p : PlayerId) (id : Option ObjectId) : Except
     return g.temptWithTheRing p id
   | _ => throw "Not time to choose a Ring-bearer"
 
+/-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/
+def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
+  g.resolveLibrarySearch p isBasicLandCard "basic land card" fun g cardId =>
+    let cardName := (g.object! cardId).name
+    let (g, _) := g.move cardId (.hand p) none
+    g.logMsg s!"{(g.player p).name} reveals {cardName} and puts it into their hand"
+
+/-- Search for up to `max` basic Plains, exile them linked to `sourceId`,
+shuffle, and gain `life`. -/
+def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
+    (sourceId : Option ObjectId) (max life : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in [0:max] do
+      match g.findLibraryCard? p (fun c => isBasicLandCard c && c.hasSubtype "Plains") with
+      | none => pure ()
+      | some id =>
+        let name := (g.object! id).name
+        let (g', newId) := g.move id .exile none
+        g := g'
+        match sourceId.bind g.findObject? with
+        | some src =>
+          g := g.setObject { src with linkedExile := src.linkedExile.push newId }
+        | none => pure ()
+        g := g.logMsg s!"{(g.player p).name} exiles {name}"
+    g := g.shuffleLibrary p
+    return g.gainLife p life
+
+/-- Target opponent reveals their hand; you discard a nonland of your choice. -/
+def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
+  let names :=
+    (g.player victim).hand.filterMap (fun id =>
+      (g.findObject? id).map (·.name))
+  let g :=
+    if names.isEmpty then
+      g.logMsg s!"{(g.player victim).name} reveals an empty hand"
+    else
+      g.logMsg
+        s!"{(g.player victim).name} reveals {String.intercalate ", " names.toList}"
+  match (g.player victim).hand.findSome? (fun id =>
+      match g.findObject? id with
+      | some o => if !o.printed.isLand then some o else none
+      | none => none) with
+  | none => g.logMsg s!"{(g.player victim).name} has no nonland card to discard"
+  | some o =>
+    let (g, _) := g.move o.id (.graveyard o.owner) none
+    g.logMsg s!"{(g.player controller).name} chooses {o.name}. {(g.player victim).name} discards it"
+
+/-- Exile `o` and return it at the beginning of the next end step. -/
+def exileUntilNextEndStep (g : Game) (o : GameObject) : Game :=
+  let name := o.name
+  let (g, newId) := g.move o.id .exile none
+  let g := { g with delayedEndStepReturns := g.delayedEndStepReturns.push newId }
+  g.logMsg s!"{name} is exiled until the beginning of the next end step"
+
+/-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
+def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
+    (sourceId : Option ObjectId) (targets : Array Target) : Game :=
+  match e with
+  | .dealDamageToOppCreature n =>
+    g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
+      g.dealDamageToPermanent o n) sourceId (some "The target is no longer legal")
+  | .destroyOppArtifact =>
+    g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
+      g.destroyPermanent o) sourceId (some "The target is no longer legal")
+  | .addMana mana =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add mana })
+      |>.logMsg s!"{(g.player controller).name} adds {mana}"
+  | .searchBasicLandToHand =>
+    g.resolveSearchBasicLandToHand controller
+  | .gainLandfallCreateElf =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if !src.isOnBattlefield then g
+      else
+        let landfall : TriggeredAbility :=
+          .onLandYouControlEntersCreateTokens TokenKind.elf 1
+        let g := g.mapObjectStatus src (fun s =>
+          { s with grantedTriggeredAbilities :=
+            s.grantedTriggeredAbilities.push landfall })
+        g.logMsg s!"{src.name} gains landfall"
+    | none => g
+  | .elvesGetVigilance p =>
+    Id.run do
+      let mut g := g
+      for o in g.permanentsOf controller do
+        if o.isCreature && g.hasSubtype o "Elf" then
+          g := g.pumpPermanent o p 0
+          g := g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.vigilance)
+          g := g.logMsg s!"{o.name} gets {signedStat p}/+0 and gains vigilance until end of turn"
+      return g
+  | .opponentDiscardsNonland =>
+    g.withLegalKindTarget controller .opponent targets (fun g t =>
+      match t with
+      | Target.player pid => g.discardNonlandFrom controller pid
+      | _ => g.logMsg "The target is no longer legal")
+      sourceId (some "The target is no longer legal")
+  | .amassGoblins n =>
+    g.amassGoblins controller n
+  | .opponentLosesYouGain n =>
+    g.withLegalKindTarget controller .opponent targets (fun g t =>
+      match t with
+      | Target.player pid => g.loseLife pid n |>.gainLife controller n
+      | _ => g.logMsg "The target is no longer legal")
+      sourceId (some "The target is no longer legal")
+  | .grantHexproofWhileRemains =>
+    match sourceId with
+    | none => g
+    | some sid =>
+      g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
+        let g := g.mapObjectStatus o (fun s =>
+          { s with hexproofGrantedBy := s.hexproofGrantedBy.push sid })
+        g.logMsg s!"{o.name} gains hexproof for as long as the Saga remains")
+        sourceId (some "The target is no longer legal")
+  | .preventDamageWhileRemains =>
+    match sourceId with
+    | none => g
+    | some sid =>
+      g.withLegalKindPermanent controller .creature targets (fun g o =>
+        let g := g.mapObjectStatus o (fun s =>
+          { s with preventDamageGrantedBy := s.preventDamageGrantedBy.push sid })
+        g.logMsg s!"damage that would be dealt by {o.name} is prevented while the Saga remains")
+        sourceId none
+  | .draw n =>
+    g.draw controller n
+  | .searchBasicPlainsExileGainLife max life =>
+    g.resolveSearchBasicPlainsExile controller sourceId max life
+  | .returnLinkedExileToHand =>
+    match sourceId.bind g.findObject? with
+    | none => g.logMsg "The Saga is no longer in play"
+    | some src =>
+      match src.linkedExile[0]? with
+      | none => g.logMsg "No card is exiled with this Saga"
+      | some eid =>
+        match g.findObject? eid with
+        | none => g.logMsg "The exiled card is no longer there"
+        | some card =>
+          let owner := card.owner
+          let name := card.name
+          let (g, _) := g.move eid (.hand owner) none
+          let src := g.object! src.id
+          let g := g.setObject { src with
+            linkedExile := src.linkedExile.filter (· != eid) }
+          g.logMsg s!"{name} is put into {(g.player owner).name}'s hand"
+  | .grantAttackPumpPerPlainsThisTurn =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with attackPumpPerPlainsThisTurn := pl.attackPumpPerPlainsThisTurn + 1 })
+      |>.logMsg
+        s!"Whenever {(g.player controller).name} attacks this turn, a creature they control gets +1/+1 for each Plains they control"
+  | .blinkUntilEndStep =>
+    g.withLegalKindPermanent controller .creatureOrLandYouControl targets
+      (fun g o => g.exileUntilNextEndStep o) sourceId none
+  | .treasureThenDragonIfFour =>
+    let g := g.createTreasureTokens controller 1
+    match sourceId.bind g.findObject? with
+    | none => g
+    | some src =>
+      if !src.isOnBattlefield then g
+      else if g.countSubtype controller "Treasure" < 4 then g
+      else
+        let name := src.name
+        let g := g.sacrificeToGraveyard src s!"{name} is sacrificed"
+        let (g, tok) := g.createToken controller dragonToken
+        g.logMsg s!"{tok.name} enters the battlefield" |>.afterPermanentEnters (g.object! tok.id)
+  | .recruit =>
+    g.beginRecruit controller
+  | .returnCreatureFromGyMvAtMost n =>
+    g.withLegalKindTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
+      (fun g t =>
+        match t with
+        | Target.card oid =>
+          match g.findObject? oid with
+          | none => g.logMsg "The target is no longer in the graveyard"
+          | some o =>
+            let name := o.name
+            let (g, newId) := g.putOntoBattlefield oid controller
+            g.logMsg s!"{name} returns to the battlefield"
+              |>.afterPermanentEnters (g.object! newId)
+        | _ => g.logMsg "The target is no longer legal")
+      sourceId (some "The target is no longer legal")
+  | .plusOneUpToOne =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      g.addPlusOnePlusOneTo o 1) sourceId none
+
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/
 def interveningStillHolds (g : Game) (controller : PlayerId)
@@ -8010,6 +8325,14 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       (g.livingOpponents controller).foldl (fun acc pl =>
         acc.beginSacrificeCreature pl.id) g
     g.temptWithTheRing controller
+  | .chapter e =>
+    g.applyChapterEffect controller e sourceId targets
+  | .pumpTargetPerPlains =>
+    let n :=
+      (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Plains") |>.size
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o n n)
+      "No target was chosen"
   | .printed text =>
     g.logMsg text
 
@@ -8029,6 +8352,16 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       g := g.putControlledTriggers p .youAttackWithTwoOrMore
     if !attackerIds.isEmpty then
       g := g.putControlledTriggers p .youAttack
+      let pumps := (g.player p).attackPumpPerPlainsThisTurn
+      if pumps > 0 then
+        let src :=
+          match (g.permanentsOf p).find? (fun o => o.printed.saga.isSome) with
+          | some o => o
+          | none =>
+            { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment] }
+              id := ⟨0⟩, owner := p, controller := some p, zone := .battlefield }
+        for _ in [0:pumps] do
+          g := g.queueTrigger p src .onYouAttackPumpTargetPerPlains .youAttack
     if attackerIds.size == 1 then
       let aid := attackerIds[0]!
       for o in g.permanentsOf p do
@@ -8117,7 +8450,17 @@ def resolveTop (g : Game) : Game :=
         let srcName := obj.printed.name.replace "'s ability" ""
         let g := g.applyTriggeredAbility entry.controller t obj.sourceId
           entry.targets entry.dividedDamage obj.lastKnownPower obj.lastKnownToughness srcName
-        g.ceaseToExist obj.id
+        let g := g.ceaseToExist obj.id
+        match t with
+        | .sagaChapter n _ =>
+          match obj.sourceId.bind g.findObject? with
+          | some src =>
+            match src.printed.saga, src.controller with
+            | some s, some p =>
+              if n == s.finalChapterNumber then g.finishSagaFinalChapter p else g
+            | _, _ => g
+          | none => g
+        | _ => g
       else
         let g :=
           match obj.giftPromisedTo, obj.printed.isInstantOrSorcery with
@@ -8337,14 +8680,17 @@ def dealAssignedCombatDamage (g : Game) : Game :=
       else if !src.status.blocking.isEmpty && recipients.isEmpty then
         g := g.logMsg
           s!"{src.name} is not blocking any creatures and assigns no combat damage (CR 510.1d)"
-      for (tid, amt) in asgn.toCreatures do
-        if amt > 0 then
-          let t := g.object! tid
-          g := g.markDamageOn t amt
-            s!"{src.name} deals {amt} combat damage to {t.name}"
-            (deathtouch := g.hasDeathtouch src) (combat := true)
-          totalDealt := totalDealt + amt
-      if asgn.toPlayer > 0 then
+      if g.sourceDamagePrevented src then
+        g := g.logMsg s!"combat damage from {src.name} is prevented"
+      else
+        for (tid, amt) in asgn.toCreatures do
+          if amt > 0 then
+            let t := g.object! tid
+            g := g.markDamageOn t amt
+              s!"{src.name} deals {amt} combat damage to {t.name}"
+              (deathtouch := g.hasDeathtouch src) (combat := true)
+            totalDealt := totalDealt + amt
+      if !g.sourceDamagePrevented src && asgn.toPlayer > 0 then
         let pl := g.player defn
         g := g.setPlayer { pl with life := pl.life - asgn.toPlayer }
         totalDealt := totalDealt + asgn.toPlayer
@@ -8492,7 +8838,7 @@ def clearTurnActivations (g : Game) : Game :=
     for pl in g.players do
       if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
-          pl.spellsCastThisTurn != 0 then
+          pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -8502,7 +8848,8 @@ def clearTurnActivations (g : Game) : Game :=
           castManaValuesThisTurn := #[]
           belladonnaResolvesThisTurn := 0
           lifeGainedThisTurn := 0
-          cantCastSpellsThisTurn := false }
+          cantCastSpellsThisTurn := false
+          attackPumpPerPlainsThisTurn := 0 }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           !o.status.allianceModesChosen.isEmpty then
@@ -8618,6 +8965,24 @@ partial def beginStep (g : Game) (st : Step) : Game :=
   | .end =>
     let ap := g.activePlayer
     let g :=
+      Id.run do
+        let mut g := g
+        let ids := g.delayedEndStepReturns
+        g := { g with delayedEndStepReturns := #[] }
+        for id in ids do
+          match g.findObject? id with
+          | none => pure ()
+          | some o =>
+            if o.zone == .exile then
+              let owner := o.owner
+              let name := o.name
+              let sick := !o.printed.keywords.haste
+              let (g', newId) := g.putOntoBattlefield id owner (summoningSick := sick)
+              g := g'.logMsg
+                s!"{name} returns to the battlefield (beginning of end step)"
+              g := g.afterPermanentEnters (g.object! newId)
+        return g
+    let g :=
       g.livingPlayers.foldl (fun acc pl =>
         acc.putControlledTriggers pl.id .eachEndStep) g
     let g := g.putControlledTriggers ap .yourEndStep
@@ -8642,6 +9007,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
       (g.startNextTurn).beginStep .untap |>.beginStep .upkeep
   | .precombatMain =>
     let ap := g.activePlayer
+    let g := g.addLoreAfterDrawStep
     let g := g.putControlledTriggers ap .yourFirstMain
     g.receivePriority ap
   | _ =>

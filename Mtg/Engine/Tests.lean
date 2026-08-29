@@ -11777,5 +11777,281 @@ def thranduilTappedForCopiedGreen : Game :=
   (thranduilTappedForCopiedGreen.player ⟨0⟩).manaPool.get (.colored .green) == 1 &&
     (namedPermanent thranduilTappedForCopiedGreen "Thranduil, the Elvenking").status.tapped
 
+/-!
+# Supported Saga cards (CR 714)
+
+Catalog Sagas store structured `ChapterEffect`s. Entering a Saga puts a lore
+counter on it and the matching chapter goes on the stack.
+-/
+
+def catalogSagasImplemented : Bool :=
+  #[burnBurnTreeAndFern, downInTheValley, downDownToGoblinTown,
+    oldFatSpiderCanTSeeMe, roadsGoEverEverOn, rollRollRollRoll,
+    theMistyMountainsCold, theMountainKingSReturn].all (fun c =>
+      match c.saga with
+      | none => false
+      | some s =>
+        !s.chapters.isEmpty &&
+          s.chapters.all (fun ch =>
+            ch.chapterEffect.isSome && !ch.chapterNumbers.isEmpty))
+
+#guard catalogSagasImplemented
+#guard burnBurnTreeAndFern.saga.get!.finalChapterNumber == 4
+#guard theMountainKingSReturn.saga.get!.finalChapterNumber == 3
+#guard (burnBurnTreeAndFern.saga.get!.chaptersForLore 3).size == 1
+#guard (burnBurnTreeAndFern.saga.get!.chaptersForLore 4).size == 1
+
+/-- Put `card` onto the battlefield and run its enters/chapter triggers. -/
+def enterSaga (g : Game) (card : CardDef) : Game :=
+  let g := addPermanent g card ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g card.name
+  g.afterPermanentEnters o |>.receivePriority ⟨0⟩
+
+/-- Apply idle actions until the stack is empty and no choice is pending. -/
+def settle (g : Game) : Nat → Game
+  | 0 => panic! "settle fuel exhausted"
+  | n + 1 =>
+    if g.over then g
+    else if g.stack.isEmpty && g.pending == .none && !g.hasWaitingTriggers then g
+    else settle (applyIdle g) n
+
+/-- Add one lore counter to the named Saga and resolve the resulting chapter. -/
+def addSagaLore (g : Game) (name : String) : Game :=
+  let g := g.addOneLoreCounter (namedPermanent g name)
+  settle (g.receivePriority ⟨0⟩) 24
+
+def burnChapterI : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  settle (enterSaga g burnBurnTreeAndFern) 24
+
+#guard
+  (namedPermanent burnChapterI "Burn, Burn, Tree and Fern").status.lore == 1 &&
+    !burnChapterI.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    (namedGraveyardCard burnChapterI ⟨1⟩ "Gray Ogre").zone == .graveyard ⟨1⟩ &&
+    burnChapterI.log.any (fun s => mentions s "is dealt 6 damage") &&
+    burnChapterI.log.any (fun s => mentions s "gets a lore counter") &&
+    burnChapterI.log.any (fun s => mentions s "saga chapter")
+
+def burnChapterII : Game :=
+  let g := addPermanent burnChapterI wayfarersBauble ⟨1⟩ ⟨1⟩
+  addSagaLore g "Burn, Burn, Tree and Fern"
+
+#guard
+  (namedPermanent burnChapterII "Burn, Burn, Tree and Fern").status.lore == 2 &&
+    !burnChapterII.battlefield.any (fun o => o.name == "Wayfarer's Bauble") &&
+    burnChapterII.log.any (fun s => mentions s "is destroyed")
+
+def burnChapterIII : Game :=
+  addSagaLore burnChapterII "Burn, Burn, Tree and Fern"
+
+#guard
+  (namedPermanent burnChapterIII "Burn, Burn, Tree and Fern").status.lore == 3 &&
+    (burnChapterIII.player ⟨0⟩).manaPool.get (.colored .red) == 1
+
+def burnChapterIV : Game :=
+  addSagaLore burnChapterIII "Burn, Burn, Tree and Fern"
+
+#guard
+  !burnChapterIV.battlefield.any (fun o => o.name == "Burn, Burn, Tree and Fern") &&
+    (burnChapterIV.player ⟨0⟩).manaPool.get (.colored .red) == 2 &&
+    burnChapterIV.log.any (fun s => mentions s "CR 714.4")
+
+def valleyChapterI : Game :=
+  let g := addToLibraryTop afterDraw forest ⟨0⟩
+  settle (enterSaga g downInTheValley) 24
+
+#guard
+  (valleyChapterI.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (valleyChapterI.player ⟨0⟩).hand.any (fun id =>
+      isBasicLandCard (valleyChapterI.object! id).printed) &&
+    (namedPermanent valleyChapterI "Down in the Valley").status.lore == 1
+
+def valleyLandfall : Game :=
+  let g := addSagaLore valleyChapterI "Down in the Valley"
+  let g := addUntappedLand g forest
+  g.afterLandEnters (namedPermanent g "Forest") |>.receivePriority ⟨0⟩ |> (settle · 24)
+
+#guard
+  valleyLandfall.battlefield.any (fun o =>
+    o.name == "Elf" && o.printed.isToken) &&
+    (namedPermanent valleyLandfall "Down in the Valley").status.grantedTriggeredAbilities.size == 1
+
+def valleyElvesPumped : Game :=
+  let g := addPermanent valleyLandfall llanowarElves ⟨0⟩ ⟨0⟩
+  addSagaLore g "Down in the Valley"
+
+#guard
+  let elf := namedPermanent valleyElvesPumped "Llanowar Elves"
+  valleyElvesPumped.power elf == 2 && valleyElvesPumped.hasVigilance elf
+
+def goblinTownChapterI : Game :=
+  settle (enterSaga afterDraw downDownToGoblinTown) 24
+
+#guard
+  (goblinTownChapterI.player ⟨1⟩).hand.size ==
+    (afterDraw.player ⟨1⟩).hand.size - 1 &&
+    goblinTownChapterI.log.any (fun s => mentions s "reveals")
+
+def goblinTownAmass : Game :=
+  addSagaLore goblinTownChapterI "Down, Down to Goblin-town"
+
+#guard
+  goblinTownAmass.battlefield.any (fun o => o.name == "Goblin Army") &&
+    (namedPermanent goblinTownAmass "Goblin Army").status.plusOnePlusOne == 1
+
+def goblinTownDrain : Game :=
+  addSagaLore goblinTownAmass "Down, Down to Goblin-town"
+
+#guard
+  (goblinTownDrain.player ⟨1⟩).life == (goblinTownAmass.player ⟨1⟩).life - 1 &&
+    (goblinTownDrain.player ⟨0⟩).life == (goblinTownAmass.player ⟨0⟩).life + 1
+
+def spiderHexproof : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  settle (enterSaga g oldFatSpiderCanTSeeMe) 24
+
+#guard
+  spiderHexproof.hasHexproof (namedPermanent spiderHexproof "Llanowar Elves") &&
+    (namedPermanent spiderHexproof "Llanowar Elves").status.hexproofGrantedBy.size == 1
+
+def spiderPrevent : Game :=
+  let g := addPermanent spiderHexproof grayOgre ⟨1⟩ ⟨1⟩
+  addSagaLore g "Old Fat Spider Can't See Me"
+
+#guard
+  (namedPermanent spiderPrevent "Gray Ogre").status.preventDamageGrantedBy.size == 1 &&
+    spiderPrevent.sourceDamagePrevented (namedPermanent spiderPrevent "Gray Ogre")
+
+def spiderPreventedDamage : Game :=
+  spiderPrevent.dealDamageFrom "Gray Ogre"
+    (namedPermanent spiderPrevent "Llanowar Elves") 1
+    (source := some (namedPermanent spiderPrevent "Gray Ogre"))
+
+#guard
+  (namedPermanent spiderPreventedDamage "Llanowar Elves").status.damage == 0 &&
+    spiderPreventedDamage.log.any (fun s => mentions s "is prevented")
+
+def spiderDraw : Game :=
+  addSagaLore spiderPrevent "Old Fat Spider Can't See Me"
+
+#guard
+  (spiderDraw.player ⟨0⟩).hand.size == (spiderPrevent.player ⟨0⟩).hand.size + 1
+
+def spiderLeaves : Game :=
+  addSagaLore spiderDraw "Old Fat Spider Can't See Me"
+
+#guard
+  !spiderLeaves.battlefield.any (fun o => o.name == "Old Fat Spider Can't See Me") &&
+    !spiderLeaves.hasHexproof (namedPermanent spiderLeaves "Llanowar Elves") &&
+    !spiderLeaves.sourceDamagePrevented (namedPermanent spiderLeaves "Gray Ogre")
+
+def roadsChapterI : Game :=
+  let g := addToLibraryTop (addToLibraryTop afterDraw plains ⟨0⟩) plains ⟨0⟩
+  settle (enterSaga g roadsGoEverEverOn) 24
+
+#guard
+  (roadsChapterI.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + 2 &&
+    (namedPermanent roadsChapterI "Roads Go Ever, Ever On").linkedExile.size == 2
+
+def roadsReturn : Game :=
+  addSagaLore roadsChapterI "Roads Go Ever, Ever On"
+
+#guard
+  (roadsReturn.player ⟨0⟩).hand.any (fun id =>
+    (roadsReturn.object! id).name == "Plains") &&
+    (namedPermanent roadsReturn "Roads Go Ever, Ever On").linkedExile.size == 1
+
+def roadsChapterIII : Game :=
+  addSagaLore roadsReturn "Roads Go Ever, Ever On"
+
+#guard
+  ((roadsChapterIII.player ⟨0⟩).hand.filter (fun id =>
+    (roadsChapterIII.object! id).name == "Plains")).size == 2 &&
+    (namedPermanent roadsChapterIII "Roads Go Ever, Ever On").linkedExile.isEmpty
+
+def roadsChapterIV : Game :=
+  addSagaLore roadsChapterIII "Roads Go Ever, Ever On"
+
+#guard
+  !roadsChapterIV.battlefield.any (fun o => o.name == "Roads Go Ever, Ever On") &&
+    (roadsChapterIV.player ⟨0⟩).attackPumpPerPlainsThisTurn == 1 &&
+    roadsChapterIV.log.any (fun s => mentions s "CR 714.4")
+
+def roadsAttackPump : Game :=
+  let g := addPermanent roadsChapterIV llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addUntappedLand g plains
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Llanowar Elves").id])
+  settle g 24
+
+#guard
+  roadsAttackPump.power (namedPermanent roadsAttackPump "Llanowar Elves") == 2 &&
+    roadsAttackPump.toughness (namedPermanent roadsAttackPump "Llanowar Elves") == 2
+
+def rollBlink : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := settle (enterSaga g rollRollRollRoll) 24
+  g
+
+#guard
+  !rollBlink.battlefield.any (fun o => o.name == "Llanowar Elves") &&
+    rollBlink.delayedEndStepReturns.size == 1
+
+def rollReturned : Game :=
+  settle (rollBlink.beginStep .end) 24
+
+#guard
+  rollReturned.battlefield.any (fun o => o.name == "Llanowar Elves") &&
+    rollReturned.log.any (fun s => mentions s "beginning of end step")
+
+def mistyTreasures : Game :=
+  let g := settle (enterSaga afterDraw theMistyMountainsCold) 24
+  let g := addSagaLore g "The Misty Mountains Cold"
+  let g := addSagaLore g "The Misty Mountains Cold"
+  addSagaLore g "The Misty Mountains Cold"
+
+#guard
+  !mistyTreasures.battlefield.any (fun o => o.name == "The Misty Mountains Cold") &&
+    mistyTreasures.battlefield.any (fun o => o.name == "Dragon") &&
+    (mistyTreasures.battlefield.filter (fun o => o.name == "Treasure")).size == 4 &&
+    (namedPermanent mistyTreasures "Dragon").printed.power == some 6
+
+def mountainKingRecruit : Game :=
+  settle (enterSaga afterDraw theMountainKingSReturn) 24
+
+#guard
+  mountainKingRecruit.log.any (fun s => mentions s "discards") &&
+    (namedPermanent mountainKingRecruit "The Mountain-king's Return").status.lore == 1
+
+def mountainKingReturn : Game :=
+  let g := addToGraveyard mountainKingRecruit llanowarElves ⟨0⟩
+  addSagaLore g "The Mountain-king's Return"
+
+#guard
+  mountainKingReturn.battlefield.any (fun o => o.name == "Llanowar Elves")
+
+def mountainKingPlusOne : Game :=
+  addSagaLore mountainKingReturn "The Mountain-king's Return"
+
+#guard
+  !mountainKingPlusOne.battlefield.any (fun o =>
+    o.name == "The Mountain-king's Return") &&
+    (namedPermanent mountainKingPlusOne "Llanowar Elves").status.plusOnePlusOne == 1 &&
+    mountainKingPlusOne.log.any (fun s => mentions s "CR 714.4")
+
+/-- A later first-main lore counter advances a Saga that entered this turn. -/
+def loreAfterFirstMain : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  let g := settle (enterSaga g burnBurnTreeAndFern) 24
+  let g := skipTo g .end 80
+  let g := passBoth g
+  let g := skipTo g .end 80
+  let g := passBoth g
+  skipTo g .precombatMain 80
+
+#guard
+  loreAfterFirstMain.battlefield.any (fun o =>
+    o.name == "Burn, Burn, Tree and Fern" && o.status.lore ≥ 2)
+
 end Mtg.Engine.Tests
 
