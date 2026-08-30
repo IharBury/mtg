@@ -199,6 +199,9 @@ structure Status where
   harnessed : Bool := false
   /-- This permanent is currently showing its back face (MSH modal DFC). -/
   transformed : Bool := false
+  /-- Entered back-face-up because it is night and the front has daybound
+  (MSH 191). Transform is illegal. -/
+  cantTransform : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -991,6 +994,11 @@ structure Game where
   /-- After first-strike damage, a regular combat damage step is still pending
   (CR 702.7b). -/
   pendingRegularCombatDamage : Bool := false
+  /-- Creatures that assigned first-strike combat damage this combat. They
+  assign regular damage only if they have double strike (Okoye; MSH 173). -/
+  firstStrikeAssignedThisCombat : Array ObjectId := #[]
+  /-- It is night (CR 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  isNight : Bool := false
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
   /-- Snapshot of Head-of-the-Hunt-style replacements for one SBA death
@@ -1246,6 +1254,24 @@ another player is making the choices (MSH 346). -/
 def resourcesFor (g : Game) (actingAs : PlayerId) : PlayerId :=
   let _ := g
   actingAs
+
+/-- You still make your own choices while controlling another player
+(MSH 334) and you make all of that player's choices (MSH 336). -/
+def decidesFor (g : Game) (actor whose : PlayerId) : Bool :=
+  match g.playerControl with
+  | some (you, them) =>
+    if whose == them then actor == you else actor == whose
+  | none => actor == whose
+
+/-- You can see everything the controlled player can see (MSH 335). -/
+def canSeeAs (g : Game) (viewer whose : PlayerId) : Bool :=
+  viewer == whose || g.controlsPlayer viewer whose
+
+/-- Cards in `whose` hand that `viewer` may look at. -/
+def visibleHand (g : Game) (viewer whose : PlayerId) : Array GameObject :=
+  if g.canSeeAs viewer whose then
+    (g.player whose).hand.filterMap (fun id => g.findObject? id)
+  else #[]
 
 /-- Whether `p` currently has an enduring story. -/
 def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
@@ -2879,9 +2905,21 @@ def hasVigilance (g : Game) (o : GameObject) : Bool :=
 def hasFlying (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.flying)
 
+/-- Okoye: attacking creature tokens you control have first strike. -/
+def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.status.attacking && o.printed.isToken &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun src =>
+        src.staticAbilities.any (fun
+          | .msh .attackingCreatureTokensYouControlHaveFirst => true
+          | _ => false))
+
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
 def hasFirstStrike (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike)
+  g.hasKeyword o (·.firstStrike) || g.hasKeyword o (·.doubleStrike) ||
+    g.okoyeGrantsFirstStrike o
 
 /-- Whether `o` has double strike (CR 702.4). -/
 def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
@@ -3158,9 +3196,14 @@ def creaturesAssigningCombatDamage (g : Game) (forAttackers : Bool) : Array Game
       g.battlefield.filter (·.status.attacking)
     else
       g.battlefield.filter (fun o => !o.status.blocking.isEmpty)
-  if !g.combatHasFirstStrike then all
+  if !g.combatHasFirstStrike && g.firstStrikeAssignedThisCombat.isEmpty then all
   else if !g.firstStrikeDamageDone then all.filter (g.hasFirstStrike)
-  else all.filter (fun o => !g.hasFirstStrike o || g.hasDoubleStrike o)
+  else
+    all.filter (fun o =>
+      if g.firstStrikeAssignedThisCombat.any (· == o.id) then
+        g.hasDoubleStrike o
+      else
+        !g.hasFirstStrike o || g.hasDoubleStrike o)
 
 /-- Legal creature recipients for `source`'s combat damage (CR 510.1c–d). -/
 def legalCombatDamageRecipients (g : Game) (source : GameObject) (forAttackers : Bool) :
@@ -4398,6 +4441,29 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
 def afterLandEnters (g : Game) (land : GameObject) : Game :=
   let g := g.afterPermanentEnters land
   g.putLandYouControlEntersTriggers (g.object! land.id)
+
+/-- Nick Fury power-up: put a Hero, Equipment, or Vehicle onto the battlefield.
+A daybound front face enters back-face-up at night and cannot transform
+(MSH 191). Otherwise it enters front-face-up; you may then transform a DFC
+(MSH 192). Front-face enters abilities trigger in either case before the
+optional transform. -/
+def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game :=
+  let some o := g.findObject? id | g.logMsg "No card to put onto the battlefield"
+  let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
+  let (g, newId) := g.putOntoBattlefield id controller
+  let o := g.object! newId
+  let g :=
+    if nightBack then
+      match o.printed.otherFace with
+      | some back =>
+        let shown := { back with otherFace := some { o.printed with otherFace := none } }
+        let g := g.setObject { o with
+          printed := shown
+          status := { o.status with transformed := true, cantTransform := true } }
+        g.logMsg s!"{shown.name} enters back face up (night / daybound)"
+      | none => g
+    else g
+  g.afterPermanentEnters (g.object! newId)
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
@@ -9455,14 +9521,17 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
   | .transform =>
     g.withSourceOnBattlefield sourceId fun g o =>
-      match o.printed.otherFace with
-      | none => g.logMsg s!"{o.name} has no other face"
-      | some face =>
-        let back := { face with otherFace := some { o.printed with otherFace := none } }
-        let g := g.setObject { o with
-          printed := back
-          status := { o.status with transformed := !o.status.transformed } }
-        g.logMsg s!"{o.name} transforms into {back.name}"
+      if o.status.cantTransform then
+        g.logMsg s!"{o.name} can't transform (entered back face up at night)"
+      else
+        match o.printed.otherFace with
+        | none => g.logMsg s!"{o.name} has no other face"
+        | some face =>
+          let back := { face with otherFace := some { o.printed with otherFace := none } }
+          let g := g.setObject { o with
+            printed := back
+            status := { o.status with transformed := !o.status.transformed } }
+          g.logMsg s!"{o.name} transforms into {back.name}"
   | .drawX =>
     let x :=
       match sourceId.bind g.findObject? with
@@ -11615,11 +11684,16 @@ def dealAssignedCombatDamage (g : Game) : Game :=
         | none => pure ()
     let pendingRegular :=
       g.combatHasFirstStrike && !g.firstStrikeDamageDone
+    let assignedFs :=
+      if pendingRegular then
+        g.firstStrikeAssignedThisCombat ++ g.assignedCombatDamage.map (·.source)
+      else g.firstStrikeAssignedThisCombat
     g := { g with
       assignedCombatDamage := #[]
       pending := .none
       firstStrikeDamageDone := g.firstStrikeDamageDone || g.combatHasFirstStrike
-      pendingRegularCombatDamage := pendingRegular }
+      pendingRegularCombatDamage := pendingRegular
+      firstStrikeAssignedThisCombat := assignedFs }
     return g.receivePriority g.activePlayer
 
 /-- Record a legal assignment batch and append it for later dealing. -/
@@ -11675,6 +11749,7 @@ def clearCombat (g : Game) : Game :=
     let mut g := { g with
       firstStrikeDamageDone := false
       pendingRegularCombatDamage := false
+      firstStrikeAssignedThisCombat := #[]
       blockersQueue := #[] }
     for o in g.battlefield do
       if o.status.attacking || !o.status.blocking.isEmpty || o.status.blocked then

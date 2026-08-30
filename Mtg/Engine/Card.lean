@@ -6500,6 +6500,8 @@ structure CardDef where
   chooseBothIfTeamwork : Bool := false
   /-- This permanent enters with this many shield counters. -/
   entersWithShield : Nat := 0
+  /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
+  daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
 deriving Repr, Inhabited

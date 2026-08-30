@@ -2537,6 +2537,70 @@ def boastOncePerTurnOk : Bool :=
 
 #guard boastOncePerTurnOk
 
+/-- Ruling 173: a token that dealt first-strike damage and then lost first
+strike does not also deal regular combat damage. -/
+def okoyeFirstStrikeLossOk : Bool :=
+  let g := addPermanent afterDraw okoyeDoraMilajeLeader ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ soldier11whiteToken
+  let g := g.setObject { tok with status := { tok.status with
+    attacking := true, attackingWhom := some ⟨1⟩ } }
+  let tok := g.object! tok.id
+  g.hasFirstStrike tok &&
+    (let g := { g with
+        firstStrikeDamageDone := true
+        firstStrikeAssignedThisCombat := #[tok.id] }
+     let (g, _) := g.move (namedPermanent g "Okoye, Dora Milaje Leader").id
+       (.graveyard ⟨0⟩) none
+     let tok := g.object! tok.id
+     !g.hasFirstStrike tok &&
+       !(g.creaturesAssigningCombatDamage true).any (fun o => o.id == tok.id)) &&
+    (mshRuling 173).comment.contains "won't also deal normal combat damage"
+
+#guard okoyeFirstStrikeLossOk
+
+/-- Rulings 191 / 192: Nick Fury puts a DFC onto the battlefield front-face-up
+unless it is night and the front has daybound. -/
+def nickFuryDayboundOk : Bool :=
+  let dfc : CardDef := { bruceBanner with daybound := true }
+  let gDay := addToLibraryTop afterDraw dfc ⟨0⟩
+  let top := (gDay.player ⟨0⟩).library.back!
+  let gDay := gDay.enterFromNickFury ⟨0⟩ top
+  namedPermanent gDay "Bruce Banner" |>.name == "Bruce Banner" &&
+    !namedPermanent gDay "Bruce Banner" |>.status.cantTransform &&
+    (let g := gDay.applyAbilityEffect ⟨0⟩ .transform #[]
+       (some (namedPermanent gDay "Bruce Banner").id)
+     namedPermanent g "The Incredible Hulk" |>.name == "The Incredible Hulk") &&
+    (let gNight := addToLibraryTop { afterDraw with isNight := true } dfc ⟨0⟩
+     let top := (gNight.player ⟨0⟩).library.back!
+     let gNight := gNight.enterFromNickFury ⟨0⟩ top
+     let hulk := namedPermanent gNight "The Incredible Hulk"
+     hulk.status.cantTransform &&
+       (let gNight := gNight.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
+        namedPermanent gNight "The Incredible Hulk" |>.name == "The Incredible Hulk" &&
+          logContains gNight "can't transform")) &&
+    (mshRuling 191).comment.contains "daybound" &&
+    (mshRuling 192).comment.contains "front face up"
+
+#guard nickFuryDayboundOk
+
+/-- Rulings 334 / 335 / 336: you still decide for yourself, you see the
+controlled player's hand, and you make their choices. -/
+def controlPlayerChoicesOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
+  g.decidesFor ⟨0⟩ ⟨0⟩ &&
+    g.decidesFor ⟨0⟩ ⟨1⟩ &&
+    !g.decidesFor ⟨1⟩ ⟨1⟩ &&
+    g.canSeeAs ⟨0⟩ ⟨1⟩ &&
+    !g.canSeeAs ⟨1⟩ ⟨0⟩ &&
+    (g.visibleHand ⟨0⟩ ⟨1⟩).any (fun o => o.name == "Lightning Bolt") &&
+    (g.visibleHand ⟨1⟩ ⟨0⟩).isEmpty &&
+    (mshRuling 334).comment.contains "continue to make your own choices" &&
+    (mshRuling 335).comment.contains "you can see all cards" &&
+    (mshRuling 336).comment.contains "you make all choices"
+
+#guard controlPlayerChoicesOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
