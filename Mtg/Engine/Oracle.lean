@@ -76,7 +76,8 @@ def stripAbilityWord (s : String) : String :=
         h == "Do You Like Squirrels?" || h == "I LOVE Squirrels!" ||
         h == "Net" || h == "Explosive" || h == "Boomerang" ||
         h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
-        h == "Trick Arrows" || h == "Radar Sense"
+        h == "Trick Arrows" || h == "Radar Sense" ||
+        h == "Photographic Reflexes" || h == "Cybernetic Senses"
       if h.isEmpty || (h.contains ' ' && !known) then s
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s

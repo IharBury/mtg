@@ -853,7 +853,7 @@ def equipWorthyOk : Bool :=
         let loki := namedPermanent g "Loki, God of Mischief"
         let serum := namedPermanent g "Super-Soldier Serum"
         let g := g.attachSourceTo serum loki
-        let g := g.applyModeledTrigger ⟨0⟩ .wheneverEnchantedCreatureAttacksOrBlocks
+        let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .enchantedAttachEquipment)
           (some (namedPermanent g "Super-Soldier Serum").id)
           #[Target.permanent hammer.id]
         (namedPermanent g "Mjölnir, Hammer of Thor").attachedTo == some loki.id)) &&
@@ -1270,7 +1270,7 @@ def onceEachTurnConniveWordingOk : Bool :=
   w1 == 1 &&
     !strucker.status.firedOnceEachTurn &&
     !strucker.status.optionalOnceUsed &&
-    (let gDec := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+    (let gDec := g.applyModeledTrigger ⟨0⟩ (.onWatch .villainConniveOnce)
        (some struckerId)
      let strucker := namedPermanent gDec "Baron Strucker, HYDRA Overlord"
      !strucker.status.optionalOnceUsed &&
@@ -1279,7 +1279,7 @@ def onceEachTurnConniveWordingOk : Bool :=
         let g2 := g2.afterPermanentEnters (namedPermanent g2 "Baron Helmut Zemo")
         villainWait g2 == w1 + 1)) &&
     (let hand0 := (g.player ⟨0⟩).hand.size
-     let gYes := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+     let gYes := g.applyModeledTrigger ⟨0⟩ (.onWatch .villainConniveOnce)
        (some struckerId) #[Target.permanent rg.id]
      let strucker := namedPermanent gYes "Baron Strucker, HYDRA Overlord"
      strucker.status.optionalOnceUsed &&
@@ -1288,7 +1288,7 @@ def onceEachTurnConniveWordingOk : Bool :=
         let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
         let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
         villainWait g3 == wYes) &&
-       (let gNo := gYes.applyModeledTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+       (let gNo := gYes.applyModeledTrigger ⟨0⟩ (.onWatch .villainConniveOnce)
           (some struckerId) #[Target.permanent rg.id]
         (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
           gNo.log.any (fun s => mentions s "no effect"))) &&
@@ -1349,11 +1349,11 @@ def illegalTargetDoesNothingOk : Bool :=
       gone
   let gAbsorb :=
     let g := addPermanent gGone absorbingMan ⟨0⟩ ⟨0⟩
-    g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfYourFirstMainPhase
+    g.applyModeledTrigger ⟨0⟩ (.onStep .copyAbsorbingMan)
       (some (namedPermanent g "Absorbing Man").id) gone
   let gTask :=
     let g := addPermanent gGone taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
-    g.applyModeledTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf
+    g.applyModeledTrigger ⟨0⟩ (.onStep .copyTaskmaster)
       (some (namedPermanent g "Taskmaster, Mercenary Mimic").id) gone
   (gDepower.player ⟨0⟩).hand.size == hand0 &&
     (gHour.player ⟨0⟩).library.size == lib0 &&
@@ -1580,7 +1580,7 @@ def hulklingGreaterStatOk : Bool :=
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let fires := g.waitingTriggers.any (fun t =>
     t.source.name == "Hulkling, Burgeoning Bruiser")
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .hulklingCompare)
     (some hulkling.id) #[Target.permanent giant.id]
   (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1 &&
     fires &&
@@ -1714,7 +1714,7 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
   bears.status.tapped && bears.status.becameTappedThisTurn &&
     g.waitingTriggers.any (fun t =>
       t.source.name == "Captain America, Living Legend") &&
-    (let g := g.applyModeledTrigger ⟨0⟩ .wheneverACreatureYouControlBecomesTappedD
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .firstTapUntap)
        none #[]
      !(namedPermanent g "Grizzly Bears").status.tapped) &&
     (mshRuling 104).comment.contains "became tapped earlier" &&
@@ -1829,7 +1829,7 @@ def absorbingManCopyOk : Bool :=
   let am := namedPermanent g "Absorbing Man"
   let doom := namedPermanent g "Doctor Doom"
   let before := g.waitingTriggers.size
-  let g := g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfYourFirstMainPhase (some am.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep .copyAbsorbingMan) (some am.id)
     #[Target.permanent doom.id]
   let am := namedPermanent g "Absorbing Man"
   am.printed.name == "Absorbing Man" &&
@@ -1849,7 +1849,7 @@ def taskmasterCopyOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.applyModeledTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf (some tm.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep .copyTaskmaster) (some tm.id)
     #[Target.permanent giant.id]
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
   tm.printed.name == "Taskmaster, Mercenary Mimic" &&
@@ -1861,7 +1861,7 @@ def taskmasterCopyOk : Bool :=
      let (g2, _) := g2.move giant.id (.graveyard ⟨1⟩) none
      let gy := namedGraveyardCard g2 ⟨1⟩ "Hill Giant"
      let tm := namedPermanent g2 "Taskmaster, Mercenary Mimic"
-     let g2 := g2.applyModeledTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf
+     let g2 := g2.applyModeledTrigger ⟨0⟩ (.onStep .copyTaskmaster)
        (some tm.id) #[Target.card gy.id]
      (namedPermanent g2 "Taskmaster, Mercenary Mimic").printed.power ==
        hillGiant.power) &&
@@ -1935,13 +1935,13 @@ def sheHulkDamageOnceOk : Bool :=
   g.waitingTriggers.any (fun t =>
     t.source.name == "The Sensational She-Hulk") &&
     (let (g, _) := g.move she.id (.graveyard ⟨0⟩) none
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverACreatureYouControlIsDealtDamage
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .sheHulkRedirectOnce)
        (some she.id) #[Target.permanent giant.id]
        "The Sensational She-Hulk" (some 3)
      let giant := namedPermanent g "Hill Giant"
      giant.status.damage == 3 &&
        g.sheHulkDamageUsedThisTurn &&
-       (let g := g.applyModeledTrigger ⟨0⟩ .wheneverACreatureYouControlIsDealtDamage
+       (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .sheHulkRedirectOnce)
           (some she.id) #[Target.permanent giant.id]
           "The Sensational She-Hulk" (some 5)
         (namedPermanent g "Hill Giant").status.damage == 3 &&
@@ -2030,7 +2030,7 @@ def vivVisionLastKnownPowerOk : Bool :=
   let pw := g.power viv
   let hand0 := (g.player ⟨0⟩).hand.size
   let (g, _) := g.move viv.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .cyberneticSensesWheneverVivVision (some viv.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack .drawIfPower4) (some viv.id)
     #[] "Viv Vision" (some pw)
   pw >= 4 &&
     (g.player ⟨0⟩).hand.size == hand0 + 1 &&
@@ -2201,7 +2201,7 @@ def whiplashLastKnownEquipmentOk : Bool :=
   let you0 := (g.player ⟨0⟩).life
   let (g, _) := g.move (namedPermanent g "Whiplash, Vengeful Engineer").id
     (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverWhiplashAttacks (some whip.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack .equippedDrain) (some whip.id)
     #[] "Whiplash" (some (Int.ofNat n))
   n == 2 &&
     (g.player ⟨1⟩).life + n == life0 &&
@@ -2242,10 +2242,10 @@ def hawkeyeReflexivePayOk : Bool :=
   let g := addPermanent afterDraw hawkeyeMasterMarksman ⟨0⟩ ⟨0⟩
   let hawk := namedPermanent g "Hawkeye, Master Marksman"
   let nonePaid :=
-    g.applyModeledTrigger ⟨0⟩ .trickArrowsWheneverHawkeyeBec (some hawk.id)
+    g.applyModeledTrigger ⟨0⟩ (.onWatch .hawkeyeModes) (some hawk.id)
       #[] "Hawkeye" none
   !nonePaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ .trickArrowsWheneverHawkeyeBec (some hawk.id)
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .hawkeyeModes) (some hawk.id)
        #[] "Hawkeye" (some (2 : Int))
      g.pendingMshReflexive.isSome &&
        g.pendingMshReflexivePaid == 2 &&
@@ -2317,9 +2317,9 @@ def grimReaperReflexiveOk : Bool :=
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let grim := namedPermanent g "Grim Reaper, Lethal Legionnaire"
   let unpaid :=
-    g.applyModeledTrigger ⟨0⟩ .wheneverGrimReaperAttacks (some grim.id)
+    g.applyModeledTrigger ⟨0⟩ (.onThisAttack .payReturnAttacking) (some grim.id)
   !unpaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ .wheneverGrimReaperAttacks (some grim.id)
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onThisAttack .payReturnAttacking) (some grim.id)
        #[] "Grim Reaper" (some (1 : Int))
      g.pendingMshReflexive.isSome &&
        (let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
@@ -2359,7 +2359,7 @@ def redHulkReflexiveOk : Bool :=
   let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let hulk := namedPermanent g "Red Hulk"
-  let g := g.applyModeledTrigger ⟨0⟩ .enrageWheneverRedHulkIs (some hulk.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .redHulk) (some hulk.id)
   (namedPermanent g "Red Hulk").status.plusOnePlusOne == 1 &&
     g.pendingMshReflexive.isSome &&
     g.pendingMshReflexivePaid == 1 &&
@@ -2369,7 +2369,7 @@ def redHulkReflexiveOk : Bool :=
     (let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
      let hulk := namedPermanent g "Red Hulk"
      let (g, _) := g.move hulk.id (.graveyard ⟨0⟩) none
-     let g := g.applyModeledTrigger ⟨0⟩ .enrageWheneverRedHulkIs (some hulk.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .redHulk) (some hulk.id)
      !g.pendingMshReflexive.isSome) &&
     (mshRuling 273).comment.contains "must survive the damage" &&
     (mshRuling 365).comment.contains "reflexive"
@@ -2382,9 +2382,9 @@ def speedYoungAvengerReflexiveOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let speed := namedPermanent g "Speed, Young Avenger"
   let unpaid :=
-    g.applyModeledTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell5 (some speed.id)
+    g.applyModeledTrigger ⟨0⟩ (.onCasting .mayPayHasteUnblockable) (some speed.id)
   !unpaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell5
+    (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting .mayPayHasteUnblockable)
        (some speed.id) #[] "Speed" (some (1 : Int))
      g.pendingMshReflexive.isSome &&
        (let speed := namedPermanent g "Speed, Young Avenger"
@@ -2450,11 +2450,11 @@ def speedballRetargetOk : Bool :=
   let g := g.setStackEntryTargets bolt.id #[Target.permanent speed.id]
   let (gGone, _) := g.move bolt.id (.graveyard ⟨1⟩) none
   let gGone :=
-    gGone.applyModeledTrigger ⟨0⟩ .wheneverAPlayerCastsASpellThatTargetsSpe (some speed.id)
+    gGone.applyModeledTrigger ⟨0⟩ (.onWatch .speedballTargeted) (some speed.id)
   gGone.power (namedPermanent gGone "Speedball, New Warrior") == 4 &&
     gGone.toughness (namedPermanent gGone "Speedball, New Warrior") == 4 &&
     (let g :=
-       g.applyModeledTrigger ⟨0⟩ .wheneverAPlayerCastsASpellThatTargetsSpe (some speed.id)
+       g.applyModeledTrigger ⟨0⟩ (.onWatch .speedballTargeted) (some speed.id)
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.retargetStackSpell bolt.id #[Target.permanent bears.id]
      (match g.stackEntry? bolt.id with
@@ -2501,7 +2501,7 @@ def kingpinExtortAndToughnessOk : Bool :=
      let g := g.setObject { kp with status := { kp.status with
        attacking := true, attackingWhom := some ⟨1⟩, summoningSick := false } }
      let kp := namedPermanent g "The Kingpin of Crime"
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouAttack3 (some kp.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking .pay2LifeToughness) (some kp.id)
        #[] "The Kingpin of Crime" (some (1 : Int))
      let kp := namedPermanent g "The Kingpin of Crime"
      g.power kp == 1 &&
@@ -2544,7 +2544,7 @@ def aresDiesAttackingOk : Bool :=
     attacking := true, attackingWhom := some ⟨1⟩ } }
   let ares := namedPermanent g "Ares, God of War"
   let (g, _) := g.move ares.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnAttackingCreatureYouControlDies
+  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath .attackingReturnHand)
     (some ares.id)
   (g.handObjects ⟨0⟩).any (fun o => o.name == "Ares, God of War") &&
     !g.battlefield.any (fun o => o.name == "Ares, God of War") &&
@@ -2800,7 +2800,7 @@ def daredevilPlayExiledOk : Bool :=
   let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let dd := namedPermanent g "Daredevil, Man Without Fear"
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouAttack2 (some dd.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking .exileTopHeroPump) (some dd.id)
   let bolt? := g.objects.find? (fun o =>
     o.name == "Lightning Bolt" && o.zone == .exile)
   (match bolt? with
@@ -2811,7 +2811,7 @@ def daredevilPlayExiledOk : Bool :=
     (let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
      let g := addToLibraryTop g mistyKnightHeroForHire ⟨0⟩
      let dd := namedPermanent g "Daredevil, Man Without Fear"
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouAttack2 (some dd.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking .exileTopHeroPump) (some dd.id)
      let hero? := g.objects.find? (fun o =>
        o.name == "Misty Knight, Hero for Hire" && o.zone == .exile)
      match hero? with
@@ -2938,7 +2938,7 @@ def crossbonesVillainOnceOk : Bool :=
              (namedPermanent g "Baron Strucker, HYDRA Overlord")
            villainWait g == 1))) &&
     (let xb := namedPermanent g0 "Crossbones, Malicious Mercenary"
-     let g := g0.applyModeledTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters3
+     let g := g0.applyModeledTrigger ⟨0⟩ (.onWatch .villainPlusOneDamageOnce)
        (some xb.id)
      (namedPermanent g "Crossbones, Malicious Mercenary").status.plusOnePlusOne == 1 &&
        (g.player ⟨1⟩).life == 18) &&
@@ -3225,16 +3225,16 @@ def hulklingRecheckOk : Bool :=
   let giant := namedPermanent g "Hill Giant"
   let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
   let gShrink := g.pumpPermanent giant (-2) (-2)
-  let gShrink := gShrink.applyModeledTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+  let gShrink := gShrink.applyModeledTrigger ⟨0⟩ (.onWatch .hulklingCompare)
     (some hulkling.id) #[Target.permanent giant.id]
   (namedPermanent gShrink "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
      let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
      let giants := g.battlefield.filter (fun o => o.name == "Hill Giant")
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .hulklingCompare)
        (some hulkling.id) #[Target.permanent giants[0]!.id]
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .hulklingCompare)
        (some hulkling.id) #[Target.permanent giants[1]!.id]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
     (let g := mshEnter afterDraw hulklingBurgeoningBruiser
@@ -3244,7 +3244,7 @@ def hulklingRecheckOk : Bool :=
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
      let g := g.mapObjectStatus hulkling (fun s => { s with setBasePT := some (4, 3) })
      let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+     let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .hulklingCompare)
        (some hulkling.id) #[Target.permanent bot.id]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
     (mshRuling 134).comment.contains "stat comparison will happen again" &&
@@ -3507,7 +3507,7 @@ def thunderboltsHeroTypeOk : Bool :=
   let (g, _) := g.move villain.id (.graveyard ⟨0⟩) none
   let gy := namedGraveyardCard g ⟨0⟩ "Agents of HYDRA"
   let before := g.waitingTriggers.size
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverAVillainYouControlDies
+  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath .villainReturnAsHero)
     (some (namedPermanent g "Thunderbolts Conspiracy").id) #[Target.card gy.id]
   let o := namedPermanent g "Agents of HYDRA"
   g.hasSubtype o "Hero" &&
@@ -3710,9 +3710,9 @@ def ironFistMultipleGrantsOk : Bool :=
   let g := addPermanent afterDraw ironFistLivingWeapon ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let fist := namedPermanent g "Iron Fist, Living Weapon"
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouCastASpellThatTargetsACreatur
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting .ironFistTap)
     (some fist.id)
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouCastASpellThatTargetsACreatur
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting .ironFistTap)
     (some fist.id)
   (namedPermanent g "Iron Fist, Living Weapon").status.ironFistTapGrants == 2 &&
     (mshRuling 106).comment.contains "multiple instances"
@@ -3828,7 +3828,7 @@ def serumHostLeftOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.attachSourceTo eq ogre
   let serum := namedPermanent g "Super-Soldier Serum"
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverEnchantedCreatureAttacksOrBlocks
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .enchantedAttachEquipment)
     (some serum.id) #[Target.permanent eq.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
     logContains g "Equipment stays" &&
@@ -3892,7 +3892,7 @@ def ultronAfterEnterOk : Bool :=
   let before :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.creatureYouControlEnters)).size
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherNontokenArtifactYouControlE
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .ultronCopy)
     (some (namedPermanent g "Ultron, Artificial Malevolence").id)
     #[Target.permanent stone.id]
   let tok :=
@@ -3968,7 +3968,7 @@ def visionModesExhaustedOk : Bool :=
   let vis := namedPermanent g "The Vision"
   let g := g.mapObjectStatus vis (fun s => { s with chosenModes := #[0, 1, 2] })
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell2
+  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting .visionModes)
     (some (namedPermanent g "The Vision").id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     logContains g "removed from the stack" &&
@@ -3985,7 +3985,7 @@ def swordsmanIllegalOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let g := g.attachSourceTo eq ogre
   let (g, _) := g.move ogre.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters2
+  let g := g.applyModeledTrigger ⟨0⟩ (.onWatch .villainAttachEquipment)
     (some (namedPermanent g "Swordsman, Sharp Scoundrel").id)
     #[Target.permanent eq.id, Target.permanent ogre.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo.isNone &&
@@ -3999,12 +3999,12 @@ def hydeMustRemoveOk : Bool :=
   let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
   let g := g.addPlusOnePlusOneTo hyde 1
-  let g := g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfYourUpkeep
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep .hydeChoose)
     (some (namedPermanent g "Mister Hyde, Monster Within").id) #[]
     "Mister Hyde, Monster Within" (some (1 : Int))
   logContains g "must remove a counter" &&
     (let hyde := namedPermanent g "Mister Hyde, Monster Within"
-     let g := g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfYourUpkeep
+     let g := g.applyModeledTrigger ⟨0⟩ (.onStep .hydeChoose)
        (some hyde.id) #[Target.permanent hyde.id]
        "Mister Hyde, Monster Within" (some (1 : Int))
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
@@ -4017,14 +4017,14 @@ def hydeMustRemoveOk : Bool :=
 def humanTorchInterveningOk : Bool :=
   let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
   let torch := namedPermanent g "Human Torch, Johnny Storm"
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouDrawACard (some torch.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource .drawIfAnotherHeroDamage) (some torch.id)
     #[Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == 20 &&
     logContains g "has no effect" &&
     (let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
      let g := addPermanent g colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
      let torch := namedPermanent g "Human Torch, Johnny Storm"
-     let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouDrawACard (some torch.id)
+     let g := g.applyModeledTrigger ⟨0⟩ (.onResource .drawIfAnotherHeroDamage) (some torch.id)
        #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life == 19) &&
     (mshRuling 233).comment.contains "won't trigger"
@@ -4130,7 +4130,7 @@ def moonGirlOverwriteOk : Bool :=
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
   let g := g.mapObjectStatus mg (fun s => { s with setBasePT := some (1, 1), pump := (1, 1) })
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Moon Girl and Devil Dinosaur") 1
-  let g := g.applyModeledTrigger ⟨0⟩ .wheneverYouDrawYourSecondCardEachTurn3
+  let g := g.applyModeledTrigger ⟨0⟩ (.onResource .secondDrawBecome66)
     (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
   g.power mg == 8 && g.toughness mg == 8 &&
@@ -4183,7 +4183,7 @@ def tenRingsReplacementOk : Bool :=
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := { g with step := .end }
-  let g := g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfYourEndStep (some rings.id)
+  let g := g.applyModeledTrigger ⟨0⟩ (.onStep .drawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
     (mshRuling 298).comment.contains "replacement effects"
 
@@ -4249,7 +4249,7 @@ def cosmicCubeSetup : Game :=
 /-- Ruling 356: Cosmic Cube looks at the top six and waits for the controller. -/
 def cosmicCubePending : Game :=
   let cube := namedPermanent cosmicCubeSetup "Cosmic Cube"
-  cosmicCubeSetup.applyModeledTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
+  cosmicCubeSetup.applyModeledTrigger ⟨0⟩ (.onYouAttacking .lookSixCast) (some cube.id)
 
 def cosmicCubeLookedNamed (g : Game) (name : String) : ObjectId :=
   match g.pending with
