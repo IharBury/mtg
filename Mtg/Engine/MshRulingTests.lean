@@ -134,7 +134,22 @@ def teamworkNotPaidWhenNotCastOk : Bool :=
 /-- Ruling 5: casting without paying the mana cost still allows optional
 additional costs such as teamwork. -/
 def teamworkOptionalOnFreeCastOk : Bool :=
-  (mshRuling 5).comment.contains "without paying its mana cost" &&
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status :=
+    { bears.status with attacking := true, summoningSick := false } }
+  let g := addToHand g helicarrierStrike ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Helicarrier Strike"
+  let g := g.setObject { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  let card := handCardNamed g ⟨0⟩ "Helicarrier Strike"
+  !(g.playManaCost card helicarrierStrike).includesManaPayment &&
+    (let g := mustApply g ⟨0⟩ (.cast card.id)
+     let g := mustApply g ⟨0⟩ (.announceTeamwork true)
+     let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
+     (namedPermanent g "Grizzly Bears").status.tapped &&
+       g.log.any (fun s => mentions s "pays a teamwork cost")) &&
+    (mshRuling 5).comment.contains "without paying its mana cost" &&
     helicarrierStrike.teamwork.isSome &&
     (mshRuling 230).comment.contains "teamwork costs"
 
@@ -3047,20 +3062,49 @@ def theVoidAttacksIfAbleOk : Bool :=
 
 #guard theVoidAttacksIfAbleOk
 
-/-- Rulings 107 / 108 / 123 / 260 / 269 / 271 / 282 / 285 / 311 / 339:
-cast triggers wait on the stack above the spell, and a multi-target spell
-queues the ability once. -/
+/-- Rulings 107 / 108 / 123 / 239 / 248 / 250 / 251 / 260 / 269 / 271 / 282 /
+285 / 311 / 339: a spell that targets a creature you control queues those
+cast triggers once, above the spell. Madame Hydra queues on a Villain
+spell. Loki (247) queues when an ability you control gets a target. -/
 def castTriggerBeforeSpellOk : Bool :=
   let g := addPermanent afterDraw colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ironFistLivingWeapon ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mockingbirdAceAgent ⟨0⟩ ⟨0⟩
+  let g := addPermanent g msMarvelKamalaKhan ⟨0⟩ ⟨0⟩
+  let g := addPermanent g madameHydra ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lokiGodOfMischief ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, spell) := g.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.putStackEntry ⟨0⟩ spell.id
+  let g :=
+    match g.stack.findIdx? (fun e => e.objectId == spell.id) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with
+          targets := #[Target.permanent bears.id] } }
   let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
-  let n :=
-    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.source.name == "Colleen Wing, Street Samurai")).size
-  n == 1 &&
+  let names :=
+    (g.waitingTriggers.map (fun (t : WaitingTrigger) => t.source.name))
+  names.any (· == "Colleen Wing, Street Samurai") &&
+    names.any (· == "Iron Fist, Living Weapon") &&
+    names.any (· == "Mockingbird, Ace Agent") &&
+    names.any (· == "Ms. Marvel, Kamala Khan") &&
+    !names.any (· == "Madame Hydra") &&
     g.objects.any (fun o => o.id == spell.id && o.zone == .stack) &&
+    (let (gV, villain) := g.allocObject agentsOfHYDRA ⟨0⟩ .stack (some ⟨0⟩)
+     let gV := gV.putStackEntry ⟨0⟩ villain.id
+     let gV := gV.putCastTriggersOnStack ⟨0⟩ (gV.object! villain.id)
+     (gV.waitingTriggers.map (fun (t : WaitingTrigger) => t.source.name)).any
+       (· == "Madame Hydra") &&
+       gV.objects.any (fun o => o.id == villain.id && o.zone == .stack)) &&
+    (let (gAb, ab) := g.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
+     let gAb := gAb.setObject { ab with abilityEffect := some (.dealDamageToTargetCreature 1) }
+     let gAb := gAb.putStackEntry ⟨0⟩ ab.id
+     let gAb := gAb.queueYouTargetTriggers ⟨0⟩ (gAb.object! ab.id)
+     gAb.waitingTriggers.any (fun (t : WaitingTrigger) =>
+         t.source.name == "Loki, God of Mischief") &&
+       gAb.objects.any (fun o => o.id == ab.id && o.zone == .stack)) &&
     (mshRuling 107).comment.contains "resolves before the spell" &&
     (mshRuling 108).comment.contains "doesn't trigger multiple times" &&
     (mshRuling 123).comment.contains "doesn't trigger multiple times" &&
@@ -3107,6 +3151,29 @@ def hawkeyeSameSourceOk : Bool :=
     (mshRuling 291).comment.contains "same source as the original"
 
 #guard hawkeyeSameSourceOk
+
+/-- Ruling 178: if all of a source's damage is prevented, Hawkeye's extra
+damage no longer applies. -/
+def hawkeyePreventionSkipsExtraOk : Bool :=
+  let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Aerial Doombot"
+  let hawk := namedPermanent g "Hawkeye, Young Avenger"
+  let extra := g.power hawk
+  let gHit := g.dealDamageFrom src.name (namedPermanent g "Grizzly Bears") 1
+    (source := some src)
+  (namedPermanent gHit "Grizzly Bears").status.damage == 1 + extra &&
+    (let gPrev := g.mapObjectStatus src (fun s =>
+        { s with preventDamageGrantedBy := #[src.id] })
+     let src := namedPermanent gPrev "Aerial Doombot"
+     let gPrev := gPrev.dealDamageFrom src.name (namedPermanent gPrev "Grizzly Bears") 1
+       (source := some src)
+     (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
+       gPrev.log.any (fun s => mentions s "prevented")) &&
+    (mshRuling 178).comment.contains "chooses an order"
+
+#guard hawkeyePreventionSkipsExtraOk
 
 /-- Ruling 348: The Ruinous Wrecking Crew cannot choose the same mode twice. -/
 def wreckingCrewModesOnceOk : Bool :=
@@ -3201,9 +3268,8 @@ def mindStoneAuraReturnOk : Bool :=
 
 #guard mindStoneAuraReturnOk
 
-/-- Rulings 177 / 178 / 179 / 237: Mjölnir doubles after assignment; two
-hammers multiply by four; prevention of all damage skips both Mjölnir and
-Hawkeye's extra. -/
+/-- Rulings 177 / 179 / 237: Mjölnir doubles after assignment; two hammers
+multiply by four; prevention of all damage skips Mjölnir. -/
 def mjolnirDoubleOk : Bool :=
   let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
@@ -3229,7 +3295,6 @@ def mjolnirDoubleOk : Bool :=
      (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
        gPrev.log.any (fun s => mentions s "prevented")) &&
     (mshRuling 177).comment.contains "chooses the order" &&
-    (mshRuling 178).comment.contains "chooses an order" &&
     (mshRuling 179).comment.contains "divided or assigned before doubling" &&
     (mshRuling 237).comment.contains "multiplied by four"
 
@@ -3371,7 +3436,7 @@ def ultronAfterEnterOk : Bool :=
 
 #guard ultronAfterEnterOk
 
-/-- Rulings 226 / 354: original division stands; an illegal target is skipped. -/
+/-- Ruling 226: original division stands; an illegal target is skipped. -/
 def deathToOurEnemiesDivisionOk : Bool :=
   let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -3381,10 +3446,31 @@ def deathToOurEnemiesDivisionOk : Bool :=
   let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
   let gGone := gGone.applyMshReflexive #[Target.player ⟨1⟩, Target.permanent bears.id]
   (gGone.player ⟨1⟩).life == 16 &&
-    (mshRuling 226).comment.contains "no damage is dealt to the illegal target" &&
-    (mshRuling 354).comment.contains "Each target must receive at least 1 damage"
+    (mshRuling 226).comment.contains "no damage is dealt to the illegal target"
 
 #guard deathToOurEnemiesDivisionOk
+
+/-- Ruling 354: each target of Death to Our Enemies' reflexive must receive
+at least 1 of the 7 damage; a 0-damage share is illegal and deals nothing. -/
+def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
+  let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let plan := namedPermanent g "Death to Our Enemies"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.queueMshReflexive ⟨0⟩ (some plan.id) 10
+  let life0 := (g.player ⟨1⟩).life
+  let gZero := g.applyMshReflexive
+    #[Target.player ⟨1⟩, Target.permanent bears.id] #[0, 7]
+  let gOk := g.applyMshReflexive
+    #[Target.player ⟨1⟩, Target.permanent bears.id] #[1, 6]
+  (gZero.player ⟨1⟩).life == life0 &&
+    (namedPermanent gZero "Grizzly Bears").status.damage == 0 &&
+    gZero.log.any (fun s => mentions s "at least 1 damage") &&
+    (gOk.player ⟨1⟩).life == life0 - 1 &&
+    (namedPermanent gOk "Grizzly Bears").status.damage == 6 &&
+    (mshRuling 354).comment.contains "Each target must receive at least 1 damage"
+
+#guard deathToOurEnemiesEachTargetAtLeastOneOk
 
 /-- Rulings 227 / 353: Zemo copies only this activation's exiles and casts
 them while resolving. -/

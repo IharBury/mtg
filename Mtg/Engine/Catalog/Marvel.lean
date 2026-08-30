@@ -643,7 +643,8 @@ def msMarvelKamalaKhan : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := (Keyword.reach).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic .youHaveNoMaximumHandSize, mshStatic .embiggenFistWheneverYouCastASpellThat])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsACreatur4])
+    (staticAbilities := #[mshStatic .youHaveNoMaximumHandSize])
 
 def multiversalIncursion : CardDef :=
   card "Multiversal Incursion" #[.sorcery] ({ symbols := #[.generic 5, .colored .blue, .colored .blue] })

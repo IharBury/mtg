@@ -4424,8 +4424,21 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.printed.hasSubtype "Villain" then
       g.putControlledTriggers caster .youCastVillain
     else g
+  let targetsCreatureYouControl : Bool :=
+    match g.stack.find? (fun e => e.objectId == spell.id) with
+    | some e =>
+      e.targets.any (fun t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o => o.isCreature && o.controlledBy caster
+          | none => false
+        | _ => false)
+    | none => false
   let g :=
-    g.putControlledTriggers caster .youCastTargetingCreatureYouControl
+    if targetsCreatureYouControl then
+      g.putControlledTriggers caster .youCastTargetingCreatureYouControl
+    else g
   let g :=
     if !spell.printed.isCreature && nonc == 1 then
       (g.livingOpponents caster).foldl (fun acc pl =>
@@ -6475,6 +6488,13 @@ def afterTriggerTargetsChosen (g : Game) : Game :=
   | none =>
     receivePriority { g with pending := .none } g.activePlayer false
 
+/-- Loki (MSH 247): when a player or permanent becomes the target of an
+ability you control, those triggers wait on the stack above that ability. -/
+def queueYouTargetTriggers (g : Game) (controller : PlayerId) (obj : GameObject) : Game :=
+  if obj.abilityEffect.isSome || obj.triggeredAbility.isSome then
+    g.putControlledTriggers controller .youTargetSomething
+  else g
+
 /-- Announce targets for the current instance of the word “target”
 (CR 601.2c / 603.3d). Multiple targets of one instance (including a
 “divided as you choose” division, CR 601.2d) are chosen together. Each
@@ -6527,6 +6547,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       for (t, n) in assignments do
         g := g.logMsg
           s!"{(g.player p).name} chooses {g.targetLogName t} to be dealt {n} damage (CR 601.2d)"
+      g := g.queueYouTargetTriggers p obj
       return g.afterTriggerTargetsChosen
     | none =>
       if choices.any (fun c => c.2.isSome) then
@@ -6555,6 +6576,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
             s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
         if g.proposedSpell.isSome then
           return g.afterTargetsChosen
+        g := g.queueYouTargetTriggers p obj
         return g.afterTriggerTargetsChosen
       if choices.size != 1 then
         throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
@@ -6568,6 +6590,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         return { g with pending := .chooseTargets p }
       if g.proposedSpell.isSome then
         return g.afterTargetsChosen
+      let g := g.queueYouTargetTriggers p obj
       return g.afterTriggerTargetsChosen
   | _ => throw "Not time to choose targets (CR 601.2c)"
 
@@ -7934,7 +7957,8 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
 
 /-- Resolve the pending MSH reflexive trigger with the now-chosen targets.
 If every target is illegal, nothing happens (MSH 125). -/
-def applyMshReflexive (g : Game) (targets : Array Target := #[]) : Game :=
+def applyMshReflexive (g : Game) (targets : Array Target := #[])
+    (division : Array Nat := #[]) : Game :=
   match g.pendingMshReflexive with
   | none => g.logMsg "No reflexive triggered ability is pending"
   | some (controller, sourceId, kind) =>
@@ -8026,18 +8050,29 @@ def applyMshReflexive (g : Game) (targets : Array Target := #[]) : Game :=
     else if kind == 10 then
       if targets.isEmpty then
         g.logMsg "No targets were chosen"
-      else if targets.size == 1 then
-        g.withLegalKindTarget controller .playerOrCreature targets
-          (fun g tgt => g.dealDamageToTarget tgt 7)
-          sourceId (some "The target is no longer legal")
+      else if targets.size > 2 then
+        g.logMsg "Choose one or two targets"
       else
-        let g :=
-          g.withLegalKindTarget controller .playerOrCreature #[targets[0]!]
-            (fun g tgt => g.dealDamageToTarget tgt 4)
-            sourceId (some "The target is no longer legal")
-        g.withLegalKindTarget controller .playerOrCreature #[targets[1]!]
-          (fun g tgt => g.dealDamageToTarget tgt 3)
-          sourceId (some "The target is no longer legal")
+        let amounts :=
+          if division.isEmpty then
+            if targets.size == 1 then #[7] else #[4, 3]
+          else division
+        if amounts.size != targets.size then
+          g.logMsg "Each target must be assigned a damage amount"
+        else if amounts.any (· == 0) then
+          g.logMsg "Each target must receive at least 1 damage"
+        else if amounts.foldl (· + ·) 0 != 7 then
+          g.logMsg "Must assign all 7 damage among the chosen targets"
+        else
+          Id.run do
+            let mut g := g
+            for i in [0:targets.size] do
+              let tgt := targets[i]!
+              let n := amounts[i]!
+              g := g.withLegalKindTarget controller .playerOrCreature #[tgt]
+                (fun g t => g.dealDamageToTarget t (Int.ofNat n))
+                sourceId (some "The target is no longer legal")
+            return g
     else if kind == 11 then
       targets.foldl (fun g tgt =>
         match tgt with
@@ -8679,6 +8714,14 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.mapObjectStatus o (fun s =>
         { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
         |>.logMsg s!"{o.name} gains a tap ability until end of turn")
+      "The source is no longer in play"
+  | .wheneverYouCastASpellThatTargetsACreatur4 =>
+    let g := g.draw controller 1
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.mapObjectStatus o (fun s =>
+        { s with grantedStaticAbilities :=
+            s.grantedStaticAbilities.push .powerEqualCardsInHand })
+        |>.logMsg s!"{o.name}'s base power is the number of cards in your hand")
       "The source is no longer in play"
   | .atTheBeginningOfYourUpkeep =>
     let mode := (lastKnownPower.getD 0).toNat

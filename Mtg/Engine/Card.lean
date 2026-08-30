@@ -4768,6 +4768,7 @@ def events : MshTrigger → Array TriggerEvent
   | .wheneverYouCastASpellThatTargetsACreatur => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsACreatur2 => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsACreatur3 => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastASpellThatTargetsACreatur4 => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsOneOrMo => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastAnInstantOrSorcerySpellTh => #[.youCastInstantOrSorcery]
   | .wheneverYouDiscardACard => #[.youDiscard]
@@ -4891,6 +4892,7 @@ def targeting : MshTrigger → EffectTargeting
   | .wheneverYouCastASpellThatTargetsACreatur => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur2 => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur3 => .of .none
+  | .wheneverYouCastASpellThatTargetsACreatur4 => .of .none
   | .wheneverYouCastASpellThatTargetsOneOrMo => .of .none
   | .wheneverYouCastAnInstantOrSorcerySpellTh => .of .none
   | .wheneverYouDiscardACard => .of .none
@@ -5013,6 +5015,7 @@ def allowsZeroTargets : MshTrigger → Bool
   | .wheneverYouCastASpellThatTargetsACreatur => false
   | .wheneverYouCastASpellThatTargetsACreatur2 => false
   | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsACreatur4 => false
   | .wheneverYouCastASpellThatTargetsOneOrMo => false
   | .wheneverYouCastAnInstantOrSorcerySpellTh => false
   | .wheneverYouDiscardACard => false
@@ -5135,6 +5138,7 @@ def onceEachTurn : MshTrigger → Bool
   | .wheneverYouCastASpellThatTargetsACreatur => false
   | .wheneverYouCastASpellThatTargetsACreatur2 => false
   | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsACreatur4 => false
   | .wheneverYouCastASpellThatTargetsOneOrMo => false
   | .wheneverYouCastAnInstantOrSorcerySpellTh => false
   | .wheneverYouDiscardACard => false
