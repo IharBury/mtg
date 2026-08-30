@@ -33,10 +33,11 @@ commands such as `state` and `quit` are omitted. When `--input` and
 accepted console commands are appended. `autopay` is recorded as the individual
 `tap` and `pay` commands it performs. `your turn`, `my turn`, `main phase`,
 and `attack step` keep passing until the named step (or until a player must
-take a non-pass action). `ignore` keeps passing until your next main phase
-even if other players take actions. Those shortcuts are recorded as the
-individual `pass` commands they perform (`noattack` / `noblock` when those
-are the only legal declarations). `attach <id>` attaches an Equipment
+take a non-pass action). Other players' pass-until shortcuts (recorded as
+`pass` sequences) do not interrupt those commands. `ignore` keeps passing
+until your next main phase and is not interrupted at all. Those shortcuts
+are recorded as the individual `pass` commands they perform (`noattack` /
+`noblock` when those are the only legal declarations). `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -84,7 +85,9 @@ Options:
                   new commands. Unique automatic cost payments are written
                   as tap, pay, and sacrifice commands. Pass-until shortcuts
                   (your turn, my turn, main phase, attack step, ignore) are written
-                  as the individual pass commands they perform
+                  as the individual pass commands they perform. Other players'
+                  pass-until shortcuts do not interrupt a pending shortcut;
+                  ignore is never interrupted
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
                   the game ends (a winner or a draw). Unused commands
@@ -662,7 +665,7 @@ def helpInteractive (controlAll : Bool := false)
   my turn              Pass until the main phase of the next turn if that turn is yours
   main phase           Pass until the next main phase
   attack step          Pass until the next declare attackers step
-  ignore               Pass until your next main phase (other players may still act)
+  ignore               Pass until your next main phase (never interrupted)
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
@@ -735,7 +738,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "attack [id...] [at] <name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "Each listed creature attacks that player").length > 1
 #guard ((helpInteractive false).splitOn "ignore").length > 1
-#guard ((helpInteractive false).splitOn "other players may still act").length > 1
+#guard ((helpInteractive false).splitOn "never interrupted").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2g").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2b").length > 1
 #guard ((helpInteractive false).splitOn "resolved trigger requires").length > 1
@@ -749,6 +752,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "Unique automatic cost payments").length > 1
 #guard (usage.splitOn "Pass-until shortcuts").length > 1
 #guard (usage.splitOn "individual pass commands they perform").length > 1
+#guard (usage.splitOn "do not interrupt a pending shortcut").length > 1
+#guard (usage.splitOn "ignore is never interrupted").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
 #guard (usage.splitOn "--name NAME").length > 1
@@ -2960,15 +2965,16 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
 
 /-- A primitive command the shortcut may issue without asking. `pass` when
 someone has priority; `noattack` / `noblock` only when that is the sole
-legal combat declaration (same rule as the automatic console steps). -/
-def passUntilCommand? (g : Game) : Option String :=
+legal combat declaration (same rule as the automatic console steps), unless
+`forceEmptyCombat` is set because another player accepted a pending shortcut. -/
+def passUntilCommand? (g : Game) (forceEmptyCombat := false) : Option String :=
   match g.pending, g.actor with
   | .none, some p =>
     if g.hasPriority p then some "pass" else none
   | .declareAttackers, some _ =>
-    if !(g.battlefield.any g.canAttack) then some "noattack" else none
+    if forceEmptyCombat || !(g.battlefield.any g.canAttack) then some "noattack" else none
   | .declareBlockers, some _ =>
-    if !hasLegalBlock g then some "noblock" else none
+    if forceEmptyCombat || !hasLegalBlock g then some "noblock" else none
   | _, _ => none
 
 /-- Apply one recorded pass-until line as the current actor. -/
@@ -2981,10 +2987,11 @@ def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
   | _ => throw s!"Unknown pass-until command: {line}"
 
 /-- Keep issuing `pass` (and empty combat declarations when they are the
-only legal action) until `target`, the game ends, or a player must take a
-non-pass action. -/
+only legal action, or whenever `forceEmptyCombat` is set) until `target`,
+the game ends, or a player must take a non-pass action. -/
 def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
-    (startTurn : Nat) (startStep : Step) (fuel : Nat) (cmds : Array String) :
+    (startTurn : Nat) (startStep : Step) (fuel : Nat) (cmds : Array String)
+    (forceEmptyCombat := false) :
     Except String PassUntilResult :=
   match fuel with
   | 0 => throw "Could not finish passing to that step"
@@ -2992,7 +2999,7 @@ def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
     if g.over || reachedPassUntil g startTurn startStep target then
       .ok { game := g, commands := cmds }
     else
-      match passUntilCommand? g with
+      match passUntilCommand? g forceEmptyCombat with
       | none =>
         if cmds.isEmpty then
           .error "A player must take an action other than pass"
@@ -3005,50 +3012,51 @@ def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
           else .ok { game := g, commands := cmds }
         | .ok g' =>
           applyPassUntilSteps g' target startTurn startStep n (cmds.push line)
+            forceEmptyCombat
 
 /-- Fuel for crossing a few turns of priority windows and empty combat. -/
 def passUntilFuel : Nat := 200
 
-def applyPassUntil (g : Game) (target : PassUntilTarget) :
-    Except String PassUntilResult :=
-  applyPassUntilSteps g target g.turnNumber g.step passUntilFuel #[]
+def applyPassUntil (g : Game) (target : PassUntilTarget)
+    (forceEmptyCombat := false) : Except String PassUntilResult :=
+  applyPassUntilSteps g target g.turnNumber g.step passUntilFuel #[] forceEmptyCombat
 
 /-- `your turn`: pass until combat of the next turn, when that turn is not
 the issuer's. -/
-def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String PassUntilResult := do
+def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
   | ["turn"] =>
     if nextTurnPlayer g == p then
       throw "The next turn is yours"
     else
-      applyPassUntil g .nextTurnCombat
+      applyPassUntil g .nextTurnCombat forceEmptyCombat
   | _ => throw yourTurnUsage
 
 /-- `my turn`: pass until the main phase of the next turn, when that turn
 is the issuer's. -/
-def applyMyTurn (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String PassUntilResult := do
+def applyMyTurn (g : Game) (p : PlayerId) (tokens : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
   | ["turn"] =>
     if nextTurnPlayer g != p then
       throw "The next turn is not yours"
     else
-      applyPassUntil g .nextTurnMain
+      applyPassUntil g .nextTurnMain forceEmptyCombat
   | _ => throw myTurnUsage
 
 /-- `main phase`: pass until the next main phase. -/
-def applyMainPhase (g : Game) (tokens : List String) :
-    Except String PassUntilResult := do
+def applyMainPhase (g : Game) (tokens : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
-  | ["phase"] => applyPassUntil g .nextMain
+  | ["phase"] => applyPassUntil g .nextMain forceEmptyCombat
   | _ => throw mainPhaseUsage
 
 /-- `attack step`: pass until the next declare attackers step. -/
-def applyAttackStep (g : Game) (tokens : List String) :
-    Except String PassUntilResult := do
+def applyAttackStep (g : Game) (tokens : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
-  | ["step"] => applyPassUntil g .nextDeclareAttackers
+  | ["step"] => applyPassUntil g .nextDeclareAttackers forceEmptyCombat
   | _ => throw attackStepUsage
 
 /-- Goal for `ignore`: the issuer's next main phase after this snapshot. -/
@@ -3069,15 +3077,16 @@ def reachedIgnore (g : Game) (goal : IgnoreGoal) : Bool :=
     !(g.turnNumber == goal.startTurn && g.step == goal.startStep)
 
 /-- `ignore` only issues commands as the issuer; other players may still act. -/
-def ignoreCommand? (g : Game) (issuer : PlayerId) : Option String :=
+def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
   match g.actor with
   | some p =>
-    if p == issuer then passUntilCommand? g else none
+    if p == issuer then passUntilCommand? g forceEmptyCombat else none
   | none => none
 
 /-- Pass as the issuer until their next main phase, another player must act,
 or the issuer must take a non-pass action. -/
-def applyIgnoreSteps (g : Game) (goal : IgnoreGoal) (fuel : Nat) (cmds : Array String) :
+def applyIgnoreSteps (g : Game) (goal : IgnoreGoal) (fuel : Nat) (cmds : Array String)
+    (forceEmptyCombat := false) :
     Except String PassUntilResult :=
   match fuel with
   | 0 => throw "Could not finish passing to your next main phase"
@@ -3085,22 +3094,23 @@ def applyIgnoreSteps (g : Game) (goal : IgnoreGoal) (fuel : Nat) (cmds : Array S
     if g.over || reachedIgnore g goal then
       .ok { game := g, commands := cmds }
     else
-      match ignoreCommand? g goal.issuer with
+      match ignoreCommand? g goal.issuer forceEmptyCombat with
       | none => .ok { game := g, commands := cmds }
       | some line =>
         match applyPassUntilLine g line with
         | .error e =>
           if cmds.isEmpty then .error e
           else .ok { game := g, commands := cmds }
-        | .ok g' => applyIgnoreSteps g' goal n (cmds.push line)
+        | .ok g' => applyIgnoreSteps g' goal n (cmds.push line) forceEmptyCombat
 
 /-- `ignore`: pass until the issuer's next main phase. Stops when another
 player must act so they can take that action; the console loop resumes
-passing for the issuer afterward. -/
-def applyIgnore (g : Game) (p : PlayerId) (tokens : List String) :
-    Except String PassUntilResult := do
+passing for the issuer afterward. Other players' actions never cancel this
+goal. -/
+def applyIgnore (g : Game) (p : PlayerId) (tokens : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
-  | [] => applyIgnoreSteps g (ignoreGoalAt g p) passUntilFuel #[]
+  | [] => applyIgnoreSteps g (ignoreGoalAt g p) passUntilFuel #[] forceEmptyCombat
   | _ => throw ignoreUsage
 
 /-- Two-word shortcuts that expand to `pass` (and empty combat declarations). -/
@@ -3119,21 +3129,123 @@ def isPassShortcutCmd (cmd : String) (args : List String) : Bool :=
   cmd == "your" || cmd == "my" || cmd == "main" || cmd == "ignore" ||
     (cmd == "attack" && commandTokens args == ["step"])
 
-def applyPassShortcut (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
-    Except String PassUntilResult := do
+def applyPassShortcut (g : Game) (p : PlayerId) (cmd : String) (args : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   match cmd with
-  | "your" => applyYourTurn g p args
-  | "my" => applyMyTurn g p args
-  | "main" => applyMainPhase g args
-  | "attack" => applyAttackStep g args
-  | "ignore" => applyIgnore g p args
+  | "your" => applyYourTurn g p args forceEmptyCombat
+  | "my" => applyMyTurn g p args forceEmptyCombat
+  | "main" => applyMainPhase g args forceEmptyCombat
+  | "attack" => applyAttackStep g args forceEmptyCombat
+  | "ignore" => applyIgnore g p args forceEmptyCombat
   | _ => throw s!"Unknown command: {cmd}"
 
 /-- Issue a pass-until shortcut as the player who currently must act. -/
-def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
-    Except String PassUntilResult := do
+def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String)
+    (forceEmptyCombat := false) : Except String PassUntilResult := do
   let p ← actingPlayer g
-  applyPassShortcut g p cmd args
+  applyPassShortcut g p cmd args forceEmptyCombat
+
+/-- Kind of pending pass-until goal stored by the console and `--check` replay. -/
+inductive PassUntilKind where
+  | named (target : PassUntilTarget)
+  | ignore
+deriving DecidableEq, Repr
+
+/-- A shortcut that stays active until its target, unless an interruptible
+goal is cancelled by another player's non-pass action. -/
+structure PassUntilGoal where
+  issuer : PlayerId
+  startTurn : Nat
+  startStep : Step
+  kind : PassUntilKind
+deriving DecidableEq, Repr
+
+def PassUntilGoal.uninterruptible (goal : PassUntilGoal) : Bool :=
+  match goal.kind with
+  | .ignore => true
+  | .named _ => false
+
+def passUntilGoalAt (g : Game) (p : PlayerId) (kind : PassUntilKind) : PassUntilGoal :=
+  { issuer := p, startTurn := g.turnNumber, startStep := g.step, kind }
+
+def shortcutKind? (cmd : String) (args : List String) : Option PassUntilKind :=
+  match cmd, commandTokens args with
+  | "your", ["turn"] => some (.named .nextTurnCombat)
+  | "my", ["turn"] => some (.named .nextTurnMain)
+  | "main", ["phase"] => some (.named .nextMain)
+  | "attack", ["step"] => some (.named .nextDeclareAttackers)
+  | "ignore", [] => some .ignore
+  | _, _ => none
+
+def ignoreGoalOf (goal : PassUntilGoal) : IgnoreGoal :=
+  { issuer := goal.issuer, startTurn := goal.startTurn, startStep := goal.startStep }
+
+def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
+  match goal.kind with
+  | .named t => reachedPassUntil g goal.startTurn goal.startStep t
+  | .ignore => reachedIgnore g (ignoreGoalOf goal)
+
+def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal) : Option String :=
+  match goal.kind with
+  | .named _ => passUntilCommand? g
+  | .ignore => ignoreCommand? g goal.issuer
+
+/-- `pass` / empty combat declarations, or a pass-until shortcut that expands
+to those commands. These do not cancel another player's interruptible shortcut. -/
+def isPassSequenceCommand (cmd : String) (args : List String) : Bool :=
+  cmd == "pass" || cmd == "noattack" || cmd == "noblock" || isPassShortcut cmd args
+
+def isPassSequenceAction : Action → Bool
+  | .pass => true
+  | .declareAttackers ids => ids.isEmpty
+  | .declareBlockers ids => ids.isEmpty
+  | _ => false
+
+def activePassUntilGoals (g : Game) (goals : Array PassUntilGoal) : Array PassUntilGoal :=
+  if g.over then #[]
+  else goals.filter (fun goal => !reachedPassUntilGoal g goal)
+
+def upsertPassUntilGoal (goals : Array PassUntilGoal) (goal : PassUntilGoal) :
+    Array PassUntilGoal :=
+  goals.filter (fun existing => existing.issuer != goal.issuer) |>.push goal
+
+/-- Drop interruptible goals issued by anyone other than `actor`. `ignore`
+never drops. -/
+def interruptPassUntilGoals (goals : Array PassUntilGoal) (actor : PlayerId) :
+    Array PassUntilGoal :=
+  goals.filter (fun goal => goal.uninterruptible || goal.issuer == actor)
+
+def otherPlayerHasPassUntilGoal (goals : Array PassUntilGoal) (actor : PlayerId) : Bool :=
+  goals.any (fun goal => goal.issuer != actor)
+
+def resumablePassUntilGoal? (g : Game) (goals : Array PassUntilGoal) : Option PassUntilGoal :=
+  goals.find? (fun goal => (passUntilGoalCommand? g goal).isSome)
+
+/-- Update stored shortcuts after a command: pass sequences keep other
+players' goals, other actions cancel interruptible ones, and a new shortcut
+is recorded when its target is not yet reached. -/
+def goalsAfterCommand (before after : Game) (actor : PlayerId) (cmd : String)
+    (args : List String) (goals : Array PassUntilGoal) : Array PassUntilGoal :=
+  let goals := activePassUntilGoals after goals
+  let goals :=
+    if isPassSequenceCommand cmd args then goals
+    else interruptPassUntilGoals goals actor
+  match shortcutKind? cmd args with
+  | none => goals
+  | some kind =>
+    let goal := passUntilGoalAt before actor kind
+    if !after.over && !reachedPassUntilGoal after goal then
+      upsertPassUntilGoal goals goal
+    else
+      goals.filter (fun existing => existing.issuer != actor)
+
+/-- Resume one stored shortcut as far as it can go without asking. -/
+def resumePassUntilGoal (g : Game) (goal : PassUntilGoal) :
+    Except String PassUntilResult :=
+  match goal.kind with
+  | .named t =>
+    applyPassUntilSteps g t goal.startTurn goal.startStep passUntilFuel #[]
+  | .ignore => applyIgnoreSteps g (ignoreGoalOf goal) passUntilFuel #[]
 
 #guard nextTurnPlayer Tests.afterDraw == ⟨1⟩
 #guard nextTurnPlayer Tests.nissaDraw == ⟨0⟩
@@ -3168,6 +3280,31 @@ def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
       turnNumber := 2, activePlayer := ⟨1⟩, step := .precombatMain } goal &&
     reachedIgnore { Tests.afterDraw with
       turnNumber := 3, activePlayer := ⟨0⟩, step := .precombatMain } goal
+#guard isPassSequenceCommand "pass" []
+#guard isPassSequenceCommand "noattack" []
+#guard isPassSequenceCommand "noblock" []
+#guard isPassSequenceCommand "main" ["phase"]
+#guard isPassSequenceCommand "ignore" []
+#guard !isPassSequenceCommand "cast" ["3"]
+#guard !isPassSequenceCommand "attack" ["3"]
+#guard isPassSequenceAction .pass
+#guard isPassSequenceAction (.declareAttackers #[])
+#guard isPassSequenceAction (.declareBlockers #[])
+#guard !isPassSequenceAction .concede
+#guard shortcutKind? "main" ["phase"] == some (.named .nextMain)
+#guard shortcutKind? "ignore" [] == some .ignore
+#guard (shortcutKind? "cast" ["3"]).isNone
+#guard
+  let named := passUntilGoalAt Tests.afterDraw ⟨0⟩ (.named .nextMain)
+  let ign := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
+  !named.uninterruptible && ign.uninterruptible &&
+    !reachedPassUntilGoal Tests.afterDraw named &&
+    reachedPassUntilGoal { Tests.afterDraw with step := .postcombatMain } named
+#guard
+  let chandra := passUntilGoalAt Tests.afterDraw ⟨0⟩ (.named .nextMain)
+  let kept := interruptPassUntilGoals #[chandra] ⟨1⟩
+  kept.isEmpty &&
+    (interruptPassUntilGoals #[passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore] ⟨1⟩).size == 1
 
 def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List String) :
     Except String Game :=
@@ -3225,14 +3362,16 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 /-- Apply a game-state command. `autopay` expands to the `tap`/`pay` lines
 that `--output` should record. Pass-until shortcuts expand to the `pass`
 lines (and `noattack` / `noblock` when those are the only legal
-declarations) rather than the shortcut text. -/
-def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : String) :
-    Except String (Game × Array String) := do
+declarations) rather than the shortcut text. `forceEmptyCombat` is set when
+another player's pending shortcut is being accepted, so empty combat
+declarations count as passing. -/
+def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : String)
+    (forceEmptyCombat := false) : Except String (Game × Array String) := do
   if cmd == "autopay" then
     let r ← applyAutopayAsActor g args
     return (r.game, r.commands)
   else if isPassShortcutCmd cmd args then
-    let r ← applyPassShortcutAsActor g cmd args
+    let r ← applyPassShortcutAsActor g cmd args forceEmptyCombat
     return (r.game, r.commands)
   else
     let g' ← applyInteractiveAsActor g cmd args
@@ -3957,7 +4096,8 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
       cmds.all (fun c => c == "pass" || c == "noattack") &&
       cmds.contains "noattack" &&
       !cmds.contains "main phase" &&
-      g'.hasPriority ⟨0⟩
+      g'.hasPriority ⟨0⟩ &&
+      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "main" ["phase"] #[]).isEmpty
   | .error _ => false
 
 #guard
@@ -4214,81 +4354,60 @@ def takeStartingPlayer (seats : Array Seat) (humanChooses : Bool) (decider : Nat
   | _ => false
 
 /-- Replay scripted game-state commands. Fails on an illegal command, leftover
-commands after the game ends, `quit`, or an unfinished game. `ignore` stays
-active so the issuer keeps passing after other players take actions. -/
+commands after the game ends, `quit`, or an unfinished game. Pass-until
+shortcuts stay active: other players' pass sequences do not cancel them,
+and `ignore` is never cancelled. -/
 def replayCompleteGameGo (g : Game) (commands : List String)
-    (ignore : Option IgnoreGoal) (fuel : Nat) : Except String Game :=
+    (goals : Array PassUntilGoal) (fuel : Nat) : Except String Game :=
   match fuel with
   | 0 => .error "Could not finish replay"
   | n + 1 =>
-    let ignore :=
-      match ignore with
-      | some goal =>
-        if g.over || reachedIgnore g goal then none else some goal
-      | none => none
+    let goals := activePassUntilGoals g goals
     if g.over then
       match commands with
       | [] => .ok g
       | line :: rest =>
         if isCheckSkipCommand ((line.splitOn " ").headD "") then
-          replayCompleteGameGo g rest ignore n
+          replayCompleteGameGo g rest goals n
         else
           .error s!"Unused command after the game ended: {line}"
     else
-      match ignore with
-      | some goal =>
-        match ignoreCommand? g goal.issuer with
-        | some line =>
-          match applyPassUntilLine g line with
-          | .error e => .error s!"Invalid command `{line}`: {e}"
-          | .ok g' => replayCompleteGameGo g' commands ignore n
-        | none =>
-          match commands with
-          | [] => .error "Game is not complete"
-          | line :: rest =>
-            let cmd := (line.splitOn " ").headD ""
-            if isCheckSkipCommand cmd then
-              replayCompleteGameGo g rest ignore n
-            else if cmd == "quit" || cmd == "exit" then
-              .error "Game is not complete"
-            else if cmd == "first" then
-              .error "Starting player already chosen (CR 103.1)"
-            else if cmd == "ignore" then
-              match commandTokens ((line.splitOn " ").drop 1), actingPlayer g with
-              | [], .ok p =>
-                replayCompleteGameGo g rest (some (ignoreGoalAt g p)) n
-              | [], .error e => .error s!"Invalid command `{line}`: {e}"
-              | _, _ => .error s!"Invalid command `{line}`: {ignoreUsage}"
-            else
-              match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
-              | .error e => .error s!"Invalid command `{line}`: {e}"
-              | .ok (g', _) => replayCompleteGameGo g' rest ignore n
+      let resumeLine :=
+        match resumablePassUntilGoal? g goals with
+        | some goal => passUntilGoalCommand? g goal
+        | none => none
+      match resumeLine with
+      | some line =>
+        match applyPassUntilLine g line with
+        | .error e => .error s!"Invalid command `{line}`: {e}"
+        | .ok g' => replayCompleteGameGo g' commands goals n
       | none =>
         match commands with
         | [] => .error "Game is not complete"
         | line :: rest =>
           let cmd := (line.splitOn " ").headD ""
+          let args := (line.splitOn " ").drop 1
           if isCheckSkipCommand cmd then
-            replayCompleteGameGo g rest none n
+            replayCompleteGameGo g rest goals n
           else if cmd == "quit" || cmd == "exit" then
             .error "Game is not complete"
           else if cmd == "first" then
             .error "Starting player already chosen (CR 103.1)"
-          else if cmd == "ignore" then
-            match commandTokens ((line.splitOn " ").drop 1), actingPlayer g with
-            | [], .ok p =>
-              replayCompleteGameGo g rest (some (ignoreGoalAt g p)) n
-            | [], .error e => .error s!"Invalid command `{line}`: {e}"
-            | _, _ => .error s!"Invalid command `{line}`: {ignoreUsage}"
           else
-            match applyLoggedAction g cmd ((line.splitOn " ").drop 1) line with
+            match actingPlayer g with
             | .error e => .error s!"Invalid command `{line}`: {e}"
-            | .ok (g', _) => replayCompleteGameGo g' rest none n
+            | .ok actor =>
+              let accept := otherPlayerHasPassUntilGoal goals actor
+              match applyLoggedAction g cmd args line accept with
+              | .error e => .error s!"Invalid command `{line}`: {e}"
+              | .ok (g', _) =>
+                replayCompleteGameGo g' rest
+                  (goalsAfterCommand g g' actor cmd args goals) n
 
 /-- Replay scripted game-state commands. Fails on an illegal command, leftover
 commands after the game ends, `quit`, or an unfinished game. -/
 def replayCompleteGame (g : Game) (commands : List String) : Except String Game :=
-  replayCompleteGameGo g commands none (commands.length * 8 + passUntilFuel)
+  replayCompleteGameGo g commands #[] (commands.length * 8 + passUntilFuel)
 
 #guard
   match replayCompleteGame Tests.started ["concede"] with
@@ -4359,6 +4478,60 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
     | some (.won p) =>
       p == ⟨1⟩ && g'.log.any (fun s => Tests.mentions s "postcombat main")
     | _ => false
+  | .error _ => false
+
+-- A pass-until shortcut that stops for a required combat action stays active
+-- so another player's `main phase` (empty combat + passes) can finish it.
+#guard
+  let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
+  let ogre := Tests.namedPermanent g0 "Gray Ogre"
+  match applyLoggedAction g0 "main" ["phase"] "main phase" with
+  | .ok (g1, _) =>
+    g1.pending == .declareAttackers &&
+      (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).size == 1 &&
+      match replayCompleteGame g0
+          ["main phase", s!"attack {ogre.id}", "main phase", "concede"] with
+      | .ok g' =>
+        g'.over && g'.log.any (fun s => Tests.mentions s "postcombat main") &&
+          match g'.result with
+          | some (.won p) => p == ⟨1⟩
+          | _ => false
+      | .error _ => false
+  | .error _ => false
+
+-- A non-pass action by the other player cancels an interruptible shortcut.
+#guard
+  let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
+  let ogre := Tests.namedPermanent g0 "Gray Ogre"
+  let bears := Tests.namedPermanent g0 "Grizzly Bears"
+  match replayCompleteGame g0
+      ["main phase", s!"attack {ogre.id}",
+        s!"block {bears.id} {ogre.id}", "concede"] with
+  | .ok g' =>
+    g'.over && !g'.log.any (fun s => Tests.mentions s "postcombat main")
+  | .error _ => false
+
+-- `ignore` is not cancelled when the other player uses `main phase`.
+#guard
+  match replayCompleteGame Tests.afterDraw ["ignore", "main phase", "concede"] with
+  | .ok g' =>
+    g'.over && g'.log.any (fun s => Tests.mentions s "postcombat main") &&
+      match g'.result with
+      | some (.won p) => p == ⟨1⟩
+      | _ => false
+  | .error _ => false
+
+#guard
+  match applyLoggedAction Tests.readyToDeclareBlockers "main" ["phase"] "main phase" with
+  | .error msg => msg == "A player must take an action other than pass"
+  | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.readyToDeclareBlockers "main" ["phase"]
+      "main phase" true with
+  | .ok (g', cmds) =>
+    cmds.contains "noblock" &&
+      (g'.step == .postcombatMain || g'.step.isMainPhase)
   | .error _ => false
 
 /-- One-line result used by `--check`. -/
@@ -4852,7 +5025,7 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
   let mut playerView := startVisible
   let mut lastActor : Option PlayerId := g.actor
   let mut pending := pending
-  let mut ignoreGoal : Option IgnoreGoal := none
+  let mut passUntilGoals : Array PassUntilGoal := #[]
   let you : PlayerId := ⟨0⟩
   let youName := (g.player you).name
   IO.println (helpInteractive controlAll youName)
@@ -4861,10 +5034,23 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
     if !controlAll then
       while !g.over && g.pendingRandom?.isNone &&
           (match g.actor with | some p => p != you | none => false) do
+        passUntilGoals := activePassUntilGoals g passUntilGoals
+        if (resumablePassUntilGoal? g passUntilGoals).isSome then
+          break
         let actorName :=
           match g.actor with
           | some p => (g.player p).name
           | none => "Agent"
+        let actorId :=
+          match g.actor with
+          | some p => p
+          | none => you
+        let chosen :=
+          match g.actor with
+          | some p => Agent.choose g p
+          | none => none
+        if !isPassSequenceAction (chosen.getD .pass) then
+          passUntilGoals := interruptPassUntilGoals passUntilGoals actorId
         match Agent.step g with
         | .error e =>
           IO.println s!"{actorName} could not act: {e}"
@@ -4913,20 +5099,18 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #["noblock"]
         g := g'
       continue
-    match ignoreGoal with
+    passUntilGoals := activePassUntilGoals g passUntilGoals
+    match resumablePassUntilGoal? g passUntilGoals with
     | some goal =>
-      if reachedIgnore g goal then
-        ignoreGoal := none
-      else
-        match ignoreCommand? g goal.issuer with
-        | some line =>
-          match applyPassUntilLine g line with
-          | .error e => IO.println s!"! {e}"
-          | .ok g' =>
-            seen ← recordAndRefresh output sameFile g g' seen playerView controlAll #[line]
-            g := g'
+      match resumePassUntilGoal g goal with
+      | .error e =>
+        IO.println s!"! {e}"
+        passUntilGoals := passUntilGoals.filter (fun existing => existing != goal)
+      | .ok r =>
+        if !r.commands.isEmpty then
+          seen ← recordAndRefresh output sameFile g r.game seen playerView controlAll r.commands
+          g := r.game
           continue
-        | none => pure ()
     | none => pure ()
     if shouldAutoPass g pending then
       let some p := g.actor | continue
@@ -4978,26 +5162,21 @@ partial def interactiveLoop (g : Game) (startVisible : Bool := false)
         else
           IO.println "Showing full game information."
     | _ =>
-      let ignoreStart : Option IgnoreGoal :=
-        if cmd == "ignore" && commandTokens (parts.drop 1) == [] then
-          match actingPlayer g with
-          | .ok p => some (ignoreGoalAt g p)
-          | .error _ => none
-        else none
-      match applyLoggedAction g cmd (parts.drop 1) line with
+      match actingPlayer g with
       | .error e => IO.println s!"! {e}"
-      | .ok (g', recorded) =>
-        for rec in recorded do
-          recordAcceptedCommand output sameFile fromInput rec
-        seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
-        g := g'
-        match ignoreStart with
-        | some goal =>
-          if !g.over && !reachedIgnore g goal then
-            ignoreGoal := some goal
-        | none => pure ()
-        if g.over then
-          printState g (currentView g playerView controlAll)
+      | .ok actor =>
+        let args := parts.drop 1
+        let accept := otherPlayerHasPassUntilGoal passUntilGoals actor
+        match applyLoggedAction g cmd args line accept with
+        | .error e => IO.println s!"! {e}"
+        | .ok (g', recorded) =>
+          for rec in recorded do
+            recordAcceptedCommand output sameFile fromInput rec
+          seen ← refreshAfterStep g g' seen (currentView g' playerView controlAll)
+          passUntilGoals := goalsAfterCommand g g' actor cmd args passUntilGoals
+          g := g'
+          if g.over then
+            printState g (currentView g playerView controlAll)
   match g.result with
   | some (.won p) => IO.println s!"Winner: {g.player p |>.name}"
   | some .draw => IO.println "The game is a draw."
