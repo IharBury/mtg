@@ -2560,24 +2560,44 @@ def okoyeFirstStrikeLossOk : Bool :=
 
 /-- Rulings 191 / 192: Nick Fury puts a DFC onto the battlefield front-face-up
 unless it is night and the front has daybound. -/
+def nickFuryDayDfc : CardDef := { bruceBanner with daybound := true }
+
+def nickFuryDayEnter : Game :=
+  let g := addToLibraryTop afterDraw nickFuryDayDfc ⟨0⟩
+  g.enterFromNickFury ⟨0⟩ (g.player ⟨0⟩).library.back!
+
+def nickFuryNightEnter : Game :=
+  let g := addToLibraryTop { afterDraw with isNight := true } nickFuryDayDfc ⟨0⟩
+  g.enterFromNickFury ⟨0⟩ (g.player ⟨0⟩).library.back!
+
+#guard (namedPermanent nickFuryDayEnter "Bruce Banner").name == "Bruce Banner"
+#guard !(namedPermanent nickFuryDayEnter "Bruce Banner").status.cantTransform
+#guard
+  let banner := namedPermanent nickFuryDayEnter "Bruce Banner"
+  let g := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+  (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk"
+#guard nickFuryNightEnter.isNight && nickFuryDayDfc.daybound &&
+  nickFuryDayDfc.otherFace.isSome
+#guard (namedPermanent nickFuryNightEnter "The Incredible Hulk").status.cantTransform
+#guard
+  let hulk := namedPermanent nickFuryNightEnter "The Incredible Hulk"
+  let g := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
+  (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk" &&
+    logContains g "can't transform"
+#guard (mshRuling 191).comment.contains "daybound"
+#guard (mshRuling 192).comment.contains "front face up"
+
 def nickFuryDayboundOk : Bool :=
-  let dfc : CardDef := { bruceBanner with daybound := true }
-  let gDay := addToLibraryTop afterDraw dfc ⟨0⟩
-  let top := (gDay.player ⟨0⟩).library.back!
-  let gDay := gDay.enterFromNickFury ⟨0⟩ top
-  let banner := namedPermanent gDay "Bruce Banner"
+  let banner := namedPermanent nickFuryDayEnter "Bruce Banner"
+  let gFlip := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+  let hulk := namedPermanent nickFuryNightEnter "The Incredible Hulk"
+  let gBlocked := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
   banner.name == "Bruce Banner" &&
     !banner.status.cantTransform &&
-    (let g := gDay.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
-     (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk") &&
-    (let gNight := addToLibraryTop { afterDraw with isNight := true } dfc ⟨0⟩
-     let top := (gNight.player ⟨0⟩).library.back!
-     let gNight := gNight.enterFromNickFury ⟨0⟩ top
-     let hulk := namedPermanent gNight "The Incredible Hulk"
-     hulk.status.cantTransform &&
-       (let gNight := gNight.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
-        namedPermanent gNight "The Incredible Hulk" |>.name == "The Incredible Hulk" &&
-          logContains gNight "can't transform")) &&
+    (namedPermanent gFlip "The Incredible Hulk").name == "The Incredible Hulk" &&
+    hulk.status.cantTransform &&
+    (namedPermanent gBlocked "The Incredible Hulk").name == "The Incredible Hulk" &&
+    logContains gBlocked "can't transform" &&
     (mshRuling 191).comment.contains "daybound" &&
     (mshRuling 192).comment.contains "front face up"
 
