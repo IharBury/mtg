@@ -88,8 +88,8 @@ Options:
                   (your turn, my turn, main phase, attack step, ignore) are written
                   as the individual pass commands they perform. your turn,
                   my turn, main phase, and ignore use noattack when declaring
-                  attackers. Other players' pass-until shortcuts do not
-                  interrupt a pending shortcut; ignore is never interrupted
+                  attackers. Other players' pass-until shortcuts do not interrupt a pending shortcut;
+                  ignore is never interrupted
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
                   the game ends (a winner or a draw). Unused commands
