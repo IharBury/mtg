@@ -1638,7 +1638,8 @@ def capWingsLastKnownToughnessOk : Bool :=
     (.onAttackOthersOfSubtypeGetEqualToughness "Hero") (some cap.id)
     #[] #[] none (some tw)
   g.toughness (namedPermanent g "She-Hulk, Jade Defender") == she0 + tw &&
-    (mshRuling 131).comment.contains "last existed on the battlefield"
+    (mshRuling 131).comment.contains "last existed on the battlefield" &&
+    (mshRuling 310).comment.contains "determined only once"
 
 #guard capWingsLastKnownToughnessOk
 
@@ -1674,7 +1675,8 @@ def warMachineLastKnownPowerOk : Bool :=
   let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfCombatOnYourTurn (some wm.id)
     #[Target.permanent bears.id] "War Machine" (some pw)
   g.power (namedPermanent g "Grizzly Bears") == p0 + pw &&
-    (mshRuling 148).comment.contains "last existed on the battlefield"
+    (mshRuling 148).comment.contains "last existed on the battlefield" &&
+    (mshRuling 308).comment.contains "calculated only once"
 
 #guard warMachineLastKnownPowerOk
 
@@ -1717,7 +1719,8 @@ def jessicaJonesLastKnownXOk : Bool :=
   (g.player ⟨0⟩).library.size == lib0 - pw.toNat &&
     (g.objects.filter (fun o =>
       o.zone == .exile && o.playPermission.isSome)).size == pw.toNat &&
-    (mshRuling 136).comment.contains "last existed on the battlefield"
+    (mshRuling 136).comment.contains "last existed on the battlefield" &&
+    (mshRuling 306).comment.contains "calculated only once"
 
 #guard jessicaJonesLastKnownXOk
 
@@ -1741,7 +1744,8 @@ def whiplashLastKnownEquipmentOk : Bool :=
   n == 2 &&
     (g.player ⟨1⟩).life + n == life0 &&
     (g.player ⟨0⟩).life == you0 + n &&
-    (mshRuling 150).comment.contains "last existed on the battlefield"
+    (mshRuling 150).comment.contains "last existed on the battlefield" &&
+    (mshRuling 309).comment.contains "calculated only once"
 
 #guard whiplashLastKnownEquipmentOk
 
@@ -2441,6 +2445,98 @@ def exilePlayFollowsTimingOk : Bool :=
     (mshRuling 374).comment.contains "timing rules"
 
 #guard exilePlayFollowsTimingOk
+
+/-- Rulings 133 / 189: Crossbones sees other Villains that enter with him,
+but the ability triggers only once each turn. -/
+def crossbonesVillainOnceOk : Bool :=
+  let villainWait (g : Game) : Nat :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.anotherVillainEnters)).size
+  let g0 := addPermanent afterDraw crossbonesMaliciousMercenary ⟨0⟩ ⟨0⟩
+  let gAlone := g0.afterPermanentEnters
+    (namedPermanent g0 "Crossbones, Malicious Mercenary")
+  villainWait gAlone == 0 &&
+    (let g := addPermanent g0 redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+     let g := g.afterPermanentEnters
+       (namedPermanent g "Red Guardian, Super-Soldier")
+     villainWait g == 1 &&
+       (let xb := namedPermanent g "Crossbones, Malicious Mercenary"
+        xb.status.firedOnceEachTurn &&
+          (let g := addPermanent g baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
+           let g := g.afterPermanentEnters
+             (namedPermanent g "Baron Strucker, HYDRA Overlord")
+           villainWait g == 1))) &&
+    (let xb := namedPermanent g0 "Crossbones, Malicious Mercenary"
+     let g := g0.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters3
+       (some xb.id)
+     (namedPermanent g "Crossbones, Malicious Mercenary").status.plusOnePlusOne == 1 &&
+       (g.player ⟨1⟩).life == 18) &&
+    (mshRuling 133).comment.contains "same time as other Villains" &&
+    (mshRuling 189).comment.contains "trigger only once"
+
+#guard crossbonesVillainOnceOk
+
+/-- Ruling 307: Squirrel Girl's X is the squirrel count as the ability
+resolves. -/
+def squirrelGirlXOnceOk : Bool :=
+  let g := addPermanent afterDraw theUnbeatableSquirrelGirl ⟨0⟩ ⟨0⟩
+  let squirrels (g : Game) : Nat :=
+    (g.battlefield.filter (fun o => o.hasSubtype "Squirrel")).size
+  let n0 := squirrels g
+  let g := g.applyMshSpell ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+  let n1 := squirrels g
+  n0 == 1 && n1 == 2 &&
+    (let g := g.applyMshSpell ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+     squirrels g == 4) &&
+    (mshRuling 307).comment.contains "calculated only once"
+
+#guard squirrelGirlXOnceOk
+
+/-- Rulings 171 / 172: a copy of a linked exile ability adds to the same
+exiled-card set; both return when the source leaves. -/
+def linkedExileCopyOk : Bool :=
+  let g := addPermanent afterDraw cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let cd := namedPermanent g "Cloak and Dagger, Entwined"
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.applyMshTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cd.id)
+    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  (namedPermanent g "Cloak and Dagger, Entwined").linkedExile.size == 1 &&
+    (let cd := namedPermanent g "Cloak and Dagger, Entwined"
+     let ogre := namedPermanent g "Gray Ogre"
+     let g := g.applyMshTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cd.id)
+       #[Target.player ⟨1⟩, Target.permanent ogre.id]
+     let cd := namedPermanent g "Cloak and Dagger, Entwined"
+     cd.linkedExile.size == 2 &&
+       !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+       !g.battlefield.any (fun o => o.name == "Gray Ogre") &&
+       (let (g, _) := g.move cd.id (.graveyard ⟨0⟩) none
+        g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+          g.battlefield.any (fun o => o.name == "Gray Ogre"))) &&
+    (mshRuling 171).comment.contains "linked to a second ability" &&
+    (mshRuling 172).comment.contains "linked to a second ability"
+
+#guard linkedExileCopyOk
+
+/-- Ruling 174: boast can be activated only once even if there is another
+combat. -/
+def boastOncePerTurnOk : Bool :=
+  let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
+  let z := namedPermanent g "Baron Helmut Zemo"
+  let g := g.mapObjectStatus z (fun s => { s with
+    declaredAsAttackerThisTurn := true })
+  let z := namedPermanent g "Baron Helmut Zemo"
+  g.canActivateBoast z &&
+    (let g := g.markBoastUsed z
+     let z := namedPermanent g "Baron Helmut Zemo"
+     !g.canActivateBoast z &&
+       (let g := { g with additionalCombatPhases := 1 }
+        !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
+    (mshRuling 174).comment.contains "only once"
+
+#guard boastOncePerTurnOk
 
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,

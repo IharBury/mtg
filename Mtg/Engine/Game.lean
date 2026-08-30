@@ -4377,7 +4377,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if g.hasSubtype entered "Villain" then
-        g.putControlledTriggers p .anotherVillainEnters
+        g.putControlledTriggers p .anotherVillainEnters (excludeId := some entered.id)
       else g
     let g :=
       if entered.printed.isArtifact then
@@ -8164,6 +8164,12 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     else
       { g with assignCombatDamageEqualToughness := some controller }
         |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+  | .wheneverAnotherVillainYouControlEnters3 =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.addPlusOnePlusOneTo o 1
+      g.forEachOpponent controller (fun g pid =>
+        g.dealDamageToPlayer pid 2 (source := some (g.object! o.id))))
+      "Crossbones is no longer on the battlefield"
   | .wheneverAnAttackingCreatureYouControlDies =>
     match g.lastDiedAttacker.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
@@ -8346,6 +8352,10 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     | _ => g
   | .exileAllCreaturesEachPlayerMayPutAnyNum =>
     g.applyWorldsWithinWorlds controller sourceId
+  | .createX11GreenSquirrelCreatureTokensWhe =>
+    let n :=
+      (g.permanentsOf controller).filter (fun o => g.hasSubtype o "Squirrel") |>.size
+    g.createKindTokens controller .squirrel11green n
   | .ifThisEquipmentIsnTACreatureItBecomesA =>
     match sourceId.bind g.findObject? with
     | some o =>
