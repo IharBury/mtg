@@ -175,6 +175,24 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         (g.mayCastFromLookedError p ids maxMv id).isNone) with
       | some id => some (.cast id)
       | none => some .decline
+    | .mayPutLandFromHand _ =>
+      match (g.player p).hand.findSome? (fun id =>
+        match g.findObject? id with
+        | some o => if o.printed.isLand then some id else none
+        | none => none) with
+      | some id => some (.cast id)
+      | none => some .decline
+    | .chooseFoodOrTreasure _ =>
+      some (.chooseMode 0)
+    | .chooseTapOrUntap _ _ =>
+      some (.chooseMode 0)
+    | .maySacArtifactOrDiscard _ =>
+      match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
+      | some o => some (.sacrifice o.id)
+      | none =>
+        match (g.player p).hand.back? with
+        | some id => some (.discard id)
+        | none => some .decline
     | .mayPutArtifactFromHand _ _ =>
       match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.cast o.id)

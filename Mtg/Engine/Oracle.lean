@@ -72,6 +72,7 @@ def stripAbilityWord (s : String) : String :=
         h == "Cosmic Awareness" || h == "Unbreakable Skin" || h == "Enrage" ||
         h == "Landfall" || h == "Avian Telepathy" || h == "Seismic Takedown" ||
         h == "Embiggen Fist" || h == "Wasp's Sting" ||
+        h == "No One Dies!" || h == "Sonic Attack" ||
         h == "Do You Like Squirrels?" || h == "I LOVE Squirrels!" ||
         h == "Net" || h == "Explosive" || h == "Boomerang" ||
         h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
@@ -197,6 +198,11 @@ def normalizePhrases (s : String) : String :=
     ("he deals", "this deals"),
     ("she deals", "this deals"),
     ("it deals", "this deals"),
+    ("he fights", "this fights"),
+    ("she fights", "this fights"),
+    ("tap him", "tap this"),
+    ("tap her", "tap this"),
+    ("this leave the battlefield", "this leaves the battlefield"),
     ("she connives", "it connives"),
     ("he connives", "it connives"),
     ("and only once each turn", "activate only once each turn"),

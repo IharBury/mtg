@@ -206,7 +206,7 @@ def heroInTraining : CardDef :=
     (oracleText := "When this creature enters, draw a card. If you control another Hero, you gain 2 life.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters5])
+    (triggeredAbilities := #[.onEnterDrawGainLifeIfAnotherHero])
 
 def invisibleWomanSueStorm : CardDef :=
   card "Invisible Woman, Sue Storm" #[.creature] ({ symbols := #[.generic 4, .colored .white] })
@@ -300,7 +300,7 @@ def nightNurseHealerOfHeroes : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := (Keyword.flash).merge Keyword.lifelink)
-    (triggeredAbilities := #[leftoverTrig .whenNightNurseEnters])
+    (triggeredAbilities := #[.onEnter .returnGyPermanentThisTurn])
 
 def okoyeDoraMilajeLeader : CardDef :=
   card "Okoye, Dora Milaje Leader" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -363,7 +363,7 @@ def redGuardianSuperSoldier : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenRedGuardianEnters])
+    (triggeredAbilities := #[.onEnter (.destroy .oppCreatureDealtDamageThisTurn)])
 
 def theSentryGoldenGuardian : CardDef :=
   card "The Sentry, Golden Guardian" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -373,7 +373,7 @@ def theSentryGoldenGuardian : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := ((Keyword.flying).merge Keyword.vigilance).merge Keyword.indestructible)
-    (triggeredAbilities := #[leftoverTrig .whenTheSentryEnters])
+    (triggeredAbilities := #[.onEnter .oppCreatesTheVoid])
 
 def sHIELDSpyKit : CardDef :=
   card "S.H.I.E.L.D. Spy Kit" #[.artifact] ({ symbols := #[.colored .white] })
@@ -387,7 +387,7 @@ def superVillainLockup : CardDef :=
   card "Super Villain Lockup" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (oracleText := "Flash\nWhen this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEnchantmentEnters])
+    (triggeredAbilities := #[.onEnterExileOppTappedUntilLeaves])
 
 def superSoldierSerum : CardDef :=
   card "Super-Soldier Serum" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
@@ -422,7 +422,7 @@ def whiteWidowFreeAgent : CardDef :=
     (oracleText := "When White Widow enters, choose one —\n• Put a +1/+1 counter on each of up to two target creatures.\n• Return target artifact or enchantment card from your graveyard to your hand.")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .whenWhiteWidowEnters])
+    (triggeredAbilities := #[.onEnter .plusOnesOrReturnArtEnch])
 
 def aerialDoombot : CardDef :=
   card "Aerial Doombot" #[.artifact, .creature] ({ symbols := #[.colored .blue] })
@@ -509,7 +509,7 @@ def falconWingedWonder : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (staticAbilities := #[leftoverStatic .avianTelepathyWhenFalconEnters])
+    (triggeredAbilities := #[.onEnter .createRedwing])
 
 def falconSWingHarness : CardDef :=
   card "Falcon's Wing Harness" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
@@ -523,7 +523,7 @@ def frozenInIce : CardDef :=
   card "Frozen in Ice" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature loses all abilities and can't become untapped.")
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters3])
+    (triggeredAbilities := #[.onEnterEnchanted .tap])
     (staticAbilities := #[leftoverStatic .enchantedCreatureLosesAllAbilitiesAndCant])
 
 def futuristForge : CardDef :=
@@ -539,7 +539,7 @@ def giantSizedFlyingAnt : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := (Keyword.flash).merge Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters])
+    (triggeredAbilities := #[.onEnterTapOrUntapNonland])
 
 def hydraulicHelper : CardDef :=
   card "Hydraulic Helper" #[.artifact, .creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -584,7 +584,7 @@ def justiceVanceAstrovik : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenJusticeEnters, leftoverTrig .wheneverAnotherNonlandPermanentYouControlI])
+    (triggeredAbilities := #[.onEnter .returnNonlandNontoken, leftoverTrig .wheneverAnotherNonlandPermanentYouControlI])
 
 def kangTheConqueror : CardDef :=
   card "Kang the Conqueror" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .blue] })
@@ -676,7 +676,7 @@ def secretInvasion : CardDef :=
   card "Secret Invasion" #[.enchantment] ({ symbols := #[.generic 1, .colored .blue, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature you control\nWhen this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield.\nEnchanted creature has ward {2}.")
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters2])
+    (triggeredAbilities := #[.onEnterExileOtherCopyEnchanted])
     (staticAbilities := #[StaticAbility.enchantedCreatureHasWard 2])
 
 def sHIELDDeploymentDrone : CardDef :=
@@ -696,7 +696,7 @@ def sHIELDFlyingCar : CardDef :=
     (toughness := some 3)
     (keywords := (Keyword.flash).merge Keyword.flying)
     (crew := some 1)
-    (triggeredAbilities := #[leftoverTrig .whenThisVehicleEnters])
+    (triggeredAbilities := #[.onEnterExileCreatureReturnEndStep])
 
 def shuriWakandanInventor : CardDef :=
   card "Shuri, Wakandan Inventor" #[.creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -729,7 +729,7 @@ def superSuit : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEquipmentEnters2])
+    (triggeredAbilities := #[.onEnterAttachThen .untap])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 2])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2] })])
 
@@ -778,7 +778,7 @@ def theWondrousWasp : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := (Keyword.flash).merge Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .waspSStingWhenTheWondrousWa])
+    (triggeredAbilities := #[.onEnter .tapLoseAbilitiesWhileSource])
 
 def agentsOfHYDRA : CardDef :=
   card "Agents of HYDRA" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -867,7 +867,7 @@ def doctorDoom : CardDef :=
     (oracleText := "When Doctor Doom enters, create two 3/3 colorless Robot Villain artifact creature tokens named Doombot.\nAs long as you control an artifact creature or a Plan, Doctor Doom has indestructible.\nAt the beginning of your end step, you draw a card and lose 1 life.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .whenDoctorDoomEnters, .onYourEndStepDrawLoseLife])
+    (triggeredAbilities := #[.onEnterCreateTokens .doombot 2, .onYourEndStepDrawLoseLife])
     (staticAbilities := #[StaticAbility.indestructibleIfArtifactCreatureOrPlan])
 
 def doomReignsSupreme : CardDef :=
@@ -883,7 +883,7 @@ def elektraDaughterOfTheHand : CardDef :=
     (oracleText := "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)\nWhen Elektra enters, destroy target creature an opponent controls with power 3 or less.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .whenElektraEnters])
+    (triggeredAbilities := #[.onEnter (.destroy (.oppCreaturePowerAtMost 3))])
     (staticAbilities := #[leftoverStatic .sneak1BB])
 
 def grimReaperLethalLegionnaire : CardDef :=
@@ -903,7 +903,7 @@ def hourOfDefeat : CardDef :=
 def hYDRAInfiltration : CardDef :=
   card "HYDRA Infiltration" #[.enchantment] ({ symbols := #[.generic 3, .colored .black] })
     (oracleText := "When this enchantment enters, target opponent discards two cards.\nWhenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life.")
-    (triggeredAbilities := #[leftoverTrig .whenThisEnchantmentEnters2, leftoverTrig .wheneverACreatureYouControlAttacksAlone2])
+    (triggeredAbilities := #[.onEnterTargetOpponentDiscards 2, leftoverTrig .wheneverACreatureYouControlAttacksAlone2])
 
 def hYDRATroopers : CardDef :=
   card "HYDRA Troopers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -911,7 +911,7 @@ def hYDRATroopers : CardDef :=
     (oracleText := "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards. (Put the top two cards of your library into your graveyard.)")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters3])
+    (triggeredAbilities := #[.onEnterVillainIfGyElseMill])
 
 def kingpinSEnforcers : CardDef :=
   card "Kingpin's Enforcers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -929,7 +929,7 @@ def klawSonicSubjugator : CardDef :=
     (oracleText := "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .sonicAttackWhenKlawEntersTa])
+    (triggeredAbilities := #[.onEnter .revealDiscardFromHand])
 
 def madameMasque : CardDef :=
   card "Madame Masque" #[.creature] ({ symbols := #[.generic 4, .colored .black] })
@@ -1027,7 +1027,7 @@ def stolenStarkTech : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEquipmentEnters])
+    (triggeredAbilities := #[.onEnterAttachThen (.grantKeywords Keyword.indestructible)])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 0])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 1] })])
 
@@ -1121,7 +1121,7 @@ def crimsonOperative : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.prowess)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters6])
+    (triggeredAbilities := #[.onEnterExileTop])
 
 def deathToOurEnemies : CardDef :=
   card "Death to Our Enemies" #[.enchantment] ({ symbols := #[.generic 2, .colored .red] })
@@ -1233,7 +1233,7 @@ def kUnLunWarrior : CardDef :=
     (oracleText := "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters9])
+    (triggeredAbilities := #[.onEnterMaySacArtifactOrDiscardDraw])
 
 def kreeSentinel : CardDef :=
   card "Kree Sentinel" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .red] })
@@ -1282,7 +1282,7 @@ def mjLnirHammerOfThor : CardDef :=
     (supertypes := #[.legendary])
     (subtypes := #["Equipment"])
     (oracleText := "When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)\n{2}{R}, Discard this card: It deals 2 damage to each creature.")
-    (triggeredAbilities := #[leftoverTrig .whenMjLnirEnters])
+    (triggeredAbilities := #[.onEnter (.dealDamageUpToOne 4)])
     (staticAbilities := #[StaticAbility.equippedDealsDoubleDamage])
     (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1), leftoverAct .n2RDiscardThisCard])
 
@@ -1350,7 +1350,7 @@ def superSpeed : CardDef :=
     (subtypes := #["Aura"])
     (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters])
+    (triggeredAbilities := #[.onEnterEnchanted (.grantKeywords Keyword.firstStrike)])
     (staticAbilities := #[StaticAbility.enchantedCreatureGetsAndHas 1 0 Keyword.haste])
 
 def teamTactics : CardDef :=
@@ -1367,7 +1367,7 @@ def thorGodOfThunder : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenThorEnters, leftoverTrig .wheneverYouCastANoncreatureSpell])
+    (triggeredAbilities := #[.onEnter .exileGyPlayUntilNextTurn, leftoverTrig .wheneverYouCastANoncreatureSpell])
 
 def truckToss : CardDef :=
   card "Truck Toss" #[.instant] ({ symbols := #[.generic 2, .colored .red, .colored .red] })
@@ -1405,7 +1405,7 @@ def antManSArmy : CardDef :=
     (oracleText := "When this creature enters, create a Food token or a Treasure token. (A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters2])
+    (triggeredAbilities := #[.onEnterCreateFoodOrTreasure])
 
 def callDamageControl : CardDef :=
   card "Call Damage Control" #[.sorcery] ({ symbols := #[.generic 1, .colored .green] })
@@ -1499,7 +1499,7 @@ def kaZarOfTheSavageLand : CardDef :=
     (toughness := some 2)
     (mayLookAtTopAnytime := true)
     (mayPlayLandsFromTop := true)
-    (triggeredAbilities := #[leftoverTrig .whenKaZarEnters])
+    (triggeredAbilities := #[.onEnter .createZabu])
 
 def knightOfWundagore : CardDef :=
   card "Knight of Wundagore" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1674,7 +1674,7 @@ def wakandanRoyalGuard : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters7])
+    (triggeredAbilities := #[.onEnterPlusOneOrTwoIfAnotherHero])
 
 def whiteTigerAvaAyala : CardDef :=
   card "White Tiger, Ava Ayala" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1793,7 +1793,7 @@ def bullseyeDeathDealer : CardDef :=
     (oracleText := "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target.\n{3}, {T}, Sacrifice an artifact or discard a nonland card: Bullseye deals 2 damage to any target.")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .whenBullseyeEnters])
+    (triggeredAbilities := #[.onEnter .maySacOrDiscardNonlandThenDamage])
     (activatedAbilities := #[leftoverAct .n3TSacrificeAnArtifactOrDisca])
 
 def captainAmericaLivingLegend : CardDef :=
@@ -1814,7 +1814,7 @@ def cloakAndDaggerEntwined : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
-    (triggeredAbilities := #[leftoverTrig .whenCloakAndDaggerEnter])
+    (triggeredAbilities := #[.onEnter .revealHandExileUntilLeaves])
 
 def theComingOfGalactus : CardDef :=
   card "The Coming of Galactus" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .black, .colored .green] })
@@ -1880,7 +1880,7 @@ def killmongerScourgeOfWakanda : CardDef :=
     (oracleText := "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls.\nAs long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .whenKillmongerEnters])
+    (triggeredAbilities := #[.onEnter .maySacAnotherThenDestroyOppNonland])
     (staticAbilities := #[StaticAbility.getsIfGyCreatureCards 2 2 1])
 
 def kingTChalla : CardDef :=
@@ -1940,7 +1940,7 @@ def theRuinousWreckingCrew : CardDef :=
     (oracleText := "The Ruinous Wrecking Crew enters with X +1/+1 counters on it.\nWhen The Ruinous Wrecking Crew enters, choose up to X —\n• Discard a card, then draw a card.\n• Target opponent loses 2 life.\n• Destroy target token.\n• Each player sacrifices a creature of their choice.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenTheRuinousWreckingCrewEnters])
+    (triggeredAbilities := #[.onEnter .chooseUpToXModes])
     (staticAbilities := #[StaticAbility.entersWithXPlusOne])
 
 def scientistSupremeOfAIM : CardDef :=
@@ -1980,7 +1980,7 @@ def spiderManToTheRescue : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := ((Keyword.flash).merge Keyword.reach).merge Keyword.vigilance)
-    (triggeredAbilities := #[leftoverTrig .noOneDiesWhenSpiderManEnte])
+    (triggeredAbilities := #[.onEnter .mayTapThenGrantIndestructible])
 
 def spiderWomanSecretAgent : CardDef :=
   card "Spider-Woman, Secret Agent" #[.creature] ({ symbols := #[.generic 3, .hybrid .white .blue] })
@@ -1990,7 +1990,7 @@ def spiderWomanSecretAgent : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenSpiderWomanEnters])
+    (triggeredAbilities := #[.onEnter .tapOppCantUntapWhileControl])
 
 def stormWindrider : CardDef :=
   card "Storm, Windrider" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .white, .colored .white] })
@@ -2053,7 +2053,7 @@ def uSAgentJohnWalker : CardDef :=
     (oracleText := "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent.")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenUSAgentEnters])
+    (triggeredAbilities := #[.onEnter .createSturdyShieldAttach])
 
 def visionQuest : CardDef :=
   card "Vision Quest" #[.sorcery] ({ symbols := #[.x, .colored .blue, .colored .red] })
@@ -2089,7 +2089,7 @@ def wolverineFierceFighter : CardDef :=
     (power := some 3)
     (toughness := some 5)
     (keywords := Keyword.haste)
-    (triggeredAbilities := #[leftoverTrig .whenWolverineEnters])
+    (triggeredAbilities := #[.onEnter .fightUpToOne])
     (staticAbilities := #[leftoverStatic .ifDamageWouldBeDealtToWolverine])
 
 def worldsWithinWorlds : CardDef :=
@@ -2142,7 +2142,7 @@ def hERBIEScoutUnit : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters4])
+    (triggeredAbilities := #[.onEnterDrawMayPutLandTapped])
 
 def ironManArmor : CardDef :=
   card "Iron Man Armor" #[.artifact] ({ symbols := #[.generic 3] })

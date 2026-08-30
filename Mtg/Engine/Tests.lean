@@ -839,6 +839,14 @@ def applyIdle (g : Game) : Game :=
     mustApply g p .decline
   | .mayCastFromLooked _ _ _, some p =>
     mustApply g p .decline
+  | .mayPutLandFromHand _, some p =>
+    mustApply g p .decline
+  | .chooseFoodOrTreasure _, some p =>
+    mustApply g p (.chooseMode 0)
+  | .chooseTapOrUntap _ _, some p =>
+    mustApply g p (.chooseMode 0)
+  | .maySacArtifactOrDiscard _, some p =>
+    mustApply g p .decline
   | .mayPutArtifactFromHand _ _, some p =>
     mustApply g p .decline
   | .chooseTargets _, some p =>
@@ -11155,7 +11163,7 @@ def discardTwoArtifactStillNeedsSecond : Bool :=
 
 /-- HYDRA Infiltration: target opponent discards two cards. -/
 def hydraInfiltrationDiscarding : Game :=
-  afterDraw.applyModeledTrigger ⟨0⟩ .whenThisEnchantmentEnters2 none
+  afterDraw.applyTriggeredAbility ⟨0⟩ (.onEnterTargetOpponentDiscards 2) none
     #[Target.player ⟨1⟩]
 
 #guard
@@ -11185,6 +11193,186 @@ def hydraInfiltrationAfterSecond : Game :=
 #guard hydraInfiltrationAfterSecond.pending == .none
 #guard (hydraInfiltrationAfterSecond.player ⟨1⟩).hand.size == 5
 #guard hydraInfiltrationAfterSecond.log.any (fun s => mentions s "Nissa discards")
+
+/-- Super Speed: enchanted creature gains first strike until EOT. -/
+def superSpeedFirstStrikeOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g superSpeed ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Super Speed"
+  let g := g.attachSourceTo aura host
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) (some aura.id)
+  (g.object! host.id).status.untilEotKeywords.firstStrike
+
+#guard superSpeedFirstStrikeOk
+
+/-- Frozen in Ice: tap enchanted creature. -/
+def frozenInIceTapOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g frozenInIce ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Frozen in Ice"
+  let g := g.attachSourceTo aura host
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterEnchanted .tap) (some aura.id)
+  (g.object! host.id).status.tapped
+
+#guard frozenInIceTapOk
+
+/-- Super Suit: attach then untap the host. -/
+def superSuitUntapOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus host (fun s => { s with tapped := true })
+  let g := addPermanent g superSuit ⟨0⟩ ⟨0⟩
+  let eq := namedPermanent g "Super Suit"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterAttachThen .untap)
+    (some eq.id) #[Target.permanent host.id]
+  !(g.object! host.id).status.tapped &&
+    (g.object! eq.id).attachedTo == some host.id
+
+#guard superSuitUntapOk
+
+/-- Stolen Stark Tech: attach then grant indestructible. -/
+def stolenStarkIndestructibleOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g stolenStarkTech ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let eq := namedPermanent g "Stolen Stark Tech"
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnterAttachThen (.grantKeywords Keyword.indestructible))
+    (some eq.id) #[Target.permanent host.id]
+  (g.object! host.id).status.untilEotKeywords.indestructible &&
+    (g.object! eq.id).attachedTo == some host.id
+
+#guard stolenStarkIndestructibleOk
+
+/-- Doctor Doom: create two Doombots. -/
+def doctorDoomDoombotsOk : Bool :=
+  let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
+  let doom := namedPermanent g "Doctor Doom"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterCreateTokens .doombot 2) (some doom.id)
+  (g.battlefield.filter (fun o => o.name == "Doombot")).size == 2
+
+#guard doctorDoomDoombotsOk
+
+/-- Thor: exile an instant from the graveyard; it is playable until next turn. -/
+def thorExilePlayOk : Bool :=
+  let g := addPermanent afterDraw thorGodOfThunder ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let thor := namedPermanent g "Thor, God of Thunder"
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .exileGyPlayUntilNextTurn)
+    (some thor.id) #[Target.card bolt.id]
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
+  | some bolt =>
+    match bolt.playPermission with
+    | some perm => perm.player == ⟨0⟩ && perm.turnEndsRemaining == 2
+    | none => false
+  | none => false
+
+#guard thorExilePlayOk
+
+/-- Wolverine fights another creature. Use a 4/4 so both sides survive
+sequential damage (a 3/3 would die before dealing damage back). -/
+def wolverineFightOk : Bool :=
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let baloth := namedPermanent g "Rumbling Baloth"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .fightUpToOne)
+    (some w.id) #[Target.permanent baloth.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
+    (namedPermanent g "Rumbling Baloth").status.damage > 0
+
+#guard wolverineFightOk
+
+/-- Justice returns a nonland nontoken. -/
+def justiceBounceOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let j := namedPermanent g "Justice, Vance Astrovik"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .returnNonlandNontoken)
+    (some j.id) #[Target.permanent bears.id]
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
+
+#guard justiceBounceOk
+
+/-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
+def flyingCarFlickerOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g sHIELDFlyingCar ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let car := namedPermanent g "S.H.I.E.L.D. Flying Car"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileCreatureReturnEndStep
+    (some car.id) #[Target.permanent bears.id]
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    g.delayedEndStepReturns.size == 1
+
+#guard flyingCarFlickerOk
+
+/-- Giant-Sized Flying Ant: choose tap. -/
+def flyingAntTapOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g giantSizedFlyingAnt ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let ant := namedPermanent g "Giant-Sized Flying Ant"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterTapOrUntapNonland
+    (some ant.id) #[Target.permanent bears.id]
+  let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  (g.object! bears.id).status.tapped
+
+#guard flyingAntTapOk
+
+/-- Ant-Man's Army: choose Treasure. -/
+def antManArmyTreasureOk : Bool :=
+  let g := addPermanent afterDraw antManSArmy ⟨0⟩ ⟨0⟩
+  let army := namedPermanent g "Ant-Man's Army"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterCreateFoodOrTreasure (some army.id)
+  let g := mustApply g ⟨0⟩ (.chooseMode 1)
+  g.battlefield.any (fun o => o.hasSubtype "Treasure") &&
+    !g.battlefield.any (fun o => o.hasSubtype "Food" && o.printed.isToken)
+
+#guard antManArmyTreasureOk
+
+/-- Hero in Training: draw, and gain 2 if another Hero is present. -/
+def heroInTrainingLifeOk : Bool :=
+  let g := addPermanent afterDraw captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := addPermanent g heroInTraining ⟨0⟩ ⟨0⟩
+  let hero := namedPermanent g "Hero in Training"
+  let life0 := (g.player ⟨0⟩).life
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterDrawGainLifeIfAnotherHero (some hero.id)
+  (g.player ⟨0⟩).hand.size == hand0 + 1 && (g.player ⟨0⟩).life == life0 + 2
+
+#guard heroInTrainingLifeOk
+
+/-- Wakandan Royal Guard: two +1/+1s on another Hero. -/
+def wakandanRoyalGuardHeroOk : Bool :=
+  let g := addPermanent afterDraw captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wakandanRoyalGuard ⟨0⟩ ⟨0⟩
+  let cap := namedPermanent g "Captain America, Super-Soldier"
+  let guard := namedPermanent g "Wakandan Royal Guard"
+  let before := (g.object! cap.id).status.plusOnePlusOne
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterPlusOneOrTwoIfAnotherHero
+    (some guard.id) #[Target.permanent cap.id]
+  (g.object! cap.id).status.plusOnePlusOne == before + 2
+
+#guard wakandanRoyalGuardHeroOk
+
+/-- K'un-Lun Warrior: discard, then draw. -/
+def kunLunDiscardDrawOk : Bool :=
+  let g := addPermanent afterDraw kUnLunWarrior ⟨0⟩ ⟨0⟩
+  let w := namedPermanent g "K'un-Lun Warrior"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterMaySacArtifactOrDiscardDraw (some w.id)
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let disc := (g.player ⟨0⟩).hand.back!
+  let g := mustApply g ⟨0⟩ (.discard disc)
+  (g.player ⟨0⟩).hand.size == hand0
+
+#guard kunLunDiscardDrawOk
 
 /-- A single-card discard still finishes after one card. -/
 def discardOneStillOne : Bool :=
