@@ -1266,6 +1266,23 @@ def battlefield (g : Game) : Array GameObject :=
 def permanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o => o.controlledBy p)
 
+/-- Creatures `p` currently controls. -/
+def creaturesControlledBy (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (·.isCreature)
+
+/-- How many creatures `p` currently controls. -/
+def countCreaturesControlledBy (g : Game) (p : PlayerId) : Nat :=
+  (g.creaturesControlledBy p).size
+
+/-- How many artifacts `p` currently controls. -/
+def countArtifactsControlledBy (g : Game) (p : PlayerId) : Nat :=
+  (g.permanentsOf p).filter (fun o => o.printed.isArtifact) |>.size
+
+/-- Artifacts on the battlefield not controlled by `controller`. -/
+def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
+  g.battlefield.filter (fun o =>
+    o.printed.isArtifact && !o.controlledBy controller) |>.size
+
 /-- End a copy effect on `o`, restoring its original printed card (CR 707).
 Does not cause the permanent to enter or leave the battlefield. -/
 def restoreCopy (g : Game) (o : GameObject) : Game :=
@@ -1631,7 +1648,7 @@ def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
       if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
     else if g.hasCreaturesYouControlPower o then
       let fromTeam : Int :=
-        Int.ofNat ((g.permanentsOf o.you).filter (·.isCreature) |>.size)
+        Int.ofNat (g.countCreaturesControlledBy o.you)
       if o.isOnBattlefield then o.status.setBasePower.getD fromTeam else fromTeam
     else
       g.characteristicBase o o.printed.power o.status.setBasePower
@@ -3369,7 +3386,7 @@ def toughness (g : Game) (o : GameObject) : Int :=
 
 /-- Greatest power among creatures `p` controls; `0` if they control none. -/
 def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
-  let creatures := g.permanentsOf p |>.filter (·.isCreature)
+  let creatures := g.creaturesControlledBy p
   if creatures.isEmpty then 0
   else creatures.foldl (fun acc o => max acc (g.power o)) (g.power creatures[0]!)
 
@@ -4726,7 +4743,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     if o.printed.entersWithHopePerCreature then
       match o.controller with
       | some p =>
-        let n := (g.permanentsOf p).filter (·.isCreature) |>.size
+        let n := g.countCreaturesControlledBy p
         let g := g.setObject { o with status := { o.status with hope := n } }
         g.logMsg s!"{o.name} enters with {n} hope counter(s)"
       | none => g
@@ -5976,7 +5993,7 @@ def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : Obj
 
 /-- Creatures `p` may sacrifice to a “sacrifices a creature of their choice” effect. -/
 def sacrificeCreatureChoices (g : Game) (p : PlayerId) : Array GameObject :=
-  g.permanentsOf p |>.filter (·.isCreature)
+  g.creaturesControlledBy p
 
 /-- Whether `sac` is a legal “another creature or artifact” sacrifice for `sourceId`. -/
 def canSacrificeAsCreatureOrArtifact (g : Game) (p : PlayerId) (sourceId : ObjectId)
@@ -7242,10 +7259,6 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   }
   return g.enterProposalWindow p pl prop ab.isModal ab.effect.requiresTarget "CR 601.2b"
 
-/-- Creatures `p` currently controls. -/
-def creaturesControlledBy (g : Game) (p : PlayerId) : Array GameObject :=
-  (g.permanentsOf p).filter (·.isCreature)
-
 /-- First player in `players` who satisfies `pred`, plus those after them. -/
 def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
     Option (PlayerId × Array PlayerId) :=
@@ -8483,7 +8496,17 @@ def sourcePTAtResolution (g : Game) (sourceId : Option ObjectId)
   | some src =>
     if src.isOnBattlefield then (g.power src, g.toughness src)
     else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
-  | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
+    | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
+
+/-- Top `count` cards of `p`'s library (last = current top). -/
+def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
+  let lib := (g.player p).library
+  let n := min count lib.size
+  lib.extract (lib.size - n) lib.size
+
+/-- Log that `p` looks at the top `n` cards of their library. -/
+def logLookAtTop (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  g.logMsg s!"{(g.player p).name} looks at the top {n} cards"
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. `logAfter ownerName cardName` is the per-card message. -/
@@ -8557,20 +8580,33 @@ def queueMshReflexiveIfPaid (g : Game) (controller : PlayerId)
     Game :=
   g.ifPaid paid unpaid fun g => g.queueMshReflexive controller sourceId kind paid
 
+/-- Sacrifice the Plan if it is still on the battlefield. `gone` is logged
+when the source left; `missing` when it was never found. -/
+def sacrificePlanIfOnBattlefield (g : Game) (sourceId : Option ObjectId)
+    (gone := fun (name : String) => s!"{name} is no longer on the battlefield")
+    (missing := "The Plan is no longer on the battlefield") : Game :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
+    else g.logMsg (gone o.name)
+  | none =>
+    g.logMsg missing
+
 /-- Sacrifice the Plan if it is still on the battlefield. Queue the
 reflexive second ability only if the sacrifice happened (MSH 360–362,
 368–369). -/
 def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (kind : Nat) : Game :=
-  match sourceId.bind g.findObject? with
-  | some o =>
-    if o.isOnBattlefield then
-      let g := g.sacrificeToGraveyard o "the Plan is completed"
-      g.queueMshReflexive controller sourceId kind
-    else
-      g.logMsg s!"{o.name} is no longer on the battlefield. The reflexive ability doesn't trigger."
-  | none =>
-    g.logMsg "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger."
+  let stillThere :=
+    match sourceId.bind g.findObject? with
+    | some o => o.isOnBattlefield
+    | none => false
+  let g := g.sacrificePlanIfOnBattlefield sourceId
+    (gone := fun name =>
+      s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
+    (missing :=
+      "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
+  if stillThere then g.queueMshReflexive controller sourceId kind else g
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn (Doom Reigns Supreme). -/
@@ -9903,6 +9939,10 @@ def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
 def resolvingTeamworkPaid (g : Game) : Bool :=
   g.stack.back?.any (fun e => (g.findObject? e.objectId).any (·.teamworkPaid))
 
+/-- `alt` if the resolving spell paid teamwork; otherwise `base`. -/
+def teamworkAmount (g : Game) (base alt : Nat) : Nat :=
+  if g.resolvingTeamworkPaid then alt else base
+
 /-- Ask the target spell's controller to pay `{n}` or let it be countered. -/
 def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
   match targets[0]? with
@@ -10144,9 +10184,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
       g.applyPermanentAction (g.object! o.id) (.dealDamage n))
   | .addRedPerOppArtifacts =>
-    let n :=
-      g.battlefield.filter (fun o =>
-        o.printed.isArtifact && !o.controlledBy controller) |>.size
+    let n := g.countOpponentArtifacts controller
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .red) n })
     g.logMsg s!"{(g.player controller).name} adds {n} red mana"
@@ -10306,9 +10344,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .lookAtTopLandsGainLife n life =>
     Id.run do
       let mut g := g
-      let pl := g.player controller
-      let take := min n pl.library.size
-      let ids := pl.library.extract (pl.library.size - take) pl.library.size
+      let ids := g.scryLookedIds controller n
       for id in ids do
         match g.findObject? id with
         | some o =>
@@ -10364,7 +10400,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         | none => g.logMsg "The target is no longer legal"
       | _ => g.logMsg "The target is no longer legal"
   | .dealDamageTeamwork n teamworkN =>
-    let amt := if g.resolvingTeamworkPaid then teamworkN else n
+    let amt := g.teamworkAmount n teamworkN
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       g.dealDamageToPermanent o amt)
   | .dealDamageThenControllerIfTeamwork n extra =>
@@ -10382,7 +10418,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
         g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.trample)
       else g)
   | .counterUnlessPaysTeamwork n teamworkN =>
-    let amt := if g.resolvingTeamworkPaid then teamworkN else n
+    let amt := g.teamworkAmount n teamworkN
     g.beginPayOrLetCounter targets amt
   | .exileCreatureMvAtMostOrAnyIfTeamwork _n life =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
@@ -10402,8 +10438,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .revealTopPutCreatures n =>
     Id.run do
       let mut g := g
-      let lib := (g.player controller).library
-      let top := lib.extract (lib.size - n.min lib.size) lib.size
+      let top := g.scryLookedIds controller n
       let teamwork := g.resolvingTeamworkPaid
       let mut putOne := false
       for id in top do
@@ -10779,7 +10814,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.setObject { o with status := { o.status with
         plusOnePlusOne := o.status.plusOnePlusOne + 2 } }
-      g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
+      g.logLookAtTop controller n
   | .transform =>
     g.withSourceOnBattlefield sourceId fun g o =>
       if o.status.cantTransform then
@@ -10796,19 +10831,13 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .drawX =>
     g.draw controller chosenX
   | .lookAtTopRevealArtifact n =>
-    g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
+    g.logLookAtTop controller n
   | .connive =>
     g.applyConnive controller sourceId
   | .msh t =>
     g.applyMshAbility controller t targets sourceId lastKnownPower
   | .mshSpell t =>
     g.applyMshSpell controller t targets sourceId
-
-/-- Top `count` cards of `p`'s library (last = current top). -/
-def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
-  let lib := (g.player p).library
-  let n := min count lib.size
-  lib.extract (lib.size - n) lib.size
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -11021,11 +11050,8 @@ def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
     else if spell.printed.teamwork.isSome && !prop.teamworkAnnounced then
       let g := { g with pending := .chooseTeamwork p }
       g.logMsg s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
-    else if g.proposedNeedsTarget prop then
-      let g := { g with pending := .chooseTargets p }
-      g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
     else
-      g.afterTargetsChosen
+      g.afterAdditionalCostAnnounced
   | _, _ => g
 
 def announceKicker (g : Game) (p : PlayerId) (kick : Bool) : Except String Game := do
@@ -11078,6 +11104,20 @@ def announceTeamwork (g : Game) (p : PlayerId) (pay : Bool) : Except String Game
       return g.logMsg
         s!"{(g.player p).name} chooses creatures to tap for teamwork {need}"
   | _ => throw "Not time to announce teamwork"
+
+/-- Untapped creatures `p` controls, taken in battlefield order until their
+total power is at least `need` (heuristic / test idle choice). -/
+def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectId :=
+  let rec pick (cs : List GameObject) (acc : Array ObjectId) (total : Int) :
+      Array ObjectId :=
+    if total >= (need : Int) then acc
+    else
+      match cs with
+      | [] => acc
+      | o :: rest =>
+        if o.status.tapped then pick rest acc total
+        else pick rest (acc.push o.id) (total + g.power o)
+  pick (g.creaturesControlledBy p).toList #[] 0
 
 def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     Except String Game := do
@@ -11621,10 +11661,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .lookAtTopRevealTypes n types =>
     Id.run do
       let mut g := g
-      let pl := g.player controller
-      let take := min n pl.library.size
-      let ids := pl.library.extract (pl.library.size - take) pl.library.size
-      g := g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
+      let ids := g.scryLookedIds controller n
+      g := g.logLookAtTop controller n
       let picked :=
         ids.find? (fun id =>
           match g.findObject? id with
@@ -11645,9 +11683,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.applyOnTriggerSource sourceId (.pump 1 1)
       |>.forEachOpponent controller (fun g pid => g.loseLife pid n)
   | .createTappedTreasuresEqualOppArtifacts =>
-    let n :=
-      g.battlefield.filter (fun o =>
-        o.printed.isArtifact && !o.controlledBy controller) |>.size
+    let n := g.countOpponentArtifacts controller
     g.createTreasureTokens controller n (tapped := true)
   | .gainControlOppUntilEot =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
@@ -11734,9 +11770,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
           s!"{(g.player controller).name} creates two tapped Spirit tokens"
   | .createTreasuresEqualDamagedPlayerArtifacts =>
     let pid := g.lastCombatDamagePlayer.getD (g.opponent controller)
-    let n :=
-      g.battlefield.filter (fun o =>
-        o.printed.isArtifact && o.controlledBy pid) |>.size
+    let n := g.countArtifactsControlledBy pid
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
   | .deal1ThenAmassOrcs =>
@@ -11911,9 +11945,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .revealTopPutRandomCreature n =>
     Id.run do
       let mut g := g
-      let pl := g.player controller
-      let take := min n pl.library.size
-      let ids := pl.library.extract (pl.library.size - take) pl.library.size
+      let ids := g.scryLookedIds controller n
       let creatures :=
         ids.filter (fun id =>
           match g.findObject? id with
@@ -11978,7 +12010,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       | Target.player pid => g.mill pid n
       | _ => g.logMsg "The target is no longer legal")
   | .treasuresPerChosenType =>
-    let n := (g.permanentsOf controller).filter (·.isCreature) |>.size
+    let n := g.countCreaturesControlledBy controller
     g.createTreasureTokens controller n
   | .revealUntilCreature =>
     Id.run do
@@ -12032,7 +12064,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       | some (Target.player pid) => pid
       | some (Target.permanent _) => g.opponent controller
       | _ => g.opponent controller
-    let n := (g.permanentsOf opp).filter (·.isCreature) |>.size
+    let n := g.countCreaturesControlledBy opp
     let g :=
       g.withTriggerSource sourceId fun g src =>
         g.mapObjectStatus src (fun s => { s with hone := s.hone + n })
@@ -12347,13 +12379,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.mapObjectStatus o (fun s => { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
         "The target is no longer legal. You won't put counters on anything."
   | .planFinishDrawPlusOneEach =>
-    let g :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
-        else g.logMsg s!"{o.name} is no longer on the battlefield"
-      | none =>
-        g.logMsg "The Plan is no longer on the battlefield"
+    let g := g.sacrificePlanIfOnBattlefield sourceId
     let g := g.draw controller 1
     g.foldBattlefield (fun c => c.controlledBy controller && c.isCreature)
       (fun g c => g.mapObjectStatus c (fun s =>
@@ -12365,13 +12391,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .planFinishExileTopCast =>
     g.sacrificePlanThenQueueReflexive controller sourceId 5
   | .planFinishCreateRobots n =>
-    let g :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
-        else g.logMsg s!"{o.name} is no longer on the battlefield"
-      | none =>
-        g.logMsg "The Plan is no longer on the battlefield"
+    let g := g.sacrificePlanIfOnBattlefield sourceId
     Id.run do
       let mut g := g
       for _ in [0:n] do

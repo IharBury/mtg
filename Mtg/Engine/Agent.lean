@@ -161,16 +161,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .chooseTeamwork _ =>
       some (.announceTeamwork false)
     | .chooseTeamworkCreatures _ need =>
-      let rec pick (cs : List GameObject) (acc : Array ObjectId) (total : Int) :
-          Array ObjectId :=
-        if total >= (need : Int) then acc
-        else
-          match cs with
-          | [] => acc
-          | o :: rest =>
-            if o.status.tapped then pick rest acc total
-            else pick rest (acc.push o.id) (total + g.power o)
-      some (.choosePermanents (pick (g.creaturesControlledBy p).toList #[] 0))
+      some (.choosePermanents (g.pickTeamworkCreatures p need))
     | .chooseRingBearer _ =>
       match (g.ringBearerChoices p)[0]? with
       | some o => some (.chooseRingBearer (some o.id))
@@ -286,8 +277,8 @@ where
           available.canPay adv.manaCost
             (allowInstRestricted := adv.types.any CardType.isInstantOrSorcery)
         | none => false)
-    let oppHasCreature := (g.permanentsOf (g.opponent p)).any (·.isCreature)
-    let ownCreature := (g.permanentsOf p).filter (·.isCreature) |>.back?
+    let oppHasCreature := !(g.creaturesControlledBy (g.opponent p)).isEmpty
+    let ownCreature := (g.creaturesControlledBy p).back?
     let spellKind (o : GameObject) (k : SpellCastKind) : Bool :=
       o.printed.hasCastKind k
     let adventureKind (o : GameObject) (k : SpellCastKind) : Bool :=
