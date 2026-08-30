@@ -1343,7 +1343,7 @@ def starkIndustriesExecutive : CardDef :=
     (oracleText := "{2}, {T}: Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.createTreasure 1) ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (.createTokens .treasure 1) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def superSpeed : CardDef :=
   card "Super Speed" #[.enchantment] ({ symbols := #[.colored .red] })
@@ -2243,7 +2243,7 @@ def avengersTower : CardDef :=
   card "Avengers Tower" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly) (ManaCost.empty) (tap := true), activated (.mshSpell .lookAtTheTopThreeCardsOfYourLibraryYou) ({ symbols := #[.generic 4] }) (tap := true)])
+    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .hero)) (ManaCost.empty) (tap := true), activated (.mshSpell .lookAtTheTopThreeCardsOfYourLibraryYou) ({ symbols := #[.generic 4] }) (tap := true)])
 
 def baxterBuilding : CardDef :=
   card "Baxter Building" #[.land] (ManaCost.empty)
@@ -2260,7 +2260,7 @@ def castleDoom : CardDef :=
   card "Castle Doom" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly3) (ManaCost.empty) (tap := true), leftoverAct .n3TSacrificeAnArtifact])
+    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .artifactSpell)) (ManaCost.empty) (tap := true), leftoverAct .n3TSacrificeAnArtifact])
 
 def darkFortress : CardDef :=
   conditionalDualLand "Dark Fortress"
@@ -2328,7 +2328,7 @@ def villainousHideout : CardDef :=
   card "Villainous Hideout" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly2) (ManaCost.empty) (tap := true), activated (.mshSpell .targetVillainYouControlConnives) ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .villain)) (ManaCost.empty) (tap := true), activated (.mshSpell .targetVillainYouControlConnives) ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
 
 /-- All unique MSH card names, including both faces of transforming cards
 and the five basic lands printed in the set. -/

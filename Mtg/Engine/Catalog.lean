@@ -850,9 +850,9 @@ def mshConditionalDualLand (name : String) (oracleText : String)
   (legendary := true)).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (legendary := true)).hasType .creature
-#guard (mshGainLifeDualLand "Silent Plaza" "" .addUOrB).entersTapped
+#guard (mshGainLifeDualLand "Silent Plaza" "" (.addOneOf .blue .black)).entersTapped
 #guard (mshConditionalDualLand "Silent Keep" ""
-  .addUOrBActivateOnlyIfThisLandEnter).tapAddMana == #[.colorless]
+  (.addOneOf .blue .black true)).tapAddMana == #[.colorless]
 #guard (powerUpAbility (.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
   (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)

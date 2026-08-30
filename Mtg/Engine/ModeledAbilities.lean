@@ -760,6 +760,26 @@ instance : ToString ModeledSpell where
   toString := toNotation
 
 end ModeledSpell
+/-- How leftover “add one mana of any color; spend only …” restricts the mana. -/
+inductive RestrictedManaSpend where
+  /-- Hero spells and Hero sources. -/
+  | hero
+  /-- Villain spells and Villain sources. -/
+  | villain
+  /-- Artifact spells. -/
+  | artifactSpell
+deriving Repr, Inhabited, BEq
+
+namespace RestrictedManaSpend
+
+/-- Official Oracle “Spend this mana only …” clause. -/
+def spendClause : RestrictedManaSpend → String
+  | .hero => "to cast a Hero spell or to activate an ability of a Hero source"
+  | .villain => "to cast a Villain spell or to activate an ability of a Villain source"
+  | .artifactSpell => "to cast an artifact spell"
+
+end RestrictedManaSpend
+
 /-- A leftover modeled activation that is not yet a shared shape. -/
 inductive ModeledAbility where
   /-- Modeled MSH ability. -/
@@ -770,50 +790,19 @@ inductive ModeledAbility where
   | addXManaOfAnyOneColorWhereXIsDocSams
   /-- Modeled MSH ability. -/
   | addFourManaInAnyCombinationOfColors
-  /-- Modeled MSH ability. -/
-  | addOneManaOfAnyColorSpendThisManaOnly
-  /-- Modeled MSH ability. -/
-  | addOneManaOfAnyColorSpendThisManaOnly2
-  /-- Modeled MSH ability. -/
-  | addOneManaOfAnyColorSpendThisManaOnly3
+  /-- Add one mana of any color, spendable only as `kind` describes. -/
+  | addOneManaOfAnyColorSpendOnly (kind : RestrictedManaSpend)
   /-- Modeled MSH ability. -/
   | addTwoManaOfAnyOneColorSpendThisManaO
-  /-- Modeled MSH ability. -/
-  | addBOrG
-  /-- Modeled MSH ability. -/
-  | addBOrR
-  /-- Modeled MSH ability. -/
-  | addBOrRActivateOnlyIfThisLandEnter
+  /-- `{T}: Add {A} or {B}`, optionally only if this land entered this turn
+  or you control a basic land. -/
+  | addOneOf (a b : Color) (enteredOrBasic : Bool := false)
   /-- Modeled MSH ability. -/
   | addCCC
-  /-- Modeled MSH ability. -/
-  | addGOrU
-  /-- Modeled MSH ability. -/
-  | addGOrW
-  /-- Modeled MSH ability. -/
-  | addGOrWActivateOnlyIfThisLandEnter
-  /-- Modeled MSH ability. -/
-  | addROrG
-  /-- Modeled MSH ability. -/
-  | addROrGActivateOnlyIfThisLandEnter
-  /-- Modeled MSH ability. -/
-  | addROrW
-  /-- Modeled MSH ability. -/
-  | addUOrB
-  /-- Modeled MSH ability. -/
-  | addUOrBActivateOnlyIfThisLandEnter
-  /-- Modeled MSH ability. -/
-  | addUOrR
   /-- Modeled MSH ability. -/
   | addUThisManaCanTBeSpentToCastANona
   /-- Modeled MSH ability. -/
   | addW
-  /-- Modeled MSH ability. -/
-  | addWOrB
-  /-- Modeled MSH ability. -/
-  | addWOrU
-  /-- Modeled MSH ability. -/
-  | addWOrUActivateOnlyIfThisLandEnter
   /-- Modeled MSH ability. -/
   | n1BDiscardThisCard
   /-- Modeled MSH ability. -/
@@ -848,28 +837,17 @@ def toNotation : ModeledAbility → String
   | .tyrannosaurusRex6UntilEndOfTu => "Tyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample."
   | .addXManaOfAnyOneColorWhereXIsDocSams => "Add X mana of any one color, where X is Doc Samson's power"
   | .addFourManaInAnyCombinationOfColors => "Add four mana in any combination of colors"
-  | .addOneManaOfAnyColorSpendThisManaOnly => "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
-  | .addOneManaOfAnyColorSpendThisManaOnly2 => "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
-  | .addOneManaOfAnyColorSpendThisManaOnly3 => "Add one mana of any color. Spend this mana only to cast an artifact spell"
+  | .addOneManaOfAnyColorSpendOnly kind =>
+    s!"Add one mana of any color. Spend this mana only {kind.spendClause}"
   | .addTwoManaOfAnyOneColorSpendThisManaO => "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
-  | .addBOrG => "Add {B} or {G}"
-  | .addBOrR => "Add {B} or {R}"
-  | .addBOrRActivateOnlyIfThisLandEnter => "Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land"
+  | .addOneOf a b enteredOrBasic =>
+    let base := s!"Add \{{a.letter}} or \{{b.letter}}"
+    if enteredOrBasic then
+      s!"{base}. Activate only if this land entered this turn or if you control a basic land"
+    else base
   | .addCCC => "Add {C}{C}{C}"
-  | .addGOrU => "Add {G} or {U}"
-  | .addGOrW => "Add {G} or {W}"
-  | .addGOrWActivateOnlyIfThisLandEnter => "Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land"
-  | .addROrG => "Add {R} or {G}"
-  | .addROrGActivateOnlyIfThisLandEnter => "Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land"
-  | .addROrW => "Add {R} or {W}"
-  | .addUOrB => "Add {U} or {B}"
-  | .addUOrBActivateOnlyIfThisLandEnter => "Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land"
-  | .addUOrR => "Add {U} or {R}"
   | .addUThisManaCanTBeSpentToCastANona => "Add {U}. This mana can't be spent to cast a nonartifact spell"
   | .addW => "Add {W}"
-  | .addWOrB => "Add {W} or {B}"
-  | .addWOrU => "Add {W} or {U}"
-  | .addWOrUActivateOnlyIfThisLandEnter => "Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land"
   | .n1BDiscardThisCard => "{1}{B}, Discard this card: Search your library for a Plan card, reveal it, put it into your hand, then shuffle."
   | .n2TDiscardACard => "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn."
   | .n2BSacrificeAnArtifactOrCreatur => "{2}{B}, Sacrifice an artifact or creature: Draw a card."
@@ -890,21 +868,7 @@ instance : ToString ModeledAbility where
 command and other mana-ability payment (CR 605.3a). -/
 def addManaTypes : ModeledAbility → Array ManaType
   | .addW => #[.colored .white]
-  | .addWOrB => #[.colored .white, .colored .black]
-  | .addWOrU | .addWOrUActivateOnlyIfThisLandEnter =>
-    #[.colored .white, .colored .blue]
-  | .addUOrB | .addUOrBActivateOnlyIfThisLandEnter =>
-    #[.colored .blue, .colored .black]
-  | .addUOrR => #[.colored .blue, .colored .red]
-  | .addBOrR | .addBOrRActivateOnlyIfThisLandEnter =>
-    #[.colored .black, .colored .red]
-  | .addBOrG => #[.colored .black, .colored .green]
-  | .addROrG | .addROrGActivateOnlyIfThisLandEnter =>
-    #[.colored .red, .colored .green]
-  | .addROrW => #[.colored .red, .colored .white]
-  | .addGOrU => #[.colored .green, .colored .blue]
-  | .addGOrW | .addGOrWActivateOnlyIfThisLandEnter =>
-    #[.colored .green, .colored .white]
+  | .addOneOf a b _ => #[.colored a, .colored b]
   | .addCCC => #[.colorless, .colorless, .colorless]
   | .addUThisManaCanTBeSpentToCastANona => #[.colored .blue]
   | _ => #[]
@@ -912,18 +876,23 @@ def addManaTypes : ModeledAbility → Array ManaType
 /-- True when the add ability may be activated only if this land entered this
 turn or if you control a basic land. -/
 def requiresEnteredOrBasic : ModeledAbility → Bool
-  | .addUOrBActivateOnlyIfThisLandEnter
-  | .addBOrRActivateOnlyIfThisLandEnter
-  | .addGOrWActivateOnlyIfThisLandEnter
-  | .addWOrUActivateOnlyIfThisLandEnter
-  | .addROrGActivateOnlyIfThisLandEnter => true
+  | .addOneOf _ _ true => true
   | _ => false
 
-#guard addManaTypes .addUOrBActivateOnlyIfThisLandEnter ==
+#guard addManaTypes (.addOneOf .blue .black true) ==
   #[.colored .blue, .colored .black]
-#guard addManaTypes .addUOrB == #[.colored .blue, .colored .black]
-#guard requiresEnteredOrBasic .addUOrBActivateOnlyIfThisLandEnter
-#guard !(requiresEnteredOrBasic .addUOrB)
+#guard addManaTypes (.addOneOf .blue .black) == #[.colored .blue, .colored .black]
+#guard requiresEnteredOrBasic (.addOneOf .blue .black true)
+#guard !(requiresEnteredOrBasic (.addOneOf .blue .black))
+#guard toNotation (.addOneOf .blue .black) == "Add {U} or {B}"
+#guard toNotation (.addOneOf .blue .black true) ==
+  "Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land"
+#guard toNotation (.addOneManaOfAnyColorSpendOnly .hero) ==
+  "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
+#guard toNotation (.addOneManaOfAnyColorSpendOnly .villain) ==
+  "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
+#guard toNotation (.addOneManaOfAnyColorSpendOnly .artifactSpell) ==
+  "Add one mana of any color. Spend this mana only to cast an artifact spell"
 
 end ModeledAbility
 /-- A leftover modeled Saga chapter that is not yet a shared shape. -/

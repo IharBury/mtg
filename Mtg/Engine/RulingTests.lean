@@ -293,7 +293,7 @@ def twoLandfallTriggered : Bool :=
     (twoLandfall.object! e.objectId).triggeredAbility)
   let waiting := twoLandfall.waitingTriggers.map (·.ability)
   let all := onStack ++ waiting
-  all.any (· == .onLandYouControlEntersGets1) &&
+  all.any (· == .onLandYouControlEntersGets 1 1) &&
     all.any (· == .onLandYouControlEntersPlusOnePlusOne)
 
 #guard twoLandfallTriggered

@@ -135,7 +135,7 @@ def captainOfUmbar : CardDef :=
   creature "Captain of Umbar" (ManaCost.ofGenericAndColor 2 .blue) #["Human", "Pirate"] 2 3
     (oracleText := "{1}, {T}: Draw a card, then discard a card.")
     (activatedAbilities := #[
-      activated .drawThenDiscard (ManaCost.ofGeneric 1) (tap := true)])
+      activated (.drawThenDiscard 1) (ManaCost.ofGeneric 1) (tap := true)])
 
 def minasTirithGarrison : CardDef :=
   card "Minas Tirith Garrison" #[.creature] (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Soldier"]
@@ -396,7 +396,7 @@ def relicOfSauron : CardDef :=
     "{T}: Add two mana in any combination of {U}, {B}, and/or {R}.\n{3}, {T}: Draw two cards, then discard a card."
     (tapAddTwoAmong := #[.colored .blue, .colored .black, .colored .red])
     (activatedAbilities := #[
-      activated (.drawThenDiscardN 2) (ManaCost.ofGeneric 3) (tap := true)])
+      activated (.drawThenDiscard 2) (ManaCost.ofGeneric 3) (tap := true)])
 
 def longLostLances : CardDef :=
   artifact "Long-Lost Lances" (ManaCost.ofGeneric 2)

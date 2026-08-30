@@ -276,7 +276,7 @@ def attercop : CardDef :=
   creature "Attercop" (ManaCost.ofGenericAndColor 1 .green) #["Spider"] 2 1
     (oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn.")
     (keywords := Keyword.reach.merge Keyword.deathtouch)
-    (triggeredAbilities := #[.onLandYouControlEntersGets1])
+    (triggeredAbilities := #[.onLandYouControlEntersGets 1 1])
 
 def ordinaryBear : CardDef :=
   creature "Ordinary Bear" (ManaCost.ofGenericAndColor 3 .green) #["Bear"] 4 5
@@ -311,8 +311,8 @@ def wellWornSpatula : CardDef :=
     (staticAbilities := #[.equippedCreatureGets 1 1])
 
 /-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
-for two +1/+1 counters on a typed creature you control. One type uses
-`plusOneOnTargetSubtype`; several types use `plusOneOnTargetAnySubtype`. -/
+for two +1/+1 counters on a typed creature you control. One type or several
+types both use `plusOneOnTarget`. -/
 def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String)
     (oracleText : String) : CardDef :=
   land name oracleText
@@ -320,10 +320,7 @@ def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String)
     (tapAddOneOf := #[.colored a, .colored b])
     (activatedAbilities := #[
       activated
-        (if creatureTypes.size == 1 then
-          .plusOneOnTargetSubtype 2 creatureTypes[0]!
-        else
-          .plusOneOnTargetAnySubtype 2 creatureTypes)
+        (.plusOneOnTarget 2 creatureTypes)
         (ManaCost.ofGenericAndColors 2 [a, b])
         (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
 
@@ -430,14 +427,14 @@ def longBodiedGreyDog : CardDef :=
   creature "Long-Bodied Grey Dog" (ManaCost.ofGeneric 3) #["Dog"] 2 2
     (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (keywords := Keyword.flash.merge Keyword.reach)
-    (triggeredAbilities := #[.onEnterCreateTreasureTapped])
+    (triggeredAbilities := #[.onEnterCreateTokens .treasure 1 true])
 
 def doriBearerOfFriends : CardDef :=
   legendaryCreature "Dori, Bearer of Friends" (ManaCost.ofGenericAndColor 2 .red)
     #["Dwarf", "Warrior"] 3 2
     (oracleText := "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onEnterCreateTreasure])
+    (triggeredAbilities := #[.onEnterCreateTokens .treasure 1])
 
 def esgarothGarrison : CardDef :=
   card "Esgaroth Garrison" #[.creature] (ManaCost.ofGenericAndColor 4 .white)
@@ -629,7 +626,7 @@ def throrsMap : CardDef :=
     (supertypes := #[.legendary])
     (triggeredAbilities := #[.onEnterSearchBasicToHand])
     (activatedAbilities := #[
-      activated (.drawThenDiscardN 1) (ManaCost.ofGeneric 2) (tap := true)])
+      activated (.drawThenDiscard 1) (ManaCost.ofGeneric 2) (tap := true)])
 
 def theBlackArrow : CardDef :=
   equipment "The Black Arrow" (ManaCost.ofGeneric 3)
@@ -1427,7 +1424,7 @@ def hobbitCards : Array CardDef := #[
 #guard (attercop.summary.splitOn "reach").length > 1
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
-#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
+#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets 1 1]
 #guard raggedShortSpear.isEquipment
 #guard !raggedShortSpear.isAura
 #guard !raggedShortSpear.requiresTarget
