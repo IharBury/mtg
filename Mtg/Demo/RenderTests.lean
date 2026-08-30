@@ -1162,6 +1162,7 @@ def mountainLine (g : Game) : String :=
     mentions (playerBlock g (g.player ⟨0⟩)) "{G}×2"
 
 #guard mentions (header proposedCratermaker) "choose a mode (CR 601.2b"
+#guard mentions (header proposedStature) "choose a value for X (CR 107.3a / 601.2b"
 #guard mentions (header cratermakerModeChosen) "choose targets (CR 601.2c"
 #guard pendingCostNotation cratermakerTargeted == some "{1}, Sacrifice"
 #guard pendingCostLine cratermakerTargeted == some "Cost: {1}, Sacrifice"

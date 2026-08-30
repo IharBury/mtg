@@ -51,6 +51,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         else
           chooseSpellMode g p
       | none => some .pass
+    | .chooseX _ =>
+      match g.proposedSpell with
+      | some prop => some (.chooseX (maxAffordableX g p prop.cost))
+      | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
     | .sacrificePermanent _ sourceId =>
@@ -204,15 +208,27 @@ where
       match g.defaultAbilityMode p prop.abilityModes with
       | some idx => some (.chooseMode idx)
       | none => some .pass
+  /-- Largest `{X}` `p` can currently pay for `cost` (CR 107.3a). -/
+  maxAffordableX (g : Game) (p : PlayerId) (cost : ManaCost) : Nat :=
+    let available := g.availableMana p
+    Id.run do
+      let mut best : Nat := 0
+      for x in [0:available.total + 1] do
+        if available.canPay (cost.substituteX x) then
+          best := x
+      return best
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let shouldActivate (o : GameObject) (ab : ActivatedAbility) : Bool :=
       let available :=
         g.availableManaExcept p (if ab.cost.tap then some o.id else none)
+      let manaCost := g.activationManaCost p ab (some o)
       g.canActivate p o ab &&
       available.canPay ab.cost.mana (allowElfRestricted := o.hasSubtype "Elf") &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
+      -- Don't spend a once-only X power-up at X = 0.
+      !(ab.effect == .plusOneX && maxAffordableX g p manaCost == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
       !(ab.effect == .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.

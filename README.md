@@ -138,7 +138,8 @@ The first slice of the engine models the two-player game:
   power that may be spent only on Elf spells and abilities), activating other abilities of
   permanents (CR 602, including modal abilities at 601.2b / 700.2), playing
   granted cards from exile, and casting spells (CR 601.2, including choosing
-  modes at 601.2b / 700.2, announcing additional or alternative costs at 601.2b
+  modes at 601.2b / 700.2, announcing a value for `{X}` at 107.3a / 601.2b,
+  announcing additional or alternative costs at 601.2b
   before targets, announcing targets at 601.2c (every target of one instance
   of the word “target” together; each instance sequentially), then determining and paying
   costs such as sacrificing an artifact or creature at 601.2f / 601.2h or paying
@@ -149,7 +150,7 @@ The first slice of the engine models the two-player game:
   abilities at 601.2g)
 - combat declaration and combat damage assignment (CR 510.1c–d), including
   first strike (CR 702.7b), islandwalk (CR 702.14), menace, “can't be blocked
-  except by N or more”, and lifelink
+  except by N or more”, “can't be blocked if power is N or less”, and lifelink
 - static abilities that grant trample, pump other creatures of listed types,
   pump an enchanted or equipped creature,
   set power and toughness equal to the number of lands you control (in all

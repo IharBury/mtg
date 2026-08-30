@@ -820,6 +820,8 @@ def applyIdle (g : Game) : Game :=
           match g.defaultMode p spell with
           | none => panic! "no legal mode (CR 601.2b)"
           | some i => mustApply g p (.chooseMode i)
+  | .chooseX _, some p =>
+    mustApply g p (.chooseX 0)
   | .assignCombatDamage _ _, some p =>
     mustApply g p (.assignCombatDamage #[])
   | .chooseLegend _ _ ids, some p =>
@@ -12848,6 +12850,12 @@ def loreAfterFirstMain : Game :=
 #guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
 #guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
+#guard supportedCatalogCards.any (fun c => c.name == "Stature, Size Shifter")
+#guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
+#guard statureSizeShifter.activatedAbilities[0]!.effect == .plusOneX
+#guard statureSizeShifter.activatedAbilities[0]!.powerUp
+#guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
+  ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
 
 /-- Put `card` onto the battlefield and run enters replacements (shield, power-up). -/
 def mshEnter (g : Game) (card : CardDef) : Game :=
@@ -12993,6 +13001,125 @@ def hiddenLairWithIsland : Game :=
     (namedPermanent g "Hidden Lair").status.tapped &&
       (g.player ⟨0⟩).manaPool.blue == 1
   | .error _ => false
+
+/- Stature, Size Shifter: unblockable at power ≤ 1; power-up puts X +1/+1. -/
+
+def statureInPlay : Game :=
+  addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
+
+#guard (namedPermanent statureInPlay "Stature, Size Shifter").printed.power == some 1
+#guard statureInPlay.power (namedPermanent statureInPlay "Stature, Size Shifter") == 1
+#guard statureInPlay.hasCantBeBlocked (namedPermanent statureInPlay "Stature, Size Shifter")
+
+/-- Stature attacks at 1 power; Bears cannot block. -/
+def statureAttacking : Game :=
+  let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Stature, Size Shifter").id])
+
+def statureReadyToBlock : Game := passBoth statureAttacking
+
+#guard statureReadyToBlock.pending == .declareBlockers
+#guard !statureReadyToBlock.canBlock
+  (namedPermanent statureReadyToBlock "Grizzly Bears")
+  (namedPermanent statureReadyToBlock "Stature, Size Shifter")
+#guard
+  match statureReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent statureReadyToBlock "Grizzly Bears").id,
+    (namedPermanent statureReadyToBlock "Stature, Size Shifter").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+/-- After power-up counters, Stature is 4/4 and can be blocked. -/
+def staturePumpedInCombat : Game :=
+  let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let o := namedPermanent g "Stature, Size Shifter"
+  let g := g.setObject { o with status := { o.status with plusOnePlusOne := 3 } }
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Stature, Size Shifter").id])
+  passBoth g
+
+#guard staturePumpedInCombat.power
+  (namedPermanent staturePumpedInCombat "Stature, Size Shifter") == 4
+#guard !staturePumpedInCombat.hasCantBeBlocked
+  (namedPermanent staturePumpedInCombat "Stature, Size Shifter")
+#guard staturePumpedInCombat.canBlock
+  (namedPermanent staturePumpedInCombat "Grizzly Bears")
+  (namedPermanent staturePumpedInCombat "Stature, Size Shifter")
+
+/-- Stature in play with enough blue to activate `{X}{U}{U}` at X = 3. -/
+def statureReady : Game :=
+  let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
+  withBlueMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 5
+
+def proposedStature : Game :=
+  mustApply statureReady ⟨0⟩ (.activate (namedPermanent statureReady "Stature, Size Shifter").id 0)
+
+#guard proposedStature.pending == .chooseX ⟨0⟩
+#guard proposedStature.proposedSpell.isSome
+#guard (proposedStature.object! proposedStature.stack.back!.objectId).abilityEffect ==
+  some .plusOneX
+#guard proposedStature.log.any (fun s => mentions s "begins activating Stature")
+#guard proposedStature.log.any (fun s => mentions s "must choose a value for X")
+
+def statureXChosen : Game :=
+  mustApply proposedStature ⟨0⟩ (.chooseX 3)
+
+#guard statureXChosen.pending == .activateManaAbilities ⟨0⟩
+#guard (statureXChosen.object! statureXChosen.stack.back!.objectId).chosenX == some 3
+#guard
+  match statureXChosen.proposedSpell with
+  | some prop =>
+    prop.cost == ({ symbols := #[.generic 3, .colored .blue, .colored .blue] } : ManaCost)
+  | none => false
+#guard statureXChosen.log.any (fun s => mentions s "chooses X = 3")
+
+def paidStature : Game := mustApply statureXChosen ⟨0⟩ .pay
+
+#guard paidStature.hasPriority ⟨0⟩
+#guard paidStature.stack.size == 1
+#guard (namedPermanent paidStature "Stature, Size Shifter").status.plusOnePlusOne == 0
+#guard (namedPermanent paidStature "Stature, Size Shifter").status.powerUpUsed
+#guard (namedPermanent paidStature "Stature, Size Shifter").status.powerUpActivations == 1
+
+def staturePowerUpResolved : Game := passBoth paidStature
+
+#guard staturePowerUpResolved.stack.isEmpty
+#guard (namedPermanent staturePowerUpResolved "Stature, Size Shifter").status.plusOnePlusOne == 3
+#guard staturePowerUpResolved.power
+  (namedPermanent staturePowerUpResolved "Stature, Size Shifter") == 4
+#guard staturePowerUpResolved.toughness
+  (namedPermanent staturePowerUpResolved "Stature, Size Shifter") == 4
+#guard !staturePowerUpResolved.hasCantBeBlocked
+  (namedPermanent staturePowerUpResolved "Stature, Size Shifter")
+#guard staturePowerUpResolved.log.any (fun s =>
+  mentions s "Stature, Size Shifter gets 3 +1/+1 counters")
+
+/-- Entered this turn, `{X}{U}{U}` minus `{U}` is `{X}{U}`. -/
+def statureEntered : Game := mshEnter afterDraw statureSizeShifter
+
+#guard (namedPermanent statureEntered "Stature, Size Shifter").status.enteredThisTurn
+#guard
+  let o := namedPermanent statureEntered "Stature, Size Shifter"
+  let ab := o.printed.activatedAbilities[0]!
+  statureEntered.activationManaCost ⟨0⟩ ab (some o) ==
+    ({ symbols := #[.x, .colored .blue] } : ManaCost)
+#guard
+  let o := namedPermanent statureEntered "Stature, Size Shifter"
+  let ab := o.printed.activatedAbilities[0]!
+  statureEntered.activationManaCost ⟨0⟩ ab (some o) (chosenX := some 2) ==
+    ({ symbols := #[.generic 2, .colored .blue] } : ManaCost)
+
+/-- Power-up is used after activation even if X is 0. -/
+#guard
+  let g := mustApply proposedStature ⟨0⟩ (.chooseX 0)
+  let g := mustApply g ⟨0⟩ .pay
+  (namedPermanent g "Stature, Size Shifter").status.powerUpUsed &&
+    !g.canActivate ⟨0⟩ (namedPermanent g "Stature, Size Shifter")
+      (namedPermanent g "Stature, Size Shifter").printed.activatedAbilities[0]!
 
 end Mtg.Engine.Tests
 

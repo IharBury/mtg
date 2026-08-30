@@ -3312,6 +3312,27 @@ def blockedStaysBlockedOk : Bool :=
 
 #guard blockedStaysBlockedOk
 
+/-- Ruling 263: once Stature is blocked at high power, shrinking her to 1
+does not make her unblocked. -/
+def statureBlockedThenShrunkOk : Bool :=
+  let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let st := namedPermanent g "Stature, Size Shifter"
+  let g := g.setObject { st with status := { st.status with
+    plusOnePlusOne := 3, attacking := true, attackingWhom := some ⟨1⟩,
+    blocked := true } }
+  let st := namedPermanent g "Stature, Size Shifter"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with
+    blocking := #[st.id] } }
+  let g := g.mapObjectStatus (namedPermanent g "Stature, Size Shifter")
+    (fun s => { s with plusOnePlusOne := 0 })
+  let st := namedPermanent g "Stature, Size Shifter"
+  g.power st == 1 && g.hasCantBeBlocked st && st.status.blocked &&
+    (namedPermanent g "Grizzly Bears").status.blocking == #[st.id]
+
+#guard statureBlockedThenShrunkOk
+
 /-- Ruling 258: multiple lifelink instances are redundant. -/
 def yellowjacketLifelinkRedundantOk : Bool :=
   let g := addPermanent afterDraw yellowjacketHeartlessMarauder ⟨0⟩ ⟨0⟩
