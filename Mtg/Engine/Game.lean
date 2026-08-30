@@ -177,6 +177,8 @@ structure Status where
   enteredThisTurn : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
   harnessed : Bool := false
+  /-- This permanent is currently showing its back face (MSH modal DFC). -/
+  transformed : Bool := false
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -949,6 +951,12 @@ structure Game where
   /-- Cards in exile that return at the beginning of the next end step
   (Roll-Roll-Roll-Roll and similar delayed blinks). -/
   delayedEndStepReturns : Array ObjectId := #[]
+  /-- Source of the current connive action, if any (MSH / CR 701.47). -/
+  conniveSource : Option ObjectId := none
+  /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
+  additionalCombatPhases : Nat := 0
+  /-- Enrage triggers that will grant an additional combat when they resolve. -/
+  enrageGrantsAdditionalCombat : Nat := 0
 deriving Repr, Inhabited
 
 namespace Game
@@ -1960,9 +1968,19 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let g := g.removeFromZoneList id old.zone
   let (g, newId) := g.allocId
   let (g, ts) := g.bumpTime
+  let leavingPlay :=
+    (old.zone == .battlefield || old.zone == .stack) &&
+      dest != .battlefield && dest != .stack
+  let printed :=
+    if leavingPlay && old.status.transformed then
+      match old.printed.otherFace with
+      | some front =>
+        { front with otherFace := some { old.printed with otherFace := none } }
+      | none => old.printed
+    else old.printed
   let fresh : GameObject := {
     id := newId
-    printed := old.printed
+    printed
     owner := old.owner
     controller := controller
     defaultController := if dest == .battlefield then controller else none
@@ -3584,7 +3602,13 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
   Id.run do
     let mut g := g
     for ab in source.matchingTriggers event do
-      g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness cause
+      let skipInfinity :=
+        match ab with
+        | .msh .atTheBeginningOf => !source.status.harnessed
+        | _ => false
+      if !skipInfinity then
+        g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
+          cause
     return g
 
 /-- Apply `f` to each battlefield permanent matching `pred`. -/
@@ -6032,10 +6056,46 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
     let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
     let g := g.logForPlayers skipped (fun p =>
       s!"{(g.player p).name} has no card to discard")
+    let g :=
+      if g.conniveSource.isSome then
+        { g with conniveSource := none }.logMsg
+          "No card is discarded; the conniving creature does not receive a +1/+1 counter"
+      else g
     { g with pending := .none }.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"
+
+/-- Draw, then discard. If a nonland is discarded and the source is still on
+the battlefield, put a +1/+1 counter on it. The creature still connives if it
+has left (MSH / CR 701.47). -/
+def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  let g := { g with conniveSource := sourceId }
+  let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
+  let g := g.draw controller 1
+  if (g.player controller).hand.isEmpty then
+    let g := { g with conniveSource := none }
+    g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
+  else
+    g.beginDiscardCards #[controller]
+
+/-- Finish a pending connive after a card is discarded. -/
+def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
+  match g.conniveSource with
+  | none => g
+  | some sid =>
+    let g := { g with conniveSource := none }
+    if discarded.printed.isLand then
+      g.logMsg "A land was discarded; the conniving creature does not receive a +1/+1 counter"
+    else
+      match g.findObject? sid with
+      | some o =>
+        if o.isOnBattlefield then
+          g.addPlusOnePlusOneTo o 1
+        else
+          g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
+      | none =>
+        g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.17). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -6126,7 +6186,20 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let g :=
     if n > 0 then
       match o.controller with
-      | some p => g.putMatchingSourceTriggers p o .sourceDealtDamage
+      | some p =>
+        let already := g.waitingTriggers.any (fun t =>
+          t.source.id == o.id && t.event == .sourceDealtDamage)
+        let g :=
+          if already then g
+          else g.putMatchingSourceTriggers p (g.object! o.id) .sourceDealtDamage
+        let hasEnrage :=
+          o.printed.triggeredAbilities.any (fun ab =>
+            match ab with
+            | .msh .enrageWheneverTheIncredi | .msh .enrageWheneverRedHulkIs => true
+            | _ => false)
+        if !already && hasEnrage && o.status.attacking then
+          { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
+        else g
       | none => g
     else g
   if n > 0 && !combat then
@@ -6831,6 +6904,19 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     g.createKindTokens controller .doombot 2
   | .whenKaZarEnters =>
     g.createNamedToken controller zabuToken
+  | .enrageWheneverTheIncredi | .enrageWheneverRedHulkIs =>
+    let g :=
+      g.withSourceOnBattlefield sourceId (fun g o =>
+        let g := g.addPlusOnePlusOneTo o 1
+        if o.status.attacking then
+          g.applyPermanentAction o .untap
+        else g) "The source is no longer in play"
+    if g.enrageGrantsAdditionalCombat > 0 then
+      { g with
+          enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat - 1
+          additionalCombatPhases := g.additionalCombatPhases + 1 }
+        |>.logMsg "There is an additional combat phase after this phase"
+    else g
   | .whenTheSentryEnters =>
     match targets[0]? with
     | some (Target.player pid) => g.createNamedToken pid theVoidToken
@@ -6922,8 +7008,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
         text.contains "draw cards" then
       g.draw controller 1
     else if text.contains "connive" then
-      let g := g.draw controller 1
-      g.beginDiscardCards #[controller]
+      g.applyConnive controller sourceId
     else if text.contains "surveil" || text.contains "Scry" || text.contains "scry" then
       g.beginScry controller 1
     else if text.contains "destroy target" then
@@ -6965,7 +7050,11 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
 def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     (targets : Array Target) : Game :=
   let text := t.toNotation
-  if text.contains "Galactus" then
+  if text.contains "connive" then
+    match targets[0]? with
+    | some (Target.permanent id) => g.applyConnive controller (some id)
+    | _ => g.applyConnive controller none
+  else if text.contains "Galactus" then
     g.createNamedToken controller galactusToken
   else if text.contains "Tiger God" then
     let g :=
@@ -7023,7 +7112,13 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
 def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let text := t.toNotation
-  if text.contains "draws four" || text.contains "Draw four" then
+  if t == .harnessTheMindStone then
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with harnessed := true })
+      g.logMsg s!"{o.name} is harnessed") "The source is no longer in play"
+  else if text.contains "connive" then
+    g.applyConnive controller sourceId
+  else if text.contains "draws four" || text.contains "Draw four" then
     g.draw controller 4
   else if text.contains "Draw two cards" || text.contains "Draw a card" then
     g.draw controller (if text.contains "two" then 2 else 1)
@@ -7976,7 +8071,11 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
       match o.printed.otherFace with
       | none => g.logMsg s!"{o.name} has no other face"
       | some face =>
-        g.setObject { o with printed := { face with otherFace := some o.printed } }
+        let back := { face with otherFace := some { o.printed with otherFace := none } }
+        let g := g.setObject { o with
+          printed := back
+          status := { o.status with transformed := !o.status.transformed } }
+        g.logMsg s!"{o.name} transforms into {back.name}"
   | .drawX =>
     let x :=
       match sourceId.bind g.findObject? with
@@ -7986,9 +8085,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .lookAtTopRevealArtifact n =>
     g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
   | .connive =>
-    g.withSourceOnBattlefield sourceId fun g _o =>
-      let g := g.draw controller 1
-      g.beginDiscardCards #[controller]
+    g.applyConnive controller sourceId
   | .msh t =>
     g.applyMshAbility controller t targets sourceId
   | .mshSpell t =>
@@ -8087,6 +8184,7 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
     let g := g.setObject { copy with
       kicked := src.kicked
       giftPromisedTo := src.giftPromisedTo
+      teamworkPaid := src.teamworkPaid
       isCopy := true
       adventurerCard := src.adventurerCard }
     let g := g.putStackEntry controller copy.id
@@ -9527,11 +9625,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
       g.draw controller 1
   | .connive =>
-    let g := g.draw controller 1
-    g.beginDiscardCards #[controller]
+    g.applyConnive controller sourceId
   | .targetConnive =>
-    let g := g.draw controller 1
-    g.beginDiscardCards #[controller]
+    match targets[0]? with
+    | some (Target.permanent id) => g.applyConnive controller (some id)
+    | _ => g.applyConnive controller sourceId
   | .pumpCause p t =>
     match (g.battlefield.find? (fun o => o.status.attacking && o.controlledBy controller)) with
     | some o => g.pumpPermanent o p t
@@ -10450,6 +10548,11 @@ def advanceStep (g : Game) : Game :=
       g.beginStep .endOfCombat
     else if g.step == .combatDamage && g.pendingRegularCombatDamage then
       { g with pendingRegularCombatDamage := false }.beginCombatDamageAssignment
+    else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
+      let g := g.clearCombat
+      let g := { g with additionalCombatPhases := g.additionalCombatPhases - 1 }
+      g.logMsg "An additional combat phase begins"
+        |>.beginStep .beginningOfCombat
     else
       g.beginStep st
   | none =>
@@ -10774,6 +10877,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let some card := g.findObject? id | throw "no such object"
     let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
     let (g, _) := g.move id (.graveyard card.owner) none
+    let g := g.finishConniveDiscard card
     return g.beginDiscardCards remaining
   | .recruitDiscard q =>
     if p != q then
