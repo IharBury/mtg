@@ -202,6 +202,10 @@ structure Status where
   /-- Entered back-face-up because it is night and the front has daybound
   (MSH 191). Transform is illegal. -/
   cantTransform : Bool := false
+  /-- Sources that make this permanent lose its printed abilities while they
+  remain (The Wondrous Wasp; MSH 145 / 190). Later granted abilities still
+  apply. -/
+  losesAbilitiesGrantedBy : Array ObjectId := #[]
   /-- Modes chosen for the object's lifetime (Gollum, Riddle Master). -/
   chosenModes : Array Nat := #[]
   /-- Odd/even choice (Gollum). `none` until chosen; `some true` is odd. -/
@@ -425,6 +429,9 @@ structure GameObject where
   copyUntilNextTurn : Bool := false
   /-- The current copy effect lasts until this source leaves the battlefield. -/
   copyUntilSourceLeaves : Option ObjectId := none
+  /-- A control-changing effect lasts until this source leaves (Super Hero
+  Civil War; MSH 143). -/
+  controlUntilSourceLeaves : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -1051,6 +1058,9 @@ structure Game where
   /-- If the controlled player skips their next turn, control applies to the
   next turn they actually take (MSH 221). -/
   controlOnNextTakenTurn : Bool := false
+  /-- Loki delayed copy: (controller, Loki's id if still known, last-known
+  power). Compared at cast time (MSH 109). -/
+  pendingLokiCopy : Option (PlayerId × Option ObjectId × Int) := none
   /-- Extort triggers waiting for a pay/don't-pay decision (MSH 371). -/
   pendingExtort : Nat := 0
   /-- Controller of the pending extort trigger. -/
@@ -1230,6 +1240,22 @@ def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
   g.battlefield.foldl (fun acc o =>
     if o.copyUntilSourceLeaves == some srcId then acc.restoreCopy o else acc) g
 
+/-- Restore control-changing effects that last until `srcId` leaves
+(Super Hero Civil War; MSH 143). -/
+def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
+  g.battlefield.foldl (fun acc o =>
+    if o.controlUntilSourceLeaves == some srcId then
+      let p := o.defaultController.getD o.owner
+      if (acc.player p).lost then
+        acc.logMsg s!"{o.name} does not change control (CR 800.4b)"
+      else
+        acc.setObject { o with
+          controller := some p
+          controlChanged := false
+          controlUntilSourceLeaves := none }
+          |>.logMsg s!"{o.name} returns to {(acc.player p).name}'s control"
+    else acc) g
+
 /-- Equipment attached to `o` (Whiplash last-known X). -/
 def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
   g.battlefield.filter (fun eq =>
@@ -1272,6 +1298,29 @@ def visibleHand (g : Game) (viewer whose : PlayerId) : Array GameObject :=
   if g.canSeeAs viewer whose then
     (g.player whose).hand.filterMap (fun id => g.findObject? id)
   else #[]
+
+/-- Controlling a player does not let you look at their sideboard
+(MSH 349). -/
+def canLookAtSideboard (_g : Game) (viewer whose : PlayerId) : Bool :=
+  viewer == whose
+
+/-- You cannot have a player you're controlling choose a card from
+outside the game (MSH 349). -/
+def canChooseOutsideGame (g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose && !g.controlsPlayer actor whose
+
+/-- Tournament-rule decisions stay with the actual player (MSH 350). -/
+def canMakeTournamentDecision (g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose && !g.controlsPlayer actor whose
+
+/-- You cannot make illegal choices for a player you control (MSH 351). -/
+def canMakeIllegalDecision (_g : Game) (_actor _whose : PlayerId) : Bool :=
+  false
+
+/-- The controlling player cannot concede for the controlled player
+(MSH 352). That player may still concede. -/
+def canConcedeAs (_g : Game) (actor whose : PlayerId) : Bool :=
+  actor == whose
 
 /-- Whether `p` currently has an enduring story. -/
 def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
@@ -2378,8 +2427,16 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     | none => g
   let g :=
     if old.zone == .battlefield then
-      g.restoreCopiesUntilSourceLeaves old.id
+      let g := g.restoreCopiesUntilSourceLeaves old.id
+      g.restoreControlUntilSourceLeaves old.id
     else g
+  let g :=
+    match g.pendingLokiCopy with
+    | some (p, some id, _) =>
+      if id == old.id then
+        { g with pendingLokiCopy := some (p, none, old.lastKnownPower.getD old.power) }
+      else g
+    | _ => g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
@@ -2877,10 +2934,21 @@ def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
             Keywords.merge k ab.hostKeywords) Keywords.none)
       else acc) Keywords.none
 
-/-- Printed, until-end-of-turn, attached-host, and enduring-story keywords. -/
+/-- Printed abilities still apply unless The Wondrous Wasp (or similar)
+is making the permanent lose them (MSH 145 / 190). -/
+def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
+  !o.status.losesAbilitiesGrantedBy.any (fun id =>
+    match g.findObject? id with
+    | some src => src.isOnBattlefield
+    | none => false)
+
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
+  let printedKw :=
+    if g.retainsPrintedAbilities o then o.printed.keywords else Keywords.none
   let base :=
-    Keywords.merge (Keywords.merge o.printedOrUntilEot (g.attachedGrantedKeywords o))
+    Keywords.merge
+      (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+        (g.attachedGrantedKeywords o))
       (g.enduringStoryKeywords o)
   if o.status.shadow > 0 then { base with shadow := true } else base
 
@@ -4302,10 +4370,37 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   let g :=
     g.putControlledTriggers caster .youCastTargetingCreatureYouControl
-  if !spell.printed.isCreature && nonc == 1 then
-    (g.livingOpponents caster).foldl (fun acc pl =>
-      acc.putControlledTriggers pl.id .opponentCastsFirstNoncreature) g
-  else g
+  let g :=
+    if !spell.printed.isCreature && nonc == 1 then
+      (g.livingOpponents caster).foldl (fun acc pl =>
+        acc.putControlledTriggers pl.id .opponentCastsFirstNoncreature) g
+    else g
+  -- Loki (MSH 109): copy the next instant or sorcery whose mana value is
+  -- ≤ Loki's power at cast time (last known if he already left).
+  let pw? :=
+    match g.pendingLokiCopy with
+    | none => none
+    | some (p, some id, fallback) =>
+      if p != caster then none
+      else
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield then some (g.power o) else some fallback
+        | none => some fallback
+    | some (p, none, fallback) =>
+      if p == caster then some fallback else none
+  match pw? with
+  | some pw =>
+    if spell.printed.isInstantOrSorcery && Int.ofNat mv <= pw then
+      let (g, copy) := g.allocObject spell.printed caster .stack (some caster)
+      let g := g.setObject { copy with
+        chosenX := spell.chosenX
+        isCopy := true }
+      let g := g.putStackEntry caster copy.id
+      { g with pendingLokiCopy := none }
+        |>.logMsg s!"A copy of {spell.name} is created (Loki)"
+    else g
+  | none => g
 
 /-- Put “whenever another Elf you control enters” triggers onto the stack
 (CR 603.6a). The entering permanent itself does not trigger. -/
@@ -4417,6 +4512,7 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
     let g :=
       if g.hasSubtype entered "Villain" || entered.printed.isArtifact then
         g.putControlledTriggers p .anotherVillainOrArtifactEnters
+          (excludeId := some entered.id)
       else g
     let g :=
       if g.hasSubtype entered "Villain" then
@@ -6029,6 +6125,29 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
       (g.permanentsOf caster).foldl (fun acc o =>
         acc + o.printed.costReductionNotFromHand) 0
   let afterNotHand := afterFirst.reduceGeneric notFromHand
+  let witchLess :=
+    if face.isInstant || face.isSorcery then
+      let mv := face.manaValue + card.chosenX.getD 0
+      if mv < 4 then 0
+      else
+        (g.permanentsOf caster).foldl (fun acc o =>
+          let reduces :=
+            o.staticAbilities.any (fun ab =>
+              match ab with
+              | .msh .instantAndSorcerySpellsYouCastWithManaVa => true
+              | _ => false)
+          if reduces then acc + (g.power o).toNat else acc) 0
+    else 0
+  let afterX :=
+    match card.chosenX with
+    | none => afterNotHand
+    | some x =>
+      { symbols := afterNotHand.symbols.foldl (fun acc s =>
+          match s with
+          | ManaSymbol.x =>
+            if x == 0 then acc else acc.push (ManaSymbol.generic x)
+          | _ => acc.push s) (#[] : Array ManaSymbol) }
+  let afterWitch := afterX.reduceGeneric witchLess
   let subtypeLess :=
     (g.permanentsOf caster).foldl (fun acc o =>
       o.staticAbilities.foldl (fun acc ab =>
@@ -6036,7 +6155,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
         | .subtypeSpellsCostLess subtype n =>
           if face.hasSubtype subtype then acc + n else acc
         | _ => acc) acc) 0
-  afterNotHand.reduceGeneric subtypeLess
+  afterWitch.reduceGeneric subtypeLess
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 601.2f). `withoutManaCost` and a reduction that removes every
@@ -8281,6 +8400,79 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
             g.applyPermanentAction (g.object! host.id) .untap
           | _ => g) "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
+  | .waspSStingWhenTheWondrousWa =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some tgt =>
+        if !tgt.isOnBattlefield then g
+        else
+          let g := g.applyPermanentAction tgt .tap
+          match sourceId.bind g.findObject? with
+          | some src =>
+            if src.isOnBattlefield then
+              let tgt := g.object! id
+              g.mapObjectStatus tgt (fun s =>
+                { s with losesAbilitiesGrantedBy :=
+                  s.losesAbilitiesGrantedBy.push src.id })
+            else
+              g.logMsg s!"The Wondrous Wasp has left. {tgt.name} is tapped but keeps its abilities."
+          | none =>
+            g.logMsg s!"The Wondrous Wasp has left. {tgt.name} is tapped but keeps its abilities."
+      | none => g
+    | _ => g
+  | .whenThisCreatureEnters4 =>
+    let g := g.draw controller 1
+    let land? :=
+      (g.player controller).hand.filterMap (fun id => g.findObject? id) |>.find?
+        (fun o => o.printed.isLand)
+    match land? with
+    | none => g
+    | some land =>
+      let (g, newId) := g.putOntoBattlefield land.id controller
+        (tapped := true) (summoningSick := false)
+      g.afterLandEnters (g.object! newId)
+  | .wheneverAnotherNontokenArtifactYouControlE =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some src =>
+        if src.isOnBattlefield && src.printed.isArtifact && !src.printed.isToken then
+          let (g, tok) := g.copyBattlefieldPermanent src controller
+          if tok.isCreature then g
+          else
+            let printed :=
+              { tok.printed with
+                types :=
+                  if tok.printed.types.any (· == .creature) then tok.printed.types
+                  else tok.printed.types.push .creature
+                subtypes := mergeSubtypes tok.printed.subtypes #["Robot", "Villain"]
+                power := some 2
+                toughness := some 2 }
+            g.setObject { tok with printed }
+              |>.logMsg s!"{printed.name} is a 2/2 Robot Villain creature"
+        else g
+      | none => g
+    | _ => g
+  | .wheneverAVillainYouControlDies =>
+    match targets[0]? with
+    | some (Target.card id) | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .graveyard o.owner && g.hasSubtype o "Villain" then
+          let owner := o.owner
+          let (g, newId) := g.putOntoBattlefield id owner
+          let o := g.object! newId
+          let subtypes :=
+            if o.printed.subtypes.any (· == "Hero") then o.printed.subtypes
+            else o.printed.subtypes.push "Hero"
+          let g := g.setObject { o with
+            printed := { o.printed with subtypes }
+            status := { o.status with finality := o.status.finality + 1 } }
+          g.afterPermanentEnters (g.object! newId)
+        else g
+      | none => g
+    | _ => g
   | .whenThisAuraEnters3 =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match src.attachedTo.bind g.findObject? with
@@ -8409,6 +8601,14 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
         g.logMsg "The target is no longer legal. The ability has no effect."
     | _, _ =>
       g.logMsg "The target is no longer legal. The ability has no effect."
+  | .whenYouNextCastAnInstantOrSorcerySpellW =>
+    let pw :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.power o else o.power
+      | none => (0 : Int)
+    { g with pendingLokiCopy := some (controller, sourceId, pw) }
+      |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
   | .copyTargetActivatedOrTriggeredAbilityYouC =>
     match targets[0]? with
     | some (Target.card id) | some (Target.permanent id) =>
@@ -8589,15 +8789,39 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
 
 /-- Resolve a modeled MSH Saga chapter. -/
 def applyMshChapter (g : Game) (controller : PlayerId) (t : MshChapter)
-    (targets : Array Target) (_sourceId : Option ObjectId) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let text := t.toNotation
   if text.contains "damage" then
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
       | Target.player pid => g.dealDamageToPlayer pid 2
       | _ => g)
-  else if text.contains "gain control" then
-    g
+  else if text.contains "gain control" || text.contains "Gain control" then
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        targets.foldl (fun (g : Game) (t : Target) =>
+          match t with
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some o =>
+              if o.isOnBattlefield then
+                let g :=
+                  if (g.player controller).lost then
+                    g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+                  else
+                    g.setObject { o with
+                      controller := some controller
+                      controlChanged := true
+                      controlUntilSourceLeaves := some src.id }
+                g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
+              else g
+            | none => g
+          | _ => g) g
+      else
+        g.logMsg "The Super Hero Civil War has left the battlefield. You won't gain control."
+    | none =>
+      g.logMsg "The Super Hero Civil War has left the battlefield. You won't gain control."
   else
     g.createKindTokens controller .treasure 1
 

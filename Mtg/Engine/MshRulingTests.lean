@@ -2621,6 +2621,402 @@ def controlPlayerChoicesOk : Bool :=
 
 #guard controlPlayerChoicesOk
 
+/-- Rulings 349 / 350 / 351 / 352: controlling a player does not reveal
+their sideboard, grant outside-game or tournament choices, or let you
+concede for them. They may still concede. -/
+def controlPlayerLimitsOk : Bool :=
+  let g := afterDraw.setPlayerControl ⟨0⟩ ⟨1⟩
+  !g.canLookAtSideboard ⟨0⟩ ⟨1⟩ &&
+    g.canLookAtSideboard ⟨1⟩ ⟨1⟩ &&
+    !g.canChooseOutsideGame ⟨0⟩ ⟨1⟩ &&
+    !g.canMakeTournamentDecision ⟨0⟩ ⟨1⟩ &&
+    g.canMakeTournamentDecision ⟨1⟩ ⟨1⟩ &&
+    !g.canMakeIllegalDecision ⟨0⟩ ⟨1⟩ &&
+    !g.canConcedeAs ⟨0⟩ ⟨1⟩ &&
+    g.canConcedeAs ⟨1⟩ ⟨1⟩ &&
+    (let g := g.concede ⟨1⟩
+     (g.player ⟨1⟩).lost) &&
+    (mshRuling 349).comment.contains "sideboard" &&
+    (mshRuling 350).comment.contains "tournament rules" &&
+    (mshRuling 351).comment.contains "can't make any illegal decisions" &&
+    (mshRuling 352).comment.contains "can't make the player"
+
+#guard controlPlayerLimitsOk
+
+/-- Rulings 193 / 196 / 197 / 200: copying a token uses its original
+characteristics, not counters or tap. -/
+def copyTokenOriginalOk : Bool :=
+  let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
+  let g := g.mapObjectStatus tok (fun s =>
+    { s with plusOnePlusOne := 3, tapped := true })
+  let dest := namedPermanent g "Aerial Doombot"
+  let tok := g.object! tok.id
+  let g := g.becomeCopyOf dest tok
+  let dest := g.object! dest.id
+  dest.printed.name == "Soldier" &&
+    dest.printed.power == some 1 &&
+    dest.printed.toughness == some 1 &&
+    dest.status.plusOnePlusOne == 0 &&
+    !dest.status.tapped &&
+    (mshRuling 193).comment.contains "original characteristics of that token" &&
+    (mshRuling 196).comment.contains "original characteristics of that token" &&
+    (mshRuling 197).comment.contains "original characteristics of that token" &&
+    (mshRuling 200).comment.contains "original characteristics of that token"
+
+#guard copyTokenOriginalOk
+
+/-- Rulings 155 / 194 / 195 / 198 / 199 / 201: a copy of a copy uses the
+copied characteristics. -/
+def copyOfCopyOk : Bool :=
+  let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
+  let g := addPermanent g sHIELDDeploymentDrone ⟨0⟩ ⟨0⟩
+  let g := addPermanent g futuristForge ⟨0⟩ ⟨0⟩
+  let drone := namedPermanent g "S.H.I.E.L.D. Deployment Drone"
+  let dest := namedPermanent g "Aerial Doombot"
+  let g := g.becomeCopyOf dest drone
+  let dest := g.object! dest.id
+  let forge := namedPermanent g "Futurist Forge"
+  let g := g.becomeCopyOf forge dest
+  let forge := g.object! forge.id
+  dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
+    forge.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
+    (mshRuling 194).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 198).comment.contains "copy of whatever" &&
+    (mshRuling 199).comment.contains "whatever that creature copied" &&
+    (mshRuling 201).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 155).comment.contains "whatever that creature copied" &&
+    (mshRuling 195).comment.contains "whatever that artifact copied"
+
+#guard copyOfCopyOk
+
+/-- Rulings 92 / 93 / 115 / 304: a token copy is not tapped or countered,
+and the copied permanent's enters abilities trigger. -/
+def copyTokenEntersAbilitiesOk : Bool :=
+  let g := addPermanent afterDraw futuristForge ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Futurist Forge"
+  let (g, tok) := g.copyBattlefieldPermanent src ⟨0⟩
+  let before := g.waitingTriggers.size
+  let g := g.afterPermanentEnters tok
+  !tok.status.tapped &&
+    tok.status.plusOnePlusOne == 0 &&
+    tok.printed.isToken &&
+    g.waitingTriggers.size > before &&
+    (mshRuling 92).comment.contains "enters abilities of each copied" &&
+    (mshRuling 93).comment.contains "enters abilities of the copied" &&
+    (mshRuling 115).comment.contains "exactly what was printed" &&
+    (mshRuling 304).comment.contains "exactly what was printed"
+
+#guard copyTokenEntersAbilitiesOk
+
+/-- Rulings 36 / 46 / 48 / 66 / 116 / 117 / 278 / 279 / 303: a stack-ability
+copy keeps mode, divided damage, and the original source. -/
+def copyStackAbilityDetailsOk : Bool :=
+  let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Aerial Doombot"
+  let (g, ab) := g.allocStackAbility src ⟨0⟩
+    (triggeredAbility := some (.onEnterDraw 1))
+  let g := g.putStackEntry ⟨0⟩ ab.id
+  let g :=
+    match g.stack.findIdx? (fun e => e.objectId == ab.id) with
+    | none => g
+    | some i =>
+      { g with stack := g.stack.set! i { g.stack[i]! with
+        targets := #[Target.player ⟨1⟩]
+        dividedDamage := #[2, 1]
+        chosenMode := some 1 } }
+  let g := g.copyStackAbility (g.object! ab.id) ⟨0⟩
+  let copies := g.objects.filter (fun o =>
+    o.zone == .stack && o.isCopy && o.sourceId == some src.id)
+  let last := g.stack.back!
+  copies.size == 1 &&
+    copies[0]!.sourceId == some src.id &&
+    last.chosenMode == some 1 &&
+    last.dividedDamage == #[2, 1] &&
+    last.targets.size == 1 &&
+    (mshRuling 36).comment.contains "choices will be made separately" &&
+    (mshRuling 46).comment.contains "division can't be changed" &&
+    (mshRuling 48).comment.contains "same mode" &&
+    (mshRuling 66).comment.contains "can't choose to pay any activation" &&
+    (mshRuling 116).comment.contains "not just one with targets" &&
+    (mshRuling 117).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 278).comment.contains "not just one with targets" &&
+    (mshRuling 279).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 303).comment.contains "same as the source of the original"
+
+#guard copyStackAbilityDetailsOk
+
+/-- Rulings 134 / 183 / 327: Hulkling re-checks on resolve, multiple
+enters trigger separately, and a swapped greater stat still counts. -/
+def hulklingRecheckOk : Bool :=
+  let g := mshEnter afterDraw hulklingBurgeoningBruiser
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let giant := namedPermanent g "Hill Giant"
+  let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
+  let gShrink := g.pumpPermanent giant (-2) (-2)
+  let gShrink := gShrink.applyMshTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+    (some hulkling.id) #[Target.permanent giant.id]
+  (namedPermanent gShrink "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
+    (let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+     let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+     let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
+     let giants := g.battlefield.filter (fun o => o.name == "Hill Giant")
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+       (some hulkling.id) #[Target.permanent giants[0]!.id]
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+       (some hulkling.id) #[Target.permanent giants[1]!.id]
+     (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
+    (let g := mshEnter afterDraw hulklingBurgeoningBruiser
+     let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+     let bot := namedPermanent g "Aerial Doombot"
+     let g := g.mapObjectStatus bot (fun s => { s with setBasePT := some (1, 4) })
+     let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
+     let g := g.mapObjectStatus hulkling (fun s => { s with setBasePT := some (4, 3) })
+     let hulkling := namedPermanent g "Hulkling, Burgeoning Bruiser"
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherCreatureYouControlEnters
+       (some hulkling.id) #[Target.permanent bot.id]
+     (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
+    (mshRuling 134).comment.contains "stat comparison will happen again" &&
+    (mshRuling 183).comment.contains "trigger multiple times" &&
+    (mshRuling 327).comment.contains "stat that's greater changes"
+
+#guard hulklingRecheckOk
+
+/-- Rulings 112 / 293: damage is tracked through indestructible; deathtouch
+is checked only on the first SBA pass after the damage. -/
+def doctorDoomDamageTrackedOk : Bool :=
+  let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
+  let doom := namedPermanent g "Doctor Doom"
+  let g := g.mapObjectStatus doom (·.grantUntilEot Keyword.indestructible)
+  let doom := namedPermanent g "Doctor Doom"
+  let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3"
+  let g := g.checkSBA
+  onBattlefield g "Doctor Doom" &&
+    (namedPermanent g "Doctor Doom").status.damage == 3 &&
+    (let doom := namedPermanent g "Doctor Doom"
+     let g := g.mapObjectStatus doom (fun s =>
+       { s with untilEotKeywords := Keywords.none })
+     let g := g.checkSBA
+     !onBattlefield g "Doctor Doom") &&
+    (let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
+     let doom := namedPermanent g "Doctor Doom"
+     let g := g.mapObjectStatus doom (·.grantUntilEot Keyword.indestructible)
+     let doom := namedPermanent g "Doctor Doom"
+     let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true)
+     let g := g.checkSBA
+     onBattlefield g "Doctor Doom" &&
+       !(namedPermanent g "Doctor Doom").status.dealtDeathtouch &&
+       (let doom := namedPermanent g "Doctor Doom"
+        let g := g.mapObjectStatus doom (fun s =>
+          { s with untilEotKeywords := Keywords.none })
+        let g := g.checkSBA
+        onBattlefield g "Doctor Doom")) &&
+    (mshRuling 112).comment.contains "tracked even if he has indestructible" &&
+    (mshRuling 293).comment.contains "first time that state-based actions"
+
+#guard doctorDoomDamageTrackedOk
+
+/-- Rulings 145 / 190: Wasp leaving before resolve still taps; later granted
+abilities are kept after printed abilities are lost. -/
+def wondrousWaspLoseAbilitiesOk : Bool :=
+  let g := addPermanent afterDraw theWondrousWasp ⟨0⟩ ⟨0⟩
+  let g := addPermanent g stormWindrider ⟨0⟩ ⟨0⟩
+  let wasp := namedPermanent g "The Wondrous Wasp"
+  let storm := namedPermanent g "Storm, Windrider"
+  let (g, _) := g.move wasp.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .waspSStingWhenTheWondrousWa (some wasp.id)
+    #[Target.permanent storm.id]
+  (namedPermanent g "Storm, Windrider").status.tapped &&
+    g.hasFlying (namedPermanent g "Storm, Windrider") &&
+    (let g := addPermanent afterDraw theWondrousWasp ⟨0⟩ ⟨0⟩
+     let g := addPermanent g stormWindrider ⟨0⟩ ⟨0⟩
+     let wasp := namedPermanent g "The Wondrous Wasp"
+     let storm := namedPermanent g "Storm, Windrider"
+     let g := g.applyMshTrigger ⟨0⟩ .waspSStingWhenTheWondrousWa (some wasp.id)
+       #[Target.permanent storm.id]
+     let storm := namedPermanent g "Storm, Windrider"
+     storm.status.tapped &&
+       !g.hasFlying storm &&
+       (let g := g.mapObjectStatus storm (·.grantUntilEot Keyword.flying)
+        g.hasFlying (namedPermanent g "Storm, Windrider"))) &&
+    (mshRuling 145).comment.contains "won't lose its abilities" &&
+    (mshRuling 190).comment.contains "will keep that ability"
+
+#guard wondrousWaspLoseAbilitiesOk
+
+/-- Ruling 143: Super Hero Civil War leaving skips the control change. -/
+def superHeroCivilWarLeaveOk : Bool :=
+  let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let saga := namedPermanent g "The Super Hero Civil War"
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshChapter ⟨0⟩ .gainControlOfUpToTwoTargetCreaturesWith
+    #[Target.permanent bears.id] (some saga.id)
+  (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
+    (let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+     let saga := namedPermanent g "The Super Hero Civil War"
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyMshChapter ⟨0⟩ .gainControlOfUpToTwoTargetCreaturesWith
+       #[Target.permanent bears.id] (some saga.id)
+     (namedPermanent g "Grizzly Bears").controlledBy ⟨0⟩) &&
+    (mshRuling 143).comment.contains "won't gain control"
+
+#guard superHeroCivilWarLeaveOk
+
+/-- Ruling 151: an artifact Villain entering fires HYDRA Assault Robot once. -/
+def hydraAssaultOnceOk : Bool :=
+  let g := addPermanent afterDraw hYDRAAssaultRobot ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ultronDrone ⟨0⟩ ⟨0⟩
+  let drone := namedPermanent g "Ultron Drone"
+  let g := g.afterPermanentEnters drone
+  let n :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.source.name == "HYDRA Assault Robot")).size
+  n == 1 &&
+    (mshRuling 151).comment.contains "trigger only once"
+
+#guard hydraAssaultOnceOk
+
+/-- Ruling 317: token creatures dying do not trigger Robot Domination. -/
+def robotDominationTokenOk : Bool :=
+  let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
+  let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none
+  !g.waitingTriggers.any (fun (t : WaitingTrigger) =>
+    t.event == TriggerEvent.creatureCardsPutIntoYourGy) &&
+    (mshRuling 317).comment.contains "Token creatures"
+
+#guard robotDominationTokenOk
+
+/-- Ruling 297: Avengers Assemble! does not trigger if neither condition
+was met. -/
+def avengersAssembleNoTriggerOk : Bool :=
+  let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
+  let assem := namedPermanent g "Avengers Assemble!"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEachEndStepDrawIfAttackedOrEnteredSubtype "Hero") (some assem.id)
+  (g.player ⟨0⟩).hand.size == hand0 &&
+    (mshRuling 297).comment.contains "won't trigger at all"
+
+#guard avengersAssembleNoTriggerOk
+
+/-- Rulings 262 / 263 / 264: becoming a better blocker or shrinking after
+the block does not make the attacker unblocked. -/
+def blockedStaysBlockedOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.setObject { bears with status := { bears.status with
+    attacking := true, attackingWhom := some ⟨1⟩, blocked := true } }
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { ogre with status := { ogre.status with
+    blocking := #[bears.id] } }
+  let g := g.mapObjectStatus (namedPermanent g "Grizzly Bears")
+    (·.grantUntilEot Keyword.flying)
+  (namedPermanent g "Grizzly Bears").status.blocked &&
+    g.hasFlying (namedPermanent g "Grizzly Bears") &&
+    (mshRuling 262).comment.contains "won't cause him to become unblocked" &&
+    (mshRuling 263).comment.contains "won't cause her to become unblocked" &&
+    (mshRuling 264).comment.contains "won't be able to make that block illegal"
+
+#guard blockedStaysBlockedOk
+
+/-- Ruling 258: multiple lifelink instances are redundant. -/
+def yellowjacketLifelinkRedundantOk : Bool :=
+  let g := addPermanent afterDraw yellowjacketHeartlessMarauder ⟨0⟩ ⟨0⟩
+  let yj := namedPermanent g "Yellowjacket, Heartless Marauder"
+  let g := g.mapObjectStatus yj (·.grantUntilEot Keyword.lifelink)
+  g.hasLifelink (namedPermanent g "Yellowjacket, Heartless Marauder") &&
+    (mshRuling 258).comment.contains "Multiple instances of lifelink"
+
+#guard yellowjacketLifelinkRedundantOk
+
+/-- Ruling 169: Scarlet Witch uses the chosen X when checking mana value. -/
+def scarletWitchXManaValueOk : Bool :=
+  let g := addPermanent afterDraw theScarletWitch ⟨0⟩ ⟨0⟩
+  let (g, spell) := g.allocObject photonBlastBarrage ⟨0⟩ (.hand ⟨0⟩) (some ⟨0⟩)
+  let cheap := g.object! spell.id
+  let cheap := { cheap with chosenX := some 1 }
+  let g := g.setObject cheap
+  let costly := { cheap with chosenX := some 2 }
+  let start : ManaCost := photonBlastBarrage.manaCost
+  let reduced := g.applyCastCostReductions costly photonBlastBarrage start
+  let unreduced := g.applyCastCostReductions cheap photonBlastBarrage start
+  reduced.manaValue == 2 &&
+    unreduced.manaValue == 3 &&
+    (mshRuling 169).comment.contains "value chosen for X"
+
+#guard scarletWitchXManaValueOk
+
+/-- Ruling 109: Loki compares mana value to last-known power if he left. -/
+def lokiLastKnownPowerOk : Bool :=
+  let g := addPermanent afterDraw lokiLaufeyson ⟨0⟩ ⟨0⟩
+  let loki := namedPermanent g "Loki Laufeyson"
+  let g := g.applyMshSpell ⟨0⟩ .whenYouNextCastAnInstantOrSorcerySpellW #[]
+    (some loki.id)
+  let (g, _) := g.move loki.id (.graveyard ⟨0⟩) none
+  let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ spell.id
+  let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+  let copies := g.objects.filter (fun o =>
+    o.zone == .stack && o.isCopy && o.printed.name == "Lightning Bolt")
+  copies.size == 1 &&
+    (mshRuling 109).comment.contains "last time he was on the battlefield"
+
+#guard lokiLastKnownPowerOk
+
+/-- Ruling 270: H.E.R.B.I.E. putting a land onto the battlefield is not
+playing a land. -/
+def herbieLandNotPlayOk : Bool :=
+  let g := addToHand afterDraw forest ⟨0⟩
+  let played0 := (g.player ⟨0⟩).landsPlayedThisTurn
+  let g := addPermanent g hERBIEScoutUnit ⟨0⟩ ⟨0⟩
+  let herbie := namedPermanent g "H.E.R.B.I.E. Scout Unit"
+  let g := g.applyMshTrigger ⟨0⟩ .whenThisCreatureEnters4 (some herbie.id)
+  g.battlefield.any (fun o =>
+      o.printed.isLand && o.status.tapped && o.status.enteredThisTurn) &&
+    (g.player ⟨0⟩).landsPlayedThisTurn == played0 &&
+    (mshRuling 270).comment.contains "doesn't count as playing a land"
+
+#guard herbieLandNotPlayOk
+
+/-- Ruling 146 / 312: Tigra does not get a counter in time to survive
+simultaneous lethal damage, and life gain is one event. -/
+def tigraLethalLifeOk : Bool :=
+  let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
+  let tigra := namedPermanent g "Tigra, Feline Fury"
+  let g := g.markDamageOn tigra 1 "Tigra is dealt 1"
+  let g := g.gainLife ⟨0⟩ 3
+  let g := g.checkSBA
+  !onBattlefield g "Tigra, Feline Fury" &&
+    (mshRuling 146).comment.contains "won't receive a counter" &&
+    (mshRuling 312).comment.contains "just once"
+
+#guard tigraLethalLifeOk
+
+/-- Ruling 295: Thunderbolts returns a Villain as a Hero from the moment
+it enters. -/
+def thunderboltsHeroTypeOk : Bool :=
+  let g := addPermanent afterDraw thunderboltsConspiracy ⟨0⟩ ⟨0⟩
+  let g := addPermanent g agentsOfHYDRA ⟨0⟩ ⟨0⟩
+  let villain := namedPermanent g "Agents of HYDRA"
+  let (g, _) := g.move villain.id (.graveyard ⟨0⟩) none
+  let gy := namedGraveyardCard g ⟨0⟩ "Agents of HYDRA"
+  let before := g.waitingTriggers.size
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverAVillainYouControlDies
+    (some (namedPermanent g "Thunderbolts Conspiracy").id) #[Target.card gy.id]
+  let o := namedPermanent g "Agents of HYDRA"
+  g.hasSubtype o "Hero" &&
+    o.status.finality == 1 &&
+    g.waitingTriggers.size >= before &&
+    (mshRuling 295).comment.contains "Hero in addition to its other types"
+
+#guard thunderboltsHeroTypeOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
