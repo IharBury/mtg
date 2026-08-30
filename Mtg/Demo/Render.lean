@@ -692,6 +692,14 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice another creature ({g.player p |>.name})]"
     | .mayCastFromLooked p _ maxMv =>
       s!" [may cast a looked-at spell (mana value ≤ {maxMv}, {g.player p |>.name})]"
+    | .mayPutLandFromHand p =>
+      s!" [may put a land from hand onto the battlefield tapped ({g.player p |>.name})]"
+    | .chooseFoodOrTreasure p =>
+      s!" [create a Food token or a Treasure token ({g.player p |>.name})]"
+    | .chooseTapOrUntap p _ =>
+      s!" [choose tap or untap ({g.player p |>.name})]"
+    | .maySacArtifactOrDiscard p =>
+      s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>

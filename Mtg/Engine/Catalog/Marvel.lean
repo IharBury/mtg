@@ -206,7 +206,7 @@ def heroInTraining : CardDef :=
     (oracleText := "When this creature enters, draw a card. If you control another Hero, you gain 2 life.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters5])
+    (triggeredAbilities := #[.onEnterDrawGainLifeIfAnotherHero])
 
 def invisibleWomanSueStorm : CardDef :=
   card "Invisible Woman, Sue Storm" #[.creature] ({ symbols := #[.generic 4, .colored .white] })
@@ -387,7 +387,7 @@ def superVillainLockup : CardDef :=
   card "Super Villain Lockup" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (oracleText := "Flash\nWhen this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEnchantmentEnters])
+    (triggeredAbilities := #[.onEnterExileOppTappedUntilLeaves])
 
 def superSoldierSerum : CardDef :=
   card "Super-Soldier Serum" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
@@ -523,7 +523,7 @@ def frozenInIce : CardDef :=
   card "Frozen in Ice" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature loses all abilities and can't become untapped.")
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters3])
+    (triggeredAbilities := #[.onEnterEnchanted .tap])
     (staticAbilities := #[leftoverStatic .enchantedCreatureLosesAllAbilitiesAndCant])
 
 def futuristForge : CardDef :=
@@ -539,7 +539,7 @@ def giantSizedFlyingAnt : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := (Keyword.flash).merge Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters])
+    (triggeredAbilities := #[.onEnterTapOrUntapNonland])
 
 def hydraulicHelper : CardDef :=
   card "Hydraulic Helper" #[.artifact, .creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -676,7 +676,7 @@ def secretInvasion : CardDef :=
   card "Secret Invasion" #[.enchantment] ({ symbols := #[.generic 1, .colored .blue, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature you control\nWhen this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield.\nEnchanted creature has ward {2}.")
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters2])
+    (triggeredAbilities := #[.onEnterExileOtherCopyEnchanted])
     (staticAbilities := #[StaticAbility.enchantedCreatureHasWard 2])
 
 def sHIELDDeploymentDrone : CardDef :=
@@ -696,7 +696,7 @@ def sHIELDFlyingCar : CardDef :=
     (toughness := some 3)
     (keywords := (Keyword.flash).merge Keyword.flying)
     (crew := some 1)
-    (triggeredAbilities := #[leftoverTrig .whenThisVehicleEnters])
+    (triggeredAbilities := #[.onEnterExileCreatureReturnEndStep])
 
 def shuriWakandanInventor : CardDef :=
   card "Shuri, Wakandan Inventor" #[.creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -729,7 +729,7 @@ def superSuit : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEquipmentEnters2])
+    (triggeredAbilities := #[.onEnterAttachThen .untap])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 2])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2] })])
 
@@ -903,7 +903,7 @@ def hourOfDefeat : CardDef :=
 def hYDRAInfiltration : CardDef :=
   card "HYDRA Infiltration" #[.enchantment] ({ symbols := #[.generic 3, .colored .black] })
     (oracleText := "When this enchantment enters, target opponent discards two cards.\nWhenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life.")
-    (triggeredAbilities := #[leftoverTrig .whenThisEnchantmentEnters2, leftoverTrig .wheneverACreatureYouControlAttacksAlone2])
+    (triggeredAbilities := #[.onEnterTargetOpponentDiscards 2, leftoverTrig .wheneverACreatureYouControlAttacksAlone2])
 
 def hYDRATroopers : CardDef :=
   card "HYDRA Troopers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -911,7 +911,7 @@ def hYDRATroopers : CardDef :=
     (oracleText := "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards. (Put the top two cards of your library into your graveyard.)")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters3])
+    (triggeredAbilities := #[.onEnterVillainIfGyElseMill])
 
 def kingpinSEnforcers : CardDef :=
   card "Kingpin's Enforcers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -1027,7 +1027,7 @@ def stolenStarkTech : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisEquipmentEnters])
+    (triggeredAbilities := #[.onEnterAttachThen (.grantKeywords Keyword.indestructible)])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 0])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 1] })])
 
@@ -1121,7 +1121,7 @@ def crimsonOperative : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.prowess)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters6])
+    (triggeredAbilities := #[.onEnterExileTop])
 
 def deathToOurEnemies : CardDef :=
   card "Death to Our Enemies" #[.enchantment] ({ symbols := #[.generic 2, .colored .red] })
@@ -1233,7 +1233,7 @@ def kUnLunWarrior : CardDef :=
     (oracleText := "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters9])
+    (triggeredAbilities := #[.onEnterMaySacArtifactOrDiscardDraw])
 
 def kreeSentinel : CardDef :=
   card "Kree Sentinel" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .red] })
@@ -1350,7 +1350,7 @@ def superSpeed : CardDef :=
     (subtypes := #["Aura"])
     (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters])
+    (triggeredAbilities := #[.onEnterEnchanted (.grantKeywords Keyword.firstStrike)])
     (staticAbilities := #[StaticAbility.enchantedCreatureGetsAndHas 1 0 Keyword.haste])
 
 def teamTactics : CardDef :=
@@ -1405,7 +1405,7 @@ def antManSArmy : CardDef :=
     (oracleText := "When this creature enters, create a Food token or a Treasure token. (A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters2])
+    (triggeredAbilities := #[.onEnterCreateFoodOrTreasure])
 
 def callDamageControl : CardDef :=
   card "Call Damage Control" #[.sorcery] ({ symbols := #[.generic 1, .colored .green] })
@@ -1674,7 +1674,7 @@ def wakandanRoyalGuard : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters7])
+    (triggeredAbilities := #[.onEnterPlusOneOrTwoIfAnotherHero])
 
 def whiteTigerAvaAyala : CardDef :=
   card "White Tiger, Ava Ayala" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -2142,7 +2142,7 @@ def hERBIEScoutUnit : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .whenThisCreatureEnters4])
+    (triggeredAbilities := #[.onEnterDrawMayPutLandTapped])
 
 def ironManArmor : CardDef :=
   card "Iron Man Armor" #[.artifact] ({ symbols := #[.generic 3] })

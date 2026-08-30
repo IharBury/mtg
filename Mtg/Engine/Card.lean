@@ -249,6 +249,8 @@ inductive EffectTargetKind where
   | elfInYourGraveyard
   /-- Target creature an opponent controls. -/
   | oppCreature
+  /-- Target tapped creature an opponent controls. -/
+  | oppTappedCreature
   /-- Target creature (any controller). -/
   | creature
   /-- Target creature with flying. -/
@@ -397,6 +399,8 @@ def spec : EffectTargetKind → Spec
     { noun := "target Elf card from your graveyard", prefer := .last }
   | .oppCreature =>
     { noun := "target creature an opponent controls" }
+  | .oppTappedCreature =>
+    { noun := "target tapped creature an opponent controls" }
   | .creature =>
     { noun := "target creature" }
   | .creatureWithFlying =>
@@ -4065,6 +4069,39 @@ inductive TriggeredAbility where
   /-- When this permanent enters, surveil `n`. Resolves as a scry-shaped
   look (cards may go to the graveyard). -/
   | onEnterSurveil (n : Nat)
+  /-- When this Aura enters, apply `action` to the enchanted creature. -/
+  | onEnterEnchanted (action : PermanentAction)
+  /-- When this Equipment enters, attach it to target creature you control,
+  then apply `followup` to that creature. -/
+  | onEnterAttachThen (followup : PermanentAction)
+  /-- When this Aura enters, exile up to one other creature until this leaves;
+  enchanted becomes a copy of that creature until this leaves. -/
+  | onEnterExileOtherCopyEnchanted
+  /-- When this Vehicle enters, exile up to one creature you control. Return
+  it at the beginning of the next end step. -/
+  | onEnterExileCreatureReturnEndStep
+  /-- When this creature enters, choose one — tap or untap target nonland. -/
+  | onEnterTapOrUntapNonland
+  /-- When this creature enters, create a Food token or a Treasure token. -/
+  | onEnterCreateFoodOrTreasure
+  /-- When this creature enters, create a tapped 2/1 menace Villain if there
+  are two or more creature cards in your graveyard; otherwise mill two. -/
+  | onEnterVillainIfGyElseMill
+  /-- When this creature enters, draw, then you may put a land from hand tapped. -/
+  | onEnterDrawMayPutLandTapped
+  /-- When this creature enters, draw. If you control another Hero, gain 2 life. -/
+  | onEnterDrawGainLifeIfAnotherHero
+  /-- When this creature enters, +1/+1 on target; two if that creature is
+  another Hero. -/
+  | onEnterPlusOneOrTwoIfAnotherHero
+  /-- When this creature enters, you may sac an artifact or discard; if you
+  do, draw. -/
+  | onEnterMaySacArtifactOrDiscardDraw
+  /-- When this enchantment enters, exile target tapped opposing creature
+  until this leaves. -/
+  | onEnterExileOppTappedUntilLeaves
+  /-- When this enchantment enters, target opponent discards `n` cards. -/
+  | onEnterTargetOpponentDiscards (n : Nat)
   /-- Whenever this creature attacks, it connives. -/
   | onAttackConnive
   /-- Whenever you gain life, put a +1/+1 counter on this. -/
@@ -4946,6 +4983,30 @@ inductive TriggerResolution where
   | planFinishIndestructibleOnTarget
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife1
+  /-- Apply `action` to the creature this Aura enchants. -/
+  | onEnchanted (action : PermanentAction)
+  /-- Attach the source to the target, then apply `action` to that host. -/
+  | attachThen (action : PermanentAction)
+  /-- Exile the targeted creature until this leaves; enchanted becomes a copy. -/
+  | exileOtherCopyEnchanted
+  /-- Exile the targeted creature; return it at the next end step. -/
+  | exileUntilNextEndStep
+  /-- Choose tap or untap for the targeted nonland. -/
+  | tapOrUntapNonland
+  /-- Create a Food token or a Treasure token. -/
+  | createFoodOrTreasure
+  /-- Tapped 2/1 menace Villain if ≥2 creature cards in GY; otherwise mill 2. -/
+  | villainIfGyElseMill
+  /-- Draw, then you may put a land from hand onto the battlefield tapped. -/
+  | drawMayPutLandTapped
+  /-- Draw. If you control another Hero, gain 2 life. -/
+  | drawGainLifeIfAnotherHero
+  /-- +1/+1 on the target; two if that creature is another Hero. -/
+  | plusOneOrTwoIfAnotherHero
+  /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
+  | maySacArtifactOrDiscardDraw
+  /-- Target opponent discards `n` cards. -/
+  | targetOpponentDiscards (n : Nat)
   /-- Resolve a modeled MSH trigger. -/
   | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
@@ -5016,17 +5077,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
     | .whenNightNurseEnters
     | .whenThorEnters
     | .whenUSAgentEnters
-    | .whenThisAuraEnters
-    | .whenThisAuraEnters3
-    | .whenThisCreatureEnters2
-    | .whenThisCreatureEnters3
-    | .whenThisCreatureEnters4
-    | .whenThisCreatureEnters5
-    | .whenThisCreatureEnters6
-    | .whenThisCreatureEnters8
-    | .whenThisCreatureEnters9
-    | .whenThisEnchantmentEnters
-    | .whenThisLandEnters
     | .noOneDiesWhenSpiderManEnte =>
       { events := #[.entering] }
     | .whenCloakAndDaggerEnter | .whenTheRuinousWreckingCrewEnters =>
@@ -5040,19 +5090,10 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
     | .whenMjLnirEnters
     | .whenWhiteWidowEnters
     | .whenWolverineEnters
-    | .whenThisAuraEnters2
     | .waspSStingWhenTheWondrousWa =>
       { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true }
-    | .whenTheSentryEnters | .whenThisEnchantmentEnters2 =>
+    | .whenTheSentryEnters =>
       { events := #[.entering], targeting := .of .opponent }
-    | .whenThisEquipmentEnters | .whenThisEquipmentEnters2 =>
-      { events := #[.entering], targeting := .of .creatureYouControl }
-    | .whenThisVehicleEnters =>
-      { events := #[.entering], targeting := .of .creatureYouControl, allowsZeroTargets := true }
-    | .whenThisCreatureEnters =>
-      { events := #[.entering], targeting := .of .nonland }
-    | .whenThisCreatureEnters7 =>
-      { events := #[.entering], targeting := .of .creature }
     | .wheneverAntManAttacks =>
       { events := #[.attacking], targeting := .of .creature }
     | .wheneverBlackWidowDealsCombatDamageToAPl =>
@@ -5717,6 +5758,39 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.yourEndStep], resolution := .drawAndLoseLife1 }
   | .onEnterSurveil n =>
     { events := #[.entering], resolution := .scry n }
+  | .onEnterEnchanted action =>
+    { events := #[.entering], resolution := .onEnchanted action }
+  | .onEnterAttachThen followup =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      resolution := .attachThen followup }
+  | .onEnterExileOtherCopyEnchanted =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .exileOtherCopyEnchanted }
+  | .onEnterExileCreatureReturnEndStep =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      allowsZeroTargets := true, resolution := .exileUntilNextEndStep }
+  | .onEnterTapOrUntapNonland =>
+    { events := #[.entering], targeting := .of .nonland,
+      resolution := .tapOrUntapNonland }
+  | .onEnterCreateFoodOrTreasure =>
+    { events := #[.entering], resolution := .createFoodOrTreasure }
+  | .onEnterVillainIfGyElseMill =>
+    { events := #[.entering], resolution := .villainIfGyElseMill }
+  | .onEnterDrawMayPutLandTapped =>
+    { events := #[.entering], resolution := .drawMayPutLandTapped }
+  | .onEnterDrawGainLifeIfAnotherHero =>
+    { events := #[.entering], resolution := .drawGainLifeIfAnotherHero }
+  | .onEnterPlusOneOrTwoIfAnotherHero =>
+    { events := #[.entering], targeting := .of .creature,
+      resolution := .plusOneOrTwoIfAnotherHero }
+  | .onEnterMaySacArtifactOrDiscardDraw =>
+    { events := #[.entering], resolution := .maySacArtifactOrDiscardDraw }
+  | .onEnterExileOppTappedUntilLeaves =>
+    { events := #[.entering], targeting := .of .oppTappedCreature,
+      resolution := .exileUntilLeaves }
+  | .onEnterTargetOpponentDiscards n =>
+    { events := #[.entering], targeting := .of .opponent,
+      resolution := .targetOpponentDiscards n }
   | .onAttackConnive =>
     { events := #[.attacking], resolution := .connive }
   | .onGainLifePlusOne =>
@@ -6145,6 +6219,30 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .drawAndLoseLife1 =>
     "you draw a card and lose 1 life"
+  | .onEnchanted action =>
+    PermanentAction.toNotation action "enchanted creature"
+  | .attachThen action =>
+    s!"attach it to {noun}. {PermanentAction.toNotation action "that creature" (sentence := true)}"
+  | .exileOtherCopyEnchanted =>
+    "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield"
+  | .exileUntilNextEndStep =>
+    s!"exile up to one {noun}. Return that card to the battlefield under its owner's control at the beginning of the next end step"
+  | .tapOrUntapNonland =>
+    "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
+  | .createFoodOrTreasure =>
+    "create a Food token or a Treasure token"
+  | .villainIfGyElseMill =>
+    "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
+  | .drawMayPutLandTapped =>
+    "draw a card, then you may put a land card from your hand onto the battlefield tapped"
+  | .drawGainLifeIfAnotherHero =>
+    "draw a card. If you control another Hero, you gain 2 life"
+  | .plusOneOrTwoIfAnotherHero =>
+    "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
+  | .maySacArtifactOrDiscardDraw =>
+    "you may sacrifice an artifact or discard a card. If you do, draw a card"
+  | .targetOpponentDiscards n =>
+    s!"{noun} discards {cardPhrase n}"
   | .msh t => t.toNotation
 
 /-- True when this trigger fires only once each turn. -/
@@ -6294,6 +6392,33 @@ def toNotation (ab : TriggeredAbility) : String :=
     "At the beginning of your end step, you draw a card and lose 1 life."
   | .onEnterSurveil n =>
     s!"When this permanent enters, surveil {n}."
+  | .onEnterEnchanted action =>
+    s!"When this Aura enters, {PermanentAction.toNotation action "enchanted creature"}."
+  | .onEnterAttachThen followup =>
+    s!"When this Equipment enters, attach it to target creature you control. {PermanentAction.toNotation followup "that creature" (sentence := true)}."
+  | .onEnterExileOtherCopyEnchanted =>
+    "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
+  | .onEnterExileCreatureReturnEndStep =>
+    "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .onEnterTapOrUntapNonland =>
+    "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
+  | .onEnterCreateFoodOrTreasure =>
+    "When this creature enters, create a Food token or a Treasure token."
+  | .onEnterVillainIfGyElseMill =>
+    "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
+  | .onEnterDrawMayPutLandTapped =>
+    "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
+  | .onEnterDrawGainLifeIfAnotherHero =>
+    "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
+  | .onEnterPlusOneOrTwoIfAnotherHero =>
+    "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
+  | .onEnterMaySacArtifactOrDiscardDraw =>
+    "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
+  | .onEnterExileOppTappedUntilLeaves =>
+    "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
+  | .onEnterTargetOpponentDiscards n =>
+    let cards := if n == 2 then "two cards" else cardPhrase n
+    s!"When this enchantment enters, target opponent discards {cards}."
   | .msh t => t.toNotation
   | _ =>
     let t := ab.timing
@@ -7443,6 +7568,46 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .scry 2
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
+#guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) ==
+  "When this Aura enters, enchanted creature gains first strike until end of turn."
+#guard TriggeredAbility.toNotation (.onEnterEnchanted .tap) ==
+  "When this Aura enters, tap enchanted creature."
+#guard TriggeredAbility.resolution (.onEnterEnchanted .tap) == .onEnchanted .tap
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (.grantKeywords Keyword.indestructible)) ==
+  "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
+#guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
+  "When this Equipment enters, attach it to target creature you control. Untap that creature."
+#guard TriggeredAbility.targetKind (.onEnterAttachThen .untap) == .creatureYouControl
+#guard TriggeredAbility.toNotation .onEnterExileOtherCopyEnchanted ==
+  "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
+#guard TriggeredAbility.allowsZeroTargets .onEnterExileOtherCopyEnchanted
+#guard TriggeredAbility.toNotation .onEnterExileCreatureReturnEndStep ==
+  "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+#guard TriggeredAbility.allowsZeroTargets .onEnterExileCreatureReturnEndStep
+#guard TriggeredAbility.toNotation .onEnterTapOrUntapNonland ==
+  "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
+#guard TriggeredAbility.targetKind .onEnterTapOrUntapNonland == .nonland
+#guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
+  "When this creature enters, create a Food token or a Treasure token."
+#guard TriggeredAbility.toNotation .onEnterVillainIfGyElseMill ==
+  "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
+#guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
+  "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
+#guard TriggeredAbility.toNotation .onEnterDrawGainLifeIfAnotherHero ==
+  "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
+#guard TriggeredAbility.toNotation .onEnterPlusOneOrTwoIfAnotherHero ==
+  "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
+#guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
+#guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
+  "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
+#guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
+  "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
+#guard TriggeredAbility.targetKind .onEnterExileOppTappedUntilLeaves == .oppTappedCreature
+#guard TriggeredAbility.resolution .onEnterExileOppTappedUntilLeaves == .exileUntilLeaves
+#guard TriggeredAbility.toNotation (.onEnterTargetOpponentDiscards 2) ==
+  "When this enchantment enters, target opponent discards two cards."
+#guard TriggeredAbility.targetKind (.onEnterTargetOpponentDiscards 2) == .opponent
+#guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
 #guard StaticAbility.toNotation (.maximumHandSize 10) ==

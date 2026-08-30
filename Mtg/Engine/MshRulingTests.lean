@@ -1776,8 +1776,8 @@ def leaveBeforeResolveExileOk : Bool :=
      let lock := namedPermanent g "Super Villain Lockup"
      let bears := namedPermanent g "Grizzly Bears"
      let (g, _) := g.move lock.id (.graveyard ⟨0⟩) none
-     let g := g.applyModeledTrigger ⟨0⟩ .whenThisEnchantmentEnters (some lock.id)
-       #[Target.permanent bears.id]
+     let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileOppTappedUntilLeaves
+       (some lock.id) #[Target.permanent bears.id]
      onBattlefield g "Grizzly Bears" &&
        !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile)) &&
     (mshRuling 149).comment.contains "won't be exiled" &&
@@ -1813,8 +1813,8 @@ def secretInvasionLeaveOk : Bool :=
   let tgt := namedPermanent g "Hill Giant"
   let g := g.attachSourceTo aura host
   let (g, _) := g.move aura.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .whenThisAuraEnters2 (some aura.id)
-    #[Target.permanent tgt.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileOtherCopyEnchanted
+    (some aura.id) #[Target.permanent tgt.id]
   onBattlefield g "Hill Giant" &&
     onBattlefield g "Grizzly Bears" &&
     (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears" &&
@@ -1909,8 +1909,8 @@ def secretInvasionCopyOk : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   let tgt := namedPermanent g "Hill Giant"
   let g := g.attachSourceTo aura host
-  let g := g.applyModeledTrigger ⟨0⟩ .whenThisAuraEnters2 (some aura.id)
-    #[Target.permanent tgt.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileOtherCopyEnchanted
+    (some aura.id) #[Target.permanent tgt.id]
   let host := g.object! host.id
   host.copyRestore.isSome &&
     (host.copyRestore.getD host.printed).name == "Grizzly Bears" &&
@@ -3384,7 +3384,15 @@ def herbieLandNotPlayOk : Bool :=
   let played0 := (g.player ⟨0⟩).landsPlayedThisTurn
   let g := addPermanent g hERBIEScoutUnit ⟨0⟩ ⟨0⟩
   let herbie := namedPermanent g "H.E.R.B.I.E. Scout Unit"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenThisCreatureEnters4 (some herbie.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterDrawMayPutLandTapped (some herbie.id)
+  let landId := (g.player ⟨0⟩).hand.findSome? (fun id =>
+    match g.findObject? id with
+    | some o => if o.printed.isLand then some id else none
+    | none => none)
+  let g :=
+    match landId with
+    | some id => mustApply g ⟨0⟩ (.cast id)
+    | none => g
   g.battlefield.any (fun o =>
       o.printed.isLand && o.status.tapped && o.status.enteredThisTurn) &&
     (g.player ⟨0⟩).landsPlayedThisTurn == played0 &&

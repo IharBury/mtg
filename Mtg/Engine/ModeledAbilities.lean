@@ -76,42 +76,6 @@ inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | whenWolverineEnters
   /-- Modeled MSH ability. -/
-  | whenThisAuraEnters
-  /-- Modeled MSH ability. -/
-  | whenThisAuraEnters2
-  /-- Modeled MSH ability. -/
-  | whenThisAuraEnters3
-  /-- Modeled MSH ability. -/
-  | whenThisEquipmentEnters
-  /-- Modeled MSH ability. -/
-  | whenThisEquipmentEnters2
-  /-- Modeled MSH ability. -/
-  | whenThisVehicleEnters
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters2
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters3
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters4
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters5
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters6
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters7
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters8
-  /-- Modeled MSH ability. -/
-  | whenThisCreatureEnters9
-  /-- Modeled MSH ability. -/
-  | whenThisEnchantmentEnters
-  /-- Modeled MSH ability. -/
-  | whenThisEnchantmentEnters2
-  /-- Modeled MSH ability. -/
-  | whenThisLandEnters
-  /-- Modeled MSH ability. -/
   | wheneverAntManAttacks
   /-- Modeled MSH ability. -/
   | wheneverBlackWidowDealsCombatDamageToAPl
@@ -296,24 +260,6 @@ def toNotation : ModeledTrigger → String
   | .whenUSAgentEnters => "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent."
   | .whenWhiteWidowEnters => "When White Widow enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
   | .whenWolverineEnters => "When Wolverine enters, he fights up to one other target creature."
-  | .whenThisAuraEnters => "When this Aura enters, enchanted creature gains first strike until end of turn."
-  | .whenThisAuraEnters2 => "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
-  | .whenThisAuraEnters3 => "When this Aura enters, tap enchanted creature."
-  | .whenThisEquipmentEnters => "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
-  | .whenThisEquipmentEnters2 => "When this Equipment enters, attach it to target creature you control. Untap that creature."
-  | .whenThisVehicleEnters => "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
-  | .whenThisCreatureEnters => "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
-  | .whenThisCreatureEnters2 => "When this creature enters, create a Food token or a Treasure token."
-  | .whenThisCreatureEnters3 => "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
-  | .whenThisCreatureEnters4 => "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
-  | .whenThisCreatureEnters5 => "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
-  | .whenThisCreatureEnters6 => "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card."
-  | .whenThisCreatureEnters7 => "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
-  | .whenThisCreatureEnters8 => "When this creature enters, surveil 2."
-  | .whenThisCreatureEnters9 => "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
-  | .whenThisEnchantmentEnters => "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-  | .whenThisEnchantmentEnters2 => "When this enchantment enters, target opponent discards two cards."
-  | .whenThisLandEnters => "When this land enters, surveil 1."
   | .wheneverAntManAttacks => "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
   | .wheneverBlackWidowDealsCombatDamageToAPl => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
   | .wheneverGrimReaperAttacks => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
