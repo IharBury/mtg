@@ -6592,9 +6592,25 @@ an explicit `tapAddMana` list. -/
 def simpleTapAddMana (c : CardDef) : Array ManaType :=
   c.basicLandMana.map ManaType.colored ++ c.tapAddMana
 
+/-- `{T}: Add` types from modeled MSH mana abilities (e.g. Hidden Lair). -/
+def mshTapAddMana (c : CardDef) : Array ManaType :=
+  c.activatedAbilities.foldl (fun acc ab =>
+    match ab.effect with
+    | .msh t => acc ++ t.addManaTypes
+    | _ => acc) #[]
+
+/-- True when a modeled MSH `{T}: Add` ability requires this land entered
+this turn or a basic land you control. -/
+def mshTapAddRequiresEnteredOrBasic (c : CardDef) : Bool :=
+  c.activatedAbilities.any (fun ab =>
+    match ab.effect with
+    | .msh t => t.requiresEnteredOrBasic
+    | _ => false)
+
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
+    c.mshTapAddMana ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||

@@ -4,6 +4,9 @@ Released under Apache 2.0 license.
 Authors: MTG Engine Contributors
 -/
 
+import Mtg.Engine.Color
+import Mtg.Engine.Mana
+
 /-!
 # Modeled Marvel Super Heroes abilities
 
@@ -877,6 +880,23 @@ def toNotation : MshAbility → String
 
 instance : ToString MshAbility where
   toString := toNotation
+
+/-- `{T}: Add` types this modeled MSH ability produces for the demo `tap`
+command and other mana-ability payment (CR 605.3a). -/
+def addManaTypes : MshAbility → Array ManaType
+  | .addUOrBActivateOnlyIfThisLandEnter => #[.colored .blue, .colored .black]
+  | _ => #[]
+
+/-- True when the add ability may be activated only if this land entered this
+turn or if you control a basic land. -/
+def requiresEnteredOrBasic : MshAbility → Bool
+  | .addUOrBActivateOnlyIfThisLandEnter => true
+  | _ => false
+
+#guard addManaTypes .addUOrBActivateOnlyIfThisLandEnter ==
+  #[.colored .blue, .colored .black]
+#guard requiresEnteredOrBasic .addUOrBActivateOnlyIfThisLandEnter
+#guard (addManaTypes .addUOrB).isEmpty
 
 end MshAbility
 /-- A Saga chapter unique to MSH -/
