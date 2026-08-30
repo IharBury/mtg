@@ -162,6 +162,8 @@ inductive TokenKind where
   | doombot
   /-- A 1/1 green Insect creature token. -/
   | insect11green
+  /-- A predefined Vibranium artifact token (MSH). -/
+  | vibranium
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -188,6 +190,7 @@ def oracleNoun : TokenKind → String
   | .wall04defender => "0/4 colorless Wall creature token with defender"
   | .doombot => "3/3 colorless Robot Villain artifact creature token named Doombot"
   | .insect11green => "1/1 green Insect creature token"
+  | .vibranium => "Vibranium token"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -211,6 +214,7 @@ def pluralNoun : TokenKind → String
   | .wall04defender => "0/4 colorless Wall creature tokens with defender"
   | .doombot => "3/3 colorless Robot Villain artifact creature tokens named Doombot"
   | .insect11green => "1/1 green Insect creature tokens"
+  | .vibranium => "Vibranium tokens"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -7329,6 +7333,44 @@ instance : ToString CardDef where
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
   let creature : CardDef := { name := "Silent Ogre", types := #[.creature] }
   instant.isInstantOrSorcery && sorcery.isInstantOrSorcery && !creature.isInstantOrSorcery
+
+/-- True when this card itself has improvise (MSH). -/
+def hasImprovise (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .improvise => true
+    | _ => false)
+
+/-- True when this permanent grants improvise to noncreature spells you cast. -/
+def grantsImproviseToNoncreature (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .noncreatureSpellsYouCastHaveImprovise => true
+    | _ => false)
+
+/-- True when this permanent has a boast ability (MSH). -/
+def hasBoast (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .boastExileAnyNumberOfBlackCardsFromYou => true
+    | _ => false)
+
+/-- Sneak alternative cost, if any (MSH). -/
+def sneakCost (c : CardDef) : Option ManaCost :=
+  if c.staticAbilities.any (fun
+      | .msh .sneak1BB => true
+      | _ => false) then
+    some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost)
+  else none
+
+/-- Equip worthy: legendary non-Villain creature that's red or white. -/
+def isWorthy (c : CardDef) : Bool :=
+  c.hasSupertype .legendary &&
+    !c.hasSubtype "Villain" &&
+    (c.colors.contains .red || c.colors.contains .white)
+
+/-- Equip worthy keyword on this Equipment (MSH). -/
+def hasEquipWorthy (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .equipWorthy1 => true
+    | _ => false)
 
 end CardDef
 

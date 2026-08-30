@@ -441,23 +441,75 @@ def tokenExileCeasesOk : Bool :=
 
 #guard tokenExileCeasesOk
 
+/-- Rulings 72–73: Hero / Villain source mana cannot pay unrestricted costs. -/
 def heroSourceOk : Bool :=
-  (mshRuling 72).comment.contains "Hero source" &&
-    avengersTower.oracleText.contains "Hero source"
+  let g := addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Avengers Tower"
+  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some o.id)
+  let pool := (g.player ⟨0⟩).manaPool
+  pool.heroWhite == 1 &&
+    !pool.canPay (ManaCost.ofColor .white) &&
+    pool.canPay (ManaCost.ofColor .white) false false true &&
+    captainAmericaSuperSoldier.hasSubtype "Hero" &&
+    (mshRuling 72).comment.contains "Hero source"
 
 #guard heroSourceOk
 
 def villainSourceOk : Bool :=
-  (mshRuling 73).comment.contains "Villain source" &&
-    villainousHideout.oracleText.contains "Villain source"
+  let g := addPermanent afterDraw villainousHideout ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Villainous Hideout"
+  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly2 #[] (some o.id)
+  let pool := (g.player ⟨0⟩).manaPool
+  pool.villainBlack == 1 &&
+    !pool.canPay (ManaCost.ofColor .black) &&
+    pool.canPay (ManaCost.ofColor .black) false false false true &&
+    elektraDaughterOfTheHand.hasSubtype "Villain" &&
+    (mshRuling 73).comment.contains "Villain source"
 
 #guard villainSourceOk
 
-def finalityOk : Bool :=
-  (mshRuling 27).comment.contains "Finality counters" &&
-    (mshRuling 29).comment.contains "any permanent"
+/-- Rulings 27–31: a finality counter exiles instead of the graveyard, does
+not stop other zones, works on any permanent, and stacks redundantly. -/
+def finalityExileOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Grizzly Bears"
+  let g := g.addFinalityTo o 2
+  let o := namedPermanent g "Grizzly Bears"
+  o.status.finality == 2 &&
+    (let g := g.destroyPermanent o
+     !g.battlefield.any (fun x => x.name == "Grizzly Bears") &&
+       g.objects.any (fun x => x.name == "Grizzly Bears" && x.zone == .exile) &&
+       !g.objects.any (fun x =>
+         x.name == "Grizzly Bears" && x.zone == .graveyard ⟨0⟩) &&
+       g.log.any (fun s => mentions s "finality counter")) &&
+    (mshRuling 27).comment.contains "exiled instead" &&
+    (mshRuling 29).comment.contains "any permanent" &&
+    (mshRuling 31).comment.contains "redundant"
 
-#guard finalityOk
+#guard finalityExileOk
+
+def finalityOtherZoneOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Grizzly Bears"
+  let g := g.addFinalityTo o 1
+  let o := namedPermanent g "Grizzly Bears"
+  let g := g.returnToHand o.id ⟨0⟩
+  (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears") &&
+    (mshRuling 28).comment.contains "owner's hand"
+
+#guard finalityOtherZoneOk
+
+def winterSoldierFinalityOk : Bool :=
+  let g := addToGraveyard afterDraw winterSoldierIcyAssassin ⟨0⟩
+  let o :=
+    match g.objects.find? (fun x =>
+      x.name == "Winter Soldier, Icy Assassin" && x.zone == .graveyard ⟨0⟩) with
+    | some x => x
+    | none => namedPermanent afterDraw "Grizzly Bears"
+  let g := g.applyMshSpell ⟨0⟩ .returnThisCardFromYourGraveyardToTheBatt #[] (some o.id)
+  (namedPermanent g "Winter Soldier, Icy Assassin").status.finality ≥ 1
+
+#guard winterSoldierFinalityOk
 
 def daredevilLookOk : Bool :=
   daredevilManWithoutFear.mayLookAtTopAnytime &&
@@ -474,6 +526,198 @@ def antManAnyCounterOk : Bool :=
     (mshRuling 90).comment.contains "for any reason"
 
 #guard antManAnyCounterOk
+
+/-!
+## 39, 54–56, 257, 331 — Improvise
+-/
+
+def improviseReduceOk : Bool :=
+  let cost : ManaCost := { symbols := #[.generic 3, .colored .blue] }
+  let reduced := Game.improviseReduce cost 2
+  reduced == ({ symbols := #[.generic 1, .colored .blue] } : ManaCost) &&
+    (Game.improviseReduce cost 3) == ({ symbols := #[.colored .blue] } : ManaCost) &&
+    arcReactor.hasImprovise &&
+    ironheartCleverChampion.grantsImproviseToNoncreature &&
+    (mshRuling 54).comment.contains "cost of casting the spell" &&
+    (mshRuling 55).comment.contains "Improvise can't pay" &&
+    (mshRuling 56).comment.contains "doesn't change a spell's mana cost" &&
+    (mshRuling 257).comment.contains "Multiple instances of improvise" &&
+    (mshRuling 331).comment.contains "first choose the value for X" &&
+    (mshRuling 39).comment.contains "isn't an alternative cost"
+
+#guard improviseReduceOk
+
+def improviseTapOk : Bool :=
+  let (g, _) := afterDraw.createToken ⟨0⟩ treasureToken
+  let (g, _) := g.createToken ⟨0⟩ treasureToken
+  let arts := g.battlefield.filter (fun o => o.printed.isArtifact)
+  match g.tapArtifactsForImprovise ⟨0⟩ (arts.map (·.id)) with
+  | .ok g =>
+    arts.size == 2 &&
+      (g.battlefield.filter (fun o => o.printed.isArtifact && o.status.tapped)).size == 2 &&
+      g.log.any (fun s => mentions s "improvise")
+  | .error _ => false
+
+#guard improviseTapOk
+
+/-- Ruling 45: a tapped artifact cannot be tapped again for improvise. -/
+def improviseAlreadyTappedOk : Bool :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
+  let g := g.setObject { tok with status := { tok.status with tapped := true } }
+  match g.tapArtifactsForImprovise ⟨0⟩ #[tok.id] with
+  | .error msg => msg.contains "already tapped"
+  | .ok _ => false
+
+#guard improviseAlreadyTappedOk
+
+/-!
+## 76, 159, 174, 181 — Boast
+-/
+
+def boastWindowOk : Bool :=
+  baronHelmutZemo.hasBoast &&
+    let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
+    let o := namedPermanent g "Baron Helmut Zemo"
+    !g.canActivateBoast o &&
+      (let g := g.setObject { o with status :=
+        { o.status with declaredAsAttackerThisTurn := true } }
+       let o := namedPermanent g "Baron Helmut Zemo"
+       g.canActivateBoast o &&
+         (let g := g.markBoastUsed o
+          !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
+    (mshRuling 76).comment.contains "declared as an attacker" &&
+    (mshRuling 159).comment.contains "never declared as an attacker" &&
+    (mshRuling 174).comment.contains "only once" &&
+    (mshRuling 181).comment.contains "hasn't been activated yet that turn"
+
+#guard boastWindowOk
+
+/-- Ruling 159: entering attacking does not unlock boast. -/
+def boastEnteredAttackingOk : Bool :=
+  let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Baron Helmut Zemo"
+  let g := g.setObject { o with status := { o.status with attacking := true } }
+  !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo")
+
+#guard boastEnteredAttackingOk
+
+/-!
+## 157, 284 — Sneak
+-/
+
+def sneakCostOk : Bool :=
+  elektraDaughterOfTheHand.sneakCost ==
+      some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost) &&
+    (mshRuling 157).comment.contains "enters tapped and attacking" &&
+    (mshRuling 284).comment.contains "declare blockers step"
+
+#guard sneakCostOk
+
+def sneakPayOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := { g with step := .declareBlockers, activePlayer := ⟨0⟩ }
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status :=
+    { bears.status with attacking := true, attackingWhom := some ⟨1⟩ } }
+  let (g, spell) := g.allocObject elektraDaughterOfTheHand ⟨0⟩ .stack (some ⟨0⟩)
+  match g.paySneak ⟨0⟩ spell.id (namedPermanent g "Grizzly Bears").id with
+  | .error _ => false
+  | .ok g =>
+    (g.object! spell.id).sneakPaid &&
+      (g.object! spell.id).sneakAttackWhom == some ⟨1⟩ &&
+      (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears") &&
+      g.canCastForSneak ⟨0⟩ &&
+      g.log.any (fun s => mentions s "sneak cost")
+
+#guard sneakPayOk
+
+def sneakWrongStepOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let (g, spell) := g.allocObject elektraDaughterOfTheHand ⟨0⟩ .stack (some ⟨0⟩)
+  match g.paySneak ⟨0⟩ spell.id (namedPermanent g "Grizzly Bears").id with
+  | .error msg => msg.contains "declare blockers"
+  | .ok _ => false
+
+#guard sneakWrongStepOk
+
+/-!
+## 118–119 — Equip worthy
+-/
+
+def equipWorthyOk : Bool :=
+  mjLnirHammerOfThor.hasEquipWorthy &&
+    captainAmericaSuperSoldier.isWorthy &&
+    !elektraDaughterOfTheHand.isWorthy &&
+    !grizzlyBears.isWorthy &&
+    (mshRuling 118).comment.contains "isn't worthy" &&
+    (mshRuling 119).comment.contains "Equip worthy"
+
+#guard equipWorthyOk
+
+/-!
+## 320, 347 — Vibranium tokens
+-/
+
+def vibraniumTokenOk : Bool :=
+  let g := afterDraw.createKindTokens ⟨0⟩ .vibranium 1
+  let o := namedPermanent g "Vibranium"
+  o.printed.isToken && o.printed.hasSubtype "Vibranium" &&
+    o.printed.keywords.indestructible &&
+    g.hasIndestructible o &&
+    (mshRuling 320).comment.contains "predefined token" &&
+    (mshRuling 347).comment.contains "isn't a nonartifact spell"
+
+#guard vibraniumTokenOk
+
+def vibraniumManaOk : Bool :=
+  let g := afterDraw.createKindTokens ⟨0⟩ .vibranium 1
+  let o := namedPermanent g "Vibranium"
+  match g.tapForMana ⟨0⟩ o.id .colorless with
+  | .error _ => false
+  | .ok g =>
+    let pool := (g.player ⟨0⟩).manaPool
+    pool.cantNonartifact == 1 &&
+      !pool.canPay (ManaCost.ofGeneric 1) &&
+      pool.canPay (ManaCost.ofGeneric 1) false false false false true
+
+#guard vibraniumManaOk
+
+/-- Ruling 163 / 274 / 281: one shield counter prevents one damage or destroy. -/
+def shieldPreventsDestroyOk : Bool :=
+  let g := mshEnter afterDraw captainAmericaSuperSoldier
+  let o := namedPermanent g "Captain America, Super-Soldier"
+  let g := g.destroyPermanent o
+  g.battlefield.any (fun x => x.name == "Captain America, Super-Soldier") &&
+    (namedPermanent g "Captain America, Super-Soldier").status.shield == 0 &&
+    (mshRuling 274).comment.contains "isn't the same as regenerating" &&
+    (mshRuling 281).comment.contains "sacrificing"
+
+#guard shieldPreventsDestroyOk
+
+/-- Ruling 43 / 161: {X} is 0 off the stack. -/
+def xOffStackIsZeroOk : Bool :=
+  photonBlastBarrage.manaCost.symbols.any (fun
+    | .x => true
+    | _ => false) &&
+    photonBlastBarrage.manaValue == 2 &&
+    ((mshRuling 43).comment.contains "X is 0" ||
+      (mshRuling 161).comment.contains "X is 0")
+
+#guard xOffStackIsZeroOk
+
+/-- Ruling 24 / 158: an exiled token ceases to exist. -/
+def tokenExileCeasesToExistOk : Bool :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
+  let (g, _) := g.move tok.id .exile none
+  let g := g.checkSBA
+  !g.objects.any (fun o => o.name == "Treasure") &&
+    g.log.any (fun s => mentions s "ceases to exist") &&
+    (mshRuling 24).comment.contains "cease to exist" &&
+    (mshRuling 158).comment.contains "ceases to exist"
+
+#guard tokenExileCeasesToExistOk
 
 /-- Every unique MSH ruling is stored, names at least one card, and is
 exercised by the engine tests above or by the shared CR behavior they

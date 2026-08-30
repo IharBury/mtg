@@ -169,6 +169,13 @@ structure Status where
   /-- Shield counters. A shield counter is removed instead of taking damage
   or being destroyed (CR 122.1b / Marvel Super Heroes). -/
   shield : Nat := 0
+  /-- Finality counters. A permanent with a finality counter that would go
+  to a graveyard from the battlefield is exiled instead (MSH release notes). -/
+  finality : Nat := 0
+  /-- This creature was declared as an attacker this turn (boast, CR 702.111). -/
+  declaredAsAttackerThisTurn : Bool := false
+  /-- A boast ability of this creature has been activated this turn. -/
+  boastUsedThisTurn : Bool := false
   /-- Plan counters on a Plan enchantment. -/
   plan : Nat := 0
   /-- A power-up ability of this permanent has been activated (CR 702.193). -/
@@ -359,6 +366,10 @@ structure GameObject where
   kicked : Bool := false
   /-- This spell's teamwork cost was paid (CR 702.194). -/
   teamworkPaid : Bool := false
+  /-- This creature spell's sneak cost was paid (MSH sneak). -/
+  sneakPaid : Bool := false
+  /-- Player the sneak-returned attacker was attacking (MSH sneak). -/
+  sneakAttackWhom : Option PlayerId := none
   /-- Opponent promised a gift as an additional cost. Given on resolution. -/
   giftPromisedTo : Option PlayerId := none
   /-- This object is a copy (CR 706). Copies of spells are not cast. -/
@@ -1629,6 +1640,18 @@ def doombotToken : CardDef :=
 def insect11greenToken : CardDef :=
   creatureToken "Insect" #["Insect"] 1 1 (some .green)
 
+/-- A predefined Vibranium artifact token (MSH). Indestructible; `{T}: Add {C}`
+that cannot be spent to cast a nonartifact spell. -/
+def vibraniumToken : CardDef := {
+  name := "Vibranium"
+  types := #[.artifact]
+  subtypes := #["Vibranium"]
+  oracleText := "Indestructible\n{T}: Add {C}. This mana can't be spent to cast a nonartifact spell."
+  keywords := Keyword.indestructible
+  tapAddMana := #[.colorless]
+  isToken := true
+}
+
 /-- Printed characteristics for a `TokenKind`. -/
 def tokenPrinted (k : TokenKind) : CardDef :=
   match k with
@@ -1653,6 +1676,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .wall04defender => wall04defenderToken
   | .doombot => doombotToken
   | .insect11green => insect11greenToken
+  | .vibranium => vibraniumToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
@@ -1939,9 +1963,15 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
   let headExile := headSource.isSome
   let smiteExile :=
     old.zone == .battlefield && old.status.untilEotExileIfDies && wouldGoToGy
-  let exileInstead := headExile || smiteExile
+  let finalityExile :=
+    old.zone == .battlefield && wouldGoToGy && old.status.finality > 0
+  let exileInstead := headExile || smiteExile || finalityExile
   -- CR 614.6: the original move-to-graveyard event never happens.
   let dest := if exileInstead then Zone.exile else dest
+  let g :=
+    if finalityExile then
+      g.logMsg s!"A finality counter exiles {old.name} instead of putting it into a graveyard"
+    else g
   let died :=
     old.zone == .battlefield && old.isCreature &&
       match dest with
@@ -4150,15 +4180,19 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let amount := g.manaFromTap o mana
   let elfRestricted := o.printed.tapAddAnyColorEqualToPower
   let instRestricted := o.printed.tapAddAnyColorForInstantOrSorcery
+  let cantNonartifact := o.printed.hasSubtype "Vibranium" && mana == .colorless
   let g := g.setObject { o with status := { o.status with tapped := true } }
   let g :=
     if o.printed.tapSacrificeAddAnyColor then
       let o := g.object! o.id
       g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {o.name}"
     else g
-  let g := g.modifyPlayer p (fun pl =>
-    { pl with manaPool :=
-      ManaPool.add pl.manaPool mana amount elfRestricted instRestricted })
+  let pool :=
+    ManaPool.add (g.player p).manaPool mana amount
+      (elfRestricted := elfRestricted)
+      (instRestricted := instRestricted)
+      (cantNonartifact := cantNonartifact)
+  let g := g.modifyPlayer p (fun pl => { pl with manaPool := pool })
   let produced :=
     if amount == 0 then "no mana"
     else if amount == 1 then toString mana
@@ -4166,6 +4200,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let restrictNote :=
     if elfRestricted then " (Elf spells and abilities)"
     else if instRestricted then " (instant or sorcery spells)"
+    else if cantNonartifact then " (not a nonartifact spell)"
     else ""
   let g :=
     if amount == 0 then
@@ -6311,6 +6346,76 @@ def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
   let (g, _) := g.move id (.hand to) none
   g.logMsg s!"{name} is returned to {(g.player to).name}'s hand"
 
+/-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
+def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
+  g.logMsg s!"{o.name} gets a finality counter"
+
+/-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/
+def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
+  cost.reduceGeneric n
+
+/-- Whether `face` has improvise, including from a granting permanent. -/
+def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
+  face.hasImprovise ||
+    (!face.isCreature &&
+      (g.permanentsOf caster).any (fun o => o.printed.grantsImproviseToNoncreature))
+
+/-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
+def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
+    Except String Game := do
+  let mut g := g
+  let mut seen : Array ObjectId := #[]
+  for id in ids do
+    if seen.contains id then
+      throw "An artifact cannot be tapped twice for the same improvise payment"
+    seen := seen.push id
+    let some o := g.findObject? id | throw "no such object"
+    if !(o.isOnBattlefield && o.printed.isArtifact && o.controlledBy p) then
+      throw s!"{o.name} is not an artifact you control"
+    if o.status.tapped then
+      throw s!"{o.name} is already tapped"
+    g := g.mapObjectStatus o (fun s => { s with tapped := true })
+  return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
+
+/-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
+def canActivateBoast (_g : Game) (o : GameObject) : Bool :=
+  o.printed.hasBoast && o.status.declaredAsAttackerThisTurn && !o.status.boastUsedThisTurn
+
+/-- Mark a boast activation used for the turn. -/
+def markBoastUsed (g : Game) (o : GameObject) : Game :=
+  g.mapObjectStatus o (fun s => { s with boastUsedThisTurn := true })
+    |>.logMsg s!"{o.name}'s boast ability is activated"
+
+/-- Legal only during the declare blockers step of the caster's turn. -/
+def canCastForSneak (g : Game) (p : PlayerId) : Bool :=
+  g.activePlayer == p && g.step == .declareBlockers
+
+/-- Pay sneak: return an unblocked attacker you control to hand and mark
+the spell. The creature enters tapped and attacking the same player. -/
+def paySneak (g : Game) (p : PlayerId) (spellId : ObjectId) (attackerId : ObjectId) :
+    Except String Game := do
+  if !g.canCastForSneak p then
+    throw "Sneak can be paid only during the declare blockers step on your turn"
+  let some attacker := g.findObject? attackerId | throw "no such object"
+  if !(attacker.isOnBattlefield && attacker.isCreature && attacker.controlledBy p) then
+    throw s!"{attacker.name} is not a creature you control"
+  if !attacker.status.attacking then
+    throw s!"{attacker.name} is not attacking"
+  if attacker.status.blocked then
+    throw s!"{attacker.name} is blocked"
+  let whom := attacker.status.attackingWhom
+  let some _spell := g.findObject? spellId | throw "The spell left the stack"
+  let g := g.returnToHand attackerId attacker.owner
+  let g := g.setObject { (g.object! spellId) with
+    sneakPaid := true, sneakAttackWhom := whom }
+  return g.logMsg s!"{(g.player p).name} pays a sneak cost"
+
+/-- Equip worthy may attach only to a legendary non-Villain red or white
+creature. Other attach effects ignore this restriction. -/
+def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield && o.isCreature && o.printed.isWorthy
+
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
@@ -7050,9 +7155,18 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
 
 /-- Resolve a modeled MSH spell. -/
 def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
-    (targets : Array Target) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
   let text := t.toNotation
-  if text.contains "connive" then
+  if text.contains "finality" then
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.zone == .graveyard o.owner then
+        let (g, newId) := g.putOntoBattlefield o.id controller
+        let g := g.logMsg s!"{o.name} returns to the battlefield"
+        g.addFinalityTo (g.object! newId) 1
+      else g
+    | none => g
+  else if text.contains "connive" then
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
@@ -7124,6 +7238,14 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     g.draw controller 4
   else if text.contains "Draw two cards" || text.contains "Draw a card" then
     g.draw controller (if text.contains "two" then 2 else 1)
+  else if text.contains "Add " && text.contains "Hero" then
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
+  else if text.contains "Add " && text.contains "Villain" then
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
   else if text.contains "Add " then
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) })
@@ -7790,7 +7912,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)
   | .msh t =>
-    g.applyMshSpell controller t targets
+    g.applyMshSpell controller t targets none
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -8091,7 +8213,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .msh t =>
     g.applyMshAbility controller t targets sourceId
   | .mshSpell t =>
-    g.applyMshSpell controller t targets
+    g.applyMshSpell controller t targets sourceId
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -8187,6 +8309,8 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       kicked := src.kicked
       giftPromisedTo := src.giftPromisedTo
       teamworkPaid := src.teamworkPaid
+      sneakPaid := src.sneakPaid
+      sneakAttackWhom := src.sneakAttackWhom
       isCopy := true
       adventurerCard := src.adventurerCard }
     let g := g.putStackEntry controller copy.id
@@ -9907,8 +10031,18 @@ def resolveTop (g : Game) : Game :=
           g.resolveAuraSpell entry obj
         else if obj.printed.isPermanentCard && !obj.printed.isLand then
           let sick := !obj.printed.keywords.haste
+          let sneak := obj.sneakPaid
+          let sneakWhom := obj.sneakAttackWhom
           let (g, newId) := g.putOntoBattlefield obj.id entry.controller
-            (tapped := g.entersTapped entry.controller obj.printed) (summoningSick := sick)
+            (tapped := sneak || g.entersTapped entry.controller obj.printed)
+            (summoningSick := sick)
+          let o := g.object! newId
+          let g :=
+            if sneak then
+              g.setObject { o with status := { o.status with
+                attacking := true
+                attackingWhom := sneakWhom } }
+            else g
           let o := g.object! newId
           let g := g.logMsg s!"{o.name} enters the battlefield"
           g.afterPermanentEnters (g.object! newId)
@@ -9938,6 +10072,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     g := g.setObject { o with status := { o.status with
       attacking := true
       attackingWhom := some dest
+      declaredAsAttackerThisTurn := true
       tapped := o.status.tapped || !g.hasVigilance o } }
     g := g.logMsg
       s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}"
@@ -10325,12 +10460,15 @@ def clearTurnActivations (g : Game) : Game :=
           attackedWithHeroThisTurn := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
-          !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn then
+          !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
+          o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
           firedOnceEachTurn := false
           allianceModesChosen := #[]
-          enteredThisTurn := false } }
+          enteredThisTurn := false
+          declaredAsAttackerThisTurn := false
+          boastUsedThisTurn := false } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
