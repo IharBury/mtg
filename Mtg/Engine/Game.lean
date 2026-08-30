@@ -5700,7 +5700,7 @@ def hasAttacksIfAble (o : GameObject) : Bool :=
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
 def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
-  o.hasAttacksIfAble && g.canAttack o &&
+  hasAttacksIfAble o && g.canAttack o &&
     !mustAttackCanDeclineIfOnlyAttackCosts attackRequiresCost
 
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
