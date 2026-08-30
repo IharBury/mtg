@@ -12948,7 +12948,8 @@ def pantherCombatDraw : Game :=
 
 /-- Hidden Lair's second ability is `{T}: Add {U} or {B}` when it entered
 this turn or you control a basic land. -/
-#guard hiddenLair.mshTapAddMana == #[.colored .blue, .colored .black]
+#guard hiddenLair.mshTapAddMana ==
+  #[.colored .blue, .colored .black]
 #guard hiddenLair.mshTapAddRequiresEnteredOrBasic
 #guard hiddenLair.manaAbilities.contains (.colored .blue)
 
