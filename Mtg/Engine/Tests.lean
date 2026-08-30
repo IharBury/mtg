@@ -838,6 +838,8 @@ def applyIdle (g : Game) : Game :=
     mustApply g p .decline
   | .payOrLetCounter _ _ _, some p =>
     mustApply g p .decline
+  | .payWard _ _ _, some p =>
+    mustApply g p .decline
   | .recruitDiscard _, some p =>
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"
@@ -13242,6 +13244,266 @@ def statureXZeroUsed : Game :=
 #guard
   let o := namedPermanent statureXZeroUsed "Stature, Size Shifter"
   !statureXZeroUsed.canActivate ⟨0⟩ o o.printed.activatedAbilities[0]!
+
+/- Empty-spec statics and unused `cantBeBlockedByPowerAtLeast` actually apply. -/
+
+/-- Attach `eqName` to `hostName`. -/
+def attachNamed (g : Game) (eqName hostName : String) : Game :=
+  g.attachSourceTo (namedPermanent g eqName) (namedPermanent g hostName)
+
+/-- Thranduil the Strategist: other Elves have `{T}: Add {G} or {U}`. -/
+def thranduilGrantsElfMana : Game :=
+  addPermanent (addPermanent afterDraw thranduilTheStrategist ⟨0⟩ ⟨0⟩)
+    llanowarElves ⟨0⟩ ⟨0⟩
+
+#guard
+  let elf := namedPermanent thranduilGrantsElfMana "Llanowar Elves"
+  (thranduilGrantsElfMana.manaAbilitiesOf elf).contains (.colored .green) &&
+    (thranduilGrantsElfMana.manaAbilitiesOf elf).contains (.colored .blue)
+#guard
+  let th := namedPermanent thranduilGrantsElfMana "Thranduil the Strategist"
+  !(thranduilGrantsElfMana.manaAbilitiesOf th).contains (.colored .blue)
+
+def thranduilElfTappedBlue : Game :=
+  mustApply thranduilGrantsElfMana ⟨0⟩
+    (.tapForMana (namedPermanent thranduilGrantsElfMana "Llanowar Elves").id
+      (.colored .blue))
+
+#guard (namedPermanent thranduilElfTappedBlue "Llanowar Elves").status.tapped
+#guard (thranduilElfTappedBlue.player ⟨0⟩).manaPool.blue == 1
+
+/-- Thorin: other Dwarves get +1/+0 per artifact token. -/
+def thorinWithMauler : Game :=
+  let g := addPermanent afterDraw thorinKingOfDurinsFolk ⟨0⟩ ⟨0⟩
+  let g := addPermanent g dwarvenMauler ⟨0⟩ ⟨0⟩
+  g.createTreasureTokens ⟨0⟩ 2
+
+#guard thorinWithMauler.power (namedPermanent thorinWithMauler "Dwarven Mauler") == 4
+#guard thorinWithMauler.toughness (namedPermanent thorinWithMauler "Dwarven Mauler") == 1
+#guard thorinWithMauler.power
+  (namedPermanent thorinWithMauler "Thorin, King of Durin's Folk") == 4
+
+/-- Bilbo can't be blocked by power 3 or greater. -/
+def bilboReadyToBlock : Game :=
+  let g := addPermanent afterDraw bilboUnexpectedAdventurer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Bilbo, Unexpected Adventurer").id])
+  passBoth g
+
+#guard !bilboReadyToBlock.canBlock
+  (namedPermanent bilboReadyToBlock "Hill Giant")
+  (namedPermanent bilboReadyToBlock "Bilbo, Unexpected Adventurer")
+#guard bilboReadyToBlock.canBlock
+  (namedPermanent bilboReadyToBlock "Grizzly Bears")
+  (namedPermanent bilboReadyToBlock "Bilbo, Unexpected Adventurer")
+#guard
+  match bilboReadyToBlock.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent bilboReadyToBlock "Hill Giant").id,
+    (namedPermanent bilboReadyToBlock "Bilbo, Unexpected Adventurer").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+/-- Enchanted River's Grasp: loses abilities and doesn't untap. -/
+def riverGraspOnGoblin : Game :=
+  let g := addPermanent afterDraw enchantedRiverSGrasp ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ragingGoblin ⟨1⟩ ⟨1⟩
+  attachNamed g "Enchanted River's Grasp" "Raging Goblin"
+
+#guard !riverGraspOnGoblin.hasKeyword
+  (namedPermanent riverGraspOnGoblin "Raging Goblin") (·.haste)
+#guard riverGraspOnGoblin.hostCantBecomeUntapped
+  (namedPermanent riverGraspOnGoblin "Raging Goblin")
+
+def riverGraspOnElf : Game :=
+  let g := addPermanent afterDraw enchantedRiverSGrasp ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
+  attachNamed g "Enchanted River's Grasp" "Llanowar Elves"
+
+#guard (riverGraspOnElf.manaAbilitiesOf
+  (namedPermanent riverGraspOnElf "Llanowar Elves")).isEmpty
+
+/-- Bilbo's Ring: hexproof and unblockable during your turn only. -/
+def bilboRingEquipped : Game :=
+  let g := addPermanent afterDraw bilboSRing ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  attachNamed g "Bilbo's Ring" "Grizzly Bears"
+
+#guard bilboRingEquipped.hasHexproof
+  (namedPermanent bilboRingEquipped "Grizzly Bears")
+#guard bilboRingEquipped.hasCantBeBlocked
+  (namedPermanent bilboRingEquipped "Grizzly Bears")
+#guard !bilboRingEquipped.canBeTargetedBy ⟨1⟩
+  (namedPermanent bilboRingEquipped "Grizzly Bears")
+
+def bilboRingOnNissaTurn : Game :=
+  { bilboRingEquipped with activePlayer := ⟨1⟩ }
+
+#guard !bilboRingOnNissaTurn.hasHexproof
+  (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
+#guard !bilboRingOnNissaTurn.hasCantBeBlocked
+  (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
+#guard bilboRingOnNissaTurn.canBeTargetedBy ⟨1⟩
+  (namedPermanent bilboRingOnNissaTurn "Grizzly Bears")
+
+/-- Glamdring: first strike and +1/+0 per instant/sorcery in your graveyard. -/
+def glamdringEquipped : Game :=
+  let g := addPermanent afterDraw glamdring ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g shock ⟨0⟩
+  attachNamed g "Glamdring" "Grizzly Bears"
+
+#guard glamdringEquipped.hasFirstStrike
+  (namedPermanent glamdringEquipped "Grizzly Bears")
+#guard glamdringEquipped.power (namedPermanent glamdringEquipped "Grizzly Bears") == 4
+#guard glamdringEquipped.toughness (namedPermanent glamdringEquipped "Grizzly Bears") == 2
+
+/-- My Precious: equipped creature has hexproof and can't be blocked. -/
+def myPreciousEquipped : Game :=
+  let g := addPermanent afterDraw myPrecious ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  attachNamed g "My Precious" "Grizzly Bears"
+
+#guard myPreciousEquipped.hasHexproof
+  (namedPermanent myPreciousEquipped "Grizzly Bears")
+#guard myPreciousEquipped.hasCantBeBlocked
+  (namedPermanent myPreciousEquipped "Grizzly Bears")
+
+/-- Black Panther prevents all damage that would be dealt to him. -/
+def pantherDamagePrevented : Game :=
+  let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
+  g.dealDamageToPermanent (namedPermanent g "Black Panther, Hope Enduring") 3
+
+#guard (namedPermanent pantherDamagePrevented "Black Panther, Hope Enduring").status.damage == 0
+#guard pantherDamagePrevented.log.any (fun s => mentions s "prevented")
+
+/-- Cast Lightning Bolt at an opponent's permanent and lock in the cost. -/
+def boltAt (g : Game) (name : String) : Game :=
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 1
+  let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Lightning Bolt").id
+    (Target.permanent (namedPermanent g name).id)
+  mustApply g ⟨0⟩ .pay
+
+/-- Saruman ward: discard an enchantment, instant, or sorcery or the spell
+is countered. -/
+def sarumanWardPending : Game :=
+  boltAt (addPermanent afterDraw sarumanOfManyColors ⟨1⟩ ⟨1⟩)
+    "Saruman of Many Colors"
+
+#guard
+  match sarumanWardPending.pending with
+  | .payWard p _ .discardEnchantmentInstantOrSorcery => p == ⟨0⟩
+  | _ => false
+
+def sarumanWardDeclined : Game :=
+  mustApply sarumanWardPending ⟨0⟩ .decline
+
+#guard sarumanWardDeclined.stack.isEmpty
+#guard sarumanWardDeclined.log.any (fun s => mentions s "countered")
+
+def sarumanWardPaid : Game :=
+  let g := addToHand sarumanWardPending shock ⟨0⟩
+  mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Shock").id)
+
+#guard sarumanWardPaid.stack.any (fun e =>
+  (sarumanWardPaid.object! e.objectId).name == "Lightning Bolt")
+#guard sarumanWardPaid.log.any (fun s => mentions s "discards Shock")
+
+/-- Sauron ward: sacrifice a legendary artifact or creature. -/
+def sauronWardPending : Game :=
+  let g := addPermanent afterDraw sauronTheDarkLord ⟨1⟩ ⟨1⟩
+  let g := addPermanent g gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+  boltAt g "Sauron, the Dark Lord"
+
+#guard
+  match sauronWardPending.pending with
+  | .payWard p _ .sacrificeLegendary => p == ⟨0⟩
+  | _ => false
+
+def sauronWardPaid : Game :=
+  mustApply sauronWardPending ⟨0⟩
+    (.sacrifice (namedPermanent sauronWardPending "Gandalf, Wandering Wizard").id)
+
+#guard !sauronWardPaid.battlefield.any (fun o => o.name == "Gandalf, Wandering Wizard")
+#guard sauronWardPaid.stack.any (fun e =>
+  (sauronWardPaid.object! e.objectId).name == "Lightning Bolt")
+
+/-- Printed `ward {3}` on Gandalf. -/
+def gandalfWardPending : Game :=
+  boltAt (addPermanent afterDraw gandalfWanderingWizard ⟨1⟩ ⟨1⟩)
+    "Gandalf, Wandering Wizard"
+
+#guard
+  match gandalfWardPending.pending with
+  | .payWard p _ (.genericMana 3) => p == ⟨0⟩
+  | _ => false
+
+def gandalfWardPaid : Game :=
+  let g := gandalfWardPending.modifyPlayer ⟨0⟩ (fun pl =>
+    { pl with manaPool := { pl.manaPool with colorless := 3 } })
+  mustApply g ⟨0⟩ .payGeneric
+
+#guard gandalfWardPaid.stack.any (fun e =>
+  (gandalfWardPaid.object! e.objectId).name == "Lightning Bolt")
+#guard gandalfWardPaid.log.any (fun s => mentions s "pays {3}")
+
+/-- Equipped creature has ward {1} (Dwarven Mattock). -/
+def mattockWardPending : Game :=
+  let g := addPermanent afterDraw dwarvenMattock ⟨1⟩ ⟨1⟩
+  let g := addPermanent g dwarvenMauler ⟨1⟩ ⟨1⟩
+  let g := attachNamed g "Dwarven Mattock" "Dwarven Mauler"
+  boltAt g "Dwarven Mauler"
+
+#guard
+  match mattockWardPending.pending with
+  | .payWard p _ (.genericMana 1) => p == ⟨0⟩
+  | _ => false
+
+/-- Titania: ward — discard a card or pay {2}. -/
+def titaniaWardPending : Game :=
+  boltAt (addPermanent afterDraw titaniaRuggedRumbler ⟨1⟩ ⟨1⟩)
+    "Titania, Rugged Rumbler"
+
+#guard
+  match titaniaWardPending.pending with
+  | .payWard p _ (.discardOrPay 2) => p == ⟨0⟩
+  | _ => false
+
+def titaniaWardDiscarded : Game :=
+  let g := addToHand titaniaWardPending forest ⟨0⟩
+  mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard titaniaWardDiscarded.stack.any (fun e =>
+  (titaniaWardDiscarded.object! e.objectId).name == "Lightning Bolt")
+
+/-- The Serpent Society: ward — get five poison counters. -/
+def serpentWardPending : Game :=
+  boltAt (addPermanent afterDraw theSerpentSociety ⟨1⟩ ⟨1⟩)
+    "The Serpent Society"
+
+#guard
+  match serpentWardPending.pending with
+  | .payWard p _ .fivePoison => p == ⟨0⟩
+  | _ => false
+
+def serpentWardPaid : Game :=
+  mustApply serpentWardPending ⟨0⟩ .pay
+
+#guard (serpentWardPaid.player ⟨0⟩).poison == 5
+#guard serpentWardPaid.stack.any (fun e =>
+  (serpentWardPaid.object! e.objectId).name == "Lightning Bolt")
+
+/-- Elven Chorus grants `{T}: Add one mana of any color` to creatures. -/
+def chorusGrantsAnyColor : Game :=
+  addPermanent (addPermanent afterDraw elvenChorus ⟨0⟩ ⟨0⟩) grizzlyBears ⟨0⟩ ⟨0⟩
+
+#guard
+  (chorusGrantsAnyColor.manaAbilitiesOf
+    (namedPermanent chorusGrantsAnyColor "Grizzly Bears")).contains (.colored .red)
 
 end Mtg.Engine.Tests
 

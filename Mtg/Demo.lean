@@ -3181,7 +3181,12 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "my" => applyMyTurn g p args |>.map (·.game)
   | "main" => applyMainPhase g args |>.map (·.game)
   | "ignore" => applyIgnore g p args |>.map (·.game)
-  | "pay" => g.apply p .pay
+  | "pay" =>
+    match g.pending with
+    | .payOrLetCounter _ _ _ | .payWard _ _ (.genericMana _)
+    | .payWard _ _ (.discardOrPay _) =>
+      g.apply p .payGeneric
+    | _ => g.apply p .pay
   | "autopay" => applyAutopay g p args |>.map (·.game)
   | "pay-extra" => applyPayExtra g p args
   | "sacrifice" => applySacrifice g p args

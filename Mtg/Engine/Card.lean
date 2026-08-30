@@ -2764,7 +2764,8 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .enchantedLosesAbilitiesDoesntUntap => {}
   | .equippedHexproofUnblockableDuringYourTurn => {}
   | .equippedTriggersAgain => {}
-  | .equippedFirstStrikePlusPerInstantSorcery => {}
+  | .equippedFirstStrikePlusPerInstantSorcery =>
+    { hostKeywords := Keyword.firstStrike }
   | .powerPerFatGraveyard _ => {}
   | .exileOppDeathCreateWolf => {}
   | .copyActivatedFromGySubtype _ => {}
@@ -3110,9 +3111,17 @@ def thresholdGets? (ab : StaticAbility) : Option (Int × Int) :=
 def cantBeBlockedByPowerAtMost? (ab : StaticAbility) : Option Int :=
   ab.shape.spec.cantBeBlockedByPowerAtMost
 
+/-- Can't be blocked by creatures with power at least this. -/
+def cantBeBlockedByPowerAtLeast? (ab : StaticAbility) : Option Int :=
+  ab.shape.spec.cantBeBlockedByPowerAtLeast
+
 /-- This creature can't be blocked if its power is at most this. -/
 def cantBeBlockedIfPowerAtMost? (ab : StaticAbility) : Option Int :=
   ab.shape.spec.cantBeBlockedIfPowerAtMost
+
+/-- True when this Equipment also makes its host unblockable. -/
+def equippedCantBeBlocked (ab : StaticAbility) : Bool :=
+  ab.shape.spec.equippedCantBeBlocked
 
 def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Keywords :=
   ab.shape.spec.equippedTeamKeywordsDuringYourTurn

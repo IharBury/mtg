@@ -641,6 +641,19 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [tap Humans ({g.player p |>.name})]"
     | .payOrLetCounter p n _ =>
       s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
+    | .payWard p _ cost =>
+      let who := g.player p |>.name
+      match cost with
+      | .genericMana n =>
+        s!" [pay \{{n}} or let the spell be countered (ward, {who})]"
+      | .discardEnchantmentInstantOrSorcery =>
+        s!" [discard an enchantment, instant, or sorcery or let the spell be countered (ward, {who})]"
+      | .sacrificeLegendary =>
+        s!" [sacrifice a legendary artifact or creature or let the spell be countered (ward, {who})]"
+      | .discardOrPay n =>
+        s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
+      | .fivePoison =>
+        s!" [get five poison counters or let the spell be countered (ward, {who})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>
