@@ -4805,7 +4805,7 @@ def targeting : MshTrigger → EffectTargeting
   | .atTheBeginningOfYourEndStep => .of .none
   | .atTheBeginningOfYourFirstMainPhase => .of .none
   | .atTheBeginningOfYourUpkeep => .of .none
-  | .whenBullseyeEnters => .of .playerOrCreature
+  | .whenBullseyeEnters => .of .none
   | .whenCloakAndDaggerEnter => .of .opponent
   | .whenDoctorDoomEnters => .of .none
   | .whenElektraEnters => .of .oppCreature
@@ -4912,7 +4912,7 @@ def targeting : MshTrigger → EffectTargeting
   | .photographicReflexesAtTheBeginningOf => .of .creature
   | .seismicTakedownWheneverYouCastA => .of .creature
   | .sonicAttackWhenKlawEntersTa => .of .player
-  | .trickArrowsWheneverHawkeyeBec => .of .creature
+  | .trickArrowsWheneverHawkeyeBec => .of .none
   | .unbreakableSkinWheneverLukeCageA => .of .none
   | .waspSStingWhenTheWondrousWa => .of .creature
   | .atTheBeginningOf => .of .nonland

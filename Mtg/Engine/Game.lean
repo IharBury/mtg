@@ -998,6 +998,18 @@ structure Game where
   enrageGrantsAdditionalCombat : Nat := 0
   /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
   sheHulkDamageUsedThisTurn : Bool := false
+  /-- A pending MSH reflexive trigger: (controller, source, kind tag).
+  Kind is `0` grant-indestructible, `1` deal-2, `2` Hawkeye modes (paid count
+  in `pendingMshReflexivePaid`). -/
+  pendingMshReflexive : Option (PlayerId × Option ObjectId × Nat) := none
+  /-- Times Hawkeye paid for Trick Arrows (0–3). -/
+  pendingMshReflexivePaid : Nat := 0
+  /-- Player-controlling effect: (you, the player you control). Last created
+  wins (MSH 259). -/
+  playerControl : Option (PlayerId × PlayerId) := none
+  /-- If the controlled player skips their next turn, control applies to the
+  next turn they actually take (MSH 221). -/
+  controlOnNextTakenTurn : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -1164,6 +1176,31 @@ def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) : Game :=
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
   g.battlefield.foldl (fun acc o =>
     if o.copyUntilSourceLeaves == some srcId then acc.restoreCopy o else acc) g
+
+/-- Equipment attached to `o` (Whiplash last-known X). -/
+def attachedEquipmentCount (g : Game) (o : GameObject) : Nat :=
+  g.battlefield.filter (fun eq =>
+    eq.printed.isEquipment && eq.attachedTo == some o.id) |>.size
+
+/-- Last player-controlling effect wins (MSH 259). The controlled player
+remains the active player on their turn (MSH 300) and still controls their
+permanents (MSH 358). -/
+def setPlayerControl (g : Game) (you them : PlayerId) : Game :=
+  { g with playerControl := some (you, them), controlOnNextTakenTurn := false }
+    |>.logMsg
+      s!"{(g.player you).name} controls {(g.player them).name} during their next turn"
+
+/-- Whether `you` currently control `them`. -/
+def controlsPlayer (g : Game) (you them : PlayerId) : Bool :=
+  match g.playerControl with
+  | some (a, b) => a == you && b == them
+  | none => false
+
+/-- Resources used to pay `actingAs`'s costs: always that player's, even if
+another player is making the choices (MSH 346). -/
+def resourcesFor (g : Game) (actingAs : PlayerId) : PlayerId :=
+  let _ := g
+  actingAs
 
 /-- Whether `p` currently has an enduring story. -/
 def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
@@ -7215,6 +7252,78 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
   | none =>
     g.logMsg missing
 
+/-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
+def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in [0:n] do
+      let pl := g.player p
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let cardName := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        let o := g.object! newId
+        g := g.setObject { o with
+          playPermission := some { player := p, turnEndsRemaining := 1 } }
+        g := g.logMsg s!"{pl.name} exiles {cardName} and may play it this turn"
+    return g
+
+/-- Queue a reflexive MSH trigger (Hawkeye, Bullseye, Spider-Man). The first
+ability has no targets; the second is chosen after the "if you do". -/
+def queueMshReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (kind : Nat) (paid : Nat := 0) : Game :=
+  { g with
+      pendingMshReflexive := some (controller, sourceId, kind)
+      pendingMshReflexivePaid := paid }
+    |>.logMsg "A reflexive triggered ability triggers"
+
+/-- Resolve the pending MSH reflexive trigger with the now-chosen targets.
+If every target is illegal, nothing happens (MSH 125). -/
+def applyMshReflexive (g : Game) (targets : Array Target := #[]) : Game :=
+  match g.pendingMshReflexive with
+  | none => g.logMsg "No reflexive triggered ability is pending"
+  | some (controller, sourceId, kind) =>
+    let paid := g.pendingMshReflexivePaid
+    let g := { g with pendingMshReflexive := none, pendingMshReflexivePaid := 0 }
+    if kind == 0 then
+      g.withLegalKindPermanent controller .creatureYouControl targets
+        (fun g o =>
+          g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
+            |>.logMsg s!"{o.name} gains indestructible until end of turn")
+        sourceId (some "The target is no longer legal")
+    else if kind == 1 then
+      g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
+        match tgt with
+        | Target.player pid => g.dealDamageToPlayer pid 2
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o => g.dealDamageToPermanent o 2
+          | none => g
+        | _ => g) sourceId (some "The target is no longer legal")
+    else if kind == 2 then
+      if targets.isEmpty then
+        let g := g.draw controller 1
+        g.beginDiscardCards #[controller]
+      else
+        g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
+          match tgt with
+          | Target.player pid =>
+            let _ := paid
+            g.dealDamageToPlayer pid 2
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some o =>
+              g.mapObjectStatus o (fun s =>
+                { s with untilEotKeywords :=
+                    Keywords.merge s.untilEotKeywords Keyword.cantBeBlocked })
+            | none => g
+          | _ => g) sourceId (some "The target is no longer legal")
+    else
+      g
+
 /-- Merge subtype names without duplicates. -/
 def mergeSubtypes (xs ys : Array String) : Array String :=
   ys.foldl (fun acc y => if acc.any (· == y) then acc else acc.push y) xs
@@ -7468,6 +7577,36 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
           | _ => g) sourceId none
       { g with sheHulkDamageUsedThisTurn := true }
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
+  | .noOneDiesWhenSpiderManEnte =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield && !src.status.tapped then
+        let g := g.applyPermanentAction src PermanentAction.tap
+        g.queueMshReflexive controller sourceId 0
+      else
+        g.logMsg "Spider-Man is not tapped this way. The reflexive ability doesn't trigger."
+    | none =>
+      g.logMsg "Spider-Man is no longer on the battlefield. The reflexive ability doesn't trigger."
+  | .whenBullseyeEnters =>
+    g.queueMshReflexive controller sourceId 1
+  | .trickArrowsWheneverHawkeyeBec =>
+    let paid := (lastKnownPower.getD (0 : Int)).toNat
+    if paid == 0 then
+      g.logMsg "Hawkeye didn't pay. The reflexive ability doesn't trigger."
+    else
+      g.queueMshReflexive controller sourceId 2 paid
+  | .wheneverWhiplashAttacks =>
+    let x :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.attachedEquipmentCount o
+        else (lastKnownPower.getD (0 : Int)).toNat
+      | none => (lastKnownPower.getD (0 : Int)).toNat
+    if x == 0 then
+      g.logMsg "Whiplash isn't equipped"
+    else
+      let g := g.forEachOpponent controller (fun g pid => g.loseLife pid x)
+      g.gainLife controller x
   | .cyberneticSensesWheneverVivVision =>
     let pw : Int :=
       match sourceId.bind g.findObject? with
@@ -7777,7 +7916,17 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
 
 /-- Resolve a modeled MSH activation. -/
 def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
-    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Game :=
+  if t == .tPutAStunCounterOnJessicaJones then
+    let x :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then (g.power o).toNat
+        else (lastKnownPower.getD (g.power o)).toNat
+      | none => (lastKnownPower.getD (0 : Int)).toNat
+    g.exileTopPlayThisTurn controller x
+  else
   let text := t.toNotation
   if t == .harnessTheMindStone then
     g.withSourceOnBattlefield sourceId (fun g o =>
@@ -8517,7 +8666,8 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
       g.afterPermanentEnters (g.object! newId)
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
-    (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none) : Game :=
   match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
@@ -8793,7 +8943,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .connive =>
     g.applyConnive controller sourceId
   | .msh t =>
-    g.applyMshAbility controller t targets sourceId
+    g.applyMshAbility controller t targets sourceId lastKnownPower
   | .mshSpell t =>
     g.applyMshSpell controller t targets sourceId
 
@@ -10594,6 +10744,7 @@ def resolveTop (g : Game) : Game :=
     | some obj =>
       if let some e := obj.abilityEffect then
         let g := g.applyAbilityEffect entry.controller e entry.targets obj.sourceId
+          obj.lastKnownPower
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then

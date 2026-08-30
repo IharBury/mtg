@@ -1703,6 +1703,112 @@ def robotDominationLeftOk : Bool :=
 
 #guard robotDominationLeftOk
 
+/-- Ruling 136: Jessica Jones exiles X using last-known power if she left. -/
+def jessicaJonesLastKnownXOk : Bool :=
+  let g := addPermanent afterDraw jessicaJonesPrivateEye ⟨0⟩ ⟨0⟩
+  let jj := namedPermanent g "Jessica Jones, Private Eye"
+  let g := g.addPlusOnePlusOneTo jj 1
+  let jj := namedPermanent g "Jessica Jones, Private Eye"
+  let pw := g.power jj
+  let lib0 := (g.player ⟨0⟩).library.size
+  let (g, _) := g.move jj.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshAbility ⟨0⟩ .tPutAStunCounterOnJessicaJones #[]
+    (some jj.id) (some pw)
+  (g.player ⟨0⟩).library.size == lib0 - pw.toNat &&
+    (g.objects.filter (fun o =>
+      o.zone == .exile && o.playPermission.isSome)).size == pw.toNat &&
+    (mshRuling 136).comment.contains "last existed on the battlefield"
+
+#guard jessicaJonesLastKnownXOk
+
+/-- Ruling 150: Whiplash drain uses last-known attached Equipment. -/
+def whiplashLastKnownEquipmentOk : Bool :=
+  let g := addPermanent afterDraw whiplashVengefulEngineer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g captainAmericaSShield ⟨0⟩ ⟨0⟩
+  let g := addPermanent g falconSWingHarness ⟨0⟩ ⟨0⟩
+  let whip := namedPermanent g "Whiplash, Vengeful Engineer"
+  let eq1 := namedPermanent g "Captain America's Shield"
+  let eq2 := namedPermanent g "Falcon's Wing Harness"
+  let g := g.attachSourceTo eq1 whip
+  let g := g.attachSourceTo eq2 (g.object! whip.id)
+  let n := g.attachedEquipmentCount (g.object! whip.id)
+  let life0 := (g.player ⟨1⟩).life
+  let you0 := (g.player ⟨0⟩).life
+  let (g, _) := g.move (namedPermanent g "Whiplash, Vengeful Engineer").id
+    (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverWhiplashAttacks (some whip.id)
+    #[] "Whiplash" (some (Int.ofNat n))
+  n == 2 &&
+    (g.player ⟨1⟩).life + n == life0 &&
+    (g.player ⟨0⟩).life == you0 + n &&
+    (mshRuling 150).comment.contains "last existed on the battlefield"
+
+#guard whiplashLastKnownEquipmentOk
+
+/-- Rulings 359 / 367: first reflexive ability has no targets; the second does. -/
+def mshReflexiveNoTargetFirstOk : Bool :=
+  let g := addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let b := namedPermanent g "Bullseye, Death Dealer"
+  let g := g.applyMshTrigger ⟨0⟩ .whenBullseyeEnters (some b.id)
+  (namedPermanent g "Grizzly Bears").status.damage == 0 &&
+    g.pendingMshReflexive.isSome &&
+    logContains g "reflexive" &&
+    (let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyMshReflexive #[Target.permanent bears.id]
+     (namedPermanent g "Grizzly Bears").status.damage == 2) &&
+    (let g := addPermanent afterDraw spiderManToTheRescue ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+     let sm := namedPermanent g "Spider-Man, To the Rescue"
+     let g := g.applyMshTrigger ⟨0⟩ .noOneDiesWhenSpiderManEnte (some sm.id)
+     (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
+       g.pendingMshReflexive.isSome &&
+       (let bears := namedPermanent g "Grizzly Bears"
+        let g := g.applyMshReflexive #[Target.permanent bears.id]
+        (namedPermanent g "Grizzly Bears").status.untilEotKeywords.indestructible)) &&
+    (mshRuling 359).comment.contains "reflexive" &&
+    (mshRuling 367).comment.contains "reflexive"
+
+#guard mshReflexiveNoTargetFirstOk
+
+/-- Ruling 125: Hawkeye's first trigger has no modes; paying queues the second. -/
+def hawkeyeReflexivePayOk : Bool :=
+  let g := addPermanent afterDraw hawkeyeMasterMarksman ⟨0⟩ ⟨0⟩
+  let hawk := namedPermanent g "Hawkeye, Master Marksman"
+  let nonePaid :=
+    g.applyMshTrigger ⟨0⟩ .trickArrowsWheneverHawkeyeBec (some hawk.id)
+      #[] "Hawkeye" none
+  !nonePaid.pendingMshReflexive.isSome &&
+    (let g := g.applyMshTrigger ⟨0⟩ .trickArrowsWheneverHawkeyeBec (some hawk.id)
+       #[] "Hawkeye" (some (2 : Int))
+     g.pendingMshReflexive.isSome &&
+       g.pendingMshReflexivePaid == 2 &&
+       (let life1 := (g.player ⟨1⟩).life
+        let g := g.applyMshReflexive #[Target.player ⟨1⟩]
+        (g.player ⟨1⟩).life + 2 == life1)) &&
+    (mshRuling 125).comment.contains "reflexive"
+
+#guard hawkeyeReflexivePayOk
+
+/-- Rulings 221 / 259 / 300 / 346 / 358: control another player. -/
+def controlAnotherPlayerOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
+  g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
+    g.activePlayer == ⟨0⟩ &&
+    (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
+    g.resourcesFor ⟨1⟩ == ⟨1⟩ &&
+    (let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
+     let g := { g with controlOnNextTakenTurn := true }
+     g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
+    (mshRuling 221).comment.contains "next turn they actually take" &&
+    (mshRuling 259).comment.contains "overwrite each other" &&
+    (mshRuling 300).comment.contains "still the active player" &&
+    (mshRuling 346).comment.contains "can't use your own" &&
+    (mshRuling 358).comment.contains "don't control any of that player's permanents"
+
+#guard controlAnotherPlayerOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
