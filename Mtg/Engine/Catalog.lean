@@ -154,9 +154,11 @@ def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (drawTwoExceptFirstDrawStep : Bool := false)
     (teamwork : Option Nat := none)
     (entersWithShield : Nat := 0)
-    (otherFace : Option CardDef := none) : CardDef :=
+    (otherFace : Option CardDef := none)
+    (legendary := false) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
-    keywords supertypes (tapAddMana := tapAddMana)
+    keywords ((if legendary then #[.legendary] else #[]) ++ supertypes)
+    (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
     (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
     (tapAddAnyColorForInstantOrSorcery := tapAddAnyColorForInstantOrSorcery)
@@ -215,9 +217,8 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
     (teamwork : Option Nat := none)
     (entersWithShield : Nat := 0)
     (otherFace : Option CardDef := none) : CardDef :=
-  creature name manaCost subtypes power toughness oracleText
-    (keywords := keywords) (tapAddMana := tapAddMana)
-    (supertypes := #[.legendary] ++ supertypes)
+  creature name manaCost subtypes power toughness oracleText (legendary := true)
+    (keywords := keywords) (tapAddMana := tapAddMana) (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
     (tapAddManaForEach := tapAddManaForEach)
@@ -314,8 +315,8 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (staticAbilities : Array StaticAbility := #[])
     (teamwork : Option Nat := none)
     (chooseBothIfTeamwork : Bool := false) : CardDef :=
-  spellCard .instant name manaCost oracleText
-    (spellEffect := spellEffect) (spellModes := spellModes)
+  spellCard .instant name manaCost oracleText spellEffect
+    (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
       additionalCostSacrificeArtifactOrCreature)
     (additionalCostOrPayGeneric := additionalCostOrPayGeneric)
@@ -363,8 +364,8 @@ def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (staticAbilities : Array StaticAbility := #[])
     (teamwork : Option Nat := none)
     (chooseBothIfTeamwork : Bool := false) : CardDef :=
-  spellCard .sorcery name manaCost oracleText
-    (spellEffect := spellEffect) (spellModes := spellModes)
+  spellCard .sorcery name manaCost oracleText spellEffect
+    (spellModes := spellModes)
     (additionalCostSacrificeArtifactOrCreature :=
       additionalCostSacrificeArtifactOrCreature)
     (additionalCostOrPayGeneric := additionalCostOrPayGeneric)
@@ -480,9 +481,11 @@ def land (name : String) (oracleText : String)
     (entersTappedUnlessLegendary : Bool := false)
     (entersTappedUnlessEquipment : Bool := false)
     (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
-    (entersTappedUnlessPayLife : Option Nat := none) : CardDef :=
+    (entersTappedUnlessPayLife : Option Nat := none)
+    (legendary := false) : CardDef :=
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
-    (supertypes := supertypes) (tapAddMana := tapAddMana)
+    (supertypes := (if legendary then #[.legendary] else #[]) ++ supertypes)
+    (tapAddMana := tapAddMana)
     (tapAddOneOf := tapAddOneOf) (activatedAbilities := activatedAbilities)
     (entersTapped := entersTapped) (triggeredAbilities := triggeredAbilities)
     (staticAbilities := staticAbilities)
@@ -502,8 +505,10 @@ def legendaryLand (name : String) (oracleText : String)
     (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
     (entersTappedUnlessPayLife : Option Nat := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
-  land name oracleText tapAddMana tapAddOneOf activatedAbilities subtypes
-    (supertypes := #[.legendary]) (entersTapped := entersTapped)
+  land name oracleText (legendary := true)
+    (tapAddMana := tapAddMana) (tapAddOneOf := tapAddOneOf)
+    (activatedAbilities := activatedAbilities) (subtypes := subtypes)
+    (entersTapped := entersTapped)
     (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
     (tapPayLifeAddOneOf := tapPayLifeAddOneOf)
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
@@ -697,6 +702,10 @@ def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
     (onlyAsSorcery := onlyAsSorcery)
 
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
+#guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
+#guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
+#guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (.dealDamage 1))).isInstant
+#guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (.dealDamage 1))).isSorcery
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
 #guard grizzlyBears.hasSorcerySpeed
