@@ -12946,8 +12946,8 @@ def pantherCombatDraw : Game :=
 -- Daredevil looks at the library top; that is a field, not leftover text.
 #guard daredevilManWithoutFear.mayLookAtTopAnytime
 
-/-- Hidden Lair's second ability is `{T}: Add {U} or {B}` when it entered
-this turn or you control a basic land. -/
+-- Hidden Lair's second ability is {T}: Add {U} or {B} when it entered
+-- this turn or you control a basic land.
 #guard hiddenLair.mshTapAddMana ==
   #[.colored .blue, .colored .black]
 #guard hiddenLair.mshTapAddRequiresEnteredOrBasic
