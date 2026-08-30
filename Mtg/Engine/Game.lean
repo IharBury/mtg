@@ -3123,6 +3123,26 @@ def hasDoubleStrike (g : Game) (o : GameObject) : Bool :=
 def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.islandwalk)
 
+/-- During the Equipment's controller's turn, the equipped creature has
+hexproof and can't be blocked (Bilbo's Ring). -/
+def equippedHexproofUnblockableThisTurn (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any (fun
+          | .equippedHexproofUnblockableDuringYourTurn => true
+          | _ => false) &&
+        match eq.controller with
+        | some p => g.activePlayer == p
+        | none => false)
+
+/-- Equipment that grants "can't be blocked" to its host (My Precious). -/
+def equippedCantBeBlockedNow (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any StaticAbility.equippedCantBeBlocked)
+
 /-- Whether `o` can't be blocked, printed or granted until end of turn
 (CR 509.1b / 611.2a), or while its power is at most a listed value. -/
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
@@ -3263,28 +3283,8 @@ def grantorStillInPlay (g : Game) (id : ObjectId) : Bool :=
   | some o => o.isOnBattlefield
   | none => false
 
-/-- During the Equipment's controller's turn, the equipped creature has
-hexproof and can't be blocked (Bilbo's Ring). -/
-def equippedHexproofUnblockableThisTurn (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield &&
-    g.battlefield.any (fun eq =>
-      eq.attachedTo == some o.id &&
-        eq.staticAbilities.any (fun
-          | .equippedHexproofUnblockableDuringYourTurn => true
-          | _ => false) &&
-        match eq.controller with
-        | some p => g.activePlayer == p
-        | none => false)
-
-/-- Equipment that grants "can't be blocked" to its host (My Precious). -/
-def equippedCantBeBlockedNow (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield &&
-    g.battlefield.any (fun eq =>
-      eq.attachedTo == some o.id &&
-        eq.staticAbilities.any StaticAbility.equippedCantBeBlocked)
-
 def hasHexproof (g : Game) (o : GameObject) : Bool :=
-  hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o ||
+  g.hasKeyword o (·.hexproof) || g.loreThresholdProtection o ||
     o.status.hexproofGrantedBy.any g.grantorStillInPlay ||
     g.equippedHexproofUnblockableThisTurn o ||
     (match o.controller with
@@ -5724,7 +5724,7 @@ def afterWardResolved (g : Game) : Game :=
   let g := { g with
     wardQueue := g.wardQueue.filter (fun w =>
       match g.findObject? w.spellId with
-      | some o => o.zone == .stack
+      | some o => o.zone == Zone.stack
       | none => false) }
   let g := g.promptNextWard
   if g.pending != .none then g
@@ -7427,7 +7427,7 @@ def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : G
         g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
-def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
+def preventsAllDamageTo (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .preventAllDamageToThis => true
     | _ => false)
