@@ -4277,9 +4277,9 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | some n => (g.player controller).lifeGainedThisTurn ≥ n
   let hulklingOk :=
     match ab, cause, source with
-    | .on .wheneverAnotherCreatureYouControlEnters, some entered, some hulkling =>
+    | .onWatch .hulklingCompare, some entered, some hulkling =>
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
-    | .on .wheneverAnotherCreatureYouControlEnters, _, _ => false
+    | .onWatch .hulklingCompare, _, _ => false
     | _, _, _ => true
   powerOk && otherOk && lifeOk && hulklingOk
 
@@ -4397,7 +4397,7 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     for ab in source.matchingTriggers event do
       let skipInfinity :=
         match ab with
-        | .on .atTheBeginningOf => !source.status.harnessed
+        | .onStep .harnessedFlicker => !source.status.harnessed
         | _ => false
       if !skipInfinity then
         g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
@@ -7722,7 +7722,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab with
-            | .on .enrageWheneverTheIncredi => true
+            | .onWatch .hulk => true
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
           { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
@@ -8355,6 +8355,12 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
       let g := { g with lastBecameTapped := some o.id }
       match o.controller with
       | some p =>
+        let g := g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
+        let g :=
+          (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
+            if eq.printed.isEquipment then
+              g.putMatchingSourceTriggers p eq .equippedBecomesTapped
+            else g) g
         if first && g.activePlayer == p then
           g.foldControlledPermanents p (excludeId := none) (fun g src =>
             g.putMatchingSourceTriggers p src .creatureYouControlTapped
@@ -9218,13 +9224,13 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
 
 /-- Resolve a modeled MSH trigger. Performs the printed effect: tokens, draw,
 damage, destroy, attach, exile, or pump. -/
-def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
+def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (sourceName : String := "This creature")
     (lastKnownPower : Option Int := none) : Game :=
   let text := t.toNotation
   match t with
-  | .atTheBeginningOfYourFirstMainPhase =>
+  | .onStep .copyAbsorbingMan =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
       | some (Target.permanent id) =>
@@ -9237,7 +9243,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
             (setPT := some (4, 4)) (addVigilance := true)
         | none => g
       | _ => g) "The source is no longer in play"
-  | .photographicReflexesAtTheBeginningOf =>
+  | .onStep .copyTaskmaster =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
       | some (Target.permanent id) | some (Target.card id) =>
@@ -9249,7 +9255,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
             (addSubtypes := #["Human", "Mercenary", "Villain"])
         | none => g
       | _ => g) "The source is no longer in play"
-  | .wheneverACreatureYouControlIsDealtDamage =>
+  | .onWatch .sheHulkRedirectOnce =>
     if g.sheHulkDamageUsedThisTurn then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
@@ -9259,11 +9265,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           (fun g tgt => g.dealDamageToTarget tgt amt) sourceId none
       { g with sheHulkDamageUsedThisTurn := true }
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
-  | .trickArrowsWheneverHawkeyeBec =>
+  | .onWatch .hawkeyeModes =>
     let paid := (lastKnownPower.getD (0 : Int)).toNat
     g.queueModeledReflexiveIfPaid controller sourceId 2 paid
       "Hawkeye didn't pay. The reflexive ability doesn't trigger."
-  | .wheneverWhiplashAttacks =>
+  | .onThisAttack .equippedDrain =>
     let x :=
       match sourceId.bind g.findObject? with
       | some o =>
@@ -9275,11 +9281,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
     else
       let g := g.forEachOpponent controller (fun g pid => g.loseLife pid x)
       g.gainLife controller x
-  | .cyberneticSensesWheneverVivVision =>
+  | .onThisAttack .drawIfPower4 =>
     let pw := g.sourcePowerAtResolution sourceId lastKnownPower
     if pw >= 4 then g.draw controller 1
     else g.logMsg "Viv Vision's power is not 4 or greater"
-  | .wheneverAnotherCreatureYouControlEnters =>
+  | .onWatch .hulklingCompare =>
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
         match targets[0]? with
@@ -9300,14 +9306,14 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         if op > g.power hulkling || ot > g.toughness hulkling then
           g.addPlusOnePlusOneTo hulkling 1
         else g) "The source is no longer in play"
-  | .wheneverACreatureYouControlBecomesTappedD =>
+  | .onWatch .firstTapUntap =>
     match g.lastBecameTapped.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield && o.status.tapped then
         g.applyPermanentAction o .untap
       else g
     | none => g
-  | .enrageWheneverTheIncredi =>
+  | .onWatch .hulk =>
     let g :=
       g.withSourceOnBattlefield sourceId (fun g o =>
         let g := g.addPlusOnePlusOneTo o 1
@@ -9320,7 +9326,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           additionalCombatPhases := g.additionalCombatPhases + 1 }
         |>.logMsg "There is an additional combat phase after this phase"
     else g
-  | .enrageWheneverRedHulkIs =>
+  | .onWatch .redHulk =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then
@@ -9331,18 +9337,18 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | none =>
       g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
-  | .wheneverGrimReaperAttacks =>
+  | .onThisAttack .payReturnAttacking =>
     g.queueModeledReflexiveIfPaid controller sourceId 6
       (lastKnownPower.getD (0 : Int)).toNat
       "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
-  | .wheneverYouCastANoncreatureSpell5 =>
+  | .onCasting .mayPayHasteUnblockable =>
     g.queueModeledReflexiveIfPaid controller sourceId 9
       (lastKnownPower.getD (0 : Int)).toNat
       "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
-  | .wheneverAPlayerCastsASpellThatTargetsSpe =>
+  | .onWatch .speedballTargeted =>
     g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
       "Speedball is no longer on the battlefield"
-  | .wheneverYouAttack2 =>
+  | .onYouAttacking .exileTopHeroPump =>
     -- Daredevil: exile the top card. Hero-ness only affects the pump;
     -- the card may be played this turn either way (MSH 333).
     let top? := (g.player controller).library.back?
@@ -9355,18 +9361,18 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
       g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
         "Daredevil is no longer on the battlefield"
     else g
-  | .wheneverYouAttack3 =>
+  | .onYouAttacking .pay2LifeToughness =>
     g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "The Kingpin's cost wasn't paid"
       fun g =>
         { g with assignCombatDamageEqualToughness := some controller }
           |>.logMsg "Creatures you control assign combat damage equal to their toughness"
-  | .wheneverAnotherVillainYouControlEnters3 =>
+  | .onWatch .villainPlusOneDamageOnce =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.addPlusOnePlusOneTo o 1
       g.forEachOpponent controller (fun g pid =>
         g.dealDamageToPlayer pid 2 (source := some (g.object! o.id))))
       "Crossbones is no longer on the battlefield"
-  | .wheneverAnotherVillainYouControlEnters4 =>
+  | .onWatch .villainConniveOnce =>
     match sourceId.bind g.findObject? with
     | none =>
       g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
@@ -9382,7 +9388,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           g.applyConnive controller (some id)
         | _ =>
           g.logMsg "The Villain does not connive"
-  | .wheneverAnAttackingCreatureYouControlDies =>
+  | .onDeath .attackingReturnHand =>
     match g.lastDiedAttacker.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
     | some o =>
@@ -9390,7 +9396,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         g.logMsg s!"{o.name} ceases to exist"
       else
         g.returnToHand o.id o.owner
-  | .wheneverAnotherNontokenArtifactYouControlE =>
+  | .onWatch .ultronCopy =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
@@ -9415,7 +9421,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         else g
       | none => g
     | _ => g
-  | .wheneverAVillainYouControlDies =>
+  | .onDeath .villainReturnAsHero =>
     match targets[0]? with
     | some (Target.card id) | some (Target.permanent id) =>
       match g.findObject? id with
@@ -9434,15 +9440,15 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         else g
       | none => g
     | _ => g
-  | .wheneverYouCastAVillainSpell =>
+  | .onCasting .villainToken =>
     g.createKindTokens controller .villain21menace 1
-  | .doYouLikeSquirrelsWheneverTheUnbeata =>
+  | .onEnterOrAttack .createSquirrel =>
     g.createKindTokens controller .squirrel11green 1
-  | .wheneverYouPutA11CounterOnACreature =>
+  | .onResource .plusOneCreateInsectOnce =>
     g.createKindTokens controller .insect11green 1
-  | .wheneverYouPutOneOrMore11CountersOnO =>
+  | .onResource .plusOneOnHeroesCreateWall =>
     g.createKindTokens controller .wall04defender 1
-  | .wheneverYouDrawYourSecondCardEachTurn3 =>
+  | .onResource .secondDrawBecome66 =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
         { s with
@@ -9450,7 +9456,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.trample })
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
-  | .wheneverYouCastANoncreatureSpell2 =>
+  | .onCasting .visionModes =>
     match sourceId.bind g.findObject? with
     | some src =>
       if src.status.chosenModes.size >= 3 then
@@ -9468,13 +9474,13 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         else
           g.draw controller 1
     | none => g.logMsg "The Vision is no longer in play"
-  | .wheneverYouCastASpellThatTargetsACreatur =>
+  | .onCasting .ironFistTap =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
         { s with ironFistTapGrants := s.ironFistTapGrants + 1 })
         |>.logMsg s!"{o.name} gains a tap ability until end of turn")
       "The source is no longer in play"
-  | .wheneverYouCastASpellThatTargetsACreatur4 =>
+  | .onCasting .drawPowerEqualHand =>
     let g := g.draw controller 1
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.mapObjectStatus o (fun s =>
@@ -9482,7 +9488,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
             s.grantedStaticAbilities.push .powerEqualCardsInHand })
         |>.logMsg s!"{o.name}'s base power is the number of cards in your hand")
       "The source is no longer in play"
-  | .atTheBeginningOfYourUpkeep =>
+  | .onStep .hydeChoose =>
     let mode := (lastKnownPower.getD 0).toNat
     if mode == 0 then
       g.withSourceOnBattlefield sourceId (fun g o =>
@@ -9506,7 +9512,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
             o.isCreature && o.status.plusOnePlusOne > 0) then
           g.logMsg "You must remove a counter from a creature you control if you can"
         else g
-  | .wheneverYouDrawACard =>
+  | .onResource .drawIfAnotherHeroDamage =>
     if (g.permanentsOf controller).any (fun o =>
         g.hasSubtype o "Hero" && some o.id != sourceId) then
       g.withLegalKindTarget controller .opponent targets (fun g tgt =>
@@ -9515,11 +9521,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
         | _ => g) sourceId none
     else
       g.logMsg "Human Torch's ability has no effect"
-  | .atTheBeginningOfYourEndStep =>
+  | .onStep .drawToTen =>
     let n := 10 - (g.player controller).hand.size
     if n > 0 then g.draw controller n
     else g.logMsg "You already have ten or more cards in hand"
-  | .atTheBeginningOf =>
+  | .onStep .harnessedFlicker =>
     match sourceId.bind g.findObject? with
     | some src =>
       if !src.status.harnessed then
@@ -9541,7 +9547,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           | none => g.logMsg "The target is no longer legal"
         | _ => g
     | none => g
-  | .wheneverEnchantedCreatureAttacksOrBlocks =>
+  | .onWatch .enchantedAttachEquipment =>
     match sourceId.bind g.findObject? with
     | some src =>
       match src.attachedTo.bind g.findObject? with
@@ -9560,7 +9566,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           | _ => g) g
     | none =>
       g.logMsg "The enchanted creature has left. Equipment stays where it is."
-  | .wheneverAnotherVillainYouControlEnters2 =>
+  | .onWatch .villainAttachEquipment =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent eqId), some (Target.permanent crId) =>
       match g.findObject? eqId, g.findObject? crId with
@@ -9571,12 +9577,12 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
           g.logMsg "The Equipment won't move"
       | _, _ => g.logMsg "The Equipment won't move"
     | _, _ => g.logMsg "The Equipment won't move"
-  | .wheneverIronManAttacks =>
+  | .onThisAttack .ifArtifactEnteredDraw =>
     if (g.player controller).artifactEnteredThisTurn then
       g.draw controller 1
     else
       g.logMsg "No artifact entered under your control this turn. Iron Man's ability doesn't trigger."
-  | .wheneverYouAttack =>
+  | .onYouAttacking .lookSixCast =>
     g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
   | _ =>
     if text.contains "create two 1/1 white Soldier" ||
@@ -12803,8 +12809,22 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | _ => g
   | .createRedwing =>
     g.createNamedToken controller redwingToken
-  | .shared e =>
-    g.applyModeledTrigger controller e sourceId targets sourceName lastKnownPower
+  | .step e =>
+    g.applyModeledTrigger controller (.onStep e) sourceId targets sourceName lastKnownPower
+  | .death e =>
+    g.applyModeledTrigger controller (.onDeath e) sourceId targets sourceName lastKnownPower
+  | .thisAttack e =>
+    g.applyModeledTrigger controller (.onThisAttack e) sourceId targets sourceName lastKnownPower
+  | .enterOrAttack e =>
+    g.applyModeledTrigger controller (.onEnterOrAttack e) sourceId targets sourceName lastKnownPower
+  | .watch e =>
+    g.applyModeledTrigger controller (.onWatch e) sourceId targets sourceName lastKnownPower
+  | .youAttacking e =>
+    g.applyModeledTrigger controller (.onYouAttacking e) sourceId targets sourceName lastKnownPower
+  | .casting e =>
+    g.applyModeledTrigger controller (.onCasting e) sourceId targets sourceName lastKnownPower
+  | .resource e =>
+    g.applyModeledTrigger controller (.onResource e) sourceId targets sourceName lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -12815,7 +12835,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       let o := g.object! id
       let skipIronMan :=
         o.printed.triggeredAbilities.any (fun
-          | .on .wheneverIronManAttacks =>
+          | .onThisAttack .ifArtifactEnteredDraw =>
             !(g.player p).artifactEnteredThisTurn
           | _ => false)
       if !skipIronMan then
