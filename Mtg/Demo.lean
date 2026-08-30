@@ -36,8 +36,9 @@ and `attack step` keep passing until the named step (or until a player must
 take a non-pass action). Other players' pass-until shortcuts (recorded as
 `pass` sequences) do not interrupt those commands. `ignore` keeps passing
 until your next main phase and is not interrupted at all. Those shortcuts
-are recorded as the individual `pass` commands they perform (`noattack` /
-`noblock` when those are the only legal declarations). `attach <id>` attaches an Equipment
+are recorded as the individual `pass` commands they perform. `your turn`,
+`my turn`, `main phase`, and `ignore` use `noattack` when declaring
+attackers; `noblock` is used when that is the only legal declaration. `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -85,8 +86,9 @@ Options:
                   new commands. Unique automatic cost payments are written
                   as tap, pay, and sacrifice commands. Pass-until shortcuts
                   (your turn, my turn, main phase, attack step, ignore) are written
-                  as the individual pass commands they perform. Other players'
-                  pass-until shortcuts do not interrupt a pending shortcut;
+                  as the individual pass commands they perform. your turn,
+                  my turn, main phase, and ignore use noattack when declaring
+                  attackers. Other players' pass-until shortcuts do not interrupt a pending shortcut;
                   ignore is never interrupted
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
@@ -661,11 +663,11 @@ def helpInteractive (controlAll : Bool := false)
   mulligan             Declare a mulligan; taken after all declarations (CR 103.5 / 103.5c)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
-  your turn            Pass until combat of the next turn if that turn is not yours
-  my turn              Pass until the main phase of the next turn if that turn is yours
-  main phase           Pass until the next main phase
+  your turn            Pass until combat of the next turn if that turn is not yours (uses noattack)
+  my turn              Pass until the main phase of the next turn if that turn is yours (uses noattack)
+  main phase           Pass until the next main phase (uses noattack)
   attack step          Pass until the next declare attackers step
-  ignore               Pass until your next main phase (never interrupted)
+  ignore               Pass until your next main phase (never interrupted; uses noattack)
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
@@ -735,6 +737,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "my turn").length > 1
 #guard ((helpInteractive false).splitOn "main phase").length > 1
 #guard ((helpInteractive false).splitOn "attack step").length > 1
+#guard ((helpInteractive false).splitOn "uses noattack").length > 4
+#guard (usage.splitOn "use noattack when declaring").length > 1
 #guard ((helpInteractive false).splitOn "attack [id...] [at] <name|opponent>").length > 1
 #guard ((helpInteractive false).splitOn "Each listed creature attacks that player").length > 1
 #guard ((helpInteractive false).splitOn "ignore").length > 1
@@ -2963,16 +2967,26 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
     g.step == .declareAttackers &&
       !(g.turnNumber == startTurn && g.step == startStep)
 
+/-- `your turn`, `my turn`, and `main phase` declare no attackers even when
+creatures can attack. `attack step` still stops so attackers can be chosen. -/
+def passUntilSkipsAttackers : PassUntilTarget → Bool
+  | .nextDeclareAttackers => false
+  | _ => true
+
 /-- A primitive command the shortcut may issue without asking. `pass` when
-someone has priority; `noattack` / `noblock` only when that is the sole
-legal combat declaration (same rule as the automatic console steps), unless
-`forceEmptyCombat` is set because another player accepted a pending shortcut. -/
-def passUntilCommand? (g : Game) (forceEmptyCombat := false) : Option String :=
+someone has priority; `noattack` when `alwaysNoAttack` is set (`your turn`,
+`my turn`, `main phase`, `ignore`) or when that is the sole legal declaration;
+`noblock` only when that is the sole legal combat declaration (same rule as
+the automatic console steps). `forceEmptyCombat` treats empty combat as
+passing because another player accepted a pending shortcut. -/
+def passUntilCommand? (g : Game) (forceEmptyCombat := false)
+    (alwaysNoAttack := false) : Option String :=
   match g.pending, g.actor with
   | .none, some p =>
     if g.hasPriority p then some "pass" else none
   | .declareAttackers, some _ =>
-    if forceEmptyCombat || !(g.battlefield.any g.canAttack) then some "noattack" else none
+    if forceEmptyCombat || alwaysNoAttack || !(g.battlefield.any g.canAttack) then
+      some "noattack" else none
   | .declareBlockers, some _ =>
     if forceEmptyCombat || !hasLegalBlock g then some "noblock" else none
   | _, _ => none
@@ -2986,9 +3000,10 @@ def applyPassUntilLine (g : Game) (line : String) : Except String Game := do
   | "noblock" => g.apply p (.declareBlockers #[])
   | _ => throw s!"Unknown pass-until command: {line}"
 
-/-- Keep issuing `pass` (and empty combat declarations when they are the
-only legal action, or whenever `forceEmptyCombat` is set) until `target`,
-the game ends, or a player must take a non-pass action. -/
+/-- Keep issuing `pass` (and `noattack` when `target` skips attackers, empty
+combat declarations when they are the only legal action, or whenever
+`forceEmptyCombat` is set) until `target`, the game ends, or a player must
+take a non-pass action. -/
 def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
     (startTurn : Nat) (startStep : Step) (fuel : Nat) (cmds : Array String)
     (forceEmptyCombat := false) :
@@ -2999,7 +3014,7 @@ def applyPassUntilSteps (g : Game) (target : PassUntilTarget)
     if g.over || reachedPassUntil g startTurn startStep target then
       .ok { game := g, commands := cmds }
     else
-      match passUntilCommand? g forceEmptyCombat with
+      match passUntilCommand? g forceEmptyCombat (passUntilSkipsAttackers target) with
       | none =>
         if cmds.isEmpty then
           .error "A player must take an action other than pass"
@@ -3080,7 +3095,7 @@ def reachedIgnore (g : Game) (goal : IgnoreGoal) : Bool :=
 def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
   match g.actor with
   | some p =>
-    if p == issuer then passUntilCommand? g forceEmptyCombat else none
+    if p == issuer then passUntilCommand? g forceEmptyCombat (alwaysNoAttack := true) else none
   | none => none
 
 /-- Pass as the issuer until their next main phase, another player must act,
@@ -3187,7 +3202,7 @@ def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal) : Option String :=
   match goal.kind with
-  | .named _ => passUntilCommand? g
+  | .named t => passUntilCommand? g (alwaysNoAttack := passUntilSkipsAttackers t)
   | .ignore => ignoreCommand? g goal.issuer
 
 /-- `pass` / empty combat declarations, or a pass-until shortcut that expands
@@ -3294,6 +3309,21 @@ def resumePassUntilGoal (g : Game) (goal : PassUntilGoal) :
 #guard shortcutKind? "main" ["phase"] == some (.named .nextMain)
 #guard shortcutKind? "ignore" [] == some .ignore
 #guard (shortcutKind? "cast" ["3"]).isNone
+#guard passUntilSkipsAttackers .nextTurnCombat
+#guard passUntilSkipsAttackers .nextTurnMain
+#guard passUntilSkipsAttackers .nextMain
+#guard !passUntilSkipsAttackers .nextDeclareAttackers
+#guard passUntilCommand? Tests.readyToDeclareAttackers == none
+#guard passUntilCommand? Tests.readyToDeclareAttackers false true == some "noattack"
+#guard passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextMain)) ==
+  some "noattack"
+#guard passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ .ignore) ==
+  some "noattack"
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩
+      (.named .nextDeclareAttackers))).isNone
 #guard
   let named := passUntilGoalAt Tests.afterDraw ⟨0⟩ (.named .nextMain)
   let ign := passUntilGoalAt Tests.afterDraw ⟨0⟩ .ignore
@@ -3361,10 +3391,10 @@ def applyInteractiveAsActor (g : Game) (cmd : String) (args : List String) : Exc
 
 /-- Apply a game-state command. `autopay` expands to the `tap`/`pay` lines
 that `--output` should record. Pass-until shortcuts expand to the `pass`
-lines (and `noattack` / `noblock` when those are the only legal
-declarations) rather than the shortcut text. `forceEmptyCombat` is set when
-another player's pending shortcut is being accepted, so empty combat
-declarations count as passing. -/
+lines (and `noattack` / `noblock`) rather than the shortcut text.
+`your turn`, `my turn`, `main phase`, and `ignore` use `noattack` when
+declaring attackers. `forceEmptyCombat` is set when another player's pending
+shortcut is being accepted, so empty combat declarations count as passing. -/
 def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : String)
     (forceEmptyCombat := false) : Except String (Game × Array String) := do
   if cmd == "autopay" then
@@ -4038,13 +4068,25 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 
 #guard
   match applyLoggedAction Tests.readyToDeclareAttackers "your" ["turn"] "your turn" with
-  | .error msg => msg == "A player must take an action other than pass"
-  | .ok _ => false
+  | .ok (g', cmds) =>
+    cmds.contains "noattack" &&
+      g'.step == .beginningOfCombat &&
+      g'.turnNumber == 2 &&
+      g'.activePlayer == ⟨1⟩ &&
+      g'.hasPriority ⟨1⟩
+  | .error _ => false
 
 #guard
   match applyLoggedAction Tests.readyToDeclareAttackers "attack" ["step"] "attack step" with
   | .error msg => msg == "A player must take an action other than pass"
   | .ok _ => false
+
+#guard
+  match applyLoggedAction Tests.readyToDeclareAttackers "ignore" [] "ignore" with
+  | .ok (g', cmds) =>
+    cmds.contains "noattack" &&
+      g'.pending != .declareAttackers
+  | .error _ => false
 
 #guard
   match applyLoggedAction Tests.started "main" ["phase"] "main phase" with
@@ -4122,6 +4164,20 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
         g'.activePlayer == ⟨0⟩ &&
         cmds.all (fun c => c == "pass" || c == "noattack") &&
         !cmds.contains "my turn" &&
+        g'.hasPriority ⟨0⟩
+    | .error _ => false
+
+#guard
+  let gReady := Tests.addPermanent Tests.nissaDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  match gReady.apply ⟨1⟩ .pass with
+  | .error _ => false
+  | .ok g =>
+    match applyLoggedAction g "my" ["turn"] "my turn" with
+    | .ok (g', cmds) =>
+      cmds.contains "noattack" &&
+        g'.step == .precombatMain &&
+        g'.turnNumber == 3 &&
+        g'.activePlayer == ⟨0⟩ &&
         g'.hasPriority ⟨0⟩
     | .error _ => false
 
@@ -4480,17 +4536,25 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
     | _ => false
   | .error _ => false
 
--- A pass-until shortcut that stops for a required combat action stays active
--- so another player's `main phase` (empty combat + passes) can finish it.
+-- `main phase` declares no attackers even when a creature can attack.
 #guard
   let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
-  let ogre := Tests.namedPermanent g0 "Gray Ogre"
+  match applyLoggedAction g0 "main" ["phase"] "main phase" with
+  | .ok (g1, cmds) =>
+    g1.step == .postcombatMain &&
+      cmds.contains "noattack" &&
+      (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).isEmpty
+  | .error _ => false
+
+-- A pass-until shortcut that stops for a required block stays active so
+-- another player's `main phase` (empty combat + passes) can finish it.
+#guard
+  let g0 := Tests.ogreDeclaredAttacker
   match applyLoggedAction g0 "main" ["phase"] "main phase" with
   | .ok (g1, _) =>
-    g1.pending == .declareAttackers &&
+    g1.pending == .declareBlockers &&
       (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).size == 1 &&
-      match replayCompleteGame g0
-          ["main phase", s!"attack {ogre.id}", "main phase", "concede"] with
+      match replayCompleteGame g0 ["main phase", "main phase", "concede"] with
       | .ok g' =>
         g'.over && g'.log.any (fun s => Tests.mentions s "postcombat main") &&
           match g'.result with
@@ -4501,12 +4565,11 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
 
 -- A non-pass action by the other player cancels an interruptible shortcut.
 #guard
-  let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
+  let g0 := Tests.ogreDeclaredAttacker
   let ogre := Tests.namedPermanent g0 "Gray Ogre"
   let bears := Tests.namedPermanent g0 "Grizzly Bears"
   match replayCompleteGame g0
-      ["main phase", s!"attack {ogre.id}",
-        s!"block {bears.id} {ogre.id}", "concede"] with
+      ["main phase", s!"block {bears.id} {ogre.id}", "concede"] with
   | .ok g' =>
     g'.over && !g'.log.any (fun s => Tests.mentions s "postcombat main")
   | .error _ => false
