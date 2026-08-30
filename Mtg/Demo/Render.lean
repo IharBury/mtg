@@ -341,7 +341,7 @@ def scryLookSection (g : Game) (pl : Player) (viewer : Option PlayerId) : Option
 
 /-- Permanents currently attached to `hostId`. -/
 def attachmentsOf (g : Game) (hostId : ObjectId) : Array GameObject :=
-  g.battlefield.filter (fun o => o.attachedTo == some hostId)
+  g.attachmentsOfId hostId
 
 /-- True when `o` is attached to a permanent on the battlefield. -/
 def attachedToBattlefield (g : Game) (o : GameObject) : Bool :=
