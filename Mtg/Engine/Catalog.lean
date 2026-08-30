@@ -82,7 +82,9 @@ def card (name : String) (types : Array CardType)
     (teamwork : Option Nat := none)
     (chooseBothIfTeamwork : Bool := false)
     (entersWithShield : Nat := 0)
-    (otherFace : Option CardDef := none) : CardDef := {
+    (otherFace : Option CardDef := none)
+    (mayLookAtTopAnytime : Bool := false)
+    (mayPlayLandsFromTop : Bool := false) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
   supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
   additionalCostOrPayGeneric, costReductionIfCreatureDied, costReductionIfTargetDamaged,
@@ -102,7 +104,8 @@ def card (name : String) (types : Array CardType)
   extraLandIfOtherSubtype, tapAddColorlessPerSubtype, cascade, kicker,
   tokenDoubling, drawTwoExceptFirstDrawStep,
   staticAbilities, triggeredAbilities, activatedAbilities, adventure,
-  teamwork, chooseBothIfTeamwork, entersWithShield, otherFace
+  teamwork, chooseBothIfTeamwork, entersWithShield, otherFace,
+  mayLookAtTopAnytime, mayPlayLandsFromTop
 }
 
 /-- A basic land whose name is also its land type (CR 305.6). -/
@@ -673,19 +676,19 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Oracle-faithful trigger used by the MSH catalog. -/
-def mshTrig (text : String) : TriggeredAbility :=
-  .catalog text
+/-- Modeled MSH trigger. -/
+def mshTrig (t : MshTrigger) : TriggeredAbility :=
+  .msh t
 
-/-- Oracle-faithful static used by the MSH catalog. -/
-def mshStatic (text : String) : StaticAbility :=
-  .catalog text
+/-- Modeled MSH static. -/
+def mshStatic (t : MshStatic) : StaticAbility :=
+  .msh t
 
-/-- Oracle-faithful activation used by the MSH catalog. -/
-def mshAct (text : String) (mana : ManaCost := ManaCost.empty)
+/-- Modeled MSH activation. -/
+def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (powerUp : Bool := false)
     (onlyAsSorcery : Bool := false) : ActivatedAbility :=
-  activated (.catalog text) mana (tap := tap) (powerUp := powerUp)
+  activated (.msh t) mana (tap := tap) (powerUp := powerUp)
     (onlyAsSorcery := onlyAsSorcery)
 
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary

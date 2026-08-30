@@ -25,7 +25,7 @@ def theSensationalSheHulk : CardDef :=
     (power := some 6)
     (toughness := some 6)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (triggeredAbilities := #[mshTrig "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverACreatureYouControlIsDealtDamage])
     (staticAbilities := #[StaticAbility.opponentsCantCastOnYourTurn])
 
 def photonLivingLight : CardDef :=
@@ -36,7 +36,7 @@ def photonLivingLight : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := ((Keyword.flying).merge Keyword.hexproof).merge Keyword.prowess)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastANoncreatureSpell4])
 
 def theIncredibleHulk : CardDef :=
   card "The Incredible Hulk" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .red, .colored .green, .colored .green] })
@@ -46,7 +46,7 @@ def theIncredibleHulk : CardDef :=
     (power := some 8)
     (toughness := some 8)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (staticAbilities := #[mshStatic "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."])
+    (triggeredAbilities := #[mshTrig .enrageWheneverTheIncredi])
 
 def theInvincibleIronMan : CardDef :=
   card "The Invincible Iron Man" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .blue, .colored .red] })
@@ -56,7 +56,7 @@ def theInvincibleIronMan : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := (Keyword.flying).merge Keyword.haste)
-    (triggeredAbilities := #[mshTrig "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to The Invincible Iron Man."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfCombatOnYourTurn5])
 
 def blackPantherHopeEnduring : CardDef :=
   card "Black Panther, Hope Enduring" #[.creature] ({ symbols := #[.generic 4, .colored .white, .colored .blue] })
@@ -66,7 +66,7 @@ def blackPantherHopeEnduring : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (keywords := (Keyword.flash).merge Keyword.doubleStrike)
-    (triggeredAbilities := #[mshTrig "Whenever Black Panther deals combat damage to a player, draw a card."])
+    (triggeredAbilities := #[.onCombatDamageDraw 1])
     (staticAbilities := #[StaticAbility.preventAllDamageToThis])
 
 def agent13SharonCarter : CardDef :=
@@ -117,7 +117,7 @@ def avengersAssemble : CardDef :=
   card "Avengers Assemble!" #[.enchantment] ({ symbols := #[.generic 4, .colored .white] })
     (oracleText := "Flash\nHeroes you control get +2/+2.\nAt the beginning of each end step, if you attacked with a Hero this turn or a Hero entered the battlefield under your control this turn, draw a card.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "At the beginning of each end step, if you attacked with a Hero this turn or a Hero entered the battlefield under your control this turn, draw a card."])
+    (triggeredAbilities := #[.onEachEndStepDrawIfAttackedOrEnteredSubtype "Hero"])
     (staticAbilities := #[StaticAbility.creaturesYouControlOfSubtypeGet "Hero" 2 2])
 
 def boroughBackup : CardDef :=
@@ -155,7 +155,7 @@ def captainAmericaWingsOfFreedom : CardDef :=
     (toughness := some 1)
     (keywords := (Keyword.flying).merge Keyword.firstStrike)
     (ward := some 1)
-    (triggeredAbilities := #[mshTrig "Whenever Captain America attacks, each other Hero you control gets +X/+X until end of turn, where X is Captain America's toughness."])
+    (triggeredAbilities := #[.onAttackOthersOfSubtypeGetEqualToughness "Hero"])
 
 def captainMarvelEarthSProtector : CardDef :=
   card "Captain Marvel, Earth's Protector" #[.creature] ({ symbols := #[.generic 3, .colored .white, .colored .white] })
@@ -175,7 +175,7 @@ def captainMarVellSpaceBorn : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := (Keyword.flying).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic "Cosmic Awareness — As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."])
+    (staticAbilities := #[mshStatic .cosmicAwarenessAsLongAsAnOpponentHasCa])
 
 def colleenWingStreetSamurai : CardDef :=
   card "Colleen Wing, Street Samurai" #[.creature] ({ symbols := #[.generic 1, .colored .white] })
@@ -184,7 +184,7 @@ def colleenWingStreetSamurai : CardDef :=
     (oracleText := "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1. (Look at the top card of your library. You may put that card on the bottom.)")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsACreatur2])
 
 def crowdOfTrueBelievers : CardDef :=
   card "Crowd of True Believers" #[.creature] ({ symbols := #[.colored .white] })
@@ -192,7 +192,7 @@ def crowdOfTrueBelievers : CardDef :=
     (oracleText := "{T}: Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life.")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.catalog "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .targetCreatureYouControlThatSAttackingAlo) (ManaCost.empty) (tap := true)])
 
 def helicarrierStrike : CardDef :=
   card "Helicarrier Strike" #[.instant] ({ symbols := #[.colored .white] })
@@ -206,7 +206,7 @@ def heroInTraining : CardDef :=
     (oracleText := "When this creature enters, draw a card. If you control another Hero, you gain 2 life.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When this creature enters, draw a card. If you control another Hero, you gain 2 life."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters5])
 
 def invisibleWomanSueStorm : CardDef :=
   card "Invisible Woman, Sue Storm" #[.creature] ({ symbols := #[.generic 4, .colored .white] })
@@ -216,7 +216,7 @@ def invisibleWomanSueStorm : CardDef :=
     (power := some 2)
     (toughness := some 5)
     (keywords := Keyword.lifelink)
-    (triggeredAbilities := #[mshTrig "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."])
+    (triggeredAbilities := #[mshTrig .wheneverYouPutOneOrMore11CountersOnO])
 
 def jenniferWalters : CardDef :=
   card "Jennifer Walters" #[.creature] ({ symbols := #[.generic 1, .colored .white] })
@@ -244,7 +244,7 @@ def lukeCagePowerMan : CardDef :=
     (oracleText := "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy him.)")
     (power := some 2)
     (toughness := some 5)
-    (staticAbilities := #[mshStatic "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."])
+    (triggeredAbilities := #[mshTrig .unbreakableSkinWheneverLukeCageA])
 
 def theMindStone : CardDef :=
   card "The Mind Stone" #[.artifact] ({ symbols := #[.generic 1, .colored .white] })
@@ -252,8 +252,8 @@ def theMindStone : CardDef :=
     (subtypes := #["Infinity", "Stone"])
     (oracleText := "Indestructible\n{T}: Add {W}.\n{5}{W}, {T}: Harness The Mind Stone. (Once harnessed, its ∞ ability is active.)\n∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control.")
     (keywords := Keyword.indestructible)
-    (staticAbilities := #[mshStatic "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."])
-    (activatedAbilities := #[activated (.catalog "Add {W}") (ManaCost.empty) (tap := true), activated (.catalog "Harness The Mind Stone") ({ symbols := #[.generic 5, .colored .white] }) (tap := true)])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOf])
+    (activatedAbilities := #[activated (.msh .addW) (ManaCost.empty) (tap := true), activated (.msh .harnessTheMindStone) ({ symbols := #[.generic 5, .colored .white] }) (tap := true)])
 
 def mockingbirdAceAgent : CardDef :=
   card "Mockingbird, Ace Agent" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -263,7 +263,7 @@ def mockingbirdAceAgent : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.doubleStrike)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsACreatur3])
 
 def monicaRambeau : CardDef :=
   card "Monica Rambeau" #[.creature] ({ symbols := #[.generic 2, .colored .white] })
@@ -300,7 +300,7 @@ def nightNurseHealerOfHeroes : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := (Keyword.flash).merge Keyword.lifelink)
-    (triggeredAbilities := #[mshTrig "When Night Nurse enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand."])
+    (triggeredAbilities := #[mshTrig .whenNightNurseEnters])
 
 def okoyeDoraMilajeLeader : CardDef :=
   card "Okoye, Dora Milaje Leader" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -309,14 +309,14 @@ def okoyeDoraMilajeLeader : CardDef :=
     (oracleText := "When Okoye enters, create two 1/1 white Soldier creature tokens.\nAttacking creature tokens you control have first strike.")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When Okoye enters, create two 1/1 white Soldier creature tokens."])
-    (staticAbilities := #[mshStatic "Attacking creature tokens you control have first strike."])
+    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 2])
+    (staticAbilities := #[mshStatic .attackingCreatureTokensYouControlHaveFirst])
 
 def originOfTheAvengers : CardDef :=
   card "Origin of the Avengers" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Scry 2.\nII — You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card.\nIII — Put a +1/+1 counter on each creature you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Scry 2." (.catalog "Scry 2"), chapter "II" "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card." (.catalog "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"), chapter "III" "Put a +1/+1 counter on each creature you control." (.catalog "Put a +1/+1 counter on each creature you control")] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Scry 2." (.spell (.scry 2)), chapter "II" "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card." (.spell (.msh .youMayPutAHeroCreatureCardWithManaValue)), chapter "III" "Put a +1/+1 counter on each creature you control." (.spell (.plusOneOnEachYouControl))] })
 
 def pantherPounce : CardDef :=
   card "Panther Pounce" #[.instant] ({ symbols := #[.colored .white] })
@@ -330,7 +330,7 @@ def patriotShieldWielder : CardDef :=
     (oracleText := "{2}, {T}: Another target creature you control gets +2/+0 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)")
     (power := some 2)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.catalog "Another target creature you control gets +2/+0 and gains hexproof until end of turn") ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .anotherTargetCreatureYouControlGets20A) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def politicalTriumph : CardDef :=
   card "Political Triumph" #[.enchantment] ({ symbols := #[.colored .white] })
@@ -345,7 +345,7 @@ def quakeAgentOfSHIELD : CardDef :=
     (oracleText := "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land.")
     (power := some 3)
     (toughness := some 3)
-    (staticAbilities := #[mshStatic "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."])
+    (triggeredAbilities := #[mshTrig .seismicTakedownWheneverYouCastA])
 
 def raftSecurityOfficer : CardDef :=
   card "Raft Security Officer" #[.creature] ({ symbols := #[.generic 1, .colored .white] })
@@ -353,7 +353,7 @@ def raftSecurityOfficer : CardDef :=
     (oracleText := "{2}, {T}: Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less.")
     (power := some 1)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less") ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .tapTargetCreatureThisAbilityCosts1Less) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def redGuardianSuperSoldier : CardDef :=
   card "Red Guardian, Super-Soldier" #[.creature] ({ symbols := #[.generic 2, .colored .white] })
@@ -363,7 +363,7 @@ def redGuardianSuperSoldier : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When Red Guardian enters, destroy target creature an opponent controls that dealt damage this turn."])
+    (triggeredAbilities := #[mshTrig .whenRedGuardianEnters])
 
 def theSentryGoldenGuardian : CardDef :=
   card "The Sentry, Golden Guardian" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -373,13 +373,13 @@ def theSentryGoldenGuardian : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := ((Keyword.flying).merge Keyword.vigilance).merge Keyword.indestructible)
-    (triggeredAbilities := #[mshTrig "When The Sentry enters, target opponent creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""])
+    (triggeredAbilities := #[mshTrig .whenTheSentryEnters])
 
 def sHIELDSpyKit : CardDef :=
   card "S.H.I.E.L.D. Spy Kit" #[.artifact] ({ symbols := #[.colored .white] })
     (subtypes := #["Equipment"])
     (oracleText := "Equipped creature gets +1/+1.\nWhenever equipped creature attacks alone, untap it and scry 1. (Look at the top card of your library. You may put that card on the bottom.)\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
-    (triggeredAbilities := #[mshTrig "Whenever equipped creature attacks alone, untap it and scry 1."])
+    (triggeredAbilities := #[mshTrig .wheneverEquippedCreatureAttacksAlone])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 1])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 1] })])
 
@@ -387,14 +387,14 @@ def superVillainLockup : CardDef :=
   card "Super Villain Lockup" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (oracleText := "Flash\nWhen this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."])
+    (triggeredAbilities := #[mshTrig .whenThisEnchantmentEnters])
 
 def superSoldierSerum : CardDef :=
   card "Super-Soldier Serum" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nEnchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types.\nWhenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it.")
-    (triggeredAbilities := #[mshTrig "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."])
-    (staticAbilities := #[mshStatic "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."])
+    (triggeredAbilities := #[mshTrig .wheneverEnchantedCreatureAttacksOrBlocks])
+    (staticAbilities := #[mshStatic .enchantedCreatureGets22])
 
 def takeUpTheShield : CardDef :=
   card "Take Up the Shield" #[.instant] ({ symbols := #[.generic 1, .colored .white] })
@@ -413,7 +413,7 @@ def wakandanDroneFlock : CardDef :=
 def webUp : CardDef :=
   card "Web Up" #[.enchantment] ({ symbols := #[.generic 2, .colored .white] })
     (oracleText := "When this enchantment enters, exile target nonland permanent an opponent controls until this enchantment leaves the battlefield.")
-    (triggeredAbilities := #[mshTrig "When this enchantment enters, exile target nonland permanent an opponent controls until this enchantment leaves the battlefield."])
+    (triggeredAbilities := #[.onEnterExileOppNonlandUntilLeaves])
 
 def whiteWidowFreeAgent : CardDef :=
   card "White Widow, Free Agent" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -422,7 +422,7 @@ def whiteWidowFreeAgent : CardDef :=
     (oracleText := "When White Widow enters, choose one —\n• Put a +1/+1 counter on each of up to two target creatures.\n• Return target artifact or enchantment card from your graveyard to your hand.")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When White Widow enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."])
+    (triggeredAbilities := #[mshTrig .whenWhiteWidowEnters])
 
 def aerialDoombot : CardDef :=
   card "Aerial Doombot" #[.artifact, .creature] ({ symbols := #[.colored .blue] })
@@ -465,7 +465,7 @@ def attumaAtlanteanWarlord : CardDef :=
     (oracleText := "Other Merfolk you control get +1/+1.\nWhenever one or more Merfolk you control attack a player, draw a card.")
     (power := some 3)
     (toughness := some 4)
-    (triggeredAbilities := #[mshTrig "Whenever one or more Merfolk you control attack a player, draw a card."])
+    (triggeredAbilities := #[mshTrig .wheneverOneOrMoreMerfolkYouControlAttack])
     (staticAbilities := #[StaticAbility.otherCreaturesGet #["Merfolk"] 1 1])
 
 def boldBiochemist : CardDef :=
@@ -489,7 +489,7 @@ def bruceBanner : CardDef :=
 def depower : CardDef :=
   card "Depower" #[.instant] ({ symbols := #[.generic 2, .colored .blue] })
     (oracleText := "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card.")
-    (spellEffect := some (.catalog "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card."))
+    (spellEffect := some (.msh .thisSpellCosts2LessToCastIfItTargets))
 
 def echoPerceptiveProdigy : CardDef :=
   card "Echo, Perceptive Prodigy" #[.creature] ({ symbols := #[.generic 2, .colored .blue] })
@@ -499,7 +499,7 @@ def echoPerceptiveProdigy : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (activatedAbilities := #[activated (.catalog "Copy target activated or triggered ability you control from a creature source. You may choose new targets for the copy") ({ symbols := #[.generic 1] }) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .copyTargetActivatedOrTriggeredAbilityYouC) ({ symbols := #[.generic 1] }) (tap := true)])
 
 def falconWingedWonder : CardDef :=
   card "Falcon, Winged Wonder" #[.creature] ({ symbols := #[.generic 4, .colored .blue] })
@@ -509,28 +509,28 @@ def falconWingedWonder : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (staticAbilities := #[mshStatic "Avian Telepathy — When Falcon enters, create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""])
+    (staticAbilities := #[mshStatic .avianTelepathyWhenFalconEnters])
 
 def falconSWingHarness : CardDef :=
   card "Falcon's Wing Harness" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
     (subtypes := #["Equipment"])
     (oracleText := "When this Equipment enters, attach it to target creature you control.\nEquipped creature gets +1/+1 and has flying and ward {1}. (Whenever equipped creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {2}{U} ({2}{U}: Attach to target creature you control. Equip only as a sorcery.)")
-    (triggeredAbilities := #[mshTrig "When this Equipment enters, attach it to target creature you control."])
-    (staticAbilities := #[mshStatic "Equipped creature gets +1/+1 and has flying and ward {1}."])
+    (triggeredAbilities := #[.onEnterAttachToCreatureYouControl])
+    (staticAbilities := #[mshStatic .equippedCreatureGets11AndHasFlyingAnd])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2, .colored .blue] })])
 
 def frozenInIce : CardDef :=
   card "Frozen in Ice" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature loses all abilities and can't become untapped.")
-    (triggeredAbilities := #[mshTrig "When this Aura enters, tap enchanted creature."])
-    (staticAbilities := #[mshStatic "Enchanted creature loses all abilities and can't become untapped."])
+    (triggeredAbilities := #[mshTrig .whenThisAuraEnters3])
+    (staticAbilities := #[mshStatic .enchantedCreatureLosesAllAbilitiesAndCant])
 
 def futuristForge : CardDef :=
   card "Futurist Forge" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
     (oracleText := "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards.")
     (triggeredAbilities := #[.onEnterDraw 1])
-    (activatedAbilities := #[mshAct "{3}{U}, Sacrifice this artifact: Draw two cards."])
+    (activatedAbilities := #[mshAct .n3USacrificeThisArtifact])
 
 def giantSizedFlyingAnt : CardDef :=
   card "Giant-Sized Flying Ant" #[.creature] ({ symbols := #[.generic 3, .colored .blue] })
@@ -539,7 +539,7 @@ def giantSizedFlyingAnt : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := (Keyword.flash).merge Keyword.flying)
-    (triggeredAbilities := #[mshTrig "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters])
 
 def hydraulicHelper : CardDef :=
   card "Hydraulic Helper" #[.artifact, .creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -548,12 +548,12 @@ def hydraulicHelper : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.defender)
-    (activatedAbilities := #[activated (.catalog "Add {U}. This mana can't be spent to cast a nonartifact spell") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addUThisManaCanTBeSpentToCastANona) (ManaCost.empty) (tap := true)])
 
 def iAmIronMan : CardDef :=
   card "I Am Iron Man" #[.instant] ({ symbols := #[.generic 2, .colored .blue] })
     (oracleText := "Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.\nDraw a card.")
-    (spellEffect := some (.catalog "Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.\nDraw a card."))
+    (spellEffect := some (.becomeArtifactCreature44Flying))
 
 def ironLadDivergingDestiny : CardDef :=
   card "Iron Lad, Diverging Destiny" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .blue] })
@@ -563,8 +563,8 @@ def ironLadDivergingDestiny : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic "You may look at the top card of your library any time."])
-    (activatedAbilities := #[activated (.catalog "Reveal the top card of your library. If it's an artifact card, draw a card") (ManaCost.empty) (tap := true)])
+    (mayLookAtTopAnytime := true)
+    (activatedAbilities := #[activated (.mshSpell .revealTheTopCardOfYourLibraryIfItSAn) (ManaCost.empty) (tap := true)])
 
 def ironheartCleverChampion : CardDef :=
   card "Ironheart, Clever Champion" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .blue] })
@@ -574,7 +574,7 @@ def ironheartCleverChampion : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (staticAbilities := #[mshStatic "Improvise", mshStatic "Noncreature spells you cast have improvise."])
+    (staticAbilities := #[mshStatic .improvise, mshStatic .noncreatureSpellsYouCastHaveImprovise])
 
 def justiceVanceAstrovik : CardDef :=
   card "Justice, Vance Astrovik" #[.creature] ({ symbols := #[.generic 2, .colored .blue] })
@@ -584,7 +584,7 @@ def justiceVanceAstrovik : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "When Justice enters, return up to one target nonland, nontoken permanent to its owner's hand.", mshTrig "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."])
+    (triggeredAbilities := #[mshTrig .whenJusticeEnters, mshTrig .wheneverAnotherNonlandPermanentYouControlI])
 
 def kangTheConqueror : CardDef :=
   card "Kang the Conqueror" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .blue] })
@@ -604,7 +604,7 @@ def kidLoki : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (triggeredAbilities := #[.onDrawSecondPlusOne])
-    (staticAbilities := #[mshStatic "Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof."])
+    (staticAbilities := #[mshStatic .eachCreatureYouControlThatYouVePutOneOr])
 
 def leaderSuperGenius : CardDef :=
   card "Leader, Super-Genius" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .blue] })
@@ -613,8 +613,8 @@ def leaderSuperGenius : CardDef :=
     (oracleText := "If a creature you control would connive, instead you draw a card, then that creature connives.\nAt the beginning of combat on your turn, target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (power := some 1)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "At the beginning of combat on your turn, target creature you control connives."])
-    (staticAbilities := #[mshStatic "If a creature you control would connive, instead you draw a card, then that creature connives."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfCombatOnYourTurn4])
+    (staticAbilities := #[mshStatic .ifACreatureYouControlWouldConnive])
 
 def lokiGodOfMischief : CardDef :=
   card "Loki, God of Mischief" #[.creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -623,7 +623,7 @@ def lokiGodOfMischief : CardDef :=
     (oracleText := "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn.")
     (power := some 2)
     (toughness := some 1)
-    (triggeredAbilities := #[mshTrig "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAPlayerOrPermanentBecomesTheTarge])
 
 def misterFantasticReedRichards : CardDef :=
   card "Mister Fantastic, Reed Richards" #[.creature] ({ symbols := #[.generic 3, .colored .blue] })
@@ -633,7 +633,7 @@ def misterFantasticReedRichards : CardDef :=
     (power := some 2)
     (toughness := some 4)
     (keywords := Keyword.reach)
-    (triggeredAbilities := #[mshTrig "Whenever one or more tokens you control enter, you may draw a card."])
+    (triggeredAbilities := #[mshTrig .wheneverOneOrMoreTokensYouControlEnter])
 
 def msMarvelKamalaKhan : CardDef :=
   card "Ms. Marvel, Kamala Khan" #[.creature] ({ symbols := #[.generic 2, .colored .blue] })
@@ -643,12 +643,12 @@ def msMarvelKamalaKhan : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := (Keyword.reach).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic "You have no maximum hand size.", mshStatic "Embiggen Fist — Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""])
+    (staticAbilities := #[mshStatic .youHaveNoMaximumHandSize, mshStatic .embiggenFistWheneverYouCastASpellThat])
 
 def multiversalIncursion : CardDef :=
   card "Multiversal Incursion" #[.sorcery] ({ symbols := #[.generic 5, .colored .blue, .colored .blue] })
     (oracleText := "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary.")
-    (spellEffect := some (.catalog "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."))
+    (spellEffect := some (.msh .forEachNontokenCreatureYouControlCreateA))
 
 def namorTheSubMariner : CardDef :=
   card "Namor the Sub-Mariner" #[.creature] ({ symbols := #[.generic 1, .colored .blue, .colored .blue] })
@@ -657,13 +657,13 @@ def namorTheSubMariner : CardDef :=
     (oracleText := "Flying\nNamor's power is equal to the number of Merfolk you control.\nWhenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens.")
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."])
-    (staticAbilities := #[mshStatic "Namor's power is equal to the number of Merfolk you control."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastANoncreatureSpellWithOneO])
+    (staticAbilities := #[mshStatic .namorSPowerIsEqualToTheNumberOfMerfolk])
 
 def pymParticles : CardDef :=
   card "Pym Particles" #[.sorcery] ({ symbols := #[.colored .blue] })
     (oracleText := "Target creature gains vigilance until end of turn and can't be blocked this turn.\nDraw a card.")
-    (spellEffect := some (.catalog "Target creature gains vigilance until end of turn and can't be blocked this turn.\nDraw a card."))
+    (spellEffect := some (.grantVigilanceUnblockable))
 
 def rewriteHistory : CardDef :=
   card "Rewrite History" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue] })
@@ -675,8 +675,8 @@ def secretInvasion : CardDef :=
   card "Secret Invasion" #[.enchantment] ({ symbols := #[.generic 1, .colored .blue, .colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature you control\nWhen this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield.\nEnchanted creature has ward {2}.")
-    (triggeredAbilities := #[mshTrig "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."])
-    (staticAbilities := #[mshStatic "Enchanted creature has ward {2}."])
+    (triggeredAbilities := #[mshTrig .whenThisAuraEnters2])
+    (staticAbilities := #[mshStatic .enchantedCreatureHasWard2])
 
 def sHIELDDeploymentDrone : CardDef :=
   card "S.H.I.E.L.D. Deployment Drone" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .blue] })
@@ -685,7 +685,7 @@ def sHIELDDeploymentDrone : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "When this creature enters, create a 1/1 white Soldier creature token."])
+    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 1])
 
 def sHIELDFlyingCar : CardDef :=
   card "S.H.I.E.L.D. Flying Car" #[.artifact] ({ symbols := #[.generic 2, .colored .blue] })
@@ -695,7 +695,7 @@ def sHIELDFlyingCar : CardDef :=
     (toughness := some 3)
     (keywords := (Keyword.flash).merge Keyword.flying)
     (crew := some 1)
-    (triggeredAbilities := #[mshTrig "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."])
+    (triggeredAbilities := #[mshTrig .whenThisVehicleEnters])
 
 def shuriWakandanInventor : CardDef :=
   card "Shuri, Wakandan Inventor" #[.creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -704,8 +704,8 @@ def shuriWakandanInventor : CardDef :=
     (oracleText := "Artifact spells you cast cost {1} less to cast.\n{1}, {T}: Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary. Activate only as a sorcery.")
     (power := some 2)
     (toughness := some 1)
-    (staticAbilities := #[mshStatic "Artifact spells you cast cost {1} less to cast."])
-    (activatedAbilities := #[activated (.catalog "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary") ({ symbols := #[.generic 1] }) (tap := true) (onlyAsSorcery := true)])
+    (staticAbilities := #[mshStatic .artifactSpellsYouCastCost1LessToCast])
+    (activatedAbilities := #[activated (.mshSpell .targetArtifactYouControlBecomesACopyOfA) ({ symbols := #[.generic 1] }) (tap := true) (onlyAsSorcery := true)])
 
 def statureSizeShifter : CardDef :=
   card "Stature, Size Shifter" #[.creature] ({ symbols := #[.colored .blue] })
@@ -721,14 +721,14 @@ def superIntelligence : CardDef :=
   card "Super Intelligence" #[.enchantment] ({ symbols := #[.colored .blue] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nAt the beginning of the upkeep of enchanted creature's controller, that player draws a card.")
-    (triggeredAbilities := #[mshTrig "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfTheUpkeepOfEnchantedCrea])
 
 def superSuit : CardDef :=
   card "Super Suit" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When this Equipment enters, attach it to target creature you control. Untap that creature."])
+    (triggeredAbilities := #[mshTrig .whenThisEquipmentEnters2])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 2])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2] })])
 
@@ -750,7 +750,7 @@ def tonyStark : CardDef :=
 def tricksterSStratagem : CardDef :=
   card "Trickster's Stratagem" #[.sorcery] ({ symbols := #[.generic 3, .colored .blue] })
     (oracleText := "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
-    (spellEffect := some (.catalog "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."))
+    (spellEffect := some (.msh .theOwnerOfTargetCreatureAnOpponentControl))
 
 def weSayTheeNay : CardDef :=
   card "We Say Thee Nay!" #[.instant] ({ symbols := #[.generic 1, .colored .blue] })
@@ -767,7 +767,7 @@ def wiccanRisingMagician : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastANoncreatureSpell3])
 
 def theWondrousWasp : CardDef :=
   card "The Wondrous Wasp" #[.creature] ({ symbols := #[.generic 1, .colored .blue] })
@@ -777,7 +777,7 @@ def theWondrousWasp : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := (Keyword.flash).merge Keyword.flying)
-    (staticAbilities := #[mshStatic "Wasp's Sting — When The Wondrous Wasp enters, tap up to one target creature. It loses all abilities for as long as The Wondrous Wasp remains on the battlefield."])
+    (triggeredAbilities := #[mshTrig .waspSStingWhenTheWondrousWa])
 
 def agentsOfHYDRA : CardDef :=
   card "Agents of HYDRA" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -785,7 +785,7 @@ def agentsOfHYDRA : CardDef :=
     (oracleText := "When this creature dies, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
     (power := some 1)
     (toughness := some 1)
-    (triggeredAbilities := #[mshTrig "When this creature dies, create a 2/1 black Villain creature token with menace."])
+    (triggeredAbilities := #[.onDiesCreateTokens .villain21menace 1])
 
 def arnimZolaBioFanatic : CardDef :=
   card "Arnim Zola, Bio-Fanatic" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -794,7 +794,7 @@ def arnimZolaBioFanatic : CardDef :=
     (oracleText := "{3}, {T}: Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard. (It can't be blocked except by two or more creatures.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard") ({ symbols := #[.generic 3] }) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .createATapped21BlackVillainCreatureToken) ({ symbols := #[.generic 3] }) (tap := true)])
 
 def baronHelmutZemo : CardDef :=
   card "Baron Helmut Zemo" #[.creature] ({ symbols := #[.colored .black, .colored .black, .colored .black] })
@@ -803,8 +803,8 @@ def baronHelmutZemo : CardDef :=
     (oracleText := "Whenever you cast a black spell from your hand, Baron Helmut Zemo connives.\nBoast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs. (Activate only if this creature attacked this turn and only once each turn.)")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a black spell from your hand, Baron Helmut Zemo connives."])
-    (staticAbilities := #[mshStatic "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."])
+    (triggeredAbilities := #[.onYouCastColorFromHandConnive .black])
+    (staticAbilities := #[mshStatic .boastExileAnyNumberOfBlackCardsFromYou])
 
 def baronStruckerHYDRAOverlord : CardDef :=
   card "Baron Strucker, HYDRA Overlord" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -813,7 +813,7 @@ def baronStruckerHYDRAOverlord : CardDef :=
     (oracleText := "Villain spells you cast cost {1} less to cast.\nWhenever another Villain you control enters, you may have it connive. Do this only once each turn. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherVillainYouControlEnters4])
     (staticAbilities := #[StaticAbility.subtypeSpellsCostLess "Villain" 1])
 
 def blackWidowSuperSpy : CardDef :=
@@ -824,7 +824,7 @@ def blackWidowSuperSpy : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.menace)
-    (triggeredAbilities := #[mshTrig "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."])
+    (triggeredAbilities := #[mshTrig .wheneverBlackWidowDealsCombatDamageToAPl])
 
 def constructACosmicCube : CardDef :=
   card "Construct a Cosmic Cube" #[.enchantment] ({ symbols := #[.generic 2, .colored .black] })
@@ -840,7 +840,7 @@ def crossbonesMaliciousMercenary : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (keywords := Keyword.deathtouch)
-    (triggeredAbilities := #[mshTrig "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherVillainYouControlEnters3])
 
 def cruelAlliance : CardDef :=
   card "Cruel Alliance" #[.sorcery] ({ symbols := #[.generic 2, .colored .black] })
@@ -866,8 +866,8 @@ def doctorDoom : CardDef :=
     (oracleText := "When Doctor Doom enters, create two 3/3 colorless Robot Villain artifact creature tokens named Doombot.\nAs long as you control an artifact creature or a Plan, Doctor Doom has indestructible.\nAt the beginning of your end step, you draw a card and lose 1 life.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When Doctor Doom enters, create two 3/3 colorless Robot Villain artifact creature tokens named Doombot.", mshTrig "At the beginning of your end step, you draw a card and lose 1 life."])
-    (staticAbilities := #[mshStatic "As long as you control an artifact creature or a Plan, Doctor Doom has indestructible."])
+    (triggeredAbilities := #[mshTrig .whenDoctorDoomEnters, .onYourEndStepDrawLoseLife])
+    (staticAbilities := #[mshStatic .asLongAsYouControlAnArtifactCreatureOrA])
 
 def doomReignsSupreme : CardDef :=
   card "Doom Reigns Supreme" #[.enchantment] ({ symbols := #[.generic 1, .colored .black] })
@@ -882,8 +882,8 @@ def elektraDaughterOfTheHand : CardDef :=
     (oracleText := "Sneak {1}{B}{B} (You may cast this spell for {1}{B}{B} if you also return an unblocked attacker you control to hand during the declare blockers step. She enters tapped and attacking.)\nWhen Elektra enters, destroy target creature an opponent controls with power 3 or less.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When Elektra enters, destroy target creature an opponent controls with power 3 or less."])
-    (staticAbilities := #[mshStatic "Sneak {1}{B}{B}"])
+    (triggeredAbilities := #[mshTrig .whenElektraEnters])
+    (staticAbilities := #[mshStatic .sneak1BB])
 
 def grimReaperLethalLegionnaire : CardDef :=
   card "Grim Reaper, Lethal Legionnaire" #[.creature] ({ symbols := #[.generic 3, .colored .black] })
@@ -892,7 +892,7 @@ def grimReaperLethalLegionnaire : CardDef :=
     (oracleText := "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it. (If a creature with a finality counter on it would die, exile it instead.)")
     (power := some 3)
     (toughness := some 4)
-    (triggeredAbilities := #[mshTrig "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."])
+    (triggeredAbilities := #[mshTrig .wheneverGrimReaperAttacks])
 
 def hourOfDefeat : CardDef :=
   card "Hour of Defeat" #[.instant] ({ symbols := #[.generic 3, .colored .black] })
@@ -902,7 +902,7 @@ def hourOfDefeat : CardDef :=
 def hYDRAInfiltration : CardDef :=
   card "HYDRA Infiltration" #[.enchantment] ({ symbols := #[.generic 3, .colored .black] })
     (oracleText := "When this enchantment enters, target opponent discards two cards.\nWhenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life.")
-    (triggeredAbilities := #[mshTrig "When this enchantment enters, target opponent discards two cards.", mshTrig "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."])
+    (triggeredAbilities := #[mshTrig .whenThisEnchantmentEnters2, mshTrig .wheneverACreatureYouControlAttacksAlone2])
 
 def hYDRATroopers : CardDef :=
   card "HYDRA Troopers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -910,7 +910,7 @@ def hYDRATroopers : CardDef :=
     (oracleText := "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards. (Put the top two cards of your library into your graveyard.)")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters3])
 
 def kingpinSEnforcers : CardDef :=
   card "Kingpin's Enforcers" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -919,7 +919,7 @@ def kingpinSEnforcers : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.lifelink)
-    (activatedAbilities := #[mshAct "{2}{B}, Sacrifice an artifact or creature: Draw a card."])
+    (activatedAbilities := #[mshAct .n2BSacrificeAnArtifactOrCreatur])
 
 def klawSonicSubjugator : CardDef :=
   card "Klaw, Sonic Subjugator" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -928,7 +928,7 @@ def klawSonicSubjugator : CardDef :=
     (oracleText := "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card.")
     (power := some 2)
     (toughness := some 2)
-    (staticAbilities := #[mshStatic "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."])
+    (triggeredAbilities := #[mshTrig .sonicAttackWhenKlawEntersTa])
 
 def madameMasque : CardDef :=
   card "Madame Masque" #[.creature] ({ symbols := #[.generic 4, .colored .black] })
@@ -937,7 +937,7 @@ def madameMasque : CardDef :=
     (oracleText := "When Madame Masque enters, she connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nWhenever you draw your second card each turn, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When Madame Masque enters, she connives.", mshTrig "Whenever you draw your second card each turn, create a 2/1 black Villain creature token with menace."])
+    (triggeredAbilities := #[.onEnterConnive, .onYouDrawSecondCreateTokens .villain21menace])
 
 def theMastersOfEvil : CardDef :=
   card "The Masters of Evil" #[.creature] ({ symbols := #[.generic 5, .colored .black] })
@@ -947,7 +947,7 @@ def theMastersOfEvil : CardDef :=
     (power := some 5)
     (toughness := some 6)
     (staticAbilities := #[StaticAbility.otherCreaturesGet #["Villain"] 2 1])
-    (activatedAbilities := #[mshAct "{1}{B}, Discard this card: Search your library for a Plan card, reveal it, put it into your hand, then shuffle."])
+    (activatedAbilities := #[mshAct .n1BDiscardThisCard])
 
 def mODOK : CardDef :=
   card "M.O.D.O.K." #[.artifact, .creature] ({ symbols := #[.generic 3, .colored .black, .colored .black] })
@@ -957,7 +957,8 @@ def mODOK : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.lifelink)
-    (staticAbilities := #[mshStatic "Mental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn.", mshStatic "Designed Only for Killing — Creatures your opponents control get -1/-1."])
+    (staticAbilities := #[mshStatic .designedOnlyForKillingCreaturesYourOppon])
+    (activatedAbilities := #[mshAct .mentalOrganismPay3LifeMODOK])
 
 def moonstoneHarshMistress : CardDef :=
   card "Moonstone, Harsh Mistress" #[.creature] ({ symbols := #[.generic 3, .colored .black] })
@@ -967,7 +968,7 @@ def moonstoneHarshMistress : CardDef :=
     (power := some 2)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."])
+    (triggeredAbilities := #[mshTrig .wheneverYouDiscardACard])
 
 def ninjaOfTheHand : CardDef :=
   card "Ninja of the Hand" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -984,7 +985,7 @@ def projectDeathlokSoldier : CardDef :=
     (oracleText := "{2}{B}: Return this card from your graveyard to your hand.")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.catalog "Return this card from your graveyard to your hand") ({ symbols := #[.generic 2, .colored .black] })])
+    (activatedAbilities := #[activated (.mshSpell .returnThisCardFromYourGraveyardToYourHan) ({ symbols := #[.generic 2, .colored .black] })])
 
 def redRoomRecruit : CardDef :=
   card "Red Room Recruit" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -1007,8 +1008,8 @@ def roninShadowStalker : CardDef :=
     (oracleText := "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn.\n{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery.")
     (power := some 3)
     (toughness := some 3)
-    (staticAbilities := #[mshStatic "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn."])
-    (activatedAbilities := #[mshAct "{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery."])
+    (staticAbilities := #[mshStatic .pay2LifeAddTwoManaOfAnyOneColorSpend])
+    (activatedAbilities := #[mshAct .tSacrificeAnEquipmentAttachedTo])
 
 def roxxonBrutes : CardDef :=
   card "Roxxon Brutes" #[.creature] ({ symbols := #[.generic 4, .colored .black] })
@@ -1017,7 +1018,7 @@ def roxxonBrutes : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.menace)
-    (triggeredAbilities := #[mshTrig "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."])
+    (triggeredAbilities := #[mshTrig .wheneverYouDrawYourSecondCardEachTurn2])
     (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def stolenStarkTech : CardDef :=
@@ -1025,7 +1026,7 @@ def stolenStarkTech : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."])
+    (triggeredAbilities := #[mshTrig .whenThisEquipmentEnters])
     (staticAbilities := #[StaticAbility.equippedCreatureGets 1 0])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 1] })])
 
@@ -1037,7 +1038,7 @@ def superSkrull : CardDef :=
     (power := some 4)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (.catalog "Create a 0/4 colorless Wall creature token with defender") ({ symbols := #[.generic 2, .colored .white] }), activated (.catalog "Super-Skrull gets +4/+4 until end of turn") ({ symbols := #[.generic 3, .colored .green] }), activated (.catalog "Super-Skrull deals 4 damage to target creature") ({ symbols := #[.generic 4, .colored .red] }), activated (.catalog "Target player draws four cards") ({ symbols := #[.generic 5, .colored .blue] })])
+    (activatedAbilities := #[activated (.createTokens .wall04defender 1) ({ symbols := #[.generic 2, .colored .white] }), activated (.mshSpell .superSkrullGets44UntilEndOfTurn) ({ symbols := #[.generic 3, .colored .green] }), activated (.mshSpell .superSkrullDeals4DamageToTargetCreature) ({ symbols := #[.generic 4, .colored .red] }), activated (.msh .targetPlayerDrawsFourCards) ({ symbols := #[.generic 5, .colored .blue] })])
 
 def swordsmanSharpScoundrel : CardDef :=
   card "Swordsman, Sharp Scoundrel" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -1046,19 +1047,19 @@ def swordsmanSharpScoundrel : CardDef :=
     (oracleText := "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control.\nWhenever an equipped creature you control attacks, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control.", mshTrig "Whenever an equipped creature you control attacks, it connives."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherVillainYouControlEnters2, mshTrig .wheneverAnEquippedCreatureYouControlAttack])
 
 def thunderboltsConspiracy : CardDef :=
   card "Thunderbolts Conspiracy" #[.enchantment] ({ symbols := #[.generic 3, .colored .black] })
     (oracleText := "Flash\nWhenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types. (If a creature with a finality counter on it would die, exile it instead.)")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."])
+    (triggeredAbilities := #[mshTrig .wheneverAVillainYouControlDies])
 
 def tooEvilToStayDead : CardDef :=
   card "Too Evil to Stay Dead" #[.sorcery] ({ symbols := #[.generic 2, .colored .black] })
     (oracleText := "Teamwork 4 (As an additional cost to cast this spell, you may tap any number of creatures you control with total power 4 or more.)\nChoose target creature card in your graveyard with mana value 4 or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield.")
     (teamwork := some 4)
-    (spellEffect := some (.catalog "Choose target creature card in your graveyard with mana value 4 or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield."))
+    (spellEffect := some (.msh .chooseTargetCreatureCardInYourGraveyardWi))
 
 def unlivingLegionnaire : CardDef :=
   card "Unliving Legionnaire" #[.creature] ({ symbols := #[.generic 3, .colored .black] })
@@ -1067,12 +1068,12 @@ def unlivingLegionnaire : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (.catalog "Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature") ({ symbols := #[.generic 5, .colored .black, .colored .black] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .returnUpToOneTargetCreatureCardFromYour) ({ symbols := #[.generic 5, .colored .black, .colored .black] }) (powerUp := true)])
 
 def visionsOfVillainy : CardDef :=
   card "Visions of Villainy" #[.instant] ({ symbols := #[.generic 2, .colored .black] })
     (oracleText := "This spell costs {1} less to cast if you control a Villain.\nYou draw two cards and lose 2 life.")
-    (spellEffect := some (.catalog "This spell costs {1} less to cast if you control a Villain.\nYou draw two cards and lose 2 life."))
+    (spellEffect := some (.msh .thisSpellCosts1LessToCastIfYouControl))
 
 def whiplashVengefulEngineer : CardDef :=
   card "Whiplash, Vengeful Engineer" #[.creature] ({ symbols := #[.colored .black] })
@@ -1081,8 +1082,8 @@ def whiplashVengefulEngineer : CardDef :=
     (oracleText := "Whiplash enters tapped.\nWhenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."])
-    (staticAbilities := #[mshStatic "Whiplash enters tapped."])
+    (entersTapped := true)
+    (triggeredAbilities := #[mshTrig .wheneverWhiplashAttacks])
 
 def widowSBite : CardDef :=
   card "Widow's Bite" #[.instant] ({ symbols := #[.generic 1, .colored .black] })
@@ -1099,18 +1100,18 @@ def yellowjacketHeartlessMarauder : CardDef :=
     (power := some 1)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherVillainYouControlEnters])
 
 def avengersDisassembled : CardDef :=
   card "Avengers Disassembled" #[.sorcery] ({ symbols := #[.generic 1, .colored .red, .colored .red] })
     (oracleText := "Choose one or both —\n• Avengers Disassembled deals 3 damage to each creature.\n• Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.")
-    (spellModes := #[.dealDamageToEachCreature 3, .catalog "Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle."])
+    (spellModes := #[.dealDamageToEachCreature 3, .destroyLandSearchBasic])
     (chooseOneOrBoth := true)
 
 def blazingCrescendo : CardDef :=
   card "Blazing Crescendo" #[.instant] ({ symbols := #[.generic 1, .colored .red] })
     (oracleText := "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card.")
-    (spellEffect := some (.catalog "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."))
+    (spellEffect := some (.msh .targetCreatureGets31UntilEndOfTurn))
 
 def crimsonOperative : CardDef :=
   card "Crimson Operative" #[.artifact, .creature] ({ symbols := #[.generic 3, .colored .red] })
@@ -1119,7 +1120,7 @@ def crimsonOperative : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.prowess)
-    (triggeredAbilities := #[mshTrig "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters6])
 
 def deathToOurEnemies : CardDef :=
   card "Death to Our Enemies" #[.enchantment] ({ symbols := #[.generic 2, .colored .red] })
@@ -1130,7 +1131,7 @@ def deathToOurEnemies : CardDef :=
 def evilSThrall : CardDef :=
   card "Evil's Thrall" #[.sorcery] ({ symbols := #[.generic 2, .colored .red] })
     (oracleText := "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn.")
-    (spellEffect := some (.catalog "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."))
+    (spellEffect := some (.msh .gainControlOfTargetCreatureUntilEndOfTur))
 
 def finFangFoom : CardDef :=
   card "Fin Fang Foom" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .red] })
@@ -1140,7 +1141,7 @@ def finFangFoom : CardDef :=
     (power := some 3)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastAnInstantOrSorcerySpellTh])
 
 def hawkeyeMasterMarksman : CardDef :=
   card "Hawkeye, Master Marksman" #[.creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1150,7 +1151,7 @@ def hawkeyeMasterMarksman : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.reach).merge Keyword.firstStrike)
-    (staticAbilities := #[mshStatic "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."])
+    (triggeredAbilities := #[mshTrig .trickArrowsWheneverHawkeyeBec])
 
 def hawkeyeYoungAvenger : CardDef :=
   card "Hawkeye, Young Avenger" #[.creature] ({ symbols := #[.generic 3, .colored .red] })
@@ -1160,26 +1161,26 @@ def hawkeyeYoungAvenger : CardDef :=
     (power := some 2)
     (toughness := some 4)
     (keywords := Keyword.reach)
-    (staticAbilities := #[mshStatic "If a source you control would deal noncombat damage to an opponent or a permanent an opponent controls, instead it deals that much damage plus X, where X is Hawkeye's power."])
+    (staticAbilities := #[mshStatic .ifASourceYouControlWouldDealNoncombatDam])
 
 def hawkeyeSBow : CardDef :=
   card "Hawkeye's Bow" #[.artifact] ({ symbols := #[.colored .red] })
     (subtypes := #["Equipment"])
     (oracleText := "Equipped creature gets +1/+0 and has reach.\nWhenever equipped creature becomes tapped, it deals 1 damage to each opponent.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
-    (triggeredAbilities := #[mshTrig "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."])
-    (staticAbilities := #[mshStatic "Equipped creature gets +1/+0 and has reach."])
+    (triggeredAbilities := #[mshTrig .wheneverEquippedCreatureBecomesTapped])
+    (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 1 0 Keyword.reach])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 1] })])
 
 def hexMagic : CardDef :=
   card "Hex Magic" #[.sorcery] ({ symbols := #[.generic 2, .colored .red] })
     (subtypes := #["Arcane"])
     (oracleText := "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way.")
-    (spellEffect := some (.catalog "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."))
+    (spellEffect := some (.msh .exileAllTheCardsFromYourHandThenDrawTh))
 
 def hireACrew : CardDef :=
   card "Hire a Crew" #[.instant] ({ symbols := #[.generic 2, .colored .red] })
     (oracleText := "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn. (A creature with menace can't be blocked except by two or more creatures.)")
-    (spellEffect := some (.catalog "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn."))
+    (spellEffect := some (.msh .createA21BlackVillainCreatureTokenWithM))
 
 def hULKSMASH : CardDef :=
   card "HULK SMASH!" #[.instant] ({ symbols := #[.generic 1, .colored .red] })
@@ -1196,8 +1197,8 @@ def humanTorchJohnnyStorm : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."])
-    (activatedAbilities := #[activated (.catalog "Put three +1/+1 counters on Human Torch") ({ symbols := #[.generic 6, .colored .red] }) (powerUp := true)])
+    (triggeredAbilities := #[mshTrig .wheneverYouDrawACard])
+    (activatedAbilities := #[activated (.mshSpell .putThree11CountersOnHumanTorch) ({ symbols := #[.generic 6, .colored .red] }) (powerUp := true)])
 
 def hYDRAAssaultRobot : CardDef :=
   card "HYDRA Assault Robot" #[.artifact, .creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1205,7 +1206,7 @@ def hYDRAAssaultRobot : CardDef :=
     (oracleText := "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent.")
     (power := some 1)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherVillainAndOrArtifactYouCon])
 
 def ironFistLivingWeapon : CardDef :=
   card "Iron Fist, Living Weapon" #[.creature] ({ symbols := #[.generic 2, .colored .red] })
@@ -1214,7 +1215,7 @@ def ironFistLivingWeapon : CardDef :=
     (oracleText := "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn.")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsACreatur])
 
 def jessicaJonesPrivateEye : CardDef :=
   card "Jessica Jones, Private Eye" #[.creature] ({ symbols := #[.generic 2, .colored .red] })
@@ -1223,7 +1224,7 @@ def jessicaJonesPrivateEye : CardDef :=
     (oracleText := "{T}, Put a stun counter on Jessica Jones: Exile the top X cards of your library, where X is Jessica Jones's power. You may play those cards this turn. (If a permanent with a stun counter would become untapped, remove one from it instead.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[mshAct "{T}, Put a stun counter on Jessica Jones: Exile the top X cards of your library, where X is Jessica Jones's power. You may play those cards this turn."])
+    (activatedAbilities := #[mshAct .tPutAStunCounterOnJessicaJones])
 
 def kUnLunWarrior : CardDef :=
   card "K'un-Lun Warrior" #[.creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1231,7 +1232,7 @@ def kUnLunWarrior : CardDef :=
     (oracleText := "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters9])
 
 def kreeSentinel : CardDef :=
   card "Kree Sentinel" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .red] })
@@ -1254,7 +1255,7 @@ def lokiLaufeyson : CardDef :=
     (oracleText := "{1}, {T}: When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy.\nPower-up — {4}{R}: Put two +1/+1 counters on Loki. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
     (power := some 2)
     (toughness := some 1)
-    (activatedAbilities := #[activated (.catalog "When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy") ({ symbols := #[.generic 1] }) (tap := true), activated (.catalog "Put two +1/+1 counters on Loki") ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .whenYouNextCastAnInstantOrSorcerySpellW) ({ symbols := #[.generic 1] }) (tap := true), activated (.mshSpell .putTwo11CountersOnLoki) ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
 
 def machinesmithAutomaton : CardDef :=
   card "Machinesmith Automaton" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .red] })
@@ -1263,7 +1264,7 @@ def machinesmithAutomaton : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.trample)
-    (triggeredAbilities := #[mshTrig "Whenever another artifact you control enters, put a +1/+1 counter on this creature."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherArtifactYouControlEnters])
 
 def mistyKnightHeroForHire : CardDef :=
   card "Misty Knight, Hero for Hire" #[.creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1272,21 +1273,21 @@ def mistyKnightHeroForHire : CardDef :=
     (oracleText := "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn.")
     (power := some 3)
     (toughness := some 1)
-    (activatedAbilities := #[mshAct "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn."])
+    (activatedAbilities := #[mshAct .n2TDiscardACard])
 
 def mjLnirHammerOfThor : CardDef :=
   card "Mjölnir, Hammer of Thor" #[.artifact] ({ symbols := #[.generic 3, .colored .red] })
     (supertypes := #[.legendary])
     (subtypes := #["Equipment"])
     (oracleText := "When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)\n{2}{R}, Discard this card: It deals 2 damage to each creature.")
-    (triggeredAbilities := #[mshTrig "When Mjölnir enters, it deals 4 damage to up to one target creature."])
-    (staticAbilities := #[mshStatic "Double all damage equipped creature would deal.", mshStatic "Equip worthy {1}"])
-    (activatedAbilities := #[mshAct "{2}{R}, Discard this card: It deals 2 damage to each creature."])
+    (triggeredAbilities := #[mshTrig .whenMjLnirEnters])
+    (staticAbilities := #[mshStatic .doubleAllDamageEquippedCreatureWouldDeal, mshStatic .equipWorthy1])
+    (activatedAbilities := #[mshAct .n2RDiscardThisCard])
 
 def photonBlastBarrage : CardDef :=
   card "Photon Blast Barrage" #[.sorcery] ({ symbols := #[.x, .colored .red, .colored .red] })
     (oracleText := "When you cast this spell, copy it X times. You may choose new targets for the copies.\nPhoton Blast Barrage deals 1 damage to target creature.")
-    (spellEffect := some (.catalog "When you cast this spell, copy it X times. You may choose new targets for the copies.\nPhoton Blast Barrage deals 1 damage to target creature."))
+    (spellEffect := some (.msh .whenYouCastThisSpellCopyItXTimesYouM))
 
 def quicksilverBrashBlur : CardDef :=
   card "Quicksilver, Brash Blur" #[.creature] ({ symbols := #[.colored .red] })
@@ -1296,8 +1297,8 @@ def quicksilverBrashBlur : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (keywords := Keyword.haste)
-    (staticAbilities := #[mshStatic "If Quicksilver, Brash Blur is in your opening hand, you may begin the game with him on the battlefield."])
-    (activatedAbilities := #[activated (.catalog "Put a +1/+1 counter and a double strike counter on Quicksilver") ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
+    (staticAbilities := #[mshStatic .ifQuicksilver])
+    (activatedAbilities := #[activated (.mshSpell .putA11CounterAndADoubleStrikeCounter) ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
 
 def redHulk : CardDef :=
   card "Red Hulk" #[.creature] ({ symbols := #[.generic 4, .colored .red, .colored .red] })
@@ -1307,7 +1308,7 @@ def redHulk : CardDef :=
     (power := some 6)
     (toughness := some 7)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (staticAbilities := #[mshStatic "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."])
+    (triggeredAbilities := #[mshTrig .enrageWheneverRedHulkIs])
 
 def repulsorBlast : CardDef :=
   card "Repulsor Blast" #[.sorcery] ({ symbols := #[.generic 3, .colored .red] })
@@ -1322,7 +1323,7 @@ def theScarletWitch : CardDef :=
     (oracleText := "Instant and sorcery spells you cast with mana value 4 or greater cost {X} less to cast, where X is The Scarlet Witch's power.")
     (power := some 2)
     (toughness := some 3)
-    (staticAbilities := #[mshStatic "Instant and sorcery spells you cast with mana value 4 or greater cost {X} less to cast, where X is The Scarlet Witch's power."])
+    (staticAbilities := #[mshStatic .instantAndSorcerySpellsYouCastWithManaVa])
 
 def speedYoungAvenger : CardDef :=
   card "Speed, Young Avenger" #[.creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1332,7 +1333,7 @@ def speedYoungAvenger : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.haste)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastANoncreatureSpell5])
 
 def starkIndustriesExecutive : CardDef :=
   card "Stark Industries Executive" #[.creature] ({ symbols := #[.colored .red] })
@@ -1340,15 +1341,15 @@ def starkIndustriesExecutive : CardDef :=
     (oracleText := "{2}, {T}: Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.catalog "Create a Treasure token") ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (.createTreasure 1) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def superSpeed : CardDef :=
   card "Super Speed" #[.enchantment] ({ symbols := #[.colored .red] })
     (subtypes := #["Aura"])
     (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste.")
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When this Aura enters, enchanted creature gains first strike until end of turn."])
-    (staticAbilities := #[mshStatic "Enchanted creature gets +1/+0 and has haste."])
+    (triggeredAbilities := #[mshTrig .whenThisAuraEnters])
+    (staticAbilities := #[StaticAbility.enchantedCreatureGetsAndHas 1 0 Keyword.haste])
 
 def teamTactics : CardDef :=
   card "Team Tactics" #[.instant] ({ symbols := #[.generic 1, .colored .red] })
@@ -1364,17 +1365,17 @@ def thorGodOfThunder : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "When Thor enters, exile target Equipment, instant, or sorcery card from your graveyard. Until the end of your next turn, you may play that card.", mshTrig "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."])
+    (triggeredAbilities := #[mshTrig .whenThorEnters, mshTrig .wheneverYouCastANoncreatureSpell])
 
 def truckToss : CardDef :=
   card "Truck Toss" #[.instant] ({ symbols := #[.generic 2, .colored .red, .colored .red] })
     (oracleText := "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target.")
-    (spellEffect := some (.catalog "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target."))
+    (spellEffect := some (.msh .thisSpellCosts2LessToCastIfYouControl))
 
 def visionOfLove : CardDef :=
   card "Vision of Love" #[.instant] ({ symbols := #[.generic 1, .colored .red] })
     (oracleText := "You may sacrifice an artifact or discard a card. If you do, draw two cards.")
-    (spellEffect := some (.catalog "You may sacrifice an artifact or discard a card. If you do, draw two cards."))
+    (spellEffect := some (.msh .youMaySacrificeAnArtifactOrDiscardACard))
 
 def volcanicVillain : CardDef :=
   card "Volcanic Villain" #[.creature] ({ symbols := #[.generic 2, .colored .red] })
@@ -1393,8 +1394,8 @@ def wonderManHollywoodHero : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (staticAbilities := #[mshStatic "Each power-up ability of permanents you control can be activated an additional time."])
-    (activatedAbilities := #[activated (.catalog "Put two +1/+1 counters on Wonder Man") ({ symbols := #[.generic 5, .colored .red, .colored .red] }) (powerUp := true)])
+    (staticAbilities := #[mshStatic .eachPowerUpAbilityOfPermanentsYouControl])
+    (activatedAbilities := #[activated (.mshSpell .putTwo11CountersOnWonderMan) ({ symbols := #[.generic 5, .colored .red, .colored .red] }) (powerUp := true)])
 
 def antManSArmy : CardDef :=
   card "Ant-Man's Army" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1402,12 +1403,12 @@ def antManSArmy : CardDef :=
     (oracleText := "When this creature enters, create a Food token or a Treasure token. (A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When this creature enters, create a Food token or a Treasure token."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters2])
 
 def callDamageControl : CardDef :=
   card "Call Damage Control" #[.sorcery] ({ symbols := #[.generic 1, .colored .green] })
     (oracleText := "Choose up to two. Return those cards from your graveyard to your hand.\n• Target artifact card.\n• Target creature card.\n• Target enchantment card.\n• Target land card.")
-    (spellEffect := some (.catalog "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."))
+    (spellEffect := some (.msh .chooseUpToTwoReturnThoseCardsFromYourG))
 
 def claimTheKingdom : CardDef :=
   card "Claim the Kingdom" #[.enchantment] ({ symbols := #[.generic 1, .colored .green] })
@@ -1422,8 +1423,8 @@ def docSamsonSuperPsychiatrist : CardDef :=
     (oracleText := "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead.\n{T}: Add X mana of any one color, where X is Doc Samson's power.")
     (power := some 3)
     (toughness := some 6)
-    (staticAbilities := #[mshStatic "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."])
-    (activatedAbilities := #[activated (.catalog "Add X mana of any one color, where X is Doc Samson's power") (ManaCost.empty) (tap := true)])
+    (staticAbilities := #[mshStatic .ifYouWouldPutOneOrMoreCountersOnAPerma])
+    (activatedAbilities := #[activated (.msh .addXManaOfAnyOneColorWhereXIsDocSams) (ManaCost.empty) (tap := true)])
 
 def earthSMightiestHeroes : CardDef :=
   card "Earth's Mightiest Heroes" #[.sorcery] ({ symbols := #[.generic 4, .colored .green, .colored .green] })
@@ -1434,14 +1435,14 @@ def earthSMightiestHeroes : CardDef :=
 def epicFight : CardDef :=
   card "Epic Fight" #[.sorcery] ({ symbols := #[.generic 2, .colored .green] })
     (oracleText := "Choose one or both —\n• Double target creature's power and toughness until end of turn.\n• Target creature you control fights target creature an opponent controls.")
-    (spellModes := #[.doublePowerAndToughness, .catalog "Target creature you control fights target creature an opponent controls."])
+    (spellModes := #[.doublePowerAndToughness, .fight])
     (chooseOneOrBoth := true)
 
 def goNuts : CardDef :=
   card "Go Nuts!" #[.sorcery] ({ symbols := #[.colored .green] })
     (oracleText := "Teamwork 3 (As an additional cost to cast this spell, you may tap any number of creatures you control with total power 3 or more.)\nChoose one. If this spell was cast using teamwork, choose both instead.\n• Put a +1/+1 counter on target creature.\n• Target creature you control fights target creature an opponent controls.")
     (teamwork := some 3)
-    (spellModes := #[.plusOneOnCreature, .catalog "Target creature you control fights target creature an opponent controls."])
+    (spellModes := #[.plusOneOnCreature, .fight])
     (chooseBothIfTeamwork := true)
 
 def guerrillaGorilla : CardDef :=
@@ -1451,7 +1452,7 @@ def guerrillaGorilla : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.reach)
-    (staticAbilities := #[mshStatic "Sacrifice this creature: Destroy target noncreature artifact or noncreature enchantment. Activate only as a sorcery."])
+    (staticAbilities := #[mshStatic .sacrificeThisCreatureDestroyTargetNoncreat])
 
 def hellcatUndyingVigilante : CardDef :=
   card "Hellcat, Undying Vigilante" #[.creature] ({ symbols := #[.colored .green, .colored .green] })
@@ -1461,7 +1462,7 @@ def hellcatUndyingVigilante : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.haste)
-    (triggeredAbilities := #[mshTrig "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."])
+    (triggeredAbilities := #[mshTrig .whenHellcatDies])
 
 def herculesPrinceOfPower : CardDef :=
   card "Hercules, Prince of Power" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1470,12 +1471,12 @@ def herculesPrinceOfPower : CardDef :=
     (oracleText := "Power-up — {4}{G}: Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
     (power := some 3)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn") ({ symbols := #[.generic 4, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putA11CounterOnHerculesHeGainsVigila) ({ symbols := #[.generic 4, .colored .green] }) (powerUp := true)])
 
 def heroicFeast : CardDef :=
   card "Heroic Feast" #[.enchantment] ({ symbols := #[.generic 2, .colored .green] })
     (oracleText := "When this enchantment enters, create a Food token. (It's an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\")\nWhenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them.")
-    (triggeredAbilities := #[mshTrig "When this enchantment enters, create a Food token.", mshTrig "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."])
+    (triggeredAbilities := #[.onEnterCreateTokens .food 1, mshTrig .wheneverYouGainLife])
 
 def hulklingBurgeoningBruiser : CardDef :=
   card "Hulkling, Burgeoning Bruiser" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1485,7 +1486,7 @@ def hulklingBurgeoningBruiser : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherCreatureYouControlEnters])
 
 def kaZarOfTheSavageLand : CardDef :=
   card "Ka-Zar of the Savage Land" #[.creature] ({ symbols := #[.generic 4, .colored .green] })
@@ -1494,8 +1495,9 @@ def kaZarOfTheSavageLand : CardDef :=
     (oracleText := "You may look at the top card of your library any time.\nYou may play lands from the top of your library.\nWhen Ka-Zar enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When Ka-Zar enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""])
-    (staticAbilities := #[mshStatic "You may look at the top card of your library any time.", mshStatic "You may play lands from the top of your library."])
+    (mayLookAtTopAnytime := true)
+    (mayPlayLandsFromTop := true)
+    (triggeredAbilities := #[mshTrig .whenKaZarEnters])
 
 def knightOfWundagore : CardDef :=
   card "Knight of Wundagore" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1504,7 +1506,7 @@ def knightOfWundagore : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.trample)
-    (triggeredAbilities := #[mshTrig "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverYouPutA11CounterOnAnotherCrea])
 
 def misterHydeMonsterWithin : CardDef :=
   card "Mister Hyde, Monster Within" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1513,7 +1515,7 @@ def misterHydeMonsterWithin : CardDef :=
     (oracleText := "At the beginning of your upkeep, choose one —\n• Put a +1/+1 counter on Mister Hyde.\n• Remove a counter from a creature you control. If you do, draw a card.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfYourUpkeep])
 
 def moleManMoloidMaster : CardDef :=
   card "Mole Man, Moloid Master" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1522,7 +1524,7 @@ def moleManMoloidMaster : CardDef :=
     (oracleText := "You may play lands from your graveyard.\nLandfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\"")
     (power := some 1)
     (toughness := some 1)
-    (staticAbilities := #[mshStatic "You may play lands from your graveyard.", mshStatic "Landfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""])
+    (staticAbilities := #[mshStatic .youMayPlayLandsFromYourGraveyard, mshStatic .landfallWheneverALandYouControlEnters])
 
 def petAvengers : CardDef :=
   card "Pet Avengers" #[.creature] ({ symbols := #[.generic 3, .colored .green] })
@@ -1531,7 +1533,7 @@ def petAvengers : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.reach)
-    (activatedAbilities := #[activated (.catalog "Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance") ({ symbols := #[.generic 6, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putA11CounterOnThisCreatureAndCreate) ({ symbols := #[.generic 6, .colored .green] }) (powerUp := true)])
 
 def powerfulBroker : CardDef :=
   card "Powerful Broker" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1539,17 +1541,17 @@ def powerfulBroker : CardDef :=
     (oracleText := "{T}: For each kind of counter on target permanent or player, give that permanent or player another counter of that kind. Activate only as a sorcery.")
     (power := some 3)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind") (ManaCost.empty) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated (.mshSpell .forEachKindOfCounterOnTargetPermanentOr) (ManaCost.empty) (tap := true) (onlyAsSorcery := true)])
 
 def punishingPunch : CardDef :=
   card "Punishing Punch" #[.instant] ({ symbols := #[.generic 2, .colored .green] })
     (oracleText := "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls.")
-    (spellEffect := some (.catalog "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls."))
+    (spellEffect := some (.msh .thisSpellCosts2LessToCastIfThereAreT))
 
 def rapidRescue : CardDef :=
   card "Rapid Rescue" #[.instant] ({ symbols := #[.colored .green] })
     (oracleText := "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life. (To mill two cards, put the top two cards of your library into your graveyard.)")
-    (spellEffect := some (.catalog "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life."))
+    (spellEffect := some (.msh .millTwoCardsYouMayPutAPermanentCardFro))
 
 def reptilDinomorpher : CardDef :=
   card "Reptil, Dinomorpher" #[.creature] ({ symbols := #[.colored .green] })
@@ -1558,13 +1560,12 @@ def reptilDinomorpher : CardDef :=
     (oracleText := "Brontosaurus — {3}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance.\nTyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample.")
     (power := some 1)
     (toughness := some 2)
-    (staticAbilities := #[mshStatic "Tyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample."])
-    (activatedAbilities := #[activated (.catalog "Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance") ({ symbols := #[.generic 3] })])
+    (activatedAbilities := #[activated (.mshSpell .untilEndOfTurnReptilBecomesADinosaurHer) ({ symbols := #[.generic 3] }), mshAct .tyrannosaurusRex6UntilEndOfTu])
 
 def restorativeTechnique : CardDef :=
   card "Restorative Technique" #[.sorcery] ({ symbols := #[.generic 2, .colored .green] })
     (oracleText := "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature.")
-    (spellEffect := some (.catalog "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."))
+    (spellEffect := some (.msh .targetPlayerGains2LifeThenSearchesTheir))
 
 def rickJonesDestinedSidekick : CardDef :=
   card "Rick Jones, Destined Sidekick" #[.creature] ({ symbols := #[.colored .green] })
@@ -1573,7 +1574,7 @@ def rickJonesDestinedSidekick : CardDef :=
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
     (power := some 0)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "Mill four cards. You may put a Hero or enchantment card from among those cards into your hand") ({ symbols := #[.generic 3] }) (tap := true)])
+    (activatedAbilities := #[activated (.mshSpell .millFourCardsYouMayPutAHeroOrEnchantme) ({ symbols := #[.generic 3] }) (tap := true)])
 
 def savageLandDinosaur : CardDef :=
   card "Savage Land Dinosaur" #[.creature] ({ symbols := #[.generic 4, .colored .green, .colored .green] })
@@ -1600,8 +1601,8 @@ def shangChiMasterOfKungFu : CardDef :=
     (oracleText := "You may activate abilities of creatures you control as though those creatures had haste.\n{T}: Add two mana of any one color. Spend this mana only to activate abilities of creature sources.")
     (power := some 2)
     (toughness := some 2)
-    (staticAbilities := #[mshStatic "You may activate abilities of creatures you control as though those creatures had haste."])
-    (activatedAbilities := #[activated (.catalog "Add two mana of any one color. Spend this mana only to activate abilities of creature sources") (ManaCost.empty) (tap := true)])
+    (staticAbilities := #[mshStatic .youMayActivateAbilitiesOfCreaturesYouCont])
+    (activatedAbilities := #[activated (.msh .addTwoManaOfAnyOneColorSpendThisManaO) (ManaCost.empty) (tap := true)])
 
 def sheHulkJadeDefender : CardDef :=
   card "She-Hulk, Jade Defender" #[.creature] ({ symbols := #[.generic 3, .colored .green] })
@@ -1611,13 +1612,13 @@ def sheHulkJadeDefender : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (activatedAbilities := #[activated (.catalog "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk") ({ symbols := #[.generic 4, .colored .green, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .destroyUpToOneTargetArtifactOrEnchantment) ({ symbols := #[.generic 4, .colored .green, .colored .green] }) (powerUp := true)])
 
 def superStrength : CardDef :=
   card "Super Strength" #[.enchantment] ({ symbols := #[.generic 4, .colored .green] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nEnchanted creature gets +4/+4 and has trample and ward {1}. (Whenever enchanted creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)")
-    (staticAbilities := #[mshStatic "Enchanted creature gets +4/+4 and has trample and ward {1}."])
+    (staticAbilities := #[mshStatic .enchantedCreatureGets44AndHasTrampleAn])
 
 def theThingBenGrimm : CardDef :=
   card "The Thing, Ben Grimm" #[.creature] ({ symbols := #[.generic 5, .colored .green] })
@@ -1627,7 +1628,7 @@ def theThingBenGrimm : CardDef :=
     (power := some 7)
     (toughness := some 7)
     (keywords := Keyword.trample)
-    (triggeredAbilities := #[mshTrig "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."])
+    (triggeredAbilities := #[mshTrig .wheneverOneOrMoreHeroesYouControlDealDam])
 
 def tigraFelineFury : CardDef :=
   card "Tigra, Feline Fury" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1637,13 +1638,13 @@ def tigraFelineFury : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := (Keyword.flash).merge Keyword.trample)
-    (triggeredAbilities := #[mshTrig "Whenever you gain life, put a +1/+1 counter on Tigra."])
+    (triggeredAbilities := #[mshTrig .wheneverYouGainLife2])
 
 def trainingRegimen : CardDef :=
   card "Training Regimen" #[.enchantment] ({ symbols := #[.generic 3, .colored .green] })
     (oracleText := "Creatures you control with +1/+1 counters on them have trample.\nAt the beginning of combat on your turn, put a +1/+1 counter on target creature you control.")
-    (triggeredAbilities := #[mshTrig "At the beginning of combat on your turn, put a +1/+1 counter on target creature you control."])
-    (staticAbilities := #[mshStatic "Creatures you control with +1/+1 counters on them have trample."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfCombatOnYourTurn3])
+    (staticAbilities := #[mshStatic .creaturesYouControlWith11CountersOnThe])
 
 def theUnbeatableSquirrelGirl : CardDef :=
   card "The Unbeatable Squirrel Girl" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .green, .colored .green] })
@@ -1652,8 +1653,8 @@ def theUnbeatableSquirrelGirl : CardDef :=
     (oracleText := "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token.\nI LOVE Squirrels! — {1}{G}{G}{G}: Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control.")
     (power := some 4)
     (toughness := some 4)
-    (staticAbilities := #[mshStatic "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."])
-    (activatedAbilities := #[activated (.catalog "Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control") ({ symbols := #[.generic 1, .colored .green, .colored .green, .colored .green] })])
+    (triggeredAbilities := #[mshTrig .doYouLikeSquirrelsWheneverTheUnbeata])
+    (activatedAbilities := #[activated (.mshSpell .createX11GreenSquirrelCreatureTokensWhe) ({ symbols := #[.generic 1, .colored .green, .colored .green, .colored .green] })])
 
 def undercoverSkrull : CardDef :=
   card "Undercover Skrull" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1661,7 +1662,7 @@ def undercoverSkrull : CardDef :=
     (oracleText := "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types.\n{T}: Add one mana of any color.")
     (power := some 1)
     (toughness := some 1)
-    (staticAbilities := #[mshStatic "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."])
+    (staticAbilities := #[mshStatic .asLongAsThereAreTwoOrMoreCreatureCards2])
     (activatedAbilities := #[activated (.addAnyColor) (ManaCost.empty) (tap := true)])
 
 def wakandanRoyalGuard : CardDef :=
@@ -1671,7 +1672,7 @@ def wakandanRoyalGuard : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters7])
 
 def whiteTigerAvaAyala : CardDef :=
   card "White Tiger, Ava Ayala" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1680,13 +1681,13 @@ def whiteTigerAvaAyala : CardDef :=
     (oracleText := "Power-up — {5}{G}: Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\" (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)")
     (power := some 2)
     (toughness := some 2)
-    (activatedAbilities := #[activated (.catalog "Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\"") ({ symbols := #[.generic 5, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putA11CounterOnWhiteTigerAndCreateTh) ({ symbols := #[.generic 5, .colored .green] }) (powerUp := true)])
 
 def worldWarHulk : CardDef :=
   card "World War Hulk" #[.enchantment] ({ symbols := #[.generic 3, .colored .green, .colored .green] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — The next red or green creature spell you cast this turn can be cast without paying its mana cost.\nII — Put three +1/+1 counters on target creature you control.\nIII — Choose target creature you control. Until end of turn, double its power and toughness and it gains trample.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "The next red or green creature spell you cast this turn can be cast without paying its mana cost." (.catalog "The next red or green creature spell you cast this turn can be cast without paying its mana cost"), chapter "II" "Put three +1/+1 counters on target creature you control." (.catalog "Put three +1/+1 counters on target creature you control"), chapter "III" "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample." (.catalog "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample")] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "The next red or green creature spell you cast this turn can be cast without paying its mana cost." (.spell (.msh .theNextRedOrGreenCreatureSpellYouCastTh)), chapter "II" "Put three +1/+1 counters on target creature you control." (.spell (.plusOneOnCreatureN 3)), chapter "III" "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample." (.spell (.msh .chooseTargetCreatureYouControlUntilEndOf))] })
 
 def abominationTerrifyingTitan : CardDef :=
   card "Abomination, Terrifying Titan" #[.creature] ({ symbols := #[.generic 3, .hybrid .red .green] })
@@ -1696,7 +1697,7 @@ def abominationTerrifyingTitan : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.trample)
-    (activatedAbilities := #[activated (.catalog "Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls") ({ symbols := #[.generic 5, .hybrid .red .green, .hybrid .red .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putA11CounterOnAbominationHeFightsUp) ({ symbols := #[.generic 5, .hybrid .red .green, .hybrid .red .green] }) (powerUp := true)])
 
 def absorbingMan : CardDef :=
   card "Absorbing Man" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .blue] })
@@ -1706,12 +1707,12 @@ def absorbingMan : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfYourFirstMainPhase])
 
 def alienInvasion : CardDef :=
   card "Alien Invasion" #[.enchantment] ({ symbols := #[.generic 1, .colored .red, .colored .red, .colored .green] })
     (oracleText := "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment.")
-    (triggeredAbilities := #[mshTrig "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfCombatOnYourTurn2])
 
 def antManColonyCommander : CardDef :=
   card "Ant-Man, Colony Commander" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .blue] })
@@ -1720,7 +1721,7 @@ def antManColonyCommander : CardDef :=
     (oracleText := "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature.\nWhenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature.", mshTrig "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAntManAttacks, mshTrig .wheneverYouPutA11CounterOnACreature])
 
 def aresGodOfWar : CardDef :=
   card "Ares, God of War" #[.creature] ({ symbols := #[.generic 1, .colored .black, .colored .red] })
@@ -1729,14 +1730,14 @@ def aresGodOfWar : CardDef :=
     (oracleText := "Ares attacks each combat if able.\nWhenever an attacking creature you control dies, return that card to its owner's hand.")
     (power := some 4)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever an attacking creature you control dies, return that card to its owner's hand."])
-    (staticAbilities := #[mshStatic "Ares attacks each combat if able."])
+    (triggeredAbilities := #[mshTrig .wheneverAnAttackingCreatureYouControlDies])
+    (staticAbilities := #[mshStatic .aresAttacksEachCombatIfAble])
 
 def armorWars : CardDef :=
   card "Armor Wars" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue, .colored .red] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — You may draw a card for each artifact you control. If you do, each opponent draws a card.\nII — Artifact spells you cast this turn cost {1} less to cast.\nIII — This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "You may draw a card for each artifact you control. If you do, each opponent draws a card." (.catalog "You may draw a card for each artifact you control. If you do, each opponent draws a card"), chapter "II" "Artifact spells you cast this turn cost {1} less to cast." (.catalog "Artifact spells you cast this turn cost {1} less to cast"), chapter "III" "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control." (.catalog "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control")] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "You may draw a card for each artifact you control. If you do, each opponent draws a card." (.spell (.msh .youMayDrawACardForEachArtifactYouContro)), chapter "II" "Artifact spells you cast this turn cost {1} less to cast." (.spell (.msh .artifactSpellsYouCastThisTurnCost1Less)), chapter "III" "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control." (.msh .thisSagaDealsXDamageToTargetOpponentWhe)] })
 
 def theAstonishingAntMan : CardDef :=
   card "The Astonishing Ant-Man" #[.creature] ({ symbols := #[.colored .green, .colored .blue] })
@@ -1745,14 +1746,14 @@ def theAstonishingAntMan : CardDef :=
     (oracleText := "Whenever you draw a card, put a +1/+1 counter on The Astonishing Ant-Man.\n{2}{G}, {T}, Remove any number of +1/+1 counters from The Astonishing Ant-Man: Create that many 1/1 green Insect creature tokens.")
     (power := some 1)
     (toughness := some 1)
-    (triggeredAbilities := #[mshTrig "Whenever you draw a card, put a +1/+1 counter on The Astonishing Ant-Man."])
-    (activatedAbilities := #[mshAct "{2}{G}, {T}, Remove any number of +1/+1 counters from The Astonishing Ant-Man: Create that many 1/1 green Insect creature tokens."])
+    (triggeredAbilities := #[mshTrig .wheneverYouDrawACard2])
+    (activatedAbilities := #[mshAct .n2GTRemoveAnyNumberOf11])
 
 def avengersUnderSiege : CardDef :=
   card "Avengers: Under Siege" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .red] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Create two 2/1 black Villain creature tokens with menace.\nII — This Saga deals 2 damage to each non-Villain creature and each opponent.\nIII — Create a Treasure token for each Villain you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Create two 2/1 black Villain creature tokens with menace." (.catalog "Create two 2/1 black Villain creature tokens with menace"), chapter "II" "This Saga deals 2 damage to each non-Villain creature and each opponent." (.catalog "This Saga deals 2 damage to each non-Villain creature and each opponent"), chapter "III" "Create a Treasure token for each Villain you control." (.catalog "Create a Treasure token for each Villain you control")] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Create two 2/1 black Villain creature tokens with menace." (.spell (.createTokens .villain21menace 2)), chapter "II" "This Saga deals 2 damage to each non-Villain creature and each opponent." (.msh .thisSagaDeals2DamageToEachNonVillainCre), chapter "III" "Create a Treasure token for each Villain you control." (.spell (.msh .createATreasureTokenForEachVillainYouCon))] })
 
 def beastEruditeAerialist : CardDef :=
   card "Beast, Erudite Aerialist" #[.creature] ({ symbols := #[.generic 3, .hybrid .green .blue] })
@@ -1761,8 +1762,8 @@ def beastEruditeAerialist : CardDef :=
     (oracleText := "As long as you've put one or more +1/+1 counters on Beast this turn, he has flying.\nWhenever Beast deals combat damage to a player, draw a card.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever Beast deals combat damage to a player, draw a card."])
-    (staticAbilities := #[mshStatic "As long as you've put one or more +1/+1 counters on Beast this turn, he has flying."])
+    (triggeredAbilities := #[.onCombatDamageDraw 1])
+    (staticAbilities := #[mshStatic .asLongAsYouVePutOneOrMore11Counters])
 
 def blackPantherVanguard : CardDef :=
   card "Black Panther, Vanguard" #[.creature] ({ symbols := #[.generic 2, .colored .green, .colored .white] })
@@ -1771,7 +1772,7 @@ def blackPantherVanguard : CardDef :=
     (oracleText := "Whenever another nontoken Hero you control enters, choose one —\n• Create a 1/1 white Soldier creature token.\n• Creatures you control get +1/+1 until end of turn.")
     (power := some 4)
     (toughness := some 4)
-    (triggeredAbilities := #[mshTrig "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherNontokenHeroYouControlEnter])
 
 def blackWidowDoubleAgent : CardDef :=
   card "Black Widow, Double Agent" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .black] })
@@ -1781,7 +1782,7 @@ def blackWidowDoubleAgent : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.deathtouch)
-    (triggeredAbilities := #[mshTrig "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."])
+    (triggeredAbilities := #[mshTrig .wheneverACreatureYouControlAttacksAlone])
 
 def bullseyeDeathDealer : CardDef :=
   card "Bullseye, Death Dealer" #[.creature] ({ symbols := #[.generic 2, .hybrid .black .red] })
@@ -1790,8 +1791,8 @@ def bullseyeDeathDealer : CardDef :=
     (oracleText := "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target.\n{3}, {T}, Sacrifice an artifact or discard a nonland card: Bullseye deals 2 damage to any target.")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target."])
-    (activatedAbilities := #[mshAct "{3}, {T}, Sacrifice an artifact or discard a nonland card: Bullseye deals 2 damage to any target."])
+    (triggeredAbilities := #[mshTrig .whenBullseyeEnters])
+    (activatedAbilities := #[mshAct .n3TSacrificeAnArtifactOrDisca])
 
 def captainAmericaLivingLegend : CardDef :=
   card "Captain America, Living Legend" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .blue] })
@@ -1801,7 +1802,7 @@ def captainAmericaLivingLegend : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."])
+    (triggeredAbilities := #[mshTrig .wheneverACreatureYouControlBecomesTappedD])
 
 def cloakAndDaggerEntwined : CardDef :=
   card "Cloak and Dagger, Entwined" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .black] })
@@ -1811,13 +1812,13 @@ def cloakAndDaggerEntwined : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
-    (triggeredAbilities := #[mshTrig "When Cloak and Dagger enter, choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until Cloak and Dagger leave the battlefield."])
+    (triggeredAbilities := #[mshTrig .whenCloakAndDaggerEnter])
 
 def theComingOfGalactus : CardDef :=
   card "The Coming of Galactus" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .black, .colored .green] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Destroy up to one target nonland permanent.\nII, III — Each opponent loses 2 life.\nIV — Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"")
-    (saga := some { sacrificeAfter := "IV", chapters := #[chapter "I" "Destroy up to one target nonland permanent." (.catalog "Destroy up to one target nonland permanent"), chapter "II, III" "Each opponent loses 2 life." (.catalog "Each opponent loses 2 life"), chapter "IV" "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"." (.catalog "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"")] })
+    (saga := some { sacrificeAfter := "IV", chapters := #[chapter "I" "Destroy up to one target nonland permanent." (.spell (.msh .destroyUpToOneTargetNonlandPermanent)), chapter "II, III" "Each opponent loses 2 life." (.spell (.eachOpponentLosesLife 2)), chapter "IV" "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"." (.spell (.msh .createGalactusALegendary1616BlackElderA))] })
 
 def daredevilManWithoutFear : CardDef :=
   card "Daredevil, Man Without Fear" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .white] })
@@ -1827,8 +1828,8 @@ def daredevilManWithoutFear : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := (Keyword.vigilance).merge Keyword.haste)
-    (triggeredAbilities := #[mshTrig "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."])
-    (staticAbilities := #[mshStatic "Radar Sense — You may look at the top card of your library any time."])
+    (mayLookAtTopAnytime := true)
+    (triggeredAbilities := #[mshTrig .wheneverYouAttack2])
 
 def ghostSpectralSaboteur : CardDef :=
   card "Ghost, Spectral Saboteur" #[.creature] ({ symbols := #[.generic 2, .hybrid .blue .black] })
@@ -1838,7 +1839,7 @@ def ghostSpectralSaboteur : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flash)
-    (staticAbilities := #[mshStatic "Intangibility — Ghost can't be blocked."])
+    (staticAbilities := #[mshStatic .intangibilityGhostCanTBeBlocked])
 
 def hulkGammaGoliath : CardDef :=
   card "Hulk, Gamma Goliath" #[.creature] ({ symbols := #[.generic 3, .colored .red, .colored .green] })
@@ -1848,8 +1849,8 @@ def hulkGammaGoliath : CardDef :=
     (power := some 6)
     (toughness := some 5)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (staticAbilities := #[mshStatic "Power-up abilities of other creatures you control cost {3} less to activate."])
-    (activatedAbilities := #[activated (.catalog "Put five +1/+1 counters on Hulk") ({ symbols := #[.generic 6, .colored .red, .colored .green] }) (powerUp := true)])
+    (staticAbilities := #[mshStatic .powerUpAbilitiesOfOtherCreaturesYouContro])
+    (activatedAbilities := #[activated (.mshSpell .putFive11CountersOnHulk) ({ symbols := #[.generic 6, .colored .red, .colored .green] }) (powerUp := true)])
 
 def ironManMasterOfMachines : CardDef :=
   card "Iron Man, Master of Machines" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .blue, .colored .red] })
@@ -1859,8 +1860,8 @@ def ironManMasterOfMachines : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := (Keyword.flying).merge Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."])
-    (staticAbilities := #[mshStatic "Iron Man gets +1/+0 for each other artifact you control."])
+    (triggeredAbilities := #[mshTrig .wheneverIronManAttacks])
+    (staticAbilities := #[mshStatic .ironManGets10ForEachOtherArtifactYou])
 
 def kangTemporalTyrant : CardDef :=
   card "Kang, Temporal Tyrant" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .black] })
@@ -1869,7 +1870,7 @@ def kangTemporalTyrant : CardDef :=
     (oracleText := "Whenever Kang attacks, he connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nWhenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life.")
     (power := some 3)
     (toughness := some 4)
-    (triggeredAbilities := #[mshTrig "Whenever Kang attacks, he connives.", mshTrig "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."])
+    (triggeredAbilities := #[mshTrig .wheneverKangAttacks, mshTrig .wheneverYouDrawYourSecondCardEachTurn])
 
 def killmongerScourgeOfWakanda : CardDef :=
   card "Killmonger, Scourge of Wakanda" #[.creature] ({ symbols := #[.generic 2, .colored .black, .colored .green] })
@@ -1878,8 +1879,8 @@ def killmongerScourgeOfWakanda : CardDef :=
     (oracleText := "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls.\nAs long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1.")
     (power := some 3)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls."])
-    (staticAbilities := #[mshStatic "As long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1."])
+    (triggeredAbilities := #[mshTrig .whenKillmongerEnters])
+    (staticAbilities := #[mshStatic .asLongAsThereAreTwoOrMoreCreatureCards])
 
 def kingTChalla : CardDef :=
   card "King T'Challa" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .blue] })
@@ -1889,7 +1890,7 @@ def kingTChalla : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "Whenever a player draws their second card each turn, you draw a card."])
+    (triggeredAbilities := #[mshTrig .wheneverAPlayerDrawsTheirSecondCardEachT])
     (activatedAbilities := #[activated (.transform) ({ symbols := #[.generic 4, .colored .white, .colored .blue] }) (onlyAsSorcery := true)])
     (otherFace := some blackPantherHopeEnduring)
 
@@ -1900,8 +1901,8 @@ def theKingpinOfCrime : CardDef :=
     (oracleText := "Extort (Whenever you cast a spell, you may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life.)\nWhenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power.")
     (power := some 1)
     (toughness := some 5)
-    (triggeredAbilities := #[mshTrig "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."])
-    (staticAbilities := #[mshStatic "Extort"])
+    (triggeredAbilities := #[mshTrig .wheneverYouAttack3])
+    (staticAbilities := #[mshStatic .extort])
 
 def madameHydra : CardDef :=
   card "Madame Hydra" #[.creature] ({ symbols := #[.generic 2, .colored .black, .colored .red] })
@@ -1910,7 +1911,7 @@ def madameHydra : CardDef :=
     (oracleText := "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
     (power := some 2)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastAVillainSpell])
 
 def theMightyThorJaneFoster : CardDef :=
   card "The Mighty Thor, Jane Foster" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .blue] })
@@ -1920,7 +1921,7 @@ def theMightyThorJaneFoster : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control.", mshTrig "Whenever an Equipment you control enters, draw a card."])
+    (triggeredAbilities := #[mshTrig .wheneverTheMightyThorAttacks, mshTrig .wheneverAnEquipmentYouControlEnters])
 
 def moonGirlAndDevilDinosaur : CardDef :=
   card "Moon Girl and Devil Dinosaur" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .blue] })
@@ -1929,7 +1930,7 @@ def moonGirlAndDevilDinosaur : CardDef :=
     (oracleText := "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample.\nWhenever an artifact you control enters, draw a card. This ability triggers only once each turn.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample.", mshTrig "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn."])
+    (triggeredAbilities := #[mshTrig .wheneverYouDrawYourSecondCardEachTurn3, .onArtifactYouControlEntersDrawOnce])
 
 def theRuinousWreckingCrew : CardDef :=
   card "The Ruinous Wrecking Crew" #[.creature] ({ symbols := #[.x, .colored .black, .colored .red] })
@@ -1938,8 +1939,8 @@ def theRuinousWreckingCrew : CardDef :=
     (oracleText := "The Ruinous Wrecking Crew enters with X +1/+1 counters on it.\nWhen The Ruinous Wrecking Crew enters, choose up to X —\n• Discard a card, then draw a card.\n• Target opponent loses 2 life.\n• Destroy target token.\n• Each player sacrifices a creature of their choice.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When The Ruinous Wrecking Crew enters, choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice."])
-    (staticAbilities := #[mshStatic "The Ruinous Wrecking Crew enters with X +1/+1 counters on it."])
+    (triggeredAbilities := #[mshTrig .whenTheRuinousWreckingCrewEnters])
+    (staticAbilities := #[mshStatic .theRuinousWreckingCrewEntersWithX11Co])
 
 def scientistSupremeOfAIM : CardDef :=
   card "Scientist Supreme of A.I.M." #[.creature] ({ symbols := #[.colored .blue, .colored .black] })
@@ -1948,7 +1949,7 @@ def scientistSupremeOfAIM : CardDef :=
     (oracleText := "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn. (Mana abilities can't be targeted.)")
     (power := some 2)
     (toughness := some 2)
-    (staticAbilities := #[mshStatic "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn."])
+    (staticAbilities := #[mshStatic .pay2LifeCopyTargetActivatedOrTriggeredA])
 
 def theSerpentSociety : CardDef :=
   card "The Serpent Society" #[.creature] ({ symbols := #[.generic 1, .colored .black, .colored .green] })
@@ -1958,8 +1959,8 @@ def theSerpentSociety : CardDef :=
     (power := some 3)
     (toughness := some 4)
     (keywords := Keyword.deathtouch)
-    (triggeredAbilities := #[mshTrig "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."])
-    (staticAbilities := #[mshStatic "Ward—Get five poison counters."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherCreatureYouControlWithDeath])
+    (staticAbilities := #[mshStatic .wardGetFivePoisonCounters])
 
 def speedballNewWarrior : CardDef :=
   card "Speedball, New Warrior" #[.creature] ({ symbols := #[.generic 2, .hybrid .blue .red] })
@@ -1968,7 +1969,7 @@ def speedballNewWarrior : CardDef :=
     (oracleText := "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell.")
     (power := some 2)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."])
+    (triggeredAbilities := #[mshTrig .wheneverAPlayerCastsASpellThatTargetsSpe])
 
 def spiderManToTheRescue : CardDef :=
   card "Spider-Man, To the Rescue" #[.creature] ({ symbols := #[.generic 2, .hybrid .green .white] })
@@ -1978,7 +1979,7 @@ def spiderManToTheRescue : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := ((Keyword.flash).merge Keyword.reach).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic "No One Dies! — When Spider-Man enters, you may tap him. When you do, another target nonattacking creature you control gains indestructible until end of turn."])
+    (triggeredAbilities := #[mshTrig .noOneDiesWhenSpiderManEnte])
 
 def spiderWomanSecretAgent : CardDef :=
   card "Spider-Woman, Secret Agent" #[.creature] ({ symbols := #[.generic 3, .hybrid .white .blue] })
@@ -1988,7 +1989,7 @@ def spiderWomanSecretAgent : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := Keyword.flash)
-    (triggeredAbilities := #[mshTrig "When Spider-Woman enters, tap target creature an opponent controls. That creature can't become untapped for as long as you control Spider-Woman."])
+    (triggeredAbilities := #[mshTrig .whenSpiderWomanEnters])
 
 def stormWindrider : CardDef :=
   card "Storm, Windrider" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .white, .colored .white] })
@@ -1998,14 +1999,14 @@ def stormWindrider : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."])
-    (staticAbilities := #[mshStatic "Creatures with flying can't attack you or block creatures you control."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsOneOrMo])
+    (staticAbilities := #[mshStatic .creaturesWithFlyingCanTAttackYouOrBlock])
 
 def theSuperHeroCivilWar : CardDef :=
   card "The Super Hero Civil War" #[.enchantment] ({ symbols := #[.generic 3, .colored .red, .colored .white] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield.\nII — Creatures you control get +1/+1 and gain vigilance until end of turn.\nIII — Target creature you control fights up to one other target creature.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield." (.catalog "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield"), chapter "II" "Creatures you control get +1/+1 and gain vigilance until end of turn." (.catalog "Creatures you control get +1/+1 and gain vigilance until end of turn"), chapter "III" "Target creature you control fights up to one other target creature." (.catalog "Target creature you control fights up to one other target creature")] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield." (.msh .gainControlOfUpToTwoTargetCreaturesWith), chapter "II" "Creatures you control get +1/+1 and gain vigilance until end of turn." (.spell (.msh .creaturesYouControlGet11AndGainVigilan)), chapter "III" "Target creature you control fights up to one other target creature." (.spell (.fightUpToOne))] })
 
 def taskmasterMercenaryMimic : CardDef :=
   card "Taskmaster, Mercenary Mimic" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .black] })
@@ -2014,7 +2015,7 @@ def taskmasterMercenaryMimic : CardDef :=
     (oracleText := "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature.")
     (power := some 3)
     (toughness := some 5)
-    (staticAbilities := #[mshStatic "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."])
+    (triggeredAbilities := #[mshTrig .photographicReflexesAtTheBeginningOf])
 
 def thanosTheMadTitan : CardDef :=
   card "Thanos, the Mad Titan" #[.creature] ({ symbols := #[.colored .red, .colored .white, .colored .black] })
@@ -2024,7 +2025,7 @@ def thanosTheMadTitan : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
-    (activatedAbilities := #[activated (.catalog "Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality") ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putTwo11CountersOnThanosChooseOddOr) ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
 
 def thorOdinson : CardDef :=
   card "Thor Odinson" #[.creature] ({ symbols := #[.generic 3, .colored .red, .colored .white] })
@@ -2042,7 +2043,7 @@ def titaniaRuggedRumbler : CardDef :=
     (oracleText := "As an additional cost to cast this spell, discard a card or pay {2}.\nWard—Discard a card or pay {2}. (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player discards a card or pays {2}.)")
     (power := some 5)
     (toughness := some 5)
-    (staticAbilities := #[mshStatic "As an additional cost to cast this spell, discard a card or pay {2}.", mshStatic "Ward—Discard a card or pay {2}."])
+    (staticAbilities := #[mshStatic .asAnAdditionalCostToCastThisSpell, mshStatic .wardDiscardACardOrPay2])
 
 def uSAgentJohnWalker : CardDef :=
   card "U.S.Agent, John Walker" #[.creature] ({ symbols := #[.generic 3, .hybrid .white .black] })
@@ -2051,12 +2052,12 @@ def uSAgentJohnWalker : CardDef :=
     (oracleText := "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent.")
     (power := some 3)
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent."])
+    (triggeredAbilities := #[mshTrig .whenUSAgentEnters])
 
 def visionQuest : CardDef :=
   card "Vision Quest" #[.sorcery] ({ symbols := #[.x, .colored .blue, .colored .red] })
     (oracleText := "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle.")
-    (spellEffect := some (.catalog "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."))
+    (spellEffect := some (.msh .searchYourLibraryAndOrGraveyardForAnArti))
 
 def warMachineLegacyOfIron : CardDef :=
   card "War Machine, Legacy of Iron" #[.artifact, .creature] ({ symbols := #[.generic 2, .hybrid .red .white] })
@@ -2066,7 +2067,7 @@ def warMachineLegacyOfIron : CardDef :=
     (power := some 1)
     (toughness := some 3)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "At the beginning of combat on your turn, another target creature you control gets +X/+0 until end of turn, where X is War Machine's power."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfCombatOnYourTurn])
 
 def winterSoldierIcyAssassin : CardDef :=
   card "Winter Soldier, Icy Assassin" #[.creature] ({ symbols := #[.colored .white, .colored .black] })
@@ -2076,8 +2077,8 @@ def winterSoldierIcyAssassin : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.vigilance).merge Keyword.menace)
-    (staticAbilities := #[mshStatic "Winter Soldier gets +2/+0 for each Equipment attached to him."])
-    (activatedAbilities := #[activated (.catalog "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him") ({ symbols := #[.generic 3, .colored .white, .colored .black] })])
+    (staticAbilities := #[mshStatic .winterSoldierGets20ForEachEquipmentAtt])
+    (activatedAbilities := #[activated (.mshSpell .returnThisCardFromYourGraveyardToTheBatt) ({ symbols := #[.generic 3, .colored .white, .colored .black] })])
 
 def wolverineFierceFighter : CardDef :=
   card "Wolverine, Fierce Fighter" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .green] })
@@ -2087,13 +2088,13 @@ def wolverineFierceFighter : CardDef :=
     (power := some 3)
     (toughness := some 5)
     (keywords := Keyword.haste)
-    (triggeredAbilities := #[mshTrig "When Wolverine enters, he fights up to one other target creature."])
-    (staticAbilities := #[mshStatic "If damage would be dealt to Wolverine, instead that damage is dealt, but all other damage already dealt to him is healed."])
+    (triggeredAbilities := #[mshTrig .whenWolverineEnters])
+    (staticAbilities := #[mshStatic .ifDamageWouldBeDealtToWolverine])
 
 def worldsWithinWorlds : CardDef :=
   card "Worlds Within Worlds" #[.sorcery] ({ symbols := #[.generic 5, .colored .green, .colored .blue] })
     (oracleText := "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds.")
-    (spellEffect := some (.catalog "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."))
+    (spellEffect := some (.msh .exileAllCreaturesEachPlayerMayPutAnyNum))
 
 def aIMSynthoids : CardDef :=
   card "A.I.M. Synthoids" #[.artifact, .creature] ({ symbols := #[.generic 2] })
@@ -2101,14 +2102,14 @@ def aIMSynthoids : CardDef :=
     (oracleText := "When this creature enters, surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)")
     (power := some 1)
     (toughness := some 3)
-    (triggeredAbilities := #[mshTrig "When this creature enters, surveil 2."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters8])
 
 def arcReactor : CardDef :=
   card "Arc Reactor" #[.artifact] ({ symbols := #[.generic 5] })
     (oracleText := "Improvise (Your artifacts can help cast this spell. Each artifact you tap after you're done activating mana abilities pays for {1}.)\nThis artifact enters tapped.\n{T}: Add {C}{C}{C}.")
     (entersTapped := true)
-    (staticAbilities := #[mshStatic "Improvise"])
-    (activatedAbilities := #[activated (.catalog "Add {C}{C}{C}") (ManaCost.empty) (tap := true)])
+    (staticAbilities := #[mshStatic .improvise])
+    (activatedAbilities := #[activated (.msh .addCCC) (ManaCost.empty) (tap := true)])
 
 def captainAmericaSShield : CardDef :=
   card "Captain America's Shield" #[.artifact] ({ symbols := #[.generic 2] })
@@ -2116,15 +2117,15 @@ def captainAmericaSShield : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "Indestructible\nEquipped creature gets +0/+8 and has vigilance.\nWhenever equipped creature attacks, tap target creature defending player controls.\nEquip {2}")
     (keywords := Keyword.indestructible)
-    (triggeredAbilities := #[mshTrig "Whenever equipped creature attacks, tap target creature defending player controls."])
-    (staticAbilities := #[mshStatic "Equipped creature gets +0/+8 and has vigilance."])
+    (triggeredAbilities := #[mshTrig .wheneverEquippedCreatureAttacks])
+    (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 0 8 Keyword.vigilance])
     (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2] })])
 
 def cosmicCube : CardDef :=
   card "Cosmic Cube" #[.artifact] ({ symbols := #[.generic 5] })
     (oracleText := "Ward {2}\nWhenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order.")
     (ward := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."])
+    (triggeredAbilities := #[mshTrig .wheneverYouAttack])
 
 def dependableQuinjet : CardDef :=
   card "Dependable Quinjet" #[.artifact] ({ symbols := #[.generic 3] })
@@ -2143,15 +2144,15 @@ def hERBIEScoutUnit : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[mshTrig "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."])
+    (triggeredAbilities := #[mshTrig .whenThisCreatureEnters4])
 
 def ironManArmor : CardDef :=
   card "Iron Man Armor" #[.artifact] ({ symbols := #[.generic 3] })
     (subtypes := #["Equipment"])
     (oracleText := "When this Equipment enters, attach it to target creature you control.\nEquipped creature gets +2/+1 and has flying.\n{2}: If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn.\nEquip {2}")
-    (triggeredAbilities := #[mshTrig "When this Equipment enters, attach it to target creature you control."])
-    (staticAbilities := #[mshStatic "Equipped creature gets +2/+1 and has flying."])
-    (activatedAbilities := #[activated (.catalog "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn") ({ symbols := #[.generic 2] }), equipAbility ({ symbols := #[.generic 2] })])
+    (triggeredAbilities := #[.onEnterAttachToCreatureYouControl])
+    (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 2 1 Keyword.flying])
+    (activatedAbilities := #[activated (.mshSpell .ifThisEquipmentIsnTACreatureItBecomesA) ({ symbols := #[.generic 2] }), equipAbility ({ symbols := #[.generic 2] })])
 
 def sHIELDHelicarrier : CardDef :=
   card "S.H.I.E.L.D. Helicarrier" #[.artifact] ({ symbols := #[.generic 4] })
@@ -2161,7 +2162,7 @@ def sHIELDHelicarrier : CardDef :=
     (toughness := some 5)
     (keywords := Keyword.flying)
     (crew := some 6)
-    (triggeredAbilities := #[mshTrig "When this Vehicle enters, create two 1/1 white Soldier creature tokens."])
+    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 2])
 
 def superAdaptoid : CardDef :=
   card "Super-Adaptoid" #[.artifact, .creature] ({ symbols := #[.generic 2] })
@@ -2169,15 +2170,15 @@ def superAdaptoid : CardDef :=
     (subtypes := #["Robot", "Villain"])
     (oracleText := "Super-Adaptoid's power is equal to the number of legendary creatures you control.\nWhenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance.")
     (toughness := some 2)
-    (triggeredAbilities := #[mshTrig "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."])
-    (staticAbilities := #[mshStatic "Super-Adaptoid's power is equal to the number of legendary creatures you control."])
+    (triggeredAbilities := #[mshTrig .wheneverSuperAdaptoidEntersOrAttacks])
+    (staticAbilities := #[mshStatic .superAdaptoidSPowerIsEqualToTheNumberOf])
 
 def theTenRings : CardDef :=
   card "The Ten Rings" #[.artifact] ({ symbols := #[.generic 8] })
     (supertypes := #[.legendary])
     (oracleText := "Your maximum hand size is ten.\nAt the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference.")
-    (triggeredAbilities := #[mshTrig "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."])
-    (staticAbilities := #[mshStatic "Your maximum hand size is ten."])
+    (triggeredAbilities := #[mshTrig .atTheBeginningOfYourEndStep])
+    (staticAbilities := #[mshStatic .yourMaximumHandSizeIsTen])
 
 def ultronArtificialMalevolence : CardDef :=
   card "Ultron, Artificial Malevolence" #[.artifact, .creature] ({ symbols := #[.generic 3] })
@@ -2186,7 +2187,7 @@ def ultronArtificialMalevolence : CardDef :=
     (oracleText := "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types.")
     (power := some 2)
     (toughness := some 4)
-    (triggeredAbilities := #[mshTrig "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."])
+    (triggeredAbilities := #[mshTrig .wheneverAnotherNontokenArtifactYouControlE])
 
 def ultronDrone : CardDef :=
   card "Ultron Drone" #[.artifact, .creature] ({ symbols := #[.generic 3] })
@@ -2194,7 +2195,7 @@ def ultronDrone : CardDef :=
     (oracleText := "Power-up — {6}: Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[activated (.catalog "Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token") ({ symbols := #[.generic 6] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.mshSpell .putTwo11CountersOnThisCreatureAndCrea) ({ symbols := #[.generic 6] }) (powerUp := true)])
 
 def vibraniumEnergyDaggers : CardDef :=
   card "Vibranium Energy Daggers" #[.artifact] ({ symbols := #[.generic 1] })
@@ -2212,7 +2213,7 @@ def theVision : CardDef :=
     (power := some 2)
     (toughness := some 5)
     (keywords := (Keyword.flying).merge Keyword.vigilance)
-    (triggeredAbilities := #[mshTrig "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastANoncreatureSpell2])
 
 def vivVisionTeenSynthezoid : CardDef :=
   card "Viv Vision, Teen Synthezoid" #[.artifact, .creature] ({ symbols := #[.generic 3] })
@@ -2222,139 +2223,139 @@ def vivVisionTeenSynthezoid : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (staticAbilities := #[mshStatic "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."])
-    (activatedAbilities := #[activated (.catalog "Put two +1/+1 counters on Viv Vision") ({ symbols := #[.generic 7] }) (powerUp := true)])
+    (triggeredAbilities := #[mshTrig .cyberneticSensesWheneverVivVision])
+    (activatedAbilities := #[activated (.mshSpell .putTwo11CountersOnVivVision) ({ symbols := #[.generic 7] }) (powerUp := true)])
 
 def aIMLabs : CardDef :=
   card "A.I.M. Labs" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {U} or {B}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addUOrB) (ManaCost.empty) (tap := true)])
 
 def asgardianCitadel : CardDef :=
   card "Asgardian Citadel" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {R} or {W}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addROrW) (ManaCost.empty) (tap := true)])
 
 def avengersHangar : CardDef :=
   card "Avengers Hangar" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {W} or {U}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addWOrU) (ManaCost.empty) (tap := true)])
 
 def avengersTower : CardDef :=
   card "Avengers Tower" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source") (ManaCost.empty) (tap := true), activated (.catalog "Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order") ({ symbols := #[.generic 4] }) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly) (ManaCost.empty) (tap := true), activated (.mshSpell .lookAtTheTopThreeCardsOfYourLibraryYou) ({ symbols := #[.generic 4] }) (tap := true)])
 
 def baxterBuilding : CardDef :=
   card "Baxter Building" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{4}, {T}: Add four mana in any combination of colors.\n{4}, {T}: Draw a card. Activate only if you control a creature with toughness 4 or greater.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add four mana in any combination of colors") ({ symbols := #[.generic 4] }) (tap := true), activated (.catalog "Draw a card. Activate only if you control a creature with toughness 4 or greater") ({ symbols := #[.generic 4] }) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addFourManaInAnyCombinationOfColors) ({ symbols := #[.generic 4] }) (tap := true), activated (.mshSpell .drawACardActivateOnlyIfYouControlACrea) ({ symbols := #[.generic 4] }) (tap := true)])
 
 def birninZanaPlaza : CardDef :=
   card "Birnin Zana Plaza" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {G} or {W}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addGOrW) (ManaCost.empty) (tap := true)])
 
 def castleDoom : CardDef :=
   card "Castle Doom" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add one mana of any color. Spend this mana only to cast an artifact spell") (ManaCost.empty) (tap := true), mshAct "{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery."])
+    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly3) (ManaCost.empty) (tap := true), mshAct .n3TSacrificeAnArtifact])
 
 def darkFortress : CardDef :=
   card "Dark Fortress" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[mshAct .addBOrRActivateOnlyIfThisLandEnter (tap := true)])
 
 def fiskTower : CardDef :=
   card "Fisk Tower" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {W} or {B}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addWOrB) (ManaCost.empty) (tap := true)])
 
 def gatheringPlace : CardDef :=
   card "Gathering Place" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[mshAct .addGOrWActivateOnlyIfThisLandEnter (tap := true)])
 
 def gleamingBastion : CardDef :=
   card "Gleaming Bastion" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[mshAct .addWOrUActivateOnlyIfThisLandEnter (tap := true)])
 
 def hellSKitchen : CardDef :=
   card "Hell's Kitchen" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {B} or {R}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addBOrR) (ManaCost.empty) (tap := true)])
 
 def hiddenLair : CardDef :=
   card "Hidden Lair" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[mshAct .addUOrBActivateOnlyIfThisLandEnter (tap := true)])
 
 def losDiablosMissileBase : CardDef :=
   card "Los Diablos Missile Base" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {R} or {G}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addROrG) (ManaCost.empty) (tap := true)])
 
 def pymTechnologies : CardDef :=
   card "Pym Technologies" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {G} or {U}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addGOrU) (ManaCost.empty) (tap := true)])
 
 def starkIndustries : CardDef :=
   card "Stark Industries" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {U} or {R}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addUOrR) (ManaCost.empty) (tap := true)])
 
 def subterraneanCavern : CardDef :=
   card "Subterranean Cavern" #[.land] (ManaCost.empty)
     (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}.")
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.catalog "Add {B} or {G}") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.msh .addBOrG) (ManaCost.empty) (tap := true)])
 
 def surveillanceRoom : CardDef :=
   card "Surveillance Room" #[.land] (ManaCost.empty)
     (oracleText := "When this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color.")
     (tapAddMana := #[.colorless])
-    (triggeredAbilities := #[mshTrig "When this land enters, surveil 1."])
+    (triggeredAbilities := #[mshTrig .whenThisLandEnters])
     (activatedAbilities := #[activated (.addAnyColor) ({ symbols := #[.generic 1] }) (tap := true)])
 
 def trainingCompound : CardDef :=
   card "Training Compound" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land") (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[mshAct .addROrGActivateOnlyIfThisLandEnter (tap := true)])
 
 def villainousHideout : CardDef :=
   card "Villainous Hideout" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.catalog "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source") (ManaCost.empty) (tap := true), activated (.catalog "Target Villain you control connives") ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly2) (ManaCost.empty) (tap := true), activated (.mshSpell .targetVillainYouControlConnives) ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
 
 /-- All unique MSH card names, including both faces of transforming cards
 and the five basic lands printed in the set. -/

@@ -12846,6 +12846,7 @@ def loreAfterFirstMain : Game :=
 #guard mshCards.size == 286
 #guard mshCards.all (·.matchesOracleText)
 #guard !mshCards.any usesPrintedStub
+#guard !mshCards.any usesCatalogStub
 #guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
 #guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
@@ -12925,6 +12926,30 @@ def teamworkPaidStrike : Game :=
 
 #guard (namedPermanent teamworkPaidStrike "Grizzly Bears").status.tapped
 #guard teamworkPaidStrike.log.any (fun s => mentions s "pays a teamwork cost")
+
+/-- Okoye creates two 1/1 white Soldier tokens on enter. -/
+def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
+
+#guard
+  (okoyeSoldiers.battlefield.filter (fun o =>
+    o.name == "Soldier" && o.printed.isToken)).size == 2
+#guard !usesCatalogStub okoyeDoraMilajeLeader
+#guard !usesPrintedStub okoyeDoraMilajeLeader
+
+/-- Black Panther draws when he deals combat damage. -/
+def pantherCombatDraw : Game :=
+  let g := addPermanent afterDraw blackPantherHopeEnduring ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Black Panther, Hope Enduring"
+  let g := g.setObject { o with status := { o.status with
+    attacking := true, summoningSick := false } }
+  settle g.combatDamage 24
+
+#guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
+#guard pantherCombatDraw.log.any (fun s => mentions s "draws")
+
+/-- Daredevil looks at the library top; that is a field, not a catalog stub. -/
+#guard daredevilManWithoutFear.mayLookAtTopAnytime
+#guard !usesCatalogStub daredevilManWithoutFear
 
 end Mtg.Engine.Tests
 

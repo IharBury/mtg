@@ -75,7 +75,7 @@ def stripAbilityWord (s : String) : String :=
         h == "Do You Like Squirrels?" || h == "I LOVE Squirrels!" ||
         h == "Net" || h == "Explosive" || h == "Boomerang" ||
         h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
-        h == "Trick Arrows"
+        h == "Trick Arrows" || h == "Radar Sense"
       if h.isEmpty || (h.contains ' ' && !known) then s
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
@@ -152,6 +152,8 @@ def prepareLine (cardName : String) (s : String) : String :=
     ("this card", "this"),
     ("this spell", "this"),
     ("this land", "this"),
+    ("this vehicle", "this"),
+    ("this saga", "this"),
     ("this enter ", "this enters "),
     ("this enter,", "this enters,")
   ]
@@ -195,6 +197,8 @@ def normalizePhrases (s : String) : String :=
     ("he deals", "this deals"),
     ("she deals", "this deals"),
     ("it deals", "this deals"),
+    ("she connives", "it connives"),
+    ("he connives", "it connives"),
     ("and only once each turn", "activate only once each turn"),
     ("activate only from the graveyard", ""),
     ("activate only from your hand", ""),
@@ -364,6 +368,22 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           if t.endsWith "." then t else s!"{t}."
         else
           activatedOracleLineFromParts ab
+      | .msh t =>
+        let text := t.toNotation.trimAscii.copy
+        if text.contains ':' &&
+            (text.startsWith "{" || text.startsWith "Pay " ||
+              text.startsWith "Sacrifice" || text.contains "—") then
+          if text.endsWith "." then text else s!"{text}."
+        else
+          activatedOracleLineFromParts ab
+      | .mshSpell t =>
+        let text := t.toNotation.trimAscii.copy
+        if text.contains ':' &&
+            (text.startsWith "{" || text.startsWith "Pay " ||
+              text.startsWith "Sacrifice" || text.contains "—") then
+          if text.endsWith "." then text else s!"{text}."
+        else
+          activatedOracleLineFromParts ab
       | _ => activatedOracleLineFromParts ab
 
 /-- Oracle-style line for a one-shot spell effect. -/
@@ -474,8 +494,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
    | some cost => [s!"Flashback {cost}"]
    | none => []) ++
   (if c.entersTapped then
-    [if c.hasSupertype .legendary then s!"{c.name} enters tapped."
-     else "This land enters tapped."]
+    [if c.hasSupertype .legendary || (!c.isLand && c.isCreature) then
+      s!"{c.name} enters tapped."
+     else if c.isLand then "This land enters tapped."
+     else if c.isArtifact then "This artifact enters tapped."
+     else "This creature enters tapped."]
    else []) ++
   (if c.entersTappedUnlessLegendary then
     [if c.hasSupertype .legendary then
@@ -519,6 +542,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.mayCastCreaturesFromTop then
     ["You may cast creature spells from the top of your library."]
    else []) ++
+  (if c.mayPlayLandsFromTop then
+    ["You may play lands from the top of your library."]
+   else []) ++
   (if c.grantCreaturesTapAddAnyColor then
     ["Creatures you control have \"{T}: Add one mana of any color.\""]
    else []) ++
@@ -561,7 +587,9 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   c.activatedAbilities.toList.map activatedOracleLine ++
   (if !c.spellModes.isEmpty then
-    let modes := String.intercalate "; " (c.spellModes.toList.map (spellEffectLine c.name))
+    let modes :=
+      String.intercalate " " (c.spellModes.toList.map (fun e =>
+        s!"• {spellEffectLine c.name e}"))
     [match c.chooseTwoIfYouControlSubtype, c.chooseBothIfTeamwork, c.chooseOneOrBoth with
      | some t, _, _ =>
        s!"Choose one. If you control a {t} as you cast this spell, you may choose two instead. {modes}"
@@ -594,6 +622,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
         "Draw a card."]
     | some (.catalog text) =>
       text.splitOn "\n" |>.filter (fun s => !s.trimAscii.copy.isEmpty)
+    | some (.msh t) =>
+      t.toNotation.splitOn "\n" |>.filterMap (fun s =>
+        let s := s.trimAscii.copy
+        if s.isEmpty then none
+        else some (if s.startsWith "deals" then s!"{c.name} {s}" else s))
     | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
@@ -687,6 +720,35 @@ def usesPrintedStub (c : CardDef) : Bool :=
       | .printed _ => true
       | _ => false))
 
+/-- True when a catalog card still stores leftover Oracle as `.catalog`. -/
+def usesCatalogStub (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .catalog _ => true
+    | _ => false) ||
+  c.triggeredAbilities.any (fun
+    | .catalog _ => true
+    | _ => false) ||
+  (match c.spellEffect with
+   | some (.catalog _) => true
+   | _ => false) ||
+  c.spellModes.any (fun
+    | .catalog _ => true
+    | _ => false) ||
+  (match c.saga with
+   | some s => s.chapters.any (fun ch =>
+     match ch.chapterEffect with
+     | some (.catalog _) => true
+     | some (.spell (.catalog _)) => true
+     | _ => false)
+   | none => false) ||
+  c.activatedAbilities.any (fun ab =>
+    (match ab.effect with
+     | .catalog _ => true
+     | _ => false) ||
+    ab.otherModes.any (fun
+      | .catalog _ => true
+      | _ => false))
+
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
   supportedCatalogCards.all (·.matchesOracleText)
@@ -726,5 +788,6 @@ def supportedOracleFailures : List String :=
 #guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
 #guard !supportedCatalogCards.any usesPrintedStub
+#guard !supportedCatalogCards.any usesCatalogStub
 
 end Mtg.Engine
