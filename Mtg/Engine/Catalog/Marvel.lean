@@ -1283,8 +1283,8 @@ def mjLnirHammerOfThor : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)\n{2}{R}, Discard this card: It deals 2 damage to each creature.")
     (triggeredAbilities := #[mshTrig .whenMjLnirEnters])
-    (staticAbilities := #[mshStatic .doubleAllDamageEquippedCreatureWouldDeal, mshStatic .equipWorthy1])
-    (activatedAbilities := #[mshAct .n2RDiscardThisCard])
+    (staticAbilities := #[mshStatic .doubleAllDamageEquippedCreatureWouldDeal])
+    (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1), mshAct .n2RDiscardThisCard])
 
 def photonBlastBarrage : CardDef :=
   card "Photon Blast Barrage" #[.sorcery] ({ symbols := #[.x, .colored .red, .colored .red] })

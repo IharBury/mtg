@@ -119,13 +119,26 @@ def manaValue (cost : ManaCost) : Nat :=
 def includesManaPayment (cost : ManaCost) : Bool :=
   cost.manaValue > 0
 
-/-- How many mana symbols of color `c` appear in this cost. -/
+/-- How many dedicated `{C}` mana symbols of color `c` appear in this cost.
+Hybrid symbols are not counted; use `symbolsIncludingColor` for Zemo's
+boast and similar “black mana symbols” checks (MSH 128). -/
 def coloredCount (cost : ManaCost) (c : Color) : Nat :=
   cost.symbols.foldl
     (fun n s =>
       match s with
       | .colored d => if d == c then n + 1 else n
       | .generic _ | .colorless | .hybrid _ _ | .x => n)
+    0
+
+/-- How many mana symbols include color `c`, counting `{c}` and `{c/x}`
+hybrids (CR 107.4e / MSH 128). -/
+def symbolsIncludingColor (cost : ManaCost) (c : Color) : Nat :=
+  cost.symbols.foldl
+    (fun n s =>
+      match s with
+      | .colored d => if d == c then n + 1 else n
+      | .hybrid a b => if a == c || b == c then n + 1 else n
+      | .generic _ | .colorless | .x => n)
     0
 
 /-- Color of an object from the colored mana symbols in its mana cost (CR 202.2). -/
@@ -662,6 +675,10 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
     p.usable (.colored .green) true == 1
 #guard (ManaCost.ofGenericAndColor 1 .green).coloredCount .green == 1
 #guard (ManaCost.ofGenericAndColor 1 .green).coloredCount .red == 0
+#guard (ManaCost.ofHybrid .black .red).coloredCount .black == 0
+#guard (ManaCost.ofHybrid .black .red).symbolsIncludingColor .black == 1
+#guard (ManaCost.ofHybrid .black .red).symbolsIncludingColor .red == 1
+#guard (ManaCost.ofHybrid .black .red).symbolsIncludingColor .green == 0
 #guard toString (ManaPool.empty.add (.colored .green) 2 (elfRestricted := true)) ==
   "{G}×2 (Elf)"
 #guard

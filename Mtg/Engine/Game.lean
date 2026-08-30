@@ -4961,6 +4961,22 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
   let kind := (g.targetingOf o).kind
   let slot := kind.slotKind (g.currentTargetSlot o)
   let legal := (g.legalTargetsForKind p slot o.sourceId).filter (fun t => !already.contains t)
+  let legal :=
+    match g.proposedSpell with
+    | some prop =>
+      if prop.spellId == o.id &&
+          prop.kind == .activatedAbility &&
+          (prop.activation.any (·.equipWorthy) ||
+            prop.original.printed.hasEquipWorthy) then
+        legal.filter (fun t =>
+          match t with
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some c => c.printed.isWorthy
+            | none => false
+          | _ => false)
+      else legal
+    | none => legal
   if kind == .twoNonlandsSharingType then
     match already[0]? with
     | some (Target.permanent id) =>
@@ -5026,9 +5042,20 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
 require one. Equip restricted to a creature subtype uses that targeting
 shape rather than “any creature you control” (CR 702.6 / 601.2c). -/
 def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility) : Bool :=
-  match ab.equipSubtype with
-  | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t)).isEmpty
-  | none => ab.allModes.any (g.modeIsChoosable p)
+  if ab.equipWorthy then
+    let worthy :=
+      (g.legalTargetsForKind p .creatureYouControl).filter (fun t =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some c => c.printed.isWorthy
+          | none => false
+        | _ => false)
+    !worthy.isEmpty
+  else
+    match ab.equipSubtype with
+    | some t => !(g.legalTargetsForKind p (.creatureYouControlSubtype t)).isEmpty
+    | none => ab.allModes.any (g.modeIsChoosable p)
 
 /-- Last target in `legal` matching `pred`. -/
 def lastLegalTarget (legal : Array Target) (pred : Target → Bool) : Option Target :=
@@ -9283,6 +9310,25 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
         g.logMsg s!"{(g.player owner).name} may search for a basic land"
       | none => g
     else g
+
+/-- Black mana symbols among `ids` for Zemo's boast, counting hybrid symbols
+that include black (MSH 128). -/
+def zemoBoastBlackSymbols (g : Game) (ids : Array ObjectId) : Nat :=
+  ids.foldl (fun n id =>
+    match g.findObject? id with
+    | some o => n + o.printed.manaCost.symbolsIncludingColor .black
+    | none => n) 0
+
+/-- True when `ids` are black cards in `p`'s graveyard whose mana costs have
+fifteen or more black mana symbols, including `{B/x}` hybrids (MSH 128). -/
+def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) : Bool :=
+  !ids.isEmpty &&
+    ids.all (fun id =>
+      match g.findObject? id with
+      | some o =>
+        o.zone == .graveyard p && o.printed.colors.contains .black
+      | none => false) &&
+    g.zemoBoastBlackSymbols ids >= 15
 
 /-- Baron Helmut Zemo boast: copy only the cards exiled to this activation
 (MSH 227). Copies are cast while the ability is resolving (MSH 353). -/

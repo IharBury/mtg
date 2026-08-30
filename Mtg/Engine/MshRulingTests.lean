@@ -275,10 +275,22 @@ def mdfcFrontFacePutOk : Bool :=
 
 #guard mdfcFrontFacePutOk
 
-/-- Ruling 14 / 18 / 19: reminder icons and Commander color identity do not
-change battlefield characteristics. -/
+/-- Ruling 14 / 18 / 19: reminder icons have no rules; Commander color
+identity of an MDFC is both faces combined, and that does not change the
+front face's battlefield color. -/
 def mdfcReminderOk : Bool :=
-  (mshRuling 14).comment.contains "icon in the top-left corner" &&
+  let id := bruceBanner.colorIdentity
+  bruceBanner.colors.contains .blue &&
+    !bruceBanner.colors.contains .red &&
+    !bruceBanner.colors.contains .green &&
+    id.contains .blue &&
+    id.contains .red &&
+    id.contains .green &&
+    !theIncredibleHulk.colors.contains .blue &&
+    theIncredibleHulk.faceColorIdentity.contains .red &&
+    theIncredibleHulk.faceColorIdentity.contains .green &&
+    !theIncredibleHulk.faceColorIdentity.contains .blue &&
+    (mshRuling 14).comment.contains "icon in the top-left corner" &&
     (mshRuling 18).comment.contains "color identity" &&
     (mshRuling 19).comment.contains "reminder text has no effect" &&
     (mshRuling 175).comment.contains "only the chosen name"
@@ -634,6 +646,11 @@ def boastEnteredAttackingOk : Bool :=
 def sneakCostOk : Bool :=
   elektraDaughterOfTheHand.sneakCost ==
       some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost) &&
+    !afterDraw.canCastForSneak ⟨0⟩ &&
+    (let g := { afterDraw with step := .declareBlockers, activePlayer := ⟨0⟩ }
+     g.canCastForSneak ⟨0⟩ && !g.canCastForSneak ⟨1⟩) &&
+    (let g := { afterDraw with step := .declareAttackers, activePlayer := ⟨0⟩ }
+     !g.canCastForSneak ⟨0⟩) &&
     (mshRuling 157).comment.contains "enters tapped and attacking" &&
     (mshRuling 284).comment.contains "declare blockers step"
 
@@ -674,9 +691,48 @@ def sneakWrongStepOk : Bool :=
 
 def equipWorthyOk : Bool :=
   mjLnirHammerOfThor.hasEquipWorthy &&
+    mjLnirHammerOfThor.activatedAbilities[0]!.equipWorthy &&
     captainAmericaSuperSoldier.isWorthy &&
     !elektraDaughterOfTheHand.isWorthy &&
+    !lokiGodOfMischief.isWorthy &&
     !grizzlyBears.isWorthy &&
+    (let ab := mjLnirHammerOfThor.activatedAbilities[0]!
+     let gCap := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+     let gCap := addPermanent gCap captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+     let gCap := withRedMana gCap ⟨0⟩ 1
+     let gLoki := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+     let gLoki := addPermanent gLoki lokiGodOfMischief ⟨0⟩ ⟨0⟩
+     let gLoki := withRedMana gLoki ⟨0⟩ 1
+     gCap.canActivate ⟨0⟩ (namedPermanent gCap "Mjölnir, Hammer of Thor") ab &&
+       !gLoki.canActivate ⟨0⟩ (namedPermanent gLoki "Mjölnir, Hammer of Thor") ab &&
+       (let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+        let g := addPermanent g captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+        let g := addPermanent g lokiGodOfMischief ⟨0⟩ ⟨0⟩
+        let g := withRedMana g ⟨0⟩ 1
+        let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
+        let cap := namedPermanent g "Captain America, Super-Soldier"
+        let loki := namedPermanent g "Loki, God of Mischief"
+        let gEq := mustApply g ⟨0⟩ (.activate hammer.id 0)
+        match gEq.pending, gEq.objectAwaitingTargets with
+        | .chooseTargets ⟨0⟩, some awaiting =>
+          let legal := gEq.legalProposedTargets ⟨0⟩ awaiting
+          legal.contains (Target.permanent cap.id) &&
+            !legal.contains (Target.permanent loki.id) &&
+            (match gEq.apply ⟨0⟩ (.target (Target.permanent loki.id)) with
+             | .error msg => mentions msg "Illegal target"
+             | .ok _ => false)
+        | _, _ => false) &&
+       (let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+        let g := addPermanent g lokiGodOfMischief ⟨0⟩ ⟨0⟩
+        let g := addPermanent g superSoldierSerum ⟨0⟩ ⟨0⟩
+        let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
+        let loki := namedPermanent g "Loki, God of Mischief"
+        let serum := namedPermanent g "Super-Soldier Serum"
+        let g := g.attachSourceTo serum loki
+        let g := g.applyMshTrigger ⟨0⟩ .wheneverEnchantedCreatureAttacksOrBlocks
+          (some (namedPermanent g "Super-Soldier Serum").id)
+          #[Target.permanent hammer.id]
+        (namedPermanent g "Mjölnir, Hammer of Thor").attachedTo == some loki.id)) &&
     (mshRuling 118).comment.contains "isn't worthy" &&
     (mshRuling 119).comment.contains "Equip worthy"
 
@@ -900,14 +956,34 @@ def copiesYouDontCastCeaseOk : Bool :=
 #guard copiesYouDontCastCeaseOk
 
 def hybridBlackCountsOk : Bool :=
-  let n :=
-    bullseyeDeathDealer.manaCost.symbols.foldl (fun acc s =>
-      match s with
-      | .colored .black => acc + 1
-      | .hybrid a b =>
-        acc + (if a == .black || b == .black then 1 else 0)
-      | _ => acc) 0
-  n == 1 &&
+  bullseyeDeathDealer.manaCost.symbolsIncludingColor .black == 1 &&
+    ghostSpectralSaboteur.manaCost.symbolsIncludingColor .black == 1 &&
+    baronHelmutZemo.manaCost.symbolsIncludingColor .black == 3 &&
+    lightningBolt.manaCost.symbolsIncludingColor .black == 0 &&
+    (let g15 :=
+      (List.range 15).foldl (fun g _ => addToGraveyard g bullseyeDeathDealer ⟨0⟩)
+        afterDraw
+     let ids15 :=
+       g15.objects.filter (fun o =>
+         o.name == "Bullseye, Death Dealer" && o.zone == .graveyard ⟨0⟩) |>.map (·.id)
+     g15.canPayZemoBoast ⟨0⟩ ids15 &&
+       g15.zemoBoastBlackSymbols ids15 == 15) &&
+    (let g14 :=
+      (List.range 14).foldl (fun g _ => addToGraveyard g bullseyeDeathDealer ⟨0⟩)
+        afterDraw
+     let ids14 :=
+       g14.objects.filter (fun o =>
+         o.name == "Bullseye, Death Dealer" && o.zone == .graveyard ⟨0⟩) |>.map (·.id)
+     !g14.canPayZemoBoast ⟨0⟩ ids14 &&
+       g14.zemoBoastBlackSymbols ids14 == 14) &&
+    (let gMix := addToGraveyard afterDraw lightningBolt ⟨0⟩
+     let gMix :=
+       (List.range 14).foldl (fun g _ => addToGraveyard g bullseyeDeathDealer ⟨0⟩)
+         gMix
+     let idsMix :=
+       gMix.objects.filter (fun o =>
+         o.zone == .graveyard ⟨0⟩) |>.map (·.id)
+     !gMix.canPayZemoBoast ⟨0⟩ idsMix) &&
     (mshRuling 128).comment.contains "Hybrid mana symbols that include black"
 
 #guard hybridBlackCountsOk

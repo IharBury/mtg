@@ -2337,6 +2337,9 @@ structure ActivatedAbility where
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
+  /-- Equip worthy: attach only to a legendary non-Villain red or white
+  creature (MSH 118 / 119). Other attach effects ignore this. -/
+  equipWorthy : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -6518,6 +6521,24 @@ def colors (c : CardDef) : ColorSet :=
   | some cs => cs
   | none => c.manaCost.colors
 
+/-- Commander color identity of this face: mana cost, color indicator, and
+basic land types (CR 903.4). Does not look at the other face. -/
+def faceColorIdentity (c : CardDef) : ColorSet :=
+  let fromCost :=
+    match c.colorIndicator with
+    | some cs => c.manaCost.colors.union cs
+    | none => c.manaCost.colors
+  c.subtypes.foldl (fun acc s =>
+    match manaForBasicLandType s with
+    | some col => acc.insert col
+    | none => acc) fromCost
+
+/-- Combined color identity of both faces of a DFC (CR 903.4 / MSH 18). -/
+def colorIdentity (c : CardDef) : ColorSet :=
+  match c.otherFace with
+  | none => c.faceColorIdentity
+  | some back => c.faceColorIdentity.union back.faceColorIdentity
+
 /-- True when `t` is among this card's types. -/
 def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
 
@@ -7376,7 +7397,8 @@ def isWorthy (c : CardDef) : Bool :=
 def hasEquipWorthy (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
     | .msh .equipWorthy1 => true
-    | _ => false)
+    | _ => false) ||
+    c.activatedAbilities.any (·.equipWorthy)
 
 end CardDef
 
