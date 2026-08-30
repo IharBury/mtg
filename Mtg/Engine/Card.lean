@@ -332,6 +332,12 @@ inductive EffectTargetKind where
   | enchantmentMvAtLeast (n : Nat)
   /-- Target noncreature artifact. -/
   | noncreatureArtifact
+  /-- An activated or triggered ability you control from a creature source
+  (Echo; MSH 74). -/
+  | stackAbilityFromCreatureSource
+  /-- An activated or triggered ability you control from an artifact source
+  (Scientist Supreme of A.I.M.; MSH 87). -/
+  | stackAbilityFromArtifactSource
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -504,6 +510,12 @@ def spec : EffectTargetKind → Spec
     { noun := s!"target enchantment with mana value {n} or greater" }
   | .noncreatureArtifact =>
     { noun := "target noncreature artifact" }
+  | .stackAbilityFromCreatureSource =>
+    { noun := "target activated or triggered ability you control from a creature source",
+      stackSpell := true }
+  | .stackAbilityFromArtifactSource =>
+    { noun := "target activated or triggered ability you control from an artifact source",
+      stackSpell := true }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -2077,7 +2089,12 @@ def spec : AbilityEffect → AbilityMeta
   | .msh t =>
     { resolution := .msh t }
   | .mshSpell t =>
-    { resolution := .mshSpell t }
+    match t with
+    | .copyTargetActivatedOrTriggeredAbilityYouC =>
+      { targeting := .of .stackAbilityFromCreatureSource,
+        resolution := .mshSpell t }
+    | _ =>
+      { resolution := .mshSpell t }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting

@@ -3733,6 +3733,22 @@ def stackSpells (g : Game) (pred : GameObject → Bool := fun _ => true) : Array
 def legalStackSpellTargets (g : Game) (pred : GameObject → Bool) : Array Target :=
   g.stackSpells pred |>.map (fun o => Target.card o.id)
 
+/-- Stack abilities `caster` controls whose source matches `sourcePred`.
+Used for Echo and Scientist Supreme (MSH 74 / 87). -/
+def legalStackAbilityTargets (g : Game) (caster : PlayerId)
+    (sourcePred : GameObject → Bool) : Array Target :=
+  g.stack.filterMap (fun e =>
+    match g.findObject? e.objectId with
+    | none => none
+    | some o =>
+      if o.zone == .stack && o.controlledBy caster &&
+          (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
+        match o.sourceId.bind g.findObject? with
+        | some src =>
+          if sourcePred src then some (Target.card o.id) else none
+        | none => none
+      else none)
+
 /-- Whether this target is a spell on the stack that `p` controls. -/
 def isOwnStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
   | .card oid =>
@@ -3867,6 +3883,10 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .noncreatureArtifact =>
     g.legalPermanentTargets caster (fun o =>
       o.isOnBattlefield && o.printed.isArtifact && !o.isCreature)
+  | .stackAbilityFromCreatureSource =>
+    g.legalStackAbilityTargets caster (fun src => src.printed.isCreature)
+  | .stackAbilityFromArtifactSource =>
+    g.legalStackAbilityTargets caster (fun src => src.printed.isArtifact)
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -9196,6 +9216,10 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     g.draw controller 4
   else if text.contains "Draw two cards" || text.contains "Draw a card" then
     g.draw controller (if text.contains "two" then 2 else 1)
+  else if text.contains "creature sources" then
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .green) 2 (creatureRestricted := true) })
   else if text.contains "Add " && text.contains "Hero" then
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=

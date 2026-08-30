@@ -974,8 +974,31 @@ def totalCostIncludesAdditionalOk : Bool :=
 #guard totalCostIncludesAdditionalOk
 
 def creatureAndArtifactSourceOk : Bool :=
-  echoPerceptiveProdigy.isCreature &&
-    scientistSupremeOfAIM.isCreature &&
+  let g := addPermanent afterDraw echoPerceptiveProdigy ⟨0⟩ ⟨0⟩
+  let g := addPermanent g shangChiMasterOfKungFu ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let stone := namedPermanent g "The Mind Stone"
+  let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
+  let (g, bearAb) := g.putStackAbility bears ⟨0⟩ (abilityEffect := some (.draw 1))
+  let (g, stoneAb) := g.putStackAbility stone ⟨0⟩ (abilityEffect := some (.draw 1))
+  let creatureLegal :=
+    g.legalTargetsForKind ⟨0⟩ .stackAbilityFromCreatureSource
+  let artifactLegal :=
+    g.legalTargetsForKind ⟨0⟩ .stackAbilityFromArtifactSource
+  let gMana :=
+    g.applyMshAbility ⟨0⟩ .addTwoManaOfAnyOneColorSpendThisManaO #[] (some shang.id)
+  let pool := (gMana.player ⟨0⟩).manaPool
+  creatureLegal.contains (Target.card bearAb.id) &&
+    !creatureLegal.contains (Target.card stoneAb.id) &&
+    artifactLegal.contains (Target.card stoneAb.id) &&
+    !artifactLegal.contains (Target.card bearAb.id) &&
+    echoPerceptiveProdigy.activatedAbilities[0]!.effect.targetKind ==
+      .stackAbilityFromCreatureSource &&
+    pool.creatureGreen == 2 &&
+    !pool.canPay (ManaCost.ofGeneric 2) &&
+    pool.canPay (ManaCost.ofGeneric 2) false false false false false true &&
     (mshRuling 74).comment.contains "creature source" &&
     (mshRuling 75).comment.contains "creature" &&
     (mshRuling 87).comment.contains "artifact source"
