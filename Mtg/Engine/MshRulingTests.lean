@@ -135,7 +135,8 @@ def teamworkNotPaidWhenNotCastOk : Bool :=
 additional costs such as teamwork. -/
 def teamworkOptionalOnFreeCastOk : Bool :=
   (mshRuling 5).comment.contains "without paying its mana cost" &&
-    helicarrierStrike.teamwork.isSome
+    helicarrierStrike.teamwork.isSome &&
+    (mshRuling 230).comment.contains "teamwork costs"
 
 #guard teamworkOptionalOnFreeCastOk
 
@@ -573,7 +574,9 @@ def improviseAlreadyTappedOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
   let g := g.setObject { tok with status := { tok.status with tapped := true } }
   match g.tapArtifactsForImprovise ⟨0⟩ #[tok.id] with
-  | .error msg => msg.contains "already tapped"
+  | .error msg =>
+    msg.contains "already tapped" &&
+      (mshRuling 45).comment.contains "won't be able to tap it again"
   | .ok _ => false
 
 #guard improviseAlreadyTappedOk
@@ -3067,7 +3070,12 @@ def castTriggerBeforeSpellOk : Bool :=
     (mshRuling 282).comment.contains "resolves before the spell" &&
     (mshRuling 285).comment.contains "resolves before the spell" &&
     (mshRuling 311).comment.contains "resolves before the spell" &&
-    (mshRuling 339).comment.contains "resolves before the spell"
+    (mshRuling 339).comment.contains "resolves before the spell" &&
+    (mshRuling 239).comment.contains "resolves before the spell" &&
+    (mshRuling 247).comment.contains "resolves before the ability" &&
+    (mshRuling 248).comment.contains "resolves before the spell" &&
+    (mshRuling 250).comment.contains "resolves before the spell" &&
+    (mshRuling 251).comment.contains "resolves before the spell"
 
 #guard castTriggerBeforeSpellOk
 
@@ -3111,6 +3119,580 @@ def wreckingCrewModesOnceOk : Bool :=
     (mshRuling 348).comment.contains "can't choose the same mode"
 
 #guard wreckingCrewModesOnceOk
+
+/-- Ruling 59: tapping an artifact does not turn off its static abilities. -/
+def improviseStaticsWhileTappedOk : Bool :=
+  let g := addPermanent afterDraw ironheartCleverChampion ⟨0⟩ ⟨0⟩
+  let ih := namedPermanent g "Ironheart, Clever Champion"
+  let g := g.mapObjectStatus ih (fun s => { s with tapped := true })
+  g.spellHasImprovise helicarrierStrike ⟨0⟩ &&
+    (namedPermanent g "Ironheart, Clever Champion").status.tapped &&
+    (mshRuling 59).comment.contains "won't cause its abilities to stop"
+
+#guard improviseStaticsWhileTappedOk
+
+/-- Ruling 229: tap an artifact for improvise, then it can still be
+sacrificed as an additional cost. -/
+def improviseThenSacrificeOk : Bool :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
+  match g.tapArtifactsForImprovise ⟨0⟩ #[tok.id] with
+  | .ok g =>
+    (g.object! tok.id).status.tapped &&
+      (g.object! tok.id).isOnBattlefield &&
+      (mshRuling 229).comment.contains "tap that permanent"
+  | .error _ => false
+
+#guard improviseThenSacrificeOk
+
+/-- Ruling 57: a Two-Headed Giant teammate's life gain is not "you gain life". -/
+def twoHeadedGiantTeammateLifeOk : Bool :=
+  let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with teammate := some ⟨1⟩ })
+  let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with teammate := some ⟨0⟩ })
+  let g := g.gainLife ⟨1⟩ 3
+  !(g.waitingTriggers.any (fun (t : WaitingTrigger) =>
+      t.source.name == "Tigra, Feline Fury")) &&
+    (mshRuling 57).comment.contains "Two-Headed Giant"
+
+#guard twoHeadedGiantTeammateLifeOk
+
+/-- Ruling 236: controlling a player in Two-Headed Giant controls the team. -/
+def twoHeadedGiantControlTeamOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨1⟩ (fun pl => { pl with teammate := some ⟨0⟩ })
+  let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
+  g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
+    g.log.any (fun s => mentions s "Two-Headed Giant") &&
+    (mshRuling 236).comment.contains "gain control of each player"
+
+#guard twoHeadedGiantControlTeamOk
+
+/-- Ruling 106 / 239: each targeting spell grants Iron Fist another tap
+ability; the trigger waits above the spell. -/
+def ironFistMultipleGrantsOk : Bool :=
+  let g := addPermanent afterDraw ironFistLivingWeapon ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let fist := namedPermanent g "Iron Fist, Living Weapon"
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouCastASpellThatTargetsACreatur
+    (some fist.id)
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouCastASpellThatTargetsACreatur
+    (some fist.id)
+  (namedPermanent g "Iron Fist, Living Weapon").status.ironFistTapGrants == 2 &&
+    (mshRuling 106).comment.contains "multiple instances"
+
+#guard ironFistMultipleGrantsOk
+
+/-- Ruling 170: an Aura returns without targeting and can attach through
+hexproof. -/
+def mindStoneAuraReturnOk : Bool :=
+  let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
+  let g := addPermanent g superSoldierSerum ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let aura := namedPermanent g "Super-Soldier Serum"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.mapObjectStatus bears (·.grantUntilEot Keyword.hexproof)
+  let (g, _) := g.move aura.id .exile none
+  let ex :=
+    (g.objects.find? (fun o => o.name == "Super-Soldier Serum" && o.zone == .exile)).getD aura
+  let g := g.returnExiledId ex.id
+  let aura := namedPermanent g "Super-Soldier Serum"
+  aura.attachedTo == some (namedPermanent g "Grizzly Bears").id &&
+    g.log.any (fun s => mentions s "does not target") &&
+    (mshRuling 170).comment.contains "doesn't target anything"
+
+#guard mindStoneAuraReturnOk
+
+/-- Rulings 177 / 178 / 179 / 237: Mjölnir doubles after assignment; two
+hammers multiply by four; prevention of all damage skips both Mjölnir and
+Hawkeye's extra. -/
+def mjolnirDoubleOk : Bool :=
+  let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
+  let ogre := namedPermanent g "Gray Ogre"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.attachSourceTo hammer ogre
+  let gHit := g.dealDamageFrom ogre.name bears 2 (source := some (namedPermanent g "Gray Ogre"))
+  (namedPermanent gHit "Grizzly Bears").status.damage == 4 &&
+    (let g := addPermanent g mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+     let hammers := g.battlefield.filter (fun o => o.name == "Mjölnir, Hammer of Thor")
+     let ogre := namedPermanent g "Gray Ogre"
+     let g :=
+       hammers.foldl (fun acc h => acc.attachSourceTo (acc.object! h.id) ogre) g
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.dealDamageFrom ogre.name bears 2 (source := some (namedPermanent g "Gray Ogre"))
+     (namedPermanent g "Grizzly Bears").status.damage == 8) &&
+    (let gPrev := g.mapObjectStatus ogre (fun s =>
+        { s with preventDamageGrantedBy := #[ogre.id] })
+     let gPrev := gPrev.dealDamageFrom ogre.name (namedPermanent gPrev "Grizzly Bears") 2
+       (source := some (namedPermanent gPrev "Gray Ogre"))
+     (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
+       gPrev.log.any (fun s => mentions s "prevented")) &&
+    (mshRuling 177).comment.contains "chooses the order" &&
+    (mshRuling 178).comment.contains "chooses an order" &&
+    (mshRuling 179).comment.contains "divided or assigned before doubling" &&
+    (mshRuling 237).comment.contains "multiplied by four"
+
+#guard mjolnirDoubleOk
+
+/-- Ruling 179: combat assignment is doubled after the split. -/
+def mjolnirCombatDivideOk : Bool :=
+  let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
+  let ogre := namedPermanent g "Gray Ogre"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.attachSourceTo hammer ogre
+  let g := g.setObject { ogre with status :=
+    { ogre.status with attacking := true, blocked := true, attackingWhom := some ⟨1⟩ } }
+  let g := { g with assignedCombatDamage :=
+    #[{ source := ogre.id, toCreatures := #[(bears.id, 2)], toPlayer := 3 }] }
+  let g := g.dealAssignedCombatDamage
+  (namedPermanent g "Grizzly Bears").status.damage == 4 &&
+    (g.player ⟨1⟩).life == 20 - 6
+
+#guard mjolnirCombatDivideOk
+
+/-- Ruling 204: a creature not controlled by the target opponent is illegal,
+but the ability may still reveal. -/
+def cloakIllegalCreatureStillResolvesOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g := addPermanent g cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let cloak := namedPermanent g "Cloak and Dagger, Entwined"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyMshTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cloak.id)
+    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  logContains g "illegal target" &&
+    onBattlefield g "Grizzly Bears" &&
+    (mshRuling 204).comment.contains "illegal target"
+
+#guard cloakIllegalCreatureStillResolvesOk
+
+/-- Ruling 234: a card exiled from hand returns to hand when Cloak leaves. -/
+def cloakReturnToHandOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g := addPermanent g cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
+  let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
+  let cloak := namedPermanent g "Cloak and Dagger, Entwined"
+  let g := g.exileUntilSourceLeaves (some cloak.id) bolt
+  let (g, _) := g.move cloak.id (.graveyard ⟨0⟩) none
+  (g.handObjects ⟨1⟩).any (fun o => o.name == "Lightning Bolt") &&
+    (mshRuling 234).comment.contains "returns to their hand"
+
+#guard cloakReturnToHandOk
+
+/-- Ruling 205: if the enchanted creature left, Serum does not move Equipment. -/
+def serumHostLeftOk : Bool :=
+  let g := addPermanent afterDraw superSoldierSerum ⟨0⟩ ⟨0⟩
+  let g := addPermanent g vibraniumEnergyDaggers ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let eq := namedPermanent g "Vibranium Energy Daggers"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.attachSourceTo eq ogre
+  let serum := namedPermanent g "Super-Soldier Serum"
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverEnchantedCreatureAttacksOrBlocks
+    (some serum.id) #[Target.permanent eq.id]
+  (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
+    logContains g "Equipment stays" &&
+    (mshRuling 205).comment.contains "remain attached"
+
+#guard serumHostLeftOk
+
+/-- Ruling 206: if either fight target is illegal, HULK SMASH deals no damage. -/
+def hulkSmashIllegalFizzleOk : Bool :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let ogre := namedPermanent g "Gray Ogre"
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, _) := g.move bears.id (.graveyard ⟨1⟩) none
+  let g := g.applyEffect ⟨0⟩ .creatureYouControlDealsPowerToOppCreature
+    #[Target.permanent ogre.id, Target.permanent bears.id]
+  (namedPermanent g "Gray Ogre").status.damage == 0 &&
+    (mshRuling 206).comment.contains "no damage will be dealt"
+
+#guard hulkSmashIllegalFizzleOk
+
+/-- Ruling 207: an illegal land target fizzles Avengers Disassembled entirely. -/
+def avengersDisassembledFizzleOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let land := namedPermanent g "Forest"
+  let (gGone, _) := g.move land.id (.graveyard ⟨1⟩) none
+  let fizzled := gGone.applyAvengersDisassembled ⟨0⟩ true true (some land.id)
+  (namedPermanent fizzled "Grizzly Bears").status.damage == 0 &&
+    logContains fizzled "doesn't resolve" &&
+    (let gOk := g.applyAvengersDisassembled ⟨0⟩ true true (some land.id)
+     (namedPermanent gOk "Grizzly Bears").status.damage == 3 &&
+       logContains gOk "may search") &&
+    (mshRuling 207).comment.contains "won't resolve"
+
+#guard avengersDisassembledFizzleOk
+
+/-- Ruling 220: Klaw reveals the whole hand if it is smaller than N. -/
+def klawRevealAllOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g := addPermanent g klawSonicSubjugator ⟨0⟩ ⟨0⟩
+  let klaw := namedPermanent g "Klaw, Sonic Subjugator"
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let g := g.applyMshTrigger ⟨0⟩ .sonicAttackWhenKlawEntersTa (some klaw.id)
+    #[Target.player ⟨1⟩]
+  logContains g "reveals 1 card" &&
+    (mshRuling 220).comment.contains "reveal all the cards"
+
+#guard klawRevealAllOk
+
+/-- Ruling 222: Ultron's token becomes a creature only after it enters. -/
+def ultronAfterEnterOk : Bool :=
+  let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
+  let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+  let stone := namedPermanent g "The Mind Stone"
+  let before :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.creatureYouControlEnters)).size
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherNontokenArtifactYouControlE
+    (some (namedPermanent g "Ultron, Artificial Malevolence").id)
+    #[Target.permanent stone.id]
+  let tok :=
+    (g.battlefield.find? (fun o =>
+      o.printed.isToken && o.name == "The Mind Stone")).getD stone
+  tok.isCreature &&
+    g.power tok == 2 &&
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.creatureYouControlEnters)).size == before &&
+    g.log.any (fun s => mentions s "after it enters") &&
+    (mshRuling 222).comment.contains "doesn't become a 2/2"
+
+#guard ultronAfterEnterOk
+
+/-- Rulings 226 / 354: original division stands; an illegal target is skipped. -/
+def deathToOurEnemiesDivisionOk : Bool :=
+  let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let plan := namedPermanent g "Death to Our Enemies"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.queueMshReflexive ⟨0⟩ (some plan.id) 10 7
+  let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
+  let gGone := gGone.applyMshReflexive #[Target.player ⟨1⟩, Target.permanent bears.id]
+  (gGone.player ⟨1⟩).life == 16 &&
+    (mshRuling 226).comment.contains "no damage is dealt to the illegal target" &&
+    (mshRuling 354).comment.contains "Each target must receive at least 1 damage"
+
+#guard deathToOurEnemiesDivisionOk
+
+/-- Rulings 227 / 353: Zemo copies only this activation's exiles and casts
+them while resolving. -/
+def zemoBoastThisActivationOk : Bool :=
+  let g := addToGraveyard afterDraw lightningBolt ⟨0⟩
+  let g := addToGraveyard g helicarrierStrike ⟨0⟩
+  let first := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let g := g.applyZemoBoast ⟨0⟩ #[first.id] 0
+  g.zemoBoastExiles.size == 1 &&
+    (let second := namedGraveyardCard g ⟨0⟩ "Helicarrier Strike"
+     let g2 := g.applyZemoBoast ⟨0⟩ #[second.id] 1
+     g2.zemoBoastExiles.size == 1 &&
+       g2.stack.any (fun e =>
+         (g2.object! e.objectId).name == "Helicarrier Strike") &&
+       g2.log.any (fun s => mentions s "as the ability resolves")) &&
+    (mshRuling 227).comment.contains "copy only the cards exiled" &&
+    (mshRuling 353).comment.contains "while Baron Helmut Zemo's boast ability is resolving"
+
+#guard zemoBoastThisActivationOk
+
+/-- Ruling 228: if every Vision mode was chosen, the ability does nothing. -/
+def visionModesExhaustedOk : Bool :=
+  let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
+  let vis := namedPermanent g "The Vision"
+  let g := g.mapObjectStatus vis (fun s => { s with chosenModes := #[0, 1, 2] })
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell2
+    (some (namedPermanent g "The Vision").id)
+  (g.player ⟨0⟩).hand.size == hand0 &&
+    logContains g "removed from the stack" &&
+    (mshRuling 228).comment.contains "removed from the stack"
+
+#guard visionModesExhaustedOk
+
+/-- Ruling 231: if either Swordsman target is illegal, the Equipment stays. -/
+def swordsmanIllegalOk : Bool :=
+  let g := addPermanent afterDraw swordsmanSharpScoundrel ⟨0⟩ ⟨0⟩
+  let g := addPermanent g vibraniumEnergyDaggers ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let eq := namedPermanent g "Vibranium Energy Daggers"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.attachSourceTo eq ogre
+  let (g, _) := g.move ogre.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters2
+    (some (namedPermanent g "Swordsman, Sharp Scoundrel").id)
+    #[Target.permanent eq.id, Target.permanent ogre.id]
+  (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
+    logContains g "won't move" &&
+    (mshRuling 231).comment.contains "Equipment won't move"
+
+#guard swordsmanIllegalOk
+
+/-- Ruling 232: Hyde's second mode must remove a counter if able. -/
+def hydeMustRemoveOk : Bool :=
+  let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
+  let hyde := namedPermanent g "Mister Hyde, Monster Within"
+  let g := g.addPlusOnePlusOneTo hyde 1
+  let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfYourUpkeep
+    (some (namedPermanent g "Mister Hyde, Monster Within").id) #[]
+    "Mister Hyde, Monster Within" (some (1 : Int))
+  logContains g "must remove a counter" &&
+    (let hyde := namedPermanent g "Mister Hyde, Monster Within"
+     let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfYourUpkeep
+       (some hyde.id) #[Target.permanent hyde.id]
+       "Mister Hyde, Monster Within" (some (1 : Int))
+     (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
+       (g.player ⟨0⟩).hand.size >= 1) &&
+    (mshRuling 232).comment.contains "must remove a counter"
+
+#guard hydeMustRemoveOk
+
+/-- Ruling 233: Human Torch needs another Hero both to trigger and to resolve. -/
+def humanTorchInterveningOk : Bool :=
+  let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
+  let torch := namedPermanent g "Human Torch, Johnny Storm"
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouDrawACard (some torch.id)
+    #[Target.player ⟨1⟩]
+  (g.player ⟨1⟩).life == 20 &&
+    logContains g "has no effect" &&
+    (let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
+     let g := addPermanent g colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
+     let torch := namedPermanent g "Human Torch, Johnny Storm"
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverYouDrawACard (some torch.id)
+       #[Target.player ⟨1⟩]
+     (g.player ⟨1⟩).life == 19) &&
+    (mshRuling 233).comment.contains "won't trigger"
+
+#guard humanTorchInterveningOk
+
+/-- Rulings 235 / 275: the last Reptil ability to resolve sets P/T and types. -/
+def reptilLastResolvesOk : Bool :=
+  let g := addPermanent afterDraw reptilDinomorpher ⟨0⟩ ⟨0⟩
+  let r := namedPermanent g "Reptil, Dinomorpher"
+  let g := g.applyMshSpell ⟨0⟩ .untilEndOfTurnReptilBecomesADinosaurHer #[] (some r.id)
+  let r := namedPermanent g "Reptil, Dinomorpher"
+  g.power r == 3 && g.toughness r == 5 &&
+    r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
+    (let g := g.applyMshAbility ⟨0⟩ .tyrannosaurusRex6UntilEndOfTu #[] (some r.id)
+     let r := namedPermanent g "Reptil, Dinomorpher"
+     g.power r == 6 && g.toughness r == 6 &&
+       r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
+    (mshRuling 235).comment.contains "last one to resolve" &&
+    (mshRuling 275).comment.contains "overwrite all previous effects"
+
+#guard reptilLastResolvesOk
+
+/-- Ruling 241: Iron Man Armor unattaches when it becomes a creature. -/
+def ironManArmorUnattachOk : Bool :=
+  let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let armor := namedPermanent g "Iron Man Armor"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.attachSourceTo armor ogre
+  let armor := namedPermanent g "Iron Man Armor"
+  armor.attachedTo == some ogre.id &&
+    (let g := g.applyMshSpell ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+       (some armor.id)
+     let armor := namedPermanent g "Iron Man Armor"
+     armor.attachedTo.isNone &&
+       armor.isCreature &&
+       armor.hasSubtype "Equipment" &&
+       (mshRuling 241).comment.contains "become unattached")
+
+#guard ironManArmorUnattachOk
+
+/-- Rulings 242 / 323: Iron Man's attack trigger looks for an artifact that
+entered this turn, even if it already left. -/
+def ironManArtifactEnteredOk : Bool :=
+  let g := addPermanent afterDraw ironManMasterOfMachines ⟨0⟩ ⟨0⟩
+  let iron := namedPermanent g "Iron Man, Master of Machines"
+  let gNo := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
+  !(gNo.waitingTriggers.any (fun (t : WaitingTrigger) =>
+      t.source.name == "Iron Man, Master of Machines")) &&
+    (let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+     let stone := namedPermanent g "The Mind Stone"
+     let g := g.afterPermanentEnters stone
+     let (g, _) := g.move stone.id (.graveyard ⟨0⟩) none
+     (g.player ⟨0⟩).artifactEnteredThisTurn &&
+       (let iron := namedPermanent g "Iron Man, Master of Machines"
+        let g := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
+        g.waitingTriggers.any (fun (t : WaitingTrigger) =>
+          t.source.name == "Iron Man, Master of Machines"))) &&
+    (mshRuling 242).comment.contains "artifact entered" &&
+    (mshRuling 323).comment.contains "won't trigger at all"
+
+#guard ironManArtifactEnteredOk
+
+/-- Ruling 252: Wrecking Crew modes run in printed order, so a destroyed
+token is not sacrificed. -/
+def wreckingCrewPrintedOrderOk : Bool :=
+  let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
+  let crew := namedPermanent g "The Ruinous Wrecking Crew"
+  let g := g.mapObjectStatus crew (fun s => { s with chosenModes := #[2, 3] })
+  let g := g.applyMshTrigger ⟨0⟩ .whenTheRuinousWreckingCrewEnters (some crew.id)
+    #[Target.permanent tok.id, Target.permanent tok.id]
+  !g.battlefield.any (fun o => o.id == tok.id) &&
+    g.log.any (fun s => mentions s "can't be sacrificed" || mentions s "destroyed") &&
+    (mshRuling 252).comment.contains "printed order"
+
+#guard wreckingCrewPrintedOrderOk
+
+/-- Rulings 253 / 254: Mole Man lets you play lands from the graveyard at
+normal land-play times, not cycle them. -/
+def moleManPlayLandOk : Bool :=
+  let g := addPermanent afterDraw moleManMoloidMaster ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g forest ⟨0⟩
+  let land := namedGraveyardCard g ⟨0⟩ "Forest"
+  g.mayPlayFromGraveyard ⟨0⟩ land &&
+    g.canPlayLand ⟨0⟩ &&
+    (let gLate := { g with step := .beginningOfCombat }
+     !gLate.canPlayLand ⟨0⟩) &&
+    (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
+     let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
+     let ab := cyc.printed.activatedAbilities[0]!
+     !gCyc.canActivate ⟨0⟩ cyc ab) &&
+    (mshRuling 253).comment.contains "doesn't allow you to activate" &&
+    (mshRuling 254).comment.contains "only one land per turn"
+
+#guard moleManPlayLandOk
+
+/-- Ruling 256: Moon Girl's 6/6 overwrites a prior set-P/T; pumps and
+counters still apply. -/
+def moonGirlOverwriteOk : Bool :=
+  let g := addPermanent afterDraw moonGirlAndDevilDinosaur ⟨0⟩ ⟨0⟩
+  let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
+  let g := g.mapObjectStatus mg (fun s => { s with setBasePT := some (1, 1), pump := (1, 1) })
+  let g := g.addPlusOnePlusOneTo (namedPermanent g "Moon Girl and Devil Dinosaur") 1
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouDrawYourSecondCardEachTurn3
+    (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
+  let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
+  g.power mg == 8 && g.toughness mg == 8 &&
+    (mshRuling 256).comment.contains "overwrite any previous effects"
+
+#guard moonGirlOverwriteOk
+
+/-- Rulings 265 / 267: Baxter Building checks toughness only as you activate. -/
+def baxterActivationLockOk : Bool :=
+  let g := addPermanent afterDraw baxterBuilding ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let bax := namedPermanent g "Baxter Building"
+  let ab := bax.printed.activatedAbilities[1]!
+  g.canActivate ⟨0⟩ bax ab &&
+    (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
+     let bax := namedPermanent g "Baxter Building"
+     !g.canActivate ⟨0⟩ bax ab) &&
+    (let g := g.applyMshSpell ⟨0⟩ .drawACardActivateOnlyIfYouControlACrea #[]
+       (some bax.id)
+     (g.player ⟨0⟩).hand.size >= 1) &&
+    (mshRuling 265).comment.contains "no player may take actions" &&
+    (mshRuling 267).comment.contains "doesn't check again"
+
+#guard baxterActivationLockOk
+
+/-- Ruling 266: Arnim Zola checks the graveyard only as you activate. -/
+def arnimActivationLockOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let arnim := namedPermanent g "Arnim Zola, Bio-Fanatic"
+  let ab := arnim.printed.activatedAbilities[0]!
+  g.canActivate ⟨0⟩ arnim ab &&
+    (let g := g.applyMshSpell ⟨0⟩ .createATapped21BlackVillainCreatureToken #[]
+       (some arnim.id)
+     g.battlefield.any (fun o =>
+       o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
+    (mshRuling 266).comment.contains "won't stop the ability from resolving"
+
+#guard arnimActivationLockOk
+
+/-- Ruling 298: Ten Rings draws through replacement effects. -/
+def tenRingsReplacementOk : Bool :=
+  let g := addPermanent afterDraw theTenRings ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+  let bot := namedPermanent g "Aerial Doombot"
+  let g := g.setObject { bot with printed :=
+    { bot.printed with drawTwoExceptFirstDrawStep := true } }
+  let rings := namedPermanent g "The Ten Rings"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := { g with step := .end }
+  let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfYourEndStep (some rings.id)
+  (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
+    (mshRuling 298).comment.contains "replacement effects"
+
+#guard tenRingsReplacementOk
+
+/-- Ruling 299: the owner chooses second-from-top versus bottom. -/
+def tricksterOwnerChoosesOk : Bool :=
+  let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
+  let ogre := namedPermanent g "Gray Ogre"
+  let gBot := g.applyMshSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
+    #[Target.permanent ogre.id] none (putOnBottom := true)
+  (gBot.objects.any (fun o =>
+      o.name == "Gray Ogre" && o.zone == .library ⟨1⟩)) &&
+    (let gTop := g.applyMshSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
+       #[Target.permanent ogre.id] none (putOnBottom := false)
+     let lib := (gTop.player ⟨1⟩).library
+     lib.size ≥ 2 &&
+       (gTop.object! lib[lib.size - 2]!).name == "Gray Ogre") &&
+    (mshRuling 299).comment.contains "second from the top"
+
+#guard tricksterOwnerChoosesOk
+
+/-- Ruling 343: World War Hulk frees only the next red or green creature. -/
+def worldWarHulkNextOnlyOk : Bool :=
+  let g := addToHand afterDraw grayOgre ⟨0⟩
+  let g := addToHand g grizzlyBears ⟨0⟩
+  let g := g.applyMshSpell ⟨0⟩ .theNextRedOrGreenCreatureSpellYouCastTh #[]
+  g.pendingFreeRGCreature == some ⟨0⟩ &&
+    (let ogre := handCardNamed g ⟨0⟩ "Gray Ogre"
+     !(g.playManaCost ogre ogre.printed).includesManaPayment &&
+       (let (g, spell) := g.allocObject grayOgre ⟨0⟩ .stack (some ⟨0⟩)
+        let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+        g.pendingFreeRGCreature.isNone &&
+          (let bears := handCardNamed g ⟨0⟩ "Grizzly Bears"
+           (g.playManaCost bears bears.printed).includesManaPayment))) &&
+    (mshRuling 343).comment.contains "only affects the next"
+
+#guard worldWarHulkNextOnlyOk
+
+/-- Ruling 355: Grim Reaper's return can attack a different player. -/
+def grimReaperOtherDestinationOk : Bool :=
+  let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingWhom := some ⟨1⟩)
+  let bears := namedPermanent g "Grizzly Bears"
+  bears.status.attacking &&
+    bears.status.attackingWhom == some ⟨1⟩ &&
+    (mshRuling 355).comment.contains "doesn't have to be the same player"
+
+#guard grimReaperOtherDestinationOk
+
+/-- Rulings 356 / 357: Cosmic Cube and Doom Reigns cast as they resolve. -/
+def castAsResolvesOk : Bool :=
+  let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let cube := namedPermanent g "Cosmic Cube"
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
+  g.stack.any (fun e => (g.object! e.objectId).name == "Lightning Bolt") &&
+    g.log.any (fun s => mentions s "as this ability resolves") &&
+    (let g := addPermanent afterDraw doomReignsSupreme ⟨0⟩ ⟨0⟩
+     let plan := namedPermanent g "Doom Reigns Supreme"
+     let g := g.applyTriggeredAbility ⟨0⟩ .onFifthPlanExileTopCast (some plan.id)
+     let g := g.applyMshReflexive #[Target.player ⟨1⟩]
+     let g := g.castExiledAsResolves ⟨0⟩ 2
+     g.stack.size ≥ 1 &&
+       g.log.any (fun s => mentions s "as the ability resolves")) &&
+    (mshRuling 356).comment.contains "can't wait to cast one later" &&
+    (mshRuling 357).comment.contains "can't wait to cast them later"
+
+#guard castAsResolvesOk
 
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
