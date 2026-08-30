@@ -4701,8 +4701,8 @@ namespace MshTrigger
 /-- When this MSH trigger fires, how it targets, and once-each-turn
 lockout. Adding a constructor only requires updating `timing` instead of
 parallel match trees. `resolution` is always `.msh t`. -/
-def timing (t : MshTrigger) : TriggerTiming :=
-  let base : TriggerTiming :=
+def timing (t : MshTrigger) : TriggeredAbility.TriggerTiming :=
+  let base : TriggeredAbility.TriggerTiming :=
     match t with
     | .atTheBeginningOfCombatOnYourTurn
     | .atTheBeginningOfCombatOnYourTurn3
@@ -4909,14 +4909,15 @@ lockout (MSH 69). -/
 def optionalOnceEachTurn (t : MshTrigger) : Bool :=
   t.timing.optionalOnceEachTurn
 
-#guard (timing .whenElektraEnters).events == #[.entering]
-#guard (timing .whenElektraEnters).targeting == .of .oppCreature
+#guard (timing .whenElektraEnters).events == #[TriggerEvent.entering]
+#guard (timing .whenElektraEnters).targeting == EffectTargeting.of .oppCreature
 #guard (timing .whenMjLnirEnters).allowsZeroTargets
 #guard (timing .wheneverACreatureYouControlIsDealtDamage).onceEachTurn
 #guard (timing .wheneverAnotherVillainYouControlEnters4).optionalOnceEachTurn
 #guard (timing .wheneverSuperAdaptoidEntersOrAttacks).events ==
-  #[.entering, .attacking]
-#guard (timing .whenHellcatDies).resolution == .msh .whenHellcatDies
+  #[TriggerEvent.entering, TriggerEvent.attacking]
+#guard (timing .whenHellcatDies).resolution ==
+  TriggeredAbility.TriggerResolution.msh .whenHellcatDies
 
 end MshTrigger
 
