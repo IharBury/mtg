@@ -92,6 +92,18 @@ abbrev Subtype := String
 def basicLandTypes : List Subtype :=
   ["Plains", "Island", "Swamp", "Mountain", "Forest"]
 
+/-- Artifact, enchantment, and land subtypes (CR 205.3g–i). A “becomes a
+`[creature types] artifact creature`” effect keeps these and replaces
+creature types (MSH 88). -/
+def isNoncreatureSubtype (s : Subtype) : Bool :=
+  s == "Equipment" || s == "Vehicle" || s == "Food" || s == "Clue" ||
+    s == "Treasure" || s == "Blood" || s == "Gold" || s == "Map" ||
+    s == "Powerstone" || s == "Aura" || s == "Saga" || s == "Plan" ||
+    s == "Case" || s == "Role" || s == "Shrine" || s == "Class" ||
+    s == "Background" || s == "Room" || s == "Lesson" || s == "Cartouche" ||
+    s == "Curse" || s == "Rune" || s == "Shard" || s == "Sphere" ||
+    basicLandTypes.any (· == s)
+
 /-- Intrinsic mana produced by a basic land type (CR 305.6). -/
 def manaForBasicLandType : Subtype → Option Color
   | "Plains" => some .white
@@ -111,6 +123,10 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
     if super.isEmpty then types else s!"{super} {types}"
   if sub.isEmpty then head else s!"{head} — {sub}"
 
+#guard isNoncreatureSubtype "Equipment"
+#guard isNoncreatureSubtype "Plan"
+#guard !isNoncreatureSubtype "Human"
+#guard !isNoncreatureSubtype "Construct"
 #guard basicLandTypes.length == 5
 #guard CardType.creature.isPermanentType
 #guard !CardType.instant.isPermanentType

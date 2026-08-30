@@ -576,7 +576,8 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (sacrificeLegendaryArtifact : Bool := false)
     (discardLegendarySameName : Bool := false)
     (sacrificeArtifact : Bool := false)
-    (powerUp : Bool := false) :
+    (powerUp : Bool := false)
+    (equipWorthy : Bool := false) :
     ActivatedAbility := {
   cost := {
     mana := mana
@@ -596,7 +597,7 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-  onlyIfYouAttackedWithTwoOrMore, powerUp
+  onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
@@ -604,6 +605,11 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
 def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=
   activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
+
+/-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
+def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
+  activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+    (equipWorthy := true)
 
 /-- Typecycling `{cost}`: discard this card from hand, search for a `landType`
 card, put it into your hand, then shuffle (CR 702.29). -/

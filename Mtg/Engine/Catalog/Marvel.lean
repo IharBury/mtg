@@ -643,7 +643,8 @@ def msMarvelKamalaKhan : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := (Keyword.reach).merge Keyword.vigilance)
-    (staticAbilities := #[mshStatic .youHaveNoMaximumHandSize, mshStatic .embiggenFistWheneverYouCastASpellThat])
+    (triggeredAbilities := #[mshTrig .wheneverYouCastASpellThatTargetsACreatur4])
+    (staticAbilities := #[mshStatic .youHaveNoMaximumHandSize])
 
 def multiversalIncursion : CardDef :=
   card "Multiversal Incursion" #[.sorcery] ({ symbols := #[.generic 5, .colored .blue, .colored .blue] })
@@ -1273,7 +1274,8 @@ def mistyKnightHeroForHire : CardDef :=
     (oracleText := "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn.")
     (power := some 3)
     (toughness := some 1)
-    (activatedAbilities := #[mshAct .n2TDiscardACard])
+    (activatedAbilities := #[activated (.msh .n2TDiscardACard)
+      ({ symbols := #[.generic 2] }) (tap := true) (discardACard := true)])
 
 def mjLnirHammerOfThor : CardDef :=
   card "Mjölnir, Hammer of Thor" #[.artifact] ({ symbols := #[.generic 3, .colored .red] })
@@ -1281,8 +1283,8 @@ def mjLnirHammerOfThor : CardDef :=
     (subtypes := #["Equipment"])
     (oracleText := "When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)\n{2}{R}, Discard this card: It deals 2 damage to each creature.")
     (triggeredAbilities := #[mshTrig .whenMjLnirEnters])
-    (staticAbilities := #[mshStatic .doubleAllDamageEquippedCreatureWouldDeal, mshStatic .equipWorthy1])
-    (activatedAbilities := #[mshAct .n2RDiscardThisCard])
+    (staticAbilities := #[mshStatic .doubleAllDamageEquippedCreatureWouldDeal])
+    (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1), mshAct .n2RDiscardThisCard])
 
 def photonBlastBarrage : CardDef :=
   card "Photon Blast Barrage" #[.sorcery] ({ symbols := #[.x, .colored .red, .colored .red] })

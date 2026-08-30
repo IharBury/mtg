@@ -353,7 +353,8 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
     match ab.equipSubtype with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
     | none =>
-      if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
+      if ab.equipWorthy then s!"Equip worthy {ab.cost.mana}{pay}"
+      else if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
       else s!"Equip {ab.cost.mana}"
   else
     match typecyclingLand? ab with

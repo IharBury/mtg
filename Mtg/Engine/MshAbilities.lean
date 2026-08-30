@@ -209,6 +209,8 @@ inductive MshTrigger where
   | wheneverYouCastASpellThatTargetsACreatur2
   /-- Modeled MSH ability. -/
   | wheneverYouCastASpellThatTargetsACreatur3
+  /-- Embiggen Fist (Ms. Marvel). -/
+  | wheneverYouCastASpellThatTargetsACreatur4
   /-- Modeled MSH ability. -/
   | wheneverYouCastASpellThatTargetsOneOrMo
   /-- Modeled MSH ability. -/
@@ -360,6 +362,7 @@ def toNotation : MshTrigger → String
   | .wheneverYouCastASpellThatTargetsACreatur => "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
   | .wheneverYouCastASpellThatTargetsACreatur2 => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
   | .wheneverYouCastASpellThatTargetsACreatur3 => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
+  | .wheneverYouCastASpellThatTargetsACreatur4 => "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
   | .wheneverYouCastASpellThatTargetsOneOrMo => "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
   | .wheneverYouCastAnInstantOrSorcerySpellTh => "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
   | .wheneverYouDiscardACard => "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."

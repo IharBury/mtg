@@ -48,6 +48,8 @@ structure Keywords where
   ascend : Bool := false
   /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
   shadow : Bool := false
+  /-- Changeling (CR 702.72): this object has all creature types. -/
+  changeling : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -82,7 +84,8 @@ def fields : List Field := [
   ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
   ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
   ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
-  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩
+  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩,
+  ⟨(·.changeling), fun k b => { k with changeling := b }, "changeling"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -126,6 +129,7 @@ def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
 def prowess : Keywords := { Keywords.none with prowess := true }
 def ascend : Keywords := { Keywords.none with ascend := true }
 def shadow : Keywords := { Keywords.none with shadow := true }
+def changeling : Keywords := { Keywords.none with changeling := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -162,6 +166,8 @@ inductive TokenKind where
   | doombot
   /-- A 1/1 green Insect creature token. -/
   | insect11green
+  /-- A predefined Vibranium artifact token (MSH). -/
+  | vibranium
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -188,6 +194,7 @@ def oracleNoun : TokenKind → String
   | .wall04defender => "0/4 colorless Wall creature token with defender"
   | .doombot => "3/3 colorless Robot Villain artifact creature token named Doombot"
   | .insect11green => "1/1 green Insect creature token"
+  | .vibranium => "Vibranium token"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -211,6 +218,7 @@ def pluralNoun : TokenKind → String
   | .wall04defender => "0/4 colorless Wall creature tokens with defender"
   | .doombot => "3/3 colorless Robot Villain artifact creature tokens named Doombot"
   | .insect11green => "1/1 green Insect creature tokens"
+  | .vibranium => "Vibranium tokens"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -328,6 +336,12 @@ inductive EffectTargetKind where
   | enchantmentMvAtLeast (n : Nat)
   /-- Target noncreature artifact. -/
   | noncreatureArtifact
+  /-- An activated or triggered ability you control from a creature source
+  (Echo; MSH 74). -/
+  | stackAbilityFromCreatureSource
+  /-- An activated or triggered ability you control from an artifact source
+  (Scientist Supreme of A.I.M.; MSH 87). -/
+  | stackAbilityFromArtifactSource
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -500,6 +514,12 @@ def spec : EffectTargetKind → Spec
     { noun := s!"target enchantment with mana value {n} or greater" }
   | .noncreatureArtifact =>
     { noun := "target noncreature artifact" }
+  | .stackAbilityFromCreatureSource =>
+    { noun := "target activated or triggered ability you control from a creature source",
+      stackSpell := true }
+  | .stackAbilityFromArtifactSource =>
+    { noun := "target activated or triggered ability you control from an artifact source",
+      stackSpell := true }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -2073,7 +2093,12 @@ def spec : AbilityEffect → AbilityMeta
   | .msh t =>
     { resolution := .msh t }
   | .mshSpell t =>
-    { resolution := .mshSpell t }
+    match t with
+    | .copyTargetActivatedOrTriggeredAbilityYouC =>
+      { targeting := .of .stackAbilityFromCreatureSource,
+        resolution := .mshSpell t }
+    | _ =>
+      { resolution := .mshSpell t }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -2333,6 +2358,9 @@ structure ActivatedAbility where
   /-- Power-up (CR 702.193): activate only once; if the source entered this
   turn, the cost is reduced by the permanent's mana cost. -/
   powerUp : Bool := false
+  /-- Equip worthy: attach only to a legendary non-Villain red or white
+  creature (MSH 118 / 119). Other attach effects ignore this. -/
+  equipWorthy : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -4651,6 +4679,9 @@ structure TriggerTiming where
   youControlCreatureWithPower : Option Int := none
   /-- This trigger fires only once each turn. -/
   onceEachTurn : Bool := false
+  /-- “Do this only once each turn”: the ability keeps triggering until the
+  controller chooses to do the optional action (MSH 69). -/
+  optionalOnceEachTurn : Bool := false
   /-- Intervening “another creature you control with power ≤ n”. -/
   anotherCreaturePowerAtMost : Option Int := none
   /-- “This or another nontoken {subtype} you control enters”. -/
@@ -4764,6 +4795,7 @@ def events : MshTrigger → Array TriggerEvent
   | .wheneverYouCastASpellThatTargetsACreatur => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsACreatur2 => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsACreatur3 => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastASpellThatTargetsACreatur4 => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastASpellThatTargetsOneOrMo => #[.youCastTargetingCreatureYouControl]
   | .wheneverYouCastAnInstantOrSorcerySpellTh => #[.youCastInstantOrSorcery]
   | .wheneverYouDiscardACard => #[.youDiscard]
@@ -4779,8 +4811,8 @@ def events : MshTrigger → Array TriggerEvent
   | .wheneverYouPutOneOrMore11CountersOnO => #[.youPutPlusOne]
   | .cyberneticSensesWheneverVivVision => #[.attacking]
   | .doYouLikeSquirrelsWheneverTheUnbeata => #[.entering, .attacking]
-  | .enrageWheneverRedHulkIs => #[.entering]
-  | .enrageWheneverTheIncredi => #[.entering]
+  | .enrageWheneverRedHulkIs => #[.sourceDealtDamage]
+  | .enrageWheneverTheIncredi => #[.sourceDealtDamage]
   | .noOneDiesWhenSpiderManEnte => #[.entering]
   | .photographicReflexesAtTheBeginningOf => #[.yourFirstMain]
   | .seismicTakedownWheneverYouCastA => #[.youCastNoncreature]
@@ -4801,14 +4833,14 @@ def targeting : MshTrigger → EffectTargeting
   | .atTheBeginningOfYourEndStep => .of .none
   | .atTheBeginningOfYourFirstMainPhase => .of .none
   | .atTheBeginningOfYourUpkeep => .of .none
-  | .whenBullseyeEnters => .of .playerOrCreature
+  | .whenBullseyeEnters => .of .none
   | .whenCloakAndDaggerEnter => .of .opponent
   | .whenDoctorDoomEnters => .of .none
   | .whenElektraEnters => .of .oppCreature
   | .whenHellcatDies => .of .none
   | .whenJusticeEnters => .of .nonland
   | .whenKaZarEnters => .of .none
-  | .whenKillmongerEnters => .of .nonland
+  | .whenKillmongerEnters => .of .none
   | .whenMjLnirEnters => .of .creature
   | .whenNightNurseEnters => .of .none
   | .whenRedGuardianEnters => .of .oppCreature
@@ -4839,7 +4871,7 @@ def targeting : MshTrigger → EffectTargeting
   | .whenThisLandEnters => .of .none
   | .wheneverAntManAttacks => .of .creature
   | .wheneverBlackWidowDealsCombatDamageToAPl => .of .none
-  | .wheneverGrimReaperAttacks => .of .creature
+  | .wheneverGrimReaperAttacks => .of .none
   | .wheneverIronManAttacks => .of .none
   | .wheneverKangAttacks => .of .none
   | .wheneverSuperAdaptoidEntersOrAttacks => .of .creature
@@ -4883,10 +4915,11 @@ def targeting : MshTrigger → EffectTargeting
   | .wheneverYouCastANoncreatureSpell2 => .of .none
   | .wheneverYouCastANoncreatureSpell3 => .of .nonland
   | .wheneverYouCastANoncreatureSpell4 => .of .none
-  | .wheneverYouCastANoncreatureSpell5 => .of .creature
+  | .wheneverYouCastANoncreatureSpell5 => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur2 => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur3 => .of .none
+  | .wheneverYouCastASpellThatTargetsACreatur4 => .of .none
   | .wheneverYouCastASpellThatTargetsOneOrMo => .of .none
   | .wheneverYouCastAnInstantOrSorcerySpellTh => .of .none
   | .wheneverYouDiscardACard => .of .none
@@ -4908,7 +4941,7 @@ def targeting : MshTrigger → EffectTargeting
   | .photographicReflexesAtTheBeginningOf => .of .creature
   | .seismicTakedownWheneverYouCastA => .of .creature
   | .sonicAttackWhenKlawEntersTa => .of .player
-  | .trickArrowsWheneverHawkeyeBec => .of .creature
+  | .trickArrowsWheneverHawkeyeBec => .of .none
   | .unbreakableSkinWheneverLukeCageA => .of .none
   | .waspSStingWhenTheWondrousWa => .of .creature
   | .atTheBeginningOf => .of .nonland
@@ -5009,6 +5042,7 @@ def allowsZeroTargets : MshTrigger → Bool
   | .wheneverYouCastASpellThatTargetsACreatur => false
   | .wheneverYouCastASpellThatTargetsACreatur2 => false
   | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsACreatur4 => false
   | .wheneverYouCastASpellThatTargetsOneOrMo => false
   | .wheneverYouCastAnInstantOrSorcerySpellTh => false
   | .wheneverYouDiscardACard => false
@@ -5104,7 +5138,7 @@ def onceEachTurn : MshTrigger → Bool
   | .wheneverAnotherVillainYouControlEnters => false
   | .wheneverAnotherVillainYouControlEnters2 => false
   | .wheneverAnotherVillainYouControlEnters3 => true
-  | .wheneverAnotherVillainYouControlEnters4 => true
+  | .wheneverAnotherVillainYouControlEnters4 => false
   | .wheneverAnotherArtifactYouControlEnters => false
   | .wheneverAnotherCreatureYouControlEnters => false
   | .wheneverAnotherCreatureYouControlWithDeath => false
@@ -5131,6 +5165,7 @@ def onceEachTurn : MshTrigger → Bool
   | .wheneverYouCastASpellThatTargetsACreatur => false
   | .wheneverYouCastASpellThatTargetsACreatur2 => false
   | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsACreatur4 => false
   | .wheneverYouCastASpellThatTargetsOneOrMo => false
   | .wheneverYouCastAnInstantOrSorcerySpellTh => false
   | .wheneverYouDiscardACard => false
@@ -5156,6 +5191,12 @@ def onceEachTurn : MshTrigger → Bool
   | .unbreakableSkinWheneverLukeCageA => false
   | .waspSStingWhenTheWondrousWa => false
   | .atTheBeginningOf => false
+
+/-- “Do this only once each turn” is a resolution choice, not a trigger
+lockout (MSH 69). -/
+def optionalOnceEachTurn : MshTrigger → Bool
+  | .wheneverAnotherVillainYouControlEnters4 => true
+  | _ => false
 
 end MshTrigger
 
@@ -5640,18 +5681,18 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.nthPlanCounter 4], targeting := .of .none,
       resolution := .planFinishReturnInstants }
   | .onSeventhPlanControlOpponent =>
-    { events := #[.nthPlanCounter 7], targeting := .of .opponent,
+    { events := #[.nthPlanCounter 7], targeting := .of .none,
       resolution := .planFinishControlOpponent }
   | .onFifthPlanExileTopCast =>
-    { events := #[.nthPlanCounter 5], targeting := .of .opponent,
+    { events := #[.nthPlanCounter 5], targeting := .of .none,
       resolution := .planFinishExileTopCast }
   | .onThirdPlanCreateRobots =>
     { events := #[.nthPlanCounter 3], resolution := .planFinishCreateRobots 3 }
   | .onFourthPlanDividedDamage =>
-    { events := #[.nthPlanCounter 4], targeting := .of .playerOrCreature,
-      resolution := .planFinishDividedDamage 7, dividedDamage := some (7, 2) }
+    { events := #[.nthPlanCounter 4], targeting := .of .none,
+      resolution := .planFinishDividedDamage 7 }
   | .onFourthPlanIndestructible =>
-    { events := #[.nthPlanCounter 4], targeting := .of .creatureYouControl,
+    { events := #[.nthPlanCounter 4], targeting := .of .none,
       resolution := .planFinishIndestructibleOnTarget }
   | .onYouCastColorFromHandConnive color =>
     { events := #[.youCastColorFromHand color], resolution := .connive }
@@ -5672,7 +5713,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .msh t =>
     { events := t.events, targeting := t.targeting,
       allowsZeroTargets := t.allowsZeroTargets, resolution := .msh t,
-      onceEachTurn := t.onceEachTurn }
+      onceEachTurn := t.onceEachTurn,
+      optionalOnceEachTurn := t.optionalOnceEachTurn }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -6094,6 +6136,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
   ab.timing.onceEachTurn
 
+/-- True when the optional action may be chosen only once each turn (MSH 69). -/
+def optionalOnceEachTurn (ab : TriggeredAbility) : Bool :=
+  ab.timing.optionalOnceEachTurn
+
 /-- Intervening power-at-most threshold for another creature entering. -/
 def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
@@ -6496,6 +6542,8 @@ structure CardDef where
   chooseBothIfTeamwork : Bool := false
   /-- This permanent enters with this many shield counters. -/
   entersWithShield : Nat := 0
+  /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
+  daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
 deriving Repr, Inhabited
@@ -6507,6 +6555,24 @@ def colors (c : CardDef) : ColorSet :=
   match c.colorIndicator with
   | some cs => cs
   | none => c.manaCost.colors
+
+/-- Commander color identity of this face: mana cost, color indicator, and
+basic land types (CR 903.4). Does not look at the other face. -/
+def faceColorIdentity (c : CardDef) : ColorSet :=
+  let fromCost :=
+    match c.colorIndicator with
+    | some cs => c.manaCost.colors.union cs
+    | none => c.manaCost.colors
+  c.subtypes.foldl (fun acc s =>
+    match manaForBasicLandType s with
+    | some col => acc.insert col
+    | none => acc) fromCost
+
+/-- Combined color identity of both faces of a DFC (CR 903.4 / MSH 18). -/
+def colorIdentity (c : CardDef) : ColorSet :=
+  match c.otherFace with
+  | none => c.faceColorIdentity
+  | some back => c.faceColorIdentity.union back.faceColorIdentity
 
 /-- True when `t` is among this card's types. -/
 def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
@@ -7345,6 +7411,45 @@ instance : ToString CardDef where
   let sorcery : CardDef := { name := "Silent Flame", types := #[.sorcery] }
   let creature : CardDef := { name := "Silent Ogre", types := #[.creature] }
   instant.isInstantOrSorcery && sorcery.isInstantOrSorcery && !creature.isInstantOrSorcery
+
+/-- True when this card itself has improvise (MSH). -/
+def hasImprovise (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .improvise => true
+    | _ => false)
+
+/-- True when this permanent grants improvise to noncreature spells you cast. -/
+def grantsImproviseToNoncreature (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .noncreatureSpellsYouCastHaveImprovise => true
+    | _ => false)
+
+/-- True when this permanent has a boast ability (MSH). -/
+def hasBoast (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .boastExileAnyNumberOfBlackCardsFromYou => true
+    | _ => false)
+
+/-- Sneak alternative cost, if any (MSH). -/
+def sneakCost (c : CardDef) : Option ManaCost :=
+  if c.staticAbilities.any (fun
+      | .msh .sneak1BB => true
+      | _ => false) then
+    some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost)
+  else none
+
+/-- Equip worthy: legendary non-Villain creature that's red or white. -/
+def isWorthy (c : CardDef) : Bool :=
+  c.hasSupertype .legendary &&
+    !c.hasSubtype "Villain" &&
+    (c.colors.contains .red || c.colors.contains .white)
+
+/-- Equip worthy keyword on this Equipment (MSH). -/
+def hasEquipWorthy (c : CardDef) : Bool :=
+  c.staticAbilities.any (fun
+    | .msh .equipWorthy1 => true
+    | _ => false) ||
+    c.activatedAbilities.any (·.equipWorthy)
 
 end CardDef
 

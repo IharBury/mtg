@@ -31,7 +31,7 @@ structure OracleRuling where
   /-- Cards this comment applies to. Rulings are issued by judges; they
   are not printed on the cards. -/
   cards : Array String
-  /-- Distinct set codes among those cards (`hob` / `hoc`). -/
+  /-- Distinct set codes among those cards (`hob` / `hoc` / `msh`). -/
   sets : Array String
 deriving Repr, Inhabited, BEq
 
