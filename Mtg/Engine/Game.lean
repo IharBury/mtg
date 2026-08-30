@@ -793,6 +793,10 @@ inductive Pending where
   | chooseRingBearer (player : PlayerId)
   /-- You may sacrifice another creature to Bolg's enters instruction. -/
   | maySacrificeAnotherBolg (player : PlayerId) (bolgId : ObjectId)
+  /-- You may cast one of these looked-at library cards without paying its
+  mana cost as the ability resolves (Cosmic Cube; MSH 356). `maxMv` is the
+  greatest power among attacking creatures you control. -/
+  | mayCastFromLooked (player : PlayerId) (ids : Array ObjectId) (maxMv : Int)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -2808,7 +2812,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .sacrificePermanent q _ | .sacrificeCreature q | .scry q _
   | .mayDiscardDraw q _ | .mayAttachEquipment q _ | .tapHumans q
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
-  | .maySacrificeAnotherBolg q _ | .putOnBottom q _ | .declareMulligan q =>
+  | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
+  | .declareMulligan q =>
     if q == p then { g with pending := .none } else g
   | .resolveRandom _ => g
 
@@ -3481,6 +3486,13 @@ def greatestPowerAmongCreatures (g : Game) (p : PlayerId) : Int :=
   let creatures := g.creaturesControlledBy p
   if creatures.isEmpty then 0
   else creatures.foldl (fun acc o => max acc (g.power o)) (g.power creatures[0]!)
+
+/-- Greatest power among attacking creatures `p` controls; `0` if none. -/
+def greatestPowerAmongAttacking (g : Game) (p : PlayerId) : Int :=
+  let attackers :=
+    (g.permanentsOf p).filter (fun o => o.isCreature && o.status.attacking)
+  if attackers.isEmpty then 0
+  else attackers.foldl (fun acc o => max acc (g.power o)) (g.power attackers[0]!)
 
 /-- Creatures currently blocking `attackerId`. -/
 def blockersOf (g : Game) (attackerId : ObjectId) : Array GameObject :=
@@ -8418,6 +8430,73 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let g := g.putStackEntry p newId
       g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
 
+/-- Why `id` cannot be cast from a pending Cosmic Cube look, if it cannot. -/
+def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (maxMv : Int) (id : ObjectId) : Option String :=
+  if !ids.contains id then
+    some "That card is not among the cards you looked at"
+  else
+    match g.findObject? id with
+    | none => some "There is no card to cast"
+    | some o =>
+      if o.zone != .library p then
+        some s!"{o.name} is no longer among the cards you looked at"
+      else if o.printed.isLand then
+        some "A land cannot be cast"
+      else if (o.printed.manaValue : Int) > maxMv then
+        some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
+      else none
+
+/-- Look at the top `n` cards and wait for the controller to choose whether
+to cast one with mana value at most `maxMv` (Cosmic Cube; MSH 356). -/
+def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
+    Game :=
+  let lib := (g.player p).library
+  let take := min n lib.size
+  let ids := lib.extract (lib.size - take) lib.size
+  if ids.isEmpty then
+    g.logMsg "No cards to look at"
+  else
+    { g with pending := .mayCastFromLooked p ids maxMv }.logMsg
+      s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
+
+/-- After the Cosmic Cube choice, put unchosen looked-at cards on the bottom
+in a random order, then grant priority unless another choice is pending. -/
+def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
+    Game :=
+  let rest :=
+    rest.filter (fun id =>
+      match g.findObject? id with
+      | some o => o.zone == .library p
+      | none => false)
+  let g :=
+    if rest.isEmpty then g
+    else
+      g.requestOrderInto rest (.library p)
+        s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+  if g.pending != .none then g
+  else g.receivePriority g.activePlayer
+
+/-- Cast one looked-at card as Cosmic Cube resolves, or decline (`none`). -/
+def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .mayCastFromLooked q ids maxMv =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may choose whether to cast a spell"
+    match castId with
+    | none =>
+      let g := g.logMsg s!"{(g.player p).name} declines to cast a spell"
+      return finishMayCastFromLooked { g with pending := .none } p ids
+    | some id =>
+      match g.mayCastFromLookedError p ids maxMv id with
+      | some err => throw err
+      | none =>
+        let g := { g with pending := .none }
+        let g := g.castAsPartOfResolution p id
+        return g.finishMayCastFromLooked p (ids.filter (· != id))
+  | _ => throw "Not time to choose a spell from among looked-at cards"
+
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
 def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
   let before :=
@@ -9615,14 +9694,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : ModeledTrigger)
         s!"{(g.player pid).name} reveals {shown.size} card(s) (all, if fewer than {n})"
     | _ => g
   | .wheneverYouAttack =>
-    let top :=
-      (g.player controller).library.reverse.toList.take 6
-    let ids := top.toArray
-    match ids[0]? with
-    | none => g.logMsg "No cards to look at"
-    | some id =>
-      g.castAsPartOfResolution controller id
-        |>.logMsg "You may cast a spell from among the top six as this ability resolves"
+    g.beginMayCastFromLooked controller 6 (g.greatestPowerAmongAttacking controller)
   | .whenTheRuinousWreckingCrewEnters =>
     let modes :=
       match sourceId.bind g.findObject? with
@@ -10061,7 +10133,7 @@ def applyZemoBoast (g : Game) (controller : PlayerId) (exileIds : Array ObjectId
     return g
 
 /-- Cast up to `n` cards that currently have a free-cast exile permission,
-as the ability resolves (Cosmic Cube / Doom Reigns; MSH 356 / 357). -/
+as the ability resolves (Doom Reigns; MSH 357). -/
 def castExiledAsResolves (g : Game) (p : PlayerId) (n : Nat) : Game :=
   let ids :=
     (g.objects.filter (fun o =>
@@ -14018,6 +14090,10 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       s!"{(g.player p).name} declines to sacrifice a creature to Bolg"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .mayCastFromLooked q _ _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to cast a spell"
+    g.chooseCastFromLooked p none
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
@@ -14254,7 +14330,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .pass => g.pass p
   | .playLand id => g.playLand p id
   | .tapForMana id m => g.tapForMana p id m
-  | .cast id => g.castSpell p id
+  | .cast id =>
+    match g.pending with
+    | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
+    | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx => g.announceMode p idx
   | .chooseX n => g.announceX p n
@@ -14329,6 +14408,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseTeamworkCreatures p _ => who p
     | .chooseRingBearer p => who p
     | .maySacrificeAnotherBolg p _ => who p
+    | .mayCastFromLooked p _ _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

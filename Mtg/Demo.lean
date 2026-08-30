@@ -687,7 +687,7 @@ def helpInteractive (controlAll : Bool := false)
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
   discard <id>         Discard a card; if you do, draw (CR 701.9)
   attach <id>          Attach that Equipment you control
-  decline              Decline an optional discard, attach, or choose no target
+  decline              Decline an optional discard, attach, cast, or choose no target
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
@@ -2486,8 +2486,8 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
 
 def declineUsage : String := "usage: decline"
 
-/-- Decline an optional discard, attach, or choose no target for an “up to one”
-instance of the word “target” (CR 115.1c / 601.2c). -/
+/-- Decline an optional discard, attach, cast, or choose no target for an
+“up to one” instance of the word “target” (CR 115.1c / 601.2c). -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] => g.apply p .decline

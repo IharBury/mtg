@@ -295,11 +295,12 @@ def canSeeScry (viewer : Option PlayerId) (scrying : PlayerId) : Bool :=
   | none => true
   | some v => v == scrying
 
-/-- Cards `p` is looking at while scrying (last = current top). Empty if `p`
-is not scrying. -/
+/-- Cards `p` is looking at while scrying or choosing a Cosmic Cube cast
+(last = current top). Empty if `p` is not looking. -/
 def scryLook (g : Game) (p : PlayerId) : Array ObjectId :=
   match g.pending with
   | .scry q n => if q == p then g.scryLookedIds p n else #[]
+  | .mayCastFromLooked q ids _ => if q == p then ids else #[]
   | _ => #[]
 
 /-- A looked-at library card: object id plus the face, as when looking at a
@@ -322,6 +323,16 @@ def scryLookBlock (g : Game) (viewer : Option PlayerId := none) : Option String 
       else some <| "Scry (top last):\n  " ++ String.intercalate "\n  " cards
     else
       some s!"{(g.player p).name} is scrying {n}"
+  | .mayCastFromLooked p ids maxMv =>
+    if canSeeScry viewer p then
+      let cards := ids.toList.map (scryCardLine g)
+      if cards.isEmpty then none
+      else
+        some <|
+          s!"May cast (mana value ≤ {maxMv}, top last):\n  " ++
+            String.intercalate "\n  " cards
+    else
+      some s!"{(g.player p).name} is looking at cards"
   | _ => none
 
 /-- Looking-at lines inside a player's `state` block while they scry. -/
@@ -337,6 +348,17 @@ def scryLookSection (g : Game) (pl : Player) (viewer : Option PlayerId) : Option
           (s!"  Looking at (scry {n}, top last):" :: cards.map (fun c => s!"    {c}"))
     else
       some s!"  Looking at (scry {n}): (hidden)"
+  | .mayCastFromLooked p ids maxMv =>
+    if p != pl.id then none
+    else if canSeeScry viewer p then
+      let cards := ids.toList.map (scryCardLine g)
+      if cards.isEmpty then none
+      else
+        some <| String.intercalate "\n"
+          (s!"  Looking at (may cast, mana value ≤ {maxMv}, top last):" ::
+            cards.map (fun c => s!"    {c}"))
+    else
+      some s!"  Looking at (may cast): (hidden)"
   | _ => none
 
 /-- Permanents currently attached to `hostId`. -/
@@ -668,6 +690,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose a Ring-bearer ({g.player p |>.name})]"
     | .maySacrificeAnotherBolg p _ =>
       s!" [may sacrifice another creature ({g.player p |>.name})]"
+    | .mayCastFromLooked p _ maxMv =>
+      s!" [may cast a looked-at spell (mana value ≤ {maxMv}, {g.player p |>.name})]"
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>
