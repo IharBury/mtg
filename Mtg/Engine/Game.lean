@@ -5379,6 +5379,21 @@ def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
       if usable.isEmpty then none
       else some (src, usable))
 
+/-- Pool after tapping `src` for `t`, including spending restrictions. -/
+def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) :
+    ManaPool :=
+  pool.add t (g.manaFromTap src t)
+    (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
+    (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
+
+/-- Whether some assignment of types from `sources` pays `cost`. -/
+def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf allowInst : Bool) : List (GameObject × Array ManaType) → Bool
+  | [] => pool.canPay cost allowElf allowInst
+  | (src, types) :: rest =>
+    types.any (fun t =>
+      g.canPayFromSources (g.poolAfterTap pool src t) cost allowElf allowInst rest)
+
 /-- Whether tapping `src` for `t` covers more of `cost` than the current pool. -/
 def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
     (cost : ManaCost) (allowElfRestricted : Bool) (allowInstRestricted : Bool) : Bool :=
@@ -5387,31 +5402,40 @@ def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
   else
     let pool := (g.player p).manaPool
     let before := pool.coveredMana cost allowElfRestricted allowInstRestricted
-    let after :=
-      pool.add t amount
-        (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
-        (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
+    let after := g.poolAfterTap pool src t
     after.coveredMana cost allowElfRestricted allowInstRestricted > before
 
 /-- A mana type among `types` that helps pay remaining symbols of `cost`.
-Prefers an unmet colored requirement, then colorless if it can be spent;
-returns none when no type can be spent on the pending payment. -/
+When `src` plus `others` can pay, types that would make the cost unpayable
+are omitted so Hidden Lair taps for `{U}` or `{B}` instead of a color another
+source already covers. Prefers an unmet colored requirement, then colorless
+if it can be spent. -/
 def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
     (types : Array ManaType) (cost : ManaCost) (allowElfRestricted : Bool)
-    (allowInstRestricted : Bool := false) : Option ManaType :=
+    (allowInstRestricted : Bool := false)
+    (others : List (GameObject × Array ManaType) := []) : Option ManaType :=
+  let pool := (g.player p).manaPool
   let helpful := types.filter (fun t =>
     g.typeHelpsPay p src t cost allowElfRestricted allowInstRestricted)
-  match helpful[0]? with
+  let payable :=
+    g.canPayFromSources pool cost allowElfRestricted allowInstRestricted
+      ((src, types) :: others)
+  let viable :=
+    if payable then
+      helpful.filter (fun t =>
+        g.canPayFromSources (g.poolAfterTap pool src t) cost
+          allowElfRestricted allowInstRestricted others)
+    else helpful
+  match viable[0]? with
   | none => none
   | some first =>
-    let pool := (g.player p).manaPool
     match Color.all.find? (fun c =>
       let req := cost.coloredCount c
       let held := pool.usable (.colored c) allowElfRestricted allowInstRestricted
-      held < req && helpful.contains (.colored c)) with
+      held < req && viable.contains (.colored c)) with
     | some c => some (.colored c)
     | none =>
-      if helpful.contains .colorless then some .colorless
+      if viable.contains .colorless then some .colorless
       else some first
 
 /-- Whether `(src, t)` is a better next tap than `(bestSrc, bestT)`: avoid
@@ -5423,13 +5447,17 @@ def betterManaTap (src : GameObject) (t : ManaType)
     (src.isCreature == bestSrc.isCreature && t == .colorless && bestT != .colorless)
 
 /-- Next source to tap for `prop`. Noncreatures are chosen before creatures
-when both help, and colorless is preferred when that type can be spent. -/
+when both help, and colorless is preferred when that type can be spent.
+A flexible source such as Hidden Lair is tapped for `{U}` or `{B}` when
+that choice still lets the remaining sources pay. -/
 def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Option (GameObject × ManaType) :=
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
-  (g.manaSourcesForProposed p prop).foldl (fun acc (src, types) =>
-    match g.preferredManaType p src types prop.cost allowElf allowInst with
+  let sources := g.manaSourcesForProposed p prop
+  sources.foldl (fun acc (src, types) =>
+    let others := sources.filter (fun (o, _) => o.id != src.id) |>.toList
+    match g.preferredManaType p src types prop.cost allowElf allowInst others with
     | none => acc
     | some t =>
       match acc with

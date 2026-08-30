@@ -15,7 +15,9 @@ open Mtg.Engine.Game
 /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay.
 Only mana that can be spent on the pending payment is considered (CR 106.10).
 Noncreatures are tapped before creatures when both help. Colorless is
-preferred when it can be spent; otherwise colors meet unmet requirements. -/
+preferred when it can be spent; otherwise colors meet unmet requirements.
+Flexible sources such as Hidden Lair tap for `{U}` or `{B}` when that
+color is needed and the rest of the board can still finish the cost. -/
 def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
   match g.proposedSpell with
   | none => some .pay
