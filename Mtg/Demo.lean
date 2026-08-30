@@ -1549,8 +1549,17 @@ def applyTap (g : Game) (p : PlayerId) (tokens : List String) : Except String Ga
   let g := Tests.hiddenLairStuck
   let lair := Tests.namedPermanent g "Hidden Lair"
   match applyTap g ⟨0⟩ [toString lair.id, "U"] with
-  | .error msg => Tests.mentions msg "entered this turn"
+  | .error msg => Tests.mentions msg "cannot produce"
   | .ok _ => false
+
+#guard
+  let g := Tests.hiddenLairWithIsland
+  let lair := Tests.namedPermanent g "Hidden Lair"
+  match applyTap g ⟨0⟩ [toString lair.id, "blue"] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Hidden Lair").status.tapped &&
+    (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .blue)
+  | .error _ => false
 
 #guard
   let g := Tests.archAndElves
