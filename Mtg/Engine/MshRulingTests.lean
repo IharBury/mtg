@@ -2541,7 +2541,7 @@ def boastOncePerTurnOk : Bool :=
 strike does not also deal regular combat damage. -/
 def okoyeFirstStrikeLossOk : Bool :=
   let g := addPermanent afterDraw okoyeDoraMilajeLeader ⟨0⟩ ⟨0⟩
-  let (g, tok) := g.createToken ⟨0⟩ soldier11whiteToken
+  let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let g := g.setObject { tok with status := { tok.status with
     attacking := true, attackingWhom := some ⟨1⟩ } }
   let tok := g.object! tok.id
@@ -2565,11 +2565,11 @@ def nickFuryDayboundOk : Bool :=
   let gDay := addToLibraryTop afterDraw dfc ⟨0⟩
   let top := (gDay.player ⟨0⟩).library.back!
   let gDay := gDay.enterFromNickFury ⟨0⟩ top
-  namedPermanent gDay "Bruce Banner" |>.name == "Bruce Banner" &&
-    !namedPermanent gDay "Bruce Banner" |>.status.cantTransform &&
-    (let g := gDay.applyAbilityEffect ⟨0⟩ .transform #[]
-       (some (namedPermanent gDay "Bruce Banner").id)
-     namedPermanent g "The Incredible Hulk" |>.name == "The Incredible Hulk") &&
+  let banner := namedPermanent gDay "Bruce Banner"
+  banner.name == "Bruce Banner" &&
+    !banner.status.cantTransform &&
+    (let g := gDay.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+     (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk") &&
     (let gNight := addToLibraryTop { afterDraw with isNight := true } dfc ⟨0⟩
      let top := (gNight.player ⟨0⟩).library.back!
      let gNight := gNight.enterFromNickFury ⟨0⟩ top
