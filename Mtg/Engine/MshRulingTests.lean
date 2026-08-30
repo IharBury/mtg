@@ -2050,13 +2050,97 @@ def warMachineLastKnownPowerOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let p0 := g.power bears
   let (g, _) := g.move wm.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .atTheBeginningOfCombatOnYourTurn (some wm.id)
-    #[Target.permanent bears.id] "War Machine" (some pw)
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatAnotherGetsSourcePower (some wm.id)
+    #[Target.permanent bears.id] #[] (some pw)
   g.power (namedPermanent g "Grizzly Bears") == p0 + pw &&
     (mshRuling 148).comment.contains "last existed on the battlefield" &&
     (mshRuling 308).comment.contains "calculated only once"
 
 #guard warMachineLastKnownPowerOk
+
+/-- Leader's combat trigger connives the targeted creature, not Leader. -/
+def leaderCombatConniveTargetsOtherOk : Bool :=
+  let g := addPermanent afterDraw leaderSuperGenius ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let leader := namedPermanent g "Leader, Super-Genius"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatTargetYouControlConnives (some leader.id)
+    #[Target.permanent bears.id]
+  let g := discardNamed g ⟨0⟩ "Lightning Bolt"
+  (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Leader, Super-Genius").status.plusOnePlusOne == 0
+
+#guard leaderCombatConniveTargetsOtherOk
+
+/-- Alien Invasion creates a hasty Alien, then grows later tokens from invasion. -/
+def alienInvasionCombatTokenOk : Bool :=
+  let g := addPermanent afterDraw alienInvasion ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Alien Invasion"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatCreateAlienPerInvasion (some src.id)
+  let tok := namedPermanent g "Alien"
+  let firstOk :=
+    tok.printed.isToken && tok.status.plusOnePlusOne == 0 &&
+      tok.printed.keywords.haste &&
+      tok.staticAbilities.contains .attacksEachCombatIfAble &&
+      (namedPermanent g "Alien Invasion").status.invasion == 1
+  let src := namedPermanent g "Alien Invasion"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatCreateAlienPerInvasion (some src.id)
+  let aliens := g.battlefield.filter (fun o => o.name == "Alien")
+  firstOk &&
+    aliens.size == 2 &&
+    aliens.any (fun o => o.status.plusOnePlusOne == 0) &&
+    aliens.any (fun o => o.status.plusOnePlusOne == 1) &&
+    (namedPermanent g "Alien Invasion").status.invasion == 2
+
+#guard alienInvasionCombatTokenOk
+
+/-- Iron Man may put Equipment from hand onto the battlefield attached to him. -/
+def ironManCombatPutEquipmentOk : Bool :=
+  let g := addPermanent afterDraw theInvincibleIronMan ⟨0⟩ ⟨0⟩
+  let g := addToHand g hawkeyeSBow ⟨0⟩
+  let iron := namedPermanent g "The Invincible Iron Man"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatMayPutArtifactAttachEquipment
+    (some iron.id)
+  match g.pending with
+  | .mayPutArtifactFromHand ⟨0⟩ hostId =>
+    let bow := handCardNamed g ⟨0⟩ "Hawkeye's Bow"
+    let g := mustApply g ⟨0⟩ (.cast bow.id)
+    let bow := namedPermanent g "Hawkeye's Bow"
+    hostId == iron.id &&
+      bow.isOnBattlefield &&
+      bow.attachedTo == some iron.id
+  | _ => false
+
+#guard ironManCombatPutEquipmentOk
+
+/-- Iron Man may decline the optional put. -/
+def ironManCombatDeclinePutOk : Bool :=
+  let g := addPermanent afterDraw theInvincibleIronMan ⟨0⟩ ⟨0⟩
+  let g := addToHand g hawkeyeSBow ⟨0⟩
+  let iron := namedPermanent g "The Invincible Iron Man"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatMayPutArtifactAttachEquipment
+    (some iron.id)
+  let g := mustApply g ⟨0⟩ .decline
+  (handCardNamed g ⟨0⟩ "Hawkeye's Bow").zone == .hand ⟨0⟩ &&
+    g.pending == .none &&
+    g.log.any (fun s => mentions s "declines to put an artifact")
+
+#guard ironManCombatDeclinePutOk
+
+/-- Iron Man puts a non-Equipment artifact without attaching it. -/
+def ironManCombatPutNonEquipmentOk : Bool :=
+  let g := addPermanent afterDraw theInvincibleIronMan ⟨0⟩ ⟨0⟩
+  let g := addToHand g theMindStone ⟨0⟩
+  let iron := namedPermanent g "The Invincible Iron Man"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCombatMayPutArtifactAttachEquipment
+    (some iron.id)
+  let stone := handCardNamed g ⟨0⟩ "The Mind Stone"
+  let g := mustApply g ⟨0⟩ (.cast stone.id)
+  let stone := namedPermanent g "The Mind Stone"
+  stone.isOnBattlefield && stone.attachedTo.isNone
+
+#guard ironManCombatPutNonEquipmentOk
 
 /-- Ruling 137: Political Triumph still draws and counters if it left. -/
 def politicalTriumphLeftOk : Bool :=

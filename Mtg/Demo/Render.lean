@@ -700,6 +700,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose tap or untap ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
+    | .mayPutArtifactFromHand p _ =>
+      s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>

@@ -847,6 +847,8 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.chooseMode 0)
   | .maySacArtifactOrDiscard _, some p =>
     mustApply g p .decline
+  | .mayPutArtifactFromHand _ _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

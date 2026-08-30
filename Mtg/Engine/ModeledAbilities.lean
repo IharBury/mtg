@@ -22,16 +22,6 @@ namespace Mtg.Engine
 /-- A leftover modeled trigger that is not yet a shared shape. -/
 inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
-  | atTheBeginningOfCombatOnYourTurn
-  /-- Modeled MSH ability. -/
-  | atTheBeginningOfCombatOnYourTurn2
-  /-- Modeled MSH ability. -/
-  | atTheBeginningOfCombatOnYourTurn3
-  /-- Modeled MSH ability. -/
-  | atTheBeginningOfCombatOnYourTurn4
-  /-- Modeled MSH ability. -/
-  | atTheBeginningOfCombatOnYourTurn5
-  /-- Modeled MSH ability. -/
   | atTheBeginningOfTheUpkeepOfEnchantedCrea
   /-- Modeled MSH ability. -/
   | atTheBeginningOfYourEndStep
@@ -233,11 +223,6 @@ namespace ModeledTrigger
 
 /-- Official Oracle wording for this ModeledTrigger. -/
 def toNotation : ModeledTrigger → String
-  | .atTheBeginningOfCombatOnYourTurn => "At the beginning of combat on your turn, another target creature you control gets +X/+0 until end of turn, where X is War Machine's power."
-  | .atTheBeginningOfCombatOnYourTurn2 => "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."
-  | .atTheBeginningOfCombatOnYourTurn3 => "At the beginning of combat on your turn, put a +1/+1 counter on target creature you control."
-  | .atTheBeginningOfCombatOnYourTurn4 => "At the beginning of combat on your turn, target creature you control connives."
-  | .atTheBeginningOfCombatOnYourTurn5 => "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to The Invincible Iron Man."
   | .atTheBeginningOfTheUpkeepOfEnchantedCrea => "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
   | .atTheBeginningOfYourEndStep => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
   | .atTheBeginningOfYourFirstMainPhase => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
