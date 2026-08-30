@@ -217,6 +217,8 @@ structure Status where
   /-- Until end of turn, this creature can be blocked only by creatures with
   haste (Speed, Young Avenger). -/
   cantBeBlockedExceptByHasteUntilEot : Bool := false
+  /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
+  dealtDamageThisTurn : Bool := false
   /-- Influence counters (Palantír of Orthanc). -/
   influence : Nat := 0
   /-- This permanent is only a Food artifact (Supper for Spiders). -/
@@ -293,7 +295,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.cantBeBlockedByPlayer.isSome,
     fun s => { s with cantBeBlockedByPlayer := none }⟩,
   ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
-    fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩
+    fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
+  ⟨fun s => s.dealtDamageThisTurn,
+    fun s => { s with dealtDamageThisTurn := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
@@ -6203,6 +6207,14 @@ def announceDividedDamage (g : Game) (p : PlayerId)
     (assignments : Array (Target × Nat)) : Except String Game :=
   g.announceTargetChoices p (assignments.map (fun (t, n) => (t, some n)))
 
+/-- Shang-Chi: activate tap abilities as though creatures had haste
+(MSH 280). Does not grant haste and does not allow attacking. -/
+def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o =>
+    o.staticAbilities.any (fun
+      | .msh .youMayActivateAbilitiesOfCreaturesYouCont => true
+      | _ => false))
+
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
 def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) :
@@ -6238,7 +6250,7 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
-  if ab.cost.tap && o.hasSummoningSickness then
+  if ab.cost.tap && o.hasSummoningSickness && !g.activatesAsThoughHaste p then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
@@ -6557,6 +6569,8 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     if g.sourceDamagePrevented src then
       g.logMsg s!"damage from {src.name} is prevented"
     else
+      let g :=
+        g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
       g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
   | none =>
     g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
@@ -7998,9 +8012,17 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     match sourceId.bind g.findObject? with
     | some src => g.attachSourceTo (g.object! shield.id) src
     | none => g
-  | .whenElektraEnters | .whenRedGuardianEnters =>
+  | .whenElektraEnters =>
     g.withLegalKindPermanent controller .oppCreature targets
       (fun g o => g.destroyPermanent o) sourceId (some "The target is no longer legal")
+  | .whenRedGuardianEnters =>
+    g.withLegalKindPermanent controller .oppCreature targets
+      (fun g o =>
+        if o.status.dealtDamageThisTurn then
+          g.destroyPermanent o
+        else
+          g.logMsg s!"{o.name} didn't deal damage this turn")
+      sourceId (some "The target is no longer legal")
   | .whenMjLnirEnters =>
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.dealDamageToPermanent o 4) sourceId none

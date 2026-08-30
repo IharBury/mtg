@@ -2130,6 +2130,67 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
 
 #guard attumaMerfolkOncePerPlayerOk
 
+/-- Ruling 286: Avengers Assemble! still draws if the Hero left after
+attacking. -/
+def avengersAssembleHeroLeftOk : Bool :=
+  let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mistyKnightHeroForHire ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with attackedWithHeroThisTurn := true })
+  let hero := namedPermanent g "Misty Knight, Hero for Hire"
+  let (g, _) := g.move hero.id (.graveyard ⟨0⟩) none
+  let assem := namedPermanent g "Avengers Assemble!"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEachEndStepDrawIfAttackedOrEnteredSubtype "Hero") (some assem.id)
+  (g.player ⟨0⟩).hand.size == hand0 + 1 &&
+    !g.battlefield.any (fun o => o.name == "Misty Knight, Hero for Hire") &&
+    (mshRuling 286).comment.contains "doesn't need to still be on the battlefield"
+
+#guard avengersAssembleHeroLeftOk
+
+/-- Ruling 280: Shang-Chi lets you activate tap abilities immediately but
+does not grant haste. -/
+def shangChiActivateNotHasteOk : Bool :=
+  -- `addPermanent` clears summoning sickness; insert Shang-Chi as sick.
+  let g := insertObject afterDraw shangChiMasterOfKungFu ⟨0⟩ .battlefield
+    (some ⟨0⟩) { summoningSick := true }
+  let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
+  let ab := shang.printed.activatedAbilities[0]!
+  shang.hasSummoningSickness &&
+    !g.canAttack shang &&
+    !g.hasHaste shang &&
+    g.canActivate ⟨0⟩ shang ab &&
+    (mshRuling 280).comment.contains "doesn't grant haste"
+
+#guard shangChiActivateNotHasteOk
+
+/-- Ruling 272: Red Guardian can destroy a creature that dealt damage even
+if the recipient has left. -/
+def redGuardianDealtDamageOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.dealDamageFrom "Grizzly Bears" ogre 2 (source := some bears)
+  let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨0⟩) none
+  let g := addPermanent g redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+  let rg := namedPermanent g "Red Guardian, Super-Soldier"
+  let bears := namedPermanent g "Grizzly Bears"
+  bears.status.dealtDamageThisTurn &&
+    (let g := g.applyMshTrigger ⟨0⟩ .whenRedGuardianEnters (some rg.id)
+       #[Target.permanent bears.id]
+     !g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
+    (let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+     let g := addPermanent g redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+     let rg := namedPermanent g "Red Guardian, Super-Soldier"
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyMshTrigger ⟨0⟩ .whenRedGuardianEnters (some rg.id)
+       #[Target.permanent bears.id]
+     g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
+    (mshRuling 272).comment.contains "dealt damage this turn"
+
+#guard redGuardianDealtDamageOk
+
 /-- Rulings 221 / 259 / 300 / 346 / 358: control another player. -/
 def controlAnotherPlayerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
