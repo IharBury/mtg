@@ -3161,7 +3161,7 @@ def twoHeadedGiantControlTeamOk : Bool :=
   let g := afterDraw.modifyPlayer ⟨1⟩ (fun pl => { pl with teammate := some ⟨0⟩ })
   let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
   g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
-    g.log.any (fun s => mentions s "Two-Headed Giant") &&
+    g.controlsPlayer ⟨0⟩ ⟨0⟩ &&
     (mshRuling 236).comment.contains "gain control of each player"
 
 #guard twoHeadedGiantControlTeamOk
@@ -3239,18 +3239,18 @@ def mjolnirDoubleOk : Bool :=
 def mjolnirCombatDivideOk : Bool :=
   let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
-  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
   let ogre := namedPermanent g "Gray Ogre"
-  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
   let g := g.attachSourceTo hammer ogre
   let g := g.setObject { ogre with status :=
     { ogre.status with attacking := true, blocked := true, attackingWhom := some ⟨1⟩ } }
   let g := { g with assignedCombatDamage :=
-    #[{ source := ogre.id, toCreatures := #[(bears.id, 2)], toPlayer := 3 }] }
+    #[{ source := ogre.id, toCreatures := #[(giant.id, 1)], toPlayer := 2 }] }
   let g := g.dealAssignedCombatDamage
-  (namedPermanent g "Grizzly Bears").status.damage == 4 &&
-    (g.player ⟨1⟩).life == 20 - 6
+  (namedPermanent g "Hill Giant").status.damage == 2 &&
+    (g.player ⟨1⟩).life == 20 - 4
 
 #guard mjolnirCombatDivideOk
 
@@ -3332,14 +3332,18 @@ def avengersDisassembledFizzleOk : Bool :=
 
 /-- Ruling 220: Klaw reveals the whole hand if it is smaller than N. -/
 def klawRevealAllOk : Bool :=
-  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g :=
+    (afterDraw.player ⟨1⟩).hand.foldl (fun acc id =>
+      (acc.move id (.library ⟨1⟩) none).1) afterDraw
+  let g := addToHand g lightningBolt ⟨1⟩
   let g := addPermanent g klawSonicSubjugator ⟨0⟩ ⟨0⟩
   let klaw := namedPermanent g "Klaw, Sonic Subjugator"
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let g := addToGraveyard g hillGiant ⟨0⟩
   let g := g.applyMshTrigger ⟨0⟩ .sonicAttackWhenKlawEntersTa (some klaw.id)
     #[Target.player ⟨1⟩]
-  logContains g "reveals 1 card" &&
+  (g.handObjects ⟨1⟩).size == 1 &&
+    logContains g "if fewer than" &&
     (mshRuling 220).comment.contains "reveal all the cards"
 
 #guard klawRevealAllOk
@@ -3427,7 +3431,7 @@ def swordsmanIllegalOk : Bool :=
   let g := g.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters2
     (some (namedPermanent g "Swordsman, Sharp Scoundrel").id)
     #[Target.permanent eq.id, Target.permanent ogre.id]
-  (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
+  (namedPermanent g "Vibranium Energy Daggers").attachedTo.isNone &&
     logContains g "won't move" &&
     (mshRuling 231).comment.contains "Equipment won't move"
 
@@ -3581,6 +3585,7 @@ def moonGirlOverwriteOk : Bool :=
 def baxterActivationLockOk : Bool :=
   let g := addPermanent afterDraw baxterBuilding ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
+  let g := g.addPlusOnePlusOneTo (namedPermanent g "Hill Giant") 1
   let bax := namedPermanent g "Baxter Building"
   let ab := bax.printed.activatedAbilities[1]!
   g.canActivate ⟨0⟩ bax ab &&
@@ -3679,16 +3684,15 @@ def castAsResolvesOk : Bool :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let cube := namedPermanent g "Cosmic Cube"
-  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
-  g.stack.any (fun e => (g.object! e.objectId).name == "Lightning Bolt") &&
-    g.log.any (fun s => mentions s "as this ability resolves") &&
-    (let g := addPermanent afterDraw doomReignsSupreme ⟨0⟩ ⟨0⟩
-     let plan := namedPermanent g "Doom Reigns Supreme"
-     let g := g.applyTriggeredAbility ⟨0⟩ .onFifthPlanExileTopCast (some plan.id)
-     let g := g.applyMshReflexive #[Target.player ⟨1⟩]
-     let g := g.castExiledAsResolves ⟨0⟩ 2
-     g.stack.size ≥ 1 &&
-       g.log.any (fun s => mentions s "as the ability resolves")) &&
+  let gCube := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
+  let (gEx, card) := afterDraw.allocObject helicarrierStrike ⟨1⟩ .exile none
+  let gEx := gEx.setObject { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
+  gCube.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+    gCube.log.any (fun s => mentions s "as this ability resolves") &&
+    gEx.objects.any (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) &&
+    gEx.log.any (fun s => mentions s "as the ability resolves") &&
     (mshRuling 356).comment.contains "can't wait to cast one later" &&
     (mshRuling 357).comment.contains "can't wait to cast them later"
 

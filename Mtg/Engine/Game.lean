@@ -3628,7 +3628,6 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
   g.objects.filter (fun o => g.mayPlayFromExile p o)
 
-/-- Whether `p` may play `o` from hand or from exile under a permission. -/
 /-- Mole Man lets you play land cards from your graveyard (MSH 253 / 254).
 Cycling and other activated abilities of those cards are still illegal. -/
 def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
@@ -7641,7 +7640,8 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       g.logMsg s!"{o.name} cannot be cast (costs)"
     else
       let name := o.name
-      let (g, _) := g.move id .stack (some p)
+      let (g, newId) := g.move id .stack (some p)
+      let g := g.putStackEntry p newId
       g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
 
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
@@ -8778,10 +8778,10 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     match targets[0]? with
     | some (Target.player pid) =>
       let n :=
-        1 + (g.player controller).graveyard.filter (fun id =>
+        1 + ((g.player controller).graveyard.filter (fun id =>
           match g.findObject? id with
           | some o => o.printed.isCreature
-          | none => false) |>.size
+          | none => false)).size
       let hand :=
         (g.player pid).hand.filterMap (fun id => g.findObject? id)
       let shown := if hand.size ≤ n then hand else hand.take n
@@ -9203,7 +9203,7 @@ def applyMshChapter (g : Game) (controller : PlayerId) (t : MshChapter)
 illegal, the spell does not resolve — even the untargeted damage mode
 (MSH 207). If the land is legal but indestructible, its controller still
 searches. -/
-def applyAvengersDisassembled (g : Game) (controller : PlayerId)
+def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
     (choseDamage choseLand : Bool) (landId : Option ObjectId) : Game :=
   let landOk :=
     match landId.bind g.findObject? with
@@ -11875,7 +11875,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     for id in attackerIds do
       let o := g.object! id
       let skipIronMan :=
-        o.triggeredAbilities.any (fun
+        o.printed.triggeredAbilities.any (fun
           | .msh .wheneverIronManAttacks =>
             !(g.player p).artifactEnteredThisTurn
           | _ => false)
