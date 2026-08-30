@@ -12947,7 +12947,7 @@ def pantherCombatDraw : Game :=
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
 #guard pantherCombatDraw.log.any (fun s => mentions s "draws")
 
-/-- Daredevil looks at the library top; that is a field, not a catalog stub. -/
+-- Daredevil looks at the library top; that is a field, not a catalog stub.
 #guard daredevilManWithoutFear.mayLookAtTopAnytime
 #guard !usesCatalogStub daredevilManWithoutFear
 
