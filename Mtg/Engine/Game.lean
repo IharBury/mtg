@@ -185,6 +185,8 @@ structure Status where
   powerUpActivations : Nat := 0
   /-- This permanent became tapped this turn (Captain America, Living Legend). -/
   becameTappedThisTurn : Bool := false
+  /-- You put a +1/+1 counter on this creature this turn (Kid Loki). -/
+  gotPlusOneThisTurn : Bool := false
   /-- Sources that stop this permanent becoming untapped while they remain
   (Spider-Woman; Frozen in Ice is attached separately). -/
   cantUntapGrantedBy : Array ObjectId := #[]
@@ -2816,6 +2818,11 @@ def hasHexproof (g : Game) (o : GameObject) : Bool :=
     (match o.controller with
      | none => false
      | some p =>
+       (o.isCreature && o.status.gotPlusOneThisTurn &&
+         (g.permanentsOf p).any (fun src =>
+           src.printed.staticAbilities.any (fun
+             | .msh .eachCreatureYouControlThatYouVePutOneOr => true
+             | _ => false))) ||
        (g.permanentsOf p).any (fun src =>
          src.status.shield > 0 &&
            src.staticAbilities.any (fun
@@ -6555,7 +6562,8 @@ def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let n := g.extraCountersOn o.controller n
-  let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
+  let g := g.mapObjectStatus o (fun s =>
+    { (s.addPlusOnePlusOne n) with gotPlusOneThisTurn := s.gotPlusOneThisTurn || n > 0 })
   let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
   match o.controller with
   | none => g
@@ -10681,7 +10689,7 @@ def clearTurnActivations (g : Game) : Game :=
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
-          o.status.becameTappedThisTurn then
+          o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
           firedOnceEachTurn := false
@@ -10689,7 +10697,8 @@ def clearTurnActivations (g : Game) : Game :=
           enteredThisTurn := false
           declaredAsAttackerThisTurn := false
           boastUsedThisTurn := false
-          becameTappedThisTurn := false } }
+          becameTappedThisTurn := false
+          gotPlusOneThisTurn := false } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/

@@ -1344,6 +1344,40 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
 
 #guard capLivingLegendFirstTapUntapsOk
 
+/-- Rulings 98 / 110 / 244–246 / 249 / 255 / 277: second-card triggers fire
+even if the permanent entered after the first draw. -/
+def secondCardDrawnAfterEnterOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 1 })
+  let g := addPermanent g kangTemporalTyrant ⟨0⟩ ⟨0⟩
+  let g := addPermanent g kidLoki ⟨0⟩ ⟨0⟩
+  let g := g.draw ⟨0⟩ 1
+  g.waitingTriggers.any (fun t => t.source.name == "Kang, Temporal Tyrant") &&
+    g.waitingTriggers.any (fun t => t.source.name == "Kid Loki") &&
+    (mshRuling 98).comment.contains "second card" &&
+    (mshRuling 110).comment.contains "second card" &&
+    (mshRuling 244).comment.contains "second card" &&
+    (mshRuling 245).comment.contains "second card" &&
+    (mshRuling 246).comment.contains "second card" &&
+    (mshRuling 249).comment.contains "second card" &&
+    (mshRuling 255).comment.contains "second card" &&
+    (mshRuling 277).comment.contains "second card"
+
+#guard secondCardDrawnAfterEnterOk
+
+/-- Ruling 97: Kid Loki hexproof applies to creatures that got +1/+1 earlier. -/
+def kidLokiHexproofAfterCountersOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.addPlusOnePlusOneTo bears 1
+  let bears := namedPermanent g "Grizzly Bears"
+  !g.hasHexproof bears &&
+    (let g := addPermanent g kidLoki ⟨0⟩ ⟨0⟩
+     let bears := namedPermanent g "Grizzly Bears"
+     g.hasHexproof bears &&
+       (mshRuling 97).comment.contains "Kid Loki")
+
+#guard kidLokiHexproofAfterCountersOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
