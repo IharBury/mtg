@@ -1415,10 +1415,27 @@ def lookAtTopRestrictionOk : Bool :=
 -/
 
 def vibraniumSpendNotOnNonartifactOk : Bool :=
-  let p := ManaPool.empty.add .colorless 1 (cantNonartifact := true)
-  !p.canPay (ManaCost.ofGeneric 1) &&
-    p.canPay (ManaCost.ofGeneric 1) false false false false true &&
-    (mshRuling 345).comment.contains "isn't a nonartifact spell"
+  let g := afterDraw.createKindTokens ⟨0⟩ .vibranium 1
+  let vib := namedPermanent g "Vibranium"
+  match g.tapForMana ⟨0⟩ vib.id .colorless with
+  | .error _ => false
+  | .ok g =>
+    let p := (g.player ⟨0⟩).manaPool
+    let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+    let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
+    let bears := namedPermanent g "Grizzly Bears"
+    let stone := namedPermanent g "The Mind Stone"
+    let (gArt, artSpell) := g.allocObject theMindStone ⟨0⟩ .stack (some ⟨0⟩)
+    let (gBolt, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+    p.cantNonartifact == 1 &&
+      !p.canPay (ManaCost.ofGeneric 1) &&
+      p.canPay (ManaCost.ofGeneric 1) false false false false true &&
+      paidOk g (dummyProposal g .activatedAbility bears (ManaCost.ofGeneric 1)) &&
+      paidOk g (dummyProposal g .activatedAbility stone (ManaCost.ofGeneric 1)) &&
+      paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofGeneric 1)) &&
+      reversedPay gBolt (dummyProposal gBolt .spell bolt (ManaCost.ofGeneric 1)) &&
+      (mshRuling 345).comment.contains "isn't a nonartifact spell" &&
+      (mshRuling 347).comment.contains "isn't a nonartifact spell"
 
 #guard vibraniumSpendNotOnNonartifactOk
 
@@ -1653,9 +1670,20 @@ def doublePowerAndToughnessOk : Bool :=
 #guard doublePowerAndToughnessOk
 
 def hydraulicHelperRestrictedBlueOk : Bool :=
-  let p := ManaPool.empty.add (.colored .blue) 1 (cantNonartifact := true)
-  !p.canPay (ManaCost.ofColor .blue) &&
+  let g := addPermanent afterDraw hydraulicHelper ⟨0⟩ ⟨0⟩
+  let helper := namedPermanent g "Hydraulic Helper"
+  let g := g.applyMshAbility ⟨0⟩ .addUThisManaCanTBeSpentToCastANona #[] (some helper.id)
+  let p := (g.player ⟨0⟩).manaPool
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let (gArt, artSpell) := g.allocObject theMindStone ⟨0⟩ .stack (some ⟨0⟩)
+  let (gBolt, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  p.cantNonartifactBlue == 1 &&
+    !p.canPay (ManaCost.ofColor .blue) &&
     p.canPay (ManaCost.ofColor .blue) false false false false true &&
+    paidOk g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .blue)) &&
+    paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofColor .blue)) &&
+    reversedPay gBolt (dummyProposal gBolt .spell bolt (ManaCost.ofColor .blue)) &&
     (mshRuling 345).comment.contains "isn't a nonartifact spell"
 
 #guard hydraulicHelperRestrictedBlueOk

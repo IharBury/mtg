@@ -5309,6 +5309,17 @@ def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
     | some o => o.printed.isCreature || o.isCreature
     | none => false
 
+/-- Whether paying this proposal may spend “can't be spent to cast a
+nonartifact spell” mana (MSH 345 / 347): artifact spells, and any
+activated ability. -/
+def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.kind with
+  | .activatedAbility => true
+  | .spell =>
+    match g.findObject? prop.spellId with
+    | some o => o.printed.isArtifact
+    | none => false
+
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
@@ -6194,9 +6205,10 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let allowInst := g.proposedAllowsInstRestricted prop
   let allowHero := g.proposedAllowsHeroRestricted prop
   let allowVillain := g.proposedAllowsVillainRestricted prop
+  let allowCant := g.proposedAllowsCantNonartifact prop
   let allowCreature := g.proposedAllowsCreatureRestricted prop
   if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
-        allowHero allowVillain false allowCreature ||
+        allowHero allowVillain allowCant allowCreature ||
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
     return g.reverseProposedSpell
@@ -6205,7 +6217,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost allowElf allowInst
-    allowHero allowVillain false allowCreature
+    allowHero allowVillain allowCant allowCreature
   let g ←
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
