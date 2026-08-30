@@ -149,6 +149,9 @@ structure Status where
   hope : Nat := 0
   /-- A once-each-turn triggered ability of this permanent has fired. -/
   firedOnceEachTurn : Bool := false
+  /-- The optional action of a “Do this only once each turn” trigger has
+  been chosen this turn (MSH 69). -/
+  optionalOnceUsed : Bool := false
   /-- This permanent is an artifact in addition to its other types until
   end of turn (e.g. Stone by Sunlight). -/
   additionalArtifactUntilEot : Bool := false
@@ -529,7 +532,8 @@ def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
 
 def hasSubtype (o : GameObject) (s : String) : Bool :=
-  o.subtypes.any (· == s)
+  o.subtypes.any (· == s) ||
+    (o.printed.keywords.changeling && !isNoncreatureSubtype s)
 
 /-- Printed static abilities plus those granted by a lasting effect. -/
 def staticAbilities (o : GameObject) : Array StaticAbility :=
@@ -2026,9 +2030,16 @@ def currentSubtypes (g : Game) (o : GameObject) : Array Subtype :=
     | some s => #[s]
     | none => o.subtypes
 
-/-- Whether `o` currently has subtype `s`, including Fog-style overwrites. -/
+/-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
+Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
+type-setting Aura overwrites the subtypes. -/
 def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
-  (g.currentSubtypes o).any (· == s)
+  let fogged :=
+    g.battlefield.any (fun a =>
+      a.attachedTo == some o.id &&
+        a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
+  (g.currentSubtypes o).any (· == s) ||
+    (!fogged && o.printedOrUntilEot.changeling && !isNoncreatureSubtype s)
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
@@ -4037,6 +4048,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
   if (g.player controller).lost then g
   else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if ab.onceEachTurn && source.status.firedOnceEachTurn then g
+  else if ab.optionalOnceEachTurn && source.status.optionalOnceUsed then g
   else
     let g :=
       if ab.onceEachTurn then
@@ -5263,6 +5275,40 @@ def proposedAllowsLegendaryRestricted (g : Game) (prop : ProposedSpell) : Bool :
     | none => false
   | .activatedAbility => false
 
+/-- Object whose types decide Hero / Villain / creature-source restrictions. -/
+def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
+  match prop.kind with
+  | .spell => g.findObject? prop.spellId
+  | .activatedAbility =>
+    match prop.sourceId.bind g.findObject? with
+    | some src => some src
+    | none => some prop.original
+
+/-- Whether paying this proposed spell or ability may spend Hero-restricted
+mana (MSH 72): Hero spells, and activated abilities of Hero sources
+(including changeling and cards in any zone). -/
+def proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match g.proposedRestrictionSource prop with
+  | some o => g.hasSubtype o "Hero"
+  | none => false
+
+/-- Whether paying this proposed spell or ability may spend Villain-restricted
+mana (MSH 73): Villain spells, and activated abilities of Villain sources. -/
+def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match g.proposedRestrictionSource prop with
+  | some o => g.hasSubtype o "Villain"
+  | none => false
+
+/-- Whether paying this proposed activation may spend creature-restricted mana
+(MSH 75). Casting a creature spell does not qualify. -/
+def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
+  match prop.kind with
+  | .spell => false
+  | .activatedAbility =>
+    match g.proposedRestrictionSource prop with
+    | some o => o.printed.isCreature || o.isCreature
+    | none => false
+
 /-- Mana types `src` can produce that may be spent on `prop` (CR 106.10). -/
 def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
     (prop : ProposedSpell) : Array ManaType :=
@@ -5347,10 +5393,15 @@ def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
         if betterManaTap src t bestSrc bestT then some (src, t) else acc) none
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
-    (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false) :
+    (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
+    (allowHeroRestricted : Bool := false) (allowVillainRestricted : Bool := false)
+    (allowCantNonartifact : Bool := false)
+    (allowCreatureRestricted : Bool := false) :
     Except String Game := do
   let pl := g.player p
-  match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted with
+  match pl.manaPool.pay? cost allowElfRestricted allowInstRestricted
+      allowHeroRestricted allowVillainRestricted allowCantNonartifact
+      allowCreatureRestricted with
   | none => throw s!"{pl.name} cannot pay {cost}"
   | some pool =>
     return g.setPlayer { pl with manaPool := pool }
@@ -6141,7 +6192,11 @@ def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
-  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst ||
+  let allowHero := g.proposedAllowsHeroRestricted prop
+  let allowVillain := g.proposedAllowsVillainRestricted prop
+  let allowCreature := g.proposedAllowsCreatureRestricted prop
+  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
+        allowHero allowVillain false allowCreature ||
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
     return g.reverseProposedSpell
@@ -6150,6 +6205,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost allowElf allowInst
+    allowHero allowVillain false allowCreature
   let g ←
     match prop.kind, prop.sourceId with
     | .activatedAbility, some sid =>
@@ -8564,6 +8620,22 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.forEachOpponent controller (fun g pid =>
         g.dealDamageToPlayer pid 2 (source := some (g.object! o.id))))
       "Crossbones is no longer on the battlefield"
+  | .wheneverAnotherVillainYouControlEnters4 =>
+    match sourceId.bind g.findObject? with
+    | none =>
+      g.logMsg "Baron Strucker is no longer on the battlefield. The ability has no effect."
+    | some src =>
+      if src.status.optionalOnceUsed then
+        g.logMsg
+          "The optional connive was already chosen this turn. This instance has no effect."
+      else
+        match targets[0]? with
+        | some (Target.permanent id) =>
+          let g := g.setObject { src with status :=
+            { src.status with optionalOnceUsed := true } }
+          g.applyConnive controller (some id)
+        | _ =>
+          g.logMsg "The Villain does not connive"
   | .wheneverAnAttackingCreatureYouControlDies =>
     match g.lastDiedAttacker.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
@@ -12640,12 +12712,14 @@ def clearTurnActivations (g : Game) : Game :=
           artifactEnteredThisTurn := false }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
+          o.status.optionalOnceUsed ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
           o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
           o.status.becameTappedThisTurn || o.status.gotPlusOneThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
           firedOnceEachTurn := false
+          optionalOnceUsed := false
           allianceModesChosen := #[]
           enteredThisTurn := false
           declaredAsAttackerThisTurn := false

@@ -36,6 +36,39 @@ def mshEnter (g : Game) (card : CardDef) : Game :=
   let o := namedPermanent g card.name
   (g.afterPermanentEnters o).receivePriority ⟨0⟩
 
+/-- Snapshot used to exercise `finishProposedSpell` restricted-mana payment. -/
+def dummyProposal (g : Game) (kind : ProposalKind) (src : GameObject) (cost : ManaCost)
+    (discardSource : Bool := false) : ProposedSpell :=
+  { caster := ⟨0⟩
+    cost
+    spellId := src.id
+    original := src
+    handBefore := (g.player ⟨0⟩).hand
+    stackBefore := g.stack
+    manaBefore := (g.player ⟨0⟩).manaPool
+    kind
+    sourceId := if kind == .spell then none else some src.id
+    discardSource }
+
+/-- True when the proposed cost is paid (not reversed). -/
+def paidOk (g : Game) (prop : ProposedSpell) : Bool :=
+  let g := { g with proposedSpell := some prop }
+  match g.finishProposedSpell with
+  | .error _ => false
+  | .ok g' => !g'.log.any (fun s => mentions s "reversed")
+
+/-- True when the engine reverses the proposal for lack of payable mana. -/
+def reversedPay (g : Game) (prop : ProposedSpell) : Bool :=
+  let g := { g with proposedSpell := some prop }
+  match g.finishProposedSpell with
+  | .error _ => true
+  | .ok g' => g'.log.any (fun s => mentions s "reversed")
+
+def graveyardCardNamed (g : Game) (p : PlayerId) (name : String) : GameObject :=
+  match g.objects.find? (fun o => o.name == name && o.zone == .graveyard p) with
+  | some o => o
+  | none => panic! s!"expected {name} in graveyard"
+
 /-!
 ## 1–3 — Power-up
 -/
@@ -508,15 +541,47 @@ def tokenExileCeasesOk : Bool :=
 
 #guard tokenExileCeasesOk
 
-/-- Rulings 72–73: Hero / Villain source mana cannot pay unrestricted costs. -/
+/-- Rulings 72–73: Hero / Villain source mana cannot pay unrestricted costs,
+but can pay Hero / Villain spells and activations in any zone, including
+changeling. -/
 def heroSourceOk : Bool :=
   let g := addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g "Avengers Tower"
-  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some o.id)
+  let g := addPermanent g captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let tower := namedPermanent g "Avengers Tower"
+  let cap := namedPermanent g "Captain America, Super-Soldier"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some tower.id)
   let pool := (g.player ⟨0⟩).manaPool
+  let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
+  let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
+  let gCh :=
+    g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
+  let chameleon := namedPermanent gCh "Grizzly Bears"
+  let gCh :=
+    gCh.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some tower.id)
+  let gGy := addToGraveyard g braveBrawler ⟨0⟩
+  let gy := graveyardCardNamed gGy ⟨0⟩ "Brave Brawler"
+  let gGy :=
+    gGy.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some tower.id)
+  let gHand := addToHand g braveBrawler ⟨0⟩
+  let hand := handCardNamed gHand ⟨0⟩ "Brave Brawler"
+  let gHand :=
+    gHand.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some tower.id)
+  let (gSp, spell) := g.allocObject captainAmericaSuperSoldier ⟨0⟩ .stack (some ⟨0⟩)
+  let gSp :=
+    gSp.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly #[] (some tower.id)
   pool.heroWhite == 1 &&
     !pool.canPay (ManaCost.ofColor .white) &&
     pool.canPay (ManaCost.ofColor .white) false false true &&
+    paidOk g capPay &&
+    reversedPay g bearPay &&
+    gCh.hasSubtype chameleon "Hero" &&
+    paidOk gCh (dummyProposal gCh .activatedAbility chameleon (ManaCost.ofColor .white)) &&
+    paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofColor .white)) &&
+    paidOk gHand (dummyProposal gHand .activatedAbility hand (ManaCost.ofColor .white)
+      (discardSource := true)) &&
+    paidOk gSp (dummyProposal gSp .spell spell (ManaCost.ofColor .white)) &&
     captainAmericaSuperSoldier.hasSubtype "Hero" &&
     (mshRuling 72).comment.contains "Hero source"
 
@@ -524,12 +589,30 @@ def heroSourceOk : Bool :=
 
 def villainSourceOk : Bool :=
   let g := addPermanent afterDraw villainousHideout ⟨0⟩ ⟨0⟩
-  let o := namedPermanent g "Villainous Hideout"
-  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly2 #[] (some o.id)
+  let g := addPermanent g elektraDaughterOfTheHand ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let hideout := namedPermanent g "Villainous Hideout"
+  let elektra := namedPermanent g "Elektra, Daughter of the Hand"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly2 #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
+  let gCh :=
+    g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
+  let chameleon := namedPermanent gCh "Grizzly Bears"
+  let gCh :=
+    gCh.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly2 #[] (some hideout.id)
+  let gGy := addToGraveyard g elektraDaughterOfTheHand ⟨0⟩
+  let gy := graveyardCardNamed gGy ⟨0⟩ "Elektra, Daughter of the Hand"
+  let gGy :=
+    gGy.applyMshAbility ⟨0⟩ .addOneManaOfAnyColorSpendThisManaOnly2 #[] (some hideout.id)
   pool.villainBlack == 1 &&
     !pool.canPay (ManaCost.ofColor .black) &&
     pool.canPay (ManaCost.ofColor .black) false false false true &&
+    paidOk g (dummyProposal g .activatedAbility elektra (ManaCost.ofColor .black)) &&
+    reversedPay g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .black)) &&
+    gCh.hasSubtype chameleon "Villain" &&
+    paidOk gCh (dummyProposal gCh .activatedAbility chameleon (ManaCost.ofColor .black)) &&
+    paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofColor .black)) &&
     elektraDaughterOfTheHand.hasSubtype "Villain" &&
     (mshRuling 73).comment.contains "Villain source"
 
@@ -999,6 +1082,13 @@ def creatureAndArtifactSourceOk : Bool :=
     pool.creatureGreen == 2 &&
     !pool.canPay (ManaCost.ofGeneric 2) &&
     pool.canPay (ManaCost.ofGeneric 2) false false false false false true &&
+    paidOk gMana (dummyProposal gMana .activatedAbility bears (ManaCost.ofGeneric 2)) &&
+    reversedPay gMana (dummyProposal gMana .activatedAbility stone (ManaCost.ofGeneric 2)) &&
+    (let gGy := addToGraveyard gMana grizzlyBears ⟨0⟩
+     let gy := graveyardCardNamed gGy ⟨0⟩ "Grizzly Bears"
+     paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofGeneric 2))) &&
+    (let (gSp, spell) := gMana.allocObject grizzlyBears ⟨0⟩ .stack (some ⟨0⟩)
+     reversedPay gSp (dummyProposal gSp .spell spell (ManaCost.ofGeneric 2))) &&
     (mshRuling 74).comment.contains "creature source" &&
     (mshRuling 75).comment.contains "creature" &&
     (mshRuling 87).comment.contains "artifact source"
@@ -1164,18 +1254,44 @@ def landfallEachAbilityOk : Bool :=
 
 #guard landfallEachAbilityOk
 
+/-- Ruling 69: declining the optional connive does not lock the ability;
+choosing it does, and already-stacked instances then do nothing. -/
 def onceEachTurnConniveWordingOk : Bool :=
   let villainWait (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.anotherVillainEnters)).size
   let g0 := addPermanent afterDraw baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
+  let struckerId := (namedPermanent g0 "Baron Strucker, HYDRA Overlord").id
   let g := addPermanent g0 redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
-  let g := g.afterPermanentEnters (namedPermanent g "Red Guardian, Super-Soldier")
-  villainWait g == 1 &&
-    (namedPermanent g "Baron Strucker, HYDRA Overlord").status.firedOnceEachTurn &&
-    (let g := addPermanent g baronHelmutZemo ⟨0⟩ ⟨0⟩
-     let g := g.afterPermanentEnters (namedPermanent g "Baron Helmut Zemo")
-     villainWait g == 1) &&
+  let rg := namedPermanent g "Red Guardian, Super-Soldier"
+  let g := g.afterPermanentEnters rg
+  let w1 := villainWait g
+  let strucker := namedPermanent g "Baron Strucker, HYDRA Overlord"
+  w1 == 1 &&
+    !strucker.status.firedOnceEachTurn &&
+    !strucker.status.optionalOnceUsed &&
+    (let gDec := g.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+       (some struckerId)
+     let strucker := namedPermanent gDec "Baron Strucker, HYDRA Overlord"
+     !strucker.status.optionalOnceUsed &&
+       (gDec.player ⟨0⟩).hand.size == (g.player ⟨0⟩).hand.size &&
+       (let g2 := addPermanent gDec baronHelmutZemo ⟨0⟩ ⟨0⟩
+        let g2 := g2.afterPermanentEnters (namedPermanent g2 "Baron Helmut Zemo")
+        villainWait g2 == w1 + 1)) &&
+    (let hand0 := (g.player ⟨0⟩).hand.size
+     let gYes := g.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+       (some struckerId) #[Target.permanent rg.id]
+     let strucker := namedPermanent gYes "Baron Strucker, HYDRA Overlord"
+     strucker.status.optionalOnceUsed &&
+       (gYes.player ⟨0⟩).hand.size == hand0 + 1 &&
+       (let wYes := villainWait gYes
+        let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
+        let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
+        villainWait g3 == wYes) &&
+       (let gNo := gYes.applyMshTrigger ⟨0⟩ .wheneverAnotherVillainYouControlEnters4
+          (some struckerId) #[Target.permanent rg.id]
+        (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
+          gNo.log.any (fun s => mentions s "no effect"))) &&
     (mshRuling 69).comment.contains "Do this only once each turn"
 
 #guard onceEachTurnConniveWordingOk

@@ -48,6 +48,8 @@ structure Keywords where
   ascend : Bool := false
   /-- Shadow (CR 702.27): can block or be blocked by only creatures with shadow. -/
   shadow : Bool := false
+  /-- Changeling (CR 702.72): this object has all creature types. -/
+  changeling : Bool := false
 deriving BEq, Repr, Inhabited
 
 namespace Keywords
@@ -82,7 +84,8 @@ def fields : List Field := [
   ⟨(·.doubleStrike), fun k b => { k with doubleStrike := b }, "double strike"⟩,
   ⟨(·.prowess), fun k b => { k with prowess := b }, "prowess"⟩,
   ⟨(·.ascend), fun k b => { k with ascend := b }, "ascend"⟩,
-  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩
+  ⟨(·.shadow), fun k b => { k with shadow := b }, "shadow"⟩,
+  ⟨(·.changeling), fun k b => { k with changeling := b }, "changeling"⟩
 ]
 
 /-- Union of two keyword sets (printed or granted). -/
@@ -126,6 +129,7 @@ def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
 def prowess : Keywords := { Keywords.none with prowess := true }
 def ascend : Keywords := { Keywords.none with ascend := true }
 def shadow : Keywords := { Keywords.none with shadow := true }
+def changeling : Keywords := { Keywords.none with changeling := true }
 end Keyword
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
@@ -4675,6 +4679,9 @@ structure TriggerTiming where
   youControlCreatureWithPower : Option Int := none
   /-- This trigger fires only once each turn. -/
   onceEachTurn : Bool := false
+  /-- “Do this only once each turn”: the ability keeps triggering until the
+  controller chooses to do the optional action (MSH 69). -/
+  optionalOnceEachTurn : Bool := false
   /-- Intervening “another creature you control with power ≤ n”. -/
   anotherCreaturePowerAtMost : Option Int := none
   /-- “This or another nontoken {subtype} you control enters”. -/
@@ -5131,7 +5138,7 @@ def onceEachTurn : MshTrigger → Bool
   | .wheneverAnotherVillainYouControlEnters => false
   | .wheneverAnotherVillainYouControlEnters2 => false
   | .wheneverAnotherVillainYouControlEnters3 => true
-  | .wheneverAnotherVillainYouControlEnters4 => true
+  | .wheneverAnotherVillainYouControlEnters4 => false
   | .wheneverAnotherArtifactYouControlEnters => false
   | .wheneverAnotherCreatureYouControlEnters => false
   | .wheneverAnotherCreatureYouControlWithDeath => false
@@ -5184,6 +5191,12 @@ def onceEachTurn : MshTrigger → Bool
   | .unbreakableSkinWheneverLukeCageA => false
   | .waspSStingWhenTheWondrousWa => false
   | .atTheBeginningOf => false
+
+/-- “Do this only once each turn” is a resolution choice, not a trigger
+lockout (MSH 69). -/
+def optionalOnceEachTurn : MshTrigger → Bool
+  | .wheneverAnotherVillainYouControlEnters4 => true
+  | _ => false
 
 end MshTrigger
 
@@ -5700,7 +5713,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .msh t =>
     { events := t.events, targeting := t.targeting,
       allowsZeroTargets := t.allowsZeroTargets, resolution := .msh t,
-      onceEachTurn := t.onceEachTurn }
+      onceEachTurn := t.onceEachTurn,
+      optionalOnceEachTurn := t.optionalOnceEachTurn }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -6121,6 +6135,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
   ab.timing.onceEachTurn
+
+/-- True when the optional action may be chosen only once each turn (MSH 69). -/
+def optionalOnceEachTurn (ab : TriggeredAbility) : Bool :=
+  ab.timing.optionalOnceEachTurn
 
 /-- Intervening power-at-most threshold for another creature entering. -/
 def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
