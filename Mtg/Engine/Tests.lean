@@ -8546,6 +8546,50 @@ def silentCavesReady : Game :=
     silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofColor .green)
       false false == some (.colored .green)
 
+/-- Island `{U}` plus Mountain `{R}` pays `{1}{U}` (generic after colored). -/
+def islandMountainApothecary : Game :=
+  let g := addUntappedLand afterDraw island
+  let g := addToHand (addUntappedLand g mountain) lakeshoreApothecary ⟨0⟩
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lakeshore Apothecary").id)
+
+#guard
+  match islandMountainApothecary.proposedSpell with
+  | some prop =>
+    let avail := islandMountainApothecary.availableMana ⟨0⟩
+    toString avail == "{U}×1 {R}×1" && avail.canPay prop.cost &&
+      prop.cost == ManaCost.ofGenericAndColor 1 .blue
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment islandMountainApothecary ⟨0⟩ with
+  | some (.tapForMana id (.colored .blue)) =>
+    (islandMountainApothecary.object! id).name == "Island"
+  | _ => false
+
+def islandTappedForApothecary : Game :=
+  mustApply islandMountainApothecary ⟨0⟩
+    (.tapForMana (namedPermanent islandMountainApothecary "Island").id (.colored .blue))
+
+#guard
+  match Agent.chooseManaPayment islandTappedForApothecary ⟨0⟩ with
+  | some (.tapForMana id (.colored .red)) =>
+    (islandTappedForApothecary.object! id).name == "Mountain"
+  | _ => false
+
+def bothTappedForApothecary : Game :=
+  mustApply islandTappedForApothecary ⟨0⟩
+    (.tapForMana (namedPermanent islandTappedForApothecary "Mountain").id (.colored .red))
+
+#guard
+  let pool := (bothTappedForApothecary.player ⟨0⟩).manaPool
+  toString pool == "{U}×1 {R}×1" &&
+    pool.canPay (ManaCost.ofGenericAndColor 1 .blue)
+
+#guard
+  match Agent.chooseManaPayment bothTappedForApothecary ⟨0⟩ with
+  | some .pay => true
+  | _ => false
+
 /- Mirkwood Pathmaker: power and toughness equal lands you control in all
 zones (CR 208.2a / 604.3). -/
 
