@@ -120,13 +120,13 @@ def teamworkCopyOk : Bool :=
 let you pay teamwork. Helicarrier Strike is an instant, so the flag is
 only on spells that were cast. -/
 def teamworkNotPaidWhenNotCastOk : Bool :=
-  let o : GameObject := {
-    id := ⟨0⟩
-    printed := helicarrierStrike
-    owner := ⟨0⟩
-    zone := .battlefield
-  }
-  !o.teamworkPaid && helicarrierStrike.teamwork == some 2 &&
+  let g := addPermanent afterDraw helicarrierStrike ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Helicarrier Strike"
+  !o.teamworkPaid &&
+    helicarrierStrike.teamwork == some 2 &&
+    (match g.apply ⟨0⟩ (.announceTeamwork true) with
+     | .error _ => true
+     | .ok _ => false) &&
     (mshRuling 7).comment.contains "without casting it"
 
 #guard teamworkNotPaidWhenNotCastOk
@@ -226,6 +226,11 @@ def mdfcFacesOk : Bool :=
     bruceBanner.manaValue == 1 &&
     theIncredibleHulk.manaValue == 6 &&
     bruceBanner.isCreature && theIncredibleHulk.isCreature &&
+    (let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
+     let banner := namedPermanent g "Bruce Banner"
+     g.objectManaValue banner == 1 &&
+       (let g := g.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+        g.objectManaValue (namedPermanent g "The Incredible Hulk") == 6)) &&
     (mshRuling 15).comment.contains "on the stack or battlefield" &&
     (mshRuling 20).comment.contains "mana value of a modal double-faced card" &&
     (mshRuling 22).comment.contains "front face" &&
@@ -448,10 +453,33 @@ def blazingCrescendoOk : Bool :=
 
 #guard blazingCrescendoOk
 
--- Ruling 344: Thirst for Knowledge may discard one artifact or two cards.
-#guard
-  thirstForKnowledge.oracleText.contains "discard" &&
+/-- Ruling 344: Thirst for Knowledge may discard one artifact or two cards. -/
+def thirstDiscardUnlessArtifactOk : Bool :=
+  let g0 := addToHand afterDraw theMindStone ⟨0⟩
+  let g0 := addToHand g0 lightningBolt ⟨0⟩
+  let g0 := addToHand g0 mountain ⟨0⟩
+  let gArt := g0.applyEffect ⟨0⟩ .drawThreeDiscardUnlessArtifact #[]
+  gArt.thirstDiscardsLeft == 2 &&
+    (match gArt.pending with
+     | .chooseDiscardCard ⟨0⟩ _ => true
+     | _ => false) &&
+    (let gArt := mustApply gArt ⟨0⟩
+        (.discard (handCardNamed gArt ⟨0⟩ "The Mind Stone").id)
+     gArt.thirstDiscardsLeft == 0 &&
+       gArt.pending == .none &&
+       (gArt.player ⟨0⟩).graveyard.any (fun id =>
+         (gArt.object! id).name == "The Mind Stone")) &&
+    (let gTwo := g0.applyEffect ⟨0⟩ .drawThreeDiscardUnlessArtifact #[]
+     let gTwo := mustApply gTwo ⟨0⟩
+       (.discard (handCardNamed gTwo ⟨0⟩ "Lightning Bolt").id)
+     gTwo.thirstDiscardsLeft == 1 &&
+       (let gTwo := mustApply gTwo ⟨0⟩
+          (.discard (handCardNamed gTwo ⟨0⟩ "Mountain").id)
+        gTwo.thirstDiscardsLeft == 0 &&
+          gTwo.pending == .none)) &&
     (mshRuling 344).comment.contains "one artifact card or two cards"
+
+#guard thirstDiscardUnlessArtifactOk
 
 /-!
 ## Shared CR principles cited by many MSH card notes
@@ -555,10 +583,20 @@ def daredevilLookOk : Bool :=
 
 /-- Ruling 90: Ant-Man's second ability triggers on any +1/+1 counter. -/
 def antManAnyCounterOk : Bool :=
-  antManColonyCommander.triggeredAbilities.any (fun ab =>
-    match ab with
-    | .msh .wheneverYouPutA11CounterOnACreature => true
-    | _ => false) &&
+  let g := addPermanent afterDraw antManColonyCommander ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.addPlusOnePlusOneTo bears 1
+  let insect :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.youPutPlusOne)).size
+  insect == 1 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (let ant := namedPermanent g "Ant-Man, Colony Commander"
+     ant.status.firedOnceEachTurn &&
+       (let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
+        (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+          t.event == TriggerEvent.youPutPlusOne)).size == 1)) &&
     (mshRuling 90).comment.contains "for any reason"
 
 #guard antManAnyCounterOk
@@ -851,9 +889,12 @@ def wonderManExtraPowerUpOk : Bool :=
 
 /-- Ruling 341: each Wonder Man adds one extra activation. -/
 def twoWonderMenThreeActivationsOk : Bool :=
-  wonderManHollywoodHero.staticAbilities.any (fun
-    | .msh .eachPowerUpAbilityOfPermanentsYouControl => true
-    | _ => false) &&
+  let g := addPermanent afterDraw wonderManHollywoodHero ⟨0⟩ ⟨0⟩
+  let g := addPermanent g wonderManHollywoodHero ⟨0⟩ ⟨0⟩
+  let n :=
+    (g.permanentsOf ⟨0⟩).filter Game.grantsExtraPowerUp |>.size
+  n == 2 &&
+    g.powerUpActivationLimit ⟨0⟩ == 3 &&
     (mshRuling 341).comment.contains "two of him"
 
 #guard twoWonderMenThreeActivationsOk
@@ -864,9 +905,12 @@ def twoWonderMenThreeActivationsOk : Bool :=
 -/
 
 def mdfcPlayFaceOk : Bool :=
-  bruceBanner.otherFace.isSome &&
-    theIncredibleHulk.manaValue == 6 &&
-    bruceBanner.manaValue == 1 &&
+  let g := addToHand afterDraw bruceBanner ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Bruce Banner"
+  g.canCast ⟨0⟩ card &&
+    g.objectManaValue card == 1 &&
+    bruceBanner.manaValue <= 2 &&
+    theIncredibleHulk.manaValue > 2 &&
     (mshRuling 21).comment.contains "face you're playing"
 
 #guard mdfcPlayFaceOk
@@ -1009,9 +1053,11 @@ def xIsZeroInZonesOk : Bool :=
     g.objectManaValue gy == 2 &&
     g.objectManaValue lib == 2 &&
     g.objectManaValue bf == 2 &&
+    (mshRuling 43).comment.contains "X is 0" &&
     (mshRuling 152).comment.contains "X is 0" &&
     (mshRuling 153).comment.contains "X is 0" &&
     (mshRuling 154).comment.contains "X is 0" &&
+    (mshRuling 161).comment.contains "X is 0" &&
     (mshRuling 162).comment.contains "X is 0" &&
     (mshRuling 168).comment.contains "value chosen for X"
 
@@ -1093,8 +1139,17 @@ def landfallEachAbilityOk : Bool :=
 #guard landfallEachAbilityOk
 
 def onceEachTurnConniveWordingOk : Bool :=
-  baronStruckerHYDRAOverlord.triggeredAbilities.size > 0 &&
-    baronStruckerHYDRAOverlord.oracleText.contains "Do this only once each turn" &&
+  let villainWait (g : Game) : Nat :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.anotherVillainEnters)).size
+  let g0 := addPermanent afterDraw baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
+  let g := addPermanent g0 redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := g.afterPermanentEnters (namedPermanent g "Red Guardian, Super-Soldier")
+  villainWait g == 1 &&
+    (namedPermanent g "Baron Strucker, HYDRA Overlord").status.firedOnceEachTurn &&
+    (let g := addPermanent g baronHelmutZemo ⟨0⟩ ⟨0⟩
+     let g := g.afterPermanentEnters (namedPermanent g "Baron Helmut Zemo")
+     villainWait g == 1) &&
     (mshRuling 69).comment.contains "Do this only once each turn"
 
 #guard onceEachTurnConniveWordingOk
@@ -2470,6 +2525,11 @@ def attacksAloneDestinationsOk : Bool :=
      let one :=
        g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Grizzly Bears").id]
      alone one) &&
+    (mshRuling 77).comment.contains "attacks alone" &&
+    (mshRuling 78).comment.contains "attacks alone" &&
+    (mshRuling 79).comment.contains "declare attackers step" &&
+    (mshRuling 80).comment.contains "declared as an attacker" &&
+    (mshRuling 82).comment.contains "currently attacking" &&
     (mshRuling 223).comment.contains "neither attacking creature is attacking alone"
 
 #guard attacksAloneDestinationsOk

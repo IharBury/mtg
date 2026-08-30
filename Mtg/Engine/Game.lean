@@ -1087,6 +1087,9 @@ structure Game where
   pendingFreeRGCreature : Option PlayerId := none
   /-- Cards exiled to pay the current Zemo boast activation (MSH 227). -/
   zemoBoastExiles : Array ObjectId := #[]
+  /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
+  card finishes the requirement early. -/
+  thirstDiscardsLeft : Nat := 0
 deriving Repr, Inhabited
 
 namespace Game
@@ -6825,7 +6828,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
         { g with conniveSource := none }.logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    { g with pending := .none }.receivePriority g.activePlayer
+    { g with pending := .none, thirstDiscardsLeft := 0 }.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"
@@ -9991,6 +9994,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       g.logMsg s!"{o.name} becomes a 4/4 artifact creature with flying until end of turn")
   | .drawThreeDiscardUnlessArtifact =>
     let g := g.draw controller 3
+    let g := { g with thirstDiscardsLeft := 2 }
     g.beginDiscardCards #[controller]
   | .eachOpponentLosesLife n =>
     g.forEachOpponent controller (fun g pid => g.loseLife pid n)
@@ -13207,6 +13211,13 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let g := g.modifyPlayer p (fun pl =>
       { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
     let g := g.finishConniveDiscard card
+    if g.thirstDiscardsLeft > 0 then
+      let left := if card.printed.isArtifact then 0 else g.thirstDiscardsLeft - 1
+      let g := { g with thirstDiscardsLeft := left }
+      if left == 0 then
+        return { g with pending := .none }.receivePriority g.activePlayer
+      else
+        return g.beginDiscardCards #[p]
     return g.beginDiscardCards remaining
   | .recruitDiscard q =>
     if p != q then
