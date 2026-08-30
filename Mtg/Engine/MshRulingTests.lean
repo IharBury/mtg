@@ -4144,22 +4144,66 @@ def grimReaperOtherDestinationOk : Bool :=
 
 #guard grimReaperOtherDestinationOk
 
-/-- Rulings 356 / 357: Cosmic Cube and Doom Reigns cast as they resolve. -/
-def castAsResolvesOk : Bool :=
+/-- Cosmic Cube: attacking Bears, then Bolt / Mountain / Hill Giant on top. -/
+def cosmicCubeSetup : Game :=
   let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
-  let g := addToLibraryTop g lightningBolt ⟨0⟩
-  let cube := namedPermanent g "Cosmic Cube"
-  let gCube := g.applyModeledTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := addToLibraryTop g hillGiant ⟨0⟩
+  let g := addToLibraryTop g mountain ⟨0⟩
+  addToLibraryTop g lightningBolt ⟨0⟩
+
+/-- Ruling 356: Cosmic Cube looks at the top six and waits for the controller. -/
+def cosmicCubePending : Game :=
+  let cube := namedPermanent cosmicCubeSetup "Cosmic Cube"
+  cosmicCubeSetup.applyModeledTrigger ⟨0⟩ .wheneverYouAttack (some cube.id)
+
+def cosmicCubeLookedNamed (g : Game) (name : String) : ObjectId :=
+  match g.pending with
+  | .mayCastFromLooked _ ids _ =>
+    match ids.find? (fun id => (g.object! id).name == name) with
+    | some id => id
+    | none => panic! s!"expected {name} among looked-at cards"
+  | _ => panic! "expected Cosmic Cube to wait for a cast choice"
+
+/-- Rulings 356 / 357: Cosmic Cube is a controller choice; Doom Reigns casts
+as it resolves. -/
+def castAsResolvesOk : Bool :=
+  let g := cosmicCubePending
+  let bolt := cosmicCubeLookedNamed g "Lightning Bolt"
+  let giant := cosmicCubeLookedNamed g "Hill Giant"
+  let land := cosmicCubeLookedNamed g "Mountain"
   let (gEx, card) := afterDraw.allocObject helicarrierStrike ⟨1⟩ .exile none
   let gEx := gEx.setObject { card with playPermission := some {
     player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   let gEx := gEx.castExiledAsResolves ⟨0⟩ 1
-  gCube.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
-    gCube.log.any (fun s => mentions s "as this ability resolves") &&
-    gEx.objects.any (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) &&
-    gEx.log.any (fun s => mentions s "as the ability resolves") &&
-    (mshRuling 356).comment.contains "can't wait to cast one later" &&
-    (mshRuling 357).comment.contains "can't wait to cast them later"
+  match g.pending with
+  | .mayCastFromLooked p ids maxMv =>
+    p == ⟨0⟩ && maxMv == 2 && ids.size == 6 &&
+      g.actor == some ⟨0⟩ &&
+      !g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+      g.log.any (fun s => mentions s "as this ability resolves") &&
+      (match g.apply ⟨0⟩ (.cast land) with
+       | .error msg => mentions msg "land cannot be cast"
+       | .ok _ => false) &&
+      (match g.apply ⟨0⟩ (.cast giant) with
+       | .error msg => mentions msg "mana value is greater"
+       | .ok _ => false) &&
+      (let gCast := mustApply g ⟨0⟩ (.cast bolt)
+       gCast.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+         gCast.log.any (fun s => mentions s "as the ability resolves") &&
+         gCast.log.any (fun s => mentions s "on the bottom")) &&
+      (let gDec := mustApply g ⟨0⟩ .decline
+       !gDec.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack) &&
+         gDec.log.any (fun s => mentions s "declines to cast") &&
+         (gDec.player ⟨0⟩).library.any (fun id =>
+           (gDec.findObject? id).any (·.name == "Lightning Bolt"))) &&
+      gEx.objects.any (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) &&
+      gEx.log.any (fun s => mentions s "as the ability resolves") &&
+      (mshRuling 356).comment.contains "can't wait to cast one later" &&
+      (mshRuling 357).comment.contains "can't wait to cast them later"
+  | _ => false
 
 #guard castAsResolvesOk
 

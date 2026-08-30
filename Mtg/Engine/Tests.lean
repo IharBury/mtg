@@ -837,6 +837,8 @@ def applyIdle (g : Game) : Game :=
     | some id => mustApply g p (.discard id)
   | .maySacrificeAnotherBolg _ _, some p =>
     mustApply g p .decline
+  | .mayCastFromLooked _ _ _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"

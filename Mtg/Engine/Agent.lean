@@ -170,6 +170,11 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.permanentsOf p).find? (fun o => o.isCreature && o.id != bolgId) with
       | some o => some (.sacrifice o.id)
       | none => some .decline
+    | .mayCastFromLooked _ ids maxMv =>
+      match ids.reverse.find? (fun id =>
+        (g.mayCastFromLookedError p ids maxMv id).isNone) with
+      | some id => some (.cast id)
+      | none => some .decline
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none

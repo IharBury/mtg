@@ -1,3 +1,4 @@
+import Mtg.Engine.MshRulingTests
 import Mtg.Engine.Tests
 import Mtg.Demo.Render
 
@@ -1622,5 +1623,20 @@ def freeCloudAfterDeath : Game :=
     mentions (playerBlock freeCloudAfterDeath (freeCloudAfterDeath.player ⟨0⟩))
       "without paying its mana cost" &&
     mentions (snapshot freeCloudAfterDeath) "without paying its mana cost"
+
+-- Cosmic Cube's look is a controller choice: the header and looked-at
+-- faces are shown to that player, not auto-cast.
+#guard
+  let g := Mtg.Engine.MshRulingTests.cosmicCubePending
+  mentions (header g) "may cast a looked-at spell" &&
+    mentions (header g) "mana value ≤ 2" &&
+    mentions (snapshot g) "Looking at (may cast, mana value ≤ 2, top last):" &&
+    mentions (snapshot g) "Lightning Bolt" &&
+    mentions (snapshot g (some ⟨1⟩)) "Looking at (may cast): (hidden)" &&
+    !mentions (snapshot g (some ⟨1⟩)) "Lightning Bolt" &&
+    (match scryLookBlock g (some ⟨1⟩) with
+     | some s => mentions s "looking at cards"
+     | none => false) &&
+    !g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
 
 end Mtg.Demo.RenderTests
