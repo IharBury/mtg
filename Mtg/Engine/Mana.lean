@@ -119,6 +119,20 @@ def manaValue (cost : ManaCost) : Nat :=
 def includesManaPayment (cost : ManaCost) : Bool :=
   cost.manaValue > 0
 
+/-- Whether this cost still has an unsubstituted `{X}` (CR 107.3a / 601.2b). -/
+def containsX (cost : ManaCost) : Bool :=
+  cost.symbols.any (fun
+    | .x => true
+    | _ => false)
+
+/-- Replace each `{X}` with `{x}` generic mana. `{X}` chosen as 0 is dropped
+(CR 107.3a / 107.3c). -/
+def substituteX (cost : ManaCost) (x : Nat) : ManaCost :=
+  { symbols := cost.symbols.foldl (fun acc s =>
+      match s with
+      | .x => if x == 0 then acc else acc.push (.generic x)
+      | _ => acc.push s) (#[] : Array ManaSymbol) }
+
 /-- How many dedicated `{C}` mana symbols of color `c` appear in this cost.
 Hybrid symbols are not counted; use `symbolsIncludingColor` for Zemo's
 boast and similar “black mana symbols” checks (MSH 128). -/
@@ -252,6 +266,14 @@ instance : BEq ManaCost where
 #guard (ofGenericAndColor 1 .green).manaValue == 2
 #guard (ofGenericAndColor 1 .green).includesManaPayment
 #guard !ManaCost.empty.includesManaPayment
+#guard ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost).containsX
+#guard !({ symbols := #[.colored .blue, .colored .blue] } : ManaCost).containsX
+#guard ({ symbols := #[.x, .colored .blue] } : ManaCost).substituteX 3 ==
+  ({ symbols := #[.generic 3, .colored .blue] } : ManaCost)
+#guard ({ symbols := #[.x, .x] } : ManaCost).substituteX 2 ==
+  ({ symbols := #[.generic 2, .generic 2] } : ManaCost)
+#guard ({ symbols := #[.x, .colored .blue] } : ManaCost).substituteX 0 ==
+  ({ symbols := #[.colored .blue] } : ManaCost)
 #guard (ofGenericAndColor 1 .green).colors.isMonocolored
 #guard (ofGeneric 4).colors.isColorless
 #guard (ofColors [.blue, .black]).colors.isColorPair

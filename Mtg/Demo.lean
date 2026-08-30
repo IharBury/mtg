@@ -672,6 +672,7 @@ def helpInteractive (controlAll : Bool := false)
   tap <id> [id...] [color]  Tap listed permanents for mana (optional W/U/B/R/G)
   activate <id> [n]    Begin activating an ability (permanent, hand, or graveyard; then tap for mana and pay). n is 1-based when a card has more than one
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
+  x <n>                Choose a value for X (CR 107.3a / 601.2b)
   cast <id>            Begin casting a spell (CR 601.2a)
   cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
   target <id|name|opponent> [n] ...  Announce every target of one “target” word together (CR 601.2c); n is damage when dividing (CR 601.2d)
@@ -707,6 +708,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "together").length > 1
 #guard ((helpInteractive false).splitOn "CR 601.2d").length > 1
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
+#guard ((helpInteractive false).splitOn "x <n>").length > 1
 #guard ((helpInteractive false).splitOn "cast <id> adventure").length > 1
 #guard ((helpInteractive false).splitOn "activate <id> [n]").length > 1
 #guard ((helpInteractive false).splitOn "CR 715.3").length > 1
@@ -1896,6 +1898,45 @@ def applyMode (g : Game) (p : PlayerId) (tokens : List String) : Except String G
   | .error msg => Tests.mentions msg "requires a target"
   | .ok _ => false
 
+def xUsage : String := "usage: x <n>"
+
+/-- Choose a value for `{X}` (CR 107.3a / 601.2b). -/
+def applyX (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | [arg] =>
+    match arg.toNat? with
+    | none => throw xUsage
+    | some n => g.apply p (.chooseX n)
+  | _ => throw xUsage
+
+#guard
+  match applyX Tests.proposedStature ⟨0⟩ [] with
+  | .error msg => msg == xUsage
+  | .ok _ => false
+
+#guard
+  match applyX Tests.proposedStature ⟨0⟩ ["nope"] with
+  | .error msg => msg == xUsage
+  | .ok _ => false
+
+#guard
+  match applyX Tests.proposedStature ⟨0⟩ ["3", "1"] with
+  | .error msg => msg == xUsage
+  | .ok _ => false
+
+#guard
+  match applyX Tests.proposedStature ⟨0⟩ ["3"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      (g'.object! g'.stack.back!.objectId).chosenX == some 3 &&
+      g'.log.any (fun s => Tests.mentions s "chooses X = 3")
+  | .error _ => false
+
+#guard
+  match applyX Tests.afterDraw ⟨0⟩ ["3"] with
+  | .error msg => Tests.mentions msg "Not time to choose X"
+  | .ok _ => false
+
 #guard
   let g := Tests.cratermakerDestroyReady
   let src := Tests.cratermakerSource g
@@ -2621,6 +2662,7 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
         | some prop => throw s!"{(g.player p).name} cannot pay {prop.cost}"
         | none => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
     | .chooseMode _ => throw "Choose a mode first (CR 601.2b)"
+    | .chooseX _ => throw "Choose a value for X first (CR 107.3a / 601.2b)"
     | .chooseTargets _ => throw "Choose a target first (CR 601.2c)"
     | .chooseAdditionalCost _ => throw "Choose an additional cost first (CR 601.2b)"
     | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
@@ -3104,6 +3146,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "play" => applyPlay g p args
   | "activate" => applyActivate g p args
   | "mode" => applyMode g p args
+  | "x" => applyX g p args
   | "tap" => applyTap g p args
   | "cast" => applyCast g p args
   | "target" => applyTarget g p args
@@ -3701,6 +3744,13 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok g' =>
     g'.pending == .chooseTargets ⟨0⟩ &&
     g'.stack.back!.chosenMode == some 0
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.proposedStature "x" ["3"] with
+  | .ok g' =>
+    g'.pending == .activateManaAbilities ⟨0⟩ &&
+      (g'.object! g'.stack.back!.objectId).chosenX == some 3
   | .error _ => false
 
 #guard

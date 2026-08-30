@@ -600,6 +600,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       | none => " [activate mana abilities (CR 601.2g)]"
     | .chooseMode p =>
       s!" [choose a mode (CR 601.2b, {g.player p |>.name})]"
+    | .chooseX p =>
+      s!" [choose a value for X (CR 107.3a / 601.2b, {g.player p |>.name})]"
     | .chooseTargets p =>
       chooseTargetsPending g p
     | .sacrificePermanent p _ =>

@@ -15,7 +15,8 @@ ending a game (CR 104), a player leaving a multiplayer game (CR 800.4),
 priority (CR 117), playing lands (CR 116.2a / 305),
 including additional land plays this turn (CR 305.2b),
 casting the spells we model (CR 601), including choosing modes of modal spells
-and abilities (CR 601.2b / 700.2), announcing additional or alternative costs
+and abilities (CR 601.2b / 700.2), announcing a value for `{X}`
+(CR 107.3a / 601.2b), announcing additional or alternative costs
 (CR 601.2b) before targets (CR 601.2c), dividing
 damage among those targets (CR 601.2d), then determining and paying costs
 including sacrificing an artifact or creature (CR 601.2f / 601.2h) or paying life (CR 118.3b / 119.4),
@@ -30,7 +31,8 @@ creature, set power and toughness
 equal to lands you control in all zones (CR 604.3 / 208.2a), restrict blocking unless you control certain
 creature types (CR 604 / 208.2a / 613.3 / 509.1b), or prevent blocking except by
 two or more (menace, CR 702.111) or N or more creatures, until-end-of-turn
-effects that prevent creatures without flying from blocking, and can't-be-blocked
+effects that prevent creatures without flying from blocking, can't-be-blocked
+if power is N or less, and can't-be-blocked
 (CR 509.1b / 611.2a), until-end-of-turn
 layer-7b base P/T setting (CR 613.3b), Aura spells (CR 303.4),
 Equipment (CR 301.5), flash (CR 702.8), hexproof (CR 702.11),
@@ -706,6 +708,8 @@ inductive Pending where
   | activateManaAbilities (caster : PlayerId)
   /-- The player must choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (caster : PlayerId)
+  /-- The player must announce a value for `{X}` (CR 107.3a / 601.2b). -/
+  | chooseX (caster : PlayerId)
   /-- The player must announce targets for the proposed spell (CR 601.2c). -/
   | chooseTargets (caster : PlayerId)
   /-- After `pay`, choose an artifact or creature to sacrifice
@@ -882,6 +886,8 @@ inductive Action where
   | castAdventure (id : ObjectId)
   /-- Choose a mode of a modal spell or ability (CR 601.2b). -/
   | chooseMode (idx : Nat)
+  /-- Announce a value for `{X}` (CR 107.3a / 601.2b). -/
+  | chooseX (n : Nat)
   /-- Announce a target for the current instance of the word “target”
   (CR 601.2c). For a divided-damage ability, assigns all remaining damage
   to this one target (CR 601.2d). For “one or two target creatures”, this
@@ -2687,7 +2693,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         |>.logMsg
           s!"{(g.player (g.nextLiving p)).name} assigns combat damage (CR 800.4h)"
     else g
-  | .activateManaAbilities q | .chooseMode q | .chooseTargets q
+  | .activateManaAbilities q | .chooseMode q | .chooseX q | .chooseTargets q
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _ =>
     if q == p then { g with pending := .none, proposedSpell := none } else g
@@ -3052,9 +3058,14 @@ def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.islandwalk)
 
 /-- Whether `o` can't be blocked, printed or granted until end of turn
-(CR 509.1b / 611.2a). -/
+(CR 509.1b / 611.2a), or while its power is at most a listed value. -/
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
-  g.hasKeyword o (·.cantBeBlocked)
+  g.hasKeyword o (·.cantBeBlocked) ||
+  (o.isOnBattlefield &&
+    o.staticAbilities.any (fun ab =>
+      match ab.cantBeBlockedIfPowerAtMost? with
+      | some n => g.snapshotPower o <= n
+      | none => false))
 
 /-- Whether `o` has lifelink, printed, granted until end of turn, or from a
 lifelink counter (CR 702.15). -/
@@ -6449,7 +6460,11 @@ def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) 
     o.id != sourceId && grantsHulkPowerUpReduction o)).size
 
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
-    (source : Option GameObject := none) : ManaCost :=
+    (source : Option GameObject := none) (chosenX : Option Nat := none) : ManaCost :=
+  let withX (cost : ManaCost) : ManaCost :=
+    match chosenX with
+    | some x => cost.substituteX x
+    | none => cost
   let cost :=
     if ab.powerUp then
       match source with
@@ -6458,14 +6473,14 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
           if o.status.enteredThisTurn then
             ab.cost.mana.reduceByCost o.printed.manaCost
           else ab.cost.mana
-        afterEnter.reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
-      | none => ab.cost.mana
+        (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
+      | none => withX ab.cost.mana
     else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
-      ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary
+      withX (ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary)
     else if ab.costReductionPerEquipment > 0 then
       let n := (g.permanentsOf p).filter (fun o => o.printed.isEquipment) |>.size
-      ab.cost.mana.reduceGeneric (ab.costReductionPerEquipment * n)
-    else ab.cost.mana
+      withX (ab.cost.mana.reduceGeneric (ab.costReductionPerEquipment * n))
+    else withX ab.cost.mana
   ManaCost.afterReduction ab.cost.mana cost
 
 /-- True when `ab` has a mana cost that `p` would not pay to activate it. -/
@@ -6473,13 +6488,17 @@ def activatesWithoutPayingManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbil
     (source : Option GameObject := none) : Bool :=
   ab.cost.mana.includesManaPayment && !(g.activationManaCost p ab source).includesManaPayment
 
-/-- After proposing a spell or activated ability, announce modes and additional
-costs (CR 601.2b), then targets (CR 601.2c), then mana abilities (CR 601.2g). -/
+/-- After proposing a spell or activated ability, announce `{X}` and modes
+(CR 107.3a / 601.2b), then additional costs, then targets (CR 601.2c), then
+mana abilities (CR 601.2g). -/
 def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : ProposedSpell)
     (needsMode needsTarget : Bool) (modeCitation : String)
     (needsAdditionalCost : Bool := false) (needsKicker : Bool := false)
     (needsGift : Bool := false) (needsTeamwork : Bool := false) : Game :=
-  if needsMode then
+  if prop.cost.containsX then
+    let g := { g with pending := .chooseX p, proposedSpell := some prop }
+    g.logMsg s!"{pl.name} must choose a value for X (CR 107.3a / 601.2b)"
+  else if needsMode then
     let g := { g with pending := .chooseMode p, proposedSpell := some prop }
     g.logMsg s!"{pl.name} must choose a mode ({modeCitation})"
   else if needsAdditionalCost then
@@ -6572,7 +6591,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsKicker := face.kicker.isSome
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
-  if !needsMode && !needsTarget && !cost.includesManaPayment && !needsSacrifice &&
+  if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
+      !needsSacrifice &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork then
     return g.becomeCast p (g.object! newId)
   let lifeInstead :=
@@ -6638,6 +6658,53 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
         return g.logMsg s!"{(g.player p).name} must choose a target (CR 601.2c)"
       return g.afterTargetsChosen
   | _ => throw "Not time to choose a mode (CR 601.2b)"
+
+/-- Announce the value of `{X}` for a proposed spell or ability
+(CR 107.3a / 601.2b). Substitutes `{X}` into the locked-in cost and
+continues the proposal window. -/
+def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
+  match g.pending with
+  | .chooseX caster =>
+    if caster != p then
+      throw s!"Only {(g.player caster).name} may choose a value for X (CR 601.2b)"
+    let some prop := g.proposedSpell
+      | throw "No spell or ability is waiting for X (CR 601.2b)"
+    let some obj := g.findObject? prop.spellId
+      | throw "The spell or ability left the stack"
+    let g := g.setObject { obj with chosenX := some x }
+    let cost :=
+      match prop.kind, prop.activation, prop.sourceId.bind g.findObject? with
+      | .activatedAbility, some ab, src =>
+        g.activationManaCost p ab (source := src) (chosenX := some x)
+      | .spell, _, _ =>
+        let spell := g.object! prop.spellId
+        g.playManaCost spell spell.printed
+      | _, _, _ => prop.cost.substituteX x
+    let prop := { prop with cost }
+    let g := { g with proposedSpell := some prop }
+    let g := g.logMsg
+      s!"{(g.player p).name} chooses X = {x} (CR 107.3a / 601.2b)"
+    let pl := g.player p
+    match prop.kind with
+    | .activatedAbility =>
+      let needsMode :=
+        match prop.activation with
+        | some ab => ab.isModal
+        | none => false
+      let needsTarget :=
+        match prop.activation with
+        | some ab => ab.effect.requiresTarget
+        | none => false
+      return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b"
+    | .spell =>
+      let spell := g.object! prop.spellId
+      let face := spell.printed
+      return g.enterProposalWindow p pl prop face.isModal
+        (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
+        (needsAdditionalCost := face.additionalCostOrPayGeneric.isSome)
+        (needsKicker := face.kicker.isSome) (needsGift := face.giftTreasure)
+        (needsTeamwork := face.teamwork.isSome)
+  | _ => throw "Not time to choose X (CR 601.2b)"
 
 /-- After a trigger's targets (and any damage division) are fully announced,
 prompt the next trigger that needs targets or continue the CR 603.3b
@@ -6864,7 +6931,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
-      !ab.cost.mana.includesManaPayment && !ab.cost.sacrificeAnotherCreatureOrArtifact then
+      !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
+      !ab.cost.sacrificeAnotherCreatureOrArtifact then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
       ab.cost.payLife ab.cost.discardSource (some ab)
     return g.becomeActivated p o.name (some id)
@@ -10161,7 +10229,7 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
 
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
   match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
@@ -10392,13 +10460,8 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
       g.logMsg s!"{(g.player controller).name} takes an extra turn after this one"
   | .plusOneX =>
-    let x :=
-      match sourceId.bind g.findObject? with
-      | some o => o.chosenX.getD 0
-      | none => 0
     g.withSourceOnBattlefield sourceId fun g o =>
-      g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + x } }
+      g.addPlusOnePlusOneTo o chosenX
   | .eachOppDiscardThenPlusOne =>
     let g :=
       (g.livingOpponents controller).foldl (fun acc pl =>
@@ -10425,11 +10488,7 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
             status := { o.status with transformed := !o.status.transformed } }
           g.logMsg s!"{o.name} transforms into {back.name}"
   | .drawX =>
-    let x :=
-      match sourceId.bind g.findObject? with
-      | some o => o.chosenX.getD 0
-      | none => 0
-    g.draw controller x
+    g.draw controller chosenX
   | .lookAtTopRevealArtifact n =>
     g.logMsg s!"{(g.player controller).name} looks at the top {n} cards"
   | .connive =>
@@ -12169,7 +12228,7 @@ def resolveTop (g : Game) : Game :=
     | some obj =>
       if let some e := obj.abilityEffect then
         let g := g.applyAbilityEffect entry.controller e entry.targets obj.sourceId
-          obj.lastKnownPower
+          obj.lastKnownPower (obj.chosenX.getD 0)
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
       else if let some t := obj.triggeredAbility then
@@ -12913,6 +12972,8 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     g.finishProposedSpell
   | .chooseMode _ =>
     throw "Choose a mode first (CR 601.2b)"
+  | .chooseX _ =>
+    throw "Choose a value for X first (CR 107.3a / 601.2b)"
   | .chooseTargets _ =>
     throw "Choose a target first (CR 601.2c)"
   | .chooseAdditionalCost _ =>
@@ -13688,6 +13749,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .cast id => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx => g.announceMode p idx
+  | .chooseX n => g.announceX p n
   | .target t => g.announceTarget p t
   | .targets ts => g.announceTargets p ts
   | .divideDamage as => g.announceDividedDamage p as
@@ -13732,6 +13794,7 @@ def actor (g : Game) : Option PlayerId :=
     | .declareBlockers => who g.currentBlockersPlayer
     | .activateManaAbilities caster => who caster
     | .chooseMode p => who p
+    | .chooseX p => who p
     | .chooseTargets p => who p
     | .sacrificePermanent p _ => who p
     | .sacrificeCreature p => who p

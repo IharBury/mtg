@@ -2677,6 +2677,8 @@ structure StaticMeta where
   thresholdGets : Option (Int × Int) := none
   /-- Can't be blocked by creatures with power at most this. -/
   cantBeBlockedByPowerAtMost : Option Int := none
+  /-- This creature can't be blocked if its own power is at most this. -/
+  cantBeBlockedIfPowerAtMost : Option Int := none
   /-- During your turn, equipped creatures you control have these keywords. -/
   equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
   /-- Enduring-story self pump. -/
@@ -2775,7 +2777,8 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .youAndOtherSubtypeHexproofIfShield _ => {}
   | .opponentsCantCastOnYourTurn => {}
   | .subtypeSpellsCostLess _ _ => {}
-  | .cantBeBlockedIfPowerAtMost _ => {}
+  | .cantBeBlockedIfPowerAtMost n =>
+    { cantBeBlockedIfPowerAtMost := some n }
   | .preventAllDamageToThis => {}
   | .msh _ => {}
 
@@ -3106,6 +3109,10 @@ def thresholdGets? (ab : StaticAbility) : Option (Int × Int) :=
 
 def cantBeBlockedByPowerAtMost? (ab : StaticAbility) : Option Int :=
   ab.shape.spec.cantBeBlockedByPowerAtMost
+
+/-- This creature can't be blocked if its power is at most this. -/
+def cantBeBlockedIfPowerAtMost? (ab : StaticAbility) : Option Int :=
+  ab.shape.spec.cantBeBlockedIfPowerAtMost
 
 def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Keywords :=
   ab.shape.spec.equippedTeamKeywordsDuringYourTurn
@@ -6895,6 +6902,10 @@ instance : ToString CardDef where
 #guard StaticAbility.toNotation (.cantBeBlockedExceptBy 2) ==
   "This creature can't be blocked except by two or more creatures."
 #guard (StaticAbility.cantBeBlockedExcept? (.cantBeBlockedExceptBy 3)) == some 3
+#guard StaticAbility.toNotation (.cantBeBlockedIfPowerAtMost 1) ==
+  "This creature can't be blocked if its power is 1 or less."
+#guard (StaticAbility.cantBeBlockedIfPowerAtMost? (.cantBeBlockedIfPowerAtMost 1)) ==
+  some 1
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
