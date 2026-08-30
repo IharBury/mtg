@@ -1624,6 +1624,85 @@ def worldsWithinWorldsOk : Bool :=
 
 #guard worldsWithinWorldsOk
 
+/-- Ruling 131: Captain America's attack pump uses last-known toughness. -/
+def capWingsLastKnownToughnessOk : Bool :=
+  let g := addPermanent afterDraw captainAmericaWingsOfFreedom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g sheHulkJadeDefender ⟨0⟩ ⟨0⟩
+  let cap := namedPermanent g "Captain America, Wings of Freedom"
+  let g := g.mapObjectStatus cap (fun s => { s with pump := (0, 4) })
+  let cap := namedPermanent g "Captain America, Wings of Freedom"
+  let tw := g.toughness cap
+  let she0 := g.toughness (namedPermanent g "She-Hulk, Jade Defender")
+  let (g, _) := g.move cap.id (.graveyard ⟨0⟩) none
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onAttackOthersOfSubtypeGetEqualToughness "Hero") (some cap.id)
+    #[] #[] none (some tw)
+  g.toughness (namedPermanent g "She-Hulk, Jade Defender") == she0 + tw &&
+    (mshRuling 131).comment.contains "last existed on the battlefield"
+
+#guard capWingsLastKnownToughnessOk
+
+/-- Ruling 147 / 321: Viv Vision draws using last-known power if she left. -/
+def vivVisionLastKnownPowerOk : Bool :=
+  let g := addPermanent afterDraw vivVisionTeenSynthezoid ⟨0⟩ ⟨0⟩
+  let viv := namedPermanent g "Viv Vision, Teen Synthezoid"
+  let g := g.addPlusOnePlusOneTo viv 2
+  let viv := namedPermanent g "Viv Vision, Teen Synthezoid"
+  let pw := g.power viv
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let (g, _) := g.move viv.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .cyberneticSensesWheneverVivVision (some viv.id)
+    #[] "Viv Vision" (some pw)
+  pw >= 4 &&
+    (g.player ⟨0⟩).hand.size == hand0 + 1 &&
+    (mshRuling 147).comment.contains "last existed on the battlefield" &&
+    (mshRuling 321).comment.contains "checks Viv Vision's power only as it resolves"
+
+#guard vivVisionLastKnownPowerOk
+
+/-- Ruling 148: War Machine's combat pump uses last-known power. -/
+def warMachineLastKnownPowerOk : Bool :=
+  let g := addPermanent afterDraw warMachineLegacyOfIron ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let wm := namedPermanent g "War Machine, Legacy of Iron"
+  let g := g.addPlusOnePlusOneTo wm 3
+  let wm := namedPermanent g "War Machine, Legacy of Iron"
+  let pw := g.power wm
+  let bears := namedPermanent g "Grizzly Bears"
+  let p0 := g.power bears
+  let (g, _) := g.move wm.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfCombatOnYourTurn (some wm.id)
+    #[Target.permanent bears.id] "War Machine" (some pw)
+  g.power (namedPermanent g "Grizzly Bears") == p0 + pw &&
+    (mshRuling 148).comment.contains "last existed on the battlefield"
+
+#guard warMachineLastKnownPowerOk
+
+/-- Ruling 137: Political Triumph still draws and counters if it left. -/
+def politicalTriumphLeftOk : Bool :=
+  let g := addPermanent afterDraw politicalTriumph ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Political Triumph"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let (g, _) := g.move plan.id (.graveyard ⟨0⟩) none
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDrawPlusOneEach (some plan.id)
+  (g.player ⟨0⟩).hand.size == hand0 + 1 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (mshRuling 137).comment.contains "won't be able to sacrifice it"
+
+#guard politicalTriumphLeftOk
+
+/-- Ruling 139: Robot Domination still creates tokens if it left. -/
+def robotDominationLeftOk : Bool :=
+  let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Robot Domination"
+  let (g, _) := g.move plan.id (.graveyard ⟨0⟩) none
+  let g := g.applyTriggeredAbility ⟨0⟩ .onThirdPlanCreateRobots (some plan.id)
+  (g.battlefield.filter (fun o => o.name == "Robot Villain")).size == 3 &&
+    (mshRuling 139).comment.contains "You'll create the Robot"
+
+#guard robotDominationLeftOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id

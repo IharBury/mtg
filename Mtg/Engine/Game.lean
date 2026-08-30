@@ -7468,6 +7468,24 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
           | _ => g) sourceId none
       { g with sheHulkDamageUsedThisTurn := true }
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
+  | .cyberneticSensesWheneverVivVision =>
+    let pw : Int :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.power o
+        else lastKnownPower.getD (g.power o)
+      | none => lastKnownPower.getD (0 : Int)
+    if pw >= 4 then g.draw controller 1
+    else g.logMsg "Viv Vision's power is not 4 or greater"
+  | .atTheBeginningOfCombatOnYourTurn =>
+    let x : Int :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.power o
+        else lastKnownPower.getD (g.power o)
+      | none => lastKnownPower.getD (0 : Int)
+    g.withLegalKindPermanent controller .creatureYouControl targets
+      (fun g o => g.pumpPermanent o x 0) sourceId none
   | .wheneverAnotherCreatureYouControlEnters =>
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
@@ -10326,13 +10344,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | some o => g.pumpPermanent o p t
     | none => g
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    match sourceId.bind g.findObject? with
-    | none => g
-    | some src =>
-      let x := g.toughness src
-      g.foldBattlefield (fun o =>
-          o.controlledBy controller && o.id != src.id && g.hasSubtype o subtype)
-        (fun g o => g.pumpPermanent o x x)
+    let (x, srcId?) :=
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then (g.toughness src, some src.id)
+        else (lastKnownToughness.getD (g.toughness src), some src.id)
+      | none => (lastKnownToughness.getD (0 : Int), none)
+    g.foldBattlefield (fun o =>
+        o.controlledBy controller &&
+          (match srcId? with
+           | some sid => o.id != sid
+           | none => true) &&
+          g.hasSubtype o subtype)
+      (fun g o => g.pumpPermanent o x x)
   | .drawIfAttackedOrEnteredSubtype subtype =>
     let pl := g.player controller
     if (subtype == "Hero" && (pl.attackedWithHeroThisTurn || pl.heroEnteredThisTurn)) ||
@@ -10392,12 +10416,17 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g.mapObjectStatus o (fun s => { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
         "No target was chosen"
   | .planFinishDrawPlusOneEach =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.sacrificeToGraveyard o "the Plan is completed"
-      let g := g.draw controller 1
-      g.foldBattlefield (fun c => c.controlledBy controller && c.isCreature)
-        (fun g c => g.mapObjectStatus c (fun s =>
-          { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none =>
+        g.logMsg "The Plan is no longer on the battlefield"
+    let g := g.draw controller 1
+    g.foldBattlefield (fun c => c.controlledBy controller && c.isCreature)
+      (fun g c => g.mapObjectStatus c (fun s =>
+        { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
   | .planFinishReturnInstants =>
     g.withSourceOnBattlefield sourceId fun g o =>
       g.sacrificeToGraveyard o "the Plan is completed"
@@ -10408,14 +10437,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.withSourceOnBattlefield sourceId fun g o =>
       g.sacrificeToGraveyard o "the Plan is completed"
   | .planFinishCreateRobots n =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.sacrificeToGraveyard o "the Plan is completed"
-      Id.run do
-        let mut g := g
-        for _ in [0:n] do
-          let (g', _) := g.createToken controller robotVillain22Token
-          g := g'
-        return g
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.sacrificeToGraveyard o "the Plan is completed"
+        else g.logMsg s!"{o.name} is no longer on the battlefield"
+      | none =>
+        g.logMsg "The Plan is no longer on the battlefield"
+    Id.run do
+      let mut g := g
+      for _ in [0:n] do
+        let (g', _) := g.createToken controller robotVillain22Token
+        g := g'
+      return g
   | .planFinishDividedDamage _n =>
     g.withSourceOnBattlefield sourceId fun g o =>
       g.sacrificeToGraveyard o "the Plan is completed"
