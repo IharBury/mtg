@@ -11151,7 +11151,7 @@ def discardTwoArtifactStillNeedsSecond : Bool :=
 
 /-- HYDRA Infiltration: target opponent discards two cards. -/
 def hydraInfiltrationDiscarding : Game :=
-  afterDraw.applyMshTrigger ⟨0⟩ .whenThisEnchantmentEnters2 none
+  afterDraw.applyModeledTrigger ⟨0⟩ .whenThisEnchantmentEnters2 none
     #[Target.player ⟨1⟩]
 
 #guard
