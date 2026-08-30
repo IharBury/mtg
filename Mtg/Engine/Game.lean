@@ -1248,21 +1248,21 @@ def restoreCopy (g : Game) (o : GameObject) : Game :=
       copyUntilSourceLeaves := none }
     |>.logMsg s!"{card.name} is no longer a copy of {copied}"
 
+/-- Restore copy effects on battlefield objects that satisfy `p`. -/
+def restoreCopiesIf (g : Game) (p : GameObject → Bool) : Game :=
+  g.battlefield.foldl (fun acc o => if p o then acc.restoreCopy o else acc) g
+
 /-- Restore copy effects that last until end of turn. -/
 def restoreCopiesUntilEot (g : Game) : Game :=
-  g.battlefield.foldl (fun acc o =>
-    if o.copyUntilEot then acc.restoreCopy o else acc) g
+  g.restoreCopiesIf (·.copyUntilEot)
 
 /-- Restore copy effects that last until `p`'s next turn. -/
 def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) : Game :=
-  g.battlefield.foldl (fun acc o =>
-    if o.copyUntilNextTurn && o.controller == some p then acc.restoreCopy o
-    else acc) g
+  g.restoreCopiesIf (fun o => o.copyUntilNextTurn && o.controller == some p)
 
 /-- Restore copy effects that last until `srcId` leaves the battlefield. -/
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
-  g.battlefield.foldl (fun acc o =>
-    if o.copyUntilSourceLeaves == some srcId then acc.restoreCopy o else acc) g
+  g.restoreCopiesIf (fun o => o.copyUntilSourceLeaves == some srcId)
 
 /-- Restore control-changing effects that last until `srcId` leaves
 (Super Hero Civil War; MSH 143). -/
