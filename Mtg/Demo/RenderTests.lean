@@ -1624,8 +1624,8 @@ def freeCloudAfterDeath : Game :=
       "without paying its mana cost" &&
     mentions (snapshot freeCloudAfterDeath) "without paying its mana cost"
 
-/-- Cosmic Cube's look is a controller choice: the header and looked-at
-faces are shown to that player, not auto-cast. -/
+-- Cosmic Cube's look is a controller choice: the header and looked-at
+-- faces are shown to that player, not auto-cast.
 #guard
   let g := Mtg.Engine.MshRulingTests.cosmicCubePending
   mentions (header g) "may cast a looked-at spell" &&
