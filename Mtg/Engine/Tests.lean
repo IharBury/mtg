@@ -12946,5 +12946,52 @@ def pantherCombatDraw : Game :=
 -- Daredevil looks at the library top; that is a field, not leftover text.
 #guard daredevilManWithoutFear.mayLookAtTopAnytime
 
+/-- Hidden Lair's second ability is `{T}: Add {U} or {B}` when it entered
+this turn or you control a basic land. -/
+#guard hiddenLair.mshTapAddMana == #[.colored .blue, .colored .black]
+#guard hiddenLair.mshTapAddRequiresEnteredOrBasic
+#guard hiddenLair.manaAbilities.contains (.colored .blue)
+
+def hiddenLairEntered : Game := mshEnter afterDraw hiddenLair
+
+#guard (namedPermanent hiddenLairEntered "Hidden Lair").status.enteredThisTurn
+#guard
+  hiddenLairEntered.manaAbilitiesOf (namedPermanent hiddenLairEntered "Hidden Lair") ==
+    #[.colorless, .colored .blue, .colored .black]
+
+def hiddenLairTappedBlue : Game :=
+  mustApply hiddenLairEntered ⟨0⟩
+    (.tapForMana (namedPermanent hiddenLairEntered "Hidden Lair").id (.colored .blue))
+
+#guard (namedPermanent hiddenLairTappedBlue "Hidden Lair").status.tapped
+#guard (hiddenLairTappedBlue.player ⟨0⟩).manaPool.blue == 1
+#guard hiddenLairTappedBlue.log.any (fun s => mentions s "blue")
+
+/-- Without entering this turn or a basic, Hidden Lair taps only for `{C}`. -/
+def hiddenLairStuck : Game := addPermanent afterDraw hiddenLair ⟨0⟩ ⟨0⟩
+
+#guard !(namedPermanent hiddenLairStuck "Hidden Lair").status.enteredThisTurn
+#guard
+  hiddenLairStuck.manaAbilitiesOf (namedPermanent hiddenLairStuck "Hidden Lair") ==
+    #[.colorless]
+#guard
+  match hiddenLairStuck.tapForMana ⟨0⟩
+      (namedPermanent hiddenLairStuck "Hidden Lair").id (.colored .blue) with
+  | .error msg => mentions msg "entered this turn"
+  | .ok _ => false
+
+/-- A basic land you control unlocks Hidden Lair's colored mana. -/
+def hiddenLairWithIsland : Game :=
+  addUntappedLand (addPermanent afterDraw hiddenLair ⟨0⟩ ⟨0⟩) island
+
+#guard hiddenLairWithIsland.controlsBasicLand ⟨0⟩
+#guard
+  match hiddenLairWithIsland.tapForMana ⟨0⟩
+      (namedPermanent hiddenLairWithIsland "Hidden Lair").id (.colored .blue) with
+  | .ok g =>
+    (namedPermanent g "Hidden Lair").status.tapped &&
+      (g.player ⟨0⟩).manaPool.blue == 1
+  | .error _ => false
+
 end Mtg.Engine.Tests
 

@@ -3655,9 +3655,25 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
 
-/-- Printed mana abilities plus those copied from the graveyard. -/
+/-- True when `p` controls a basic land (CR 205.4c / 305.8). -/
+def controlsBasicLand (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o => isBasicLandCard o.printed)
+
+/-- Hidden Lair's colored add ability: this land entered this turn, or you
+control a basic land. -/
+def canUseEnteredOrBasicAdd (g : Game) (o : GameObject) : Bool :=
+  o.status.enteredThisTurn ||
+    match o.controller with
+    | some p => g.controlsBasicLand p
+    | none => false
+
+/-- Printed mana abilities plus those copied from the graveyard. Restricted
+MSH `{T}: Add` types are omitted until the activation condition holds. -/
 def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
-  o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities)
+  let types := o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities)
+  if o.printed.mshTapAddRequiresEnteredOrBasic && !g.canUseEnteredOrBasicAdd o then
+    types.filter (fun t => !o.printed.mshTapAddMana.contains t)
+  else types
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
@@ -4121,6 +4137,10 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw s!"{o.name} is needed to pay \{T}"
   if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
+  if o.printed.mshTapAddMana.contains mana &&
+      o.printed.mshTapAddRequiresEnteredOrBasic &&
+      !g.canUseEnteredOrBasicAdd o then
+    throw s!"{o.name}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   if !(g.manaAbilitiesOf o).contains mana then
     throw s!"{o.name} cannot produce {mana}"
   let amount := g.manaFromTap o mana
