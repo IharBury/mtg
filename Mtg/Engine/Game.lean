@@ -5405,11 +5405,11 @@ def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
     let after := g.poolAfterTap pool src t
     after.coveredMana cost allowElfRestricted allowInstRestricted > before
 
-/-- A mana type among `types` that helps pay remaining symbols of `cost` and
-leaves `others` able to finish the payment. Prefers an unmet colored
-requirement, then colorless if it can be spent; returns none when no type
-can be spent without making the cost unpayable. Hidden Lair's `{U}` or `{B}`
-is chosen this way when that color is still needed. -/
+/-- A mana type among `types` that helps pay remaining symbols of `cost`.
+When `src` plus `others` can pay, types that would make the cost unpayable
+are omitted so Hidden Lair taps for `{U}` or `{B}` instead of a color another
+source already covers. Prefers an unmet colored requirement, then colorless
+if it can be spent. -/
 def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
     (types : Array ManaType) (cost : ManaCost) (allowElfRestricted : Bool)
     (allowInstRestricted : Bool := false)
@@ -5417,9 +5417,15 @@ def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
   let pool := (g.player p).manaPool
   let helpful := types.filter (fun t =>
     g.typeHelpsPay p src t cost allowElfRestricted allowInstRestricted)
-  let viable := helpful.filter (fun t =>
-    g.canPayFromSources (g.poolAfterTap pool src t) cost
-      allowElfRestricted allowInstRestricted others)
+  let payable :=
+    g.canPayFromSources pool cost allowElfRestricted allowInstRestricted
+      ((src, types) :: others)
+  let viable :=
+    if payable then
+      helpful.filter (fun t =>
+        g.canPayFromSources (g.poolAfterTap pool src t) cost
+          allowElfRestricted allowInstRestricted others)
+    else helpful
   match viable[0]? with
   | none => none
   | some first =>
