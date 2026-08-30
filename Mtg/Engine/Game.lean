@@ -1471,10 +1471,13 @@ def putShadowCounter (g : Game) (o : GameObject) : Game :=
     additionalSubtypes := extra } }
     |>.logMsg s!"{o.name} gets a shadow counter"
 
+/-- Permanents currently attached to `hostId`. -/
+def attachmentsOfId (g : Game) (hostId : ObjectId) : Array GameObject :=
+  g.battlefield.filter (fun o => o.attachedTo == some hostId)
+
 /-- Attachments that should phase out or in with `host`. -/
 def attachmentsOf (g : Game) (host : GameObject) : Array GameObject :=
-  g.objects.filter (fun o =>
-    o.zone == .battlefield && o.attachedTo == some host.id)
+  g.attachmentsOfId host.id
 
 /-- Remove `o` from combat (CR 506.4). -/
 def removeFromCombat (g : Game) (o : GameObject) : Game :=
@@ -7184,6 +7187,19 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
   else
     g.setLife pid (pl.life - n) s!"{pl.name} is dealt {n} damage ({pl.life - n} life)"
 
+/-- Deal this creature's power as damage to `dest` (one side of a fight). -/
+def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
+  g.dealDamageFrom src.name dest (g.power src).toNat
+    (deathtouch := g.hasDeathtouch src)
+
+/-- Both sides of a fight deal damage simultaneously-looking: `src` first,
+then `dest` if both are still in play. -/
+def fightCreatures (g : Game) (src dest : GameObject) : Game :=
+  let g := g.dealFightDamage src dest
+  match g.findObject? dest.id, g.findObject? src.id with
+  | some dest, some src => g.dealFightDamage dest src
+  | _, _ => g
+
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/
 def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -7194,6 +7210,10 @@ def loseLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
     let g := { g with lastLifeLost := some (p, n) }
     g.livingPlayers.foldl (fun acc pl =>
       acc.putControlledTriggers pl.id .playerLosesLife) g
+
+/-- Draw `cards`, then lose `life` (Night's Whisper, MSH draw-and-lose). -/
+def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
+  (g.draw p cards).loseLife p life
 
 /-- Increase `p`'s life total (CR 118.2). Gaining 0 life does nothing (CR 118.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -7250,6 +7270,29 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
       g.mapObjectStatus o (·.grantUntilEot kw)
         |>.logMsg s!"{o.name} gains {label} until end of turn"
     else g
+
+/-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
+def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Game :=
+  kws.foldl (fun g kw =>
+    match g.findObject? o.id with
+    | some o => g.mapObjectStatus o (·.grantUntilEot kw)
+    | none => g) g
+
+/-- Set base P/T, optional creature types, and keywords until end of turn. -/
+def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
+    (kws : Keywords) (msg : String)
+    (types : Option (Array String) := none)
+    (additionalCreature := false) (additionalArtifact := false)
+    (pumpPerArtifact := false) : Game :=
+  g.mapObjectStatus o (fun s =>
+    { s with
+      setBasePT := some pt
+      replacedCreatureTypesUntilEot := types.orElse fun _ => s.replacedCreatureTypesUntilEot
+      untilEotKeywords := Keywords.merge s.untilEotKeywords kws
+      additionalCreatureUntilEot := additionalCreature || s.additionalCreatureUntilEot
+      additionalArtifactUntilEot := additionalArtifact || s.additionalArtifactUntilEot
+      pumpPerArtifactUntilEot := pumpPerArtifact || s.pumpPerArtifactUntilEot })
+    |>.logMsg msg
 
 /-- Move `id` to `to`'s hand and log the return. -/
 def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
@@ -7756,10 +7799,15 @@ def millThenPutFromGy (g : Game) (p : PlayerId) (n : Nat)
         left := left - 1
     return g
 
+/-- Deal `n` damage to each creature matching `pred`. -/
+def dealDamageToEachCreatureMatching (g : Game) (n : Nat)
+    (pred : GameObject → Bool := fun _ => true) : Game :=
+  g.foldBattlefield (fun o => o.isCreature && pred o)
+    (fun g o => g.dealDamageToPermanent o n)
+
 /-- Deal `n` damage to each non-Dragon creature. -/
 def dealDamageToEachNonDragon (g : Game) (n : Nat) : Game :=
-  g.foldBattlefield (fun o => o.isCreature && !g.hasSubtype o "Dragon")
-    (fun g o => g.applyPermanentAction o (.dealDamage n))
+  g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o "Dragon")
 
 /-- Palantír of Orthanc: an illegal target means no influence, scry, draw,
 or mill. -/
@@ -7975,6 +8023,43 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
     else g.logMsg s!"{o.name} is no longer on the battlefield"
   | none =>
     g.logMsg missing
+
+/-- Run `f` if the source is still on the battlefield; otherwise log the same
+`missing` message whether the source is gone or was never found. -/
+def withSourceStillOnBattlefield (g : Game) (sourceId : Option ObjectId)
+    (f : Game → GameObject → Game)
+    (missing := "The source has left the battlefield. Nothing is exiled.") : Game :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then f g o
+    else g.logMsg missing
+  | none =>
+    g.logMsg missing
+
+/-- Current power of `sourceId` if it is still on the battlefield; otherwise
+last-known power, falling back to the object's current power. -/
+def sourcePowerAtResolution (g : Game) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Int :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then g.power o
+    else lastKnownPower.getD (g.power o)
+  | none => lastKnownPower.getD (0 : Int)
+
+/-- `sourcePowerAtResolution` as a `Nat`. -/
+def sourcePowerNatAtResolution (g : Game) (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none) : Nat :=
+  (g.sourcePowerAtResolution sourceId lastKnownPower).toNat
+
+/-- Current P/T of `sourceId` if it is still on the battlefield; otherwise
+last-known values (defaulting to 0). -/
+def sourcePTAtResolution (g : Game) (sourceId : Option ObjectId)
+    (lastKnownPower lastKnownToughness : Option Int := none) : Int × Int :=
+  match sourceId.bind g.findObject? with
+  | some src =>
+    if src.isOnBattlefield then (g.power src, g.toughness src)
+    else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
+  | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
 
 /-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
 def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -8380,67 +8465,50 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     | none => g
     | some opp =>
       let g := g.revealHand opp
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then
-          match targets[1]? with
-          | some (Target.permanent id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.controlledBy opp then
-                g.exileUntilSourceLeaves sourceId o
-              else
-                g.logMsg "The creature is an illegal target. The ability may still resolve."
-            | none => g
-          | some (Target.card id) =>
-            match g.findObject? id with
-            | some o =>
-              if o.zone == .hand opp && !o.printed.isLand then
-                g.exileUntilSourceLeaves sourceId o
-              else g
-            | none => g
-          | _ => g
-        else
-          g.logMsg "Cloak and Dagger have left the battlefield. Nothing is exiled."
-      | none =>
-        g.logMsg "Cloak and Dagger have left the battlefield. Nothing is exiled."
+      g.withSourceStillOnBattlefield sourceId (fun g _ =>
+        match targets[1]? with
+        | some (Target.permanent id) =>
+          match g.findObject? id with
+          | some o =>
+            if o.controlledBy opp then
+              g.exileUntilSourceLeaves sourceId o
+            else
+              g.logMsg "The creature is an illegal target. The ability may still resolve."
+          | none => g
+        | some (Target.card id) =>
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .hand opp && !o.printed.isLand then
+              g.exileUntilSourceLeaves sourceId o
+            else g
+          | none => g
+        | _ => g)
+        "Cloak and Dagger have left the battlefield. Nothing is exiled."
   | .whenThisAuraEnters2 =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        match targets[0]? with
-        | some (Target.permanent id) =>
-          match g.findObject? id with
-          | some tgt =>
-            let host? := src.attachedTo.bind g.findObject?
-            let g := g.exileUntilSourceLeaves sourceId tgt
-            match host? with
+    g.withSourceStillOnBattlefield sourceId fun g src =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some tgt =>
+          let host? := src.attachedTo.bind g.findObject?
+          let g := g.exileUntilSourceLeaves sourceId tgt
+          match host? with
+          | some host =>
+            match g.findObject? host.id with
             | some host =>
-              match g.findObject? host.id with
-              | some host =>
-                g.becomeCopyOf host tgt (untilSourceLeaves := some src.id)
-              | none => g
+              g.becomeCopyOf host tgt (untilSourceLeaves := some src.id)
             | none => g
-          | none => g.logMsg "The target is no longer legal"
-        | _ => g
-      else
-        g.logMsg "The source has left the battlefield. Nothing is exiled."
-    | none =>
-      g.logMsg "The source has left the battlefield. Nothing is exiled."
+          | none => g
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g
   | .whenThisEnchantmentEnters =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        match targets[0]? with
-        | some (Target.permanent id) =>
-          match g.findObject? id with
-          | some o => g.exileUntilSourceLeaves sourceId o
-          | none => g.logMsg "The target is no longer legal"
-        | _ => g
-      else
-        g.logMsg "The source has left the battlefield. Nothing is exiled."
-    | none =>
-      g.logMsg "The source has left the battlefield. Nothing is exiled."
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some o => g.exileUntilSourceLeaves sourceId o
+        | none => g.logMsg "The target is no longer legal"
+      | _ => g
   | .atTheBeginningOfYourFirstMainPhase =>
     g.withSourceOnBattlefield sourceId (fun g src =>
       match targets[0]? with
@@ -8472,14 +8540,8 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     else
       let amt := lastKnownPower.getD 0
       let g :=
-        g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-          match tgt with
-          | Target.player pid => g.dealDamageToPlayer pid amt
-          | Target.permanent id =>
-            match g.findObject? id with
-            | some o => g.dealDamageToPermanent o amt
-            | none => g
-          | _ => g) sourceId none
+        g.withLegalKindTarget controller .playerOrCreature targets
+          (fun g tgt => g.dealDamageToTarget tgt amt) sourceId none
       { g with sheHulkDamageUsedThisTurn := true }
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
   | .noOneDiesWhenSpiderManEnte =>
@@ -8513,21 +8575,11 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       let g := g.forEachOpponent controller (fun g pid => g.loseLife pid x)
       g.gainLife controller x
   | .cyberneticSensesWheneverVivVision =>
-    let pw : Int :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.power o
-        else lastKnownPower.getD (g.power o)
-      | none => lastKnownPower.getD (0 : Int)
+    let pw := g.sourcePowerAtResolution sourceId lastKnownPower
     if pw >= 4 then g.draw controller 1
     else g.logMsg "Viv Vision's power is not 4 or greater"
   | .atTheBeginningOfCombatOnYourTurn =>
-    let x : Int :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.power o
-        else lastKnownPower.getD (g.power o)
-      | none => lastKnownPower.getD (0 : Int)
+    let x := g.sourcePowerAtResolution sourceId lastKnownPower
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.pumpPermanent o x 0) sourceId none
   | .wheneverAnotherCreatureYouControlEnters =>
@@ -9040,8 +9092,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     else if text.contains "Doombot" then
       g.createKindTokens controller .doombot 2
     else if text.contains "draw a card" && text.contains "lose 1 life" then
-      let g := g.draw controller 1
-      g.loseLife controller 1
+      g.drawThenLoseLife controller 1 1
     else if text.contains "draw a card" || text.contains "you draw" ||
         text.contains "draw cards" then
       g.draw controller 1
@@ -9053,15 +9104,9 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.withLegalKindPermanent controller .oppCreature targets
         (fun g o => g.destroyPermanent o) sourceId none
     else if text.contains "exile" && text.contains "leaves" then
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield then
-          g.withLegalKindPermanent controller .oppNonland targets
-            (fun g o => g.exileUntilSourceLeaves sourceId o) sourceId none
-        else
-          g.logMsg "The source has left the battlefield. Nothing is exiled."
-      | none =>
-        g.logMsg "The source has left the battlefield. Nothing is exiled."
+      g.withSourceStillOnBattlefield sourceId fun g _ =>
+        g.withLegalKindPermanent controller .oppNonland targets
+          (fun g o => g.exileUntilSourceLeaves sourceId o) sourceId none
     else if text.contains "+1/+1 counter" then
       match targets[0]? with
       | some (Target.permanent id) => g.addPlusOnePlusOneTo (g.object! id) 1
@@ -9071,16 +9116,11 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     else if text.contains "each opponent loses" then
       g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
     else if text.contains "deals" && text.contains "damage" then
-      g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid 1
-        | Target.permanent id => g.dealDamageToPermanent (g.object! id) 1
-        | _ => g) sourceId none
+      g.applyDamageToKindTarget controller .playerOrCreature targets 1 sourceId none
     else if text.contains "fights" then
       match sourceId, targets[0]? with
       | some sid, some (Target.permanent id) =>
-        let src := g.object! sid
-        g.dealDamageFrom src.name (g.object! id) (g.power src).toNat
+        g.dealFightDamage (g.object! sid) (g.object! id)
       | _, _ => g
     else if text.contains "attach" then
       g.withLegalKindPermanent controller .creatureYouControl targets
@@ -9164,26 +9204,17 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
               |>.logMsg s!"{o.name} becomes unattached"
           else g
         let o := g.object! o.id
-        let g := g.mapObjectStatus o (fun s =>
-          { s with
-            setBasePT := some (0, 0)
-            additionalCreatureUntilEot := true
-            additionalArtifactUntilEot := true
-            untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.flying
-            replacedCreatureTypesUntilEot := some #["Construct", "Hero"]
-            pumpPerArtifactUntilEot := true })
-        g.logMsg s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
+        g.setUntilEotForm o (0, 0) Keyword.flying
+          s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
+          (types := some #["Construct", "Hero"])
+          (additionalCreature := true) (additionalArtifact := true)
+          (pumpPerArtifact := true)
     | none => g.logMsg "The Equipment is no longer in play"
   | .untilEndOfTurnReptilBecomesADinosaurHer =>
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with
-          setBasePT := some (3, 5)
-          replacedCreatureTypesUntilEot := some #["Dinosaur", "Hero"]
-          untilEotKeywords :=
-            Keywords.merge (Keywords.merge s.untilEotKeywords Keyword.reach)
-              Keyword.vigilance })
-        |>.logMsg s!"{o.name} becomes a 3/5 Dinosaur Hero with reach and vigilance")
+      g.setUntilEotForm o (3, 5) (Keyword.reach.merge Keyword.vigilance)
+        s!"{o.name} becomes a 3/5 Dinosaur Hero with reach and vigilance"
+        (types := some #["Dinosaur", "Hero"]))
       "The source is no longer in play"
   | .theNextRedOrGreenCreatureSpellYouCastTh =>
     { g with pendingFreeRGCreature := some controller }
@@ -9259,20 +9290,14 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
-      let src := g.object! a
-      g.dealDamageFrom src.name (g.object! b) (g.power src).toNat
+      g.dealFightDamage (g.object! a) (g.object! b)
     | _, _ => g
   else if text.contains "draw" && text.contains "lose" then
-    let g := g.draw controller 2
-    g.loseLife controller 2
+    g.drawThenLoseLife controller 2 2
   else if text.contains "Draw" || text.contains "draw" then
     g.draw controller 1
   else if text.contains "deals" && text.contains "damage" then
-    g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.dealDamageToPlayer pid 4
-      | Target.permanent id => g.dealDamageToPermanent (g.object! id) 4
-      | _ => g)
+    g.applyDamageToKindTarget controller .playerOrCreature targets 4
   else if text.contains "+1/+1 counter on each" then
     g.forEachControlledCreature controller (fun g o => g.addPlusOnePlusOneTo o 1)
   else if text.contains "+1/+1" then
@@ -9293,20 +9318,12 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     g.draw controller (g.player controller).cardsDiscardedThisTurn
   else if t == .tyrannosaurusRex6UntilEndOfTu then
     g.withSourceOnBattlefield sourceId (fun g o =>
-      g.mapObjectStatus o (fun s =>
-        { s with
-          setBasePT := some (6, 6)
-          replacedCreatureTypesUntilEot := some #["Dinosaur", "Hero"]
-          untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.trample })
-        |>.logMsg s!"{o.name} becomes a 6/6 Dinosaur Hero with trample")
+      g.setUntilEotForm o (6, 6) Keyword.trample
+        s!"{o.name} becomes a 6/6 Dinosaur Hero with trample"
+        (types := some #["Dinosaur", "Hero"]))
       "The source is no longer in play"
   else if t == .tPutAStunCounterOnJessicaJones then
-    let x :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then (g.power o).toNat
-        else (lastKnownPower.getD (g.power o)).toNat
-      | none => (lastKnownPower.getD (0 : Int)).toNat
+    let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
     g.exileTopPlayThisTurn controller x
   else
   let text := t.toNotation
@@ -9360,11 +9377,7 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
   else if text.contains "Insect" then
     g.createKindTokens controller .insect11green 1
   else if text.contains "deals" && text.contains "damage" then
-    g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.dealDamageToPlayer pid 2
-      | Target.permanent id => g.dealDamageToPermanent (g.object! id) 2
-      | _ => g)
+    g.applyDamageToKindTarget controller .playerOrCreature targets 2
   else if text.contains "-4/-4" then
     g.withLegalKindPermanent controller .creature targets
       (fun g o => g.pumpPermanent o (-4) (-4)) sourceId none
@@ -9379,39 +9392,31 @@ def applyMshChapter (g : Game) (controller : PlayerId) (t : MshChapter)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let text := t.toNotation
   if text.contains "damage" then
-    g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.dealDamageToPlayer pid 2
-      | _ => g)
+    g.applyDamageToKindTarget controller .opponent targets 2
   else if text.contains "next red or green" then
     { g with pendingFreeRGCreature := some controller }
       |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   else if text.contains "gain control" || text.contains "Gain control" then
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        targets.foldl (fun (g : Game) (t : Target) =>
-          match t with
-          | Target.permanent id =>
-            match g.findObject? id with
-            | some o =>
-              if o.isOnBattlefield then
-                let g :=
-                  if (g.player controller).lost then
-                    g.logMsg s!"{o.name} does not change control (CR 800.4b)"
-                  else
-                    g.setObject { o with
-                      controller := some controller
-                      controlChanged := true
-                      controlUntilSourceLeaves := some src.id }
-                g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
-              else g
-            | none => g
-          | _ => g) g
-      else
-        g.logMsg "The Super Hero Civil War has left the battlefield. You won't gain control."
-    | none =>
-      g.logMsg "The Super Hero Civil War has left the battlefield. You won't gain control."
+    g.withSourceStillOnBattlefield sourceId (fun g src =>
+      targets.foldl (fun (g : Game) (t : Target) =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then
+              let g :=
+                if (g.player controller).lost then
+                  g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+                else
+                  g.setObject { o with
+                    controller := some controller
+                    controlChanged := true
+                    controlUntilSourceLeaves := some src.id }
+              g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
+            else g
+          | none => g
+        | _ => g) g)
+      "The Super Hero Civil War has left the battlefield. You won't gain control."
   else
     g.createKindTokens controller .treasure 1
 
@@ -9430,8 +9435,7 @@ def applyAvengersDisassembled (g : Game) (_controller : PlayerId)
   else
     let g :=
       if choseDamage then
-        g.foldBattlefield (fun o => o.isCreature) (fun g o =>
-          g.dealDamageToPermanent o 3)
+        g.dealDamageToEachCreatureMatching 3
       else g
     if choseLand then
       match landId.bind g.findObject? with
@@ -9506,9 +9510,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       let destOk := (g.legalOppCreatureTargets controller).contains
         (Target.permanent destId)
       if srcOk && destOk then
-        let src := g.object! srcId
-        g.dealDamageFrom src.name (g.object! destId) (g.power src).toNat
-          (deathtouch := g.hasDeathtouch src)
+        g.dealFightDamage (g.object! srcId) (g.object! destId)
       else
         let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
@@ -9519,8 +9521,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       { pl with additionalLandsThisTurn := pl.additionalLandsThisTurn + 1 })
     g.logMsg s!"{(g.player controller).name} may play an additional land this turn"
   | .drawAndLoseLife cards life =>
-    let g := g.draw controller cards
-    g.loseLife controller life
+    g.drawThenLoseLife controller cards life
   | .onPermanent action =>
     g.applyOnPermanent controller effect.targetKind targets action
   | .allCreaturesPump p t =>
@@ -9710,17 +9711,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
       match g.findObject? srcId, g.findObject? destId with
-      | some src, some _dest =>
+      | some src, some dest =>
         let g := g.addPlusOnePlusOneTo src n
-        let src := g.object! srcId
-        let dest := g.object! destId
-        let g := g.dealDamageFrom src.name dest (g.power src).toNat
-          (deathtouch := g.hasDeathtouch src)
-        match g.findObject? destId, g.findObject? srcId with
-        | some dest, some src =>
-          g.dealDamageFrom dest.name src (g.power dest).toNat
-            (deathtouch := g.hasDeathtouch dest)
-        | _, _ => g
+        g.fightCreatures (g.object! src.id) (g.object! dest.id)
       | _, _ => g.logMsg "The target is no longer legal"
     | _, _ => g.logMsg "The target is no longer legal"
   | .plusOneThenEachOtherIfFromGy =>
@@ -9743,8 +9736,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.resolveLibrarySearchToHand controller (fun c =>
       c.isCreature && c.hasSupertype .legendary) "legendary creature card"
   | .dealDamageToEachOppCreature n =>
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
-      (fun g o => g.applyPermanentAction o (.dealDamage n))
+    g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
   | .targetPlayerDraw n =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
       match tgt with
@@ -9951,8 +9943,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .damageOppCreaturesEqualOtherSpellsMv =>
     let xs := (g.player controller).castManaValuesThisTurn
     let n : Nat := (xs.extract 0 xs.size.pred).foldl (fun a b => a + b) 0
-    g.foldBattlefield (fun o => o.isCreature && !o.controlledBy controller)
-      (fun g o => g.dealDamageToPermanent o (Int.ofNat n))
+    g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
       |>.logMsg s!"deals {n} damage to each opposing creature"
   | .phaseOutKicker =>
     if kicked then
@@ -10083,11 +10074,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let g := g.mapObjectStatus o (fun s =>
         { s with plusOnePlusOne := s.plusOnePlusOne + 1 })
-      let o := g.object! o.id
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.lifelink)
-      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.indestructible))
+      g.grantUntilEotKeywords (g.object! o.id) [Keyword.lifelink, Keyword.indestructible])
   | .dealDamageToEachCreature n =>
-    g.foldBattlefield (fun o => o.isCreature) (fun g o => g.dealDamageToPermanent o (n : Int))
+    g.dealDamageToEachCreatureMatching n
   | .destroyLandSearchBasic =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let owner := o.owner
@@ -10107,19 +10096,14 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     | _ => g.logMsg "The target is no longer legal"
   | .grantVigilanceUnblockable =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.vigilance)
-      let g := g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.cantBeBlocked)
+      let g := g.grantUntilEotKeywords o [Keyword.vigilance, Keyword.cantBeBlocked]
       g.draw controller 1)
       none (some "The target is no longer legal. You won't draw a card.")
   | .becomeArtifactCreature44Flying =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let g := g.mapObjectStatus o (fun s =>
-        { s with
-          setBasePT := some (4, 4)
-          additionalArtifactUntilEot := true
-          additionalCreatureUntilEot := true
-          untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.flying })
-      g.logMsg s!"{o.name} becomes a 4/4 artifact creature with flying until end of turn")
+      g.setUntilEotForm o (4, 4) Keyword.flying
+        s!"{o.name} becomes a 4/4 artifact creature with flying until end of turn"
+        (additionalCreature := true) (additionalArtifact := true))
   | .drawThreeDiscardUnlessArtifact =>
     let g := g.draw controller 3
     let g := { g with thirstDiscardsLeft := 2 }
@@ -10129,8 +10113,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .fightUpToOne =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
-      let src := g.object! srcId
-      g.dealDamageFrom src.name (g.object! destId) (g.power src).toNat
+      g.dealFightDamage (g.object! srcId) (g.object! destId)
     | some (Target.permanent srcId), none =>
       g.logMsg s!"{(g.object! srcId).name} has nothing to fight"
     | _, _ => g.logMsg "The target is no longer legal"
@@ -10984,12 +10967,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
   | .setOtherBasePT =>
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
-      let (pw, tw) :=
-        match sourceId.bind g.findObject? with
-        | some src =>
-          if src.isOnBattlefield then (g.power src, g.toughness src)
-          else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
-        | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
+      let (pw, tw) := g.sourcePTAtResolution sourceId lastKnownPower lastKnownToughness
       let g := g.mapObjectStatus o (fun s => { s with setBasePT := some (pw, tw) })
       g.logMsg
         s!"{o.name}'s base power and toughness become {pw}/{tw} until end of turn")
@@ -11106,15 +11084,9 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
       g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
   | .exileUntilLeaves =>
-    match sourceId.bind g.findObject? with
-    | some src =>
-      if src.isOnBattlefield then
-        g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
-          g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
-      else
-        g.logMsg "The source has left the battlefield. Nothing is exiled."
-    | none =>
-      g.logMsg "The source has left the battlefield. Nothing is exiled."
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+        g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
   | .returnLinkedExile =>
     match sourceId.bind g.findObject? with
     | some src => g.returnLinkedExile src
@@ -11547,19 +11519,14 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         else acc
       | none => acc) g
   | .exileOppNonlandEachUntilLeaves =>
-    match sourceId.bind g.findObject? with
-    | none => g.logMsg "The source has left the battlefield. Nothing is exiled."
-    | some src =>
-      if !src.isOnBattlefield then
-        g.logMsg "The source has left the battlefield. Nothing is exiled."
-      else
-        targets.foldl (fun acc t =>
-          match t with
-          | Target.permanent oid =>
-            match acc.findObject? oid with
-            | some o => acc.exileUntilSourceLeaves sourceId o
-            | none => acc
-          | _ => acc) g
+    g.withSourceStillOnBattlefield sourceId fun g _ =>
+      targets.foldl (fun acc t =>
+        match t with
+        | Target.permanent oid =>
+          match acc.findObject? oid with
+          | some o => acc.exileUntilSourceLeaves sourceId o
+          | none => acc
+        | _ => acc) g
   | .plusOneEqualLastKnownMv =>
     let n := (lastKnownPower.getD 0).toNat
     g.applyOnPermanent controller ab.targetKind targets (.plusOne n) sourceId

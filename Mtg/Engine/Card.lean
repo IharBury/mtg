@@ -172,6 +172,13 @@ deriving Repr, Inhabited, BEq
 
 namespace TokenKind
 
+/-- English count word used in Oracle token-creation phrases (`two`, `three`). -/
+def englishCount (n : Nat) : String :=
+  match n with
+  | 2 => "two"
+  | 3 => "three"
+  | _ => toString n
+
 def oracleNoun : TokenKind → String
   | .treasure => "Treasure token"
   | .food => "Food token"
@@ -196,29 +203,9 @@ def oracleNoun : TokenKind → String
   | .insect11green => "1/1 green Insect creature token"
   | .vibranium => "Vibranium token"
 
-def pluralNoun : TokenKind → String
-  | .treasure => "Treasure tokens"
-  | .food => "Food tokens"
-  | .humanSoldier => "1/1 white Human Soldier creature tokens"
-  | .wolf => "2/2 green Wolf creature tokens"
-  | .dwarf => "2/2 red Dwarf creature tokens"
-  | .bear => "2/2 green Bear creature tokens"
-  | .elf => "1/1 green Elf creature tokens"
-  | .spirit => "1/1 white Spirit creature tokens with flying"
-  | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
-  | .wall => "3/1 colorless Wall artifact creature tokens with defender named Stone Boulder"
-  | .dragon => "6/6 red Dragon creature tokens with flying"
-  | .clue => "Clue tokens"
-  | .hero32vigilance => "3/2 white Hero creature tokens with vigilance"
-  | .villain21menace => "2/1 black Villain creature tokens with menace"
-  | .robotVillain22 => "2/2 colorless Robot Villain artifact creature tokens"
-  | .leviathan65hexproof => "6/5 blue Leviathan creature tokens with hexproof"
-  | .soldier11white => "1/1 white Soldier creature tokens"
-  | .squirrel11green => "1/1 green Squirrel creature tokens"
-  | .wall04defender => "0/4 colorless Wall creature tokens with defender"
-  | .doombot => "3/3 colorless Robot Villain artifact creature tokens named Doombot"
-  | .insect11green => "1/1 green Insect creature tokens"
-  | .vibranium => "Vibranium tokens"
+/-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
+def pluralNoun (k : TokenKind) : String :=
+  k.oracleNoun.replace "token" "tokens"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -226,8 +213,14 @@ def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
   if n == 1 then
     s!"create a {tappedS}{k.oracleNoun}"
   else
-    let nWord := if n == 3 then "three" else if n == 2 then "two" else toString n
-    s!"create {nWord} {tappedS}{k.pluralNoun}"
+    s!"create {englishCount n} {tappedS}{k.pluralNoun}"
+
+#guard TokenKind.pluralNoun .treasure == "Treasure tokens"
+#guard TokenKind.pluralNoun .spirit == "1/1 white Spirit creature tokens with flying"
+#guard TokenKind.pluralNoun .doombot ==
+  "3/3 colorless Robot Villain artifact creature tokens named Doombot"
+#guard TokenKind.createPhrase .wolf 2 == "create two 2/2 green Wolf creature tokens"
+#guard TokenKind.createPhrase .elf 3 == "create three 1/1 green Elf creature tokens"
 
 end TokenKind
 

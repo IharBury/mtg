@@ -517,11 +517,18 @@ def treasureToken : CardDef :=
     (tapSacrificeAddAnyColor := true)
     (isToken := true)
 
+/-- A creature token with a color indicator (CR 202.2e). -/
+def tokenCreature (name : String) (subtypes : Array Subtype)
+    (power toughness : Int) (color : Color)
+    (keywords : Keywords := Keywords.none) : CardDef :=
+  creature name ManaCost.empty subtypes power toughness
+    (colorIndicator := some (ColorSet.singleton color))
+    (keywords := keywords)
+    (isToken := true)
+
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
-  creature "Human Soldier" ManaCost.empty #["Human", "Soldier"] 1 1
-    (colorIndicator := some (ColorSet.singleton .white))
-    (isToken := true)
+  tokenCreature "Human Soldier" #["Human", "Soldier"] 1 1 .white
 
 /-- A Food token. -/
 def foodToken : CardDef :=
@@ -535,24 +542,16 @@ def foodToken : CardDef :=
     (isToken := true)
 
 def wolfToken : CardDef :=
-  creature "Wolf" ManaCost.empty #["Wolf"] 2 2
-    (colorIndicator := some (ColorSet.singleton .green))
-    (isToken := true)
+  tokenCreature "Wolf" #["Wolf"] 2 2 .green
 
 def dwarfToken : CardDef :=
-  creature "Dwarf" ManaCost.empty #["Dwarf"] 2 2
-    (colorIndicator := some (ColorSet.singleton .red))
-    (isToken := true)
+  tokenCreature "Dwarf" #["Dwarf"] 2 2 .red
 
 def bearToken : CardDef :=
-  creature "Bear" ManaCost.empty #["Bear"] 2 2
-    (colorIndicator := some (ColorSet.singleton .green))
-    (isToken := true)
+  tokenCreature "Bear" #["Bear"] 2 2 .green
 
 def elfToken : CardDef :=
-  creature "Elf" ManaCost.empty #["Elf"] 1 1
-    (colorIndicator := some (ColorSet.singleton .green))
-    (isToken := true)
+  tokenCreature "Elf" #["Elf"] 1 1 .green
 
 /-- An activated ability (CR 602.1). -/
 def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
