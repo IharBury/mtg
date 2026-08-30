@@ -4203,8 +4203,8 @@ inductive TriggeredAbility where
   from your hand onto the battlefield. If it's an Equipment, attach it to
   this creature. -/
   | onCombatMayPutArtifactAttachEquipment
-  /-- A modeled leftover trigger that is not yet a shared shape. -/
-  | msh (t : ModeledTrigger)
+  /-- A leftover-event trigger that is not yet a more specific constructor. -/
+  | on (e : SharedTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -5134,8 +5134,8 @@ inductive TriggerResolution where
   | revealDiscardFromHand
   /-- Create Redwing. -/
   | createRedwing
-  /-- Resolve a modeled MSH trigger. -/
-  | msh (t : ModeledTrigger)
+  /-- Resolve a leftover-event trigger. -/
+  | shared (e : SharedTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -5174,12 +5174,12 @@ deriving Repr, Inhabited, BEq
 
 end TriggeredAbility
 
-namespace ModeledTrigger
+namespace SharedTrigger
 
-/-- When this MSH trigger fires, how it targets, and once-each-turn
+/-- When this leftover-event trigger fires, how it targets, and once-each-turn
 lockout. Adding a constructor only requires updating `timing` instead of
-parallel match trees. `resolution` is always `.msh t`. -/
-def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
+parallel match trees. `resolution` is always `.shared t`. -/
+def timing (t : SharedTrigger) : TriggeredAbility.TriggerTiming :=
   let base : TriggeredAbility.TriggerTiming :=
     match t with
     | .atTheBeginningOfTheUpkeepOfEnchantedCrea =>
@@ -5198,7 +5198,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.dealsCombatDamageToPlayer] }
     | .wheneverGrimReaperAttacks
     | .wheneverIronManAttacks
-    | .wheneverKangAttacks
     | .wheneverTheMightyThorAttacks
     | .wheneverWhiplashAttacks
     | .cyberneticSensesWheneverVivVision
@@ -5222,12 +5221,8 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.anyPlayerDrawsSecond] }
     | .wheneverAPlayerOrPermanentBecomesTheTarge =>
       { events := #[.youTargetSomething], onceEachTurn := true }
-    | .wheneverAnEquipmentYouControlEnters =>
-      { events := #[.equipmentYouControlEnters] }
     | .wheneverAnAttackingCreatureYouControlDies =>
       { events := #[.attackingCreatureYouControlDies] }
-    | .wheneverAnEquippedCreatureYouControlAttack =>
-      { events := #[.equippedCreatureYouControlAttacks] }
     | .wheneverAnotherVillainAndOrArtifactYouCon =>
       { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent }
     | .wheneverAnotherVillainYouControlEnters =>
@@ -5238,8 +5233,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.anotherVillainEnters], onceEachTurn := true }
     | .wheneverAnotherVillainYouControlEnters4 =>
       { events := #[.anotherVillainEnters], optionalOnceEachTurn := true }
-    | .wheneverAnotherArtifactYouControlEnters =>
-      { events := #[.anotherArtifactEnters] }
     | .wheneverAnotherCreatureYouControlEnters
     | .wheneverAnotherCreatureYouControlWithDeath =>
       { events := #[.anotherCreatureYouControlEnters] }
@@ -5287,8 +5280,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.youDiscard] }
     | .wheneverYouDrawACard =>
       { events := #[.youDraw], targeting := .of .opponent }
-    | .wheneverYouDrawACard2 =>
-      { events := #[.youDraw] }
     | .wheneverYouDrawYourSecondCardEachTurn
     | .wheneverYouDrawYourSecondCardEachTurn3 =>
       { events := #[.youDrawSecondCard] }
@@ -5296,8 +5287,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.youDrawSecondCard], targeting := .of .creature }
     | .wheneverYouGainLife =>
       { events := #[.youGainLife], targeting := .of .playerOrCreature, allowsZeroTargets := true }
-    | .wheneverYouGainLife2 =>
-      { events := #[.youGainLife] }
     | .wheneverYouPutA11CounterOnACreature
     | .wheneverYouPutA11CounterOnAnotherCrea =>
       { events := #[.youPutPlusOne], onceEachTurn := true }
@@ -5315,25 +5304,25 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.entering], allowsZeroTargets := true }
     | .atTheBeginningOf =>
       { events := #[.yourEndStep], targeting := .of .nonland, allowsZeroTargets := true }
-  { base with resolution := .msh t }
+  { base with resolution := .shared t }
 
-/-- Events that fire this modeled MSH trigger. -/
-def events (t : ModeledTrigger) : Array TriggerEvent :=
+/-- Events that fire this leftover-event trigger. -/
+def events (t : SharedTrigger) : Array TriggerEvent :=
   t.timing.events
 
 /-- Targeting when this trigger is put on the stack. -/
-def targeting (t : ModeledTrigger) : EffectTargeting :=
+def targeting (t : SharedTrigger) : EffectTargeting :=
   t.timing.targeting
 
-def allowsZeroTargets (t : ModeledTrigger) : Bool :=
+def allowsZeroTargets (t : SharedTrigger) : Bool :=
   t.timing.allowsZeroTargets
 
-def onceEachTurn (t : ModeledTrigger) : Bool :=
+def onceEachTurn (t : SharedTrigger) : Bool :=
   t.timing.onceEachTurn
 
 /-- “Do this only once each turn” is a resolution choice, not a trigger
 lockout (MSH 69). -/
-def optionalOnceEachTurn (t : ModeledTrigger) : Bool :=
+def optionalOnceEachTurn (t : SharedTrigger) : Bool :=
   t.timing.optionalOnceEachTurn
 
 #guard (timing .wheneverACreatureYouControlIsDealtDamage).onceEachTurn
@@ -5341,9 +5330,9 @@ def optionalOnceEachTurn (t : ModeledTrigger) : Bool :=
 #guard (timing .wheneverSuperAdaptoidEntersOrAttacks).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]
 #guard (timing .whenHellcatDies).resolution ==
-  TriggeredAbility.TriggerResolution.msh .whenHellcatDies
+  TriggeredAbility.TriggerResolution.shared .whenHellcatDies
 
-end ModeledTrigger
+end SharedTrigger
 
 /-- Timing for a leftover “When ⟨this⟩ enters” ability. -/
 def EnterEffect.timing : EnterEffect → TriggeredAbility.TriggerTiming
@@ -5959,7 +5948,7 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.yourBeginCombat], resolution := .createAlienPerInvasion }
   | .onCombatMayPutArtifactAttachEquipment =>
     { events := #[.yourBeginCombat], resolution := .mayPutArtifactAttachEquipment }
-  | .msh t => t.timing
+  | .on e => e.timing
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -6435,7 +6424,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
   | .createRedwing =>
     "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-  | .msh t => t.toNotation
+  | .shared e => e.toNotation
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -6613,7 +6602,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"When this enchantment enters, target opponent discards {cards}."
   | .onEnter (.dealDamageUpToOne n) =>
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
-  | .msh t => t.toNotation
+  | .on e => e.toNotation
   | _ =>
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then

@@ -12,15 +12,16 @@ import Mtg.Engine.Mana
 
 Reusable ability shapes live on `TriggeredAbility`, `StaticAbility`,
 `SpellEffect`, `AbilityEffect`, and `CardDef` so any set can use them.
-Constructors here are leftover wordings that are not yet a shared
-shape. Each stores official Oracle text in `toNotation` and resolves
-through `Game.applyModeled*` — not by logging leftover text.
+`SharedTrigger` is the leftover-event catalog that has not yet been
+split into a more specific `TriggeredAbility` constructor. Each stores
+official Oracle text in `toNotation` and resolves through
+`Game.applyModeledTrigger`.
 -/
 
 namespace Mtg.Engine
 
-/-- A leftover modeled trigger that is not yet a shared shape. -/
-inductive ModeledTrigger where
+/-- A shared leftover trigger that is not yet a more specific constructor. -/
+inductive SharedTrigger where
   /-- Modeled MSH ability. -/
   | atTheBeginningOfTheUpkeepOfEnchantedCrea
   /-- Modeled MSH ability. -/
@@ -39,8 +40,6 @@ inductive ModeledTrigger where
   | wheneverGrimReaperAttacks
   /-- Modeled MSH ability. -/
   | wheneverIronManAttacks
-  /-- Modeled MSH ability. -/
-  | wheneverKangAttacks
   /-- Modeled MSH ability. -/
   | wheneverSuperAdaptoidEntersOrAttacks
   /-- Modeled MSH ability. -/
@@ -64,11 +63,7 @@ inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | wheneverAPlayerOrPermanentBecomesTheTarge
   /-- Modeled MSH ability. -/
-  | wheneverAnEquipmentYouControlEnters
-  /-- Modeled MSH ability. -/
   | wheneverAnAttackingCreatureYouControlDies
-  /-- Modeled MSH ability. -/
-  | wheneverAnEquippedCreatureYouControlAttack
   /-- Modeled MSH ability. -/
   | wheneverAnotherVillainAndOrArtifactYouCon
   /-- Modeled MSH ability. -/
@@ -79,8 +74,6 @@ inductive ModeledTrigger where
   | wheneverAnotherVillainYouControlEnters3
   /-- Modeled MSH ability. -/
   | wheneverAnotherVillainYouControlEnters4
-  /-- Modeled MSH ability. -/
-  | wheneverAnotherArtifactYouControlEnters
   /-- Modeled MSH ability. -/
   | wheneverAnotherCreatureYouControlEnters
   /-- Modeled MSH ability. -/
@@ -142,8 +135,6 @@ inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | wheneverYouDrawACard
   /-- Modeled MSH ability. -/
-  | wheneverYouDrawACard2
-  /-- Modeled MSH ability. -/
   | wheneverYouDrawYourSecondCardEachTurn
   /-- Modeled MSH ability. -/
   | wheneverYouDrawYourSecondCardEachTurn2
@@ -151,8 +142,6 @@ inductive ModeledTrigger where
   | wheneverYouDrawYourSecondCardEachTurn3
   /-- Modeled MSH ability. -/
   | wheneverYouGainLife
-  /-- Modeled MSH ability. -/
-  | wheneverYouGainLife2
   /-- Modeled MSH ability. -/
   | wheneverYouPutA11CounterOnACreature
   /-- Modeled MSH ability. -/
@@ -179,10 +168,10 @@ inductive ModeledTrigger where
   | atTheBeginningOf
 deriving Repr, Inhabited, BEq
 
-namespace ModeledTrigger
+namespace SharedTrigger
 
-/-- Official Oracle wording for this ModeledTrigger. -/
-def toNotation : ModeledTrigger → String
+/-- Official Oracle wording for this SharedTrigger. -/
+def toNotation : SharedTrigger → String
   | .atTheBeginningOfTheUpkeepOfEnchantedCrea => "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
   | .atTheBeginningOfYourEndStep => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
   | .atTheBeginningOfYourFirstMainPhase => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
@@ -192,7 +181,6 @@ def toNotation : ModeledTrigger → String
   | .wheneverBlackWidowDealsCombatDamageToAPl => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
   | .wheneverGrimReaperAttacks => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
   | .wheneverIronManAttacks => "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
-  | .wheneverKangAttacks => "Whenever Kang attacks, he connives."
   | .wheneverSuperAdaptoidEntersOrAttacks => "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
   | .wheneverTheMightyThorAttacks => "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
   | .wheneverWhiplashAttacks => "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
@@ -204,15 +192,12 @@ def toNotation : ModeledTrigger → String
   | .wheneverAPlayerCastsASpellThatTargetsSpe => "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
   | .wheneverAPlayerDrawsTheirSecondCardEachT => "Whenever a player draws their second card each turn, you draw a card."
   | .wheneverAPlayerOrPermanentBecomesTheTarge => "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
-  | .wheneverAnEquipmentYouControlEnters => "Whenever an Equipment you control enters, draw a card."
   | .wheneverAnAttackingCreatureYouControlDies => "Whenever an attacking creature you control dies, return that card to its owner's hand."
-  | .wheneverAnEquippedCreatureYouControlAttack => "Whenever an equipped creature you control attacks, it connives."
   | .wheneverAnotherVillainAndOrArtifactYouCon => "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
   | .wheneverAnotherVillainYouControlEnters => "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
   | .wheneverAnotherVillainYouControlEnters2 => "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
   | .wheneverAnotherVillainYouControlEnters3 => "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
   | .wheneverAnotherVillainYouControlEnters4 => "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
-  | .wheneverAnotherArtifactYouControlEnters => "Whenever another artifact you control enters, put a +1/+1 counter on this creature."
   | .wheneverAnotherCreatureYouControlEnters => "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
   | .wheneverAnotherCreatureYouControlWithDeath => "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
   | .wheneverAnotherNonlandPermanentYouControlI => "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
@@ -243,12 +228,10 @@ def toNotation : ModeledTrigger → String
   | .wheneverYouCastAnInstantOrSorcerySpellTh => "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
   | .wheneverYouDiscardACard => "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
   | .wheneverYouDrawACard => "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
-  | .wheneverYouDrawACard2 => "Whenever you draw a card, put a +1/+1 counter on The Astonishing Ant-Man."
   | .wheneverYouDrawYourSecondCardEachTurn => "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
   | .wheneverYouDrawYourSecondCardEachTurn2 => "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
   | .wheneverYouDrawYourSecondCardEachTurn3 => "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
   | .wheneverYouGainLife => "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
-  | .wheneverYouGainLife2 => "Whenever you gain life, put a +1/+1 counter on Tigra."
   | .wheneverYouPutA11CounterOnACreature => "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
   | .wheneverYouPutA11CounterOnAnotherCrea => "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
   | .wheneverYouPutOneOrMore11CountersOnO => "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
@@ -262,10 +245,10 @@ def toNotation : ModeledTrigger → String
   | .unbreakableSkinWheneverLukeCageA => "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
   | .atTheBeginningOf => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
 
-instance : ToString ModeledTrigger where
+instance : ToString SharedTrigger where
   toString := toNotation
 
-end ModeledTrigger
+end SharedTrigger
 /-- A leftover modeled static that is not yet a shared shape. -/
 inductive ModeledStatic where
   /-- Modeled MSH ability. -/

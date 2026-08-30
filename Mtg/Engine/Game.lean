@@ -4277,9 +4277,9 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | some n => (g.player controller).lifeGainedThisTurn ≥ n
   let hulklingOk :=
     match ab, cause, source with
-    | .msh .wheneverAnotherCreatureYouControlEnters, some entered, some hulkling =>
+    | .on .wheneverAnotherCreatureYouControlEnters, some entered, some hulkling =>
       g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
-    | .msh .wheneverAnotherCreatureYouControlEnters, _, _ => false
+    | .on .wheneverAnotherCreatureYouControlEnters, _, _ => false
     | _, _, _ => true
   powerOk && otherOk && lifeOk && hulklingOk
 
@@ -4397,7 +4397,7 @@ def putMatchingSourceTriggers (g : Game) (controller : PlayerId) (source : GameO
     for ab in source.matchingTriggers event do
       let skipInfinity :=
         match ab with
-        | .msh .atTheBeginningOf => !source.status.harnessed
+        | .on .atTheBeginningOf => !source.status.harnessed
         | _ => false
       if !skipInfinity then
         g := g.queueTrigger controller source ab event lastKnownPower lastKnownToughness
@@ -7722,7 +7722,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab with
-            | .msh .enrageWheneverTheIncredi => true
+            | .on .enrageWheneverTheIncredi => true
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
           { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
@@ -9218,7 +9218,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
 
 /-- Resolve a modeled MSH trigger. Performs the printed effect: tokens, draw,
 damage, destroy, attach, exile, or pump. -/
-def applyModeledTrigger (g : Game) (controller : PlayerId) (t : ModeledTrigger)
+def applyModeledTrigger (g : Game) (controller : PlayerId) (t : SharedTrigger)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (sourceName : String := "This creature")
     (lastKnownPower : Option Int := none) : Game :=
@@ -9434,8 +9434,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : ModeledTrigger)
         else g
       | none => g
     | _ => g
-  | .wheneverKangAttacks =>
-    g.drawThenBeginDiscard controller
   | .wheneverYouCastAVillainSpell =>
     g.createKindTokens controller .villain21menace 1
   | .doYouLikeSquirrelsWheneverTheUnbeata =>
@@ -12805,8 +12803,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | _ => g
   | .createRedwing =>
     g.createNamedToken controller redwingToken
-  | .msh t =>
-    g.applyModeledTrigger controller t sourceId targets sourceName lastKnownPower
+  | .shared e =>
+    g.applyModeledTrigger controller e sourceId targets sourceName lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -12817,7 +12815,7 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
       let o := g.object! id
       let skipIronMan :=
         o.printed.triggeredAbilities.any (fun
-          | .msh .wheneverIronManAttacks =>
+          | .on .wheneverIronManAttacks =>
             !(g.player p).artifactEnteredThisTurn
           | _ => false)
       if !skipIronMan then

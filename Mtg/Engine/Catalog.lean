@@ -737,10 +737,6 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Leftover modeled trigger. -/
-def leftoverTrig (t : ModeledTrigger) : TriggeredAbility :=
-  .msh t
-
 /-- Leftover modeled static. -/
 def leftoverStatic (t : ModeledStatic) : StaticAbility :=
   .msh t
