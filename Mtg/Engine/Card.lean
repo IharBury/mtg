@@ -4812,7 +4812,7 @@ def targeting : MshTrigger → EffectTargeting
   | .whenHellcatDies => .of .none
   | .whenJusticeEnters => .of .nonland
   | .whenKaZarEnters => .of .none
-  | .whenKillmongerEnters => .of .nonland
+  | .whenKillmongerEnters => .of .none
   | .whenMjLnirEnters => .of .creature
   | .whenNightNurseEnters => .of .none
   | .whenRedGuardianEnters => .of .oppCreature
@@ -4843,7 +4843,7 @@ def targeting : MshTrigger → EffectTargeting
   | .whenThisLandEnters => .of .none
   | .wheneverAntManAttacks => .of .creature
   | .wheneverBlackWidowDealsCombatDamageToAPl => .of .none
-  | .wheneverGrimReaperAttacks => .of .creature
+  | .wheneverGrimReaperAttacks => .of .none
   | .wheneverIronManAttacks => .of .none
   | .wheneverKangAttacks => .of .none
   | .wheneverSuperAdaptoidEntersOrAttacks => .of .creature
@@ -4887,7 +4887,7 @@ def targeting : MshTrigger → EffectTargeting
   | .wheneverYouCastANoncreatureSpell2 => .of .none
   | .wheneverYouCastANoncreatureSpell3 => .of .nonland
   | .wheneverYouCastANoncreatureSpell4 => .of .none
-  | .wheneverYouCastANoncreatureSpell5 => .of .creature
+  | .wheneverYouCastANoncreatureSpell5 => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur2 => .of .none
   | .wheneverYouCastASpellThatTargetsACreatur3 => .of .none
@@ -5644,18 +5644,18 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.nthPlanCounter 4], targeting := .of .none,
       resolution := .planFinishReturnInstants }
   | .onSeventhPlanControlOpponent =>
-    { events := #[.nthPlanCounter 7], targeting := .of .opponent,
+    { events := #[.nthPlanCounter 7], targeting := .of .none,
       resolution := .planFinishControlOpponent }
   | .onFifthPlanExileTopCast =>
-    { events := #[.nthPlanCounter 5], targeting := .of .opponent,
+    { events := #[.nthPlanCounter 5], targeting := .of .none,
       resolution := .planFinishExileTopCast }
   | .onThirdPlanCreateRobots =>
     { events := #[.nthPlanCounter 3], resolution := .planFinishCreateRobots 3 }
   | .onFourthPlanDividedDamage =>
-    { events := #[.nthPlanCounter 4], targeting := .of .playerOrCreature,
-      resolution := .planFinishDividedDamage 7, dividedDamage := some (7, 2) }
+    { events := #[.nthPlanCounter 4], targeting := .of .none,
+      resolution := .planFinishDividedDamage 7 }
   | .onFourthPlanIndestructible =>
-    { events := #[.nthPlanCounter 4], targeting := .of .creatureYouControl,
+    { events := #[.nthPlanCounter 4], targeting := .of .none,
       resolution := .planFinishIndestructibleOnTarget }
   | .onYouCastColorFromHandConnive color =>
     { events := #[.youCastColorFromHand color], resolution := .connive }

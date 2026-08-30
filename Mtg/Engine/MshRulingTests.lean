@@ -1790,6 +1790,188 @@ def hawkeyeReflexivePayOk : Bool :=
 
 #guard hawkeyeReflexivePayOk
 
+/-- Ruling 360: Claim the Kingdom's first ability only sacrifices; the
+indestructible counter is a reflexive second trigger. -/
+def claimTheKingdomReflexiveOk : Bool :=
+  let g := addPermanent afterDraw claimTheKingdom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Claim the Kingdom"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanIndestructible (some plan.id)
+  !g.battlefield.any (fun o => o.name == "Claim the Kingdom") &&
+    (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0 &&
+    g.pendingMshReflexive.isSome &&
+    (let g := g.applyMshReflexive #[Target.permanent bears.id]
+     (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 1) &&
+    (let g := addPermanent afterDraw claimTheKingdom ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+     let plan := namedPermanent g "Claim the Kingdom"
+     let (g, _) := g.move plan.id (.graveyard ⟨0⟩) none
+     let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanIndestructible (some plan.id)
+     !g.pendingMshReflexive.isSome &&
+       (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0) &&
+    (mshRuling 360).comment.contains "reflexive"
+
+#guard claimTheKingdomReflexiveOk
+
+/-- Ruling 361: Construct a Cosmic Cube queues control of an opponent. -/
+def constructACosmicCubeReflexiveOk : Bool :=
+  let g := addPermanent afterDraw constructACosmicCube ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Construct a Cosmic Cube"
+  let g := g.applyTriggeredAbility ⟨0⟩ .onSeventhPlanControlOpponent (some plan.id)
+  !g.battlefield.any (fun o => o.name == "Construct a Cosmic Cube") &&
+    g.pendingMshReflexive.isSome &&
+    (let g := g.applyMshReflexive #[Target.player ⟨1⟩]
+     g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
+    (mshRuling 361).comment.contains "reflexive"
+
+#guard constructACosmicCubeReflexiveOk
+
+/-- Ruling 362: Doom Reigns Supreme exiles the opponent's top cards only
+after the Plan is sacrificed. -/
+def doomReignsSupremeReflexiveOk : Bool :=
+  let g := addPermanent afterDraw doomReignsSupreme ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Doom Reigns Supreme"
+  let lib0 := (g.player ⟨1⟩).library.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFifthPlanExileTopCast (some plan.id)
+  (g.player ⟨1⟩).library.size == lib0 &&
+    g.pendingMshReflexive.isSome &&
+    (let g := g.applyMshReflexive #[Target.player ⟨1⟩]
+     (g.player ⟨1⟩).library.size == lib0 - 5 &&
+       (g.objects.filter (fun o =>
+         o.zone == .exile && o.playPermission.isSome)).size == 5) &&
+    (mshRuling 362).comment.contains "reflexive"
+
+#guard doomReignsSupremeReflexiveOk
+
+/-- Ruling 363: Grim Reaper's pay is the first ability; the return is
+reflexive. -/
+def grimReaperReflexiveOk : Bool :=
+  let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let grim := namedPermanent g "Grim Reaper, Lethal Legionnaire"
+  let unpaid :=
+    g.applyMshTrigger ⟨0⟩ .wheneverGrimReaperAttacks (some grim.id)
+  !unpaid.pendingMshReflexive.isSome &&
+    (let g := g.applyMshTrigger ⟨0⟩ .wheneverGrimReaperAttacks (some grim.id)
+       #[] "Grim Reaper" (some (1 : Int))
+     g.pendingMshReflexive.isSome &&
+       (let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+        let g := g.applyMshReflexive #[Target.card gy.id]
+        let bears := namedPermanent g "Grizzly Bears"
+        bears.status.tapped && bears.status.attacking &&
+          bears.status.finality ≥ 1)) &&
+    (mshRuling 363).comment.contains "reflexive"
+
+#guard grimReaperReflexiveOk
+
+/-- Ruling 364: Killmonger only destroys if another creature was
+sacrificed. -/
+def killmongerReflexiveOk : Bool :=
+  let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let km := namedPermanent g "Killmonger, Scourge of Wakanda"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.applyMshTrigger ⟨0⟩ .whenKillmongerEnters (some km.id)
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    g.pendingMshReflexive.isSome &&
+    g.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    (let g := g.applyMshReflexive #[Target.permanent ogre.id]
+     !g.battlefield.any (fun o => o.name == "Gray Ogre")) &&
+    (let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
+     let km := namedPermanent g "Killmonger, Scourge of Wakanda"
+     let g := g.applyMshTrigger ⟨0⟩ .whenKillmongerEnters (some km.id)
+     !g.pendingMshReflexive.isSome) &&
+    (mshRuling 364).comment.contains "reflexive"
+
+#guard killmongerReflexiveOk
+
+/-- Rulings 273 / 365: Red Hulk's reflexive damage uses the counters only
+if he survived to receive one. -/
+def redHulkReflexiveOk : Bool :=
+  let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let hulk := namedPermanent g "Red Hulk"
+  let g := g.applyMshTrigger ⟨0⟩ .enrageWheneverRedHulkIs (some hulk.id)
+  (namedPermanent g "Red Hulk").status.plusOnePlusOne == 1 &&
+    g.pendingMshReflexive.isSome &&
+    g.pendingMshReflexivePaid == 1 &&
+    (let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyMshReflexive #[Target.permanent bears.id]
+     (namedPermanent g "Grizzly Bears").status.damage == 1) &&
+    (let g := addPermanent afterDraw redHulk ⟨0⟩ ⟨0⟩
+     let hulk := namedPermanent g "Red Hulk"
+     let (g, _) := g.move hulk.id (.graveyard ⟨0⟩) none
+     let g := g.applyMshTrigger ⟨0⟩ .enrageWheneverRedHulkIs (some hulk.id)
+     !g.pendingMshReflexive.isSome) &&
+    (mshRuling 273).comment.contains "must survive the damage" &&
+    (mshRuling 365).comment.contains "reflexive"
+
+#guard redHulkReflexiveOk
+
+/-- Ruling 366: Speed's pay queues a haste-only blocker restriction. -/
+def speedYoungAvengerReflexiveOk : Bool :=
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let speed := namedPermanent g "Speed, Young Avenger"
+  let unpaid :=
+    g.applyMshTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell5 (some speed.id)
+  !unpaid.pendingMshReflexive.isSome &&
+    (let g := g.applyMshTrigger ⟨0⟩ .wheneverYouCastANoncreatureSpell5
+       (some speed.id) #[] "Speed" (some (1 : Int))
+     g.pendingMshReflexive.isSome &&
+       (let speed := namedPermanent g "Speed, Young Avenger"
+        let g := g.applyMshReflexive #[Target.permanent speed.id]
+        let speed := namedPermanent g "Speed, Young Avenger"
+        let g := g.setObject { speed with status := { speed.status with
+          attacking := true, attackingWhom := some ⟨1⟩ } }
+        let speed := namedPermanent g "Speed, Young Avenger"
+        let bears := namedPermanent g "Grizzly Bears"
+        speed.status.cantBeBlockedExceptByHasteUntilEot &&
+          !g.canBlock bears speed &&
+          (let g := g.mapObjectStatus bears (·.grantUntilEot Keyword.haste)
+           g.canBlock (namedPermanent g "Grizzly Bears")
+             (namedPermanent g "Speed, Young Avenger")))) &&
+    (mshRuling 366).comment.contains "reflexive"
+
+#guard speedYoungAvengerReflexiveOk
+
+/-- Ruling 368: Death to Our Enemies deals 7 only after the sacrifice. -/
+def deathToOurEnemiesReflexiveOk : Bool :=
+  let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
+  let plan := namedPermanent g "Death to Our Enemies"
+  let life0 := (g.player ⟨1⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDividedDamage (some plan.id)
+  (g.player ⟨1⟩).life == life0 &&
+    g.pendingMshReflexive.isSome &&
+    (let g := g.applyMshReflexive #[Target.player ⟨1⟩]
+     (g.player ⟨1⟩).life + 7 == life0) &&
+    (mshRuling 368).comment.contains "reflexive"
+
+#guard deathToOurEnemiesReflexiveOk
+
+/-- Ruling 369: Rewrite History returns instants and sorceries only after
+the Plan is sacrificed. -/
+def rewriteHistoryReflexiveOk : Bool :=
+  let g := addPermanent afterDraw rewriteHistory ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g helicarrierStrike ⟨0⟩
+  let g := addToGraveyard g hourOfDefeat ⟨0⟩
+  let plan := namedPermanent g "Rewrite History"
+  let inst := namedGraveyardCard g ⟨0⟩ "Helicarrier Strike"
+  let sorc := namedGraveyardCard g ⟨0⟩ "Hour of Defeat"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanReturnInstants (some plan.id)
+  (g.player ⟨0⟩).hand.size == hand0 &&
+    g.pendingMshReflexive.isSome &&
+    (let g := g.applyMshReflexive #[Target.card inst.id, Target.card sorc.id]
+     (g.player ⟨0⟩).hand.size == hand0 + 2 &&
+       (g.handObjects ⟨0⟩).any (fun o => o.name == "Helicarrier Strike") &&
+       (g.handObjects ⟨0⟩).any (fun o => o.name == "Hour of Defeat")) &&
+    (mshRuling 369).comment.contains "reflexive"
+
+#guard rewriteHistoryReflexiveOk
+
 /-- Rulings 221 / 259 / 300 / 346 / 358: control another player. -/
 def controlAnotherPlayerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩

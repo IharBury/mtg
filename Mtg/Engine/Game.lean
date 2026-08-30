@@ -214,6 +214,9 @@ structure Status where
   /-- Creatures this player controls cannot block this attacker this turn
   (The Black Gate). Cleared in cleanup. -/
   cantBeBlockedByPlayer : Option PlayerId := none
+  /-- Until end of turn, this creature can be blocked only by creatures with
+  haste (Speed, Young Avenger). -/
+  cantBeBlockedExceptByHasteUntilEot : Bool := false
   /-- Influence counters (Palantír of Orthanc). -/
   influence : Nat := 0
   /-- This permanent is only a Food artifact (Supper for Spiders). -/
@@ -288,7 +291,9 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.additionalCreatureUntilEot,
     fun s => { s with additionalCreatureUntilEot := false }⟩,
   ⟨fun s => s.cantBeBlockedByPlayer.isSome,
-    fun s => { s with cantBeBlockedByPlayer := none }⟩
+    fun s => { s with cantBeBlockedByPlayer := none }⟩,
+  ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
+    fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
@@ -2845,7 +2850,8 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   (!(g.hasShadow blocker) || g.hasShadow attacker) &&
   !(match attacker.status.cantBeBlockedByPlayer with
     | some pid => blocker.controlledBy pid
-    | none => false)
+    | none => false) &&
+  !(attacker.status.cantBeBlockedExceptByHasteUntilEot && !g.hasHaste blocker)
 
 /-- Whether `src` currently grants trample to `target` (CR 604.2). -/
 def grantsTrampleTo (g : Game) (src target : GameObject) : Bool :=
@@ -6431,7 +6437,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         let hasEnrage :=
           o.printed.triggeredAbilities.any (fun ab =>
             match ab with
-            | .msh .enrageWheneverTheIncredi | .msh .enrageWheneverRedHulkIs => true
+            | .msh .enrageWheneverTheIncredi => true
             | _ => false)
         if !already && hasEnrage && o.status.attacking then
           { g with enrageGrantsAdditionalCombat := g.enrageGrantsAdditionalCombat + 1 }
@@ -7271,14 +7277,73 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g.logMsg s!"{pl.name} exiles {cardName} and may play it this turn"
     return g
 
-/-- Queue a reflexive MSH trigger (Hawkeye, Bullseye, Spider-Man). The first
-ability has no targets; the second is chosen after the "if you do". -/
+/-- Queue a reflexive MSH trigger. The first ability has no targets; the
+second is chosen after the "if you do" (MSH 359–369). -/
 def queueMshReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (kind : Nat) (paid : Nat := 0) : Game :=
   { g with
       pendingMshReflexive := some (controller, sourceId, kind)
       pendingMshReflexivePaid := paid }
     |>.logMsg "A reflexive triggered ability triggers"
+
+/-- Sacrifice the Plan if it is still on the battlefield. Queue the
+reflexive second ability only if the sacrifice happened (MSH 360–362,
+368–369). -/
+def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (kind : Nat) : Game :=
+  match sourceId.bind g.findObject? with
+  | some o =>
+    if o.isOnBattlefield then
+      let g := g.sacrificeToGraveyard o "the Plan is completed"
+      g.queueMshReflexive controller sourceId kind
+    else
+      g.logMsg s!"{o.name} is no longer on the battlefield. The reflexive ability doesn't trigger."
+  | none =>
+    g.logMsg "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger."
+
+/-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
+them this turn (Doom Reigns Supreme). -/
+def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
+  Id.run do
+    let mut g := g
+    for _ in [0:n] do
+      let pl := g.player fromPlayer
+      if pl.library.isEmpty then
+        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
+      else
+        let top := pl.library.back!
+        let cardName := (g.object! top).name
+        let (g', newId) := g.move top .exile none
+        g := g'
+        let o := g.object! newId
+        g := g.setObject { o with
+          playPermission := some { player := caster, turnEndsRemaining := 1 } }
+        g := g.logMsg s!"{pl.name} exiles {cardName}; {(g.player caster).name} may cast it"
+    return g
+
+/-- Return a graveyard creature tapped and attacking with a finality
+counter (Grim Reaper). -/
+def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
+    (cardId : ObjectId) : Game :=
+  match g.findObject? cardId with
+  | none => g.logMsg "The target is no longer in the graveyard"
+  | some o =>
+    if !(o.printed.isCreature && o.zone == .graveyard controller) then
+      g.logMsg "The target is no longer a creature card in your graveyard"
+    else
+      let whom :=
+        match (g.livingOpponents controller)[0]? with
+        | some pl => some pl.id
+        | none => none
+      let (g, newId) := g.putOntoBattlefield o.id controller (tapped := true)
+      let o := g.object! newId
+      let g := g.setObject { o with status := { o.status with
+        attacking := true
+        attackingWhom := whom } }
+      let o := g.object! newId
+      let g := g.addFinalityTo o
+      let o := g.object! newId
+      g.afterPermanentEnters o |>.logMsg s!"{o.name} enters tapped and attacking"
 
 /-- Resolve the pending MSH reflexive trigger with the now-chosen targets.
 If every target is illegal, nothing happens (MSH 125). -/
@@ -7321,6 +7386,82 @@ def applyMshReflexive (g : Game) (targets : Array Target := #[]) : Game :=
                     Keywords.merge s.untilEotKeywords Keyword.cantBeBlocked })
             | none => g
           | _ => g) sourceId (some "The target is no longer legal")
+    else if kind == 3 then
+      g.withLegalKindPermanent controller .creatureYouControl targets
+        (fun g o =>
+          g.mapObjectStatus o (fun s =>
+            { s with indestructibleCounters := s.indestructibleCounters + 1 })
+            |>.logMsg s!"{o.name} gets an indestructible counter")
+        sourceId (some "The target is no longer legal")
+    else if kind == 4 then
+      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
+        match tgt with
+        | Target.player pid =>
+          let g := g.setPlayerControl controller pid
+          { g with controlOnNextTakenTurn := true }
+        | _ => g) sourceId (some "The target is no longer legal")
+    else if kind == 5 then
+      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
+        match tgt with
+        | Target.player pid => g.exileTopMayCast pid controller 5
+        | _ => g) sourceId (some "The target is no longer legal")
+    else if kind == 6 then
+      match targets[0]? with
+      | some (Target.card id) | some (Target.permanent id) =>
+        g.returnFromGyTappedAttackingFinality controller id
+      | _ => g.logMsg "The target is no longer legal"
+    else if kind == 7 then
+      g.withLegalKindPermanent controller .oppNonland targets
+        (fun g o => g.destroyPermanent o) sourceId (some "The target is no longer legal")
+    else if kind == 8 then
+      let amt : Int := Int.ofNat paid
+      g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
+        match tgt with
+        | Target.player pid => g.dealDamageToPlayer pid amt
+        | Target.permanent id =>
+          if sourceId == some id then
+            g.logMsg "Red Hulk can't target himself"
+          else
+            match g.findObject? id with
+            | some o => g.dealDamageToPermanent o amt
+            | none => g
+        | _ => g) sourceId (some "The target is no longer legal")
+    else if kind == 9 then
+      g.withLegalKindPermanent controller .creature targets
+        (fun g o =>
+          if g.hasHaste o then
+            g.mapObjectStatus o (fun s =>
+              { s with cantBeBlockedExceptByHasteUntilEot := true })
+              |>.logMsg s!"{o.name} can't be blocked this turn except by creatures with haste"
+          else
+            g.logMsg s!"{o.name} doesn't have haste")
+        sourceId (some "The target is no longer legal")
+    else if kind == 10 then
+      if targets.isEmpty then
+        g.logMsg "No targets were chosen"
+      else if targets.size == 1 then
+        g.withLegalKindTarget controller .playerOrCreature targets
+          (fun g tgt => g.dealDamageToTarget tgt 7)
+          sourceId (some "The target is no longer legal")
+      else
+        let g :=
+          g.withLegalKindTarget controller .playerOrCreature #[targets[0]!]
+            (fun g tgt => g.dealDamageToTarget tgt 4)
+            sourceId (some "The target is no longer legal")
+        g.withLegalKindTarget controller .playerOrCreature #[targets[1]!]
+          (fun g tgt => g.dealDamageToTarget tgt 3)
+          sourceId (some "The target is no longer legal")
+    else if kind == 11 then
+      targets.foldl (fun g tgt =>
+        match tgt with
+        | Target.card id | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.zone == .graveyard controller && o.printed.isInstantOrSorcery then
+              g.returnToHand id controller
+            else g
+          | none => g
+        | _ => g) g
     else
       g
 
@@ -7666,7 +7807,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     g.createKindTokens controller .doombot 2
   | .whenKaZarEnters =>
     g.createNamedToken controller zabuToken
-  | .enrageWheneverTheIncredi | .enrageWheneverRedHulkIs =>
+  | .enrageWheneverTheIncredi =>
     let g :=
       g.withSourceOnBattlefield sourceId (fun g o =>
         let g := g.addPlusOnePlusOneTo o 1
@@ -7679,6 +7820,39 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
           additionalCombatPhases := g.additionalCombatPhases + 1 }
         |>.logMsg "There is an additional combat phase after this phase"
     else g
+  | .enrageWheneverRedHulkIs =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield then
+        let g := g.addPlusOnePlusOneTo o 1
+        let o := g.object! o.id
+        g.queueMshReflexive controller sourceId 8 o.status.plusOnePlusOne
+      else
+        g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
+    | none =>
+      g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
+  | .whenKillmongerEnters =>
+    let others :=
+      (g.permanentsOf controller).filter (fun o =>
+        o.isCreature && some o.id != sourceId)
+    match others[0]? with
+    | none =>
+      g.logMsg "No other creature was sacrificed. The reflexive ability doesn't trigger."
+    | some victim =>
+      let g := g.sacrificeToGraveyard victim "Killmonger"
+      g.queueMshReflexive controller sourceId 7
+  | .wheneverGrimReaperAttacks =>
+    let paid := (lastKnownPower.getD (0 : Int)).toNat
+    if paid == 0 then
+      g.logMsg "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
+    else
+      g.queueMshReflexive controller sourceId 6
+  | .wheneverYouCastANoncreatureSpell5 =>
+    let paid := (lastKnownPower.getD (0 : Int)).toNat
+    if paid == 0 then
+      g.logMsg "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
+    else
+      g.queueMshReflexive controller sourceId 9
   | .whenTheSentryEnters =>
     match targets[0]? with
     | some (Target.player pid) => g.createNamedToken pid theVoidToken
@@ -10578,14 +10752,11 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       (fun g c => g.mapObjectStatus c (fun s =>
         { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
   | .planFinishReturnInstants =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.sacrificeToGraveyard o "the Plan is completed"
+    g.sacrificePlanThenQueueReflexive controller sourceId 11
   | .planFinishControlOpponent =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.sacrificeToGraveyard o "the Plan is completed"
+    g.sacrificePlanThenQueueReflexive controller sourceId 4
   | .planFinishExileTopCast =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.sacrificeToGraveyard o "the Plan is completed"
+    g.sacrificePlanThenQueueReflexive controller sourceId 5
   | .planFinishCreateRobots n =>
     let g :=
       match sourceId.bind g.findObject? with
@@ -10601,15 +10772,9 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         g := g'
       return g
   | .planFinishDividedDamage _n =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      g.sacrificeToGraveyard o "the Plan is completed"
+    g.sacrificePlanThenQueueReflexive controller sourceId 10
   | .planFinishIndestructibleOnTarget =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.sacrificeToGraveyard o "the Plan is completed"
-      g.withLegalTriggerPermanent controller ab sourceId targets (fun g t =>
-        g.setObject { t with status := { t.status with
-          indestructibleCounters := t.status.indestructibleCounters + 1 } })
-        "No target was chosen"
+    g.sacrificePlanThenQueueReflexive controller sourceId 3
   | .drawAndLoseLife1 =>
     let g := g.draw controller 1
     g.loseLife controller 1
