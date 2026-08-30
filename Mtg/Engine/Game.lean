@@ -6655,7 +6655,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
     let cost :=
       match prop.kind, prop.activation, prop.sourceId.bind g.findObject? with
       | .activatedAbility, some ab, src =>
-        g.activationManaCost p ab src (chosenX := some x)
+        g.activationManaCost p ab (source := src) (chosenX := some x)
       | .spell, _, _ =>
         let spell := g.object! prop.spellId
         g.playManaCost spell spell.printed

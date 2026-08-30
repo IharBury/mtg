@@ -13110,16 +13110,19 @@ def statureEntered : Game := mshEnter afterDraw statureSizeShifter
 #guard
   let o := namedPermanent statureEntered "Stature, Size Shifter"
   let ab := o.printed.activatedAbilities[0]!
-  statureEntered.activationManaCost ⟨0⟩ ab (some o) (chosenX := some 2) ==
-    ({ symbols := #[.generic 2, .colored .blue] } : ManaCost)
+  let cost :=
+    statureEntered.activationManaCost ⟨0⟩ ab (source := some o) (chosenX := some 2)
+  cost == ({ symbols := #[.generic 2, .colored .blue] } : ManaCost)
 
 /-- Power-up is used after activation even if X is 0. -/
-#guard
+def statureXZeroUsed : Game :=
   let g := mustApply proposedStature ⟨0⟩ (.chooseX 0)
-  let g := mustApply g ⟨0⟩ .pay
-  (namedPermanent g "Stature, Size Shifter").status.powerUpUsed &&
-    !g.canActivate ⟨0⟩ (namedPermanent g "Stature, Size Shifter")
-      (namedPermanent g "Stature, Size Shifter").printed.activatedAbilities[0]!
+  mustApply g ⟨0⟩ .pay
+
+#guard (namedPermanent statureXZeroUsed "Stature, Size Shifter").status.powerUpUsed
+#guard
+  let o := namedPermanent statureXZeroUsed "Stature, Size Shifter"
+  !statureXZeroUsed.canActivate ⟨0⟩ o o.printed.activatedAbilities[0]!
 
 end Mtg.Engine.Tests
 
