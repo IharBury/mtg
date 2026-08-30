@@ -13002,6 +13002,81 @@ def hiddenLairWithIsland : Game :=
       (g.player ⟨0⟩).manaPool.blue == 1
   | .error _ => false
 
+def hiddenLairWithSwamp : Game :=
+  addUntappedLand (addPermanent afterDraw hiddenLair ⟨0⟩ ⟨0⟩) swamp
+
+/-- Propose `card` from hand after putting it there. -/
+def proposeFromHand (g : Game) (card : CardDef) : Game :=
+  let g := addToHand g card ⟨0⟩
+  mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ card.name).id)
+
+/-- Hidden Lair entered this turn; `{U}` must come from its colored ability. -/
+def hiddenLairPayingDoombot : Game :=
+  proposeFromHand hiddenLairEntered aerialDoombot
+
+#guard
+  match hiddenLairPayingDoombot.pending with
+  | .activateManaAbilities ⟨0⟩ => true
+  | _ => false
+
+#guard
+  match Agent.chooseManaPayment hiddenLairPayingDoombot ⟨0⟩ with
+  | some (.tapForMana id (.colored .blue)) =>
+    (hiddenLairPayingDoombot.object! id).name == "Hidden Lair"
+  | _ => false
+
+/-- Hidden Lair entered this turn; `{B}` must come from its colored ability. -/
+def hiddenLairPayingDeathlok : Game :=
+  proposeFromHand hiddenLairEntered projectDeathlokSoldier
+
+#guard
+  match Agent.chooseManaPayment hiddenLairPayingDeathlok ⟨0⟩ with
+  | some (.tapForMana id (.colored .black)) =>
+    (hiddenLairPayingDeathlok.object! id).name == "Hidden Lair"
+  | _ => false
+
+/-- Without the colored ability, Hidden Lair cannot pay `{U}`. -/
+def hiddenLairStuckPayingDoombot : Game :=
+  proposeFromHand hiddenLairStuck aerialDoombot
+
+#guard
+  match Agent.chooseManaPayment hiddenLairStuckPayingDoombot ⟨0⟩ with
+  | some .pay =>
+    !(namedPermanent hiddenLairStuckPayingDoombot "Hidden Lair").status.tapped
+  | _ => false
+
+/-- Island already makes `{U}`; Hidden Lair must tap for `{B}` so `{U}{B}`
+is still payable. -/
+def hiddenLairScientistWithIsland : Game :=
+  proposeFromHand hiddenLairWithIsland scientistSupremeOfAIM
+
+#guard
+  match hiddenLairScientistWithIsland.proposedSpell with
+  | some prop =>
+    let lair := namedPermanent hiddenLairScientistWithIsland "Hidden Lair"
+    let isl := namedPermanent hiddenLairScientistWithIsland "Island"
+    hiddenLairScientistWithIsland.preferredManaType ⟨0⟩ lair
+      (hiddenLairScientistWithIsland.manaAbilitiesOf lair) prop.cost false false
+      [(isl, hiddenLairScientistWithIsland.manaAbilitiesOf isl)] ==
+        some (.colored .black)
+  | none => false
+
+#guard
+  match Agent.chooseManaPayment hiddenLairScientistWithIsland ⟨0⟩ with
+  | some (.tapForMana id (.colored .black)) =>
+    (hiddenLairScientistWithIsland.object! id).name == "Hidden Lair"
+  | _ => false
+
+/-- Swamp already makes `{B}`; Hidden Lair must tap for `{U}`. -/
+def hiddenLairScientistWithSwamp : Game :=
+  proposeFromHand hiddenLairWithSwamp scientistSupremeOfAIM
+
+#guard
+  match Agent.chooseManaPayment hiddenLairScientistWithSwamp ⟨0⟩ with
+  | some (.tapForMana id (.colored .blue)) =>
+    (hiddenLairScientistWithSwamp.object! id).name == "Hidden Lair"
+  | _ => false
+
 /- Stature, Size Shifter: unblockable at power ≤ 1; power-up puts X +1/+1. -/
 
 def statureInPlay : Game :=

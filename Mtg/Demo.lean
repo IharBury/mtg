@@ -2632,8 +2632,9 @@ def canPayProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) : Bool :=
 
 /-- Activate mana abilities chosen by the heuristic, then pay (CR 601.2g–h).
 Taps noncreatures before creatures when both help, and prefers colorless
-when that type can be spent. Fails without changing the game if the cost
-cannot be paid. -/
+when that type can be spent. Hidden Lair taps for `{U}` or `{B}` when that
+ability is live and the color is needed. Fails without changing the game
+if the cost cannot be paid. -/
 def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array String) :
     Except String AutopayResult := do
   match fuel with
@@ -2668,7 +2669,8 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
     | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 /-- Tap necessary mana sources (noncreatures first; colorless if usable) and
-pay the current cost. -/
+pay the current cost. Hidden Lair contributes `{U}` or `{B}` when that
+ability can be activated. -/
 def applyAutopay (g : Game) (p : PlayerId) (tokens : List String) :
     Except String AutopayResult :=
   match commandTokens tokens with
@@ -2804,6 +2806,55 @@ def applyAutopayAsActor (g : Game) (tokens : List String) : Except String Autopa
         tapCommand mountain.id (.colored .red), "pay"] &&
       r.game.pending == .none &&
       r.game.log.any (fun s => Tests.mentions s "activates Wayfarer's Bauble")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.hiddenLairPayingDoombot ⟨0⟩ [] with
+  | .ok r =>
+    let lair := Tests.namedPermanent Tests.hiddenLairPayingDoombot "Hidden Lair"
+    r.commands == #[tapCommand lair.id (.colored .blue), "pay"] &&
+      (Tests.namedPermanent r.game "Hidden Lair").status.tapped &&
+      r.game.log.any (fun s => Tests.mentions s "casts Aerial Doombot")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.hiddenLairPayingDeathlok ⟨0⟩ [] with
+  | .ok r =>
+    let lair := Tests.namedPermanent Tests.hiddenLairPayingDeathlok "Hidden Lair"
+    r.commands == #[tapCommand lair.id (.colored .black), "pay"] &&
+      (Tests.namedPermanent r.game "Hidden Lair").status.tapped &&
+      r.game.log.any (fun s => Tests.mentions s "casts Project Deathlok Soldier")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.hiddenLairStuckPayingDoombot ⟨0⟩ [] with
+  | .error msg =>
+    Tests.mentions msg "cannot pay" &&
+      !(Tests.namedPermanent Tests.hiddenLairStuckPayingDoombot "Hidden Lair").status.tapped
+  | .ok _ => false
+
+#guard
+  match applyAutopay Tests.hiddenLairScientistWithIsland ⟨0⟩ [] with
+  | .ok r =>
+    let lair := Tests.namedPermanent Tests.hiddenLairScientistWithIsland "Hidden Lair"
+    let isl := Tests.namedPermanent Tests.hiddenLairScientistWithIsland "Island"
+    r.commands ==
+      #[tapCommand lair.id (.colored .black),
+        tapCommand isl.id (.colored .blue), "pay"] &&
+      (Tests.namedPermanent r.game "Hidden Lair").status.tapped &&
+      (Tests.namedPermanent r.game "Island").status.tapped &&
+      r.game.log.any (fun s => Tests.mentions s "casts Scientist Supreme")
+  | .error _ => false
+
+#guard
+  match applyAutopay Tests.hiddenLairScientistWithSwamp ⟨0⟩ [] with
+  | .ok r =>
+    let lair := Tests.namedPermanent Tests.hiddenLairScientistWithSwamp "Hidden Lair"
+    let sw := Tests.namedPermanent Tests.hiddenLairScientistWithSwamp "Swamp"
+    r.commands ==
+      #[tapCommand lair.id (.colored .blue),
+        tapCommand sw.id (.colored .black), "pay"] &&
+      r.game.log.any (fun s => Tests.mentions s "casts Scientist Supreme")
   | .error _ => false
 
 def shuffleUsage : String := "usage: shuffle [id ...]"
@@ -4442,21 +4493,12 @@ def subsetFromMask {α : Type} (xs : Array α) (mask : Nat) : Array α :=
 def payingSourceSubset (a b : Array (GameObject × Array ManaType)) : Bool :=
   a.all (fun (oa, _) => b.any (fun (ob, _) => oa.id == ob.id))
 
-/-- Pool after tapping `src` for `t`, including spending restrictions. -/
-def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) :
-    ManaPool :=
-  pool.add t (g.manaFromTap src t)
-    (elfRestricted := src.printed.tapAddAnyColorEqualToPower)
-    (instRestricted := src.printed.tapAddAnyColorForInstantOrSorcery)
-
 /-- Whether tapping every source in `sources` can pay `cost` for some
 type assignment. -/
 def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) : List (GameObject × Array ManaType) → Bool
-  | [] => pool.canPay cost allowElf allowInst
-  | (src, types) :: rest =>
-    types.any (fun t =>
-      canPayTappingAll g (poolAfterTap g pool src t) cost allowElf allowInst rest)
+    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType)) :
+    Bool :=
+  g.canPayFromSources pool cost allowElf allowInst sources
 
 /-- Unique source set that can pay when there are too many sources to
 enumerate every subset. Recognizes a single sufficient source, or that
