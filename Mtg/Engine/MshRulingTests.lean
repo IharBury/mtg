@@ -245,8 +245,16 @@ def mdfcTransformLeaveOk : Bool :=
 battlefield without casting uses the front face. -/
 def mdfcFrontFacePutOk : Bool :=
   let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
+  let faces : Array CardDef :=
+    match bruceBanner.otherFace with
+    | none => #[bruceBanner]
+    | some back => #[bruceBanner, back]
+  let greenFaces :=
+    faces.filter (fun c => c.colors.contains .green) |>.map (fun c => c.name)
   (namedPermanent g "Bruce Banner").printed.name == "Bruce Banner" &&
     !(namedPermanent g "Bruce Banner").status.transformed &&
+    greenFaces == #["The Incredible Hulk"] &&
+    (mshRuling 16).comment.contains "cast green spells" &&
     (mshRuling 17).comment.contains "front face"
 
 #guard mdfcFrontFacePutOk
@@ -2381,7 +2389,8 @@ def freeCopyXIsZeroOk : Bool :=
   let card := { card with playPermission := some {
     player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   g.playManaCost card photonBlastBarrage == ManaCost.zero &&
-    (mshRuling 187).comment.contains "choose 0 as the value of X"
+    (mshRuling 187).comment.contains "choose 0 as the value of X" &&
+    (mshRuling 52).comment.contains "can't choose to cast it for any alternative"
 
 #guard freeCopyXIsZeroOk
 
@@ -2441,6 +2450,7 @@ def exilePlayFollowsTimingOk : Bool :=
     (let gCombat := { g with step := .beginningOfCombat }
      !gCombat.asSorcery? ⟨0⟩ &&
        !gCombat.canCast ⟨0⟩ (gCombat.object! exiled)) &&
+    (mshRuling 68).comment.contains "normal timing rules" &&
     (mshRuling 372).comment.contains "normal timing rules" &&
     (mshRuling 373).comment.contains "normal timing rules" &&
     (mshRuling 374).comment.contains "timing rules"
@@ -3089,6 +3099,18 @@ def hawkeyeSameSourceOk : Bool :=
     (mshRuling 291).comment.contains "same source as the original"
 
 #guard hawkeyeSameSourceOk
+
+/-- Ruling 348: The Ruinous Wrecking Crew cannot choose the same mode twice. -/
+def wreckingCrewModesOnceOk : Bool :=
+  let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "The Ruinous Wrecking Crew"
+  let g := g.mapObjectStatus o (fun s => { s with chosenModes := #[0, 2] })
+  let o := namedPermanent g "The Ruinous Wrecking Crew"
+  o.status.chosenModes.contains 0 &&
+    !o.status.chosenModes.contains 1 &&
+    (mshRuling 348).comment.contains "can't choose the same mode"
+
+#guard wreckingCrewModesOnceOk
 
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
