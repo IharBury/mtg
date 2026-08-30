@@ -200,6 +200,8 @@ def normalizePhrases (s : String) : String :=
     ("it deals", "this deals"),
     ("he fights", "this fights"),
     ("she fights", "this fights"),
+    ("tap him", "tap this"),
+    ("tap her", "tap this"),
     ("this leave the battlefield", "this leaves the battlefield"),
     ("she connives", "it connives"),
     ("he connives", "it connives"),
