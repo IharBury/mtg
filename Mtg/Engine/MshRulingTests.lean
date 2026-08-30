@@ -1563,8 +1563,8 @@ def spiderWomanCantUntapOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let wasp := namedPermanent g "Spider-Woman, Secret Agent"
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenSpiderWomanEnters (some wasp.id)
-    #[Target.permanent host.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .tapOppCantUntapWhileControl)
+    (some wasp.id) #[Target.permanent host.id]
   let host := namedPermanent g "Grizzly Bears"
   host.status.tapped && g.hostCantBecomeUntapped host &&
     (mshRuling 167).comment.contains "won't untap" &&
@@ -1793,8 +1793,8 @@ def cloakAndDaggerRevealIfLeftOk : Bool :=
   let cloak := namedPermanent g "Cloak and Dagger, Entwined"
   let bears := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move cloak.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cloak.id)
-    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .revealHandExileUntilLeaves)
+    (some cloak.id) #[Target.player ⟨1⟩, Target.permanent bears.id]
   logContains g "reveals their hand" &&
     onBattlefield g "Grizzly Bears" &&
     !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
@@ -2216,7 +2216,7 @@ def mshReflexiveNoTargetFirstOk : Bool :=
   let g := addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Bullseye, Death Dealer"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenBullseyeEnters (some b.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .maySacOrDiscardNonlandThenDamage) (some b.id)
   (namedPermanent g "Grizzly Bears").status.damage == 0 &&
     g.pendingMshReflexive.isSome &&
     logContains g "reflexive" &&
@@ -2226,7 +2226,7 @@ def mshReflexiveNoTargetFirstOk : Bool :=
     (let g := addPermanent afterDraw spiderManToTheRescue ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let sm := namedPermanent g "Spider-Man, To the Rescue"
-     let g := g.applyModeledTrigger ⟨0⟩ .noOneDiesWhenSpiderManEnte (some sm.id)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .mayTapThenGrantIndestructible) (some sm.id)
      (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
        g.pendingMshReflexive.isSome &&
        (let bears := namedPermanent g "Grizzly Bears"
@@ -2339,7 +2339,7 @@ def killmongerReflexiveOk : Bool :=
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let km := namedPermanent g "Killmonger, Scourge of Wakanda"
   let ogre := namedPermanent g "Gray Ogre"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenKillmongerEnters (some km.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .maySacAnotherThenDestroyOppNonland) (some km.id)
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     g.pendingMshReflexive.isSome &&
     g.battlefield.any (fun o => o.name == "Gray Ogre") &&
@@ -2347,7 +2347,7 @@ def killmongerReflexiveOk : Bool :=
      !g.battlefield.any (fun o => o.name == "Gray Ogre")) &&
     (let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
      let km := namedPermanent g "Killmonger, Scourge of Wakanda"
-     let g := g.applyModeledTrigger ⟨0⟩ .whenKillmongerEnters (some km.id)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .maySacAnotherThenDestroyOppNonland) (some km.id)
      !g.pendingMshReflexive.isSome) &&
     (mshRuling 364).comment.contains "reflexive"
 
@@ -2643,15 +2643,15 @@ def redGuardianDealtDamageOk : Bool :=
   let rg := namedPermanent g "Red Guardian, Super-Soldier"
   let bears := namedPermanent g "Grizzly Bears"
   bears.status.dealtDamageThisTurn &&
-    (let g := g.applyModeledTrigger ⟨0⟩ .whenRedGuardianEnters (some rg.id)
-       #[Target.permanent bears.id]
+    (let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter (.destroy .oppCreatureDealtDamageThisTurn))
+       (some rg.id) #[Target.permanent bears.id]
      !g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
     (let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
      let g := addPermanent g redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
      let rg := namedPermanent g "Red Guardian, Super-Soldier"
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyModeledTrigger ⟨0⟩ .whenRedGuardianEnters (some rg.id)
-       #[Target.permanent bears.id]
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter (.destroy .oppCreatureDealtDamageThisTurn))
+       (some rg.id) #[Target.permanent bears.id]
      g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
     (mshRuling 272).comment.contains "dealt damage this turn"
 
@@ -2971,13 +2971,13 @@ def linkedExileCopyOk : Bool :=
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let cd := namedPermanent g "Cloak and Dagger, Entwined"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cd.id)
-    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .revealHandExileUntilLeaves)
+    (some cd.id) #[Target.player ⟨1⟩, Target.permanent bears.id]
   (namedPermanent g "Cloak and Dagger, Entwined").linkedExile.size == 1 &&
     (let cd := namedPermanent g "Cloak and Dagger, Entwined"
      let ogre := namedPermanent g "Gray Ogre"
-     let g := g.applyModeledTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cd.id)
-       #[Target.player ⟨1⟩, Target.permanent ogre.id]
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .revealHandExileUntilLeaves)
+       (some cd.id) #[Target.player ⟨1⟩, Target.permanent ogre.id]
      let cd := namedPermanent g "Cloak and Dagger, Entwined"
      cd.linkedExile.size == 2 &&
        !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
@@ -3295,16 +3295,16 @@ def wondrousWaspLoseAbilitiesOk : Bool :=
   let wasp := namedPermanent g "The Wondrous Wasp"
   let storm := namedPermanent g "Storm, Windrider"
   let (g, _) := g.move wasp.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ .waspSStingWhenTheWondrousWa (some wasp.id)
-    #[Target.permanent storm.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .tapLoseAbilitiesWhileSource)
+    (some wasp.id) #[Target.permanent storm.id]
   (namedPermanent g "Storm, Windrider").status.tapped &&
     g.hasFlying (namedPermanent g "Storm, Windrider") &&
     (let g := addPermanent afterDraw theWondrousWasp ⟨0⟩ ⟨0⟩
      let g := addPermanent g stormWindrider ⟨0⟩ ⟨0⟩
      let wasp := namedPermanent g "The Wondrous Wasp"
      let storm := namedPermanent g "Storm, Windrider"
-     let g := g.applyModeledTrigger ⟨0⟩ .waspSStingWhenTheWondrousWa (some wasp.id)
-       #[Target.permanent storm.id]
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .tapLoseAbilitiesWhileSource)
+       (some wasp.id) #[Target.permanent storm.id]
      let storm := namedPermanent g "Storm, Windrider"
      storm.status.tapped &&
        !g.hasFlying storm &&
@@ -3798,8 +3798,8 @@ def cloakIllegalCreatureStillResolvesOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let cloak := namedPermanent g "Cloak and Dagger, Entwined"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyModeledTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cloak.id)
-    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .revealHandExileUntilLeaves)
+    (some cloak.id) #[Target.player ⟨1⟩, Target.permanent bears.id]
   logContains g "illegal target" &&
     onBattlefield g "Grizzly Bears" &&
     (mshRuling 204).comment.contains "illegal target"
@@ -3876,8 +3876,8 @@ def klawRevealAllOk : Bool :=
   let klaw := namedPermanent g "Klaw, Sonic Subjugator"
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let g := addToGraveyard g hillGiant ⟨0⟩
-  let g := g.applyModeledTrigger ⟨0⟩ .sonicAttackWhenKlawEntersTa (some klaw.id)
-    #[Target.player ⟨1⟩]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .revealDiscardFromHand)
+    (some klaw.id) #[Target.player ⟨1⟩]
   (g.handObjects ⟨1⟩).size == 1 &&
     logContains g "if fewer than" &&
     (mshRuling 220).comment.contains "reveal all the cards"
@@ -4096,8 +4096,8 @@ def wreckingCrewPrintedOrderOk : Bool :=
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let crew := namedPermanent g "The Ruinous Wrecking Crew"
   let g := g.mapObjectStatus crew (fun s => { s with chosenModes := #[2, 3] })
-  let g := g.applyModeledTrigger ⟨0⟩ .whenTheRuinousWreckingCrewEnters (some crew.id)
-    #[Target.permanent tok.id, Target.permanent tok.id]
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .chooseUpToXModes)
+    (some crew.id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
     g.log.any (fun s => mentions s "can't be sacrificed" || mentions s "destroyed") &&
     (mshRuling 252).comment.contains "printed order"

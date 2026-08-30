@@ -30,41 +30,7 @@ inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | atTheBeginningOfYourUpkeep
   /-- Modeled MSH ability. -/
-  | whenBullseyeEnters
-  /-- Modeled MSH ability. -/
-  | whenCloakAndDaggerEnter
-  /-- Modeled MSH ability. -/
-  | whenDoctorDoomEnters
-  /-- Modeled MSH ability. -/
-  | whenElektraEnters
-  /-- Modeled MSH ability. -/
   | whenHellcatDies
-  /-- Modeled MSH ability. -/
-  | whenJusticeEnters
-  /-- Modeled MSH ability. -/
-  | whenKaZarEnters
-  /-- Modeled MSH ability. -/
-  | whenKillmongerEnters
-  /-- Modeled MSH ability. -/
-  | whenMjLnirEnters
-  /-- Modeled MSH ability. -/
-  | whenNightNurseEnters
-  /-- Modeled MSH ability. -/
-  | whenRedGuardianEnters
-  /-- Modeled MSH ability. -/
-  | whenSpiderWomanEnters
-  /-- Modeled MSH ability. -/
-  | whenTheRuinousWreckingCrewEnters
-  /-- Modeled MSH ability. -/
-  | whenTheSentryEnters
-  /-- Modeled MSH ability. -/
-  | whenThorEnters
-  /-- Modeled MSH ability. -/
-  | whenUSAgentEnters
-  /-- Modeled MSH ability. -/
-  | whenWhiteWidowEnters
-  /-- Modeled MSH ability. -/
-  | whenWolverineEnters
   /-- Modeled MSH ability. -/
   | wheneverAntManAttacks
   /-- Modeled MSH ability. -/
@@ -202,19 +168,13 @@ inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | enrageWheneverTheIncredi
   /-- Modeled MSH ability. -/
-  | noOneDiesWhenSpiderManEnte
-  /-- Modeled MSH ability. -/
   | photographicReflexesAtTheBeginningOf
   /-- Modeled MSH ability. -/
   | seismicTakedownWheneverYouCastA
   /-- Modeled MSH ability. -/
-  | sonicAttackWhenKlawEntersTa
-  /-- Modeled MSH ability. -/
   | trickArrowsWheneverHawkeyeBec
   /-- Modeled MSH ability. -/
   | unbreakableSkinWheneverLukeCageA
-  /-- Modeled MSH ability. -/
-  | waspSStingWhenTheWondrousWa
   /-- Modeled MSH ability. -/
   | atTheBeginningOf
 deriving Repr, Inhabited, BEq
@@ -227,24 +187,7 @@ def toNotation : ModeledTrigger → String
   | .atTheBeginningOfYourEndStep => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
   | .atTheBeginningOfYourFirstMainPhase => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
   | .atTheBeginningOfYourUpkeep => "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
-  | .whenBullseyeEnters => "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target."
-  | .whenCloakAndDaggerEnter => "When Cloak and Dagger enter, choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until Cloak and Dagger leave the battlefield."
-  | .whenDoctorDoomEnters => "When Doctor Doom enters, create two 3/3 colorless Robot Villain artifact creature tokens named Doombot."
-  | .whenElektraEnters => "When Elektra enters, destroy target creature an opponent controls with power 3 or less."
   | .whenHellcatDies => "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
-  | .whenJusticeEnters => "When Justice enters, return up to one target nonland, nontoken permanent to its owner's hand."
-  | .whenKaZarEnters => "When Ka-Zar enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-  | .whenKillmongerEnters => "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls."
-  | .whenMjLnirEnters => "When Mjölnir enters, it deals 4 damage to up to one target creature."
-  | .whenNightNurseEnters => "When Night Nurse enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand."
-  | .whenRedGuardianEnters => "When Red Guardian enters, destroy target creature an opponent controls that dealt damage this turn."
-  | .whenSpiderWomanEnters => "When Spider-Woman enters, tap target creature an opponent controls. That creature can't become untapped for as long as you control Spider-Woman."
-  | .whenTheRuinousWreckingCrewEnters => "When The Ruinous Wrecking Crew enters, choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice."
-  | .whenTheSentryEnters => "When The Sentry enters, target opponent creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
-  | .whenThorEnters => "When Thor enters, exile target Equipment, instant, or sorcery card from your graveyard. Until the end of your next turn, you may play that card."
-  | .whenUSAgentEnters => "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent."
-  | .whenWhiteWidowEnters => "When White Widow enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
-  | .whenWolverineEnters => "When Wolverine enters, he fights up to one other target creature."
   | .wheneverAntManAttacks => "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
   | .wheneverBlackWidowDealsCombatDamageToAPl => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
   | .wheneverGrimReaperAttacks => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
@@ -313,13 +256,10 @@ def toNotation : ModeledTrigger → String
   | .doYouLikeSquirrelsWheneverTheUnbeata => "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
   | .enrageWheneverRedHulkIs => "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
   | .enrageWheneverTheIncredi => "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
-  | .noOneDiesWhenSpiderManEnte => "No One Dies! — When Spider-Man enters, you may tap him. When you do, another target nonattacking creature you control gains indestructible until end of turn."
   | .photographicReflexesAtTheBeginningOf => "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
   | .seismicTakedownWheneverYouCastA => "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
-  | .sonicAttackWhenKlawEntersTa => "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."
   | .trickArrowsWheneverHawkeyeBec => "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
   | .unbreakableSkinWheneverLukeCageA => "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
-  | .waspSStingWhenTheWondrousWa => "Wasp's Sting — When The Wondrous Wasp enters, tap up to one target creature. It loses all abilities for as long as The Wondrous Wasp remains on the battlefield."
   | .atTheBeginningOf => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
 
 instance : ToString ModeledTrigger where
@@ -344,8 +284,6 @@ inductive ModeledStatic where
   | asLongAsYouVePutOneOrMore11Counters
   /-- Modeled MSH ability. -/
   | attackingCreatureTokensYouControlHaveFirst
-  /-- Modeled MSH ability. -/
-  | avianTelepathyWhenFalconEnters
   /-- Modeled MSH ability. -/
   | boastExileAnyNumberOfBlackCardsFromYou
   /-- Modeled MSH ability. -/
@@ -446,7 +384,6 @@ def toNotation : ModeledStatic → String
   | .asLongAsYouControlAnArtifactCreatureOrA => "As long as you control an artifact creature or a Plan, Doctor Doom has indestructible."
   | .asLongAsYouVePutOneOrMore11Counters => "As long as you've put one or more +1/+1 counters on Beast this turn, he has flying."
   | .attackingCreatureTokensYouControlHaveFirst => "Attacking creature tokens you control have first strike."
-  | .avianTelepathyWhenFalconEnters => "Avian Telepathy — When Falcon enters, create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
   | .boastExileAnyNumberOfBlackCardsFromYou => "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
   | .cosmicAwarenessAsLongAsAnOpponentHasCa => "Cosmic Awareness — As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."
   | .creaturesWithFlyingCanTAttackYouOrBlock => "Creatures with flying can't attack you or block creatures you control."

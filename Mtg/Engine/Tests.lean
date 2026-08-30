@@ -11247,6 +11247,58 @@ def stolenStarkIndestructibleOk : Bool :=
 
 #guard stolenStarkIndestructibleOk
 
+/-- Doctor Doom: create two Doombots. -/
+def doctorDoomDoombotsOk : Bool :=
+  let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
+  let doom := namedPermanent g "Doctor Doom"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnterCreateTokens .doombot 2) (some doom.id)
+  (g.battlefield.filter (fun o => o.name == "Doombot")).size == 2
+
+#guard doctorDoomDoombotsOk
+
+/-- Thor: exile an instant from the graveyard; it is playable until next turn. -/
+def thorExilePlayOk : Bool :=
+  let g := addPermanent afterDraw thorGodOfThunder ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let thor := namedPermanent g "Thor, God of Thunder"
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .exileGyPlayUntilNextTurn)
+    (some thor.id) #[Target.card bolt.id]
+  match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
+  | some bolt =>
+    match bolt.playPermission with
+    | some perm => perm.player == ⟨0⟩ && perm.turnEndsRemaining == 2
+    | none => false
+  | none => false
+
+#guard thorExilePlayOk
+
+/-- Wolverine fights another creature. -/
+def wolverineFightOk : Bool :=
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .fightUpToOne)
+    (some w.id) #[Target.permanent giant.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
+    !g.battlefield.any (fun o => o.name == "Hill Giant")
+
+#guard wolverineFightOk
+
+/-- Justice returns a nonland nontoken. -/
+def justiceBounceOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let j := namedPermanent g "Justice, Vance Astrovik"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .returnNonlandNontoken)
+    (some j.id) #[Target.permanent bears.id]
+  !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
+
+#guard justiceBounceOk
+
 /-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
 def flyingCarFlickerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩

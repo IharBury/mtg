@@ -341,6 +341,18 @@ inductive EffectTargetKind where
   /-- An activated or triggered ability you control from an artifact source
   (Scientist Supreme of A.I.M.; MSH 87). -/
   | stackAbilityFromArtifactSource
+  /-- Target creature an opponent controls with power `n` or less. -/
+  | oppCreaturePowerAtMost (n : Int)
+  /-- Target creature an opponent controls that dealt damage this turn. -/
+  | oppCreatureDealtDamageThisTurn
+  /-- Target nonland, nontoken permanent. -/
+  | nonlandNontoken
+  /-- Target permanent card in your graveyard. -/
+  | permanentCardInYourGraveyard
+  /-- Target Equipment, instant, or sorcery card in your graveyard. -/
+  | equipmentInstantOrSorceryInYourGraveyard
+  /-- Target artifact or enchantment card in your graveyard. -/
+  | artEnchCardInYourGraveyard
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -521,6 +533,20 @@ def spec : EffectTargetKind → Spec
   | .stackAbilityFromArtifactSource =>
     { noun := "target activated or triggered ability you control from an artifact source",
       stackSpell := true }
+  | .oppCreaturePowerAtMost n =>
+    { noun := s!"target creature an opponent controls with power {n} or less" }
+  | .oppCreatureDealtDamageThisTurn =>
+    { noun := "target creature an opponent controls that dealt damage this turn" }
+  | .nonlandNontoken =>
+    { noun := "target nonland, nontoken permanent", prefer := .ownThenOpponent }
+  | .permanentCardInYourGraveyard =>
+    { noun := "target permanent card in your graveyard", prefer := .last }
+  | .equipmentInstantOrSorceryInYourGraveyard =>
+    { noun := "target Equipment, instant, or sorcery card from your graveyard",
+      prefer := .last }
+  | .artEnchCardInYourGraveyard =>
+    { noun := "target artifact or enchantment card from your graveyard",
+      prefer := .last }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -3556,6 +3582,50 @@ def spec : ChapterEffect → Spec
 
 end ChapterEffect
 
+/-- Leftover “When ⟨this⟩ enters” wordings that do not already match a more
+specific `TriggeredAbility` constructor. One `onEnter` constructor keeps the
+C runtime tag under the limit. -/
+inductive EnterEffect where
+  /-- Destroy the targeted permanent. -/
+  | destroy (kind : EffectTargetKind)
+  /-- Deal `n` damage to up to one target creature. -/
+  | dealDamageUpToOne (n : Nat)
+  /-- This fights up to one other target creature. -/
+  | fightUpToOne
+  /-- Return up to one nonland nontoken to its owner's hand. -/
+  | returnNonlandNontoken
+  /-- Create Zabu. -/
+  | createZabu
+  /-- Target opponent creates The Void. -/
+  | oppCreatesTheVoid
+  /-- Create Sturdy Shield and attach it to this. -/
+  | createSturdyShieldAttach
+  /-- Exile an Equipment, instant, or sorcery from your GY; play until next turn. -/
+  | exileGyPlayUntilNextTurn
+  /-- Return a GY permanent card put there this turn to your hand. -/
+  | returnGyPermanentThisTurn
+  /-- Tap an opposing creature; it can't untap while you control this. -/
+  | tapOppCantUntapWhileControl
+  /-- You may sacrifice another creature. When you do, destroy an opposing nonland. -/
+  | maySacAnotherThenDestroyOppNonland
+  /-- You may sac an artifact or discard a nonland. When you do, 2 damage. -/
+  | maySacOrDiscardNonlandThenDamage
+  /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
+  | revealHandExileUntilLeaves
+  /-- +1/+1 on up to two creatures, or return an artifact/enchantment from GY. -/
+  | plusOnesOrReturnArtEnch
+  /-- Choose up to X modes. -/
+  | chooseUpToXModes
+  /-- You may tap this. When you do, grant indestructible. -/
+  | mayTapThenGrantIndestructible
+  /-- Tap up to one creature; it loses abilities while this remains. -/
+  | tapLoseAbilitiesWhileSource
+  /-- Target player reveals; you choose a card to discard. -/
+  | revealDiscardFromHand
+  /-- Create Redwing. -/
+  | createRedwing
+deriving Repr, Inhabited, BEq
+
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
@@ -4102,6 +4172,10 @@ inductive TriggeredAbility where
   | onEnterExileOppTappedUntilLeaves
   /-- When this enchantment enters, target opponent discards `n` cards. -/
   | onEnterTargetOpponentDiscards (n : Nat)
+  /-- When this permanent enters, resolve `e`. Shared shape for leftover
+  “When ⟨this⟩ enters” abilities that do not already match a more specific
+  constructor. -/
+  | onEnter (e : EnterEffect)
   /-- Whenever this creature attacks, it connives. -/
   | onAttackConnive
   /-- Whenever you gain life, put a +1/+1 counter on this. -/
@@ -5026,6 +5100,40 @@ inductive TriggerResolution where
   /-- You may put an artifact from your hand onto the battlefield; attach
   it if it is Equipment. -/
   | mayPutArtifactAttachEquipment
+  /-- This fights the targeted creature. -/
+  | fightUpToOne
+  /-- Return the targeted permanent to its owner's hand. -/
+  | returnToOwnerHand
+  /-- Create Zabu. -/
+  | createZabu
+  /-- Target opponent creates The Void. -/
+  | oppCreatesTheVoid
+  /-- Create Sturdy Shield and attach it to the source. -/
+  | createSturdyShieldAttach
+  /-- Exile the targeted GY card; you may play it until the end of your next turn. -/
+  | exileGyPlayUntilNextTurn
+  /-- Return the targeted GY permanent card to your hand. -/
+  | returnGyPermanentThisTurn
+  /-- Tap the target; it can't become untapped while you control the source. -/
+  | tapCantUntapWhileControl
+  /-- You may sacrifice another creature. When you do, destroy an opposing nonland. -/
+  | maySacAnotherThenDestroyOppNonland
+  /-- You may sac an artifact or discard a nonland. When you do, 2 damage. -/
+  | maySacOrDiscardNonlandThenDamage
+  /-- Reveal the opponent's hand; exile a card or creature until this leaves. -/
+  | revealHandExileUntilLeaves
+  /-- +1/+1 on creature targets, or return an artifact/enchantment from GY. -/
+  | plusOnesOrReturnArtEnch
+  /-- Resolve chosen “up to X” modes in printed order. -/
+  | chooseUpToXModes
+  /-- You may tap this. When you do, grant indestructible to another creature. -/
+  | mayTapThenGrantIndestructible
+  /-- Tap the target; it loses abilities while the source remains. -/
+  | tapLoseAbilitiesWhileSource
+  /-- Target player reveals cards from hand; you choose one to discard. -/
+  | revealDiscardFromHand
+  /-- Create Redwing. -/
+  | createRedwing
   /-- Resolve a modeled MSH trigger. -/
   | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
@@ -5082,30 +5190,8 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.yourFirstMain] }
     | .atTheBeginningOfYourUpkeep =>
       { events := #[.yourUpkeep] }
-    | .whenBullseyeEnters
-    | .whenDoctorDoomEnters
-    | .whenKaZarEnters
-    | .whenKillmongerEnters
-    | .whenNightNurseEnters
-    | .whenThorEnters
-    | .whenUSAgentEnters
-    | .noOneDiesWhenSpiderManEnte =>
-      { events := #[.entering] }
-    | .whenCloakAndDaggerEnter | .whenTheRuinousWreckingCrewEnters =>
-      { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true }
-    | .whenElektraEnters | .whenRedGuardianEnters | .whenSpiderWomanEnters =>
-      { events := #[.entering], targeting := .of .oppCreature }
     | .whenHellcatDies =>
       { events := #[.dying] }
-    | .whenJusticeEnters =>
-      { events := #[.entering], targeting := .of .nonland, allowsZeroTargets := true }
-    | .whenMjLnirEnters
-    | .whenWhiteWidowEnters
-    | .whenWolverineEnters
-    | .waspSStingWhenTheWondrousWa =>
-      { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true }
-    | .whenTheSentryEnters =>
-      { events := #[.entering], targeting := .of .opponent }
     | .wheneverAntManAttacks =>
       { events := #[.attacking], targeting := .of .creature }
     | .wheneverBlackWidowDealsCombatDamageToAPl =>
@@ -5225,8 +5311,6 @@ def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
       { events := #[.yourFirstMain], targeting := .of .creature, allowsZeroTargets := true }
     | .seismicTakedownWheneverYouCastA =>
       { events := #[.youCastNoncreature], targeting := .of .creature }
-    | .sonicAttackWhenKlawEntersTa =>
-      { events := #[.entering], targeting := .of .player }
     | .trickArrowsWheneverHawkeyeBec =>
       { events := #[.entering], allowsZeroTargets := true }
     | .atTheBeginningOf =>
@@ -5252,9 +5336,6 @@ lockout (MSH 69). -/
 def optionalOnceEachTurn (t : ModeledTrigger) : Bool :=
   t.timing.optionalOnceEachTurn
 
-#guard (timing .whenElektraEnters).events == #[TriggerEvent.entering]
-#guard (timing .whenElektraEnters).targeting == EffectTargeting.of .oppCreature
-#guard (timing .whenMjLnirEnters).allowsZeroTargets
 #guard (timing .wheneverACreatureYouControlIsDealtDamage).onceEachTurn
 #guard (timing .wheneverAnotherVillainYouControlEnters4).optionalOnceEachTurn
 #guard (timing .wheneverSuperAdaptoidEntersOrAttacks).events ==
@@ -5263,6 +5344,57 @@ def optionalOnceEachTurn (t : ModeledTrigger) : Bool :=
   TriggeredAbility.TriggerResolution.msh .whenHellcatDies
 
 end ModeledTrigger
+
+/-- Timing for a leftover “When ⟨this⟩ enters” ability. -/
+def EnterEffect.timing : EnterEffect → TriggeredAbility.TriggerTiming
+  | .destroy kind =>
+    { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
+  | .dealDamageUpToOne n =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .onPermanent (.dealDamage n) }
+  | .fightUpToOne =>
+    { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
+      resolution := .fightUpToOne }
+  | .returnNonlandNontoken =>
+    { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
+      resolution := .returnToOwnerHand }
+  | .createZabu =>
+    { events := #[.entering], resolution := .createZabu }
+  | .oppCreatesTheVoid =>
+    { events := #[.entering], targeting := .of .opponent, resolution := .oppCreatesTheVoid }
+  | .createSturdyShieldAttach =>
+    { events := #[.entering], resolution := .createSturdyShieldAttach }
+  | .exileGyPlayUntilNextTurn =>
+    { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
+      resolution := .exileGyPlayUntilNextTurn }
+  | .returnGyPermanentThisTurn =>
+    { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
+      resolution := .returnGyPermanentThisTurn }
+  | .tapOppCantUntapWhileControl =>
+    { events := #[.entering], targeting := .of .oppCreature,
+      resolution := .tapCantUntapWhileControl }
+  | .maySacAnotherThenDestroyOppNonland =>
+    { events := #[.entering], resolution := .maySacAnotherThenDestroyOppNonland }
+  | .maySacOrDiscardNonlandThenDamage =>
+    { events := #[.entering], resolution := .maySacOrDiscardNonlandThenDamage }
+  | .revealHandExileUntilLeaves =>
+    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
+      resolution := .revealHandExileUntilLeaves }
+  | .plusOnesOrReturnArtEnch =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .plusOnesOrReturnArtEnch }
+  | .chooseUpToXModes =>
+    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
+      resolution := .chooseUpToXModes }
+  | .mayTapThenGrantIndestructible =>
+    { events := #[.entering], resolution := .mayTapThenGrantIndestructible }
+  | .tapLoseAbilitiesWhileSource =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .tapLoseAbilitiesWhileSource }
+  | .revealDiscardFromHand =>
+    { events := #[.entering], targeting := .of .player, resolution := .revealDiscardFromHand }
+  | .createRedwing =>
+    { events := #[.entering], resolution := .createRedwing }
 
 namespace TriggeredAbility
 
@@ -5803,6 +5935,7 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterTargetOpponentDiscards n =>
     { events := #[.entering], targeting := .of .opponent,
       resolution := .targetOpponentDiscards n }
+  | .onEnter e => e.timing
   | .onAttackConnive =>
     { events := #[.attacking], resolution := .connive }
   | .onGainLifePlusOne =>
@@ -6268,6 +6401,40 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
   | .mayPutArtifactAttachEquipment =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
+  | .fightUpToOne =>
+    "this fights up to one other target creature"
+  | .returnToOwnerHand =>
+    s!"return up to one {noun} to its owner's hand"
+  | .createZabu =>
+    "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+  | .oppCreatesTheVoid =>
+    s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+  | .createSturdyShieldAttach =>
+    "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
+  | .exileGyPlayUntilNextTurn =>
+    s!"exile {noun}. Until the end of your next turn, you may play that card"
+  | .returnGyPermanentThisTurn =>
+    s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
+  | .tapCantUntapWhileControl =>
+    s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
+  | .maySacAnotherThenDestroyOppNonland =>
+    "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
+  | .maySacOrDiscardNonlandThenDamage =>
+    "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
+  | .revealHandExileUntilLeaves =>
+    "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
+  | .plusOnesOrReturnArtEnch =>
+    "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
+  | .chooseUpToXModes =>
+    "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
+  | .mayTapThenGrantIndestructible =>
+    "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
+  | .tapLoseAbilitiesWhileSource =>
+    "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
+  | .revealDiscardFromHand =>
+    s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
+  | .createRedwing =>
+    "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
   | .msh t => t.toNotation
 
 /-- True when this trigger fires only once each turn. -/
@@ -6444,6 +6611,8 @@ def toNotation (ab : TriggeredAbility) : String :=
   | .onEnterTargetOpponentDiscards n =>
     let cards := if n == 2 then "two cards" else cardPhrase n
     s!"When this enchantment enters, target opponent discards {cards}."
+  | .onEnter (.dealDamageUpToOne n) =>
+    s!"When this permanent enters, it deals {n} damage to up to one target creature."
   | .msh t => t.toNotation
   | _ =>
     let t := ab.timing
@@ -7647,6 +7816,29 @@ instance : ToString CardDef where
 #guard TriggeredAbility.toNotation (.onEnterTargetOpponentDiscards 2) ==
   "When this enchantment enters, target opponent discards two cards."
 #guard TriggeredAbility.targetKind (.onEnterTargetOpponentDiscards 2) == .opponent
+#guard TriggeredAbility.toNotation (.onEnter (.destroy (.oppCreaturePowerAtMost 3))) ==
+  "When this permanent enters, destroy target creature an opponent controls with power 3 or less."
+#guard TriggeredAbility.targetKind (.onEnter (.destroy (.oppCreaturePowerAtMost 3))) ==
+  .oppCreaturePowerAtMost 3
+#guard TriggeredAbility.toNotation (.onEnter (.dealDamageUpToOne 4)) ==
+  "When this permanent enters, it deals 4 damage to up to one target creature."
+#guard TriggeredAbility.allowsZeroTargets (.onEnter (.dealDamageUpToOne 4))
+#guard TriggeredAbility.toNotation (.onEnter .fightUpToOne) ==
+  "When this permanent enters, this fights up to one other target creature."
+#guard TriggeredAbility.targetKind (.onEnter .fightUpToOne) == .anotherCreature
+#guard TriggeredAbility.toNotation (.onEnter .createZabu) ==
+  "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
+#guard TriggeredAbility.targetKind (.onEnter .oppCreatesTheVoid) == .opponent
+#guard TriggeredAbility.resolution (.onEnter .createSturdyShieldAttach) ==
+  .createSturdyShieldAttach
+#guard TriggeredAbility.targetKind (.onEnter .exileGyPlayUntilNextTurn) ==
+  .equipmentInstantOrSorceryInYourGraveyard
+#guard TriggeredAbility.targetKind (.onEnter .returnGyPermanentThisTurn) ==
+  .permanentCardInYourGraveyard
+#guard TriggeredAbility.resolution (.onEnter .tapOppCantUntapWhileControl) ==
+  .tapCantUntapWhileControl
+#guard TriggeredAbility.resolution (.onEnter .maySacAnotherThenDestroyOppNonland) ==
+  .maySacAnotherThenDestroyOppNonland
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
