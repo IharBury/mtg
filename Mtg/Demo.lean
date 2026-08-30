@@ -661,7 +661,7 @@ def helpInteractive (controlAll : Bool := false)
   your turn            Pass until combat of the next turn if that turn is not yours
   my turn              Pass until the main phase of the next turn if that turn is yours
   main phase           Pass until the next main phase
-  attack step          Pass until the next combat phase
+  attack step          Pass until the next declare attackers step
   ignore               Pass until your next main phase (other players may still act)
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
@@ -2835,7 +2835,7 @@ inductive PassUntilTarget where
   | nextTurnCombat
   | nextTurnMain
   | nextMain
-  | nextCombat
+  | nextDeclareAttackers
 deriving DecidableEq, Repr
 
 /-- Game after a pass-until shortcut, and the primitive lines `--output` records. -/
@@ -2861,9 +2861,9 @@ def reachedPassUntil (g : Game) (startTurn : Nat) (startStep : Step) :
     g.turnNumber > startTurn && g.step.isMainPhase
   | .nextMain =>
     g.step.isMainPhase && !(g.turnNumber == startTurn && g.step == startStep)
-  | .nextCombat =>
-    g.step.isCombatPhase &&
-      !(startStep.isCombatPhase && g.turnNumber == startTurn)
+  | .nextDeclareAttackers =>
+    g.step == .declareAttackers &&
+      !(g.turnNumber == startTurn && g.step == startStep)
 
 /-- A primitive command the shortcut may issue without asking. `pass` when
 someone has priority; `noattack` / `noblock` only when that is the sole
@@ -2951,11 +2951,11 @@ def applyMainPhase (g : Game) (tokens : List String) :
   | ["phase"] => applyPassUntil g .nextMain
   | _ => throw mainPhaseUsage
 
-/-- `attack step`: pass until the next combat phase. -/
+/-- `attack step`: pass until the next declare attackers step. -/
 def applyAttackStep (g : Game) (tokens : List String) :
     Except String PassUntilResult := do
   match commandTokens tokens with
-  | ["step"] => applyPassUntil g .nextCombat
+  | ["step"] => applyPassUntil g .nextDeclareAttackers
   | _ => throw attackStepUsage
 
 /-- Goal for `ignore`: the issuer's next main phase after this snapshot. -/
@@ -3057,8 +3057,12 @@ def applyPassShortcutAsActor (g : Game) (cmd : String) (args : List String) :
 #guard isPassShortcutCmd "ignore" []
 #guard isPassShortcutCmd "attack" ["step"]
 #guard !isPassShortcutCmd "attack" []
-#guard reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
-  Tests.afterDraw.turnNumber Tests.afterDraw.step .nextCombat
+#guard reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+  Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
+#guard !reachedPassUntil { Tests.afterDraw with step := .beginningOfCombat }
+  Tests.afterDraw.turnNumber Tests.afterDraw.step .nextDeclareAttackers
+#guard !reachedPassUntil { Tests.afterDraw with step := .declareAttackers }
+  Tests.afterDraw.turnNumber .declareAttackers .nextDeclareAttackers
 #guard !reachedPassUntil Tests.afterDraw Tests.afterDraw.turnNumber
   Tests.afterDraw.step .nextMain
 #guard reachedPassUntil { Tests.afterDraw with step := .postcombatMain }
@@ -3793,6 +3797,11 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok _ => false
 
 #guard
+  match applyLoggedAction Tests.readyToDeclareAttackers "attack" ["step"] "attack step" with
+  | .error msg => msg == "A player must take an action other than pass"
+  | .ok _ => false
+
+#guard
   match applyLoggedAction Tests.started "main" ["phase"] "main phase" with
   | .ok (g', cmds) =>
     g'.step == .precombatMain &&
@@ -3805,20 +3814,32 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.afterDraw "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
-    g'.step == .beginningOfCombat &&
+    g'.step == .declareAttackers &&
+      g'.pending == .declareAttackers &&
       g'.turnNumber == 1 &&
       g'.activePlayer == ⟨0⟩ &&
-      cmds == #["pass", "pass"] &&
-      g'.hasPriority ⟨0⟩
+      cmds == #["pass", "pass", "pass", "pass"] &&
+      g'.actor == some ⟨0⟩
   | .error _ => false
 
 #guard
   match applyLoggedAction Tests.started "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
-    g'.step == .beginningOfCombat &&
+    g'.step == .declareAttackers &&
+      g'.pending == .declareAttackers &&
       g'.turnNumber == 1 &&
       cmds.all (fun c => c == "pass") &&
       !cmds.contains "attack step"
+  | .error _ => false
+
+#guard
+  match applyLoggedAction (Tests.skipTo Tests.afterDraw .beginningOfCombat 80)
+      "attack" ["step"] "attack step" with
+  | .ok (g', cmds) =>
+    g'.step == .declareAttackers &&
+      g'.pending == .declareAttackers &&
+      g'.turnNumber == 1 &&
+      cmds == #["pass", "pass"]
   | .error _ => false
 
 #guard
@@ -3860,7 +3881,7 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 
 #guard
   match applyInteractiveAsActor Tests.afterDraw "attack" ["step"] with
-  | .ok g' => g'.step == .beginningOfCombat && g'.hasPriority ⟨0⟩
+  | .ok g' => g'.step == .declareAttackers && g'.pending == .declareAttackers
   | .error _ => false
 
 #guard
