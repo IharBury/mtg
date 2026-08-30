@@ -592,7 +592,9 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     (allowCreatureRestricted : Bool := false) : Option ManaPool :=
   Id.run do
     let mut pool := p
-    -- Pay specific symbols first.
+    -- Specific symbols first so leftover mana of other types can pay generic
+    -- (e.g. `{U}×1 {R}×1` pays `{1}{U}`). Printed order would spend `{U}` on
+    -- `{1}` via `spendAny?` and then fail the `{U}`.
     for s in cost.symbols do
       match s with
       | .colored c =>
@@ -607,13 +609,6 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
             allowCreatureRestricted with
         | some p' => pool := p'
         | none => return none
-      | .generic n =>
-        for _ in [0:n] do
-          match pool.spendAny? allowElfRestricted allowInstRestricted
-              allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
-          | some p' => pool := p'
-          | none => return none
       | .hybrid a b =>
         match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
@@ -625,7 +620,17 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
               allowCreatureRestricted with
           | some p' => pool := p'
           | none => return none
-      | .x => pure () -- CR 107.3g: X is 0 off the stack; we treat unpaid X as 0
+      | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
+    for s in cost.symbols do
+      match s with
+      | .generic n =>
+        for _ in [0:n] do
+          match pool.spendAny? allowElfRestricted allowInstRestricted
+              allowHeroRestricted allowVillainRestricted allowCantNonartifact
+              allowCreatureRestricted with
+          | some p' => pool := p'
+          | none => return none
+      | _ => pure ()
     return some pool
 
 def canPay (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
@@ -647,6 +652,8 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
   Id.run do
     let mut pool := p
     let mut paid := 0
+    -- Match `pay?`: cover colored/colorless/hybrid first so leftover mana
+    -- still counts toward generic.
     for s in cost.symbols do
       match s with
       | .colored c =>
@@ -665,15 +672,6 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
           pool := p'
           paid := paid + 1
         | none => pure ()
-      | .generic n =>
-        for _ in [0:n] do
-          match pool.spendAny? allowElfRestricted allowInstRestricted
-              allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
-          | some p' =>
-            pool := p'
-            paid := paid + 1
-          | none => pure ()
       | .hybrid a b =>
         match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
             allowHeroRestricted allowVillainRestricted allowCantNonartifact
@@ -689,7 +687,19 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
             pool := p'
             paid := paid + 1
           | none => pure ()
-      | .x => pure ()
+      | .generic _ | .x => pure ()
+    for s in cost.symbols do
+      match s with
+      | .generic n =>
+        for _ in [0:n] do
+          match pool.spendAny? allowElfRestricted allowInstRestricted
+              allowHeroRestricted allowVillainRestricted allowCantNonartifact
+              allowCreatureRestricted with
+          | some p' =>
+            pool := p'
+            paid := paid + 1
+          | none => pure ()
+      | _ => pure ()
     return paid
 
 /-- One `{C}×n` fragment, plus optional restriction labels. -/
@@ -730,6 +740,16 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
          (ManaCost.ofGenericAndColor 1 .green)).isSome
 #guard ((ManaPool.empty.add (.colored .green) 1).pay?
          (ManaCost.ofGenericAndColor 1 .green)).isNone
+#guard
+  let p := ManaPool.empty.add (.colored .blue) 1 |>.add (.colored .red) 1
+  toString p == "{U}×1 {R}×1" &&
+    (p.pay? (ManaCost.ofGenericAndColor 1 .blue)).isSome &&
+    p.canPay (ManaCost.ofGenericAndColor 1 .blue) &&
+    p.coveredMana (ManaCost.ofGenericAndColor 1 .blue) == 2
+#guard
+  let p := ManaPool.empty.add (.colored .red) 1 |>.add (.colored .green) 1
+  (p.pay? (ManaCost.ofGenericAndColor 1 .blue)).isNone &&
+    p.coveredMana (ManaCost.ofGenericAndColor 1 .blue) == 1
 #guard
   let p := ManaPool.empty.add (.colored .green) 2 (elfRestricted := true)
   p.total == 2 && p.elfGreen == 2 && p.unrestricted (.colored .green) == 0 &&
