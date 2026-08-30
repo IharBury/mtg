@@ -830,7 +830,7 @@ def mshConditionalDualLand (name : String) (oracleText : String)
   .addUOrBActivateOnlyIfThisLandEnter).tapAddMana == #[.colorless]
 #guard (powerUpAbility (.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
-  Keyword.flying.merge Keyword.trample |>.merge Keyword.haste
+  (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
 #guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura
 
 end Mtg.Engine.Catalog
