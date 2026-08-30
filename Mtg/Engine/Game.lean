@@ -804,6 +804,8 @@ structure Player where
   /-- Delayed “whenever you attack this turn, pump per Plains” chapters
   still waiting to fire (Roads Go Ever, Ever On). -/
   attackPumpPerPlainsThisTurn : Nat := 0
+  /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
+  lifeLocked : Bool := false
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -1015,6 +1017,13 @@ structure Game where
   /-- If the controlled player skips their next turn, control applies to the
   next turn they actually take (MSH 221). -/
   controlOnNextTakenTurn : Bool := false
+  /-- Extort triggers waiting for a pay/don't-pay decision (MSH 371). -/
+  pendingExtort : Nat := 0
+  /-- Controller of the pending extort trigger. -/
+  pendingExtortController : Option PlayerId := none
+  /-- Until EOT, this player's creatures with toughness greater than power
+  assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
+  assignCombatDamageEqualToughness : Option PlayerId := none
 deriving Repr, Inhabited
 
 namespace Game
@@ -1035,7 +1044,10 @@ def modifyPlayer (g : Game) (p : PlayerId) (f : Player → Player) : Game :=
 
 /-- Set `p`'s life total and log `msg`. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String) : Game :=
-  g.setPlayer { (g.player p) with life := life } |>.logMsg msg
+  if (g.player p).lifeLocked && life != (g.player p).life then
+    g.logMsg s!"{(g.player p).name}'s life total can't change"
+  else
+    g.setPlayer { (g.player p) with life := life } |>.logMsg msg
 
 def livingPlayers (g : Game) : Array Player :=
   g.players.filter (fun pl => !pl.lost)
@@ -3060,7 +3072,14 @@ def combatDamageToAssign (g : Game) (source : GameObject) (forAttackers : Bool) 
       !g.canAssignCombatDamageToDefendingPlayer source forAttackers then
     0
   else
-    max (g.power source) 0
+    let amt :=
+      match g.assignCombatDamageEqualToughness with
+      | some pid =>
+        if source.controlledBy pid && g.toughness source > g.power source then
+          g.toughness source
+        else g.power source
+      | none => g.power source
+    max amt 0
 
 /-- True when a creature this player controls has two or more creature
 recipients, so the controller must divide combat damage (CR 510.1c–d). -/
@@ -4091,6 +4110,18 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     else g
   let g :=
     g.putControlledTriggers caster .youCastSpell
+  let extortN :=
+    (g.permanentsOf caster).filter (fun o =>
+      o.staticAbilities.any (fun
+        | .msh .extort => true
+        | _ => false)) |>.size
+  let g :=
+    if extortN == 0 then g
+    else
+      { g with
+          pendingExtort := g.pendingExtort + extortN
+          pendingExtortController := some caster }
+        |>.logMsg "Extort triggers"
   let g :=
     if spell.printed.hasSubtype "Villain" then
       g.putControlledTriggers caster .youCastVillain
@@ -4958,7 +4989,18 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
   let g :=
     match g.stackEntry? spell.id with
-    | some e => g.queueBecomesTargetTriggers p e.targets
+    | some e =>
+      let g := g.queueBecomesTargetTriggers p e.targets
+      e.targets.foldl (fun (g : Game) (t : Target) =>
+        match t with
+        | Target.permanent oid =>
+          match g.findObject? oid with
+          | some o =>
+            match o.controller with
+            | some c => g.putMatchingSourceTriggers c o .spellTargetsSource
+            | none => g
+          | none => g
+        | _ => g) g
     | none => g
   let g := g.putCastTriggersOnStack p spell
   g.receivePriority p
@@ -5044,6 +5086,31 @@ def afterAdditionalCostAnnounced (g : Game) : Game :=
         |>.logMsg s!"{(g.player prop.caster).name} must choose a target (CR 601.2c)"
     else
       g.afterTargetsChosen
+
+/-- Choose new targets for a spell on the stack (Speedball; MSH 370).
+Each slot that has no new legal target is left unchanged, even if the
+current target is illegal. -/
+def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Target) :
+    Game :=
+  match g.stack.findIdx? (fun e => e.objectId == spellId) with
+  | none => g.logMsg "The spell is no longer on the stack"
+  | some i =>
+    let e := g.stack[i]!
+    match g.findObject? spellId with
+    | none => g.logMsg "The spell is no longer on the stack"
+    | some spell =>
+      let kind := (g.targetingOf spell).kind
+      let legal := g.legalTargetsForKind e.controller kind (some spellId)
+      let merged :=
+        Id.run do
+          let mut out := e.targets
+          for j in [0:Nat.min out.size newTargets.size] do
+            let neu := newTargets[j]!
+            if legal.any (fun t => t == neu) then
+              out := out.set! j neu
+          return out
+      { g with stack := g.stack.set! i { e with targets := merged } }
+        |>.logMsg "New targets are chosen for the spell"
 
 /-- Write `targets` (and optional damage division) onto the stack entry. -/
 def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Target)
@@ -7277,6 +7344,33 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g.logMsg s!"{pl.name} exiles {cardName} and may play it this turn"
     return g
 
+/-- Resolve one pending extort trigger. You may pay at most once (MSH 371).
+Life gained equals life actually lost (MSH 292). Extort does not target
+(MSH 296). -/
+def applyExtort (g : Game) (pay : Bool) : Game :=
+  match g.pendingExtortController with
+  | none => g.logMsg "No extort trigger is pending"
+  | some controller =>
+    if g.pendingExtort == 0 then
+      g.logMsg "No extort trigger is pending"
+    else
+      let g := { g with
+        pendingExtort := g.pendingExtort - 1
+        pendingExtortController :=
+          if g.pendingExtort - 1 == 0 then none else some controller }
+      if !pay then
+        g.logMsg "Extort is not paid"
+      else
+        let (g, lost) :=
+          (g.livingOpponents controller).foldl (fun (acc : Game × Nat) pl =>
+            let before := (acc.1.player pl.id).life
+            let g := acc.1.loseLife pl.id 1
+            let after := (g.player pl.id).life
+            let delta :=
+              if before > after then (before - after).toNat else 0
+            (g, acc.2 + delta)) (g, 0)
+        g.gainLife controller lost |>.logMsg "Extort is paid"
+
 /-- Queue a reflexive MSH trigger. The first ability has no targets; the
 second is chosen after the "if you do" (MSH 359–369). -/
 def queueMshReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
@@ -7853,6 +7947,16 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.logMsg "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
     else
       g.queueMshReflexive controller sourceId 9
+  | .wheneverAPlayerCastsASpellThatTargetsSpe =>
+    g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
+      "Speedball is no longer on the battlefield"
+  | .wheneverYouAttack3 =>
+    let paid := (lastKnownPower.getD (0 : Int)).toNat
+    if paid == 0 then
+      g.logMsg "The Kingpin's cost wasn't paid"
+    else
+      { g with assignCombatDamageEqualToughness := some controller }
+        |>.logMsg "Creatures you control assign combat damage equal to their toughness"
   | .whenTheSentryEnters =>
     match targets[0]? with
     | some (Target.player pid) => g.createNamedToken pid theVoidToken
@@ -11319,7 +11423,9 @@ def clearCombat (g : Game) : Game :=
 
 def clearEOT (g : Game) : Game :=
   Id.run do
-    let mut g := { g with creaturesWithoutFlyingCantBlock := false }
+    let mut g := { g with
+      creaturesWithoutFlyingCantBlock := false
+      assignCombatDamageEqualToughness := none }
     g := g.restoreCopiesUntilEot
     for o in g.battlefield do
       if o.status.controlUntilEot then

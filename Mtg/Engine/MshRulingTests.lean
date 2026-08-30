@@ -1972,6 +1972,82 @@ def rewriteHistoryReflexiveOk : Bool :=
 
 #guard rewriteHistoryReflexiveOk
 
+/-- Rulings 283 / 370: Speedball pumps even if the spell left, and may
+change any number of that spell's targets (illegal replacements stay). -/
+def speedballRetargetOk : Bool :=
+  let g := addPermanent afterDraw speedballNewWarrior ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g mountain ⟨1⟩ ⟨1⟩
+  let speed := namedPermanent g "Speedball, New Warrior"
+  let (g, bolt) := g.allocObject lightningBolt ⟨1⟩ .stack (some ⟨1⟩)
+  let g := g.putStackEntry ⟨1⟩ bolt.id
+  let g := g.setStackEntryTargets bolt.id #[Target.permanent speed.id]
+  let (gGone, _) := g.move bolt.id (.graveyard ⟨1⟩) none
+  let gGone :=
+    gGone.applyMshTrigger ⟨0⟩ .wheneverAPlayerCastsASpellThatTargetsSpe (some speed.id)
+  gGone.power (namedPermanent gGone "Speedball, New Warrior") == 4 &&
+    gGone.toughness (namedPermanent gGone "Speedball, New Warrior") == 4 &&
+    (let g :=
+       g.applyMshTrigger ⟨0⟩ .wheneverAPlayerCastsASpellThatTargetsSpe (some speed.id)
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.retargetStackSpell bolt.id #[Target.permanent bears.id]
+     (match g.stackEntry? bolt.id with
+      | some e => e.targets[0]? == some (Target.permanent bears.id)
+      | none => false) &&
+       (let mt := namedPermanent g "Mountain"
+        let g := g.retargetStackSpell bolt.id #[Target.permanent mt.id]
+        match g.stackEntry? bolt.id with
+        | some e => e.targets[0]? == some (Target.permanent bears.id)
+        | none => false)) &&
+    (mshRuling 283).comment.contains "resolves even if that spell" &&
+    (mshRuling 370).comment.contains "You may change any number of the targets"
+
+#guard speedballRetargetOk
+
+/-- Rulings 287 / 292 / 296 / 371: Kingpin extort pays once; life gained
+equals life actually lost; combat assignment uses toughness, not power. -/
+def kingpinExtortAndToughnessOk : Bool :=
+  let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
+  let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ spell.id
+  let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+  g.pendingExtort == 1 &&
+    (let life0 := (g.player ⟨0⟩).life
+     let life1 := (g.player ⟨1⟩).life
+     let g := g.applyExtort true
+     (g.player ⟨1⟩).life + 1 == life1 &&
+       (g.player ⟨0⟩).life == life0 + 1 &&
+       g.pendingExtort == 0 &&
+       (let g := g.applyExtort true
+        g.pendingExtort == 0 && (g.player ⟨1⟩).life + 1 == life1)) &&
+    (let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
+     let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+     let g := g.putStackEntry ⟨0⟩ spell.id
+     let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+     let g := g.modifyPlayer ⟨1⟩ (fun pl => { pl with lifeLocked := true })
+     let life0 := (g.player ⟨0⟩).life
+     let life1 := (g.player ⟨1⟩).life
+     let g := g.applyExtort true
+     (g.player ⟨1⟩).life == life1 &&
+       (g.player ⟨0⟩).life == life0) &&
+    (let g := addPermanent afterDraw theKingpinOfCrime ⟨0⟩ ⟨0⟩
+     let kp := namedPermanent g "The Kingpin of Crime"
+     let g := g.setObject { kp with status := { kp.status with
+       attacking := true, attackingWhom := some ⟨1⟩, summoningSick := false } }
+     let kp := namedPermanent g "The Kingpin of Crime"
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack3 (some kp.id)
+       #[] "The Kingpin of Crime" (some (1 : Int))
+     let kp := namedPermanent g "The Kingpin of Crime"
+     g.power kp == 1 &&
+       g.toughness kp == 5 &&
+       g.combatDamageToAssign kp true == 5) &&
+    (mshRuling 287).comment.contains "doesn't actually change any creature's power" &&
+    (mshRuling 292).comment.contains "total amount of life lost" &&
+    (mshRuling 296).comment.contains "doesn't target any player" &&
+    (mshRuling 371).comment.contains "maximum of one time"
+
+#guard kingpinExtortAndToughnessOk
+
 /-- Rulings 221 / 259 / 300 / 346 / 358: control another player. -/
 def controlAnotherPlayerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
