@@ -16,177 +16,12 @@ Reusable leftover *trigger* wordings now live on event-family effect
 inductives (`StepEffect`, `DeathEffect`, `ThisAttackEffect`,
 `EnterOrAttackEffect`, `WatchEffect`, `YouAttackEffect`, `CastEffect`,
 `ResourceEffect`) with one `TriggeredAbility` constructor each.
-Leftover statics, spells, and activations remain here.
+Reusable leftover *statics* now live on `StaticAbility`. Leftover spells
+and activations remain here.
 -/
 
 namespace Mtg.Engine
 
-/-- A leftover modeled static that is not yet a shared shape. -/
-inductive ModeledStatic where
-  /-- Modeled MSH ability. -/
-  | aresAttacksEachCombatIfAble
-  /-- Modeled MSH ability. -/
-  | artifactSpellsYouCastCost1LessToCast
-  /-- Modeled MSH ability. -/
-  | asAnAdditionalCostToCastThisSpell
-  /-- Modeled MSH ability. -/
-  | asLongAsThereAreTwoOrMoreCreatureCards
-  /-- Modeled MSH ability. -/
-  | asLongAsThereAreTwoOrMoreCreatureCards2
-  /-- Modeled MSH ability. -/
-  | asLongAsYouControlAnArtifactCreatureOrA
-  /-- Modeled MSH ability. -/
-  | asLongAsYouVePutOneOrMore11Counters
-  /-- Modeled MSH ability. -/
-  | attackingCreatureTokensYouControlHaveFirst
-  /-- Modeled MSH ability. -/
-  | boastExileAnyNumberOfBlackCardsFromYou
-  /-- Modeled MSH ability. -/
-  | cosmicAwarenessAsLongAsAnOpponentHasCa
-  /-- Modeled MSH ability. -/
-  | creaturesWithFlyingCanTAttackYouOrBlock
-  /-- Modeled MSH ability. -/
-  | creaturesYouControlWith11CountersOnThe
-  /-- Modeled MSH ability. -/
-  | designedOnlyForKillingCreaturesYourOppon
-  /-- Modeled MSH ability. -/
-  | doubleAllDamageEquippedCreatureWouldDeal
-  /-- Modeled MSH ability. -/
-  | eachCreatureYouControlThatYouVePutOneOr
-  /-- Modeled MSH ability. -/
-  | eachPowerUpAbilityOfPermanentsYouControl
-  /-- Modeled MSH ability. -/
-  | embiggenFistWheneverYouCastASpellThat
-  /-- Modeled MSH ability. -/
-  | enchantedCreatureGets22
-  /-- Modeled MSH ability. -/
-  | enchantedCreatureGets44AndHasTrampleAn
-  /-- Modeled MSH ability. -/
-  | enchantedCreatureHasWard2
-  /-- Modeled MSH ability. -/
-  | equipWorthy1
-  /-- Modeled MSH ability. -/
-  | equippedCreatureGets11AndHasFlyingAnd
-  /-- Modeled MSH ability. -/
-  | extort
-  /-- Modeled MSH ability. -/
-  | ifQuicksilver
-  /-- Modeled MSH ability. -/
-  | ifACreatureYouControlWouldConnive
-  /-- Modeled MSH ability. -/
-  | ifASourceYouControlWouldDealNoncombatDam
-  /-- Modeled MSH ability. -/
-  | ifDamageWouldBeDealtToWolverine
-  /-- Modeled MSH ability. -/
-  | ifYouWouldPutOneOrMoreCountersOnAPerma
-  /-- Modeled MSH ability. -/
-  | improvise
-  /-- Modeled MSH ability. -/
-  | instantAndSorcerySpellsYouCastWithManaVa
-  /-- Modeled MSH ability. -/
-  | intangibilityGhostCanTBeBlocked
-  /-- Modeled MSH ability. -/
-  | ironManGets10ForEachOtherArtifactYou
-  /-- Modeled MSH ability. -/
-  | landfallWheneverALandYouControlEnters
-  /-- Modeled MSH ability. -/
-  | namorSPowerIsEqualToTheNumberOfMerfolk
-  /-- Modeled MSH ability. -/
-  | noncreatureSpellsYouCastHaveImprovise
-  /-- Modeled MSH ability. -/
-  | pay2LifeAddTwoManaOfAnyOneColorSpend
-  /-- Modeled MSH ability. -/
-  | pay2LifeCopyTargetActivatedOrTriggeredA
-  /-- Modeled MSH ability. -/
-  | powerUpAbilitiesOfOtherCreaturesYouContro
-  /-- Modeled MSH ability. -/
-  | sacrificeThisCreatureDestroyTargetNoncreat
-  /-- Modeled MSH ability. -/
-  | sneak1BB
-  /-- Modeled MSH ability. -/
-  | superAdaptoidSPowerIsEqualToTheNumberOf
-  /-- Modeled MSH ability. -/
-  | theRuinousWreckingCrewEntersWithX11Co
-  /-- Modeled MSH ability. -/
-  | wardDiscardACardOrPay2
-  /-- Modeled MSH ability. -/
-  | wardGetFivePoisonCounters
-  /-- Modeled MSH ability. -/
-  | winterSoldierGets20ForEachEquipmentAtt
-  /-- Modeled MSH ability. -/
-  | youHaveNoMaximumHandSize
-  /-- Modeled MSH ability. -/
-  | youMayActivateAbilitiesOfCreaturesYouCont
-  /-- Modeled MSH ability. -/
-  | youMayPlayLandsFromTheTopOfYourLibrary
-  /-- Modeled MSH ability. -/
-  | youMayPlayLandsFromYourGraveyard
-  /-- Modeled MSH ability. -/
-  | yourMaximumHandSizeIsTen
-  /-- Modeled MSH ability. -/
-  | enchantedCreatureLosesAllAbilitiesAndCant
-deriving Repr, Inhabited, BEq
-
-namespace ModeledStatic
-
-/-- Official Oracle wording for this ModeledStatic. -/
-def toNotation : ModeledStatic → String
-  | .aresAttacksEachCombatIfAble => "Ares attacks each combat if able."
-  | .artifactSpellsYouCastCost1LessToCast => "Artifact spells you cast cost {1} less to cast."
-  | .asAnAdditionalCostToCastThisSpell => "As an additional cost to cast this spell, discard a card or pay {2}."
-  | .asLongAsThereAreTwoOrMoreCreatureCards => "As long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1."
-  | .asLongAsThereAreTwoOrMoreCreatureCards2 => "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."
-  | .asLongAsYouControlAnArtifactCreatureOrA => "As long as you control an artifact creature or a Plan, Doctor Doom has indestructible."
-  | .asLongAsYouVePutOneOrMore11Counters => "As long as you've put one or more +1/+1 counters on Beast this turn, he has flying."
-  | .attackingCreatureTokensYouControlHaveFirst => "Attacking creature tokens you control have first strike."
-  | .boastExileAnyNumberOfBlackCardsFromYou => "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
-  | .cosmicAwarenessAsLongAsAnOpponentHasCa => "Cosmic Awareness — As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."
-  | .creaturesWithFlyingCanTAttackYouOrBlock => "Creatures with flying can't attack you or block creatures you control."
-  | .creaturesYouControlWith11CountersOnThe => "Creatures you control with +1/+1 counters on them have trample."
-  | .designedOnlyForKillingCreaturesYourOppon => "Designed Only for Killing — Creatures your opponents control get -1/-1."
-  | .doubleAllDamageEquippedCreatureWouldDeal => "Double all damage equipped creature would deal."
-  | .eachCreatureYouControlThatYouVePutOneOr => "Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof."
-  | .eachPowerUpAbilityOfPermanentsYouControl => "Each power-up ability of permanents you control can be activated an additional time."
-  | .embiggenFistWheneverYouCastASpellThat => "Embiggen Fist — Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
-  | .enchantedCreatureGets22 => "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
-  | .enchantedCreatureGets44AndHasTrampleAn => "Enchanted creature gets +4/+4 and has trample and ward {1}."
-  | .enchantedCreatureHasWard2 => "Enchanted creature has ward {2}."
-  | .equipWorthy1 => "Equip worthy {1}"
-  | .equippedCreatureGets11AndHasFlyingAnd => "Equipped creature gets +1/+1 and has flying and ward {1}."
-  | .extort => "Extort"
-  | .ifQuicksilver => "If Quicksilver, Brash Blur is in your opening hand, you may begin the game with him on the battlefield."
-  | .ifACreatureYouControlWouldConnive => "If a creature you control would connive, instead you draw a card, then that creature connives."
-  | .ifASourceYouControlWouldDealNoncombatDam => "If a source you control would deal noncombat damage to an opponent or a permanent an opponent controls, instead it deals that much damage plus X, where X is Hawkeye's power."
-  | .ifDamageWouldBeDealtToWolverine => "If damage would be dealt to Wolverine, instead that damage is dealt, but all other damage already dealt to him is healed."
-  | .ifYouWouldPutOneOrMoreCountersOnAPerma => "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
-  | .improvise => "Improvise"
-  | .instantAndSorcerySpellsYouCastWithManaVa => "Instant and sorcery spells you cast with mana value 4 or greater cost {X} less to cast, where X is The Scarlet Witch's power."
-  | .intangibilityGhostCanTBeBlocked => "Intangibility — Ghost can't be blocked."
-  | .ironManGets10ForEachOtherArtifactYou => "Iron Man gets +1/+0 for each other artifact you control."
-  | .landfallWheneverALandYouControlEnters => "Landfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""
-  | .namorSPowerIsEqualToTheNumberOfMerfolk => "Namor's power is equal to the number of Merfolk you control."
-  | .noncreatureSpellsYouCastHaveImprovise => "Noncreature spells you cast have improvise."
-  | .pay2LifeAddTwoManaOfAnyOneColorSpend => "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn."
-  | .pay2LifeCopyTargetActivatedOrTriggeredA => "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn."
-  | .powerUpAbilitiesOfOtherCreaturesYouContro => "Power-up abilities of other creatures you control cost {3} less to activate."
-  | .sacrificeThisCreatureDestroyTargetNoncreat => "Sacrifice this creature: Destroy target noncreature artifact or noncreature enchantment. Activate only as a sorcery."
-  | .sneak1BB => "Sneak {1}{B}{B}"
-  | .superAdaptoidSPowerIsEqualToTheNumberOf => "Super-Adaptoid's power is equal to the number of legendary creatures you control."
-  | .theRuinousWreckingCrewEntersWithX11Co => "The Ruinous Wrecking Crew enters with X +1/+1 counters on it."
-  | .wardDiscardACardOrPay2 => "Ward—Discard a card or pay {2}."
-  | .wardGetFivePoisonCounters => "Ward—Get five poison counters."
-  | .winterSoldierGets20ForEachEquipmentAtt => "Winter Soldier gets +2/+0 for each Equipment attached to him."
-  | .youHaveNoMaximumHandSize => "You have no maximum hand size."
-  | .youMayActivateAbilitiesOfCreaturesYouCont => "You may activate abilities of creatures you control as though those creatures had haste."
-  | .youMayPlayLandsFromTheTopOfYourLibrary => "You may play lands from the top of your library."
-  | .youMayPlayLandsFromYourGraveyard => "You may play lands from your graveyard."
-  | .yourMaximumHandSizeIsTen => "Your maximum hand size is ten."
-  | .enchantedCreatureLosesAllAbilitiesAndCant => "Enchanted creature loses all abilities and can't become untapped."
-
-instance : ToString ModeledStatic where
-  toString := toNotation
-
-end ModeledStatic
 /-- A leftover modeled spell effect that is not yet a shared shape. -/
 inductive ModeledSpell where
   /-- Modeled MSH ability. -/
@@ -446,6 +281,12 @@ inductive ModeledAbility where
   | tPutAStunCounterOnJessicaJones
   /-- Modeled MSH ability. -/
   | tSacrificeAnEquipmentAttachedTo
+  /-- Pay 2 life: add two mana, spendable only on Equipment. -/
+  | pay2LifeAddTwoManaOfAnyOneColorSpend
+  /-- Pay 2 life: copy an artifact-source ability you control. -/
+  | pay2LifeCopyTargetActivatedOrTriggeredA
+  /-- Sacrifice this: destroy a noncreature artifact or enchantment. -/
+  | sacrificeThisCreatureDestroyTargetNoncreat
   /-- Modeled MSH ability. -/
   | harnessTheMindStone
   /-- Modeled MSH ability. -/
@@ -481,6 +322,12 @@ def toNotation : ModeledAbility → String
   | .n3USacrificeThisArtifact => "{3}{U}, Sacrifice this artifact: Draw two cards."
   | .tPutAStunCounterOnJessicaJones => "{T}, Put a stun counter on Jessica Jones: Exile the top X cards of your library, where X is Jessica Jones's power. You may play those cards this turn."
   | .tSacrificeAnEquipmentAttachedTo => "{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery."
+  | .pay2LifeAddTwoManaOfAnyOneColorSpend =>
+      "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn."
+  | .pay2LifeCopyTargetActivatedOrTriggeredA =>
+      "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn."
+  | .sacrificeThisCreatureDestroyTargetNoncreat =>
+      "Sacrifice this creature: Destroy target noncreature artifact or noncreature enchantment. Activate only as a sorcery."
   | .harnessTheMindStone => "Harness The Mind Stone"
   | .targetPlayerDrawsFourCards => "Target player draws four cards"
 

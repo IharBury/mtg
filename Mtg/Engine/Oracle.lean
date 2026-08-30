@@ -77,7 +77,8 @@ def stripAbilityWord (s : String) : String :=
         h == "Net" || h == "Explosive" || h == "Boomerang" ||
         h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
         h == "Trick Arrows" || h == "Radar Sense" ||
-        h == "Photographic Reflexes" || h == "Cybernetic Senses"
+        h == "Photographic Reflexes" || h == "Cybernetic Senses" ||
+        h == "Designed Only for Killing"
       if h.isEmpty || (h.contains ' ' && !known) then s
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
@@ -206,6 +207,11 @@ def normalizePhrases (s : String) : String :=
     ("this leave the battlefield", "this leaves the battlefield"),
     ("she connives", "it connives"),
     ("he connives", "it connives"),
+    ("he has flying", "it has flying"),
+    ("attached to him", "attached to it"),
+    ("dealt to him", "dealt to it"),
+    ("with him on the battlefield", "with it on the battlefield"),
+    ("begin the game with him", "begin the game with it"),
     ("and only once each turn", "activate only once each turn"),
     ("activate only from the graveyard", ""),
     ("activate only from your hand", ""),

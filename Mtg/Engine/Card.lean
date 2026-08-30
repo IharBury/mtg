@@ -172,6 +172,8 @@ inductive TokenKind where
   | insect11green
   /-- A predefined Vibranium artifact token (MSH). -/
   | vibranium
+  /-- A 1/1 green Minion creature token named Moloid. -/
+  | moloid
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -206,6 +208,8 @@ def oracleNoun : TokenKind → String
   | .doombot => "3/3 colorless Robot Villain artifact creature token named Doombot"
   | .insect11green => "1/1 green Insect creature token"
   | .vibranium => "Vibranium token"
+  | .moloid =>
+    "1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (k : TokenKind) : String :=
@@ -2625,8 +2629,18 @@ inductive StaticAbility where
   additional types. -/
   | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords)
     (types : Array String)
-  /-- A modeled leftover static that is not yet a shared shape. -/
-  | msh (t : ModeledStatic)
+  /-- Enchanted creature loses all abilities and can't become untapped. -/
+  | enchantedLosesAbilitiesCantUntap
+  /-- Enchanted creature gets +P/+T and has these keywords and ward `{w}`. -/
+  | enchantedCreatureGetsHasAndWard (power toughness : Int) (k : Keywords)
+    (w : Nat)
+  /-- As long as there are at least `min` creature cards in your graveyard,
+  this gets +P/+T and is all creature types. -/
+  | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
+  /-- Sneak `cost` (cast by returning an unblocked attacker). -/
+  | sneak (cost : ManaCost)
+  /-- Boast — exile black cards from your graveyard and copy them. -/
+  | boast
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -2773,7 +2787,11 @@ inductive StaticShape where
   | entersWithXPlusOne
   | enchantedGetsHasAndTypes (power toughness : Int) (k : Keywords)
     (types : Array String)
-  | msh (t : ModeledStatic)
+  | enchantedLosesAbilitiesCantUntap
+  | enchantedGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
+  | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
+  | sneak (cost : ManaCost)
+  | boast
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -2961,7 +2979,12 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .entersWithXPlusOne => {}
   | .enchantedGetsHasAndTypes p t k _ =>
     { hostBonus := (p, t), hostKeywords := k }
-  | .msh _ => {}
+  | .enchantedLosesAbilitiesCantUntap => {}
+  | .enchantedGetsHasAndWard p t k w =>
+    { hostBonus := (p, t), hostKeywords := k, grantedWard := some w }
+  | .getsAndAllTypesIfGyCreatureCards _ _ _ => {}
+  | .sneak _ => {}
+  | .boast => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -3076,7 +3099,13 @@ def shape : StaticAbility → StaticShape
   | .entersWithXPlusOne => .entersWithXPlusOne
   | .enchantedCreatureGetsHasAndTypes p t k types =>
     .enchantedGetsHasAndTypes p t k types
-  | .msh t => .msh t
+  | .enchantedLosesAbilitiesCantUntap => .enchantedLosesAbilitiesCantUntap
+  | .enchantedCreatureGetsHasAndWard p t k w =>
+    .enchantedGetsHasAndWard p t k w
+  | .getsAndAllTypesIfGyCreatureCards min p t =>
+    .getsAndAllTypesIfGyCreatureCards min p t
+  | .sneak cost => .sneak cost
+  | .boast => .boast
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -3319,11 +3348,24 @@ def toNotation (ab : StaticAbility) : String :=
   | .entersWithXPlusOne =>
     "This enters with X +1/+1 counters on it."
   | .enchantedGetsHasAndTypes p t k types =>
+    let kw :=
+      match k.toList with
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
     let extra :=
       if types.isEmpty then ""
-      else s!" and is a {String.intercalate " " types.toList} in addition to its other types"
-    s!"Enchanted creature gets {signedStat p}/{signedStat t} and has {k}{extra}."
-  | .msh t => t.toNotation
+      else s!", and is a {String.intercalate " " types.toList} in addition to its other types"
+    s!"Enchanted creature gets {signedStat p}/{signedStat t}, has {kw}{extra}."
+  | .enchantedLosesAbilitiesCantUntap =>
+    "Enchanted creature loses all abilities and can't become untapped."
+  | .enchantedGetsHasAndWard p t k w =>
+    s!"Enchanted creature gets {signedStat p}/{signedStat t} and has {k} and ward \{{w}}."
+  | .getsAndAllTypesIfGyCreatureCards min p t =>
+    s!"As long as there are {min} or more creature cards in your graveyard, this creature gets {signedStat p}/{signedStat t} and is all creature types."
+  | .sneak cost =>
+    s!"Sneak {cost}"
+  | .boast =>
+    "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -7113,6 +7155,8 @@ structure CardDef where
   /-- Alternative additional cost: pay this much generic mana instead of
   sacrificing an artifact or creature (CR 601.2b). -/
   additionalCostOrPayGeneric : Option Nat := none
+  /-- Additional cost: discard a card or pay `{n}` (e.g. Titania). -/
+  additionalCostDiscardOrPayGeneric : Option Nat := none
   /-- This spell costs this much generic mana less if a creature died this
   turn (e.g. Dreaded Bat-Cloud). -/
   costReductionIfCreatureDied : Nat := 0
@@ -7495,7 +7539,11 @@ def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
       [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
     | none =>
       ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
-  else []
+  else
+    match c.additionalCostDiscardOrPayGeneric with
+    | some n =>
+      [s!"As an additional cost to cast this spell, discard a card or pay \{{n}}."]
+    | none => []
 
 /-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
@@ -8241,6 +8289,19 @@ instance : ToString CardDef where
 #guard StaticAbility.toNotation .improvise == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
   "Artifact spells you cast cost {1} less to cast."
+#guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
+    (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]) ==
+  "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
+#guard StaticAbility.toNotation .enchantedLosesAbilitiesCantUntap ==
+  "Enchanted creature loses all abilities and can't become untapped."
+#guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndWard 4 4 Keyword.trample 1) ==
+  "Enchanted creature gets +4/+4 and has trample and ward {1}."
+#guard StaticAbility.toNotation (.getsAndAllTypesIfGyCreatureCards 2 2 2) ==
+  "As long as there are 2 or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."
+#guard StaticAbility.toNotation (.sneak (ManaCost.ofGenericAndColors 1 [.black, .black])) ==
+  "Sneak {1}{B}{B}"
+#guard StaticAbility.toNotation .boast ==
+  "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
@@ -8272,29 +8333,27 @@ instance : ToString CardDef where
 /-- True when this card itself has improvise (MSH). -/
 def hasImprovise (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
-    | .improvise | .msh .improvise => true
+    | .improvise => true
     | _ => false)
 
 /-- True when this permanent grants improvise to noncreature spells you cast. -/
 def grantsImproviseToNoncreature (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
-    | .noncreatureSpellsHaveImprovise
-    | .msh .noncreatureSpellsYouCastHaveImprovise => true
+    | .noncreatureSpellsHaveImprovise => true
     | _ => false)
 
 /-- True when this permanent has a boast ability (MSH). -/
 def hasBoast (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
-    | .msh .boastExileAnyNumberOfBlackCardsFromYou => true
+    | .boast => true
     | _ => false)
 
 /-- Sneak alternative cost, if any (MSH). -/
 def sneakCost (c : CardDef) : Option ManaCost :=
-  if c.staticAbilities.any (fun
-      | .msh .sneak1BB => true
-      | _ => false) then
-    some ({ symbols := #[.generic 1, .colored .black, .colored .black] } : ManaCost)
-  else none
+  c.staticAbilities.foldl (fun acc ab =>
+    match acc, ab with
+    | none, .sneak cost => some cost
+    | acc, _ => acc) none
 
 /-- Equip worthy: legendary non-Villain creature that's red or white. -/
 def isWorthy (c : CardDef) : Bool :=
@@ -8304,10 +8363,7 @@ def isWorthy (c : CardDef) : Bool :=
 
 /-- Equip worthy keyword on this Equipment (MSH). -/
 def hasEquipWorthy (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .msh .equipWorthy1 => true
-    | _ => false) ||
-    c.activatedAbilities.any (·.equipWorthy)
+  c.activatedAbilities.any (·.equipWorthy)
 
 end CardDef
 
