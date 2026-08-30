@@ -126,6 +126,28 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       else some (.choosePermanents (humans.map (·.id)))
     | .payOrLetCounter _ n _ =>
       payGenericOrTapFirstSource g p n
+    | .payWard _ _ cost =>
+      match cost with
+      | .genericMana n | .discardOrPay n =>
+        match cost with
+        | .discardOrPay _ =>
+          match (g.player p).hand.back? with
+          | some id => some (.discard id)
+          | none => payGenericOrTapFirstSource g p n
+        | _ => payGenericOrTapFirstSource g p n
+      | .discardEnchantmentInstantOrSorcery =>
+        match (g.player p).hand.find? (fun id =>
+          match g.findObject? id with
+          | some o =>
+            o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+          | none => false) with
+        | some id => some (.discard id)
+        | none => some .decline
+      | .sacrificeLegendary =>
+        match (g.legendaryWardSacrificeChoices p)[0]? with
+        | some o => some (.sacrifice o.id)
+        | none => some .decline
+      | .fivePoison => some .pay
     | .recruitDiscard _ =>
       match (g.player p).hand.back? with
       | some id => some (.discard id)

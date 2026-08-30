@@ -699,6 +699,28 @@ inductive AfterRandom where
   | putCreatureThenShuffle (controller : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Payment a player may make to stop ward from countering their spell
+(CR 702.21). -/
+inductive WardCost where
+  /-- Ward `{n}`. -/
+  | genericMana (n : Nat)
+  /-- Ward — discard an enchantment, instant, or sorcery card. -/
+  | discardEnchantmentInstantOrSorcery
+  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
+  | sacrificeLegendary
+  /-- Ward — discard a card or pay `{n}`. -/
+  | discardOrPay (n : Nat)
+  /-- Ward — get five poison counters. -/
+  | fivePoison
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- A queued ward obligation waiting to be announced. -/
+structure WardObligation where
+  player : PlayerId
+  spellId : ObjectId
+  cost : WardCost
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   | none
@@ -754,6 +776,9 @@ inductive Pending where
   | tapHumans (player : PlayerId)
   /-- Pay `{n}` or let the targeted spell be countered. -/
   | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : ObjectId)
+  /-- Pay this ward cost or let the targeting spell or ability be countered
+  (CR 702.21). -/
+  | payWard (player : PlayerId) (spellId : ObjectId) (cost : WardCost)
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
   /-- Announce whether to pay the optional kicker cost (CR 702.32 / 601.2b). -/
@@ -1100,6 +1125,8 @@ structure Game where
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0
+  /-- Ward payments still to announce after the current one (CR 702.21). -/
+  wardQueue : Array WardObligation := #[]
 deriving Repr, Inhabited
 
 namespace Game
@@ -2054,24 +2081,36 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
   src.staticAbilities.foldl
     (fun acc ab =>
-      match ab.lordPump? with
-      | none => acc
-      | some (subtypes, p, t) =>
-        let sameController :=
-          src.isOnBattlefield && target.isOnBattlefield &&
-            src.controller == target.controller && src.controller.isSome &&
-            target.isCreature
-        let otherOk := src.id != target.id || ab.lordIncludesSelf
-        let legendaryOk :=
-          (!ab.lordLegendaryOnly || target.isLegendary) &&
-          (!ab.lordNonlegendaryOnly || !target.isLegendary)
-        let subtypeOk :=
-          match src.status.chosenCreatureType with
-          | some t => g.hasSubtype target t
-          | none => subtypes.isEmpty || subtypes.any (g.hasSubtype target)
-        if sameController && otherOk && legendaryOk && subtypeOk then
-          addStats acc (p, t)
-        else acc)
+      let sameController :=
+        src.isOnBattlefield && target.isOnBattlefield &&
+          src.controller == target.controller && src.controller.isSome &&
+          target.isCreature
+      match ab with
+      | .otherSubtypeGetPowerPerArtifactToken subtype =>
+        if sameController && src.id != target.id && g.hasSubtype target subtype then
+          let n : Int :=
+            match src.controller with
+            | none => 0
+            | some p =>
+              Int.ofNat ((g.permanentsOf p).filter (fun o =>
+                o.printed.isToken && o.printed.isArtifact) |>.size)
+          addStats acc (n, 0)
+        else acc
+      | _ =>
+        match ab.lordPump? with
+        | none => acc
+        | some (subtypes, p, t) =>
+          let otherOk := src.id != target.id || ab.lordIncludesSelf
+          let legendaryOk :=
+            (!ab.lordLegendaryOnly || target.isLegendary) &&
+            (!ab.lordNonlegendaryOnly || !target.isLegendary)
+          let subtypeOk :=
+            match src.status.chosenCreatureType with
+            | some t => g.hasSubtype target t
+            | none => subtypes.isEmpty || subtypes.any (g.hasSubtype target)
+          if sameController && otherOk && legendaryOk && subtypeOk then
+            addStats acc (p, t)
+          else acc)
     (0, 0)
 
 /-- Continuous +P/+T granted to `o` by other permanents you control (CR 613.3c). -/
@@ -2088,6 +2127,13 @@ def auraStatBonus (aura : GameObject) : Int × Int :=
     (fun acc ab => addStats acc ab.hostStatBonus)
     (0, 0)
 
+/-- Instant and sorcery cards in `p`'s graveyard (Glamdring). -/
+def instantSorceryInGraveyard (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).graveyard.filter (fun id =>
+    match g.findObject? id with
+    | some c => c.printed.isInstant || c.printed.isSorcery
+    | none => false) |>.size
+
 /-- Static power/toughness from Auras and Equipment attached to `o`. -/
 def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
   if !o.isOnBattlefield then (0, 0)
@@ -2095,7 +2141,16 @@ def attachedStatBonus (g : Game) (o : GameObject) : Int × Int :=
     g.battlefield.foldl
       (fun acc aura =>
         if aura.attachedTo == some o.id then
-          addStats acc (addStats (auraStatBonus aura) ((aura.status.hone : Int), 0))
+          let glam : Int × Int :=
+            if aura.staticAbilities.any (fun
+              | .equippedFirstStrikePlusPerInstantSorcery => true
+              | _ => false) then
+              match aura.controller with
+              | some p => (Int.ofNat (g.instantSorceryInGraveyard p), 0)
+              | none => (0, 0)
+            else (0, 0)
+          addStats acc
+            (addStats (addStats (auraStatBonus aura) glam) ((aura.status.hone : Int), 0))
         else acc)
       (0, 0)
 
@@ -2650,7 +2705,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
       else
         { g with pending := .declareBlockers, blockersQueue := rest }
     else g
-  | .payOrLetCounter q _ spellId =>
+  | .payOrLetCounter q _ spellId | .payWard q spellId _ =>
     if q == p then
       let g := { g with pending := .none }
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
@@ -2994,9 +3049,20 @@ def attachedGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
             Keywords.merge k ab.hostKeywords) Keywords.none)
       else acc) Keywords.none
 
+/-- True when an attached Aura makes `o` lose all abilities (Enchanted
+River's Grasp; Frozen in Ice). -/
+def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
+  g.battlefield.any (fun aura =>
+    aura.attachedTo == some o.id &&
+      aura.staticAbilities.any (fun
+        | .enchantedLosesAbilitiesDoesntUntap => true
+        | .msh .enchantedCreatureLosesAllAbilitiesAndCant => true
+        | _ => false))
+
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)
-is making the permanent lose them (MSH 145 / 190). -/
+is making the permanent lose them (MSH 145 / 190), or an Aura strips them. -/
 def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
+  !g.attachedLosesAbilities o &&
   !o.status.losesAbilitiesGrantedBy.any (fun id =>
     match g.findObject? id with
     | some src => src.isOnBattlefield
@@ -3061,6 +3127,8 @@ def hasIslandwalk (g : Game) (o : GameObject) : Bool :=
 (CR 509.1b / 611.2a), or while its power is at most a listed value. -/
 def hasCantBeBlocked (g : Game) (o : GameObject) : Bool :=
   g.hasKeyword o (·.cantBeBlocked) ||
+  g.equippedHexproofUnblockableThisTurn o ||
+  g.equippedCantBeBlockedNow o ||
   (o.isOnBattlefield &&
     o.staticAbilities.any (fun ab =>
       match ab.cantBeBlockedIfPowerAtMost? with
@@ -3135,6 +3203,10 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       match ab.cantBeBlockedByPowerAtMost? with
       | some n => g.snapshotPower blocker <= n
       | none => false)) &&
+  !(attacker.staticAbilities.any (fun ab =>
+      match ab.cantBeBlockedByPowerAtLeast? with
+      | some n => g.snapshotPower blocker >= n
+      | none => false)) &&
   (!g.hasFlying attacker ||
     g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
   (!(g.hasShadow attacker) || g.hasShadow blocker) &&
@@ -3191,9 +3263,30 @@ def grantorStillInPlay (g : Game) (id : ObjectId) : Bool :=
   | some o => o.isOnBattlefield
   | none => false
 
+/-- During the Equipment's controller's turn, the equipped creature has
+hexproof and can't be blocked (Bilbo's Ring). -/
+def equippedHexproofUnblockableThisTurn (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any (fun
+          | .equippedHexproofUnblockableDuringYourTurn => true
+          | _ => false) &&
+        match eq.controller with
+        | some p => g.activePlayer == p
+        | none => false)
+
+/-- Equipment that grants "can't be blocked" to its host (My Precious). -/
+def equippedCantBeBlockedNow (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    g.battlefield.any (fun eq =>
+      eq.attachedTo == some o.id &&
+        eq.staticAbilities.any StaticAbility.equippedCantBeBlocked)
+
 def hasHexproof (g : Game) (o : GameObject) : Bool :=
   hasPrintedOrEot o (·.hexproof) || g.loreThresholdProtection o ||
     o.status.hexproofGrantedBy.any g.grantorStillInPlay ||
+    g.equippedHexproofUnblockableThisTurn o ||
     (match o.controller with
      | none => false
      | some p =>
@@ -4203,7 +4296,8 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
 
 /-- Printed activated abilities plus those copied from the graveyard. -/
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
-  o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
+  if !g.retainsPrintedAbilities o then #[]
+  else o.printed.activatedAbilities ++ g.copiedFromGy o (·.activatedAbilities)
 
 /-- True when `p` controls a basic land (CR 205.4c / 305.8). -/
 def controlsBasicLand (g : Game) (p : PlayerId) : Bool :=
@@ -4217,13 +4311,46 @@ def canUseEnteredOrBasicAdd (g : Game) (o : GameObject) : Bool :=
     | some p => g.controlsBasicLand p
     | none => false
 
-/-- Printed mana abilities plus those copied from the graveyard. Restricted
-MSH `{T}: Add` types are omitted until the activation condition holds. -/
+/-- Mana types other permanents currently grant `o` (`{T}: Add`). -/
+def grantedManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
+  if !o.isOnBattlefield then #[]
+  else
+    match o.controller with
+    | none => #[]
+    | some p =>
+      let fromLords :=
+        (g.permanentsOf p).foldl (fun acc src =>
+          if src.id == o.id then acc
+          else
+            src.staticAbilities.foldl (fun acc ab =>
+              match ab with
+              | .otherSubtypeHaveTapAddOneOf subtypes mana =>
+                if subtypes.any (g.hasSubtype o) then
+                  mana.foldl (fun acc t =>
+                    if acc.contains t then acc else acc.push t) acc
+                else acc
+              | _ => acc) acc) #[]
+      let anyColor : Array ManaType :=
+        #[.colored .white, .colored .blue, .colored .black,
+          .colored .red, .colored .green]
+      if o.isCreature &&
+          (g.permanentsOf p).any (fun src => src.printed.grantCreaturesTapAddAnyColor) then
+        anyColor.foldl (fun acc t =>
+          if acc.contains t then acc else acc.push t) fromLords
+      else fromLords
+
+/-- Printed mana abilities plus those copied from the graveyard or granted
+by another permanent. Restricted MSH `{T}: Add` types are omitted until the
+activation condition holds. -/
 def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
-  let types := o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities)
-  if o.printed.mshTapAddRequiresEnteredOrBasic && !g.canUseEnteredOrBasicAdd o then
-    types.filter (fun t => !o.printed.mshTapAddMana.contains t)
-  else types
+  if !g.retainsPrintedAbilities o then #[]
+  else
+    let types :=
+      o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities) ++
+        g.grantedManaAbilities o
+    if o.printed.mshTapAddRequiresEnteredOrBasic && !g.canUseEnteredOrBasicAdd o then
+      types.filter (fun t => !o.printed.mshTapAddMana.contains t)
+    else types
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
@@ -4774,6 +4901,11 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
     | .activateManaAbilities caster => caster == p
     | .mayPayGeneric q _ => q == p
     | .payOrLetCounter q _ _ => q == p
+    | .payWard q _ cost =>
+      q == p &&
+        (match cost with
+         | .genericMana _ | .discardOrPay _ => true
+         | _ => false)
     | _ => false
 
 def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Except String Game := do
@@ -5507,6 +5639,119 @@ def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
       | _ => pure ()
     return g
 
+/-- Printed and granted ward costs currently on `o`. -/
+def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
+  Id.run do
+    let mut acc : Array WardCost := #[]
+    match o.printed.ward with
+    | some n => acc := acc.push (.genericMana n)
+    | none => pure ()
+    for ab in o.staticAbilities do
+      match ab with
+      | .wardDiscardEnchantmentInstantOrSorcery =>
+        acc := acc.push .discardEnchantmentInstantOrSorcery
+      | .wardSacrificeLegendary =>
+        acc := acc.push .sacrificeLegendary
+      | .msh .wardDiscardACardOrPay2 =>
+        acc := acc.push (.discardOrPay 2)
+      | .msh .wardGetFivePoisonCounters =>
+        acc := acc.push .fivePoison
+      | _ =>
+        match ab.grantedWard? with
+        | some n =>
+          if ab.lordLegendaryOnly && o.isLegendary && o.isCreature then
+            acc := acc.push (.genericMana n)
+        | none =>
+          match ab.teamWardIfEnduringStory? with
+          | some n =>
+            match o.controller with
+            | some p =>
+              if g.hasEnduringStory p && (o.printed.isArtifact || o.isCreature) then
+                acc := acc.push (.genericMana n)
+            | none => pure ()
+          | none => pure ()
+    for src in g.battlefield do
+      if src.id != o.id then
+        for ab in src.staticAbilities do
+          match ab.grantedWard? with
+          | some n =>
+            if src.attachedTo == some o.id then
+              acc := acc.push (.genericMana n)
+            else if ab.lordLegendaryOnly && src.controller == o.controller &&
+                o.isLegendary && o.isCreature then
+              acc := acc.push (.genericMana n)
+          | none =>
+            match ab.teamWardIfEnduringStory? with
+            | some n =>
+              if src.controller == o.controller then
+                match o.controller with
+                | some p =>
+                  if g.hasEnduringStory p &&
+                      (o.printed.isArtifact || o.isCreature) then
+                    acc := acc.push (.genericMana n)
+                | none => pure ()
+            | none => pure ()
+    return acc
+
+/-- Prompt the next queued ward, if any and no other choice is pending. -/
+def promptNextWard (g : Game) : Game :=
+  match g.pending with
+  | .none =>
+    match g.wardQueue[0]? with
+    | none => g
+    | some w =>
+      let rest := g.wardQueue.extract 1 g.wardQueue.size
+      let who := (g.player w.player).name
+      let msg :=
+        match w.cost with
+        | .genericMana n =>
+          s!"{who} may pay \{{n}} or the spell is countered (ward)"
+        | .discardEnchantmentInstantOrSorcery =>
+          s!"{who} may discard an enchantment, instant, or sorcery card or the spell is countered (ward)"
+        | .sacrificeLegendary =>
+          s!"{who} may sacrifice a legendary artifact or creature or the spell is countered (ward)"
+        | .discardOrPay n =>
+          s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
+        | .fivePoison =>
+          s!"{who} may get five poison counters or the spell is countered (ward)"
+      { g with pending := .payWard w.player w.spellId w.cost, wardQueue := rest
+        }.logMsg msg
+  | _ => g
+
+/-- Drop ward obligations whose spell has left the stack, then prompt. -/
+def afterWardResolved (g : Game) : Game :=
+  let g := { g with pending := .none }
+  let g := { g with
+    wardQueue := g.wardQueue.filter (fun w =>
+      match g.findObject? w.spellId with
+      | some o => o.zone == .stack
+      | none => false) }
+  let g := g.promptNextWard
+  if g.pending != .none then g
+  else g.receivePriority g.activePlayer
+
+/-- Queue ward payments for opponent permanents targeted by this spell
+or ability (CR 702.21). -/
+def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
+    (targets : Array Target) : Game :=
+  Id.run do
+    let mut g := g
+    let mut seen : Array ObjectId := #[]
+    for t in targets do
+      match t with
+      | Target.permanent oid =>
+        if !seen.contains oid then
+          seen := seen.push oid
+          match g.findObject? oid with
+          | some o =>
+            if o.controller != some caster && o.isOnBattlefield then
+              for cost in g.wardCostsOn o do
+                g := { g with wardQueue := g.wardQueue.push {
+                  player := caster, spellId, cost } }
+          | none => pure ()
+      | _ => pure ()
+    return g.promptNextWard
+
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := { g with castingFromTop := false }
   let g := g.logMsg s!"{(g.player p).name} casts {spell.name}"
@@ -5526,6 +5771,10 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
         | _ => g) g
     | none => g
   let g := g.putCastTriggersOnStack p spell
+  let g :=
+    match g.stackEntry? spell.id with
+    | some e => g.beginWardsForTargets p spell.id e.targets
+    | none => g
   g.receivePriority p
 
 /-- After targets are announced, reduce the locked-in cost if the spell cares
@@ -5685,7 +5934,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       | none => g
   let g :=
     match g.stack.back? with
-    | some e => g.queueBecomesTargetTriggers p e.targets
+    | some e =>
+      let g := g.queueBecomesTargetTriggers p e.targets
+      g.beginWardsForTargets p e.objectId e.targets
     | none => g
   g.logMsg s!"{(g.player p).name} activates {sourceName}" |>.receivePriority p
 
@@ -6053,6 +6304,11 @@ def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
     match g.findObject? id with
     | some o => o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
     | none => false)
+
+/-- Legendary artifacts and creatures `p` may sacrifice to Sauron's ward. -/
+def legendaryWardSacrificeChoices (g : Game) (p : PlayerId) : Array GameObject :=
+  (g.permanentsOf p).filter (fun o =>
+    o.isLegendary && (o.isCreature || o.printed.isArtifact))
 
 /-- Split the top four library cards into a face-up pile and a face-down pile.
 A 4/0 split is legal. The face-down pile is not revealed if it is put into
@@ -7133,6 +7389,15 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         let g := g.queueTrigger c bolg .onBolgDealSacrificedPower
           .bolgSacrificedForReflexive (lastKnownPower := some pw)
         return g.receivePriority g.activePlayer
+  | .payWard q _ .sacrificeLegendary =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice for ward"
+    let some sac := g.findObject? id | throw "no such object"
+    if !(g.legendaryWardSacrificeChoices p).any (fun o => o.id == id) then
+      throw s!"Can't sacrifice {sac.name} to pay ward"
+    let g := g.sacrificeToGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name} (ward)"
+    return g.afterWardResolved
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- Destroy a permanent (CR 701.7). Indestructible permanents aren't destroyed
@@ -7161,10 +7426,17 @@ def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : G
       g.foldControlledPermanents p (excludeId := none) (fun g src =>
         g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
 
-/-- Deal `n` damage to a creature and log `msg`. `deathtouch` records that a
-source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
+/-- True when all damage that would be dealt to `o` is prevented. -/
+def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .preventAllDamageToThis => true
+    | _ => false)
+
 def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (deathtouch := false) (combat := false) (unpreventable := false) : Game :=
+  if n > 0 && !unpreventable && g.preventsAllDamageTo o then
+    g.logMsg s!"Damage that would be dealt to {o.name} is prevented"
+  else
   let healsOther :=
     o.printed.staticAbilities.any (fun
       | .msh .ifDamageWouldBeDealtToWolverine => true
@@ -7408,12 +7680,14 @@ def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
   let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
   g.logMsg s!"{o.name} gets a finality counter"
 
-/-- Frozen in Ice or Spider-Woman prevents this permanent becoming untapped. -/
+/-- Frozen in Ice, Enchanted River's Grasp, or Spider-Woman prevents this
+permanent becoming untapped. -/
 def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
-        aura.printed.staticAbilities.any (fun
+        aura.staticAbilities.any (fun
+          | .enchantedLosesAbilitiesDoesntUntap => true
           | .msh .enchantedCreatureLosesAllAbilitiesAndCant => true
           | _ => false))
   let granted :=
@@ -7996,6 +8270,10 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
   | some o =>
     if o.zone != .stack then
       g.logMsg s!"{o.name} is no longer on the stack"
+    else if o.abilityEffect.isSome || o.triggeredAbility.isSome then
+      let name := o.name
+      let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
+      g.logMsg s!"{name} is countered"
     else if o.printed.cantBeCountered || o.uncounterableThisCast then
       g.logMsg s!"{o.name} can't be countered"
     else
@@ -12978,6 +13256,12 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     throw "Choose a target first (CR 601.2c)"
   | .chooseAdditionalCost _ =>
     throw "Choose an additional cost first (CR 601.2b)"
+  | .payWard q _ .fivePoison =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may pay ward"
+    let g := g.modifyPlayer p (fun pl => { pl with poison := pl.poison + 5 })
+    let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
+    return g.afterWardResolved
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 /-- Announce whether to pay extra generic mana or sacrifice an artifact or
@@ -13335,6 +13619,29 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
         let (g, _) := g.createToken p humanSoldierToken
         g
     return g.receivePriority g.activePlayer
+  | .payWard q _ cost =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may discard for ward"
+    let legal :=
+      match cost with
+      | .discardEnchantmentInstantOrSorcery =>
+        match g.findObject? id with
+        | some o =>
+          o.printed.isEnchantment || o.printed.isInstant || o.printed.isSorcery
+        | none => false
+      | .discardOrPay _ => true
+      | _ => false
+    if !legal then
+      throw "That card cannot pay this ward"
+    let pl := g.player p
+    if !pl.hand.contains id then
+      throw "That card is not in your hand"
+    let some card := g.findObject? id | throw "no such object"
+    let g := g.logMsg s!"{(g.player p).name} discards {card.name} (ward)"
+    let (g, _) := g.move id (.graveyard card.owner) none
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    return g.afterWardResolved
   | _ => throw "Not time to discard a card (CR 701.9)"
 
 /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
@@ -13359,6 +13666,14 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .payWard q _ (.genericMana n) | .payWard q _ (.discardOrPay n) =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may pay ward"
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+      throw s!"{(g.player p).name} cannot pay \{{n}}"
+    let g ← g.payCost p (ManaCost.ofGeneric n)
+    let g := g.logMsg s!"{(g.player p).name} pays \{{n}} (ward)"
+    return g.afterWardResolved
   | _ => throw "Not time to pay generic mana"
 
 /-- Put the pending card on top or bottom of its owner's library. -/
@@ -13491,6 +13806,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let g := { g with pending := .none }
     let g := g.counterStackSpell spellId
     return g.receivePriority g.activePlayer
+  | .payWard q spellId _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to pay ward"
+    let g := g.logMsg s!"{(g.player p).name} does not pay ward"
+    let g := g.counterStackSpell spellId
+    return g.afterWardResolved
   | .mayAttachEquipment q _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to attach Equipment"
@@ -13813,6 +14134,7 @@ def actor (g : Game) : Option PlayerId :=
     | .mayAttachEquipment p _ => who p
     | .tapHumans p => who p
     | .payOrLetCounter p _ _ => who p
+    | .payWard p _ _ => who p
     | .recruitDiscard p => who p
     | .chooseKicker p => who p
     | .chooseGift p => who p
