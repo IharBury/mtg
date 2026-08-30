@@ -4448,22 +4448,24 @@ A daybound front face enters back-face-up at night and cannot transform
 (MSH 192). Front-face enters abilities trigger in either case before the
 optional transform. -/
 def enterFromNickFury (g : Game) (controller : PlayerId) (id : ObjectId) : Game :=
-  let some o := g.findObject? id | g.logMsg "No card to put onto the battlefield"
-  let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
-  let (g, newId) := g.putOntoBattlefield id controller
-  let o := g.object! newId
-  let g :=
-    if nightBack then
-      match o.printed.otherFace with
-      | some back =>
-        let shown := { back with otherFace := some { o.printed with otherFace := none } }
-        let g := g.setObject { o with
-          printed := shown
-          status := { o.status with transformed := true, cantTransform := true } }
-        g.logMsg s!"{shown.name} enters back face up (night / daybound)"
-      | none => g
-    else g
-  g.afterPermanentEnters (g.object! newId)
+  match g.findObject? id with
+  | none => g.logMsg "No card to put onto the battlefield"
+  | some o =>
+    let nightBack := g.isNight && o.printed.daybound && o.printed.otherFace.isSome
+    let (g, newId) := g.putOntoBattlefield id controller
+    let o := g.object! newId
+    let g :=
+      if nightBack then
+        match o.printed.otherFace with
+        | some back =>
+          let shown := { back with otherFace := some { o.printed with otherFace := none } }
+          let g := g.setObject { o with
+            printed := shown
+            status := { o.status with transformed := true, cantTransform := true } }
+          g.logMsg s!"{shown.name} enters back face up (night / daybound)"
+        | none => g
+      else g
+    g.afterPermanentEnters (g.object! newId)
 
 def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   if !g.canPlayLand p then
