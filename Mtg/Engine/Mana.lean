@@ -306,6 +306,9 @@ structure ManaPool where
   /-- Colorless mana that cannot be spent to cast a nonartifact spell
   (Vibranium tokens). -/
   cantNonartifact : Nat := 0
+  /-- Blue mana that cannot be spent to cast a nonartifact spell
+  (Hydraulic Helper). -/
+  cantNonartifactBlue : Nat := 0
 deriving BEq, DecidableEq, Repr, Inhabited
 
 namespace ManaPool
@@ -409,6 +412,9 @@ def setVillain (p : ManaPool) (t : ManaType) (n : Nat) : ManaPool :=
 def unrestricted (p : ManaPool) (t : ManaType) : Nat :=
   match t with
   | .colorless => p.colorless - p.cantNonartifact
+  | .colored .blue =>
+    p.get t - p.getElf t - p.getInst t - p.getHero t - p.getVillain t
+      - p.cantNonartifactBlue
   | _ => p.get t - p.getElf t - p.getInst t - p.getHero t - p.getVillain t
 
 /-- Amount of this type that may be spent under the given restrictions. -/
@@ -421,7 +427,8 @@ def usable (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
     (if allowInstRestricted then p.getInst t else 0) +
     (if allowHeroRestricted then p.getHero t else 0) +
     (if allowVillainRestricted then p.getVillain t else 0) +
-    (if allowCantNonartifact && t == .colorless then p.cantNonartifact else 0)
+    (if allowCantNonartifact && t == .colorless then p.cantNonartifact else 0) +
+    (if allowCantNonartifact && t == .colored .blue then p.cantNonartifactBlue else 0)
 
 def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := false)
     (instRestricted : Bool := false) (heroRestricted : Bool := false)
@@ -433,6 +440,8 @@ def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := fa
   let p := if villainRestricted then p.setVillain t (p.getVillain t + n) else p
   if cantNonartifact && t == .colorless then
     { p with cantNonartifact := p.cantNonartifact + n }
+  else if cantNonartifact && t == .colored .blue then
+    { p with cantNonartifactBlue := p.cantNonartifactBlue + n }
   else p
 
 def total (p : ManaPool) : Nat :=
@@ -454,6 +463,8 @@ def spendOne? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := false)
     some (p.set t (p.get t - 1) |>.setInst t (p.getInst t - 1))
   else if allowCantNonartifact && t == .colorless && p.cantNonartifact > 0 then
     some { p.set t (p.get t - 1) with cantNonartifact := p.cantNonartifact - 1 }
+  else if allowCantNonartifact && t == .colored .blue && p.cantNonartifactBlue > 0 then
+    some { p.set t (p.get t - 1) with cantNonartifactBlue := p.cantNonartifactBlue - 1 }
   else if p.unrestricted t > 0 then
     some (p.set t (p.get t - 1))
   else none
@@ -670,6 +681,10 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
   let p := ManaPool.empty.add .colorless 1 (cantNonartifact := true)
   (p.pay? (ManaCost.ofGeneric 1)).isNone &&
     (p.pay? (ManaCost.ofGeneric 1) false false false false true).isSome
+#guard
+  let p := ManaPool.empty.add (.colored .blue) 1 (cantNonartifact := true)
+  (p.pay? (ManaCost.ofColor .blue)).isNone &&
+    (p.pay? (ManaCost.ofColor .blue) false false false false true).isSome
 
 end ManaPool
 

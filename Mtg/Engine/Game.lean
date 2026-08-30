@@ -180,6 +180,17 @@ structure Status where
   plan : Nat := 0
   /-- A power-up ability of this permanent has been activated (CR 702.193). -/
   powerUpUsed : Bool := false
+  /-- How many times a power-up ability of this permanent has been activated.
+  Wonder Man raises the lifetime limit above one (MSH). -/
+  powerUpActivations : Nat := 0
+  /-- This permanent became tapped this turn (Captain America, Living Legend). -/
+  becameTappedThisTurn : Bool := false
+  /-- Sources that stop this permanent becoming untapped while they remain
+  (Spider-Woman; Frozen in Ice is attached separately). -/
+  cantUntapGrantedBy : Array ObjectId := #[]
+  /-- This permanent is a creature in addition to its other types until EOT
+  (I Am Iron Man). -/
+  additionalCreatureUntilEot : Bool := false
   /-- This permanent entered the battlefield this turn. -/
   enteredThisTurn : Bool := false
   /-- The Mind Stone (or similar) has been harnessed. -/
@@ -272,6 +283,8 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.setBasePT.isSome, fun s => { s with setBasePT := none }⟩,
   ⟨fun s => s.additionalArtifactUntilEot,
     fun s => { s with additionalArtifactUntilEot := false }⟩,
+  ⟨fun s => s.additionalCreatureUntilEot,
+    fun s => { s with additionalCreatureUntilEot := false }⟩,
   ⟨fun s => s.cantBeBlockedByPlayer.isSome,
     fun s => { s with cantBeBlockedByPlayer := none }⟩
 ]
@@ -403,8 +416,10 @@ def types (o : GameObject) : Array CardType :=
     let ts := o.printed.types.filter (· != .creature)
     if ts.any (· == .artifact) then ts else ts.push .artifact
   else
+    let asCreature :=
+      o.status.additionalCreature || o.status.additionalCreatureUntilEot
     let ts :=
-      if o.status.additionalCreature && !o.printed.isCreature then
+      if asCreature && !o.printed.isCreature then
         o.printed.types.push .creature
       else
         o.printed.types
@@ -450,7 +465,8 @@ def you (o : GameObject) : PlayerId :=
 /-- Whether this object is currently a creature (CR 205.1a / 302). -/
 def isCreature (o : GameObject) : Bool :=
   !o.status.onlyFoodArtifact && !o.status.returnedAsArtifact &&
-    (o.printed.isCreature || o.status.additionalCreature)
+    (o.printed.isCreature || o.status.additionalCreature ||
+      o.status.additionalCreatureUntilEot)
 
 /-- Whether this permanent has the legendary supertype (CR 205.4d / 704.5j). -/
 def isLegendary (o : GameObject) : Bool :=
@@ -964,6 +980,8 @@ structure Game where
   delayedEndStepReturns : Array ObjectId := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.47). -/
   conniveSource : Option ObjectId := none
+  /-- Most recent creature that became tapped (Captain America, Living Legend). -/
+  lastBecameTapped : Option ObjectId := none
   /-- Extra combat phases still to begin after the current combat (Hulk enrage). -/
   additionalCombatPhases : Nat := 0
   /-- Enrage triggers that will grant an additional combat when they resolve. -/
@@ -1315,11 +1333,32 @@ when that CDA applies (in all zones), else the printed values
 def hasCreaturesYouControlPower (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any StaticAbility.isCreaturesYouControlPower
 
+/-- True when `o` is Namor's characteristic-defining power (MSH ruling 289). -/
+def hasNamorPowerCda (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun
+    | .msh .namorSPowerIsEqualToTheNumberOfMerfolk => true
+    | _ => false)
+
+/-- True when `o` is Super-Adaptoid's characteristic-defining power (MSH 290). -/
+def hasSuperAdaptoidPowerCda (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun
+    | .msh .superAdaptoidSPowerIsEqualToTheNumberOf => true
+    | _ => false)
+
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
   let power :=
     if g.hasCardsInHandPower o then
-      let fromHand : Int := Int.ofNat (g.player o.you).hand.size
-      if o.isOnBattlefield then o.status.setBasePower.getD fromHand else fromHand
+      -- Ms. Marvel (ruling 288): this set-P/T overwrites previous layer-7b sets.
+      Int.ofNat (g.player o.you).hand.size
+    else if hasNamorPowerCda o then
+      let cda : Int :=
+        Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.hasSubtype "Merfolk") |>.size)
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
+    else if hasSuperAdaptoidPowerCda o then
+      let cda : Int :=
+        Int.ofNat ((g.permanentsOf o.you).filter (fun p =>
+          p.isCreature && p.isLegendary) |>.size)
+      if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
     else if g.hasCreaturesYouControlPower o then
       let fromTeam : Int :=
         Int.ofNat ((g.permanentsOf o.you).filter (·.isCreature) |>.size)
@@ -3503,7 +3542,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
 
 /-- True when any intervening trigger condition holds (e.g. Ferocious). -/
 def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (cause : Option GameObject := none) : Bool :=
+    (cause : Option GameObject := none) (source : Option GameObject := none) : Bool :=
   let powerOk :=
     match ab.youControlCreatureWithPower? with
     | none => true
@@ -3519,7 +3558,13 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     match ab.timing.gainedLifeAtLeast with
     | none => true
     | some n => (g.player controller).lifeGainedThisTurn ≥ n
-  powerOk && otherOk && lifeOk
+  let hulklingOk :=
+    match ab, cause, source with
+    | .msh .wheneverAnotherCreatureYouControlEnters, some entered, some hulkling =>
+      g.power entered > g.power hulkling || g.toughness entered > g.toughness hulkling
+    | .msh .wheneverAnotherCreatureYouControlEnters, _, _ => false
+    | _, _, _ => true
+  powerOk && otherOk && lifeOk && hulklingOk
 
 /-- Put `ab` on the stack for `event`, using that event's spec for the log label
 and CR 603.3d check so a new event is not restated at every queue site. -/
@@ -3528,7 +3573,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) : Game :=
   if (g.player controller).lost then g
-  else if !g.triggerConditionHolds controller ab cause then g
+  else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if event.checkTargets then
     g.putTriggerOrFizzle controller source ab event.label lastKnownPower lastKnownToughness
   else
@@ -3565,7 +3610,7 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) : Game :=
   if (g.player controller).lost then g
-  else if !g.triggerConditionHolds controller ab cause then g
+  else if !g.triggerConditionHolds controller ab cause (some source) then g
   else if ab.onceEachTurn && source.status.firedOnceEachTurn then g
   else
     let g :=
@@ -3985,6 +4030,18 @@ def putAnotherCreatureYouControlEntersTriggers (g : Game) (entering : GameObject
           (cause := some entering))
       |>.promptTriggerTargetsIfNeeded
 
+/-- Extra counters Doc Samson puts on a permanent you control (MSH 165 / 238). -/
+def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
+  if n == 0 then 0
+  else
+    match controller with
+    | none => n
+    | some p =>
+      n + ((g.permanentsOf p).filter (fun o =>
+        o.printed.staticAbilities.any (fun
+          | .msh .ifYouWouldPutOneOrMoreCountersOnAPerma => true
+          | _ => false))).size
+
 /-- After a permanent enters, put its enters triggers and “another … enters”
 triggers (CR 603.6a). -/
 def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
@@ -4001,9 +4058,10 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let o := g.object! o.id
   let g :=
     if o.printed.entersWithShield > 0 then
+      let n := g.extraCountersOn (o.controller) o.printed.entersWithShield
       let g := g.setObject { o with status :=
-        { o.status with shield := o.status.shield + o.printed.entersWithShield } }
-      g.logMsg s!"{o.name} enters with {o.printed.entersWithShield} shield counter(s)"
+        { o.status with shield := o.status.shield + n } }
+      g.logMsg s!"{o.name} enters with {n} shield counter(s)"
     else g
   let o := g.object! o.id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
@@ -4932,7 +4990,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
             src.printed.activatedAbilities.any (·.powerUp)
         let g := g.setObject { src with status := { src.status with
           activationsThisTurn := src.status.activationsThisTurn + 1
-          powerUpUsed := src.status.powerUpUsed || powerUp } }
+          powerUpUsed := src.status.powerUpUsed || powerUp
+          powerUpActivations :=
+            src.status.powerUpActivations + (if powerUp then 1 else 0) } }
         let src := g.object! sid
         if src.isCreature then
           g.putControlledTriggers p .youActivateCreatureAbility
@@ -5618,17 +5678,41 @@ def playsWithoutPayingManaCost (g : Game) (card : GameObject)
     (face : CardDef := card.printed) : Bool :=
   face.manaCost.includesManaPayment && !(g.playManaCost card face).includesManaPayment
 
-/-- Mana to activate `ab` after applicable reductions (CR 118.7 / 602.2b).
-A reduction that removes every mana symbol becomes `{0}`. -/
+/-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
+def grantsExtraPowerUp (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun ab =>
+    match ab with
+    | .msh .eachPowerUpAbilityOfPermanentsYouControl => true
+    | _ => false)
+
+/-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
+def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
+  1 + ((g.permanentsOf p).filter grantsExtraPowerUp).size
+
+/-- True when `o` is Hulk's generic power-up cost reduction. -/
+def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun ab =>
+    match ab with
+    | .msh .powerUpAbilitiesOfOtherCreaturesYouContro => true
+    | _ => false)
+
+/-- Generic mana subtracted from other creatures' power-up costs by Hulk
+(MSH ruling 127: only generic mana). -/
+def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) : Nat :=
+  3 * ((g.permanentsOf p).filter (fun o =>
+    o.id != sourceId && grantsHulkPowerUpReduction o)).size
+
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (source : Option GameObject := none) : ManaCost :=
   let cost :=
     if ab.powerUp then
       match source with
       | some o =>
-        if o.status.enteredThisTurn then
-          ab.cost.mana.reduceByCost o.printed.manaCost
-        else ab.cost.mana
+        let afterEnter :=
+          if o.status.enteredThisTurn then
+            ab.cost.mana.reduceByCost o.printed.manaCost
+          else ab.cost.mana
+        afterEnter.reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
       | none => ab.cost.mana
     else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
       ab.cost.mana.reduceGeneric ab.costReductionIfYouControlLegendary
@@ -5962,7 +6046,9 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability can be activated only during your turn"
   if ab.onceEachTurn && o.status.activationsThisTurn != 0 then
     throw s!"{o.name}'s ability can be activated only once each turn"
-  if ab.powerUp && o.status.powerUpUsed then
+  if ab.powerUp &&
+      (Nat.max o.status.powerUpActivations (if o.status.powerUpUsed then 1 else 0)) ≥
+        g.powerUpActivationLimit p then
     throw s!"{o.name}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{o.name} is already tapped"
@@ -6214,10 +6300,23 @@ def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :
 /-- Deal `n` damage to a creature and log `msg`. `deathtouch` records that a
 source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
 def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
-    (deathtouch := false) (combat := false) : Game :=
-  if n > 0 && o.status.shield > 0 then
+    (deathtouch := false) (combat := false) (unpreventable := false) : Game :=
+  let healsOther :=
+    o.printed.staticAbilities.any (fun
+      | .msh .ifDamageWouldBeDealtToWolverine => true
+      | _ => false)
+  let o :=
+    if healsOther && n > 0 then
+      { o with status := { o.status with damage := 0 } }
+    else o
+  let g := if healsOther && n > 0 then g.setObject o else g
+  if n > 0 && o.status.shield > 0 && !unpreventable then
     let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
     g.logMsg s!"A shield counter is removed from {o.name} instead of damage"
+  else if n > 0 && o.status.shield > 0 && unpreventable then
+    let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
+    let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
+    (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
   else
   let g := (g.mapObjectStatus o (fun s => s.addDamage n deathtouch)).logMsg msg
   let g :=
@@ -6348,8 +6447,45 @@ def returnToHand (g : Game) (id : ObjectId) (to : PlayerId) : Game :=
 
 /-- Put `n` finality counters on `o` (MSH). Multiple counters are redundant. -/
 def addFinalityTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let n := g.extraCountersOn o.controller n
   let g := g.mapObjectStatus o (fun s => { s with finality := s.finality + n })
   g.logMsg s!"{o.name} gets a finality counter"
+
+/-- Frozen in Ice or Spider-Woman prevents this permanent becoming untapped. -/
+def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
+  let frozen :=
+    g.battlefield.any (fun aura =>
+      aura.attachedTo == some o.id &&
+        aura.printed.staticAbilities.any (fun
+          | .msh .enchantedCreatureLosesAllAbilitiesAndCant => true
+          | _ => false))
+  let granted :=
+    o.status.cantUntapGrantedBy.any (fun sid =>
+      match g.findObject? sid with
+      | some src => src.isOnBattlefield
+      | none => false)
+  frozen || granted
+
+/-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
+def grantsNoMaxHandSize (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun
+    | .msh .youHaveNoMaximumHandSize => true
+    | _ => false)
+
+def grantsMaxHandSizeTen (o : GameObject) : Bool :=
+  o.printed.staticAbilities.any (fun
+    | .msh .yourMaximumHandSizeIsTen => true
+    | _ => false)
+
+def effectiveMaxHandSize (g : Game) (p : PlayerId) : Nat :=
+  let effects :=
+    ((g.permanentsOf p).filter (fun o =>
+      grantsNoMaxHandSize o || grantsMaxHandSizeTen o)).qsort
+      (fun a b => decide (a.timestamp < b.timestamp))
+  effects.foldl (fun acc o =>
+    if grantsMaxHandSizeTen o then 10
+    else if grantsNoMaxHandSize o then 10000
+    else acc) (g.player p).maxHandSize
 
 /-- Reduce generic mana in `cost` by `n` (improvise taps artifacts for {1}). -/
 def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
@@ -6418,6 +6554,7 @@ def isWorthyPermanent (_g : Game) (o : GameObject) : Bool :=
 
 /-- Put `n` +1/+1 counters on `o` (CR 122.1). -/
 def addPlusOnePlusOneTo (g : Game) (o : GameObject) (n : Nat := 1) : Game :=
+  let n := g.extraCountersOn o.controller n
   let g := g.mapObjectStatus o (·.addPlusOnePlusOne n)
   let g := g.logMsg s!"{o.name} gets {plusOnePlusOneCountersPhrase n}"
   match o.controller with
@@ -6712,10 +6849,23 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     if o.status.tapped then
       g.logMsg s!"{o.name} is already tapped"
     else
-      let g := g.mapObjectStatus o (fun s => { s with tapped := true })
-      g.logMsg s!"{o.name} becomes tapped"
+      let first := !o.status.becameTappedThisTurn
+      let g := g.mapObjectStatus o (fun s =>
+        { s with tapped := true, becameTappedThisTurn := true })
+      let g := g.logMsg s!"{o.name} becomes tapped"
+      let g := { g with lastBecameTapped := some o.id }
+      match o.controller with
+      | some p =>
+        if first && g.activePlayer == p then
+          g.foldControlledPermanents p (excludeId := none) (fun g src =>
+            g.putMatchingSourceTriggers p src .creatureYouControlTapped
+              (cause := some (g.object! o.id)))
+        else g
+      | none => g
   | .untap =>
-    if !o.status.tapped then
+    if g.hostCantBecomeUntapped o then
+      g.logMsg s!"{o.name} can't become untapped"
+    else if !o.status.tapped then
       g.logMsg s!"{o.name} is already untapped"
     else
       let g := g.mapObjectStatus o (fun s => { s with tapped := false })
@@ -7007,6 +7157,43 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     (sourceName : String := "This creature") : Game :=
   let text := t.toNotation
   match t with
+  | .wheneverAnotherCreatureYouControlEnters =>
+    g.withSourceOnBattlefield sourceId (fun g hulkling =>
+      let entered :=
+        match targets[0]? with
+        | some (Target.permanent id) => g.findObject? id
+        | _ =>
+          let cands := (g.permanentsOf controller).filter (fun (x : GameObject) =>
+            x.isCreature && x.id != hulkling.id && x.status.enteredThisTurn)
+          if cands.isEmpty then none
+          else some (cands.foldl (fun (acc : GameObject) (x : GameObject) =>
+            if x.timestamp > acc.timestamp then x else acc) cands[0]!)
+      match entered with
+      | none => g
+      | some other =>
+        let op := if other.isOnBattlefield then g.power other
+          else other.lastKnownPower.getD (g.power other)
+        let ot := if other.isOnBattlefield then g.toughness other
+          else other.lastKnownToughness.getD (g.toughness other)
+        if op > g.power hulkling || ot > g.toughness hulkling then
+          g.addPlusOnePlusOneTo hulkling 1
+        else g) "The source is no longer in play"
+  | .wheneverACreatureYouControlBecomesTappedD =>
+    match g.lastBecameTapped.bind g.findObject? with
+    | some o =>
+      if o.isOnBattlefield && o.status.tapped then
+        g.applyPermanentAction o .untap
+      else g
+    | none => g
+  | .whenSpiderWomanEnters =>
+    g.withLegalKindPermanent controller .oppCreature targets
+      (fun g o =>
+        let g := g.applyPermanentAction o .tap
+        let o := g.object! o.id
+        let sid := sourceId.getD ⟨0⟩
+        g.mapObjectStatus o (fun s =>
+          { s with cantUntapGrantedBy := s.cantUntapGrantedBy.push sid }))
+      sourceId (some "The target is no longer legal")
   | .whenDoctorDoomEnters =>
     g.createKindTokens controller .doombot 2
   | .whenKaZarEnters =>
@@ -7246,9 +7433,29 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=
         pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
+  else if text.contains "can't be spent to cast a nonartifact" ||
+      text.contains "This mana can't be spent to cast a Nona" then
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .blue) 1 (cantNonartifact := true) })
+  else if text.contains "Add X mana" then
+    let x :=
+      match sourceId.bind g.findObject? with
+      | some o => (g.power o).toNat
+      | none => 0
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored .green) x })
   else if text.contains "Add " then
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) })
+  else if text.contains "Tiger God" then
+    g.createNamedToken controller tigerGodToken
+  else if text.contains "Hero creature token" || text.contains "create the Hero" then
+    g.createKindTokens controller .soldier11white 1
+  else if text.contains "Robot Villain" then
+    g.createKindTokens controller .villain21menace 1
+  else if text.contains "each opponent" && text.contains "discard" then
+    g.beginDiscardCards ((g.livingOpponents controller).map (·.id))
   else if text.contains "Doombot" then
     g.createKindTokens controller .doombot 1
   else if text.contains "Insect" then
@@ -7892,7 +8099,13 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.cantBeBlocked))
   | .becomeArtifactCreature44Flying =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      g.mapObjectStatus o (·.grantUntilEot Keyword.flying))
+      let g := g.mapObjectStatus o (fun s =>
+        { s with
+          setBasePT := some (4, 4)
+          additionalArtifactUntilEot := true
+          additionalCreatureUntilEot := true
+          untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.flying })
+      g.logMsg s!"{o.name} becomes a 4/4 artifact creature with flying until end of turn")
   | .drawThreeDiscardUnlessArtifact =>
     let g := g.draw controller 3
     g.beginDiscardCards #[controller]
@@ -8161,10 +8374,15 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
         plusOnePlusOne := o.status.plusOnePlusOne + 1
         indestructibleCounters := o.status.indestructibleCounters + 1 } }
   | .plusOneAndDraw plus cards =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.setObject { o with status := { o.status with
-        plusOnePlusOne := o.status.plusOnePlusOne + plus } }
-      g.draw controller cards
+    let g :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then
+          g.setObject { o with status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne + plus } }
+        else g
+      | none => g
+    g.draw controller cards
   | .plusOneAndExtraTurn =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.setObject { o with status := { o.status with
@@ -8311,6 +8529,7 @@ def copyStackSpell (g : Game) (src : GameObject) (controller : PlayerId) : Game 
       teamworkPaid := src.teamworkPaid
       sneakPaid := src.sneakPaid
       sneakAttackWhom := src.sneakAttackWhom
+      chosenX := src.chosenX
       isCopy := true
       adventurerCard := src.adventurerCard }
     let g := g.putStackEntry controller copy.id
@@ -10416,7 +10635,7 @@ def clearEOT (g : Game) : Game :=
 not use the stack; the engine discards from the back of the hand array. -/
 def discardToMaxHandSize (g : Game) : Game :=
   let pl := g.player g.activePlayer
-  let extra := pl.hand.size - pl.maxHandSize
+  let extra := pl.hand.size - g.effectiveMaxHandSize g.activePlayer
   if extra == 0 then g
   else
     Id.run do
@@ -10461,14 +10680,16 @@ def clearTurnActivations (g : Game) : Game :=
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
-          o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn then
+          o.status.declaredAsAttackerThisTurn || o.status.boastUsedThisTurn ||
+          o.status.becameTappedThisTurn then
         g := g.setObject { o with status := { o.status with
           activationsThisTurn := 0
           firedOnceEachTurn := false
           allianceModesChosen := #[]
           enteredThisTurn := false
           declaredAsAttackerThisTurn := false
-          boastUsedThisTurn := false } }
+          boastUsedThisTurn := false
+          becameTappedThisTurn := false } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
@@ -10562,8 +10783,9 @@ partial def beginStep (g : Game) (st : Step) : Game :=
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
         let skipUntap :=
-          o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
-            !g.hasEnduringStory ap
+          (o.staticAbilities.any StaticAbility.doesntUntapUnlessEnduringStory? &&
+            !g.hasEnduringStory ap) ||
+          g.hostCantBecomeUntapped o
         if o.status.tapped && !skipUntap then
           g := g.logMsg s!"{apName} untaps {o.name}"
         let tapped := if skipUntap then o.status.tapped else false
