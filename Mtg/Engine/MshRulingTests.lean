@@ -2048,6 +2048,88 @@ def kingpinExtortAndToughnessOk : Bool :=
 
 #guard kingpinExtortAndToughnessOk
 
+/-- Ruling 375: Misty Knight draws for each discard this turn even if those
+cards left the graveyard. -/
+def mistyKnightDiscardCountOk : Bool :=
+  let g := addPermanent afterDraw mistyKnightHeroForHire ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let g := addToGraveyard g giantGrowth ⟨0⟩
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let growth := namedGraveyardCard g ⟨0⟩ "Giant Growth"
+  let (g, _) := g.move bolt.id .exile none
+  let (g, _) := g.move growth.id .exile none
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDiscardedThisTurn := 2 })
+  let misty := namedPermanent g "Misty Knight, Hero for Hire"
+  let hand0 := (g.player ⟨0⟩).hand.size
+  let g := g.applyMshAbility ⟨0⟩ .n2TDiscardACard #[] (some misty.id)
+  (g.player ⟨0⟩).hand.size == hand0 + 2 &&
+    !(g.objects.any (fun o =>
+      o.zone == .graveyard ⟨0⟩ &&
+        (o.name == "Lightning Bolt" || o.name == "Giant Growth"))) &&
+    (mshRuling 375).comment.contains "even if those cards are no longer"
+
+#guard mistyKnightDiscardCountOk
+
+/-- Ruling 94: Ares returns himself if he dies while attacking. -/
+def aresDiesAttackingOk : Bool :=
+  let g := addPermanent afterDraw aresGodOfWar ⟨0⟩ ⟨0⟩
+  let ares := namedPermanent g "Ares, God of War"
+  let g := g.setObject { ares with status := { ares.status with
+    attacking := true, attackingWhom := some ⟨1⟩ } }
+  let ares := namedPermanent g "Ares, God of War"
+  let (g, _) := g.move ares.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverAnAttackingCreatureYouControlDies
+    (some ares.id)
+  (g.handObjects ⟨0⟩).any (fun o => o.name == "Ares, God of War") &&
+    !g.battlefield.any (fun o => o.name == "Ares, God of War") &&
+    (mshRuling 94).comment.contains "Ares himself"
+
+#guard aresDiesAttackingOk
+
+/-- Ruling 99: Attuma triggers once per player attacked with Merfolk. -/
+def attumaMerfolkOncePerPlayerOk : Bool :=
+  let g := addPermanent afterDraw attumaAtlanteanWarlord ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g :=
+    g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s =>
+      { s with additionalSubtypes := #["Merfolk"] })
+  let attuma := namedPermanent g "Attuma, Atlantean Warlord"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { attuma with status := { attuma.status with
+    attacking := true, attackingWhom := some ⟨1⟩ } }
+  let g := g.setObject { (namedPermanent g "Grizzly Bears") with status :=
+    { bears.status with attacking := true, attackingWhom := some ⟨1⟩ } }
+  let one :=
+    g.putAttackTriggersOnStack ⟨0⟩
+      #[(namedPermanent g "Attuma, Atlantean Warlord").id,
+        (namedPermanent g "Grizzly Bears").id]
+  let merfolkWaits (g : Game) : Nat :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.merfolkAttackPlayer)).size
+  merfolkWaits one == 1 &&
+    (let g := { afterDraw with
+      players := afterDraw.players.push
+        { (afterDraw.player ⟨1⟩) with id := ⟨2⟩, name := "Gimli" } }
+     let g := addPermanent g attumaAtlanteanWarlord ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+     let g :=
+       g.mapObjectStatus (namedPermanent g "Grizzly Bears") (fun s =>
+         { s with additionalSubtypes := #["Merfolk"] })
+     let attuma := namedPermanent g "Attuma, Atlantean Warlord"
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.setObject { attuma with status := { attuma.status with
+       attacking := true, attackingWhom := some ⟨1⟩ } }
+     let g := g.setObject { (namedPermanent g "Grizzly Bears") with status :=
+       { bears.status with attacking := true, attackingWhom := some ⟨2⟩ } }
+     let two :=
+       g.putAttackTriggersOnStack ⟨0⟩
+         #[(namedPermanent g "Attuma, Atlantean Warlord").id,
+           (namedPermanent g "Grizzly Bears").id]
+     merfolkWaits two == 2) &&
+    (mshRuling 99).comment.contains "once for each player"
+
+#guard attumaMerfolkOncePerPlayerOk
+
 /-- Rulings 221 / 259 / 300 / 346 / 358: control another player. -/
 def controlAnotherPlayerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩

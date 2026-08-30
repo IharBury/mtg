@@ -1273,7 +1273,8 @@ def mistyKnightHeroForHire : CardDef :=
     (oracleText := "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn.")
     (power := some 3)
     (toughness := some 1)
-    (activatedAbilities := #[mshAct .n2TDiscardACard])
+    (activatedAbilities := #[activated (.msh .n2TDiscardACard)
+      ({ symbols := #[.generic 2] }) (tap := true) (discardACard := true)])
 
 def mjLnirHammerOfThor : CardDef :=
   card "Mjölnir, Hammer of Thor" #[.artifact] ({ symbols := #[.generic 3, .colored .red] })

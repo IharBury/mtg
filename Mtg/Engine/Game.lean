@@ -806,6 +806,8 @@ structure Player where
   attackPumpPerPlainsThisTurn : Nat := 0
   /-- This player's life total can't change (Platinum Emperion; MSH 292). -/
   lifeLocked : Bool := false
+  /-- Cards discarded this turn (Misty Knight; MSH 375). -/
+  cardsDiscardedThisTurn : Nat := 0
 deriving Repr, Inhabited
 
 /-- A seat at the table before objects are created. -/
@@ -1024,6 +1026,8 @@ structure Game where
   /-- Until EOT, this player's creatures with toughness greater than power
   assign combat damage equal to toughness (The Kingpin of Crime; MSH 287). -/
   assignCombatDamageEqualToughness : Option PlayerId := none
+  /-- Most recent attacking creature that died (new GY object id; Ares). -/
+  lastDiedAttacker : Option ObjectId := none
 deriving Repr, Inhabited
 
 namespace Game
@@ -2204,15 +2208,34 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else (#[] : Array WaitingTrigger)
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
+  let attackingDie :=
+    if died && old.status.attacking then
+      match old.controller with
+      | some p =>
+        let fromOthers :=
+          g.battlefield.foldl (fun acc o =>
+            match o.controller with
+            | some q =>
+              if q == p then
+                acc ++ o.waitingTriggersFor q .attackingCreatureYouControlDies
+              else acc
+            | none => acc) (#[] : Array WaitingTrigger)
+        fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
+      | none => (#[] : Array WaitingTrigger)
+    else (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie
+        nontokenDie ++ goblinOrcArmyDie ++ attackingDie
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
       { g with battlefieldCreaturesToGyThisTurn :=
         g.battlefieldCreaturesToGyThisTurn.push newId }
+    else g
+  let g :=
+    if died && old.status.attacking then
+      { g with lastDiedAttacker := some newId }
     else g
   let g :=
     if exileInstead then
@@ -5648,7 +5671,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         let card := g.object! hid
         g := g.logMsg s!"{(g.player p).name} discards {card.name}"
         let (g', _) := g.move hid (.graveyard card.owner) none
-        g := g'
+        g := g'.modifyPlayer p (fun pl =>
+          { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
     if a.cost.discardLegendarySameName then
       let names :=
         (g.permanentsOf p).filterMap (fun o =>
@@ -7957,6 +7981,14 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     else
       { g with assignCombatDamageEqualToughness := some controller }
         |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+  | .wheneverAnAttackingCreatureYouControlDies =>
+    match g.lastDiedAttacker.bind g.findObject? with
+    | none => g.logMsg "The attacking creature is no longer in the graveyard"
+    | some o =>
+      if o.printed.isToken then
+        g.logMsg s!"{o.name} ceases to exist"
+      else
+        g.returnToHand o.id o.owner
   | .whenTheSentryEnters =>
     match targets[0]? with
     | some (Target.player pid) => g.createNamedToken pid theVoidToken
@@ -8196,7 +8228,9 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
 def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
-  if t == .tPutAStunCounterOnJessicaJones then
+  if t == .n2TDiscardACard then
+    g.draw controller (g.player controller).cardsDiscardedThisTurn
+  else if t == .tPutAStunCounterOnJessicaJones then
     let x :=
       match sourceId.bind g.findObject? with
       | some o =>
@@ -10909,7 +10943,15 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
     if !attackerIds.isEmpty then
       if attackerIds.any (fun id => g.hasSubtype (g.object! id) "Hero") then
         g := g.modifyPlayer p (fun pl => { pl with attackedWithHeroThisTurn := true })
-      if attackerIds.any (fun id => g.hasSubtype (g.object! id) "Merfolk") then
+      let merfolkDefenders :=
+        attackerIds.foldl (fun acc id =>
+          let o := g.object! id
+          if !g.hasSubtype o "Merfolk" then acc
+          else
+            let d := o.status.attackingWhom.getD g.defendingPlayer
+            if acc.any (· == d) then acc else acc.push d)
+          (#[] : Array PlayerId)
+      for _ in merfolkDefenders do
         g := g.putControlledTriggers p .merfolkAttackPlayer
       for id in attackerIds do
         let o := g.object! id
@@ -11467,7 +11509,8 @@ def clearTurnActivations (g : Game) : Game :=
         pure ()
       else if pl.cardsDrawnThisTurn != 0 || pl.belladonnaResolvesThisTurn != 0 ||
           pl.lifeGainedThisTurn != 0 || pl.creatureSpellsCastThisTurn != 0 ||
-          pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 then
+          pl.spellsCastThisTurn != 0 || pl.attackPumpPerPlainsThisTurn != 0 ||
+          pl.cardsDiscardedThisTurn != 0 then
         g := g.setPlayer { pl with
           cardsDrawnThisTurn := 0
           cardsDrawnThisDrawStep := 0
@@ -11480,7 +11523,8 @@ def clearTurnActivations (g : Game) : Game :=
           cantCastSpellsThisTurn := false
           attackPumpPerPlainsThisTurn := 0
           heroEnteredThisTurn := false
-          attackedWithHeroThisTurn := false }
+          attackedWithHeroThisTurn := false
+          cardsDiscardedThisTurn := 0 }
     for o in g.battlefield do
       if o.status.activationsThisTurn != 0 || o.status.firedOnceEachTurn ||
           !o.status.allianceModesChosen.isEmpty || o.status.enteredThisTurn ||
@@ -12034,6 +12078,8 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let some card := g.findObject? id | throw "no such object"
     let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
     let (g, _) := g.move id (.graveyard card.owner) none
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
     let g := g.draw p n
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
@@ -12046,6 +12092,8 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let some card := g.findObject? id | throw "no such object"
     let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
     let (g, _) := g.move id (.graveyard card.owner) none
+    let g := g.modifyPlayer p (fun pl =>
+      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
     let g := g.finishConniveDiscard card
     return g.beginDiscardCards remaining
   | .recruitDiscard q =>
