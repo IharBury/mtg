@@ -7626,6 +7626,16 @@ def withLegalKindPermanent (g : Game) (controller : PlayerId) (kind : EffectTarg
   g.withLegalPermanentTarget (g.legalTargetsForKind controller kind sourceId) targets f
     missing
 
+/-- Apply `f` to a still-legal player target of `kind`. -/
+def withLegalKindPlayer (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+    (targets : Array Target) (f : Game → PlayerId → Game)
+    (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
+  g.withLegalKindTarget controller kind targets (fun g tgt =>
+    match tgt with
+    | Target.player pid => f g pid
+    | Target.permanent _ | Target.card _ => g.logMsg "The target is no longer legal")
+    sourceId missing
+
 /-- Apply `f` when the announced trigger target is still legal (CR 608.2b). -/
 def withLegalTriggerTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
@@ -8016,11 +8026,12 @@ def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Ga
 
 def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game)
-    (missing := "The ability's source is no longer in play") : Game :=
+    (missing := "The ability's source is no longer in play")
+    (leftMsg : Option String := none) : Game :=
   match sourceId.bind g.findObject? with
   | some o =>
     if o.isOnBattlefield then f g o
-    else g.logMsg s!"{o.name} is no longer on the battlefield"
+    else g.logMsg (leftMsg.getD s!"{o.name} is no longer on the battlefield")
   | none =>
     g.logMsg missing
 
@@ -8029,12 +8040,7 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
 def withSourceStillOnBattlefield (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game)
     (missing := "The source has left the battlefield. Nothing is exiled.") : Game :=
-  match sourceId.bind g.findObject? with
-  | some o =>
-    if o.isOnBattlefield then f g o
-    else g.logMsg missing
-  | none =>
-    g.logMsg missing
+  g.withSourceOnBattlefield sourceId f missing (leftMsg := some missing)
 
 /-- Current power of `sourceId` if it is still on the battlefield; otherwise
 last-known power, falling back to the object's current power. -/
@@ -8061,12 +8067,14 @@ def sourcePTAtResolution (g : Game) (sourceId : Option ObjectId)
     else (lastKnownPower.getD 0, lastKnownToughness.getD 0)
   | none => (lastKnownPower.getD 0, lastKnownToughness.getD 0)
 
-/-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
-def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
+/-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
+them this turn. `logAfter ownerName cardName` is the per-card message. -/
+def exileTopForPlay (g : Game) (fromPlayer caster : PlayerId) (n : Nat)
+    (logAfter : String → String → String) : Game :=
   Id.run do
     let mut g := g
     for _ in [0:n] do
-      let pl := g.player p
+      let pl := g.player fromPlayer
       if pl.library.isEmpty then
         g := g.logMsg s!"{pl.name} has no cards in their library to exile"
       else
@@ -8076,9 +8084,14 @@ def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
         g := g'
         let o := g.object! newId
         g := g.setObject { o with
-          playPermission := some { player := p, turnEndsRemaining := 1 } }
-        g := g.logMsg s!"{pl.name} exiles {cardName} and may play it this turn"
+          playPermission := some { player := caster, turnEndsRemaining := 1 } }
+        g := g.logMsg (logAfter pl.name cardName)
     return g
+
+/-- Exile the top `n` cards of `p`'s library. They may be played this turn. -/
+def exileTopPlayThisTurn (g : Game) (p : PlayerId) (n : Nat) : Game :=
+  g.exileTopForPlay p p n fun owner card =>
+    s!"{owner} exiles {card} and may play it this turn"
 
 /-- Resolve one pending extort trigger. You may pay at most once (MSH 371).
 Life gained equals life actually lost (MSH 292). Extort does not target
@@ -8116,6 +8129,16 @@ def queueMshReflexive (g : Game) (controller : PlayerId) (sourceId : Option Obje
       pendingMshReflexivePaid := paid }
     |>.logMsg "A reflexive triggered ability triggers"
 
+/-- Run `act` when `paid` is positive; otherwise log `unpaid`. -/
+def ifPaid (g : Game) (paid : Nat) (unpaid : String) (act : Game → Game) : Game :=
+  if paid == 0 then g.logMsg unpaid else act g
+
+/-- Queue a reflexive trigger when a cost (`paid`) was actually paid. -/
+def queueMshReflexiveIfPaid (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) (kind : Nat) (paid : Nat) (unpaid : String) :
+    Game :=
+  g.ifPaid paid unpaid fun g => g.queueMshReflexive controller sourceId kind paid
+
 /-- Sacrifice the Plan if it is still on the battlefield. Queue the
 reflexive second ability only if the sacrifice happened (MSH 360–362,
 368–369). -/
@@ -8134,22 +8157,8 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn (Doom Reigns Supreme). -/
 def exileTopMayCast (g : Game) (fromPlayer caster : PlayerId) (n : Nat) : Game :=
-  Id.run do
-    let mut g := g
-    for _ in [0:n] do
-      let pl := g.player fromPlayer
-      if pl.library.isEmpty then
-        g := g.logMsg s!"{pl.name} has no cards in their library to exile"
-      else
-        let top := pl.library.back!
-        let cardName := (g.object! top).name
-        let (g', newId) := g.move top .exile none
-        g := g'
-        let o := g.object! newId
-        g := g.setObject { o with
-          playPermission := some { player := caster, turnEndsRemaining := 1 } }
-        g := g.logMsg s!"{pl.name} exiles {cardName}; {(g.player caster).name} may cast it"
-    return g
+  g.exileTopForPlay fromPlayer caster n fun owner card =>
+    s!"{owner} exiles {card}; {(g.player caster).name} may cast it"
 
 /-- Return a graveyard creature tapped and attacking with a finality
 counter (Grim Reaper). -/
@@ -8214,12 +8223,9 @@ def applyMshReflexive (g : Game) (targets : Array Target := #[])
             g.dealDamageToPlayer pid 2
           | Target.permanent id =>
             match g.findObject? id with
-            | some o =>
-              g.mapObjectStatus o (fun s =>
-                { s with untilEotKeywords :=
-                    Keywords.merge s.untilEotKeywords Keyword.cantBeBlocked })
+            | some o => g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
             | none => g
-          | _ => g) sourceId (some "The target is no longer legal")
+          | Target.card _ => g) sourceId (some "The target is no longer legal")
     else if kind == 3 then
       g.withLegalKindPermanent controller .creatureYouControl targets
         (fun g o =>
@@ -8228,17 +8234,14 @@ def applyMshReflexive (g : Game) (targets : Array Target := #[])
             |>.logMsg s!"{o.name} gets an indestructible counter")
         sourceId (some "The target is no longer legal")
     else if kind == 4 then
-      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-        match tgt with
-        | Target.player pid =>
-          let g := g.setPlayerControl controller pid
-          { g with controlOnNextTakenTurn := true }
-        | _ => g) sourceId (some "The target is no longer legal")
+      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
+        let g := g.setPlayerControl controller pid
+        { g with controlOnNextTakenTurn := true })
+        sourceId (some "The target is no longer legal")
     else if kind == 5 then
-      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.exileTopMayCast pid controller 5
-        | _ => g) sourceId (some "The target is no longer legal")
+      g.withLegalKindPlayer controller .opponent targets
+        (fun g pid => g.exileTopMayCast pid controller 5)
+        sourceId (some "The target is no longer legal")
     else if kind == 6 then
       match targets[0]? with
       | some (Target.card id) | some (Target.permanent id) =>
@@ -8558,10 +8561,8 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     g.queueMshReflexive controller sourceId 1
   | .trickArrowsWheneverHawkeyeBec =>
     let paid := (lastKnownPower.getD (0 : Int)).toNat
-    if paid == 0 then
-      g.logMsg "Hawkeye didn't pay. The reflexive ability doesn't trigger."
-    else
-      g.queueMshReflexive controller sourceId 2 paid
+    g.queueMshReflexiveIfPaid controller sourceId 2 paid
+      "Hawkeye didn't pay. The reflexive ability doesn't trigger."
   | .wheneverWhiplashAttacks =>
     let x :=
       match sourceId.bind g.findObject? with
@@ -8658,46 +8659,34 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       let g := g.sacrificeToGraveyard victim "Killmonger"
       g.queueMshReflexive controller sourceId 7
   | .wheneverGrimReaperAttacks =>
-    let paid := (lastKnownPower.getD (0 : Int)).toNat
-    if paid == 0 then
-      g.logMsg "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
-    else
-      g.queueMshReflexive controller sourceId 6
+    g.queueMshReflexiveIfPaid controller sourceId 6
+      (lastKnownPower.getD (0 : Int)).toNat
+      "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
   | .wheneverYouCastANoncreatureSpell5 =>
-    let paid := (lastKnownPower.getD (0 : Int)).toNat
-    if paid == 0 then
-      g.logMsg "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
-    else
-      g.queueMshReflexive controller sourceId 9
+    g.queueMshReflexiveIfPaid controller sourceId 9
+      (lastKnownPower.getD (0 : Int)).toNat
+      "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
   | .wheneverAPlayerCastsASpellThatTargetsSpe =>
     g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
       "Speedball is no longer on the battlefield"
   | .wheneverYouAttack2 =>
     -- Daredevil: exile the top card. Hero-ness only affects the pump;
     -- the card may be played this turn either way (MSH 333).
-    let pl := g.player controller
-    if pl.library.isEmpty then
-      g.logMsg s!"{pl.name} has no cards in their library to exile"
-    else
-      let top := pl.library.back!
-      let card := g.object! top
-      let isHero := card.hasSubtype "Hero"
-      let (g, newId) := g.move top .exile none
-      let o := g.object! newId
-      let g := g.setObject { o with
-        playPermission := some { player := controller, turnEndsRemaining := 1 } }
-      let g := g.logMsg s!"{pl.name} exiles {card.name} and may play it this turn"
-      if isHero then
-        g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
-          "Daredevil is no longer on the battlefield"
-      else g
+    let top? := (g.player controller).library.back?
+    let isHero :=
+      match top? with
+      | some top => (g.object! top).hasSubtype "Hero"
+      | none => false
+    let g := g.exileTopPlayThisTurn controller 1
+    if isHero then
+      g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
+        "Daredevil is no longer on the battlefield"
+    else g
   | .wheneverYouAttack3 =>
-    let paid := (lastKnownPower.getD (0 : Int)).toNat
-    if paid == 0 then
-      g.logMsg "The Kingpin's cost wasn't paid"
-    else
-      { g with assignCombatDamageEqualToughness := some controller }
-        |>.logMsg "Creatures you control assign combat damage equal to their toughness"
+    g.ifPaid (lastKnownPower.getD (0 : Int)).toNat "The Kingpin's cost wasn't paid"
+      fun g =>
+        { g with assignCombatDamageEqualToughness := some controller }
+          |>.logMsg "Creatures you control assign combat damage equal to their toughness"
   | .wheneverAnotherVillainYouControlEnters3 =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.addPlusOnePlusOneTo o 1
@@ -9527,18 +9516,11 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .allCreaturesPump p t =>
     g.foldBattlefield (fun o => o.isCreature) (fun g o => g.pumpPermanent o p t)
   | .playerDrawLoseLife cards life =>
-    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player pid =>
-        let g := g.draw pid cards
-        g.loseLife pid life
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.drawThenLoseLife pid cards life)
   | .creaturesOfPlayerPump pw tw =>
-    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player pid =>
-        g.pumpControlledCreatures pid pw tw
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.pumpControlledCreatures pid pw tw)
   | .destroyAndControllerLosesLife n =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let ctrl := o.controller
@@ -9547,10 +9529,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | some pid => g.loseLife pid n
       | none => g)
   | .exileGraveyardCreaturesGrantCast =>
-    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.exileCreaturesFromGraveyard controller pid
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.exileCreaturesFromGraveyard controller pid)
   | .draw n =>
     g.draw controller n
   | .drawThenDiscard n =>
@@ -9738,10 +9718,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .dealDamageToEachOppCreature n =>
     g.dealDamageToEachCreatureMatching n (fun o => !o.controlledBy controller)
   | .targetPlayerDraw n =>
-    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.draw pid n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.draw pid n)
   | .dealDamageToCreatureExileIfDies n =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
@@ -10191,10 +10169,8 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .creaturesYouControlPump pw tw =>
     g.pumpControlledCreatures controller pw tw
   | .mill n =>
-    g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
-      match tgt with
-      | Target.player pid => g.mill pid n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.mill pid n)
   | .drawThenDiscard =>
     let g := g.draw controller 1
     g.beginDiscardCards #[controller]
@@ -10843,18 +10819,14 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
           |>.logMsg s!"{o.name} gets {signedStat p}/+0 and gains vigilance until end of turn"
       else g
   | .opponentDiscardsNonland =>
-    g.withLegalKindTarget controller .opponent targets (fun g t =>
-      match t with
-      | Target.player pid => g.discardNonlandFrom controller pid
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller .opponent targets
+      (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
   | .amassGoblins n =>
     g.amassGoblins controller n
   | .opponentLosesYouGain n =>
-    g.withLegalKindTarget controller .opponent targets (fun g t =>
-      match t with
-      | Target.player pid => g.loseLife pid n |>.gainLife controller n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalKindPlayer controller .opponent targets
+      (fun g pid => g.loseLife pid n |>.gainLife controller n)
       sourceId (some "The target is no longer legal")
   | .grantHexproofWhileRemains =>
     match sourceId with
@@ -11137,8 +11109,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     let g := g.applyOnTriggerSource sourceId (.pump p 0)
     g.grantUntilEotToControlledCreatures controller Keyword.trample "trample"
   | .drawAndLoseLife =>
-    let g := g.draw controller 1
-    g.loseLife controller 1
+    g.drawThenLoseLife controller 1 1
   | .amassGoblins n =>
     g.amassGoblins controller n
   | .createTokens kind n tapped =>
