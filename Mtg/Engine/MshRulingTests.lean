@@ -2290,7 +2290,8 @@ def robotDominationSimultaneousOk : Bool :=
      let (g, _) :=
        g.move (namedPermanent g "Robot Domination").id (.graveyard ⟨0⟩) none
      !gyWait g) &&
-    (mshRuling 138).comment.contains "won't trigger at all"
+    (mshRuling 138).comment.contains "won't trigger at all" &&
+    (mshRuling 276).comment.contains "creature cards are put into your graveyard"
 
 #guard robotDominationSimultaneousOk
 
@@ -2943,7 +2944,7 @@ def scarletWitchXManaValueOk : Bool :=
   let cheap := { cheap with chosenX := some 1 }
   let g := g.setObject cheap
   let costly := { cheap with chosenX := some 2 }
-  let start : ManaCost := photonBlastBarrage.manaCost
+  let start := photonBlastBarrage.manaCost
   let reduced := g.applyCastCostReductions costly photonBlastBarrage start
   let unreduced := g.applyCastCostReductions cheap photonBlastBarrage start
   reduced.manaValue == 2 &&
@@ -3016,6 +3017,78 @@ def thunderboltsHeroTypeOk : Bool :=
     (mshRuling 295).comment.contains "Hero in addition to its other types"
 
 #guard thunderboltsHeroTypeOk
+
+/-- Ruling 144: The Void attacks if able, but not while sick, tapped, or
+if attacking would require an unpaid cost. -/
+def theVoidAttacksIfAbleOk : Bool :=
+  let (g, tok) := afterDraw.createToken ⟨0⟩ Game.theVoidToken
+  Game.hasAttacksIfAble tok &&
+    !g.mustAttackIfAble tok &&
+    (let g := g.mapObjectStatus tok (fun s => { s with summoningSick := false })
+     let tok := g.object! tok.id
+     g.mustAttackIfAble tok &&
+       (let g := g.mapObjectStatus tok (fun s => { s with tapped := true })
+        !g.mustAttackIfAble (g.object! tok.id) &&
+          !g.mustAttackIfAble tok (attackRequiresCost := true))) &&
+    (mshRuling 144).comment.contains "doesn't attack"
+
+#guard theVoidAttacksIfAbleOk
+
+/-- Rulings 107 / 108 / 123 / 260 / 269 / 271 / 282 / 285 / 311 / 339:
+cast triggers wait on the stack above the spell, and a multi-target spell
+queues the ability once. -/
+def castTriggerBeforeSpellOk : Bool :=
+  let g := addPermanent afterDraw colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.putStackEntry ⟨0⟩ spell.id
+  let g := g.putCastTriggersOnStack ⟨0⟩ (g.object! spell.id)
+  let n :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.source.name == "Colleen Wing, Street Samurai")).size
+  n == 1 &&
+    g.objects.any (fun o => o.id == spell.id && o.zone == .stack) &&
+    (mshRuling 107).comment.contains "resolves before the spell" &&
+    (mshRuling 108).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 123).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 260).comment.contains "resolves before the spell" &&
+    (mshRuling 269).comment.contains "resolves before the spell" &&
+    (mshRuling 271).comment.contains "resolves before the spell" &&
+    (mshRuling 282).comment.contains "resolves before the spell" &&
+    (mshRuling 285).comment.contains "resolves before the spell" &&
+    (mshRuling 311).comment.contains "resolves before the spell" &&
+    (mshRuling 339).comment.contains "resolves before the spell"
+
+#guard castTriggerBeforeSpellOk
+
+/-- Rulings 41 / 53 / 126: one life-gaining event triggers Tigra once. -/
+def lifeGainOnceOk : Bool :=
+  let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
+  let g := g.gainLife ⟨0⟩ 5
+  let n :=
+    (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
+      t.source.name == "Tigra, Feline Fury")).size
+  n == 1 &&
+    (mshRuling 41).comment.contains "separate life-gaining event" &&
+    (mshRuling 53).comment.contains "triggers only once" &&
+    (mshRuling 126).comment.contains "just once"
+
+#guard lifeGainOnceOk
+
+/-- Ruling 291: Hawkeye's extra damage is dealt by the original source. -/
+def hawkeyeSameSourceOk : Bool :=
+  let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let src := namedPermanent g "Aerial Doombot"
+  let bears := namedPermanent g "Grizzly Bears"
+  let hawk := namedPermanent g "Hawkeye, Young Avenger"
+  let g := g.dealDamageFrom src.name bears 1 (source := some src)
+  (namedPermanent g "Grizzly Bears").status.damage == 1 + g.power hawk &&
+    logContains g "Aerial Doombot deals" &&
+    (mshRuling 291).comment.contains "same source as the original"
+
+#guard hawkeyeSameSourceOk
 
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,

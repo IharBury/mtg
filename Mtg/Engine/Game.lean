@@ -5859,7 +5859,8 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
 def hasAttacksIfAble (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .msh .aresAttacksEachCombatIfAble => true
-    | _ => false)
+    | _ => false) ||
+    o.printed.oracleText.contains "attacks each combat if able"
 
 /-- True when `o` must attack this combat. Summoning sickness, being tapped,
 or an unpaid attack cost means it does not have to attack (MSH 130). -/
@@ -7663,7 +7664,8 @@ def zabuToken : CardDef :=
 def theVoidToken : CardDef :=
   { (creatureToken "The Void" #["Horror", "Villain"] 5 5 (some .black)
       ((Keyword.flying).merge Keyword.indestructible)) with
-    supertypes := #[.legendary] }
+    supertypes := #[.legendary]
+    oracleText := "Flying, indestructible\nThe Void attacks each combat if able." }
 
 def galactusToken : CardDef :=
   { (creatureToken "Galactus" #["Elder", "Alien"] 16 16 (some .black)
