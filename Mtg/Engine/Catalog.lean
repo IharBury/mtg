@@ -452,10 +452,14 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (toughness : Option Int := none)
     (tapAddAnyColorAmongLegendaries : Bool := false)
     (tapAddCommanderIdentity : Bool := false)
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option AdventureFace := none)
+    (legendary := false)
+    (entersTapped := false)
+    (ward : Option Nat := none) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
     (power := power) (toughness := toughness)
-    (keywords := keywords) (supertypes := supertypes)
+    (keywords := keywords)
+    (supertypes := (if legendary then #[.legendary] else #[]) ++ supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
     (tapAddManaForEach := tapAddManaForEach)
@@ -467,6 +471,29 @@ def artifact (name : String) (manaCost : ManaCost) (oracleText : String)
     (tapAddAnyColorAmongLegendaries := tapAddAnyColorAmongLegendaries)
     (tapAddCommanderIdentity := tapAddCommanderIdentity)
     (adventure := adventure)
+    (entersTapped := entersTapped)
+    (ward := ward)
+
+/-- An artifact creature, optionally legendary. -/
+def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
+    (power toughness : Int) (oracleText : String := "")
+    (keywords : Keywords := Keywords.none)
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (activatedAbilities : Array ActivatedAbility := #[])
+    (legendary := false)
+    (ward : Option Nat := none)
+    (otherFace : Option CardDef := none)
+    (entersWithShield : Nat := 0) : CardDef :=
+  card name #[.artifact, .creature] manaCost subtypes oracleText
+    (some power) (some toughness) keywords
+    ((if legendary then #[.legendary] else #[]) )
+    (staticAbilities := staticAbilities)
+    (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities := activatedAbilities)
+    (ward := ward)
+    (otherFace := otherFace)
+    (entersWithShield := entersWithShield)
 
 /-- A nonbasic land. -/
 def land (name : String) (oracleText : String)
@@ -615,6 +642,26 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
   activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
     (equipWorthy := true)
 
+/-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
+def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
+    (equip : ManaCost)
+    (staticAbilities : Array StaticAbility := #[])
+    (triggeredAbilities : Array TriggeredAbility := #[])
+    (keywords : Keywords := Keywords.none)
+    (equipSubtype : Option String := none)
+    (moreEquips : Array ActivatedAbility := #[])
+    (legendary := false)
+    (adventure : Option AdventureFace := none) : CardDef :=
+  artifact name manaCost oracleText
+    (subtypes := #["Equipment"])
+    (keywords := keywords)
+    (legendary := legendary)
+    (staticAbilities := staticAbilities)
+    (triggeredAbilities := triggeredAbilities)
+    (activatedAbilities :=
+      #[equipAbility equip (subtype := equipSubtype)] ++ moreEquips)
+    (adventure := adventure)
+
 /-- Typecycling `{cost}`: discard this card from hand, search for a `landType`
 card, put it into your hand, then shuffle (CR 702.29). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
@@ -701,6 +748,28 @@ def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
   activated (.msh t) mana (tap := tap) (powerUp := powerUp)
     (onlyAsSorcery := onlyAsSorcery)
 
+/-- Activated ability that is a power-up (activate only once; reduced if
+the source entered this turn). -/
+def powerUpAbility (effect : AbilityEffect) (mana : ManaCost)
+    (tap : Bool := false) : ActivatedAbility :=
+  activated effect mana (tap := tap) (powerUp := true)
+
+/-- MSH dual land: enters tapped, gains 1 life, `{T}: Add` two colors. -/
+def mshGainLifeDualLand (name : String) (oracleText : String)
+    (addColors : MshAbility) : CardDef :=
+  land name oracleText
+    (entersTapped := true)
+    (triggeredAbilities := #[.onEnterGainLife 1])
+    (activatedAbilities := #[activated (.msh addColors) (tap := true)])
+
+/-- MSH dual land: `{T}: Add {C}` plus a two-color tap that requires this
+land entered this turn or a basic land. -/
+def mshConditionalDualLand (name : String) (oracleText : String)
+    (addConditional : MshAbility) : CardDef :=
+  land name oracleText
+    (tapAddMana := #[.colorless])
+    (activatedAbilities := #[mshAct addConditional (tap := true)])
+
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
@@ -745,6 +814,23 @@ def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
 #guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
   (subtypes := #["Equipment"])).isEquipment
+#guard (equipment "Silent Blade" (ManaCost.ofGeneric 1) ""
+  (ManaCost.ofGeneric 2)).isEquipment
+#guard (equipment "Silent Blade" (ManaCost.ofGeneric 1) ""
+  (ManaCost.ofGeneric 2)).activatedAbilities ==
+  #[equipAbility (ManaCost.ofGeneric 2)]
+#guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
+  (legendary := true)).hasSupertype .legendary
+#guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
+  (legendary := true)).hasType .artifact
+#guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
+  (legendary := true)).hasType .creature
+#guard (mshGainLifeDualLand "Silent Plaza" "" .addUOrB).entersTapped
+#guard (mshConditionalDualLand "Silent Keep" ""
+  .addUOrBActivateOnlyIfThisLandEnter).tapAddMana == #[.colorless]
+#guard (powerUpAbility (.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
+#guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
+  Keyword.flying.merge Keyword.trample |>.merge Keyword.haste
 #guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura
 
 end Mtg.Engine.Catalog
