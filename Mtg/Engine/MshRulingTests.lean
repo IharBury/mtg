@@ -100,7 +100,10 @@ def teamworkPaidOk : Bool :=
     (mshRuling 4).comment.contains "cast using teamwork" &&
     (mshRuling 8).comment.contains "won't cause that creature to stop attacking" &&
     (mshRuling 9).comment.contains "doesn't let you pay a teamwork cost more than once" &&
-    (mshRuling 10).comment.contains "haven't controlled continuously"
+    (mshRuling 10).comment.contains "haven't controlled continuously" &&
+    (mshRuling 63).comment.contains "total cost of a spell" &&
+    (mshRuling 65).comment.contains "additional costs" &&
+    (mshRuling 313).comment.contains "total cost of a spell"
 
 #guard teamworkPaidOk
 
@@ -1253,10 +1256,16 @@ def fizzleWhenTargetLeftOk : Bool :=
 -/
 
 def lookAtTopRestrictionOk : Bool :=
-  daredevilManWithoutFear.mayLookAtTopAnytime &&
+  let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g ironLadDivergingDestiny ⟨0⟩ ⟨0⟩
+  let g := addPermanent g kaZarOfTheSavageLand ⟨0⟩ ⟨0⟩
+  g.canLookAtLibraryTop ⟨0⟩ &&
+    !({ g with castingFromTop := true }).canLookAtLibraryTop ⟨0⟩ &&
+    daredevilManWithoutFear.mayLookAtTopAnytime &&
     ironLadDivergingDestiny.mayLookAtTopAnytime &&
     kaZarOfTheSavageLand.mayLookAtTopAnytime &&
     (mshRuling 30).comment.contains "can't look at the n" &&
+    (mshRuling 113).comment.contains "look at the top card" &&
     (mshRuling 240).comment.contains "look at the top card" &&
     (mshRuling 243).comment.contains "look at the top card"
 
@@ -2649,6 +2658,7 @@ def exilePlayFollowsTimingOk : Bool :=
     (let gCombat := { g with step := .beginningOfCombat }
      !gCombat.asSorcery? ⟨0⟩ &&
        !gCombat.canCast ⟨0⟩ (gCombat.object! exiled)) &&
+    (mshRuling 33).comment.contains "normal timing rules" &&
     (mshRuling 68).comment.contains "normal timing rules" &&
     (mshRuling 372).comment.contains "normal timing rules" &&
     (mshRuling 373).comment.contains "normal timing rules" &&
