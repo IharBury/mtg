@@ -1620,15 +1620,18 @@ when that CDA applies (in all zones), else the printed values
 def hasCreaturesYouControlPower (_g : Game) (o : GameObject) : Bool :=
   o.staticAbilities.any StaticAbility.isCreaturesYouControlPower
 
-/-- True when `o` is Namor's characteristic-defining power (MSH ruling 289). -/
-def hasNamorPowerCda (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun
-    | .msh .namorSPowerIsEqualToTheNumberOfMerfolk => true
-    | _ => false)
+/-- Subtype whose count defines this creature's power, if any. -/
+def powerEqualSubtype? (o : GameObject) : Option String :=
+  o.staticAbilities.foldl (fun acc ab =>
+    match acc, ab with
+    | none, .powerEqualSubtypeYouControl s => some s
+    | none, .msh .namorSPowerIsEqualToTheNumberOfMerfolk => some "Merfolk"
+    | acc, _ => acc) none
 
 /-- True when `o` is Super-Adaptoid's characteristic-defining power (MSH 290). -/
 def hasSuperAdaptoidPowerCda (o : GameObject) : Bool :=
-  o.printed.staticAbilities.any (fun
+  o.staticAbilities.any (fun
+    | .powerEqualLegendaryCreaturesYouControl => true
     | .msh .superAdaptoidSPowerIsEqualToTheNumberOf => true
     | _ => false)
 
@@ -1637,9 +1640,9 @@ def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
     if g.hasCardsInHandPower o then
       -- Ms. Marvel (ruling 288): this set-P/T overwrites previous layer-7b sets.
       Int.ofNat (g.player o.you).hand.size
-    else if hasNamorPowerCda o then
+    else if let some subtype := powerEqualSubtype? o then
       let cda : Int :=
-        Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.hasSubtype "Merfolk") |>.size)
+        Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.hasSubtype subtype) |>.size)
       if o.isOnBattlefield then o.status.setBasePower.getD cda else cda
     else if hasSuperAdaptoidPowerCda o then
       let cda : Int :=
@@ -4365,8 +4368,8 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
     let types :=
       o.printed.manaAbilities ++ g.copiedFromGy o (·.manaAbilities) ++
         g.grantedManaAbilities o
-    if o.printed.mshTapAddRequiresEnteredOrBasic && !g.canUseEnteredOrBasicAdd o then
-      types.filter (fun t => !o.printed.mshTapAddMana.contains t)
+    if o.printed.requiresEnteredOrBasicAdd && !g.canUseEnteredOrBasicAdd o then
+      types.filter (fun t => !o.printed.enteredOrBasicAddMana.contains t)
     else types
 
 /-- If a stacked triggered ability still needs targets, prompt its controller
@@ -4610,7 +4613,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let extortN :=
     (g.permanentsOf caster).filter (fun o =>
       o.staticAbilities.any (fun
-        | .msh .extort => true
+        | .extort | .msh .extort => true
         | _ => false)) |>.size
   let g :=
     if extortN == 0 then g
@@ -4939,8 +4942,8 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
     throw s!"{o.name} is needed to pay \{T}"
   if o.hasSummoningSickness then
     throw s!"{o.name} has summoning sickness (CR 302.6)"
-  if o.printed.mshTapAddMana.contains mana &&
-      o.printed.mshTapAddRequiresEnteredOrBasic &&
+  if o.printed.enteredOrBasicAddMana.contains mana &&
+      o.printed.requiresEnteredOrBasicAdd &&
       !g.canUseEnteredOrBasicAdd o then
     throw s!"{o.name}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
   if !(g.manaAbilitiesOf o).contains mana then
@@ -6699,6 +6702,8 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
         match ab with
         | .subtypeSpellsCostLess subtype n =>
           if face.hasSubtype subtype then acc + n else acc
+        | .typeSpellsCostLess ty n =>
+          if face.hasType ty then acc + n else acc
         | _ => acc) acc) 0
   afterWitch.reduceGeneric subtypeLess
 
@@ -7741,12 +7746,13 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
 /-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
 def grantsNoMaxHandSize (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun
-    | .msh .youHaveNoMaximumHandSize => true
+    | .noMaximumHandSize | .msh .youHaveNoMaximumHandSize => true
     | _ => false)
 
 def grantsMaxHandSizeTen (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun
-    | .msh .yourMaximumHandSizeIsTen => true
+    | .maximumHandSize 10 | .msh .yourMaximumHandSizeIsTen => true
+    | .maximumHandSize _ => false
     | _ => false)
 
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Nat :=

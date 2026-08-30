@@ -8,11 +8,13 @@ import Mtg.Engine.Color
 import Mtg.Engine.Mana
 
 /-!
-# Modeled Marvel Super Heroes abilities
+# Leftover set-specific ability constructors
 
-Named constructors for MSH abilities that are not already a shared HOB/HOC
-shape. Each constructor stores official Oracle wording in `toNotation` and
-resolves through `Game.applyMsh*` — not by logging leftover text.
+Reusable ability shapes live on `TriggeredAbility`, `StaticAbility`,
+`SpellEffect`, `AbilityEffect`, and `CardDef` so any set can use them.
+Constructors here are leftover MSH wordings that are not yet a shared
+shape. Each stores official Oracle text in `toNotation` and resolves
+through `Game.applyMsh*` — not by logging leftover text.
 -/
 
 namespace Mtg.Engine
@@ -887,19 +889,41 @@ instance : ToString MshAbility where
 /-- `{T}: Add` types this modeled MSH ability produces for the demo `tap`
 command and other mana-ability payment (CR 605.3a). -/
 def addManaTypes : MshAbility → Array ManaType
-  | .addUOrBActivateOnlyIfThisLandEnter => #[.colored .blue, .colored .black]
+  | .addW => #[.colored .white]
+  | .addWOrB => #[.colored .white, .colored .black]
+  | .addWOrU | .addWOrUActivateOnlyIfThisLandEnter =>
+    #[.colored .white, .colored .blue]
+  | .addUOrB | .addUOrBActivateOnlyIfThisLandEnter =>
+    #[.colored .blue, .colored .black]
+  | .addUOrR => #[.colored .blue, .colored .red]
+  | .addBOrR | .addBOrRActivateOnlyIfThisLandEnter =>
+    #[.colored .black, .colored .red]
+  | .addBOrG => #[.colored .black, .colored .green]
+  | .addROrG | .addROrGActivateOnlyIfThisLandEnter =>
+    #[.colored .red, .colored .green]
+  | .addROrW => #[.colored .red, .colored .white]
+  | .addGOrU => #[.colored .green, .colored .blue]
+  | .addGOrW | .addGOrWActivateOnlyIfThisLandEnter =>
+    #[.colored .green, .colored .white]
+  | .addCCC => #[.colorless, .colorless, .colorless]
+  | .addUThisManaCanTBeSpentToCastANona => #[.colored .blue]
   | _ => #[]
 
 /-- True when the add ability may be activated only if this land entered this
 turn or if you control a basic land. -/
 def requiresEnteredOrBasic : MshAbility → Bool
-  | .addUOrBActivateOnlyIfThisLandEnter => true
+  | .addUOrBActivateOnlyIfThisLandEnter
+  | .addBOrRActivateOnlyIfThisLandEnter
+  | .addGOrWActivateOnlyIfThisLandEnter
+  | .addWOrUActivateOnlyIfThisLandEnter
+  | .addROrGActivateOnlyIfThisLandEnter => true
   | _ => false
 
 #guard addManaTypes .addUOrBActivateOnlyIfThisLandEnter ==
   #[.colored .blue, .colored .black]
+#guard addManaTypes .addUOrB == #[.colored .blue, .colored .black]
 #guard requiresEnteredOrBasic .addUOrBActivateOnlyIfThisLandEnter
-#guard (addManaTypes .addUOrB).isEmpty
+#guard !(requiresEnteredOrBasic .addUOrB)
 
 end MshAbility
 /-- A Saga chapter unique to MSH -/

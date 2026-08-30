@@ -430,6 +430,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     [s!"\{T}: Add {String.intercalate " or " (c.tapAddOneOf.toList.map (fun t => s!"\{{t.letter}}"))}"]
    else
     c.tapAddOneOf.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")) ++
+  (if c.tapAddOneOfIfEnteredOrBasic.size >= 2 then
+    [s!"\{T}: Add {String.intercalate " or " (c.tapAddOneOfIfEnteredOrBasic.toList.map (fun t => s!"\{{t.letter}}"))}. Activate only if this land entered this turn or if you control a basic land."]
+   else
+    c.tapAddOneOfIfEnteredOrBasic.toList.map (fun t =>
+      s!"\{T}: Add \{{t.letter}}. Activate only if this land entered this turn or if you control a basic land.")) ++
   c.tapAddForEachLines ++
   c.tapAddAnyColorEqualToPowerLine ++
   c.tapAddAnyColorForInstantOrSorceryLine ++

@@ -2530,7 +2530,25 @@ inductive StaticAbility where
   | cantBeBlockedIfPowerAtMost (n : Int)
   /-- Prevent all damage that would be dealt to this permanent. -/
   | preventAllDamageToThis
-  /-- A modeled MSH static. -/
+  /-- You have no maximum hand size. -/
+  | noMaximumHandSize
+  /-- Your maximum hand size is `n`. -/
+  | maximumHandSize (n : Nat)
+  /-- This creature's power is equal to the number of permanents you control
+  of this subtype (e.g. Namor and Merfolk). -/
+  | powerEqualSubtypeYouControl (subtype : String)
+  /-- This creature's power is equal to the number of legendary creatures
+  you control (e.g. Super-Adaptoid). -/
+  | powerEqualLegendaryCreaturesYouControl
+  /-- Spells of this card type you cast cost `{n}` less (e.g. artifact spells). -/
+  | typeSpellsCostLess (ty : CardType) (n : Nat)
+  /-- Improvise (CR 702.126). -/
+  | improvise
+  /-- Noncreature spells you cast have improvise. -/
+  | noncreatureSpellsHaveImprovise
+  /-- Extort (CR 702.83). -/
+  | extort
+  /-- A modeled leftover static that is not yet a shared shape. -/
   | msh (t : MshStatic)
 deriving Repr, Inhabited, BEq
 
@@ -2640,6 +2658,14 @@ inductive StaticShape where
   | subtypeSpellsCostLess (subtype : String) (n : Nat)
   | cantBeBlockedIfPowerAtMost (n : Int)
   | preventAllDamageToThis
+  | noMaximumHandSize
+  | maximumHandSize (n : Nat)
+  | powerEqualSubtype (subtype : String)
+  | powerEqualLegendaryCreatures
+  | typeSpellsCostLess (ty : CardType) (n : Nat)
+  | improvise
+  | noncreatureSpellsHaveImprovise
+  | extort
   | msh (t : MshStatic)
 deriving Repr, Inhabited, BEq
 
@@ -2699,6 +2725,14 @@ structure StaticMeta where
   equipTargetingThisCostLess : Option Nat := none
   /-- First equip is free if enduring story. -/
   firstEquipFreeIfEnduringStory : Bool := false
+  /-- You have no maximum hand size. -/
+  noMaximumHandSize : Bool := false
+  /-- Your maximum hand size, if this ability sets one. -/
+  maximumHandSize : Option Nat := none
+  /-- Power equal to permanents you control of this subtype. -/
+  powerEqualSubtype : Option String := none
+  /-- Power equal to legendary creatures you control. -/
+  powerEqualLegendaryCreatures : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -2781,6 +2815,14 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedIfPowerAtMost n =>
     { cantBeBlockedIfPowerAtMost := some n }
   | .preventAllDamageToThis => {}
+  | .noMaximumHandSize => { noMaximumHandSize := true }
+  | .maximumHandSize n => { maximumHandSize := some n }
+  | .powerEqualSubtype subtype => { powerEqualSubtype := some subtype }
+  | .powerEqualLegendaryCreatures => { powerEqualLegendaryCreatures := true }
+  | .typeSpellsCostLess _ _ => {}
+  | .improvise => {}
+  | .noncreatureSpellsHaveImprovise => {}
+  | .extort => {}
   | .msh _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
@@ -2857,6 +2899,14 @@ def shape : StaticAbility → StaticShape
   | .subtypeSpellsCostLess subtype n => .subtypeSpellsCostLess subtype n
   | .cantBeBlockedIfPowerAtMost n => .cantBeBlockedIfPowerAtMost n
   | .preventAllDamageToThis => .preventAllDamageToThis
+  | .noMaximumHandSize => .noMaximumHandSize
+  | .maximumHandSize n => .maximumHandSize n
+  | .powerEqualSubtypeYouControl subtype => .powerEqualSubtype subtype
+  | .powerEqualLegendaryCreaturesYouControl => .powerEqualLegendaryCreatures
+  | .typeSpellsCostLess ty n => .typeSpellsCostLess ty n
+  | .improvise => .improvise
+  | .noncreatureSpellsHaveImprovise => .noncreatureSpellsHaveImprovise
+  | .extort => .extort
   | .msh t => .msh t
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
@@ -3025,6 +3075,23 @@ def toNotation (ab : StaticAbility) : String :=
     s!"This creature can't be blocked if its power is {n} or less."
   | .preventAllDamageToThis =>
     "Prevent all damage that would be dealt to this."
+  | .noMaximumHandSize =>
+    "You have no maximum hand size."
+  | .maximumHandSize n =>
+    s!"Your maximum hand size is {n}."
+  | .powerEqualSubtype subtype =>
+    let plural := if subtype == "Merfolk" then "Merfolk" else pluralSubtype subtype
+    s!"This creature's power is equal to the number of {plural} you control."
+  | .powerEqualLegendaryCreatures =>
+    "This creature's power is equal to the number of legendary creatures you control."
+  | .typeSpellsCostLess ty n =>
+    s!"{ty} spells you cast cost \{{n}} less to cast."
+  | .improvise =>
+    "Improvise"
+  | .noncreatureSpellsHaveImprovise =>
+    "Noncreature spells you cast have improvise."
+  | .extort =>
+    "Extort"
   | .msh t => t.toNotation
 
 instance : ToString StaticAbility where
@@ -3800,7 +3867,10 @@ inductive TriggeredAbility where
   | onArtifactYouControlEntersDrawOnce
   /-- At the beginning of your end step, draw a card and lose 1 life. -/
   | onYourEndStepDrawLoseLife
-  /-- A modeled MSH trigger. -/
+  /-- When this permanent enters, surveil `n`. Resolves as a scry-shaped
+  look (cards may go to the graveyard). -/
+  | onEnterSurveil (n : Nat)
+  /-- A modeled leftover trigger that is not yet a shared shape. -/
   | msh (t : MshTrigger)
 deriving Repr, Inhabited, BEq
 
@@ -5444,6 +5514,8 @@ def timing : TriggeredAbility → TriggerTiming
       onceEachTurn := true }
   | .onYourEndStepDrawLoseLife =>
     { events := #[.yourEndStep], resolution := .drawAndLoseLife1 }
+  | .onEnterSurveil n =>
+    { events := #[.entering], resolution := .scry n }
   | .msh t => t.timing
 
 /-- Damage amount and maximum number of targets when this ability divides
@@ -6007,6 +6079,8 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn."
   | .onYourEndStepDrawLoseLife =>
     "At the beginning of your end step, you draw a card and lose 1 life."
+  | .onEnterSurveil n =>
+    s!"When this permanent enters, surveil {n}."
   | .msh t => t.toNotation
   | _ =>
     let t := ab.timing
@@ -6149,6 +6223,9 @@ structure CardDef where
   /-- `{T}: Add one of these mana types` as a single choice ability
   (e.g. `{T}: Add {G} or {U}`). -/
   tapAddOneOf : Array ManaType := #[]
+  /-- `{T}: Add one of these types. Activate only if this land entered this
+  turn or if you control a basic land.` -/
+  tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
   /-- `{T}: Add one mana of any color` with no spending restriction. -/
   tapAddAnyColor : Bool := false
   /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
@@ -6403,10 +6480,19 @@ def mshTapAddRequiresEnteredOrBasic (c : CardDef) : Bool :=
     | .msh t => t.requiresEnteredOrBasic
     | _ => false)
 
+/-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
+def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
+  c.tapAddOneOfIfEnteredOrBasic ++ c.mshTapAddMana
+
+/-- True when a `{T}: Add` ability requires this land entered this turn or
+a basic land you control. -/
+def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
+  !c.tapAddOneOfIfEnteredOrBasic.isEmpty || c.mshTapAddRequiresEnteredOrBasic
+
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
-    c.mshTapAddMana ++
+    c.enteredOrBasicAddMana ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
@@ -7118,6 +7204,18 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .onPermanent (.pumpAndTrample 2 0)
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
+#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .scry 2
+#guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
+  "When this permanent enters, surveil 1."
+#guard StaticAbility.toNotation .noMaximumHandSize ==
+  "You have no maximum hand size."
+#guard StaticAbility.toNotation (.maximumHandSize 10) ==
+  "Your maximum hand size is 10."
+#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl "Merfolk") ==
+  "This creature's power is equal to the number of Merfolk you control."
+#guard StaticAbility.toNotation .improvise == "Improvise"
+#guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
+  "Artifact spells you cast cost {1} less to cast."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
@@ -7149,12 +7247,13 @@ instance : ToString CardDef where
 /-- True when this card itself has improvise (MSH). -/
 def hasImprovise (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
-    | .msh .improvise => true
+    | .improvise | .msh .improvise => true
     | _ => false)
 
 /-- True when this permanent grants improvise to noncreature spells you cast. -/
 def grantsImproviseToNoncreature (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
+    | .noncreatureSpellsHaveImprovise
     | .msh .noncreatureSpellsYouCastHaveImprovise => true
     | _ => false)
 
