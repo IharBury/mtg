@@ -245,6 +245,8 @@ structure Status where
   burden : Nat := 0
   /-- Quest counters (Last Light of Durin's Day). -/
   quest : Nat := 0
+  /-- Invasion counters (Alien Invasion). -/
+  invasion : Nat := 0
   /-- Trample counters (Beorn the Fierce). -/
   trampleCounters : Nat := 0
   /-- Until end of turn, combat damage to a player creates a Treasure. -/
@@ -797,6 +799,9 @@ inductive Pending where
   mana cost as the ability resolves (Cosmic Cube; MSH 356). `maxMv` is the
   greatest power among attacking creatures you control. -/
   | mayCastFromLooked (player : PlayerId) (ids : Array ObjectId) (maxMv : Int)
+  /-- You may put an artifact card from your hand onto the battlefield.
+  If it is Equipment, attach it to `hostId`. -/
+  | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -1977,6 +1982,20 @@ def doombotToken : CardDef :=
 def insect11greenToken : CardDef :=
   creatureToken "Insect" #["Insect"] 1 1 (some .green)
 
+/-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
+def alien11redHasteToken : CardDef := {
+  name := "Alien"
+  types := #[.creature]
+  subtypes := #["Alien"]
+  power := some 1
+  toughness := some 1
+  colorIndicator := some (ColorSet.singleton .red)
+  keywords := Keyword.haste
+  oracleText := "Haste\nThis token attacks each combat if able."
+  staticAbilities := #[.attacksEachCombatIfAble]
+  isToken := true
+}
+
 /-- A predefined Vibranium artifact token (MSH). Indestructible; `{T}: Add {C}`
 that cannot be spent to cast a nonartifact spell. -/
 def vibraniumToken : CardDef := {
@@ -2812,7 +2831,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .sacrificePermanent q _ | .sacrificeCreature q | .scry q _
   | .mayDiscardDraw q _ | .mayAttachEquipment q _ | .tapHumans q
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
-  | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
+  | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _
+  | .mayPutArtifactFromHand q _ | .putOnBottom q _
   | .declareMulligan q =>
     if q == p then { g with pending := .none } else g
   | .resolveRandom _ => g
@@ -8497,6 +8517,35 @@ def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option ObjectId) :
         return g.finishMayCastFromLooked p (ids.filter (· != id))
   | _ => throw "Not time to choose a spell from among looked-at cards"
 
+/-- Put an artifact from hand onto the battlefield, attaching Equipment to `hostId`. -/
+def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
+    Except String Game := do
+  match g.pending with
+  | .mayPutArtifactFromHand q hostId =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may put an artifact onto the battlefield"
+    let some o := g.findObject? cardId | throw "no such object"
+    if o.zone != .hand p then
+      throw s!"{o.name} is not in your hand"
+    if !o.printed.isArtifact then
+      throw s!"{o.name} is not an artifact card"
+    let name := o.name
+    let (g, newId) := g.putOntoBattlefield cardId p
+    let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
+    let g := g.afterPermanentEnters (g.object! newId)
+    let o := g.object! newId
+    let g :=
+      if o.printed.isEquipment then
+        match g.findObject? hostId with
+        | some host =>
+          if host.isOnBattlefield then g.attachSourceTo o host
+          else g.logMsg s!"{host.name} is no longer on the battlefield"
+        | none => g.logMsg "The source is no longer in play"
+      else g
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to put an artifact from your hand"
+
 /-- Mill opponents, then a reflexive trigger exists only if cards were milled. -/
 def millThenReflexive (g : Game) (opponents : Array PlayerId) (n : Nat) : Game × Bool :=
   let before :=
@@ -9247,10 +9296,6 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : ModeledTrigger)
     let pw := g.sourcePowerAtResolution sourceId lastKnownPower
     if pw >= 4 then g.draw controller 1
     else g.logMsg "Viv Vision's power is not 4 or greater"
-  | .atTheBeginningOfCombatOnYourTurn =>
-    let x := g.sourcePowerAtResolution sourceId lastKnownPower
-    g.withLegalKindPermanent controller .creatureYouControl targets
-      (fun g o => g.pumpPermanent o x 0) sourceId none
   | .wheneverAnotherCreatureYouControlEnters =>
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
@@ -12140,6 +12185,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
             trampleCounters := 0
             influence := 0
             lore := 0
+            invasion := 0
             indestructibleCounters := 0
             lifelinkCounters := 0 } }
         g.logMsg s!"counters are removed from {host.name}"
@@ -12606,6 +12652,32 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .drawAndLoseLife1 =>
     let g := g.draw controller 1
     g.loseLife controller 1
+  | .pumpTargetBySourcePower =>
+    let x := g.sourcePowerAtResolution sourceId lastKnownPower
+    g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+      g.pumpPermanent o x 0) "The target is no longer legal"
+  | .createAlienPerInvasion =>
+    let n :=
+      match sourceId.bind g.findObject? with
+      | some src => src.status.invasion
+      | none => 0
+    let (g, tok) := g.createToken controller alien11redHasteToken
+    let g := if n == 0 then g else g.addPlusOnePlusOneTo (g.object! tok.id) n
+    g.withSourceOnBattlefield sourceId (fun g src =>
+      g.mapObjectStatus src (fun s => { s with invasion := s.invasion + 1 })
+        |>.logMsg s!"{src.name} gets an invasion counter")
+      "The source is no longer in play"
+  | .mayPutArtifactAttachEquipment =>
+    let arts :=
+      (g.player controller).hand.filterMap (fun id =>
+        match g.findObject? id with
+        | some o => if o.printed.isArtifact then some o else none
+        | none => none)
+    if arts.isEmpty then
+      g.logMsg "There is no artifact card in your hand"
+    else
+      { g with pending := .mayPutArtifactFromHand controller (sourceId.getD ⟨0⟩) }.logMsg
+        s!"{(g.player controller).name} may put an artifact card from their hand onto the battlefield"
   | .msh t =>
     g.applyModeledTrigger controller t sourceId targets sourceName lastKnownPower
 
@@ -14094,6 +14166,13 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     if p != q then
       throw s!"Only {(g.player q).name} may decline to cast a spell"
     g.chooseCastFromLooked p none
+  | .mayPutArtifactFromHand q _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"
+    let g := g.logMsg
+      s!"{(g.player p).name} declines to put an artifact onto the battlefield"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
@@ -14333,6 +14412,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .cast id =>
     match g.pending with
     | .mayCastFromLooked .. => g.chooseCastFromLooked p (some id)
+    | .mayPutArtifactFromHand .. => g.choosePutArtifactFromHand p id
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .chooseMode idx => g.announceMode p idx
@@ -14409,6 +14489,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseRingBearer p => who p
     | .maySacrificeAnotherBolg p _ => who p
     | .mayCastFromLooked p _ _ => who p
+    | .mayPutArtifactFromHand p _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

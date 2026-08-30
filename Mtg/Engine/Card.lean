@@ -4081,6 +4081,17 @@ inductive TriggeredAbility where
   /-- At the beginning of combat on your turn, target creature you control
   connives. -/
   | onCombatTargetYouControlConnives
+  /-- At the beginning of combat on your turn, another target creature you
+  control gets +X/+0 until end of turn, where X is this creature's power. -/
+  | onCombatAnotherGetsSourcePower
+  /-- At the beginning of combat on your turn, create a 1/1 red Alien creature
+  token with haste and “attacks each combat if able,” then grow it from
+  invasion counters and add an invasion counter. -/
+  | onCombatCreateAlienPerInvasion
+  /-- At the beginning of combat on your turn, you may put an artifact card
+  from your hand onto the battlefield. If it's an Equipment, attach it to
+  this creature. -/
+  | onCombatMayPutArtifactAttachEquipment
   /-- A modeled leftover trigger that is not yet a shared shape. -/
   | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
@@ -4946,6 +4957,14 @@ inductive TriggerResolution where
   | planFinishIndestructibleOnTarget
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife1
+  /-- Another target creature gets +X/+0, X = source power. -/
+  | pumpTargetBySourcePower
+  /-- Create an Alien token, put +1/+1s for each invasion counter, then
+  put an invasion counter on the source. -/
+  | createAlienPerInvasion
+  /-- You may put an artifact from your hand onto the battlefield; attach
+  it if it is Equipment. -/
+  | mayPutArtifactAttachEquipment
   /-- Resolve a modeled MSH trigger. -/
   | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
@@ -4994,13 +5013,6 @@ parallel match trees. `resolution` is always `.msh t`. -/
 def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
   let base : TriggeredAbility.TriggerTiming :=
     match t with
-    | .atTheBeginningOfCombatOnYourTurn
-    | .atTheBeginningOfCombatOnYourTurn3
-    | .atTheBeginningOfCombatOnYourTurn4 =>
-      { events := #[.yourBeginCombat], targeting := .of .creatureYouControl }
-    | .atTheBeginningOfCombatOnYourTurn2
-    | .atTheBeginningOfCombatOnYourTurn5 =>
-      { events := #[.yourBeginCombat] }
     | .atTheBeginningOfTheUpkeepOfEnchantedCrea =>
       { events := #[.enchantedControllerUpkeep] }
     | .atTheBeginningOfYourEndStep =>
@@ -5732,7 +5744,14 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .onPermanent (.plusOne 1) }
   | .onCombatTargetYouControlConnives =>
     { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
-      resolution := .connive }
+      resolution := .targetConnive }
+  | .onCombatAnotherGetsSourcePower =>
+    { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
+      resolution := .pumpTargetBySourcePower }
+  | .onCombatCreateAlienPerInvasion =>
+    { events := #[.yourBeginCombat], resolution := .createAlienPerInvasion }
+  | .onCombatMayPutArtifactAttachEquipment =>
+    { events := #[.yourBeginCombat], resolution := .mayPutArtifactAttachEquipment }
   | .msh t => t.timing
 
 /-- Damage amount and maximum number of targets when this ability divides
@@ -6145,6 +6164,12 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "sacrifice it. When you do, put an indestructible counter on target creature you control"
   | .drawAndLoseLife1 =>
     "you draw a card and lose 1 life"
+  | .pumpTargetBySourcePower =>
+    s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
+  | .createAlienPerInvasion =>
+    "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
+  | .mayPutArtifactAttachEquipment =>
+    "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
   | .msh t => t.toNotation
 
 /-- True when this trigger fires only once each turn. -/
@@ -7265,6 +7290,21 @@ instance : ToString CardDef where
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
 #guard TriggeredAbility.toNotation (.onLandYouControlEntersGets 1 1) ==
   "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
+#guard TriggeredAbility.toNotation .onCombatPlusOneOnCreatureYouControl ==
+  "At the beginning of combat on your turn, put a +1/+1 counter on target creature you control."
+#guard TriggeredAbility.toNotation .onCombatTargetYouControlConnives ==
+  "At the beginning of combat on your turn, target creature you control connives."
+#guard TriggeredAbility.toNotation .onCombatAnotherGetsSourcePower ==
+  "At the beginning of combat on your turn, another target creature you control gets +X/+0 until end of turn, where X is this creature's power."
+#guard TriggeredAbility.toNotation .onCombatCreateAlienPerInvasion ==
+  "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."
+#guard TriggeredAbility.toNotation .onCombatMayPutArtifactAttachEquipment ==
+  "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature."
+#guard TriggeredAbility.resolution .onCombatTargetYouControlConnives == .targetConnive
+#guard TriggeredAbility.targetKind .onCombatAnotherGetsSourcePower ==
+  .anotherCreatureYouControl
+#guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .yourBeginCombat
+#guard !TriggeredAbility.requiresTarget .onCombatMayPutArtifactAttachEquipment
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
 #guard TriggeredAbility.toNotation (.onEnterOrAttackDealDividedDamage 3 3) ==

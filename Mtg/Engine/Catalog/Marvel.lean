@@ -56,7 +56,7 @@ def theInvincibleIronMan : CardDef :=
     (power := some 5)
     (toughness := some 5)
     (keywords := (Keyword.flying).merge Keyword.haste)
-    (triggeredAbilities := #[leftoverTrig .atTheBeginningOfCombatOnYourTurn5])
+    (triggeredAbilities := #[.onCombatMayPutArtifactAttachEquipment])
 
 def blackPantherHopeEnduring : CardDef :=
   card "Black Panther, Hope Enduring" #[.creature] ({ symbols := #[.generic 4, .colored .white, .colored .blue] })
@@ -613,7 +613,7 @@ def leaderSuperGenius : CardDef :=
     (oracleText := "If a creature you control would connive, instead you draw a card, then that creature connives.\nAt the beginning of combat on your turn, target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (power := some 1)
     (toughness := some 3)
-    (triggeredAbilities := #[leftoverTrig .atTheBeginningOfCombatOnYourTurn4])
+    (triggeredAbilities := #[.onCombatTargetYouControlConnives])
     (staticAbilities := #[StaticAbility.extraDrawOnConnive])
 
 def lokiGodOfMischief : CardDef :=
@@ -1714,7 +1714,7 @@ def absorbingMan : CardDef :=
 def alienInvasion : CardDef :=
   card "Alien Invasion" #[.enchantment] ({ symbols := #[.generic 1, .colored .red, .colored .red, .colored .green] })
     (oracleText := "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment.")
-    (triggeredAbilities := #[leftoverTrig .atTheBeginningOfCombatOnYourTurn2])
+    (triggeredAbilities := #[.onCombatCreateAlienPerInvasion])
 
 def antManColonyCommander : CardDef :=
   card "Ant-Man, Colony Commander" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .blue] })
@@ -2068,7 +2068,7 @@ def warMachineLegacyOfIron : CardDef :=
     (power := some 1)
     (toughness := some 3)
     (keywords := Keyword.flying)
-    (triggeredAbilities := #[leftoverTrig .atTheBeginningOfCombatOnYourTurn])
+    (triggeredAbilities := #[.onCombatAnotherGetsSourcePower])
 
 def winterSoldierIcyAssassin : CardDef :=
   card "Winter Soldier, Icy Assassin" #[.creature] ({ symbols := #[.colored .white, .colored .black] })
