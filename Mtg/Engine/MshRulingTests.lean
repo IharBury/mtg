@@ -1045,16 +1045,61 @@ def attacksAloneWordingOk : Bool :=
 ## 209–219 — Illegal targets cause the spell or ability to do nothing
 -/
 
+/-- Rulings 209–219: an illegal creature target fizzles the whole spell or
+ability, including untargeted extras (life, draw, surveil, exile, damage). -/
 def illegalTargetDoesNothingOk : Bool :=
-  depower.spellEffect.isSome &&
-    depower.oracleText.contains "Draw a card" &&
-    cruelAlliance.oracleText.contains "gain" &&
+  let g0 := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g0 "Grizzly Bears"
+  let (gGone, _) := g0.move bears.id (.graveyard ⟨0⟩) none
+  let gone := #[Target.permanent bears.id]
+  let hand0 := (gGone.player ⟨0⟩).hand.size
+  let life0 := (gGone.player ⟨0⟩).life
+  let lib0 := (gGone.player ⟨0⟩).library.size
+  let plan0 :=
+    let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
+    (namedPermanent g "Claim the Kingdom").status.plan
+  let gDepower := gGone.applyEffect ⟨0⟩ (.msh .thisSpellCosts2LessToCastIfItTargets) gone
+  let gHour := gGone.applyEffect ⟨0⟩ .destroyCreatureSurveil gone
+  let gPym := gGone.applyEffect ⟨0⟩ .grantVigilanceUnblockable gone
+  let gCrescendo :=
+    gGone.applyEffect ⟨0⟩ (.msh .targetCreatureGets31UntilEndOfTurn) gone
+  let gRepulsor :=
+    gGone.applyEffect ⟨0⟩ (.dealDamageThenControllerIfTeamwork 5 2) gone
+  let gCruel :=
+    gGone.applyEffect ⟨0⟩ (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3) gone
+  let gCrowd :=
+    gGone.applyMshSpell ⟨0⟩ .targetCreatureYouControlThatSAttackingAlo gone
+  let gLandfall :=
+    let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
+    let plan := namedPermanent g "Claim the Kingdom"
+    g.applyTriggeredAbility ⟨0⟩ (.onLandYouControlEntersPlusOneAndPlan) (some plan.id)
+      gone
+  let gAbsorb :=
+    let g := addPermanent gGone absorbingMan ⟨0⟩ ⟨0⟩
+    g.applyMshTrigger ⟨0⟩ .atTheBeginningOfYourFirstMainPhase
+      (some (namedPermanent g "Absorbing Man").id) gone
+  let gTask :=
+    let g := addPermanent gGone taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
+    g.applyMshTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf
+      (some (namedPermanent g "Taskmaster, Mercenary Mimic").id) gone
+  (gDepower.player ⟨0⟩).hand.size == hand0 &&
+    (gHour.player ⟨0⟩).library.size == lib0 &&
+    (gPym.player ⟨0⟩).hand.size == hand0 &&
+    (gCrescendo.player ⟨0⟩).library.size == lib0 &&
+    (gRepulsor.player ⟨1⟩).life == (gGone.player ⟨1⟩).life &&
+    (gCruel.player ⟨0⟩).life == life0 &&
+    (gCrowd.player ⟨0⟩).life == life0 &&
+    (namedPermanent gLandfall "Claim the Kingdom").status.plan == plan0 &&
+    !(namedPermanent gAbsorb "Absorbing Man").printed.subtypes.any (· == "Bear") &&
+    !(namedPermanent gTask "Taskmaster, Mercenary Mimic").printed.subtypes.any
+      (· == "Bear") &&
     (mshRuling 209).comment.contains "won't gain life" &&
     (mshRuling 210).comment.contains "Cruel Alliance" &&
     (mshRuling 211).comment.contains "Depower" &&
     (mshRuling 212).comment.contains "Hour of Defeat" &&
     (mshRuling 213).comment.contains "Pym Particles" &&
     (mshRuling 214).comment.contains "Repulsor Blast" &&
+    (mshRuling 215).comment.contains "illegal target" &&
     (mshRuling 216).comment.contains "will not resolve" &&
     (mshRuling 217).comment.contains "Taskmaster" &&
     (mshRuling 218).comment.contains "landfall ability" &&

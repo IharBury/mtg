@@ -8942,6 +8942,21 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (putOnBottom := false) : Game :=
   match t with
+  | .thisSpellCosts2LessToCastIfItTargets =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o (-4) 0
+      g.draw controller 1)
+      sourceId (some "The target is no longer legal. You won't draw a card.")
+  | .targetCreatureGets31UntilEndOfTurn =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o 3 1
+      g.exileTopPlayThisTurn controller 1)
+      sourceId (some "The target is no longer legal. No card will be exiled.")
+  | .targetCreatureYouControlThatSAttackingAlo =>
+    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
+      let g := g.pumpPermanent o 1 0
+      g.gainLife controller 1)
+      sourceId (some "The target is no longer legal. You won't gain life.")
   | .targetArtifactYouControlBecomesACopyOfA =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -9870,9 +9885,16 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       | _ => controller
     g.createKindTokens pid kind n
   | .destroyCreatureSurveil =>
-    let g := g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      g.destroyPermanent o)
-    g.mill controller 1
+    let stillLegal :=
+      match targets[0]? with
+      | some t => (g.legalTargetsForKind controller effect.targetKind).contains t
+      | none => false
+    if stillLegal then
+      let g := g.withLegalKindPermanent controller effect.targetKind targets
+        (fun g o => g.destroyPermanent o)
+      g.beginScry controller 1
+    else
+      g.logMsg "The target is no longer legal. You won't surveil."
   | .investigatePumpFlyingUntap =>
     let g := (g.createToken controller clueToken).1
     g.withLegalKindPermanent controller .creature targets (fun g o =>
@@ -9909,7 +9931,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .grantVigilanceUnblockable =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let g := g.mapObjectStatus o (·.grantUntilEot Keyword.vigilance)
-      g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.cantBeBlocked))
+      let g := g.mapObjectStatus (g.object! o.id) (·.grantUntilEot Keyword.cantBeBlocked)
+      g.draw controller 1)
+      none (some "The target is no longer legal. You won't draw a card.")
   | .becomeArtifactCreature44Flying =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
       let g := g.mapObjectStatus o (fun s =>
@@ -11862,12 +11886,15 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g
   | .plusOneOnTargetAndPlan =>
     g.withSourceOnBattlefield sourceId fun g src =>
-      let g := g.setObject { src with status := { src.status with plan := src.status.plan + 1 } }
-      let src := g.object! src.id
-      let g := g.putMatchingSourceTriggers controller src (.nthPlanCounter src.status.plan)
       g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>
+        let src := g.object! src.id
+        let g := g.setObject { src with status :=
+          { src.status with plan := src.status.plan + 1 } }
+        let src := g.object! src.id
+        let g := g.putMatchingSourceTriggers controller src
+          (.nthPlanCounter src.status.plan)
         g.mapObjectStatus o (fun s => { s with plusOnePlusOne := s.plusOnePlusOne + 1 }))
-        "No target was chosen"
+        "The target is no longer legal. You won't put counters on anything."
   | .planFinishDrawPlusOneEach =>
     let g :=
       match sourceId.bind g.findObject? with
