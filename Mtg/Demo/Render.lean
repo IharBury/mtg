@@ -692,6 +692,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice another creature ({g.player p |>.name})]"
     | .mayCastFromLooked p _ maxMv =>
       s!" [may cast a looked-at spell (mana value ≤ {maxMv}, {g.player p |>.name})]"
+    | .mayPutArtifactFromHand p _ =>
+      s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>

@@ -175,6 +175,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         (g.mayCastFromLookedError p ids maxMv id).isNone) with
       | some id => some (.cast id)
       | none => some .decline
+    | .mayPutArtifactFromHand _ _ =>
+      match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
+      | some o => some (.cast o.id)
+      | none => some .decline
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none
