@@ -5691,6 +5691,18 @@ def rewriteAbilityCardName (abilityText printedName copierName : String) : Strin
 def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool :=
   onlyAttacksRequireCost
 
+/-- Ares and similar “attacks each combat if able” statics (MSH 130). -/
+def hasAttacksIfAble (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .msh .aresAttacksEachCombatIfAble => true
+    | _ => false)
+
+/-- True when `o` must attack this combat. Summoning sickness, being tapped,
+or an unpaid attack cost means it does not have to attack (MSH 130). -/
+def mustAttackIfAble (g : Game) (o : GameObject) (attackRequiresCost := false) : Bool :=
+  o.hasAttacksIfAble && g.canAttack o &&
+    !mustAttackCanDeclineIfOnlyAttackCosts attackRequiresCost
+
 /-- Failed Adventure from Bilbo's graveyard ability is exiled by Bilbo, not
 as an Adventure, so it cannot be cast as a permanent later. -/
 def exileFailedAdventureFromBilbo (g : Game) (id : ObjectId) : Game :=
@@ -6672,6 +6684,16 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         (some n)
   else g
 
+/-- Extra noncombat damage from Hawkeye, Young Avenger. X is his power at
+the time the damage would be dealt (MSH 305). -/
+def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
+  (g.permanentsOf sourceController).foldl (fun acc o =>
+    if o.staticAbilities.any (fun
+      | .msh .ifASourceYouControlWouldDealNoncombatDam => true
+      | _ => false) then
+      acc + g.power o
+    else acc) (0 : Int)
+
 /-- Deal `n` damage to a creature and log the generic “is dealt” message. -/
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int) : Game :=
   g.markDamageOn o n s!"{o.name} is dealt {n} damage"
@@ -6684,6 +6706,11 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     if g.sourceDamagePrevented src then
       g.logMsg s!"damage from {src.name} is prevented"
     else
+      let extra :=
+        match src.controller with
+        | some p => g.hawkeyeNoncombatBonus p
+        | none => (0 : Int)
+      let n := n + extra
       let g :=
         g.mapObjectStatus src (fun s => { s with dealtDamageThisTurn := true })
       g.markDamageOn o n s!"{sourceName} deals {n} damage to {o.name}" deathtouch
@@ -6692,7 +6719,15 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
-    (preventable := true) : Game :=
+    (preventable := true) (source : Option GameObject := none) : Game :=
+  let extra :=
+    match source with
+    | some src =>
+      match src.controller with
+      | some p => g.hawkeyeNoncombatBonus p
+      | none => (0 : Int)
+    | none => (0 : Int)
+  let n := n + extra
   let pl := g.player pid
   if preventable && pl.protectionFromEverything then
     g.logMsg s!"damage to {pl.name} is prevented (protection from everything)"

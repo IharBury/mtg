@@ -2380,6 +2380,68 @@ def freeCopyXIsZeroOk : Bool :=
 
 #guard freeCopyXIsZeroOk
 
+/-- Ruling 130: Ares must attack if able, but not if he is sick, tapped,
+or attacking would cost. -/
+def aresAttacksIfAbleOk : Bool :=
+  let g := addPermanent afterDraw aresGodOfWar ⟨0⟩ ⟨0⟩
+  let ares := namedPermanent g "Ares, God of War"
+  g.mustAttackIfAble ares &&
+    (let g := insertObject afterDraw aresGodOfWar ⟨0⟩ .battlefield
+       (some ⟨0⟩) { summoningSick := true }
+     !g.mustAttackIfAble (namedPermanent g "Ares, God of War")) &&
+    (let g := g.mapObjectStatus ares (fun s => { s with tapped := true })
+     !g.mustAttackIfAble (namedPermanent g "Ares, God of War")) &&
+    !g.mustAttackIfAble ares (attackRequiresCost := true) &&
+    (mshRuling 130).comment.contains "doesn't have to attack"
+
+#guard aresAttacksIfAbleOk
+
+/-- Ruling 305: Hawkeye's plus-X is calculated when the noncombat damage
+would be dealt. -/
+def hawkeyeNoncombatXOk : Bool :=
+  let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let ogre := namedPermanent g "Gray Ogre"
+  let bears := namedPermanent g "Grizzly Bears"
+  let gHit := g.dealDamageFrom "Gray Ogre" bears 2 (source := some ogre)
+  (namedPermanent gHit "Grizzly Bears").status.damage == 4 &&
+    (let g := g.pumpPermanent (namedPermanent g "Hawkeye, Young Avenger") 3 0
+     let ogre := namedPermanent g "Gray Ogre"
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.dealDamageFrom "Gray Ogre" bears 2 (source := some ogre)
+     (namedPermanent g "Grizzly Bears").status.damage == 7) &&
+    (let (g, _) :=
+       g.move (namedPermanent g "Hawkeye, Young Avenger").id (.graveyard ⟨0⟩) none
+     let ogre := namedPermanent g "Gray Ogre"
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.dealDamageFrom "Gray Ogre" bears 2 (source := some ogre)
+     (namedPermanent g "Grizzly Bears").status.damage == 2) &&
+    (mshRuling 305).comment.contains "calculated at the time"
+
+#guard hawkeyeNoncombatXOk
+
+/-- Rulings 372 / 373 / 374: play-from-exile permissions still follow
+normal timing. -/
+def exilePlayFollowsTimingOk : Bool :=
+  let g := addToHand afterDraw grizzlyBears ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Grizzly Bears"
+  let (g, exiled) := g.move card.id .exile none
+  let o := g.object! exiled
+  let g := g.setObject { o with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1 } }
+  let o := g.object! exiled
+  g.mayPlayFromExile ⟨0⟩ o &&
+    g.canCast ⟨0⟩ o &&
+    (let gCombat := { g with step := .beginningOfCombat }
+     !gCombat.asSorcery? ⟨0⟩ &&
+       !gCombat.canCast ⟨0⟩ (gCombat.object! exiled)) &&
+    (mshRuling 372).comment.contains "normal timing rules" &&
+    (mshRuling 373).comment.contains "normal timing rules" &&
+    (mshRuling 374).comment.contains "timing rules"
+
+#guard exilePlayFollowsTimingOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
