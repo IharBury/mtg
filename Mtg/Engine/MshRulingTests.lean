@@ -2210,6 +2210,176 @@ def controlAnotherPlayerOk : Bool :=
 
 #guard controlAnotherPlayerOk
 
+/-- Ruling 105: Captain Mar-Vell grants flash if an opponent has already
+cast a spell this turn, even if he entered afterward. -/
+def captainMarVellFlashOk : Bool :=
+  let g := addPermanent afterDraw captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
+  let g := addToHand g grizzlyBears ⟨0⟩
+  let gCombat := { g with step := .beginningOfCombat }
+  let bears := handCardNamed gCombat ⟨0⟩ "Grizzly Bears"
+  !gCombat.asSorcery? ⟨0⟩ &&
+    !gCombat.canCast ⟨0⟩ bears &&
+    (let gOpp := gCombat.modifyPlayer ⟨1⟩ (fun pl =>
+      { pl with spellsCastThisTurn := 1 })
+     gOpp.canCast ⟨0⟩ (handCardNamed gOpp ⟨0⟩ "Grizzly Bears")) &&
+    (let gLate := addToHand afterDraw grizzlyBears ⟨0⟩
+     let gLate := { gLate with step := .beginningOfCombat }
+     let gLate := gLate.modifyPlayer ⟨1⟩ (fun pl =>
+       { pl with spellsCastThisTurn := 1 })
+     !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&
+       (let gLate := addPermanent gLate captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
+        gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears"))) &&
+    (mshRuling 105).comment.contains "as though they had flash"
+
+#guard captainMarVellFlashOk
+
+/-- Ruling 88: becoming a Construct Hero artifact creature replaces
+creature types and keeps Equipment. -/
+def ironManArmorTypesOk : Bool :=
+  let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
+  let armor := namedPermanent g "Iron Man Armor"
+  let g := g.applyMshSpell ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+    (some armor.id)
+  let armor := namedPermanent g "Iron Man Armor"
+  armor.isCreature &&
+    armor.hasSubtype "Construct" &&
+    armor.hasSubtype "Hero" &&
+    armor.hasSubtype "Equipment" &&
+    armor.types.any (· == .artifact) &&
+    g.power armor == 1 &&
+    g.toughness armor == 1 &&
+    (let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+     let ogre := namedPermanent g "Gray Ogre"
+     let g := g.mapObjectStatus ogre (fun s => { s with
+       additionalArtifactUntilEot := true
+       additionalCreatureUntilEot := true
+       replacedCreatureTypesUntilEot := some #["Construct", "Hero"] })
+     let ogre := namedPermanent g "Gray Ogre"
+     !ogre.hasSubtype "Ogre" &&
+       ogre.hasSubtype "Construct" &&
+       ogre.hasSubtype "Hero") &&
+    (mshRuling 88).comment.contains "replaces any existing creature types"
+
+#guard ironManArmorTypesOk
+
+/-- Ruling 138: Robot Domination does not see creature cards that go to
+the graveyard at the same time it leaves, and an animated copy is not a
+creature card. -/
+def robotDominationSimultaneousOk : Bool :=
+  let gyWait (g : Game) : Bool :=
+    g.waitingTriggers.any (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.creatureCardsPutIntoYourGy)
+  let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  gyWait g &&
+    (let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+     let g := g.moveSimultaneousToGraveyard
+       #[(namedPermanent g "Robot Domination").id,
+         (namedPermanent g "Grizzly Bears").id]
+     !gyWait g) &&
+    (let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
+     let rd := namedPermanent g "Robot Domination"
+     let g := g.mapObjectStatus rd (fun s =>
+       { s with additionalCreatureUntilEot := true })
+     let (g, _) :=
+       g.move (namedPermanent g "Robot Domination").id (.graveyard ⟨0⟩) none
+     !gyWait g) &&
+    (mshRuling 138).comment.contains "won't trigger at all"
+
+#guard robotDominationSimultaneousOk
+
+/-- Ruling 223: two attackers are never attacking alone, even at
+different players. -/
+def attacksAloneDestinationsOk : Bool :=
+  let alone (g : Game) : Bool :=
+    g.waitingTriggers.any (fun (t : WaitingTrigger) =>
+      t.event == TriggerEvent.creatureYouControlAttacksAlone)
+  let g := addPermanent afterDraw agent13SharonCarter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let ogre := namedPermanent g "Gray Ogre"
+  let g := g.setObject { bears with status := { bears.status with
+    attacking := true, attackingWhom := some ⟨1⟩ } }
+  let g := g.setObject { (namedPermanent g "Gray Ogre") with status :=
+    { ogre.status with attacking := true, attackingWhom := some ⟨2⟩ } }
+  let two :=
+    g.putAttackTriggersOnStack ⟨0⟩
+      #[(namedPermanent g "Grizzly Bears").id,
+        (namedPermanent g "Gray Ogre").id]
+  !alone two &&
+    (let g := addPermanent afterDraw agent13SharonCarter ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+     let bears := namedPermanent g "Grizzly Bears"
+     let g := g.setObject { bears with status := { bears.status with
+       attacking := true, attackingWhom := some ⟨1⟩ } }
+     let one :=
+       g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Grizzly Bears").id]
+     alone one) &&
+    (mshRuling 223).comment.contains "neither attacking creature is attacking alone"
+
+#guard attacksAloneDestinationsOk
+
+/-- Ruling 333: Daredevil lets you play the exiled card whether or not
+it is a Hero; Hero-ness only grants the pump. -/
+def daredevilPlayExiledOk : Bool :=
+  let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let dd := namedPermanent g "Daredevil, Man Without Fear"
+  let g := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack2 (some dd.id)
+  let bolt? := g.objects.find? (fun o =>
+    o.name == "Lightning Bolt" && o.zone == .exile)
+  (match bolt? with
+   | some o =>
+     g.mayPlayFromExile ⟨0⟩ o &&
+       (namedPermanent g "Daredevil, Man Without Fear").status.pump == (0, 0)
+   | none => false) &&
+    (let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
+     let g := addToLibraryTop g mistyKnightHeroForHire ⟨0⟩
+     let dd := namedPermanent g "Daredevil, Man Without Fear"
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverYouAttack2 (some dd.id)
+     let hero? := g.objects.find? (fun o =>
+       o.name == "Misty Knight, Hero for Hire" && o.zone == .exile)
+     match hero? with
+     | some o =>
+       g.mayPlayFromExile ⟨0⟩ o &&
+         (namedPermanent g "Daredevil, Man Without Fear").status.pump == (2, 1)
+     | none => false) &&
+    (mshRuling 333).comment.contains "You may play the exiled card"
+
+#guard daredevilPlayExiledOk
+
+/-- Ruling 84: opening-hand actions happen after mulligans, starting
+player first, then the first turn begins. -/
+def quicksilverOpeningHandOk : Bool :=
+  let g := addToHand afterDraw quicksilverBrashBlur ⟨0⟩
+  let g := addToHand g quicksilverBrashBlur ⟨1⟩
+  let g := g.applyOpeningHandActions
+  let p0 := g.battlefield.find? (fun o =>
+    o.name == "Quicksilver, Brash Blur" && o.controlledBy ⟨0⟩)
+  let p1 := g.battlefield.find? (fun o =>
+    o.name == "Quicksilver, Brash Blur" && o.controlledBy ⟨1⟩)
+  p0.isSome && p1.isSome &&
+    (match p0, p1 with
+     | some a, some b => a.timestamp < b.timestamp
+     | _, _ => false) &&
+    (mshRuling 84).comment.contains "opening hand"
+
+#guard quicksilverOpeningHandOk
+
+/-- Ruling 187: a copy cast without paying its mana cost has X = 0. -/
+def freeCopyXIsZeroOk : Bool :=
+  let g := addToHand afterDraw photonBlastBarrage ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Photon Blast Barrage"
+  let card := { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+  g.playManaCost card photonBlastBarrage == ManaCost.zero &&
+    (mshRuling 187).comment.contains "choose 0 as the value of X"
+
+#guard freeCopyXIsZeroOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id

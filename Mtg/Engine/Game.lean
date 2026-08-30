@@ -219,6 +219,12 @@ structure Status where
   cantBeBlockedExceptByHasteUntilEot : Bool := false
   /-- This permanent dealt damage this turn (Red Guardian; MSH 272). -/
   dealtDamageThisTurn : Bool := false
+  /-- Until end of turn, these replace existing creature types and keep
+  noncreature subtypes (Iron Man Armor; MSH 88). -/
+  replacedCreatureTypesUntilEot : Option (Array String) := none
+  /-- Until end of turn, this creature gets +1/+1 for each artifact you
+  control (Iron Man Armor). -/
+  pumpPerArtifactUntilEot : Bool := false
   /-- Influence counters (Palantír of Orthanc). -/
   influence : Nat := 0
   /-- This permanent is only a Food artifact (Supper for Spiders). -/
@@ -297,7 +303,11 @@ def untilEotFields : List UntilEotField := [
   ⟨fun s => s.cantBeBlockedExceptByHasteUntilEot,
     fun s => { s with cantBeBlockedExceptByHasteUntilEot := false }⟩,
   ⟨fun s => s.dealtDamageThisTurn,
-    fun s => { s with dealtDamageThisTurn := false }⟩
+    fun s => { s with dealtDamageThisTurn := false }⟩,
+  ⟨fun s => s.replacedCreatureTypesUntilEot.isSome,
+    fun s => { s with replacedCreatureTypesUntilEot := none }⟩,
+  ⟨fun s => s.pumpPerArtifactUntilEot,
+    fun s => { s with pumpPerArtifactUntilEot := false }⟩
 ]
 
 /-- True when cleanup must clear until-EOT pumps, damage, keyword grants, or
@@ -451,7 +461,13 @@ def subtypes (o : GameObject) : Array Subtype :=
   if o.status.onlyFoodArtifact then #["Food"]
   else
     let extra := o.status.additionalSubtypes.filter (fun s => !o.printed.subtypes.any (· == s))
-    o.printed.subtypes ++ extra
+    let raw := o.printed.subtypes ++ extra
+    match o.status.replacedCreatureTypesUntilEot with
+    | none => raw
+    | some types =>
+      let kept := raw.filter isNoncreatureSubtype
+      let added := types.filter (fun t => !kept.any (· == t))
+      kept ++ added
 
 /-- Type line from current types and subtypes (CR 205.1a). -/
 def typeLine (o : GameObject) : String :=
@@ -985,6 +1001,10 @@ structure Game where
   “other creatures die” triggers; the batch queues them only for creatures
   that actually die (CR 614.6). -/
   suppressOthersDie : Bool := false
+  /-- While a simultaneous graveyard batch is applying, `move` skips
+  per-object “creature cards to graveyard” triggers so “one or more”
+  fires once (Robot Domination; MSH 138). -/
+  suppressCreatureCardsToGy : Bool := false
   /-- Player most recently dealt combat damage by a creature whose
   combat-damage trigger is resolving (Cavern-Hoard Dragon). -/
   lastCombatDamagePlayer : Option PlayerId := none
@@ -2023,12 +2043,22 @@ def fatGraveyardPowerBonus (g : Game) (o : GameObject) : Int :=
       acc + p * (n : Int)
     | _ => acc) 0
 
+/-- +1/+1 for each artifact you control (Iron Man Armor until EOT). -/
+def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
+  if !o.status.pumpPerArtifactUntilEot || !o.isOnBattlefield then (0, 0)
+  else
+    let n : Int :=
+      Int.ofNat ((g.permanentsOf o.you).filter (fun p => p.printed.isArtifact ||
+        p.status.additionalArtifactUntilEot) |>.size)
+    (n, n)
+
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
   let n : Int := o.status.plusOnePlusOne
   #[g.characteristicBasePT o, o.status.pump, (n, n), g.attachedStatBonus o,
       g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
       (g.mountainPowerBonus o, (0 : Int)),
-      (g.fatGraveyardPowerBonus o, (0 : Int))].foldl
+      (g.fatGraveyardPowerBonus o, (0 : Int)),
+      g.artifactCountPump o].foldl
     addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
@@ -2227,10 +2257,27 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         fromOthers ++ old.waitingTriggersFor p .attackingCreatureYouControlDies
       | none => (#[] : Array WaitingTrigger)
     else (#[] : Array WaitingTrigger)
+  -- After the object has left: sources still on the battlefield see
+  -- creature cards going to a graveyard (Robot Domination; MSH 138).
+  let creatureCardToGy :=
+    if g.suppressCreatureCardsToGy then (#[] : Array WaitingTrigger)
+    else
+      match dest with
+      | .graveyard owner =>
+        if old.printed.isCreature && !old.printed.isToken then
+          g.battlefield.foldl (fun acc o =>
+            match o.controller with
+            | some p =>
+              if p == owner then
+                acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
+              else acc
+            | none => acc) (#[] : Array WaitingTrigger)
+        else (#[] : Array WaitingTrigger)
+      | _ => (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie ++ attackingDie
+        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then
@@ -2314,6 +2361,40 @@ replacements are applied by `move` (CR 614.1 / 614.6). -/
 def moveToOwnerGraveyard (g : Game) (o : GameObject) (reason : String) : Game :=
   let g := g.logMsg reason
   (g.move o.id (.graveyard o.owner) none).1
+
+/-- Move several objects to their owners' graveyards as one event.
+Sources that also leave do not see “creature cards put into your
+graveyard” (Robot Domination; MSH 138). -/
+def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId) : Game :=
+  let objs := ids.filterMap g.findObject?
+  let leavingIds := objs.map (·.id)
+  let gyOwners :=
+    objs.foldl (fun acc o =>
+      if o.printed.isCreature && !o.printed.isToken &&
+          !acc.any (· == o.owner) then
+        acc.push o.owner
+      else acc) (#[] : Array PlayerId)
+  let extra :=
+    if gyOwners.isEmpty then (#[] : Array WaitingTrigger)
+    else
+      g.battlefield.foldl (fun acc o =>
+        if leavingIds.any (· == o.id) then acc
+        else
+          match o.controller with
+          | some p =>
+            if gyOwners.any (· == p) then
+              acc ++ o.waitingTriggersFor p .creatureCardsPutIntoYourGy
+            else acc
+          | none => acc) (#[] : Array WaitingTrigger)
+  let g := { g with
+    waitingTriggers := g.waitingTriggers ++ extra
+    suppressCreatureCardsToGy := true }
+  let g :=
+    objs.foldl (fun g o =>
+      match g.findObject? o.id with
+      | some o => g.moveToOwnerGraveyard o s!"{o.name} is put into its owner's graveyard"
+      | none => g) g
+  { g with suppressCreatureCardsToGy := false }
 
 /-- Put `id` onto the battlefield under `controller`, then set tap, sickness,
 and optional attachment. `applyHope` applies Arwen-style enter-with-counters
@@ -3236,6 +3317,26 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
                   g.waitingTriggers ++
                     o.waitingTriggersFor p .oneOrMoreOtherCreaturesDie }
               | none => pure ()
+          -- “One or more creature cards” fires once per source still on
+          -- the battlefield (Robot Domination; MSH 138).
+          let leavingIds := victims.map (fun pair => pair.1.id)
+          let gyOwners :=
+            actualDeaths.foldl (fun acc pair =>
+              if pair.1.printed.isCreature && !pair.1.printed.isToken &&
+                  !acc.any (· == pair.1.owner) then
+                acc.push pair.1.owner
+              else acc) (#[] : Array PlayerId)
+          if !gyOwners.isEmpty then
+            for o in g.battlefield do
+              if !leavingIds.any (· == o.id) then
+                match o.controller with
+                | some p =>
+                  if gyOwners.any (· == p) then
+                    g := { g with waitingTriggers :=
+                      g.waitingTriggers ++
+                        o.waitingTriggersFor p .creatureCardsPutIntoYourGy }
+                | none => pure ()
+            g := { g with suppressCreatureCardsToGy := true }
       for pair in victims do
         let o := pair.1
         let reason := pair.2
@@ -3245,7 +3346,10 @@ partial def checkSBACounted (g : Game) : Game × Bool :=
             g := g.moveToOwnerGraveyard o reason
             changed := true
         | none => pure ()
-      g := { g with lockedDeathReplacements := none, suppressOthersDie := false }
+      g := { g with
+        lockedDeathReplacements := none
+        suppressOthersDie := false
+        suppressCreatureCardsToGy := false }
       for o in g.battlefield do
         if o.isCreature && o.status.dealtDeathtouch && g.hasIndestructible o then
           g := g.setObject { o with status := { o.status with dealtDeathtouch := false } }
@@ -4774,6 +4878,16 @@ def targetLogName (g : Game) : Target → String
     | some o => o.name
     | none => toString oid
 
+/-- Captain Mar-Vell: as though spells had flash while an opponent has
+cast a spell this turn (MSH 105). The permanent need not have been on
+the battlefield when that spell was cast. -/
+def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o =>
+    o.staticAbilities.any (fun
+      | .msh .cosmicAwarenessAsLongAsAnOpponentHasCa => true
+      | _ => false)) &&
+    (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
+
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
   let hasConditionalFlash :=
@@ -4784,7 +4898,8 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef) : Bool :=
     face.isCreature && (g.player p).creatureSpellsCastThisTurn == 0 &&
       (g.permanentsOf p).any (fun o => o.printed.firstCreatureHasFlash)
   g.hasPriority p &&
-  (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash then
+  (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
+      !g.cosmicAwarenessFlash p then
     g.asSorcery? p else true)
 
 /-- Whether `p` may begin to cast `o` (CR 601.3). Having enough mana in the
@@ -7988,6 +8103,25 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
   | .wheneverAPlayerCastsASpellThatTargetsSpe =>
     g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
       "Speedball is no longer on the battlefield"
+  | .wheneverYouAttack2 =>
+    -- Daredevil: exile the top card. Hero-ness only affects the pump;
+    -- the card may be played this turn either way (MSH 333).
+    let pl := g.player controller
+    if pl.library.isEmpty then
+      g.logMsg s!"{pl.name} has no cards in their library to exile"
+    else
+      let top := pl.library.back!
+      let card := g.object! top
+      let isHero := card.hasSubtype "Hero"
+      let (g, newId) := g.move top .exile none
+      let o := g.object! newId
+      let g := g.setObject { o with
+        playPermission := some { player := controller, turnEndsRemaining := 1 } }
+      let g := g.logMsg s!"{pl.name} exiles {card.name} and may play it this turn"
+      if isHero then
+        g.withSourceOnBattlefield sourceId (fun g src => g.pumpPermanent src 2 1)
+          "Daredevil is no longer on the battlefield"
+      else g
   | .wheneverYouAttack3 =>
     let paid := (lastKnownPower.getD (0 : Int)).toNat
     if paid == 0 then
@@ -8177,6 +8311,24 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     | _ => g
   | .exileAllCreaturesEachPlayerMayPutAnyNum =>
     g.applyWorldsWithinWorlds controller sourceId
+  | .ifThisEquipmentIsnTACreatureItBecomesA =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then
+        g.logMsg "The Equipment is no longer in play"
+      else if o.isCreature then
+        g.logMsg s!"{o.name} is already a creature"
+      else
+        let g := g.mapObjectStatus o (fun s =>
+          { s with
+            setBasePT := some (0, 0)
+            additionalCreatureUntilEot := true
+            additionalArtifactUntilEot := true
+            untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.flying
+            replacedCreatureTypesUntilEot := some #["Construct", "Hero"]
+            pumpPerArtifactUntilEot := true })
+        g.logMsg s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
+    | none => g.logMsg "The Equipment is no longer in play"
   | _ =>
   let text := t.toNotation
   if text.contains "finality" then
@@ -10992,9 +11144,13 @@ def putAttackTriggersOnStack (g : Game) (p : PlayerId) (attackerIds : Array Obje
               id := ⟨0⟩, owner := p, controller := some p, zone := .battlefield }
         for _ in [0:pumps] do
           g := g.queueTrigger p src .onYouAttackPumpTargetPerPlains .youAttack
-    if attackerIds.size == 1 then
-      let aid := attackerIds[0]!
-      let attacker := g.object! aid
+    -- Destination does not matter: two attackers at different players
+    -- still are not attacking alone (MSH 223).
+    let attackingNow :=
+      (g.permanentsOf p).filter (fun o => o.isCreature && o.status.attacking)
+    if attackingNow.size == 1 then
+      let attacker := attackingNow[0]!
+      let aid := attacker.id
       for o in g.permanentsOf p do
         g := g.putMatchingSourceTriggers p o .creatureYouControlAttacksAlone
           (cause := some attacker)
@@ -11913,14 +12069,41 @@ def promptBottom (g : Game) (p : PlayerId) : Game :=
   { g with pending := .putOnBottom p n }
     |>.logMsg s!"{g.player p |>.name} puts {cards} on the bottom of their library (CR 103.5)"
 
-/-- After every remaining player has kept, the starting player takes their
-first turn (CR 103.8). -/
+/-- Cards that may begin the game on the battlefield from an opening hand
+(Quicksilver; MSH 84). -/
+def beginsOnBattlefieldFromOpeningHand (o : GameObject) : Bool :=
+  o.staticAbilities.any (fun
+    | .msh .ifQuicksilver => true
+    | _ => false)
+
+/-- After mulligans, the starting player takes opening-hand actions first,
+then each other player in turn order (MSH 84). -/
+def applyOpeningHandActions (g : Game) : Game :=
+  Id.run do
+    let mut g := g
+    let order := g.playersInOrderFrom g.startingPlayer (fun pl => !pl.lost)
+    for pid in order do
+      let ids := (g.player pid).hand
+      for id in ids do
+        match g.findObject? id with
+        | some o =>
+          if beginsOnBattlefieldFromOpeningHand o then
+            let name := o.name
+            let (g', _) := g.move o.id .battlefield (some pid)
+            g := g'
+            g := g.logMsg s!"{name} begins the game on the battlefield"
+        | none => pure ()
+    return g
+
+/-- After every remaining player has kept, opening-hand actions resolve,
+then the starting player takes their first turn (CR 103.8 / MSH 84). -/
 def finishOpeningHands (g : Game) : Game :=
   let g := { g with
     pending := .none
     mulliganToDeclare := #[]
     willMulligan := #[]
     mulliganToBottom := #[] }
+  let g := g.applyOpeningHandActions
   let g := g.logMsg s!"{g.player g.startingPlayer |>.name} takes the first turn"
   g.beginTurn
 
