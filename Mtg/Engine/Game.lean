@@ -12762,7 +12762,7 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     let dest ← g.resolveAttackDestination p want
     if g.hasFlying o && g.leftoverFlyingRestriction dest then
       throw s!"{o.name} can't attack {(g.player dest).name}"
-    g := g.setObject { o with status := { o.status with }
+    g := g.setObject { o with status := { o.status with
       attacking := true
       attackingWhom := some dest
       declaredAsAttackerThisTurn := true

@@ -524,7 +524,7 @@ def frozenInIce : CardDef :=
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature loses all abilities and can't become untapped.")
     (triggeredAbilities := #[leftoverTrig .whenThisAuraEnters3])
-    (staticAbilities := #[StaticAbility.enchantedLosesAbilitiesDoesntUntap])
+    (staticAbilities := #[leftoverStatic .enchantedCreatureLosesAllAbilitiesAndCant])
 
 def futuristForge : CardDef :=
   card "Futurist Forge" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
@@ -613,7 +613,7 @@ def leaderSuperGenius : CardDef :=
     (oracleText := "If a creature you control would connive, instead you draw a card, then that creature connives.\nAt the beginning of combat on your turn, target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (power := some 1)
     (toughness := some 3)
-    (triggeredAbilities := #[.onCombatTargetYouControlConnives])
+    (triggeredAbilities := #[leftoverTrig .atTheBeginningOfCombatOnYourTurn4])
     (staticAbilities := #[StaticAbility.extraDrawOnConnive])
 
 def lokiGodOfMischief : CardDef :=
@@ -958,7 +958,7 @@ def mODOK : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.lifelink)
-    (staticAbilities := #[StaticAbility.opponentsCreaturesGet (-1) (-1)])
+    (staticAbilities := #[leftoverStatic .designedOnlyForKillingCreaturesYourOppon])
     (activatedAbilities := #[leftoverAct .mentalOrganismPay3LifeMODOK])
 
 def moonstoneHarshMistress : CardDef :=
@@ -1299,7 +1299,7 @@ def quicksilverBrashBlur : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (keywords := Keyword.haste)
-    (staticAbilities := #[StaticAbility.mayBeginOnBattlefield])
+    (staticAbilities := #[leftoverStatic .ifQuicksilver])
     (activatedAbilities := #[activated (.mshSpell .putA11CounterAndADoubleStrikeCounter) ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
 
 def redHulk : CardDef :=
@@ -1620,8 +1620,7 @@ def superStrength : CardDef :=
   card "Super Strength" #[.enchantment] ({ symbols := #[.generic 4, .colored .green] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nEnchanted creature gets +4/+4 and has trample and ward {1}. (Whenever enchanted creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)")
-    (staticAbilities := #[StaticAbility.enchantedCreatureGetsAndHas 4 4 Keyword.trample,
-      StaticAbility.enchantedCreatureHasWard 1])
+    (staticAbilities := #[leftoverStatic .enchantedCreatureGets44AndHasTrampleAn])
 
 def theThingBenGrimm : CardDef :=
   card "The Thing, Ben Grimm" #[.creature] ({ symbols := #[.generic 5, .colored .green] })
@@ -1766,7 +1765,7 @@ def beastEruditeAerialist : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (triggeredAbilities := #[.onCombatDamageDraw 1])
-    (staticAbilities := #[StaticAbility.flyingIfPlusOneThisTurn])
+    (staticAbilities := #[leftoverStatic .asLongAsYouVePutOneOrMore11Counters])
 
 def blackPantherVanguard : CardDef :=
   card "Black Panther, Vanguard" #[.creature] ({ symbols := #[.generic 2, .colored .green, .colored .white] })
@@ -2079,7 +2078,7 @@ def winterSoldierIcyAssassin : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.vigilance).merge Keyword.menace)
-    (staticAbilities := #[StaticAbility.getsPowerPerAttachedEquipment 2])
+    (staticAbilities := #[leftoverStatic .winterSoldierGets20ForEachEquipmentAtt])
     (activatedAbilities := #[activated (.mshSpell .returnThisCardFromYourGraveyardToTheBatt) ({ symbols := #[.generic 3, .colored .white, .colored .black] })])
 
 def wolverineFierceFighter : CardDef :=
@@ -2091,7 +2090,7 @@ def wolverineFierceFighter : CardDef :=
     (toughness := some 5)
     (keywords := Keyword.haste)
     (triggeredAbilities := #[leftoverTrig .whenWolverineEnters])
-    (staticAbilities := #[StaticAbility.healOtherDamageWhenDealt])
+    (staticAbilities := #[leftoverStatic .ifDamageWouldBeDealtToWolverine])
 
 def worldsWithinWorlds : CardDef :=
   card "Worlds Within Worlds" #[.sorcery] ({ symbols := #[.generic 5, .colored .green, .colored .blue] })
