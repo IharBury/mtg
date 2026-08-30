@@ -11101,6 +11101,95 @@ def stonyAfterDiscard : Game := applyIdle stonyDiscarding
 #guard stonyAfterDiscard.pending == .none
 #guard stonyAfterDiscard.log.any (fun s => mentions s "Nissa discards")
 
+/-- “Discard two cards” starts one pending discard and keeps a remaining
+count; calling `beginDiscardCards` twice only replaced the choice. -/
+def discardTwoPending : Game :=
+  afterDraw.drawThenBeginDiscard ⟨0⟩ 0 (discardRounds := 2)
+
+#guard
+  match discardTwoPending.pending with
+  | .chooseDiscardCard ⟨0⟩ _ => true
+  | _ => false
+#guard discardTwoPending.pendingDiscardsLeft == 2
+#guard (discardTwoPending.player ⟨0⟩).hand.size == 7
+#guard
+  (discardTwoPending.log.filter (fun s => mentions s "must discard a card")).size == 1
+
+def discardTwoAfterFirst : Game :=
+  mustApply discardTwoPending ⟨0⟩
+    (.discard (discardTwoPending.player ⟨0⟩).hand.back!)
+
+#guard
+  match discardTwoAfterFirst.pending with
+  | .chooseDiscardCard ⟨0⟩ _ => true
+  | _ => false
+#guard discardTwoAfterFirst.pendingDiscardsLeft == 1
+#guard (discardTwoAfterFirst.player ⟨0⟩).hand.size == 6
+#guard (discardTwoAfterFirst.player ⟨0⟩).graveyard.size == 1
+
+def discardTwoAfterSecond : Game :=
+  mustApply discardTwoAfterFirst ⟨0⟩
+    (.discard (discardTwoAfterFirst.player ⟨0⟩).hand.back!)
+
+#guard discardTwoAfterSecond.pending == .none
+#guard discardTwoAfterSecond.pendingDiscardsLeft == 0
+#guard (discardTwoAfterSecond.player ⟨0⟩).hand.size == 5
+#guard (discardTwoAfterSecond.player ⟨0⟩).graveyard.size == 2
+
+/-- An artifact does not finish a required two-card discard (unlike Thirst). -/
+def discardTwoArtifactStillNeedsSecond : Bool :=
+  let g := addToHand afterDraw theMindStone ⟨0⟩
+  let g := g.drawThenBeginDiscard ⟨0⟩ 0 (discardRounds := 2)
+  let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "The Mind Stone").id)
+  (match g.pending with
+   | .chooseDiscardCard ⟨0⟩ _ => true
+   | _ => false) &&
+    g.pendingDiscardsLeft == 1 &&
+    (g.player ⟨0⟩).graveyard.any (fun id => (g.object! id).name == "The Mind Stone")
+
+#guard discardTwoArtifactStillNeedsSecond
+
+/-- HYDRA Infiltration: target opponent discards two cards. -/
+def hydraInfiltrationDiscarding : Game :=
+  afterDraw.applyMshTrigger ⟨0⟩ .whenThisEnchantmentEnters2 none
+    #[Target.player ⟨1⟩]
+
+#guard
+  match hydraInfiltrationDiscarding.pending with
+  | .chooseDiscardCard ⟨1⟩ _ => true
+  | _ => false
+#guard hydraInfiltrationDiscarding.pendingDiscardsLeft == 2
+#guard (hydraInfiltrationDiscarding.player ⟨1⟩).hand.size == 7
+#guard
+  (hydraInfiltrationDiscarding.log.filter (fun s =>
+    mentions s "must discard a card")).size == 1
+
+def hydraInfiltrationAfterFirst : Game :=
+  mustApply hydraInfiltrationDiscarding ⟨1⟩
+    (.discard (hydraInfiltrationDiscarding.player ⟨1⟩).hand.back!)
+
+#guard
+  match hydraInfiltrationAfterFirst.pending with
+  | .chooseDiscardCard ⟨1⟩ _ => true
+  | _ => false
+#guard (hydraInfiltrationAfterFirst.player ⟨1⟩).hand.size == 6
+
+def hydraInfiltrationAfterSecond : Game :=
+  mustApply hydraInfiltrationAfterFirst ⟨1⟩
+    (.discard (hydraInfiltrationAfterFirst.player ⟨1⟩).hand.back!)
+
+#guard hydraInfiltrationAfterSecond.pending == .none
+#guard (hydraInfiltrationAfterSecond.player ⟨1⟩).hand.size == 5
+#guard hydraInfiltrationAfterSecond.log.any (fun s => mentions s "Nissa discards")
+
+/-- A single-card discard still finishes after one card. -/
+def discardOneStillOne : Bool :=
+  let g := afterDraw.drawThenBeginDiscard ⟨0⟩ 0
+  let g := mustApply g ⟨0⟩ (.discard (g.player ⟨0⟩).hand.back!)
+  g.pending == .none && (g.player ⟨0⟩).hand.size == 6
+
+#guard discardOneStillOne
+
 
 /- Typecycling: Oliphaunt Mountaincycling and Troll of Khazad-dûm Swampcycling
 (CR 702.29). -/
