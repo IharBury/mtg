@@ -776,16 +776,7 @@ def applyIdle (g : Game) : Game :=
   | .chooseTeamwork _, some p =>
     mustApply g p (.announceTeamwork false)
   | .chooseTeamworkCreatures _ need, some p =>
-    let rec pick (cs : List GameObject) (acc : Array ObjectId) (total : Int) :
-        Array ObjectId :=
-      if total >= (need : Int) then acc
-      else
-        match cs with
-        | [] => acc
-        | o :: rest =>
-          if o.status.tapped then pick rest acc total
-          else pick rest (acc.push o.id) (total + g.power o)
-    mustApply g p (.choosePermanents (pick (g.creaturesControlledBy p).toList #[] 0))
+    mustApply g p (.choosePermanents (g.pickTeamworkCreatures p need))
   | .chooseAdditionalCost _, some p =>
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
@@ -7557,6 +7548,10 @@ def archAlone : Game := addPermanent started elvishArchdruid ⟨0⟩ ⟨0⟩
 #guard archAndOppElves.power (namedPermanent archAndOppElves "Llanowar Elves") == 1
 #guard archAlone.power (namedPermanent archAlone "Elvish Archdruid") == 2
 #guard archAndElves.countSubtype ⟨0⟩ "Elf" == 2
+#guard archAndElves.countCreaturesControlledBy ⟨0⟩ == 2
+#guard archAndOppElves.countCreaturesControlledBy ⟨0⟩ == 1
+#guard (archAndElves.pickTeamworkCreatures ⟨0⟩ 2).size == 1
+#guard (archAndElves.pickTeamworkCreatures ⟨0⟩ 3).size == 2
 #guard (archAndElves.availableMana ⟨0⟩).green == 3
 #guard (archAlone.availableMana ⟨0⟩).green == 1
 #guard (archAndOppElves.availableMana ⟨0⟩).green == 1
@@ -12978,6 +12973,12 @@ def teamworkPaidStrike : Game :=
 
 #guard (namedPermanent teamworkPaidStrike "Grizzly Bears").status.tapped
 #guard teamworkPaidStrike.log.any (fun s => mentions s "pays a teamwork cost")
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g treasureToken ⟨1⟩ ⟨1⟩
+  g.countOpponentArtifacts ⟨0⟩ == 1 &&
+    g.countArtifactsControlledBy ⟨1⟩ == 1 &&
+    (g.pickTeamworkCreatures ⟨0⟩ 2) == #[(namedPermanent g "Grizzly Bears").id]
 
 /-- Okoye creates two 1/1 white Soldier tokens on enter. -/
 def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
