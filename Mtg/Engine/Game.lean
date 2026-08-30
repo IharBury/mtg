@@ -7694,10 +7694,6 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
       (fun g o => g.addPlusOnePlusOneTo o n)
   | .msh t =>
     g.applyMshSpell controller t targets
-  | .catalog text =>
-    g.logMsg text
-  | .printed text =>
-    g.logMsg text
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -7997,10 +7993,6 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.applyMshAbility controller t targets sourceId
   | .mshSpell t =>
     g.applyMshSpell controller t targets
-  | .catalog text =>
-    g.logMsg text
-  | .printed text =>
-    g.logMsg text
 
 /-- Top `count` cards of `p`'s library (last = current top). -/
 def scryLookedIds (g : Game) (p : PlayerId) (count : Nat) : Array ObjectId :=
@@ -8501,8 +8493,6 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
     g.applyMshChapter controller t targets sourceId
   | .spell e =>
     g.applyEffect controller e targets
-  | .catalog text =>
-    g.logMsg text
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/
@@ -9652,8 +9642,6 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.loseLife controller 1
   | .msh t =>
     g.applyMshTrigger controller t sourceId targets sourceName
-  | .printed text =>
-    g.logMsg text
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/

@@ -12845,8 +12845,6 @@ def loreAfterFirstMain : Game :=
 
 #guard mshCards.size == 286
 #guard mshCards.all (·.matchesOracleText)
-#guard !mshCards.any usesPrintedStub
-#guard !mshCards.any usesCatalogStub
 #guard supportedCatalogCards.any (fun c => c.name == "Brave Brawler")
 #guard supportedCatalogCards.any (fun c => c.name == "Jennifer Walters")
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
@@ -12933,8 +12931,6 @@ def okoyeSoldiers : Game := settle (mshEnter afterDraw okoyeDoraMilajeLeader) 24
 #guard
   (okoyeSoldiers.battlefield.filter (fun o =>
     o.name == "Soldier" && o.printed.isToken)).size == 2
-#guard !usesCatalogStub okoyeDoraMilajeLeader
-#guard !usesPrintedStub okoyeDoraMilajeLeader
 
 /-- Black Panther draws when he deals combat damage. -/
 def pantherCombatDraw : Game :=
@@ -12947,9 +12943,8 @@ def pantherCombatDraw : Game :=
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
 #guard pantherCombatDraw.log.any (fun s => mentions s "draws")
 
--- Daredevil looks at the library top; that is a field, not a catalog stub.
+-- Daredevil looks at the library top; that is a field, not leftover text.
 #guard daredevilManWithoutFear.mayLookAtTopAnytime
-#guard !usesCatalogStub daredevilManWithoutFear
 
 end Mtg.Engine.Tests
 

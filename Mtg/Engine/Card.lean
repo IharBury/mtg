@@ -825,10 +825,6 @@ inductive SpellEffect where
   | plusOneOnCreatureN (n : Nat)
   /-- A modeled MSH spell. -/
   | msh (t : MshSpell)
-  /-- Oracle-faithful spell whose resolution is still modeled. -/
-  | catalog (text : String)
-  /-- Unique printed spell wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -1028,8 +1024,6 @@ inductive SpellResolution where
   | targetPlayerDraw (n : Nat)
   /-- Deal `n` damage; if the creature would die this turn, exile it. -/
   | dealDamageToCreatureExileIfDies (n : Nat)
-  /-- Unique printed spell wording. -/
-  | printed (text : String)
   /-- Add {R} for each artifact opponents control. -/
   | addRedPerOppArtifacts
   /-- Deal `n` damage to each non-Dragon creature. -/
@@ -1124,8 +1118,6 @@ inductive SpellResolution where
   | plusOneOnCreatureN (n : Nat)
   /-- A modeled MSH spell. -/
   | msh (t : MshSpell)
-  /-- Oracle-faithful catalog spell. -/
-  | catalog (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1435,10 +1427,6 @@ def spec : SpellEffect → SpellMeta
       resolution := .plusOneOnCreatureN n }
   | .msh t =>
     { targeting := .of .none, castKind := .extraLand, resolution := .msh t }
-  | .catalog text =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .catalog text }
-  | .printed text =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .printed text }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1652,8 +1640,6 @@ def toNotation (e : SpellEffect) : String :=
     let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
     s!"put {counters} on {noun}"
   | .msh t => t.toNotation
-  | .catalog text => text
-  | .printed text => text
 
 end SpellEffect
 
@@ -1800,10 +1786,6 @@ inductive AbilityEffect where
   | msh (t : MshAbility)
   /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
   | mshSpell (t : MshSpell)
-  /-- Oracle-faithful activated wording whose resolution is still modeled. -/
-  | catalog (text : String)
-  /-- Unique printed activated wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1935,10 +1917,6 @@ inductive AbilityResolution where
   | msh (t : MshAbility)
   /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
   | mshSpell (t : MshSpell)
-  /-- Oracle-faithful activated wording whose resolution is still modeled. -/
-  | catalog (text : String)
-  /-- Unique printed activated wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -2096,10 +2074,6 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .msh t }
   | .mshSpell t =>
     { resolution := .mshSpell t }
-  | .catalog text =>
-    { resolution := .catalog text }
-  | .printed text =>
-    { resolution := .printed text }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -2251,8 +2225,6 @@ def toNotation (e : AbilityEffect) : String :=
     "This creature connives"
   | .msh t => t.toNotation
   | .mshSpell t => t.toNotation
-  | .catalog text => text
-  | .printed text => text
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -2535,10 +2507,6 @@ inductive StaticAbility where
   | preventAllDamageToThis
   /-- A modeled MSH static. -/
   | msh (t : MshStatic)
-  /-- Oracle-faithful static wording. -/
-  | catalog (text : String)
-  /-- Unique printed static wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -2648,8 +2616,6 @@ inductive StaticShape where
   | cantBeBlockedIfPowerAtMost (n : Int)
   | preventAllDamageToThis
   | msh (t : MshStatic)
-  | catalog (text : String)
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -2787,8 +2753,6 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedIfPowerAtMost _ => {}
   | .preventAllDamageToThis => {}
   | .msh _ => {}
-  | .catalog _ => {}
-  | .printed _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -2865,8 +2829,6 @@ def shape : StaticAbility → StaticShape
   | .cantBeBlockedIfPowerAtMost n => .cantBeBlockedIfPowerAtMost n
   | .preventAllDamageToThis => .preventAllDamageToThis
   | .msh t => .msh t
-  | .catalog text => .catalog text
-  | .printed text => .printed text
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -3035,8 +2997,6 @@ def toNotation (ab : StaticAbility) : String :=
   | .preventAllDamageToThis =>
     "Prevent all damage that would be dealt to this."
   | .msh t => t.toNotation
-  | .catalog text => text
-  | .printed text => text
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -3211,8 +3171,6 @@ inductive ChapterEffect where
   | msh (t : MshChapter)
   /-- A spell-shaped MSH Saga chapter (reuses `SpellEffect`). -/
   | spell (e : SpellEffect)
-  /-- Oracle-faithful Saga chapter. -/
-  | catalog (text : String)
 deriving Repr, Inhabited, BEq
 
 namespace ChapterEffect
@@ -3282,8 +3240,6 @@ def spec : ChapterEffect → Spec
     { targeting := e.spec.targeting
       allowsZeroTargets := e.allowsZeroTargets
       phrase := e.toNotation }
-  | .catalog text =>
-    { phrase := text }
 
 end ChapterEffect
 
@@ -3805,11 +3761,6 @@ inductive TriggeredAbility where
   | onYourEndStepDrawLoseLife
   /-- A modeled MSH trigger. -/
   | msh (t : MshTrigger)
-  /-- Oracle-faithful trigger. Prefer a modeled constructor when the event
-  and resolution already exist; this holds unique MSH wording. -/
-  | catalog (text : String)
-  /-- Unique printed trigger wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -4679,8 +4630,6 @@ inductive TriggerResolution where
   | drawAndLoseLife1
   /-- Resolve a modeled MSH trigger. -/
   | msh (t : MshTrigger)
-  /-- Unique printed trigger wording. -/
-  | printed (text : String)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -5724,10 +5673,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := t.events, targeting := t.targeting,
       allowsZeroTargets := t.allowsZeroTargets, resolution := .msh t,
       onceEachTurn := t.onceEachTurn }
-  | .catalog text =>
-    { resolution := .printed text }
-  | .printed text =>
-    { resolution := .printed text }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -6144,7 +6089,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .drawAndLoseLife1 =>
     "you draw a card and lose 1 life"
   | .msh t => t.toNotation
-  | .printed text => text
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -6288,19 +6232,14 @@ def toNotation (ab : TriggeredAbility) : String :=
   | .onYourEndStepDrawLoseLife =>
     "At the beginning of your end step, you draw a card and lose 1 life."
   | .msh t => t.toNotation
-  | .catalog text => text
-  | .printed text => text
   | _ =>
-    match ab.resolution with
-    | .printed text => text
-    | _ =>
-      let t := ab.timing
-      if t.events.contains .equippedAttacksAlone then
-        "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
-      else
-        let once :=
-          if t.onceEachTurn then " This ability triggers only once each turn." else ""
-        s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+    let t := ab.timing
+    if t.events.contains .equippedAttacksAlone then
+      "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+    else
+      let once :=
+        if t.onceEachTurn then " This ability triggers only once each turn." else ""
+      s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation

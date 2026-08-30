@@ -345,8 +345,7 @@ def activatedOracleLineFromParts (ab : ActivatedAbility) : String :=
   s!"{ab.cost.toNotation}: {body}.{timing}"
 
 /-- Oracle-style line for a modeled activated ability. Timing restrictions are
-sentences, not parentheticals, so they survive reminder-text stripping. A
-`.catalog` that is already a full cost-and-effect line is kept as-is. -/
+sentences, not parentheticals, so they survive reminder-text stripping. -/
 def activatedOracleLine (ab : ActivatedAbility) : String :=
   if isEquipAbility ab then
     let pay :=
@@ -361,13 +360,6 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
     | some t => s!"{t}cycling {ab.cost.mana}"
     | none =>
       match ab.effect with
-      | .catalog text =>
-        let t := text.trimAscii.copy
-        if t.contains ':' &&
-            (t.startsWith "{" || t.startsWith "Pay " || t.startsWith "Sacrifice") then
-          if t.endsWith "." then t else s!"{t}."
-        else
-          activatedOracleLineFromParts ab
       | .msh t =>
         let text := t.toNotation.trimAscii.copy
         if text.contains ':' &&
@@ -620,8 +612,6 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.becomeArtifactCreature44Flying) =>
       ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
         "Draw a card."]
-    | some (.catalog text) =>
-      text.splitOn "\n" |>.filter (fun s => !s.trimAscii.copy.isEmpty)
     | some (.msh t) =>
       t.toNotation.splitOn "\n" |>.filterMap (fun s =>
         let s := s.trimAscii.copy
@@ -698,57 +688,6 @@ def supportedCatalogCards : Array CardDef :=
     ++ Catalog.hobbitEternalCards
     ++ Catalog.mshCards
 
-/-- True when a catalog card still stores an ability or effect as `.printed`. -/
-def usesPrintedStub (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .printed _ => true
-    | _ => false) ||
-  c.triggeredAbilities.any (fun
-    | .printed _ => true
-    | _ => false) ||
-  (match c.spellEffect with
-   | some (.printed _) => true
-   | _ => false) ||
-  c.spellModes.any (fun
-    | .printed _ => true
-    | _ => false) ||
-  c.activatedAbilities.any (fun ab =>
-    (match ab.effect with
-     | .printed _ => true
-     | _ => false) ||
-    ab.otherModes.any (fun
-      | .printed _ => true
-      | _ => false))
-
-/-- True when a catalog card still stores leftover Oracle as `.catalog`. -/
-def usesCatalogStub (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .catalog _ => true
-    | _ => false) ||
-  c.triggeredAbilities.any (fun
-    | .catalog _ => true
-    | _ => false) ||
-  (match c.spellEffect with
-   | some (.catalog _) => true
-   | _ => false) ||
-  c.spellModes.any (fun
-    | .catalog _ => true
-    | _ => false) ||
-  (match c.saga with
-   | some s => s.chapters.any (fun ch =>
-     match ch.chapterEffect with
-     | some (.catalog _) => true
-     | some (.spell (.catalog _)) => true
-     | _ => false)
-   | none => false) ||
-  c.activatedAbilities.any (fun ab =>
-    (match ab.effect with
-     | .catalog _ => true
-     | _ => false) ||
-    ab.otherModes.any (fun
-      | .catalog _ => true
-      | _ => false))
-
 /-- True when every currently supported catalog card's `CardDef` matches Oracle. -/
 def supportedCardsMatchOracle : Bool :=
   supportedCatalogCards.all (·.matchesOracleText)
@@ -787,7 +726,5 @@ def supportedOracleFailures : List String :=
 #guard magnificentEnd.matchesOracleText
 #guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
-#guard !supportedCatalogCards.any usesPrintedStub
-#guard !supportedCatalogCards.any usesCatalogStub
 
 end Mtg.Engine
