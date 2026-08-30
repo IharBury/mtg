@@ -3350,6 +3350,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .enchantedGetsHasAndTypes p t k types =>
     let kw :=
       match k.toList with
+      | ["vigilance", "first strike"] => "first strike and vigilance"
       | [a, b] => s!"{a} and {b}"
       | ks => String.intercalate ", " ks
     let extra :=
