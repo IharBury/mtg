@@ -133,7 +133,7 @@ def braveBrawler : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (keywords := Keyword.lifelink)
-    (activatedAbilities := #[activated (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 4, .colored .white] }) (powerUp := true)])
+    (activatedAbilities := #[powerUpAbility (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 4, .colored .white] })])
 
 def captainAmericaSuperSoldier : CardDef :=
   card "Captain America, Super-Soldier" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .white] })
@@ -431,7 +431,7 @@ def aerialDoombot : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (.putPlusOnePlusOneOnSource 3) ({ symbols := #[.generic 5, .colored .blue] }) (powerUp := true)])
+    (activatedAbilities := #[powerUpAbility (.putPlusOnePlusOneOnSource 3) ({ symbols := #[.generic 5, .colored .blue] })])
 
 def aIMScientists : CardDef :=
   card "A.I.M. Scientists" #[.creature] ({ symbols := #[.generic 3, .colored .blue] })
@@ -1386,7 +1386,7 @@ def volcanicVillain : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.haste)
-    (activatedAbilities := #[activated (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 5, .colored .red] }) (powerUp := true)])
+    (activatedAbilities := #[powerUpAbility (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 5, .colored .red] })])
 
 def wonderManHollywoodHero : CardDef :=
   card "Wonder Man, Hollywood Hero" #[.creature] ({ symbols := #[.generic 3, .colored .red, .colored .red] })
@@ -1594,7 +1594,7 @@ def serpentSpecialist : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (keywords := Keyword.deathtouch)
-    (activatedAbilities := #[activated (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 3, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[powerUpAbility (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 3, .colored .green] })])
 
 def shangChiMasterOfKungFu : CardDef :=
   card "Shang-Chi, Master of Kung Fu" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -2099,11 +2099,9 @@ def worldsWithinWorlds : CardDef :=
     (spellEffect := some (.msh .exileAllCreaturesEachPlayerMayPutAnyNum))
 
 def aIMSynthoids : CardDef :=
-  card "A.I.M. Synthoids" #[.artifact, .creature] ({ symbols := #[.generic 2] })
-    (subtypes := #["Robot", "Villain"])
-    (oracleText := "When this creature enters, surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)")
-    (power := some 1)
-    (toughness := some 3)
+  artifactCreature "A.I.M. Synthoids" ({ symbols := #[.generic 2] })
+    #["Robot", "Villain"] 1 3
+    "When this creature enters, surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)"
     (triggeredAbilities := #[mshTrig .whenThisCreatureEnters8])
 
 def arcReactor : CardDef :=
@@ -2114,14 +2112,13 @@ def arcReactor : CardDef :=
     (activatedAbilities := #[activated (.msh .addCCC) (ManaCost.empty) (tap := true)])
 
 def captainAmericaSShield : CardDef :=
-  card "Captain America's Shield" #[.artifact] ({ symbols := #[.generic 2] })
-    (supertypes := #[.legendary])
-    (subtypes := #["Equipment"])
-    (oracleText := "Indestructible\nEquipped creature gets +0/+8 and has vigilance.\nWhenever equipped creature attacks, tap target creature defending player controls.\nEquip {2}")
+  equipment "Captain America's Shield" ({ symbols := #[.generic 2] })
+    "Indestructible\nEquipped creature gets +0/+8 and has vigilance.\nWhenever equipped creature attacks, tap target creature defending player controls.\nEquip {2}"
+    ({ symbols := #[.generic 2] })
+    (legendary := true)
     (keywords := Keyword.indestructible)
     (triggeredAbilities := #[mshTrig .wheneverEquippedCreatureAttacks])
     (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 0 8 Keyword.vigilance])
-    (activatedAbilities := #[equipAbility ({ symbols := #[.generic 2] })])
 
 def cosmicCube : CardDef :=
   card "Cosmic Cube" #[.artifact] ({ symbols := #[.generic 5] })
@@ -2229,25 +2226,19 @@ def vivVisionTeenSynthezoid : CardDef :=
     (activatedAbilities := #[activated (.mshSpell .putTwo11CountersOnVivVision) ({ symbols := #[.generic 7] }) (powerUp := true)])
 
 def aIMLabs : CardDef :=
-  card "A.I.M. Labs" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addUOrB) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "A.I.M. Labs"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
+    .addUOrB
 
 def asgardianCitadel : CardDef :=
-  card "Asgardian Citadel" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addROrW) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Asgardian Citadel"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}."
+    .addROrW
 
 def avengersHangar : CardDef :=
-  card "Avengers Hangar" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addWOrU) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Avengers Hangar"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}."
+    .addWOrU
 
 def avengersTower : CardDef :=
   card "Avengers Tower" #[.land] (ManaCost.empty)
@@ -2262,11 +2253,9 @@ def baxterBuilding : CardDef :=
     (activatedAbilities := #[activated (.msh .addFourManaInAnyCombinationOfColors) ({ symbols := #[.generic 4] }) (tap := true), activated (.mshSpell .drawACardActivateOnlyIfYouControlACrea) ({ symbols := #[.generic 4] }) (tap := true)])
 
 def birninZanaPlaza : CardDef :=
-  card "Birnin Zana Plaza" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addGOrW) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Birnin Zana Plaza"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}."
+    .addGOrW
 
 def castleDoom : CardDef :=
   card "Castle Doom" #[.land] (ManaCost.empty)
@@ -2275,70 +2264,54 @@ def castleDoom : CardDef :=
     (activatedAbilities := #[activated (.msh .addOneManaOfAnyColorSpendThisManaOnly3) (ManaCost.empty) (tap := true), mshAct .n3TSacrificeAnArtifact])
 
 def darkFortress : CardDef :=
-  card "Dark Fortress" #[.land] (ManaCost.empty)
-    (oracleText := "{T}: Add {C}.\n{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct .addBOrRActivateOnlyIfThisLandEnter (tap := true)])
+  mshConditionalDualLand "Dark Fortress"
+    "{T}: Add {C}.\n{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land."
+    .addBOrRActivateOnlyIfThisLandEnter
 
 def fiskTower : CardDef :=
-  card "Fisk Tower" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addWOrB) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Fisk Tower"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}."
+    .addWOrB
 
 def gatheringPlace : CardDef :=
-  card "Gathering Place" #[.land] (ManaCost.empty)
-    (oracleText := "{T}: Add {C}.\n{T}: Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct .addGOrWActivateOnlyIfThisLandEnter (tap := true)])
+  mshConditionalDualLand "Gathering Place"
+    "{T}: Add {C}.\n{T}: Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land."
+    .addGOrWActivateOnlyIfThisLandEnter
 
 def gleamingBastion : CardDef :=
-  card "Gleaming Bastion" #[.land] (ManaCost.empty)
-    (oracleText := "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct .addWOrUActivateOnlyIfThisLandEnter (tap := true)])
+  mshConditionalDualLand "Gleaming Bastion"
+    "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land."
+    .addWOrUActivateOnlyIfThisLandEnter
 
 def hellSKitchen : CardDef :=
-  card "Hell's Kitchen" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addBOrR) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Hell's Kitchen"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}."
+    .addBOrR
 
 def hiddenLair : CardDef :=
-  card "Hidden Lair" #[.land] (ManaCost.empty)
-    (oracleText := "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct .addUOrBActivateOnlyIfThisLandEnter (tap := true)])
+  mshConditionalDualLand "Hidden Lair"
+    "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land."
+    .addUOrBActivateOnlyIfThisLandEnter
 
 def losDiablosMissileBase : CardDef :=
-  card "Los Diablos Missile Base" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addROrG) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Los Diablos Missile Base"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}."
+    .addROrG
 
 def pymTechnologies : CardDef :=
-  card "Pym Technologies" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addGOrU) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Pym Technologies"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}."
+    .addGOrU
 
 def starkIndustries : CardDef :=
-  card "Stark Industries" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addUOrR) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Stark Industries"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}."
+    .addUOrR
 
 def subterraneanCavern : CardDef :=
-  card "Subterranean Cavern" #[.land] (ManaCost.empty)
-    (oracleText := "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}.")
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh .addBOrG) (ManaCost.empty) (tap := true)])
+  mshGainLifeDualLand "Subterranean Cavern"
+    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}."
+    .addBOrG
 
 def surveillanceRoom : CardDef :=
   card "Surveillance Room" #[.land] (ManaCost.empty)
@@ -2348,10 +2321,9 @@ def surveillanceRoom : CardDef :=
     (activatedAbilities := #[activated (.addAnyColor) ({ symbols := #[.generic 1] }) (tap := true)])
 
 def trainingCompound : CardDef :=
-  card "Training Compound" #[.land] (ManaCost.empty)
-    (oracleText := "{T}: Add {C}.\n{T}: Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land.")
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct .addROrGActivateOnlyIfThisLandEnter (tap := true)])
+  mshConditionalDualLand "Training Compound"
+    "{T}: Add {C}.\n{T}: Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land."
+    .addROrGActivateOnlyIfThisLandEnter
 
 def villainousHideout : CardDef :=
   card "Villainous Hideout" #[.land] (ManaCost.empty)

@@ -29,6 +29,18 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
       | some (src, t) => some (.tapForMana src.id t)
       | none => some .pay
 
+/-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
+def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Action :=
+  if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
+    some .payGeneric
+  else
+    match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
+    | some (src, types) =>
+      match types[0]? with
+      | some t => some (.tapForMana src.id t)
+      | none => some .decline
+    | none => some .decline
+
 /-- Choose a single legal action for `p`, or `none` if that player is not to act. -/
 def choose (g : Game) (p : PlayerId) : Option Action :=
   if g.over then none
@@ -94,15 +106,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
     | .mayPayGeneric _ n =>
-      if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
-        some .payGeneric
-      else
-        match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
-        | some (src, types) =>
-          match types[0]? with
-          | some t => some (.tapForMana src.id t)
-          | none => some .decline
-        | none => some .decline
+      payGenericOrTapFirstSource g p n
     | .chooseLibraryPlacement _ _ =>
       some .chooseBottom
     | .mayAttachEquipment _ hostId =>
@@ -117,15 +121,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       if humans.isEmpty then some .decline
       else some (.choosePermanents (humans.map (·.id)))
     | .payOrLetCounter _ n _ =>
-      if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
-        some .payGeneric
-      else
-        match (g.manaSources p).find? (fun (_, types) => !types.isEmpty) with
-        | some (src, types) =>
-          match types[0]? with
-          | some t => some (.tapForMana src.id t)
-          | none => some .decline
-        | none => some .decline
+      payGenericOrTapFirstSource g p n
     | .recruitDiscard _ =>
       match (g.player p).hand.back? with
       | some id => some (.discard id)

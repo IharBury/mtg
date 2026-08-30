@@ -151,12 +151,11 @@ def dreadedBatCloud : CardDef :=
     (costReductionIfCreatureDied := 3)
 
 def crudeBentBlade : CardDef :=
-  artifact "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
+  equipment "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
     "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 2)
     (staticAbilities := #[.equippedCreatureGets 2 1])
     (triggeredAbilities := #[.onEnterTargetOpponentSacrificesCreature])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def gollumTheAbandoned : CardDef :=
   legendaryCreature "Gollum the Abandoned" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 2 2
@@ -200,12 +199,11 @@ def gandalfSparkStarter : CardDef :=
     (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
 
 def raggedShortSpear : CardDef :=
-  artifact "Ragged Short Spear" (ManaCost.ofGenericAndColor 1 .red)
+  equipment "Ragged Short Spear" (ManaCost.ofGenericAndColor 1 .red)
     "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 3)
     (staticAbilities := #[.equippedCreatureGets 2 0])
     (triggeredAbilities := #[.onEnterMayDiscardDraw 2])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def snowslopeHunter : CardDef :=
   creature "Snowslope Hunter" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Ranger"] 2 3
@@ -286,7 +284,7 @@ def ordinaryBear : CardDef :=
 def largeBear : CardDef :=
   creature "Large Bear" (ManaCost.ofGenericAndHybrids 3 .black .green 2) #["Bear"] 5 5
     (oracleText := "Reach, trample, haste")
-    (keywords := Keyword.reach.merge Keyword.trample |>.merge Keyword.haste)
+    (keywords := Keywords.mergeAll #[Keyword.reach, Keyword.trample, Keyword.haste])
 
 def littleBear : CardDef :=
   creature "Little Bear" (ManaCost.ofGenericAndColor 2 .green) #["Bear"] 3 2
@@ -306,56 +304,48 @@ def smaugsFury : CardDef :=
     (some (.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike)))
 
 def wellWornSpatula : CardDef :=
-  artifact "Well-Worn Spatula" (ManaCost.ofGeneric 1)
+  equipment "Well-Worn Spatula" (ManaCost.ofGeneric 1)
     "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 1)
     (triggeredAbilities := #[.onEnterGainLife 2])
     (staticAbilities := #[.equippedCreatureGets 1 1])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1)])
 
 /-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
-for two +1/+1 counters on a typed creature you control. -/
-def hobbitDualLand (name : String) (a b : Color) (creatureType : String)
+for two +1/+1 counters on a typed creature you control. One type uses
+`plusOneOnTargetSubtype`; several types use `plusOneOnTargetAnySubtype`. -/
+def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String)
     (oracleText : String) : CardDef :=
   land name oracleText
     (entersTapped := true)
     (tapAddOneOf := #[.colored a, .colored b])
     (activatedAbilities := #[
-      activated (.plusOneOnTargetSubtype 2 creatureType)
+      activated
+        (if creatureTypes.size == 1 then
+          .plusOneOnTargetSubtype 2 creatureTypes[0]!
+        else
+          .plusOneOnTargetAnySubtype 2 creatureTypes)
         (ManaCost.ofGenericAndColors 2 [a, b])
         (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
 
 def elvenkingsHalls : CardDef :=
-  hobbitDualLand "Elvenking's Halls" .green .blue "Elf"
+  hobbitDualLand "Elvenking's Halls" .green .blue #["Elf"]
     "This land enters tapped.\n{T}: Add {G} or {U}.\n{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery."
 
 def ironHills : CardDef :=
-  hobbitDualLand "Iron Hills" .red .white "Dwarf"
+  hobbitDualLand "Iron Hills" .red .white #["Dwarf"]
     "This land enters tapped.\n{T}: Add {R} or {W}.\n{2}{R}{W}, {T}, Sacrifice this land: Put two +1/+1 counters on target Dwarf you control. Activate only as a sorcery."
 
 def lakeTown : CardDef :=
-  hobbitDualLand "Lake-town" .white .blue "Human"
+  hobbitDualLand "Lake-town" .white .blue #["Human"]
     "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery."
 
 def goblinTown : CardDef :=
-  land "Goblin-town"
+  hobbitDualLand "Goblin-town" .black .red #["Goblin", "Orc"]
     "This land enters tapped.\n{T}: Add {B} or {R}.\n{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery."
-    (entersTapped := true)
-    (tapAddOneOf := #[.colored .black, .colored .red])
-    (activatedAbilities := #[
-      activated (.plusOneOnTargetAnySubtype 2 #["Goblin", "Orc"])
-        (ManaCost.ofGenericAndColors 2 [.black, .red])
-        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
 
 def mirkwood : CardDef :=
-  land "Mirkwood"
+  hobbitDualLand "Mirkwood" .black .green #["Bear", "Spider", "Wolf"]
     "This land enters tapped.\n{T}: Add {B} or {G}.\n{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counters on target Bear, Spider, or Wolf you control. Activate only as a sorcery."
-    (entersTapped := true)
-    (tapAddOneOf := #[.colored .black, .colored .green])
-    (activatedAbilities := #[
-      activated (.plusOneOnTargetAnySubtype 2 #["Bear", "Spider", "Wolf"])
-        (ManaCost.ofGenericAndColors 2 [.black, .green])
-        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
 
 def hobbitHole : CardDef :=
   land "Hobbit Hole"
@@ -532,20 +522,18 @@ def chiefWargsCompany : CardDef :=
     (triggeredAbilities := #[.onYourUpkeepCreateTokens .wolf 1])
 
 def dwarvenShortsword : CardDef :=
-  artifact "Dwarven Shortsword" (ManaCost.ofGenericAndColor 3 .white)
+  equipment "Dwarven Shortsword" (ManaCost.ofGenericAndColor 3 .white)
     "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 2)
     (triggeredAbilities := #[.onEnterCreateThenAttach .dwarf])
     (staticAbilities := #[.equippedCreatureGets 1 2])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def goblinPlateMail : CardDef :=
-  artifact "Goblin Plate Mail" (ManaCost.ofGenericAndHybrids 1 .black .red)
+  equipment "Goblin Plate Mail" (ManaCost.ofGenericAndHybrids 1 .black .red)
     "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 4)
     (triggeredAbilities := #[.onEnterAmassThenAttach 1])
     (staticAbilities := #[.equippedCreatureGetsAndHas 1 0 Keyword.menace])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 4)])
 
 def momentOfGlory : CardDef :=
   sorcery "Moment of Glory" (ManaCost.ofColor .white)
@@ -589,12 +577,11 @@ def trollNegotiations : CardDef :=
     (some (.plusOneThenFight 2))
 
 def dwarvenMattock : CardDef :=
-  artifact "Dwarven Mattock" (ManaCost.ofGeneric 2)
+  equipment "Dwarven Mattock" (ManaCost.ofGeneric 2)
     "When this Equipment enters, attach it to target Dwarf you control.\nEquipped creature gets +2/+2 and has ward {1}. (Whenever equipped creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+    (ManaCost.ofGeneric 3)
     (triggeredAbilities := #[.onEnterAttachToSubtype "Dwarf"])
     (staticAbilities := #[.equippedCreatureGetsAndWard 2 2 1])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def greatUglyLookingGoblin : CardDef :=
   creature "Great Ugly-Looking Goblin" (ManaCost.ofGenericAndColor 5 .black)
@@ -645,14 +632,13 @@ def throrsMap : CardDef :=
       activated (.drawThenDiscardN 1) (ManaCost.ofGeneric 2) (tap := true)])
 
 def theBlackArrow : CardDef :=
-  artifact "The Black Arrow" (ManaCost.ofGeneric 3)
+  equipment "The Black Arrow" (ManaCost.ofGeneric 3)
     "Flash\nWhen The Black Arrow enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it.\nEquipped creature gets +1/+1 and has reach.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
+    (ManaCost.ofGeneric 1)
+    (legendary := true)
     (keywords := Keyword.flash)
     (triggeredAbilities := #[.onEnterDealDamageDestroyIfSubtype 1 "Dragon"])
     (staticAbilities := #[.equippedCreatureGetsAndHas 1 1 Keyword.reach])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1)])
 
 def smaugTheMagnificent : CardDef :=
   legendaryCreature "Smaug the Magnificent" (ManaCost.ofGenericAndColors 2 [.red, .red])
@@ -869,12 +855,11 @@ def smaugWickedWorm : CardDef :=
       .onCastWithTreasureDrawLoseLife])
 
 def glamdringFoeHammer : CardDef :=
-  artifact "Glamdring, Foe-hammer" (ManaCost.ofGeneric 2)
+  equipment "Glamdring, Foe-hammer" (ManaCost.ofGeneric 2)
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power.\nEquip {2}\n//ADV//\nGleam of Death {3}{U}\nSorcery — Adventure\nMill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
+    (ManaCost.ofGeneric 2)
+    (legendary := true)
     (staticAbilities := #[.instantSorceryCostReductionEqualEquippedPower])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
     (adventure := some (adventure "Gleam of Death" (ManaCost.ofGenericAndColor 3 .blue)
       "Mill six cards, then put all instant and sorcery cards from among them into your hand. (Then exile this card. You may cast the artifact later from exile.)"
       (.millThenPutAllInstantsOrSorceries 6)))
@@ -1106,12 +1091,11 @@ def oldFatSpiderCanTSeeMe : CardDef :=
     chapter "III, IV" "Draw a card." (.draw 1)]
 
 def orcristGoblinCleaver : CardDef :=
-  artifact "Orcrist, Goblin-cleaver" (ManaCost.ofGeneric 3) "Equipped creature gets +2/+2 and has trample.\nWhenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type.\nEquip {3}"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
+  equipment "Orcrist, Goblin-cleaver" (ManaCost.ofGeneric 3) "Equipped creature gets +2/+2 and has trample.\nWhenever equipped creature deals combat damage to a player, choose a creature type. Create a Treasure token for each creature you control of that type.\nEquip {3}"
+    (ManaCost.ofGeneric 3)
+    (legendary := true)
     (staticAbilities := #[.equippedCreatureGetsAndHas 2 2 Keyword.trample])
     (triggeredAbilities := #[.onEquippedCombatDamageTreasuresPerChosenType])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def partInFriendship : CardDef :=
   enchantment "Part in Friendship" (ManaCost.ofGenericAndColor 4 .green) "Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
@@ -1150,12 +1134,11 @@ def silvanReveler : CardDef :=
       .onLandYouControlEntersPayReturnFromGy])
 
 def stingBilboSSword : CardDef :=
-  artifact "Sting, Bilbo's Sword" (ManaCost.ofGeneric 2) "Flash\nWhen Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)\nEquip {3}"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
+  equipment "Sting, Bilbo's Sword" (ManaCost.ofGeneric 2) "Flash\nWhen Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control. (Each hone counter on an Equipment grants +1/+0 to equipped creature.)\nEquip {3}"
+    (ManaCost.ofGeneric 3)
+    (legendary := true)
     (keywords := Keyword.flash)
     (triggeredAbilities := #[.onEnterHonePerOppCreaturesAttach])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def stoneGiantOfHighPass : CardDef :=
   creature "Stone-Giant of High Pass" (ManaCost.ofGenericAndColors 5 [.red, .red]) #["Giant"] 7 7 (oracleText := "Whenever this creature enters or attacks, create a 3/1 colorless Wall artifact creature token with defender named Stone Boulder.\n{2}{R}, Sacrifice an artifact: This creature deals 4 damage to any target.")
@@ -1234,12 +1217,12 @@ def uncoverTheMoonLetters : CardDef :=
     (triggeredAbilities := #[.onCastNoncreatureMayDrawXDiscard2])
 
 def wizardSStaff : CardDef :=
-  artifact "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
-    (subtypes := #["Equipment"])
+  equipment "Wizard's Staff" (ManaCost.ofGenericAndColor 1 .blue) "Equipped creature has prowess. (Whenever its controller casts a noncreature spell, that creature gets +1/+1 until end of turn.)\nIf a triggered ability of equipped creature triggers, that ability triggers an additional time.\nEquip Wizard {1}\nEquip {3}"
+    (ManaCost.ofGeneric 1)
+    (equipSubtype := some "Wizard")
+    (moreEquips := #[equipAbility (ManaCost.ofGeneric 3)])
     (staticAbilities := #[.equippedTriggersAgain,
       .equippedCreatureHasKeywords Keyword.prowess])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1) (subtype := some "Wizard"),
-      equipAbility (ManaCost.ofGeneric 3)])
 
 /-- Every unique card in The Hobbit (HOB), including Journey basic lands
 that are also in the core catalog. -/

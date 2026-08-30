@@ -92,6 +92,10 @@ def fields : List Field := [
 def merge (a b : Keywords) : Keywords :=
   fields.foldl (fun acc f => f.set acc (f.get a || f.get b)) none
 
+/-- Union of every keyword set in `ks`. -/
+def mergeAll (ks : Array Keywords) : Keywords :=
+  ks.foldl merge none
+
 /-- `name` when `b` is true, otherwise nothing. -/
 def flag (b : Bool) (name : String) : List String :=
   if b then [name] else []

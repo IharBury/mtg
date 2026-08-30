@@ -615,7 +615,7 @@ def callForthTheTempest : CardDef :=
 def cavernHoardDragon : CardDef :=
   creature "Cavern-Hoard Dragon" (ManaCost.ofGenericAndColors 7 [.red, .red]) #["Dragon"] 6 6 (oracleText := "This spell costs {X} less to cast, where X is the greatest number of artifacts an opponent controls.\nFlying, trample, haste\nWhenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls.")
     (costReductionEqualOppArtifacts := true)
-    (keywords := Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
+    (keywords := Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste])
     (triggeredAbilities := #[.onCombatDamageCreateTreasuresEqualPlayerArtifacts])
 
 def chiefOfTheWilds : CardDef :=
@@ -709,7 +709,7 @@ def sauronTheDarkLord : CardDef :=
 
 def smaugTheImpenetrable : CardDef :=
   legendaryCreature "Smaug the Impenetrable" (ManaCost.ofGenericAndColors 5 [.black, .red]) #["Dragon"] 8 7 (oracleText := "Flying, indestructible, haste\nWhenever Smaug is dealt noncombat damage, create that many Treasure tokens.")
-    (keywords := Keyword.flying.merge Keyword.indestructible |>.merge Keyword.haste)
+    (keywords := Keywords.mergeAll #[Keyword.flying, Keyword.indestructible, Keyword.haste])
     (triggeredAbilities := #[.onDealtNoncombatDamageCreateTreasures])
 
 def theBlackGate : CardDef :=
