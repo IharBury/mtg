@@ -395,6 +395,14 @@ structure GameObject where
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
+  /-- Printed card to restore when a copy effect ends (CR 707 / MSH). -/
+  copyRestore : Option CardDef := none
+  /-- The current copy effect lasts until end of turn. -/
+  copyUntilEot : Bool := false
+  /-- The current copy effect lasts until this controller's next turn. -/
+  copyUntilNextTurn : Bool := false
+  /-- The current copy effect lasts until this source leaves the battlefield. -/
+  copyUntilSourceLeaves : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -988,6 +996,8 @@ structure Game where
   additionalCombatPhases : Nat := 0
   /-- Enrage triggers that will grant an additional combat when they resolve. -/
   enrageGrantsAdditionalCombat : Nat := 0
+  /-- The Sensational She-Hulk chose to deal damage this turn (MSH 95 / 142). -/
+  sheHulkDamageUsedThisTurn : Bool := false
 deriving Repr, Inhabited
 
 namespace Game
@@ -1123,6 +1133,37 @@ def battlefield (g : Game) : Array GameObject :=
 
 def permanentsOf (g : Game) (p : PlayerId) : Array GameObject :=
   g.battlefield.filter (fun o => o.controlledBy p)
+
+/-- End a copy effect on `o`, restoring its original printed card (CR 707).
+Does not cause the permanent to enter or leave the battlefield. -/
+def restoreCopy (g : Game) (o : GameObject) : Game :=
+  match o.copyRestore with
+  | none => g
+  | some card =>
+    let copied := o.printed.name
+    g.setObject { o with
+      printed := card
+      copyRestore := none
+      copyUntilEot := false
+      copyUntilNextTurn := false
+      copyUntilSourceLeaves := none }
+    |>.logMsg s!"{card.name} is no longer a copy of {copied}"
+
+/-- Restore copy effects that last until end of turn. -/
+def restoreCopiesUntilEot (g : Game) : Game :=
+  g.battlefield.foldl (fun acc o =>
+    if o.copyUntilEot then acc.restoreCopy o else acc) g
+
+/-- Restore copy effects that last until `p`'s next turn. -/
+def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) : Game :=
+  g.battlefield.foldl (fun acc o =>
+    if o.copyUntilNextTurn && o.controller == some p then acc.restoreCopy o
+    else acc) g
+
+/-- Restore copy effects that last until `srcId` leaves the battlefield. -/
+def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId) : Game :=
+  g.battlefield.foldl (fun acc o =>
+    if o.copyUntilSourceLeaves == some srcId then acc.restoreCopy o else acc) g
 
 /-- Whether `p` currently has an enduring story. -/
 def hasEnduringStory (g : Game) (p : PlayerId) : Bool :=
@@ -2181,6 +2222,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       else g
     | none => g
+  let g :=
+    if old.zone == .battlefield then
+      g.restoreCopiesUntilSourceLeaves old.id
+    else g
   (g, newId)
 
 /-- Move `o` to its owner's graveyard and log `reason`. Exile-if-dies
@@ -6304,6 +6349,16 @@ def destroyPermanent (g : Game) (o : GameObject) : Game :=
 def mapObjectStatus (g : Game) (o : GameObject) (f : Status → Status) : Game :=
   g.setObject { o with status := f o.status }
 
+/-- Queue “a creature you control is dealt damage” triggers (She-Hulk). -/
+def queueCreatureYouControlDealtDamage (g : Game) (o : GameObject) (n : Int) : Game :=
+  if n <= 0 || !o.isCreature then g
+  else
+    match o.controller with
+    | none => g
+    | some p =>
+      g.foldControlledPermanents p (excludeId := none) (fun g src =>
+        g.putMatchingSourceTriggers p src .creatureYouControlDealtDamage (some n))
+
 /-- Deal `n` damage to a creature and log `msg`. `deathtouch` records that a
 source with deathtouch dealt this damage (CR 702.2 / 704.5h). -/
 def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
@@ -6323,7 +6378,8 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   else if n > 0 && o.status.shield > 0 && unpreventable then
     let g := g.setObject { o with status := { o.status with shield := o.status.shield - 1 } }
     let g := g.logMsg s!"A shield counter is removed from {o.name} (unpreventable damage)"
-    (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
+    let g := (g.mapObjectStatus (g.object! o.id) (fun s => s.addDamage n deathtouch)).logMsg msg
+    g.queueCreatureYouControlDealtDamage (g.object! o.id) n
   else
   let g := (g.mapObjectStatus o (fun s => s.addDamage n deathtouch)).logMsg msg
   let g :=
@@ -6345,6 +6401,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         else g
       | none => g
     else g
+  let g := g.queueCreatureYouControlDealtDamage o n
   if n > 0 && !combat then
     match o.controller with
     | none => { g with lastNoncombatDamage := some (o.id, n.toNat) }
@@ -7158,13 +7215,259 @@ def withSourceOnBattlefield (g : Game) (sourceId : Option ObjectId)
   | none =>
     g.logMsg missing
 
+/-- Merge subtype names without duplicates. -/
+def mergeSubtypes (xs ys : Array String) : Array String :=
+  ys.foldl (fun acc y => if acc.any (· == y) then acc else acc.push y) xs
+
+/-- `o` becomes a copy of `src`'s copiable values. The permanent does not
+enter or leave the battlefield (MSH 322 / 326 / 329 / 330). Counters,
+attachments, and status are unchanged. If `src` is already a copy, `o`
+copies whatever `src` copied (MSH 194 / 198 / 199 / 201). -/
+def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
+    (untilEot := false) (untilNextTurn := false)
+    (untilSourceLeaves : Option ObjectId := none)
+    (exceptName : Option String := none)
+    (forceLegendary := false) (notLegendary := false)
+    (addCreature := false) (addSubtypes : Array String := #[])
+    (setPT : Option (Int × Int) := none)
+    (addVigilance := false) : Game :=
+  let restore := o.copyRestore.getD o.printed
+  let printed0 := src.printed
+  let types :=
+    if addCreature && !printed0.types.any (· == .creature) then
+      printed0.types.push .creature
+    else printed0.types
+  let supertypes :=
+    if notLegendary then printed0.supertypes.filter (· != .legendary)
+    else if forceLegendary && !printed0.supertypes.any (· == .legendary) then
+      printed0.supertypes.push .legendary
+    else printed0.supertypes
+  let printed : CardDef :=
+    { printed0 with
+      name := exceptName.getD printed0.name
+      types
+      subtypes := mergeSubtypes printed0.subtypes addSubtypes
+      supertypes
+      power :=
+        match setPT with
+        | some (p, _) => some p
+        | none => printed0.power
+      toughness :=
+        match setPT with
+        | some (_, t) => some t
+        | none => printed0.toughness
+      keywords :=
+        if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
+        else printed0.keywords }
+  let g := g.setObject { o with
+    printed
+    copyRestore := some restore
+    copyUntilEot := untilEot
+    copyUntilNextTurn := untilNextTurn
+    copyUntilSourceLeaves := untilSourceLeaves }
+  g.logMsg s!"{restore.name} becomes a copy of {printed0.name}"
+
+/-- Copy an activated or triggered ability on the stack. The copy is not
+cast or activated (MSH 34 / 40 / 66) and uses the same source and X
+(MSH 47 / 302 / 303). -/
+def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Game :=
+  if (g.player controller).lost then
+    g.logMsg s!"{src.name} remains in its current zone (CR 800.4b)"
+  else
+    let (g, copy) := g.allocObject src.printed controller .stack (some controller)
+      (abilityEffect := src.abilityEffect)
+      (triggeredAbility := src.triggeredAbility)
+      (sourceId := src.sourceId)
+      (lastKnownPower := src.lastKnownPower)
+      (lastKnownToughness := src.lastKnownToughness)
+    let g := g.setObject { copy with
+      chosenX := src.chosenX
+      isCopy := true
+      teamworkPaid := src.teamworkPaid }
+    let g := g.putStackEntry controller copy.id
+    let g :=
+      match g.stack.findIdx? (fun e => e.objectId == src.id) with
+      | some i =>
+        let orig := g.stack[i]!
+        let last := g.stack.size - 1
+        { g with stack := g.stack.set! last { g.stack[last]! with
+          targets := orig.targets
+          dividedDamage := orig.dividedDamage
+          chosenMode := orig.chosenMode } }
+      | none => g
+    g.logMsg s!"A copy of {src.name} is created"
+
+/-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
+def revealHand (g : Game) (p : PlayerId) : Game :=
+  let names :=
+    (g.player p).hand.foldl (fun acc id =>
+      match g.findObject? id with
+      | some o => if acc == "" then o.name else s!"{acc}, {o.name}"
+      | none => acc) ""
+  g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
+
+/-- Worlds Within Worlds (MSH 96): exile creatures, put creature cards from
+hands onto the battlefield, return the exiled cards to hands, exile the spell. -/
+def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
+    (sourceId : Option ObjectId) : Game :=
+  Id.run do
+    let mut g := g
+    let creatures := g.battlefield.filter (fun o => o.isCreature)
+    let mut exiled : Array ObjectId := #[]
+    for o in creatures do
+      let name := o.name
+      let (g', nid) := g.move o.id .exile none
+      g := g'
+      exiled := exiled.push nid
+      g := g.logMsg s!"{name} is exiled"
+    let order :=
+      let apnap := g.apnapOrder
+      if apnap.isEmpty then #[controller]
+      else apnap
+    for pid in order do
+      let ids := (g.player pid).hand
+      for id in ids do
+        match g.findObject? id with
+        | some o =>
+          if o.printed.isCreature then
+            let (g', _) := g.putOntoBattlefield o.id pid
+            g := g'
+            g := g.logMsg s!"{(g.player pid).name} puts {o.name} onto the battlefield"
+          else g := g
+        | none => pure ()
+    for nid in exiled do
+      match g.findObject? nid with
+      | some o =>
+        if o.zone == .exile then
+          let (g', _) := g.move o.id (.hand o.owner) none
+          g := g'.logMsg s!"{o.name} is returned to its owner's hand"
+        else pure ()
+      | none => pure ()
+    match sourceId.bind g.findObject? with
+    | some src =>
+      let (g', _) := g.move src.id .exile none
+      return g'.logMsg s!"{src.name} is exiled"
+    | none =>
+      return g
+
 /-- Resolve a modeled MSH trigger. Performs the printed effect: tokens, draw,
 damage, destroy, attach, exile, or pump. -/
 def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (sourceName : String := "This creature") : Game :=
+    (sourceName : String := "This creature")
+    (lastKnownPower : Option Int := none) : Game :=
   let text := t.toNotation
   match t with
+  | .whenCloakAndDaggerEnter =>
+    let opp? :=
+      match targets[0]? with
+      | some (Target.player pid) => some pid
+      | _ =>
+        match (g.livingOpponents controller)[0]? with
+        | some pl => some pl.id
+        | none => none
+    match opp? with
+    | none => g
+    | some opp =>
+      let g := g.revealHand opp
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then
+          match targets[1]? with
+          | some (Target.permanent id) =>
+            match g.findObject? id with
+            | some o => g.exileUntilSourceLeaves sourceId o
+            | none => g
+          | some (Target.card id) =>
+            match g.findObject? id with
+            | some o =>
+              if o.zone == .hand opp && !o.printed.isLand then
+                g.exileUntilSourceLeaves sourceId o
+              else g
+            | none => g
+          | _ => g
+        else
+          g.logMsg "Cloak and Dagger have left the battlefield. Nothing is exiled."
+      | none =>
+        g.logMsg "Cloak and Dagger have left the battlefield. Nothing is exiled."
+  | .whenThisAuraEnters2 =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        match targets[0]? with
+        | some (Target.permanent id) =>
+          match g.findObject? id with
+          | some tgt =>
+            let host? := src.attachedTo.bind g.findObject?
+            let g := g.exileUntilSourceLeaves sourceId tgt
+            match host? with
+            | some host =>
+              match g.findObject? host.id with
+              | some host =>
+                g.becomeCopyOf host tgt (untilSourceLeaves := some src.id)
+              | none => g
+            | none => g
+          | none => g.logMsg "The target is no longer legal"
+        | _ => g
+      else
+        g.logMsg "The source has left the battlefield. Nothing is exiled."
+    | none =>
+      g.logMsg "The source has left the battlefield. Nothing is exiled."
+  | .whenThisEnchantmentEnters =>
+    match sourceId.bind g.findObject? with
+    | some src =>
+      if src.isOnBattlefield then
+        match targets[0]? with
+        | some (Target.permanent id) =>
+          match g.findObject? id with
+          | some o => g.exileUntilSourceLeaves sourceId o
+          | none => g.logMsg "The target is no longer legal"
+        | _ => g
+      else
+        g.logMsg "The source has left the battlefield. Nothing is exiled."
+    | none =>
+      g.logMsg "The source has left the battlefield. Nothing is exiled."
+  | .atTheBeginningOfYourFirstMainPhase =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
+      match targets[0]? with
+      | some (Target.permanent id) =>
+        match g.findObject? id with
+        | some tgt =>
+          g.becomeCopyOf src tgt (untilNextTurn := true)
+            (exceptName := some "Absorbing Man")
+            (forceLegendary := true) (addCreature := true)
+            (addSubtypes := #["Human", "Villain"])
+            (setPT := some (4, 4)) (addVigilance := true)
+        | none => g
+      | _ => g) "The source is no longer in play"
+  | .photographicReflexesAtTheBeginningOf =>
+    g.withSourceOnBattlefield sourceId (fun g src =>
+      match targets[0]? with
+      | some (Target.permanent id) | some (Target.card id) =>
+        match g.findObject? id with
+        | some tgt =>
+          g.becomeCopyOf src tgt (untilNextTurn := true)
+            (exceptName := some "Taskmaster, Mercenary Mimic")
+            (forceLegendary := true) (addCreature := true)
+            (addSubtypes := #["Human", "Mercenary", "Villain"])
+        | none => g
+      | _ => g) "The source is no longer in play"
+  | .wheneverACreatureYouControlIsDealtDamage =>
+    if g.sheHulkDamageUsedThisTurn then
+      g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
+    else
+      let amt := lastKnownPower.getD 0
+      let g :=
+        g.withLegalKindTarget controller .playerOrCreature targets (fun g tgt =>
+          match tgt with
+          | Target.player pid => g.dealDamageToPlayer pid amt
+          | Target.permanent id =>
+            match g.findObject? id with
+            | some o => g.dealDamageToPermanent o amt
+            | none => g
+          | _ => g) sourceId none
+      { g with sheHulkDamageUsedThisTurn := true }
+        |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
   | .wheneverAnotherCreatureYouControlEnters =>
     g.withSourceOnBattlefield sourceId (fun g hulkling =>
       let entered :=
@@ -7317,8 +7620,15 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.withLegalKindPermanent controller .oppCreature targets
         (fun g o => g.destroyPermanent o) sourceId none
     else if text.contains "exile" && text.contains "leaves" then
-      g.withLegalKindPermanent controller .oppNonland targets
-        (fun g o => g.exileUntilSourceLeaves sourceId o) sourceId none
+      match sourceId.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield then
+          g.withLegalKindPermanent controller .oppNonland targets
+            (fun g o => g.exileUntilSourceLeaves sourceId o) sourceId none
+        else
+          g.logMsg "The source has left the battlefield. Nothing is exiled."
+      | none =>
+        g.logMsg "The source has left the battlefield. Nothing is exiled."
     else if text.contains "+1/+1 counter" then
       match targets[0]? with
       | some (Target.permanent id) => g.addPlusOnePlusOneTo (g.object! id) 1
@@ -7351,6 +7661,34 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
 /-- Resolve a modeled MSH spell. -/
 def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     (targets : Array Target) (sourceId : Option ObjectId := none) : Game :=
+  match t with
+  | .targetArtifactYouControlBecomesACopyOfA =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent a), some (Target.permanent b) =>
+      match g.findObject? a, g.findObject? b with
+      | some dest, some src =>
+        if dest.isOnBattlefield && src.isOnBattlefield &&
+            dest.controlledBy controller && src.controlledBy controller &&
+            dest.printed.isArtifact && src.printed.isArtifact then
+          g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
+        else
+          g.logMsg "The target is no longer legal. The ability has no effect."
+      | _, _ =>
+        g.logMsg "The target is no longer legal. The ability has no effect."
+    | _, _ =>
+      g.logMsg "The target is no longer legal. The ability has no effect."
+  | .copyTargetActivatedOrTriggeredAbilityYouC =>
+    match targets[0]? with
+    | some (Target.card id) | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .stack then g.copyStackAbility o controller
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g
+  | .exileAllCreaturesEachPlayerMayPutAnyNum =>
+    g.applyWorldsWithinWorlds controller sourceId
+  | _ =>
   let text := t.toNotation
   if text.contains "finality" then
     match sourceId.bind g.findObject? with
@@ -10092,7 +10430,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     let g := g.draw controller 1
     g.loseLife controller 1
   | .msh t =>
-    g.applyMshTrigger controller t sourceId targets sourceName
+    g.applyMshTrigger controller t sourceId targets sourceName lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -10632,6 +10970,7 @@ def clearCombat (g : Game) : Game :=
 def clearEOT (g : Game) : Game :=
   Id.run do
     let mut g := { g with creaturesWithoutFlyingCantBlock := false }
+    g := g.restoreCopiesUntilEot
     for o in g.battlefield do
       if o.status.controlUntilEot then
         g := g.endControlChangingEffect (g.object! o.id)
@@ -10663,7 +11002,8 @@ def clearTurnActivations (g : Game) : Game :=
       creatureDiedThisTurn := false
       battlefieldCreaturesToGyThisTurn := #[]
       lastLifeLost := none
-      lastNoncombatDamage := none }
+      lastNoncombatDamage := none
+      sheHulkDamageUsedThisTurn := false }
     for pl in g.players do
       if pl.lost then
         -- Keep last-known this-turn info until that turn would have begun
@@ -10731,6 +11071,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         |>.logMsg
           s!"{(g.player p).name}'s protection from everything ends (CR 800.4m)"
     else g
+  let g := g.restoreCopiesUntilNextTurn p
   let g := g.expirePlayPermissions p
   g.setPlayer { (g.player p) with
     cardsDrawnThisTurn := 0
@@ -10898,6 +11239,7 @@ partial def beginStep (g : Game) (st : Step) : Game :=
 
 def beginTurn (g : Game) : Game :=
   let p := g.activePlayer
+  let g := g.restoreCopiesUntilNextTurn p
   let g :=
     if (g.player p).protectionFromEverything then
       g.setPlayer { (g.player p) with protectionFromEverything := false }

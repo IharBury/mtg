@@ -1378,6 +1378,252 @@ def kidLokiHexproofAfterCountersOk : Bool :=
 
 #guard kidLokiHexproofAfterCountersOk
 
+/-- True when a battlefield permanent named `n` exists. -/
+def onBattlefield (g : Game) (n : String) : Bool :=
+  g.battlefield.any (fun o => o.name == n)
+
+/-- Rulings 149 / 141: leave-before-resolve exile does nothing. -/
+def leaveBeforeResolveExileOk : Bool :=
+  let g := addPermanent afterDraw webUp ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let web := namedPermanent g "Web Up"
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, _) := g.move web.id (.graveyard ⟨0⟩) none
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterExileOppNonlandUntilLeaves
+    (some web.id) #[Target.permanent bears.id]
+  onBattlefield g "Grizzly Bears" &&
+    !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
+    (let g := addPermanent afterDraw superVillainLockup ⟨0⟩ ⟨0⟩
+     let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+     let lock := namedPermanent g "Super Villain Lockup"
+     let bears := namedPermanent g "Grizzly Bears"
+     let (g, _) := g.move lock.id (.graveyard ⟨0⟩) none
+     let g := g.applyMshTrigger ⟨0⟩ .whenThisEnchantmentEnters (some lock.id)
+       #[Target.permanent bears.id]
+     onBattlefield g "Grizzly Bears" &&
+       !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile)) &&
+    (mshRuling 149).comment.contains "won't be exiled" &&
+    (mshRuling 141).comment.contains "won't be exiled"
+
+#guard leaveBeforeResolveExileOk
+
+/-- Ruling 132 / 204 / 225: Cloak and Dagger still reveal if they left. -/
+def cloakAndDaggerRevealIfLeftOk : Bool :=
+  let g := addToHand afterDraw lightningBolt ⟨1⟩
+  let g := addPermanent g cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let cloak := namedPermanent g "Cloak and Dagger, Entwined"
+  let bears := namedPermanent g "Grizzly Bears"
+  let (g, _) := g.move cloak.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cloak.id)
+    #[Target.player ⟨1⟩, Target.permanent bears.id]
+  logContains g "reveals their hand" &&
+    onBattlefield g "Grizzly Bears" &&
+    !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
+    (mshRuling 132).comment.contains "still reveal" &&
+    (mshRuling 225).comment.contains "still do as much as it can"
+
+#guard cloakAndDaggerRevealIfLeftOk
+
+/-- Rulings 140 / 325 / 329: Secret Invasion leaving skips exile and the copy. -/
+def secretInvasionLeaveOk : Bool :=
+  let g := addPermanent afterDraw secretInvasion ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let aura := namedPermanent g "Secret Invasion"
+  let host := namedPermanent g "Grizzly Bears"
+  let tgt := namedPermanent g "Hill Giant"
+  let g := g.attachSourceTo aura host
+  let (g, _) := g.move aura.id (.graveyard ⟨0⟩) none
+  let g := g.applyMshTrigger ⟨0⟩ .whenThisAuraEnters2 (some aura.id)
+    #[Target.permanent tgt.id]
+  onBattlefield g "Hill Giant" &&
+    onBattlefield g "Grizzly Bears" &&
+    (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears" &&
+    (mshRuling 140).comment.contains "won't be exiled"
+
+#guard secretInvasionLeaveOk
+
+/-- Rulings 121 / 200 / 201 / 322: Absorbing Man copies printed values, no ETB. -/
+def absorbingManCopyOk : Bool :=
+  let g := addPermanent afterDraw absorbingMan ⟨0⟩ ⟨0⟩
+  let g := addPermanent g doctorDoom ⟨0⟩ ⟨0⟩
+  let am := namedPermanent g "Absorbing Man"
+  let doom := namedPermanent g "Doctor Doom"
+  let before := g.waitingTriggers.size
+  let g := g.applyMshTrigger ⟨0⟩ .atTheBeginningOfYourFirstMainPhase (some am.id)
+    #[Target.permanent doom.id]
+  let am := namedPermanent g "Absorbing Man"
+  am.printed.name == "Absorbing Man" &&
+    am.printed.power == some 4 &&
+    am.printed.types.any (· == .creature) &&
+    am.copyRestore.isSome &&
+    am.copyUntilNextTurn &&
+    g.waitingTriggers.size == before &&
+    (mshRuling 121).comment.contains "exactly what was printed" &&
+    (mshRuling 322).comment.contains "neither entering nor leaving"
+
+#guard absorbingManCopyOk
+
+/-- Rulings 122 / 196 / 198 / 326: Taskmaster copies a creature or graveyard card. -/
+def taskmasterCopyOk : Bool :=
+  let g := addPermanent afterDraw taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyMshTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf (some tm.id)
+    #[Target.permanent giant.id]
+  let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
+  tm.printed.name == "Taskmaster, Mercenary Mimic" &&
+    tm.printed.power == hillGiant.power &&
+    tm.copyUntilNextTurn &&
+    (let g2 := addPermanent afterDraw taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
+     let g2 := addPermanent g2 hillGiant ⟨1⟩ ⟨1⟩
+     let giant := namedPermanent g2 "Hill Giant"
+     let (g2, _) := g2.move giant.id (.graveyard ⟨1⟩) none
+     let gy := namedGraveyardCard g2 ⟨1⟩ "Hill Giant"
+     let tm := namedPermanent g2 "Taskmaster, Mercenary Mimic"
+     let g2 := g2.applyMshTrigger ⟨0⟩ .photographicReflexesAtTheBeginningOf
+       (some tm.id) #[Target.card gy.id]
+     (namedPermanent g2 "Taskmaster, Mercenary Mimic").printed.power ==
+       hillGiant.power) &&
+    (mshRuling 122).comment.contains "exactly what was printed" &&
+    (mshRuling 326).comment.contains "neither entering nor leaving"
+
+#guard taskmasterCopyOk
+
+/-- Rulings 120 / 188 / 193 / 194 / 330: Shuri copies until EOT and isn't legendary. -/
+def shuriCopyUntilEotOk : Bool :=
+  let g := addPermanent afterDraw shuriWakandanInventor ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
+  let g := addPermanent g sHIELDDeploymentDrone ⟨0⟩ ⟨0⟩
+  let destId := (namedPermanent g "Aerial Doombot").id
+  let src := namedPermanent g "S.H.I.E.L.D. Deployment Drone"
+  let g := g.applyMshSpell ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+    #[Target.permanent destId, Target.permanent src.id]
+  let dest := g.object! destId
+  dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
+    dest.copyUntilEot &&
+    !dest.printed.supertypes.any (· == .legendary) &&
+    dest.copyRestore.isSome &&
+    (dest.copyRestore.getD dest.printed).name == "Aerial Doombot" &&
+    (let g := g.clearEOT
+     (g.object! destId).printed.name == "Aerial Doombot") &&
+    (let g2 := addPermanent afterDraw shuriWakandanInventor ⟨0⟩ ⟨0⟩
+     let g2 := addPermanent g2 aerialDoombot ⟨0⟩ ⟨0⟩
+     let dest := namedPermanent g2 "Aerial Doombot"
+     let destName := dest.printed.name
+     let g2 := g2.applyMshSpell ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+       #[Target.permanent dest.id]
+     (g2.object! dest.id).printed.name == destName) &&
+    (mshRuling 120).comment.contains "exactly what was printed" &&
+    (mshRuling 188).comment.contains "won't have any effect" &&
+    (mshRuling 330).comment.contains "neither entering nor leaving"
+
+#guard shuriCopyUntilEotOk
+
+/-- Rulings 197 / 199 / 325: Secret Invasion copies until the Aura leaves. -/
+def secretInvasionCopyOk : Bool :=
+  let g := addPermanent afterDraw secretInvasion ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let aura := namedPermanent g "Secret Invasion"
+  let host := namedPermanent g "Grizzly Bears"
+  let tgt := namedPermanent g "Hill Giant"
+  let g := g.attachSourceTo aura host
+  let g := g.applyMshTrigger ⟨0⟩ .whenThisAuraEnters2 (some aura.id)
+    #[Target.permanent tgt.id]
+  let host := g.object! host.id
+  host.copyRestore.isSome &&
+    (host.copyRestore.getD host.printed).name == "Grizzly Bears" &&
+    host.printed.name == "Hill Giant" &&
+    (let aura := namedPermanent g "Secret Invasion"
+     let (g, _) := g.move aura.id (.graveyard ⟨0⟩) none
+     (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears") &&
+    (mshRuling 325).comment.contains "exactly what was printed" &&
+    (mshRuling 329).comment.contains "neither entering nor leaving"
+
+#guard secretInvasionCopyOk
+
+/-- Rulings 95 / 142 / 160: She-Hulk may deal the total even if she left; once. -/
+def sheHulkDamageOnceOk : Bool :=
+  let g := addPermanent afterDraw theSensationalSheHulk ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let she := namedPermanent g "The Sensational She-Hulk"
+  let bears := namedPermanent g "Grizzly Bears"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.markDamageOn bears 3 "Bears are dealt 3 damage"
+  g.waitingTriggers.any (fun t =>
+    t.source.name == "The Sensational She-Hulk") &&
+    (let (g, _) := g.move she.id (.graveyard ⟨0⟩) none
+     let g := g.applyMshTrigger ⟨0⟩ .wheneverACreatureYouControlIsDealtDamage
+       (some she.id) #[Target.permanent giant.id]
+       "The Sensational She-Hulk" (some 3)
+     let giant := namedPermanent g "Hill Giant"
+     giant.status.damage == 3 &&
+       g.sheHulkDamageUsedThisTurn &&
+       (let g := g.applyMshTrigger ⟨0⟩ .wheneverACreatureYouControlIsDealtDamage
+          (some she.id) #[Target.permanent giant.id]
+          "The Sensational She-Hulk" (some 5)
+        (namedPermanent g "Hill Giant").status.damage == 3 &&
+          logContains g "no effect")) &&
+    (mshRuling 95).comment.contains "won't trigger again that turn" &&
+    (mshRuling 142).comment.contains "may still have her deal damage" &&
+    (mshRuling 160).comment.contains "total amount of damage"
+
+#guard sheHulkDamageOnceOk
+
+/-- Rulings 34 / 40 / 47 / 61 / 62 / 302: copying a stack ability is not
+casting and keeps the same source and X. -/
+def copyStackAbilityOk : Bool :=
+  let g := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Aerial Doombot"
+  let (g, ab) := g.allocStackAbility src ⟨0⟩
+    (triggeredAbility := some (.onEnterDraw 1)) (lastKnownPower := some 4)
+  let g := g.setObject { ab with chosenX := some 2 }
+  let g := g.putStackEntry ⟨0⟩ ab.id
+  let origId := ab.id
+  let g := g.copyStackAbility (g.object! origId) ⟨0⟩
+  let copies := g.objects.filter (fun o =>
+    o.zone == .stack && o.isCopy && o.sourceId == some src.id)
+  copies.size == 1 &&
+    copies[0]!.chosenX == some 2 &&
+    copies[0]!.lastKnownPower == some 4 &&
+    copies[0]!.triggeredAbility.isSome &&
+    g.stack.size == 2 &&
+    g.stack.back!.objectId == copies[0]!.id &&
+    (mshRuling 34).comment.contains "won't apply to copying" &&
+    (mshRuling 40).comment.contains "won't cause abilities that trigger" &&
+    (mshRuling 47).comment.contains "same value of X" &&
+    (mshRuling 61).comment.contains "same targets as the ability" &&
+    (mshRuling 62).comment.contains "resolve before the original" &&
+    (mshRuling 302).comment.contains "same as the source of the original"
+
+#guard copyStackAbilityOk
+
+/-- Ruling 96: Worlds Within Worlds exiles creatures, then hand creatures
+enter, then the exiled cards return to hands. -/
+def worldsWithinWorldsOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let g := addToHand g aerialDoombot ⟨0⟩
+  let (g, spell) := g.allocObject worldsWithinWorlds ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.applyMshSpell ⟨0⟩ .exileAllCreaturesEachPlayerMayPutAnyNum #[]
+    (some spell.id)
+  g.battlefield.any (fun o => o.name == "Aerial Doombot") &&
+    !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
+    !g.battlefield.any (fun o => o.name == "Hill Giant") &&
+    (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears") &&
+    (g.player ⟨1⟩).hand.any (fun id => (g.object! id).name == "Hill Giant") &&
+    (match g.findObject? spell.id with
+     | some o => o.zone == .exile
+     | none =>
+       g.objects.any (fun o => o.name == "Worlds Within Worlds" && o.zone == .exile)) &&
+    (mshRuling 96).comment.contains "Worlds Within Worlds"
+
+#guard worldsWithinWorldsOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
