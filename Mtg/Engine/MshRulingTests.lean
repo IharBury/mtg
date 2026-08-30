@@ -2500,7 +2500,6 @@ def linkedExileCopyOk : Bool :=
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let cd := namedPermanent g "Cloak and Dagger, Entwined"
   let bears := namedPermanent g "Grizzly Bears"
-  let ogre := namedPermanent g "Gray Ogre"
   let g := g.applyMshTrigger ⟨0⟩ .whenCloakAndDaggerEnter (some cd.id)
     #[Target.player ⟨1⟩, Target.permanent bears.id]
   (namedPermanent g "Cloak and Dagger, Entwined").linkedExile.size == 1 &&
