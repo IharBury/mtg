@@ -1,5 +1,6 @@
 import Mtg.Engine.Color
 import Mtg.Engine.Mana
+import Mtg.Engine.MshAbilities
 import Mtg.Engine.TypeLine
 
 /-!
@@ -141,6 +142,26 @@ inductive TokenKind where
   | birdSoldier
   | wall
   | dragon
+  /-- A Clue artifact token (CR 111 / 701.55). -/
+  | clue
+  /-- A 3/2 white Hero creature token with vigilance. -/
+  | hero32vigilance
+  /-- A 2/1 black Villain creature token with menace. -/
+  | villain21menace
+  /-- A 2/2 colorless Robot Villain artifact creature token. -/
+  | robotVillain22
+  /-- A 6/5 blue Leviathan creature token with hexproof. -/
+  | leviathan65hexproof
+  /-- A 1/1 white Soldier creature token. -/
+  | soldier11white
+  /-- A 1/1 green Squirrel creature token. -/
+  | squirrel11green
+  /-- A 0/4 colorless Wall creature token with defender. -/
+  | wall04defender
+  /-- A 3/3 colorless Robot Villain artifact creature token named Doombot. -/
+  | doombot
+  /-- A 1/1 green Insect creature token. -/
+  | insect11green
 deriving Repr, Inhabited, BEq
 
 namespace TokenKind
@@ -157,6 +178,16 @@ def oracleNoun : TokenKind → String
   | .birdSoldier => "4/4 white Bird Soldier creature token with flying"
   | .wall => "3/1 colorless Wall artifact creature token with defender named Stone Boulder"
   | .dragon => "6/6 red Dragon creature token with flying"
+  | .clue => "Clue token"
+  | .hero32vigilance => "3/2 white Hero creature token with vigilance"
+  | .villain21menace => "2/1 black Villain creature token with menace"
+  | .robotVillain22 => "2/2 colorless Robot Villain artifact creature token"
+  | .leviathan65hexproof => "6/5 blue Leviathan creature token with hexproof"
+  | .soldier11white => "1/1 white Soldier creature token"
+  | .squirrel11green => "1/1 green Squirrel creature token"
+  | .wall04defender => "0/4 colorless Wall creature token with defender"
+  | .doombot => "3/3 colorless Robot Villain artifact creature token named Doombot"
+  | .insect11green => "1/1 green Insect creature token"
 
 def pluralNoun : TokenKind → String
   | .treasure => "Treasure tokens"
@@ -170,6 +201,16 @@ def pluralNoun : TokenKind → String
   | .birdSoldier => "4/4 white Bird Soldier creature tokens with flying"
   | .wall => "3/1 colorless Wall artifact creature tokens with defender named Stone Boulder"
   | .dragon => "6/6 red Dragon creature tokens with flying"
+  | .clue => "Clue tokens"
+  | .hero32vigilance => "3/2 white Hero creature tokens with vigilance"
+  | .villain21menace => "2/1 black Villain creature tokens with menace"
+  | .robotVillain22 => "2/2 colorless Robot Villain artifact creature tokens"
+  | .leviathan65hexproof => "6/5 blue Leviathan creature tokens with hexproof"
+  | .soldier11white => "1/1 white Soldier creature tokens"
+  | .squirrel11green => "1/1 green Squirrel creature tokens"
+  | .wall04defender => "0/4 colorless Wall creature tokens with defender"
+  | .doombot => "3/3 colorless Robot Villain artifact creature tokens named Doombot"
+  | .insect11green => "1/1 green Insect creature tokens"
 
 /-- Oracle “create …” clause for `n` tokens of this kind. -/
 def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
@@ -177,7 +218,7 @@ def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
   if n == 1 then
     s!"create a {tappedS}{k.oracleNoun}"
   else
-    let nWord := if n == 3 then "three" else toString n
+    let nWord := if n == 3 then "three" else if n == 2 then "two" else toString n
     s!"create {nWord} {tappedS}{k.pluralNoun}"
 
 end TokenKind
@@ -277,6 +318,16 @@ inductive EffectTargetKind where
   | twoPlayers
   /-- Up to one target creature, then target player (e.g. Meager Meal). -/
   | upToOneCreatureThenPlayer
+  /-- Target attacking or blocking creature. -/
+  | attackingOrBlockingCreature
+  /-- Target creature with mana value `n` or less. -/
+  | creatureMvAtMost (n : Nat)
+  /-- Target creature with toughness `n` or greater. -/
+  | creatureToughnessAtLeast (n : Int)
+  /-- Target enchantment with mana value `n` or greater. -/
+  | enchantmentMvAtLeast (n : Nat)
+  /-- Target noncreature artifact. -/
+  | noncreatureArtifact
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -439,6 +490,16 @@ def spec : EffectTargetKind → Spec
       prefer := .own
       slots := #[.creature, .player]
       optionalSlots := #[0] }
+  | .attackingOrBlockingCreature =>
+    { noun := "target attacking or blocking creature" }
+  | .creatureMvAtMost n =>
+    { noun := s!"target creature with mana value {n} or less" }
+  | .creatureToughnessAtLeast n =>
+    { noun := s!"target creature with toughness {n} or greater" }
+  | .enchantmentMvAtLeast n =>
+    { noun := s!"target enchantment with mana value {n} or greater" }
+  | .noncreatureArtifact =>
+    { noun := "target noncreature artifact" }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -702,8 +763,68 @@ inductive SpellEffect where
   | damageOppCreaturesEqualOtherSpellsMv
   /-- Phase out the target, or each of a player's creatures if kicked. -/
   | phaseOutKicker
-  /-- Unique printed spell wording. -/
-  | printed (text : String)
+  /-- Deal `n` to an attacking or blocking creature; `teamworkN` if teamwork. -/
+  | dealDamageToAttackerOrBlocker (n teamworkN : Nat)
+  /-- Deal `n` to a creature; if teamwork, also `extra` to its controller. -/
+  | dealDamageThenControllerIfTeamwork (n extra : Nat)
+  /-- Target creature gains double strike; also trample if teamwork. -/
+  | grantDoubleStrikeTeamworkTrample
+  /-- Counter unless pays `n`; `teamworkN` instead if teamwork. -/
+  | counterUnlessPaysTeamwork (n teamworkN : Nat)
+  /-- Exile a creature with MV ≤ `n`; if teamwork, any creature and gain life. -/
+  | exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat)
+  /-- Return a gy creature with MV ≤ `n`; if teamwork, any gy creature. -/
+  | returnGyCreatureMvAtMostOrAny (n : Nat)
+  /-- Reveal the top `n`; put one creature onto the battlefield, or any if teamwork. -/
+  | revealTopPutCreatures (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
+  /-- Exile target creature with toughness `n` or greater. -/
+  | exileCreatureToughnessAtLeast (n : Int)
+  /-- Exile target enchantment with mana value `n` or greater. -/
+  | exileEnchantmentMvAtLeast (n : Nat)
+  /-- Return one or two target nonland permanents to their owners' hands. -/
+  | returnOneOrTwoNonlands
+  /-- Target creature gains deathtouch until end of turn. -/
+  | grantDeathtouch
+  /-- Destroy target noncreature artifact. -/
+  | destroyNoncreatureArtifact
+  /-- Put a +1/+1 counter on target creature. -/
+  | plusOneOnCreature
+  /-- Target player creates a token of this kind. -/
+  | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
+  /-- Destroy target creature. Surveil 1. -/
+  | destroyCreatureSurveil
+  /-- Target player investigates. Target creature gets +1/+0 and flying; untap it. -/
+  | investigatePumpFlyingUntap
+  /-- Put a +1/+1 counter on target creature; it gains lifelink and indestructible. -/
+  | plusOneLifelinkIndestructible
+  /-- Deal `n` damage to each creature. -/
+  | dealDamageToEachCreature (n : Nat)
+  /-- Destroy target land; its controller may search a basic land tapped. -/
+  | destroyLandSearchBasic
+  /-- Double target creature's power and toughness until end of turn. -/
+  | doublePowerAndToughness
+  /-- Return target card of this subtype from your graveyard to your hand. -/
+  | returnGySubtypeToHand (subtype : String)
+  /-- Target creature gains vigilance and can't be blocked this turn. -/
+  | grantVigilanceUnblockable
+  /-- Until end of turn, target artifact or creature becomes a 4/4 artifact creature with flying. -/
+  | becomeArtifactCreature44Flying
+  /-- Draw three cards, then discard two unless you discard an artifact. -/
+  | drawThreeDiscardUnlessArtifact
+  /-- Each opponent loses `n` life. -/
+  | eachOpponentLosesLife (n : Nat)
+  /-- Target creature you control fights target creature an opponent controls. -/
+  | fight
+  /-- Target creature you control fights up to one other target creature. -/
+  | fightUpToOne
+  /-- Put a +1/+1 counter on each creature you control. -/
+  | plusOneOnEachYouControl
+  /-- Put `n` +1/+1 counters on target creature you control. -/
+  | plusOneOnCreatureN (n : Nat)
+  /-- A modeled MSH spell. -/
+  | msh (t : MshSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -903,8 +1024,6 @@ inductive SpellResolution where
   | targetPlayerDraw (n : Nat)
   /-- Deal `n` damage; if the creature would die this turn, exile it. -/
   | dealDamageToCreatureExileIfDies (n : Nat)
-  /-- Unique printed spell wording. -/
-  | printed (text : String)
   /-- Add {R} for each artifact opponents control. -/
   | addRedPerOppArtifacts
   /-- Deal `n` damage to each non-Dragon creature. -/
@@ -947,6 +1066,58 @@ inductive SpellResolution where
   | damageOppCreaturesEqualOtherSpellsMv
   /-- Phase out the target, or each of a player's creatures if kicked. -/
   | phaseOutKicker
+  /-- Deal `n` to the target; `teamworkN` if the spell was cast using teamwork. -/
+  | dealDamageTeamwork (n teamworkN : Nat)
+  /-- Deal `n` to the target; if teamwork, `extra` to its controller. -/
+  | dealDamageThenControllerIfTeamwork (n extra : Nat)
+  /-- Grant double strike; also trample if teamwork. -/
+  | grantDoubleStrikeTeamworkTrample
+  /-- Counter unless `n`; `teamworkN` if teamwork. -/
+  | counterUnlessPaysTeamwork (n teamworkN : Nat)
+  /-- Exile MV-limited creature, or any plus gain life if teamwork. -/
+  | exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat)
+  /-- Return a gy creature, MV-limited unless teamwork. -/
+  | returnGyCreatureMvAtMostOrAny (n : Nat)
+  /-- Reveal the top `n` and put creatures onto the battlefield. -/
+  | revealTopPutCreatures (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat)
+  /-- Exile the targeted creature. -/
+  | exileTarget
+  /-- Return one or two targeted nonlands to hand. -/
+  | returnOneOrTwoNonlands
+  /-- Target player creates tokens. -/
+  | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
+  /-- Destroy the targeted creature, then surveil 1. -/
+  | destroyCreatureSurveil
+  /-- Investigate, pump +1/+0 and flying, untap. -/
+  | investigatePumpFlyingUntap
+  /-- +1/+1, lifelink, and indestructible on the target. -/
+  | plusOneLifelinkIndestructible
+  /-- Deal `n` damage to each creature. -/
+  | dealDamageToEachCreature (n : Nat)
+  /-- Destroy the targeted land; its controller may search a basic. -/
+  | destroyLandSearchBasic
+  /-- Double the targeted creature's power and toughness. -/
+  | doublePowerAndToughness
+  /-- Return a graveyard card of this subtype to hand. -/
+  | returnGySubtypeToHand (subtype : String)
+  /-- Grant vigilance and unblockable. -/
+  | grantVigilanceUnblockable
+  /-- Become a 4/4 artifact creature with flying. -/
+  | becomeArtifactCreature44Flying
+  /-- Draw three, then discard two unless an artifact. -/
+  | drawThreeDiscardUnlessArtifact
+  /-- Each opponent loses `n` life. -/
+  | eachOpponentLosesLife (n : Nat)
+  /-- Fight up to one other creature. -/
+  | fightUpToOne
+  /-- +1/+1 on each creature you control. -/
+  | plusOneOnEachYouControl
+  /-- `n` +1/+1 counters on a creature you control. -/
+  | plusOneOnCreatureN (n : Nat)
+  /-- A modeled MSH spell. -/
+  | msh (t : MshSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1172,8 +1343,90 @@ def spec : SpellEffect → SpellMeta
       resolution := .damageOppCreaturesEqualOtherSpellsMv }
   | .phaseOutKicker =>
     { targeting := .of .creature, castKind := .counter, resolution := .phaseOutKicker }
-  | .printed text =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .printed text }
+  | .dealDamageToAttackerOrBlocker n teamworkN =>
+    { targeting := .of .attackingOrBlockingCreature, castKind := .creatureDamage,
+      resolution := .dealDamageTeamwork n teamworkN }
+  | .dealDamageThenControllerIfTeamwork n extra =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .dealDamageThenControllerIfTeamwork n extra }
+  | .grantDoubleStrikeTeamworkTrample =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .grantDoubleStrikeTeamworkTrample }
+  | .counterUnlessPaysTeamwork n teamworkN =>
+    { targeting := .of .spell, castKind := .counter,
+      resolution := .counterUnlessPaysTeamwork n teamworkN }
+  | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
+    { targeting := .of (.creatureMvAtMost n), castKind := .destroyCreature,
+      resolution := .exileCreatureMvAtMostOrAnyIfTeamwork n life }
+  | .returnGyCreatureMvAtMostOrAny n =>
+    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n), castKind := .draw,
+      resolution := .returnGyCreatureMvAtMostOrAny n }
+  | .revealTopPutCreatures n =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .revealTopPutCreatures n }
+  | .createTokens kind n =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .createTokens kind n }
+  | .exileCreatureToughnessAtLeast _n =>
+    { targeting := .of (.creatureToughnessAtLeast _n), castKind := .destroyCreature,
+      resolution := .exileTarget }
+  | .exileEnchantmentMvAtLeast _n =>
+    { targeting := .of (.enchantmentMvAtLeast _n), castKind := .destroyArtifactOrLand,
+      resolution := .exileTarget }
+  | .returnOneOrTwoNonlands =>
+    { targeting := .of .nonland, castKind := .counter, resolution := .returnOneOrTwoNonlands,
+      maxTargets := 2 }
+  | .grantDeathtouch =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .onPermanent (.grantKeywords Keyword.deathtouch) }
+  | .destroyNoncreatureArtifact =>
+    { targeting := .of .noncreatureArtifact, castKind := .destroyArtifactOrLand,
+      resolution := .onPermanent .destroy }
+  | .plusOneOnCreature =>
+    { targeting := .of .creature, castKind := .pump, resolution := .onPermanent (.plusOne 1) }
+  | .targetPlayerCreatesTokens kind n =>
+    { targeting := .of .player, castKind := .extraLand,
+      resolution := .targetPlayerCreatesTokens kind n }
+  | .destroyCreatureSurveil =>
+    { targeting := .of .creature, castKind := .destroyCreature,
+      resolution := .destroyCreatureSurveil }
+  | .investigatePumpFlyingUntap =>
+    { targeting := .of .playerOrCreature, castKind := .pump,
+      resolution := .investigatePumpFlyingUntap }
+  | .plusOneLifelinkIndestructible =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .plusOneLifelinkIndestructible }
+  | .dealDamageToEachCreature n =>
+    { targeting := .of .none, castKind := .creatureDamage,
+      resolution := .dealDamageToEachCreature n }
+  | .destroyLandSearchBasic =>
+    { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
+      resolution := .destroyLandSearchBasic }
+  | .doublePowerAndToughness =>
+    { targeting := .of .creature, castKind := .pump, resolution := .doublePowerAndToughness }
+  | .returnGySubtypeToHand _subtype =>
+    { targeting := .of .creatureCardInYourGraveyard, castKind := .draw,
+      resolution := .returnGySubtypeToHand _subtype }
+  | .grantVigilanceUnblockable =>
+    { targeting := .of .creature, castKind := .pump, resolution := .grantVigilanceUnblockable }
+  | .becomeArtifactCreature44Flying =>
+    { targeting := .of .artifactOrCreatureYouControl, castKind := .pump,
+      resolution := .becomeArtifactCreature44Flying }
+  | .drawThreeDiscardUnlessArtifact =>
+    { targeting := .of .none, castKind := .draw, resolution := .drawThreeDiscardUnlessArtifact }
+  | .eachOpponentLosesLife n =>
+    { targeting := .of .none, castKind := .burn, resolution := .eachOpponentLosesLife n }
+  | .fight =>
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      resolution := .fight }
+  | .fightUpToOne =>
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      allowsZeroTargets := true, resolution := .fightUpToOne }
+  | .plusOneOnEachYouControl =>
+    { targeting := .of .none, castKind := .pump, resolution := .plusOneOnEachYouControl }
+  | .plusOneOnCreatureN n =>
+    { targeting := .of .creatureYouControl, castKind := .pump,
+      resolution := .plusOneOnCreatureN n }
+  | .msh t =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .msh t }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1219,6 +1472,10 @@ def resolution (e : SpellEffect) : SpellResolution :=
 only updates `spec`. -/
 def toNotation (e : SpellEffect) : String :=
   let noun := e.targetKind.noun
+  match e with
+  | .fight =>
+    "target creature you control fights target creature an opponent controls"
+  | _ =>
   match e.resolution with
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
@@ -1328,7 +1585,61 @@ def toNotation (e : SpellEffect) : String :=
     "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
   | .phaseOutKicker =>
     "target creature phases out. If this spell was kicked, each creature target player controls phases out instead"
-  | .printed text => text
+  | .dealDamageTeamwork n teamworkN =>
+    s!"deals {n} damage to target attacking or blocking creature. If this spell was cast using teamwork, it deals {teamworkN} damage to that creature instead"
+  | .dealDamageThenControllerIfTeamwork n extra =>
+    s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
+  | .grantDoubleStrikeTeamworkTrample =>
+    "target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains trample until end of turn"
+  | .counterUnlessPaysTeamwork n teamworkN =>
+    s!"counter target spell unless its controller pays \{{n}}. Counter that spell unless its controller pays \{{teamworkN}} instead if this spell was cast using teamwork"
+  | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
+    s!"exile target creature with mana value {n} or less. If this spell was cast using teamwork, instead exile target creature and you gain {life} life"
+  | .returnGyCreatureMvAtMostOrAny n =>
+    s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
+  | .revealTopPutCreatures n =>
+    s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
+  | .createTokens kind n =>
+    TokenKind.createPhrase kind n
+  | .exileTarget =>
+    s!"exile {noun}"
+  | .returnOneOrTwoNonlands =>
+    "return one or two target nonland permanents to their owners' hands"
+  | .targetPlayerCreatesTokens kind n =>
+    let phrase := TokenKind.createPhrase kind n
+    let rest :=
+      if phrase.startsWith "create " then phrase.drop "create ".length else phrase
+    s!"{noun} creates {rest}"
+  | .destroyCreatureSurveil =>
+    s!"destroy {noun}. Surveil 1"
+  | .investigatePumpFlyingUntap =>
+    "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
+  | .plusOneLifelinkIndestructible =>
+    "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
+  | .dealDamageToEachCreature n =>
+    s!"deals {n} damage to each creature"
+  | .destroyLandSearchBasic =>
+    s!"destroy {noun}. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle"
+  | .doublePowerAndToughness =>
+    s!"double {noun}'s power and toughness until end of turn"
+  | .returnGySubtypeToHand subtype =>
+    s!"return target {subtype} card from your graveyard to your hand"
+  | .grantVigilanceUnblockable =>
+    s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
+  | .becomeArtifactCreature44Flying =>
+    s!"until end of turn, {noun} becomes an artifact creature with base power and toughness 4/4 and gains flying"
+  | .drawThreeDiscardUnlessArtifact =>
+    "draw three cards. Then discard two cards unless you discard an artifact card"
+  | .eachOpponentLosesLife n =>
+    s!"each opponent loses {n} life"
+  | .fightUpToOne =>
+    "target creature you control fights up to one other target creature"
+  | .plusOneOnEachYouControl =>
+    "put a +1/+1 counter on each creature you control"
+  | .plusOneOnCreatureN n =>
+    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
+    s!"put {counters} on {noun}"
+  | .msh t => t.toNotation
 
 end SpellEffect
 
@@ -1449,8 +1760,32 @@ inductive AbilityEffect where
   | teamGainDoubleStrike
   /-- The source gains indestructible until end of turn and becomes tapped. -/
   | sourceGainsIndestructibleTap
-  /-- Unique printed activated wording. -/
-  | printed (text : String)
+  /-- Put `n` +1/+1 counters on each other permanent you control of this subtype. -/
+  | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
+  /-- Put a +1/+1 counter and an indestructible counter on the source. -/
+  | plusOneAndIndestructibleCounter
+  /-- Put `plus` +1/+1 counters on the source and draw `cards`. -/
+  | plusOneAndDraw (plus cards : Nat)
+  /-- Put a +1/+1 counter on the source and take an extra turn. -/
+  | plusOneAndExtraTurn
+  /-- Put X +1/+1 counters on the source. -/
+  | plusOneX
+  /-- Each opponent discards a card. Put a +1/+1 counter on the source. -/
+  | eachOppDiscardThenPlusOne
+  /-- Look at the top `n`; you may put a Hero, Equipment, or Vehicle onto the battlefield. -/
+  | lookAtTopPutHeroEquipVehicle (n : Nat)
+  /-- Transform this permanent. -/
+  | transform
+  /-- Draw X cards. -/
+  | drawX
+  /-- Look at the top `n`; you may reveal an artifact and put it into your hand. -/
+  | lookAtTopRevealArtifact (n : Nat)
+  /-- The source connives. -/
+  | connive
+  /-- A modeled MSH activation. -/
+  | msh (t : MshAbility)
+  /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
+  | mshSpell (t : MshSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1556,8 +1891,32 @@ inductive AbilityResolution where
   | teamGainDoubleStrike
   /-- Source gains indestructible and taps. -/
   | sourceGainsIndestructibleTap
-  /-- Unique printed activated wording. -/
-  | printed (text : String)
+  /-- +1/+1 on each other permanent of this subtype. -/
+  | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
+  /-- +1/+1 and an indestructible counter on the source. -/
+  | plusOneAndIndestructibleCounter
+  /-- +1/+1 counters on the source and draw. -/
+  | plusOneAndDraw (plus cards : Nat)
+  /-- +1/+1 on the source and an extra turn. -/
+  | plusOneAndExtraTurn
+  /-- X +1/+1 counters on the source. -/
+  | plusOneX
+  /-- Each opponent discards; +1/+1 on the source. -/
+  | eachOppDiscardThenPlusOne
+  /-- Look at the top `n`; put a Hero, Equipment, or Vehicle onto the battlefield. -/
+  | lookAtTopPutHeroEquipVehicle (n : Nat)
+  /-- Transform the source. -/
+  | transform
+  /-- Draw X cards. -/
+  | drawX
+  /-- Look at the top `n`; reveal an artifact to hand. -/
+  | lookAtTopRevealArtifact (n : Nat)
+  /-- The source connives. -/
+  | connive
+  /-- A modeled MSH activation. -/
+  | msh (t : MshAbility)
+  /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
+  | mshSpell (t : MshSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -1689,8 +2048,32 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .teamGainDoubleStrike }
   | .sourceGainsIndestructibleTap =>
     { resolution := .sourceGainsIndestructibleTap }
-  | .printed text =>
-    { resolution := .printed text }
+  | .plusOneOnEachOtherSubtype subtype n =>
+    { resolution := .plusOneOnEachOtherSubtype subtype n }
+  | .plusOneAndIndestructibleCounter =>
+    { resolution := .plusOneAndIndestructibleCounter }
+  | .plusOneAndDraw plus cards =>
+    { resolution := .plusOneAndDraw plus cards }
+  | .plusOneAndExtraTurn =>
+    { resolution := .plusOneAndExtraTurn }
+  | .plusOneX =>
+    { resolution := .plusOneX }
+  | .eachOppDiscardThenPlusOne =>
+    { resolution := .eachOppDiscardThenPlusOne }
+  | .lookAtTopPutHeroEquipVehicle n =>
+    { resolution := .lookAtTopPutHeroEquipVehicle n }
+  | .transform =>
+    { resolution := .transform }
+  | .drawX =>
+    { resolution := .drawX }
+  | .lookAtTopRevealArtifact n =>
+    { resolution := .lookAtTopRevealArtifact n }
+  | .connive =>
+    { resolution := .connive }
+  | .msh t =>
+    { resolution := .msh t }
+  | .mshSpell t =>
+    { resolution := .mshSpell t }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -1815,7 +2198,33 @@ def toNotation (e : AbilityEffect) : String :=
     "Creatures you control gain double strike until end of turn"
   | .sourceGainsIndestructibleTap =>
     "Witch-king of Angmar gains indestructible until end of turn. Tap him"
-  | .printed text => text
+  | .plusOneOnEachOtherSubtype subtype n =>
+    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
+    s!"Put {counters} on each other {subtype} you control"
+  | .plusOneAndIndestructibleCounter =>
+    "Put a +1/+1 counter and an indestructible counter on this"
+  | .plusOneAndDraw plus cards =>
+    let counters := if plus == 1 then "a +1/+1 counter" else s!"{plus} +1/+1 counters"
+    let draw := if cards == 1 then "draw a card" else s!"draw {cards} cards"
+    s!"Put {counters} on this and {draw}"
+  | .plusOneAndExtraTurn =>
+    "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated"
+  | .plusOneX =>
+    "Put X +1/+1 counters on this"
+  | .eachOppDiscardThenPlusOne =>
+    "Each opponent discards a card. Put a +1/+1 counter on this"
+  | .lookAtTopPutHeroEquipVehicle n =>
+    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put a Hero, Equipment, or Vehicle card from among them onto the battlefield. If it's a double-faced card, you may transform it. Put the rest on the bottom of your library in a random order"
+  | .transform =>
+    "Transform this"
+  | .drawX =>
+    "Draw X cards"
+  | .lookAtTopRevealArtifact n =>
+    s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
+  | .connive =>
+    "This creature connives"
+  | .msh t => t.toNotation
+  | .mshSpell t => t.toNotation
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -1921,6 +2330,9 @@ structure ActivatedAbility where
   costReductionPerEquipment : Nat := 0
   /-- “Activate only if you attacked with two or more creatures this turn.” -/
   onlyIfYouAttackedWithTwoOrMore : Bool := false
+  /-- Power-up (CR 702.193): activate only once; if the source entered this
+  turn, the cost is reduced by the permanent's mana cost. -/
+  powerUp : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -2080,8 +2492,21 @@ inductive StaticAbility where
   | wardDiscardEnchantmentInstantOrSorcery
   /-- Ward — sacrifice a legendary artifact or legendary creature. -/
   | wardSacrificeLegendary
-  /-- Unique printed static wording. -/
-  | printed (text : String)
+  /-- Creatures you control of this subtype get +P/+T (includes the source). -/
+  | creaturesYouControlOfSubtypeGet (subtype : String) (power toughness : Int)
+  /-- You and other permanents of this subtype have hexproof while this has
+  a shield counter. -/
+  | youAndOtherSubtypeHaveHexproofIfShield (subtype : String)
+  /-- Opponents can't cast spells during your turn. -/
+  | opponentsCantCastOnYourTurn
+  /-- Spells of this subtype you cast cost `{n}` less. -/
+  | subtypeSpellsCostLess (subtype : String) (n : Nat)
+  /-- This creature can't be blocked if its power is `n` or less. -/
+  | cantBeBlockedIfPowerAtMost (n : Int)
+  /-- Prevent all damage that would be dealt to this permanent. -/
+  | preventAllDamageToThis
+  /-- A modeled MSH static. -/
+  | msh (t : MshStatic)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -2184,7 +2609,13 @@ inductive StaticShape where
   | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
   | wardDiscardEnchantmentInstantOrSorcery
   | wardSacrificeLegendary
-  | printed (text : String)
+  | teamPumpSubtype (subtype : String) (power toughness : Int)
+  | youAndOtherSubtypeHexproofIfShield (subtype : String)
+  | opponentsCantCastOnYourTurn
+  | subtypeSpellsCostLess (subtype : String) (n : Nat)
+  | cantBeBlockedIfPowerAtMost (n : Int)
+  | preventAllDamageToThis
+  | msh (t : MshStatic)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -2314,7 +2745,14 @@ def StaticShape.spec : StaticShape → StaticMeta
     { hostBonus := (p, t) }
   | .wardDiscardEnchantmentInstantOrSorcery => {}
   | .wardSacrificeLegendary => {}
-  | .printed _ => {}
+  | .teamPumpSubtype subtype p t =>
+    { lordPump := some (#[subtype], p, t), lordIncludesSelf := true }
+  | .youAndOtherSubtypeHexproofIfShield _ => {}
+  | .opponentsCantCastOnYourTurn => {}
+  | .subtypeSpellsCostLess _ _ => {}
+  | .cantBeBlockedIfPowerAtMost _ => {}
+  | .preventAllDamageToThis => {}
+  | .msh _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching `false` / `(0, 0)` in `Game`. -/
@@ -2382,7 +2820,15 @@ def shape : StaticAbility → StaticShape
   | .wardDiscardEnchantmentInstantOrSorcery =>
     .wardDiscardEnchantmentInstantOrSorcery
   | .wardSacrificeLegendary => .wardSacrificeLegendary
-  | .printed text => .printed text
+  | .creaturesYouControlOfSubtypeGet subtype p t =>
+    .teamPumpSubtype subtype p t
+  | .youAndOtherSubtypeHaveHexproofIfShield subtype =>
+    .youAndOtherSubtypeHexproofIfShield subtype
+  | .opponentsCantCastOnYourTurn => .opponentsCantCastOnYourTurn
+  | .subtypeSpellsCostLess subtype n => .subtypeSpellsCostLess subtype n
+  | .cantBeBlockedIfPowerAtMost n => .cantBeBlockedIfPowerAtMost n
+  | .preventAllDamageToThis => .preventAllDamageToThis
+  | .msh t => .msh t
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
 table. -/
@@ -2536,7 +2982,21 @@ def toNotation (ab : StaticAbility) : String :=
     "Ward—Discard an enchantment, instant, or sorcery card."
   | .wardSacrificeLegendary =>
     "Ward—Sacrifice a legendary artifact or legendary creature."
-  | .printed text => text
+  | .teamPumpSubtype subtype p t =>
+    let plural := if subtype == "Hero" then "Heroes" else pluralSubtype subtype
+    s!"{plural} you control get {signedStat p}/{signedStat t}."
+  | .youAndOtherSubtypeHexproofIfShield subtype =>
+    let plural := if subtype == "Hero" then "Heroes" else pluralSubtype subtype
+    s!"As long as this has a shield counter on it, you and other {plural} you control have hexproof."
+  | .opponentsCantCastOnYourTurn =>
+    "Your opponents can't cast spells during your turn."
+  | .subtypeSpellsCostLess subtype n =>
+    s!"{subtype} spells you cast cost \{{n}} less to cast."
+  | .cantBeBlockedIfPowerAtMost n =>
+    s!"This creature can't be blocked if its power is {n} or less."
+  | .preventAllDamageToThis =>
+    "Prevent all damage that would be dealt to this."
+  | .msh t => t.toNotation
 
 instance : ToString StaticAbility where
   toString := toNotation
@@ -2707,6 +3167,10 @@ inductive ChapterEffect where
   | returnCreatureFromGyMvAtMost (n : Nat)
   /-- Put a +1/+1 counter on up to one target creature. -/
   | plusOneUpToOne
+  /-- A modeled MSH Saga chapter. -/
+  | msh (t : MshChapter)
+  /-- A spell-shaped MSH Saga chapter (reuses `SpellEffect`). -/
+  | spell (e : SpellEffect)
 deriving Repr, Inhabited, BEq
 
 namespace ChapterEffect
@@ -2770,6 +3234,12 @@ def spec : ChapterEffect → Spec
   | .plusOneUpToOne =>
     { targeting := .of .creature, allowsZeroTargets := true
       phrase := "put a +1/+1 counter on up to one target creature" }
+  | .msh t =>
+    { phrase := t.toNotation }
+  | .spell e =>
+    { targeting := e.spec.targeting
+      allowsZeroTargets := e.allowsZeroTargets
+      phrase := e.toNotation }
 
 end ChapterEffect
 
@@ -3233,8 +3703,64 @@ inductive TriggeredAbility where
   | sagaChapter (n : Nat) (effect : ChapterEffect)
   /-- Whenever you attack this turn, pump a target per Plains (Roads Go Ever). -/
   | onYouAttackPumpTargetPerPlains
-  /-- Unique printed trigger wording. -/
-  | printed (text : String)
+  /-- Whenever a creature you control attacks alone, investigate. -/
+  | onCreatureYouControlAttacksAloneInvestigate
+  /-- Whenever a creature you control attacks alone, it gets +P/+T. -/
+  | onCreatureYouControlAttacksAlonePump (power toughness : Int)
+  /-- Whenever this becomes tapped to pay a teamwork cost, +1/+1 and draw. -/
+  | onTappedForTeamworkPlusOneAndDraw
+  /-- At each end step, draw if you attacked with or a subtype entered. -/
+  | onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String)
+  /-- Whenever this attacks, other permanents of this subtype get +X/+X. -/
+  | onAttackOthersOfSubtypeGetEqualToughness (subtype : String)
+  /-- When this enters, it connives. -/
+  | onEnterConnive
+  /-- Whenever you draw your second card each turn, create this token. -/
+  | onYouDrawSecondCreateTokens (kind : TokenKind)
+  /-- Whenever a creature you control enters, scry and put a plan counter. -/
+  | onCreatureYouControlEntersScryAndPlan (n : Nat)
+  /-- Whenever creatures you control become tapped, loot and put a plan counter. -/
+  | onCreaturesYouControlBecomeTappedLootAndPlan
+  /-- Whenever you draw your second card, create a Villain and a plan counter. -/
+  | onYouDrawSecondCreateVillainAndPlan
+  /-- Whenever a Villain you control enters, drain and put a plan counter. -/
+  | onVillainYouControlEntersDrainAndPlan (n : Nat)
+  /-- Whenever creature cards go to your graveyard, draw, lose life, plan. -/
+  | onCreatureCardsToGyDrawLoseLifeAndPlan
+  /-- Whenever you cast a noncreature spell, tapped Treasure and plan. -/
+  | onCastNoncreatureTreasureAndPlan
+  /-- Landfall — +1/+1 on a target and a plan counter. -/
+  | onLandYouControlEntersPlusOneAndPlan
+  /-- When the fourth plan counter is put on this, sacrifice, draw, and +1 each. -/
+  | onFourthPlanDrawPlusOneEach
+  /-- When the fourth plan counter is put on this, sacrifice and return instants. -/
+  | onFourthPlanReturnInstants
+  /-- When the seventh plan counter is put on this, sacrifice and control an opponent. -/
+  | onSeventhPlanControlOpponent
+  /-- When the fifth plan counter is put on this, sacrifice and exile-cast. -/
+  | onFifthPlanExileTopCast
+  /-- When the third plan counter is put on this, sacrifice and create Robots. -/
+  | onThirdPlanCreateRobots
+  /-- When the fourth plan counter is put on this, sacrifice and divide damage. -/
+  | onFourthPlanDividedDamage
+  /-- When the fourth plan counter is put on this, sacrifice and grant indestructible. -/
+  | onFourthPlanIndestructible
+  /-- Whenever you cast a color spell from your hand, this connives. -/
+  | onYouCastColorFromHandConnive (color : Color)
+  /-- Whenever this is dealt damage, put a +1/+1 counter on it. -/
+  | onDealtDamagePlusOne
+  /-- When this dies, create tokens. -/
+  | onDiesCreateTokens (kind : TokenKind) (n : Nat)
+  /-- Whenever this deals combat damage to a player, draw `n` cards. -/
+  | onCombatDamageDraw (n : Nat)
+  /-- When this Equipment enters, attach it to target creature you control. -/
+  | onEnterAttachToCreatureYouControl
+  /-- Whenever an artifact you control enters, draw a card. Once each turn. -/
+  | onArtifactYouControlEntersDrawOnce
+  /-- At the beginning of your end step, draw a card and lose 1 life. -/
+  | onYourEndStepDrawLoseLife
+  /-- A modeled MSH trigger. -/
+  | msh (t : MshTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -3371,6 +3897,74 @@ inductive TriggerEvent where
   | nontokenYouControlDies
   /-- Equipped creature deals combat damage to a player. -/
   | equippedDealsCombatDamageToPlayer
+  /-- A creature you control is the only attacker declared this combat. -/
+  | creatureYouControlAttacksAlone
+  /-- This permanent became tapped to pay a teamwork cost. -/
+  | tappedForTeamwork
+  /-- A creature you control enters. -/
+  | creatureYouControlEnters
+  /-- A permanent you control of this subtype enters. -/
+  | subtypeYouControlEnters (subtype : String)
+  /-- One or more creatures you control become tapped. -/
+  | creaturesYouControlBecomeTapped
+  /-- One or more creature cards are put into your graveyard from anywhere. -/
+  | creatureCardsPutIntoYourGy
+  /-- You cast a spell of this color from your hand. -/
+  | youCastColorFromHand (color : Color)
+  /-- This permanent was dealt damage. -/
+  | sourceDealtDamage
+  /-- The `n`th plan counter was put on this enchantment. -/
+  | nthPlanCounter (n : Nat)
+  /-- You cast a Villain spell. -/
+  | youCastVillain
+  /-- You cast a spell that targets a creature you control. -/
+  | youCastTargetingCreatureYouControl
+  /-- You cast a spell. -/
+  | youCastSpell
+  /-- You discard a card. -/
+  | youDiscard
+  /-- You put a +1/+1 counter on a creature. -/
+  | youPutPlusOne
+  /-- You gain life. -/
+  | youGainLife
+  /-- A player draws their second card this turn. -/
+  | anyPlayerDrawsSecond
+  /-- A spell targets this permanent. -/
+  | spellTargetsSource
+  /-- A player or permanent becomes the target of an ability you control. -/
+  | youTargetSomething
+  /-- An Equipment you control enters. -/
+  | equipmentYouControlEnters
+  /-- Another Villain or artifact you control enters. -/
+  | anotherVillainOrArtifactEnters
+  /-- Another Villain you control enters. -/
+  | anotherVillainEnters
+  /-- Another artifact you control enters. -/
+  | anotherArtifactEnters
+  /-- Another nontoken Hero you control enters. -/
+  | anotherNontokenHeroEnters
+  /-- Another nontoken artifact you control enters. -/
+  | anotherNontokenArtifactEnters
+  /-- Another nonland permanent you control is returned to hand. -/
+  | anotherNonlandReturned
+  /-- A Villain you control dies. -/
+  | villainYouControlDies
+  /-- An attacking creature you control dies. -/
+  | attackingCreatureYouControlDies
+  /-- An equipped creature you control attacks. -/
+  | equippedCreatureYouControlAttacks
+  /-- Enchanted creature attacks or blocks. -/
+  | enchantedAttacksOrBlocks
+  /-- A creature you control becomes tapped during your turn. -/
+  | creatureYouControlTapped
+  /-- A creature you control is dealt damage. -/
+  | creatureYouControlDealtDamage
+  /-- One or more Heroes you control deal damage to a player. -/
+  | heroesDealDamageToPlayer
+  /-- One or more Merfolk you control attack a player. -/
+  | merfolkAttackPlayer
+  /-- The upkeep of the enchanted creature's controller. -/
+  | enchantedControllerUpkeep
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace TriggerEvent
@@ -3573,6 +4167,110 @@ def spec : TriggerEvent → Spec
   | .equippedDealsCombatDamageToPlayer =>
     { clause := "equipped creature deals combat damage to a player",
       label := "equipped-combat-damage trigger", checkTargets := false }
+  | .creatureYouControlAttacksAlone =>
+    { clause := "a creature you control attacks alone",
+      label := "attacks-alone trigger" }
+  | .tappedForTeamwork =>
+    { clause := "this becomes tapped to pay a teamwork cost",
+      label := "teamwork-tap trigger", checkTargets := false }
+  | .creatureYouControlEnters =>
+    { clause := "a creature you control enters",
+      label := "creature-enters trigger", checkTargets := false }
+  | .subtypeYouControlEnters subtype =>
+    { clause := s!"a {subtype} you control enters",
+      label := "subtype-enters trigger", checkTargets := false }
+  | .creaturesYouControlBecomeTapped =>
+    { clause := "one or more creatures you control become tapped",
+      label := "tap trigger", checkTargets := false }
+  | .creatureCardsPutIntoYourGy =>
+    { clause := "one or more creature cards are put into your graveyard from anywhere",
+      label := "graveyard trigger", checkTargets := false }
+  | .youCastColorFromHand color =>
+    { clause := s!"you cast a {color.englishName} spell from your hand",
+      label := "cast trigger", checkTargets := false }
+  | .sourceDealtDamage =>
+    { clause := "this is dealt damage",
+      label := "dealt-damage trigger", checkTargets := false }
+  | .nthPlanCounter n =>
+    let ord :=
+      match n with
+      | 1 => "first" | 2 => "second" | 3 => "third" | 4 => "fourth"
+      | 5 => "fifth" | 6 => "sixth" | 7 => "seventh" | 8 => "eighth"
+      | _ => s!"{n}th"
+    { clause := s!"the {ord} plan counter is put on this enchantment",
+      isWhenever := false, label := "plan trigger" }
+  | .youCastVillain =>
+    { clause := "you cast a Villain spell", label := "cast trigger",
+      checkTargets := false }
+  | .youCastTargetingCreatureYouControl =>
+    { clause := "you cast a spell that targets a creature you control",
+      label := "cast trigger", checkTargets := false }
+  | .youCastSpell =>
+    { clause := "you cast a spell", label := "cast trigger", checkTargets := false }
+  | .youDiscard =>
+    { clause := "you discard a card", label := "discard trigger", checkTargets := false }
+  | .youPutPlusOne =>
+    { clause := "you put a +1/+1 counter on a creature",
+      label := "counter trigger", checkTargets := false }
+  | .youGainLife =>
+    { clause := "you gain life", label := "gain-life trigger", checkTargets := false }
+  | .anyPlayerDrawsSecond =>
+    { clause := "a player draws their second card each turn",
+      label := "second-card trigger", checkTargets := false }
+  | .spellTargetsSource =>
+    { clause := "a player casts a spell that targets this",
+      label := "becomes-target trigger", checkTargets := false }
+  | .youTargetSomething =>
+    { clause := "a player or permanent becomes the target of an ability you control",
+      label := "you-target trigger", checkTargets := false }
+  | .equipmentYouControlEnters =>
+    { clause := "an Equipment you control enters",
+      label := "equipment-enters trigger", checkTargets := false }
+  | .anotherVillainOrArtifactEnters =>
+    { clause := "another Villain and/or artifact you control enters",
+      label := "villain-or-artifact trigger", checkTargets := false }
+  | .anotherVillainEnters =>
+    { clause := "another Villain you control enters",
+      label := "villain-enters trigger", checkTargets := false }
+  | .anotherArtifactEnters =>
+    { clause := "another artifact you control enters",
+      label := "artifact-enters trigger", checkTargets := false }
+  | .anotherNontokenHeroEnters =>
+    { clause := "another nontoken Hero you control enters",
+      label := "hero-enters trigger", checkTargets := false }
+  | .anotherNontokenArtifactEnters =>
+    { clause := "another nontoken artifact you control enters",
+      label := "artifact-enters trigger", checkTargets := false }
+  | .anotherNonlandReturned =>
+    { clause := "another nonland permanent you control is returned to its owner's hand",
+      label := "return trigger", checkTargets := false }
+  | .villainYouControlDies =>
+    { clause := "a Villain you control dies",
+      label := "villain-dies trigger", checkTargets := false }
+  | .attackingCreatureYouControlDies =>
+    { clause := "an attacking creature you control dies",
+      label := "attacker-dies trigger", checkTargets := false }
+  | .equippedCreatureYouControlAttacks =>
+    { clause := "an equipped creature you control attacks",
+      label := "equipped-attacks trigger", checkTargets := false }
+  | .enchantedAttacksOrBlocks =>
+    { clause := "enchanted creature attacks or blocks",
+      label := "enchanted-combat trigger", checkTargets := false }
+  | .creatureYouControlTapped =>
+    { clause := "a creature you control becomes tapped during your turn",
+      label := "tap trigger", checkTargets := false }
+  | .creatureYouControlDealtDamage =>
+    { clause := "a creature you control is dealt damage",
+      label := "dealt-damage trigger", checkTargets := false }
+  | .heroesDealDamageToPlayer =>
+    { clause := "one or more Heroes you control deal damage to a player",
+      label := "hero-damage trigger", checkTargets := false }
+  | .merfolkAttackPlayer =>
+    { clause := "one or more Merfolk you control attack a player",
+      label := "merfolk-attack trigger", checkTargets := false }
+  | .enchantedControllerUpkeep =>
+    { clause := "the beginning of the upkeep of enchanted creature's controller",
+      isWhenever := false, label := "enchanted-upkeep trigger", checkTargets := false }
 
 /-- Oracle “when/whenever” clause after the leading word. -/
 def clause (e : TriggerEvent) : String :=
@@ -3886,8 +4584,52 @@ inductive TriggerResolution where
   | chapter (effect : ChapterEffect)
   /-- Target creature you control gets +1/+1 per Plains you control. -/
   | pumpTargetPerPlains
-  /-- Unique printed trigger wording. -/
-  | printed (text : String)
+  /-- Investigate (create a Clue). -/
+  | investigate
+  /-- Put a +1/+1 counter on the source and draw a card. -/
+  | plusOneOnSourceAndDraw
+  /-- The source connives (CR 701.48). -/
+  | connive
+  /-- The targeted creature connives. -/
+  | targetConnive
+  /-- Pump the creature that caused the trigger. -/
+  | pumpCause (power toughness : Int)
+  /-- Other permanents you control of this subtype get +X/+X, X = source toughness. -/
+  | othersOfSubtypeGetEqualSourceToughness (subtype : String)
+  /-- Draw a card if you attacked with this subtype or one entered this turn. -/
+  | drawIfAttackedOrEnteredSubtype (subtype : String)
+  /-- Scry `n` and put a plan counter on the source. -/
+  | scryAndPlan (n : Nat)
+  /-- Draw, discard, and put a plan counter on the source. -/
+  | lootAndPlan
+  /-- Create a Villain token and put a plan counter on the source. -/
+  | createVillainAndPlan
+  /-- Each opponent loses `n` life, you gain `n`, and put a plan counter. -/
+  | drainAndPlan (n : Nat)
+  /-- Draw a card, lose 1 life, and put a plan counter. -/
+  | drawLoseLifeAndPlan
+  /-- Create a tapped Treasure and put a plan counter. -/
+  | treasureTappedAndPlan
+  /-- Put a +1/+1 counter on the target and a plan counter on the source. -/
+  | plusOneOnTargetAndPlan
+  /-- Sacrifice this, draw a card, and put a +1/+1 counter on each creature. -/
+  | planFinishDrawPlusOneEach
+  /-- Sacrifice this. Return up to two instant/sorcery cards from your graveyard. -/
+  | planFinishReturnInstants
+  /-- Sacrifice this. You control target opponent during their next turn. -/
+  | planFinishControlOpponent
+  /-- Sacrifice this. Exile the top five; you may cast up to two without paying. -/
+  | planFinishExileTopCast
+  /-- Sacrifice this and create `n` Robot Villain tokens. -/
+  | planFinishCreateRobots (n : Nat)
+  /-- Sacrifice this. Deal `amount` divided among one or two targets. -/
+  | planFinishDividedDamage (amount : Nat)
+  /-- Sacrifice this. Put an indestructible counter on target creature you control. -/
+  | planFinishIndestructibleOnTarget
+  /-- Draw a card and lose 1 life. -/
+  | drawAndLoseLife1
+  /-- Resolve a modeled MSH trigger. -/
+  | msh (t : MshTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -3920,6 +4662,504 @@ structure TriggerTiming where
   /-- “This or another {subtype} you control enters”. -/
   thisOrAnotherSubtype : Option String := none
 deriving Repr, Inhabited, BEq
+
+end TriggeredAbility
+
+namespace MshTrigger
+
+/-- Events that fire this modeled MSH trigger. -/
+def events : MshTrigger → Array TriggerEvent
+  | .atTheBeginningOfCombatOnYourTurn => #[.yourBeginCombat]
+  | .atTheBeginningOfCombatOnYourTurn2 => #[.yourBeginCombat]
+  | .atTheBeginningOfCombatOnYourTurn3 => #[.yourBeginCombat]
+  | .atTheBeginningOfCombatOnYourTurn4 => #[.yourBeginCombat]
+  | .atTheBeginningOfCombatOnYourTurn5 => #[.yourBeginCombat]
+  | .atTheBeginningOfTheUpkeepOfEnchantedCrea => #[.enchantedControllerUpkeep]
+  | .atTheBeginningOfYourEndStep => #[.yourEndStep]
+  | .atTheBeginningOfYourFirstMainPhase => #[.yourFirstMain]
+  | .atTheBeginningOfYourUpkeep => #[.yourUpkeep]
+  | .whenBullseyeEnters => #[.entering]
+  | .whenCloakAndDaggerEnter => #[.entering]
+  | .whenDoctorDoomEnters => #[.entering]
+  | .whenElektraEnters => #[.entering]
+  | .whenHellcatDies => #[.dying]
+  | .whenJusticeEnters => #[.entering]
+  | .whenKaZarEnters => #[.entering]
+  | .whenKillmongerEnters => #[.entering]
+  | .whenMjLnirEnters => #[.entering]
+  | .whenNightNurseEnters => #[.entering]
+  | .whenRedGuardianEnters => #[.entering]
+  | .whenSpiderWomanEnters => #[.entering]
+  | .whenTheRuinousWreckingCrewEnters => #[.entering]
+  | .whenTheSentryEnters => #[.entering]
+  | .whenThorEnters => #[.entering]
+  | .whenUSAgentEnters => #[.entering]
+  | .whenWhiteWidowEnters => #[.entering]
+  | .whenWolverineEnters => #[.entering]
+  | .whenThisAuraEnters => #[.entering]
+  | .whenThisAuraEnters2 => #[.entering]
+  | .whenThisAuraEnters3 => #[.entering]
+  | .whenThisEquipmentEnters => #[.entering]
+  | .whenThisEquipmentEnters2 => #[.entering]
+  | .whenThisVehicleEnters => #[.entering]
+  | .whenThisCreatureEnters => #[.entering]
+  | .whenThisCreatureEnters2 => #[.entering]
+  | .whenThisCreatureEnters3 => #[.entering]
+  | .whenThisCreatureEnters4 => #[.entering]
+  | .whenThisCreatureEnters5 => #[.entering]
+  | .whenThisCreatureEnters6 => #[.entering]
+  | .whenThisCreatureEnters7 => #[.entering]
+  | .whenThisCreatureEnters8 => #[.entering]
+  | .whenThisCreatureEnters9 => #[.entering]
+  | .whenThisEnchantmentEnters => #[.entering]
+  | .whenThisEnchantmentEnters2 => #[.entering]
+  | .whenThisLandEnters => #[.entering]
+  | .wheneverAntManAttacks => #[.attacking]
+  | .wheneverBlackWidowDealsCombatDamageToAPl => #[.dealsCombatDamageToPlayer]
+  | .wheneverGrimReaperAttacks => #[.attacking]
+  | .wheneverIronManAttacks => #[.attacking]
+  | .wheneverKangAttacks => #[.attacking]
+  | .wheneverSuperAdaptoidEntersOrAttacks => #[.entering, .attacking]
+  | .wheneverTheMightyThorAttacks => #[.attacking]
+  | .wheneverWhiplashAttacks => #[.attacking]
+  | .wheneverAVillainYouControlDies => #[.villainYouControlDies]
+  | .wheneverACreatureYouControlAttacksAlone => #[.creatureYouControlAttacksAlone]
+  | .wheneverACreatureYouControlAttacksAlone2 => #[.creatureYouControlAttacksAlone]
+  | .wheneverACreatureYouControlBecomesTappedD => #[.creatureYouControlTapped]
+  | .wheneverACreatureYouControlIsDealtDamage => #[.creatureYouControlDealtDamage]
+  | .wheneverAPlayerCastsASpellThatTargetsSpe => #[.spellTargetsSource]
+  | .wheneverAPlayerDrawsTheirSecondCardEachT => #[.anyPlayerDrawsSecond]
+  | .wheneverAPlayerOrPermanentBecomesTheTarge => #[.youTargetSomething]
+  | .wheneverAnEquipmentYouControlEnters => #[.equipmentYouControlEnters]
+  | .wheneverAnAttackingCreatureYouControlDies => #[.attackingCreatureYouControlDies]
+  | .wheneverAnEquippedCreatureYouControlAttack => #[.equippedCreatureYouControlAttacks]
+  | .wheneverAnotherVillainAndOrArtifactYouCon => #[.anotherVillainOrArtifactEnters]
+  | .wheneverAnotherVillainYouControlEnters => #[.anotherVillainEnters]
+  | .wheneverAnotherVillainYouControlEnters2 => #[.anotherVillainEnters]
+  | .wheneverAnotherVillainYouControlEnters3 => #[.anotherVillainEnters]
+  | .wheneverAnotherVillainYouControlEnters4 => #[.anotherVillainEnters]
+  | .wheneverAnotherArtifactYouControlEnters => #[.anotherArtifactEnters]
+  | .wheneverAnotherCreatureYouControlEnters => #[.anotherCreatureYouControlEnters]
+  | .wheneverAnotherCreatureYouControlWithDeath => #[.anotherCreatureYouControlEnters]
+  | .wheneverAnotherNonlandPermanentYouControlI => #[.anotherNonlandReturned]
+  | .wheneverAnotherNontokenHeroYouControlEnter => #[.anotherNontokenHeroEnters]
+  | .wheneverAnotherNontokenArtifactYouControlE => #[.anotherNontokenArtifactEnters]
+  | .wheneverEnchantedCreatureAttacksOrBlocks => #[.enchantedAttacksOrBlocks]
+  | .wheneverEquippedCreatureAttacksAlone => #[.equippedAttacks]
+  | .wheneverEquippedCreatureAttacks => #[.equippedAttacks]
+  | .wheneverEquippedCreatureBecomesTapped => #[.equippedAttacks]
+  | .wheneverOneOrMoreHeroesYouControlDealDam => #[.heroesDealDamageToPlayer]
+  | .wheneverOneOrMoreMerfolkYouControlAttack => #[.merfolkAttackPlayer]
+  | .wheneverOneOrMoreTokensYouControlEnter => #[.tokenYouControlEnters]
+  | .wheneverYouAttack => #[.youAttack]
+  | .wheneverYouAttack2 => #[.youAttack]
+  | .wheneverYouAttack3 => #[.youAttack]
+  | .wheneverYouCastAVillainSpell => #[.youCastVillain]
+  | .wheneverYouCastANoncreatureSpellWithOneO => #[.youCastNoncreature]
+  | .wheneverYouCastANoncreatureSpell => #[.youCastNoncreature]
+  | .wheneverYouCastANoncreatureSpell2 => #[.youCastNoncreature]
+  | .wheneverYouCastANoncreatureSpell3 => #[.youCastNoncreature]
+  | .wheneverYouCastANoncreatureSpell4 => #[.youCastNoncreature]
+  | .wheneverYouCastANoncreatureSpell5 => #[.youCastNoncreature]
+  | .wheneverYouCastASpellThatTargetsACreatur => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastASpellThatTargetsACreatur2 => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastASpellThatTargetsACreatur3 => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastASpellThatTargetsOneOrMo => #[.youCastTargetingCreatureYouControl]
+  | .wheneverYouCastAnInstantOrSorcerySpellTh => #[.youCastInstantOrSorcery]
+  | .wheneverYouDiscardACard => #[.youDiscard]
+  | .wheneverYouDrawACard => #[.youDraw]
+  | .wheneverYouDrawACard2 => #[.youDraw]
+  | .wheneverYouDrawYourSecondCardEachTurn => #[.youDrawSecondCard]
+  | .wheneverYouDrawYourSecondCardEachTurn2 => #[.youDrawSecondCard]
+  | .wheneverYouDrawYourSecondCardEachTurn3 => #[.youDrawSecondCard]
+  | .wheneverYouGainLife => #[.youGainLife]
+  | .wheneverYouGainLife2 => #[.youGainLife]
+  | .wheneverYouPutA11CounterOnACreature => #[.youPutPlusOne]
+  | .wheneverYouPutA11CounterOnAnotherCrea => #[.youPutPlusOne]
+  | .wheneverYouPutOneOrMore11CountersOnO => #[.youPutPlusOne]
+  | .cyberneticSensesWheneverVivVision => #[.attacking]
+  | .doYouLikeSquirrelsWheneverTheUnbeata => #[.entering, .attacking]
+  | .enrageWheneverRedHulkIs => #[.entering]
+  | .enrageWheneverTheIncredi => #[.entering]
+  | .noOneDiesWhenSpiderManEnte => #[.entering]
+  | .photographicReflexesAtTheBeginningOf => #[.yourFirstMain]
+  | .seismicTakedownWheneverYouCastA => #[.youCastNoncreature]
+  | .sonicAttackWhenKlawEntersTa => #[.entering]
+  | .trickArrowsWheneverHawkeyeBec => #[.entering]
+  | .unbreakableSkinWheneverLukeCageA => #[.attacking]
+  | .waspSStingWhenTheWondrousWa => #[.entering]
+  | .atTheBeginningOf => #[.yourEndStep]
+
+/-- Targeting when this trigger is put on the stack. -/
+def targeting : MshTrigger → EffectTargeting
+  | .atTheBeginningOfCombatOnYourTurn => .of .creatureYouControl
+  | .atTheBeginningOfCombatOnYourTurn2 => .of .none
+  | .atTheBeginningOfCombatOnYourTurn3 => .of .creatureYouControl
+  | .atTheBeginningOfCombatOnYourTurn4 => .of .creatureYouControl
+  | .atTheBeginningOfCombatOnYourTurn5 => .of .none
+  | .atTheBeginningOfTheUpkeepOfEnchantedCrea => .of .none
+  | .atTheBeginningOfYourEndStep => .of .none
+  | .atTheBeginningOfYourFirstMainPhase => .of .none
+  | .atTheBeginningOfYourUpkeep => .of .none
+  | .whenBullseyeEnters => .of .playerOrCreature
+  | .whenCloakAndDaggerEnter => .of .opponent
+  | .whenDoctorDoomEnters => .of .none
+  | .whenElektraEnters => .of .oppCreature
+  | .whenHellcatDies => .of .none
+  | .whenJusticeEnters => .of .nonland
+  | .whenKaZarEnters => .of .none
+  | .whenKillmongerEnters => .of .nonland
+  | .whenMjLnirEnters => .of .creature
+  | .whenNightNurseEnters => .of .none
+  | .whenRedGuardianEnters => .of .oppCreature
+  | .whenSpiderWomanEnters => .of .oppCreature
+  | .whenTheRuinousWreckingCrewEnters => .of .opponent
+  | .whenTheSentryEnters => .of .opponent
+  | .whenThorEnters => .of .none
+  | .whenUSAgentEnters => .of .none
+  | .whenWhiteWidowEnters => .of .creature
+  | .whenWolverineEnters => .of .creature
+  | .whenThisAuraEnters => .of .none
+  | .whenThisAuraEnters2 => .of .creature
+  | .whenThisAuraEnters3 => .of .none
+  | .whenThisEquipmentEnters => .of .creatureYouControl
+  | .whenThisEquipmentEnters2 => .of .creatureYouControl
+  | .whenThisVehicleEnters => .of .creatureYouControl
+  | .whenThisCreatureEnters => .of .nonland
+  | .whenThisCreatureEnters2 => .of .none
+  | .whenThisCreatureEnters3 => .of .none
+  | .whenThisCreatureEnters4 => .of .none
+  | .whenThisCreatureEnters5 => .of .none
+  | .whenThisCreatureEnters6 => .of .none
+  | .whenThisCreatureEnters7 => .of .creature
+  | .whenThisCreatureEnters8 => .of .none
+  | .whenThisCreatureEnters9 => .of .none
+  | .whenThisEnchantmentEnters => .of .none
+  | .whenThisEnchantmentEnters2 => .of .opponent
+  | .whenThisLandEnters => .of .none
+  | .wheneverAntManAttacks => .of .creature
+  | .wheneverBlackWidowDealsCombatDamageToAPl => .of .none
+  | .wheneverGrimReaperAttacks => .of .creature
+  | .wheneverIronManAttacks => .of .none
+  | .wheneverKangAttacks => .of .none
+  | .wheneverSuperAdaptoidEntersOrAttacks => .of .creature
+  | .wheneverTheMightyThorAttacks => .of .none
+  | .wheneverWhiplashAttacks => .of .none
+  | .wheneverAVillainYouControlDies => .of .none
+  | .wheneverACreatureYouControlAttacksAlone => .of .none
+  | .wheneverACreatureYouControlAttacksAlone2 => .of .opponent
+  | .wheneverACreatureYouControlBecomesTappedD => .of .none
+  | .wheneverACreatureYouControlIsDealtDamage => .of .playerOrCreature
+  | .wheneverAPlayerCastsASpellThatTargetsSpe => .of .none
+  | .wheneverAPlayerDrawsTheirSecondCardEachT => .of .none
+  | .wheneverAPlayerOrPermanentBecomesTheTarge => .of .none
+  | .wheneverAnEquipmentYouControlEnters => .of .none
+  | .wheneverAnAttackingCreatureYouControlDies => .of .none
+  | .wheneverAnEquippedCreatureYouControlAttack => .of .none
+  | .wheneverAnotherVillainAndOrArtifactYouCon => .of .opponent
+  | .wheneverAnotherVillainYouControlEnters => .of .none
+  | .wheneverAnotherVillainYouControlEnters2 => .of .creatureYouControl
+  | .wheneverAnotherVillainYouControlEnters3 => .of .none
+  | .wheneverAnotherVillainYouControlEnters4 => .of .none
+  | .wheneverAnotherArtifactYouControlEnters => .of .none
+  | .wheneverAnotherCreatureYouControlEnters => .of .none
+  | .wheneverAnotherCreatureYouControlWithDeath => .of .none
+  | .wheneverAnotherNonlandPermanentYouControlI => .of .none
+  | .wheneverAnotherNontokenHeroYouControlEnter => .of .none
+  | .wheneverAnotherNontokenArtifactYouControlE => .of .none
+  | .wheneverEnchantedCreatureAttacksOrBlocks => .of .none
+  | .wheneverEquippedCreatureAttacksAlone => .of .none
+  | .wheneverEquippedCreatureAttacks => .of .creature
+  | .wheneverEquippedCreatureBecomesTapped => .of .none
+  | .wheneverOneOrMoreHeroesYouControlDealDam => .of .none
+  | .wheneverOneOrMoreMerfolkYouControlAttack => .of .none
+  | .wheneverOneOrMoreTokensYouControlEnter => .of .none
+  | .wheneverYouAttack => .of .none
+  | .wheneverYouAttack2 => .of .none
+  | .wheneverYouAttack3 => .of .none
+  | .wheneverYouCastAVillainSpell => .of .none
+  | .wheneverYouCastANoncreatureSpellWithOneO => .of .none
+  | .wheneverYouCastANoncreatureSpell => .of .playerOrCreature
+  | .wheneverYouCastANoncreatureSpell2 => .of .none
+  | .wheneverYouCastANoncreatureSpell3 => .of .nonland
+  | .wheneverYouCastANoncreatureSpell4 => .of .none
+  | .wheneverYouCastANoncreatureSpell5 => .of .creature
+  | .wheneverYouCastASpellThatTargetsACreatur => .of .none
+  | .wheneverYouCastASpellThatTargetsACreatur2 => .of .none
+  | .wheneverYouCastASpellThatTargetsACreatur3 => .of .none
+  | .wheneverYouCastASpellThatTargetsOneOrMo => .of .none
+  | .wheneverYouCastAnInstantOrSorcerySpellTh => .of .none
+  | .wheneverYouDiscardACard => .of .none
+  | .wheneverYouDrawACard => .of .opponent
+  | .wheneverYouDrawACard2 => .of .none
+  | .wheneverYouDrawYourSecondCardEachTurn => .of .none
+  | .wheneverYouDrawYourSecondCardEachTurn2 => .of .creature
+  | .wheneverYouDrawYourSecondCardEachTurn3 => .of .none
+  | .wheneverYouGainLife => .of .playerOrCreature
+  | .wheneverYouGainLife2 => .of .none
+  | .wheneverYouPutA11CounterOnACreature => .of .none
+  | .wheneverYouPutA11CounterOnAnotherCrea => .of .none
+  | .wheneverYouPutOneOrMore11CountersOnO => .of .none
+  | .cyberneticSensesWheneverVivVision => .of .none
+  | .doYouLikeSquirrelsWheneverTheUnbeata => .of .none
+  | .enrageWheneverRedHulkIs => .of .none
+  | .enrageWheneverTheIncredi => .of .none
+  | .noOneDiesWhenSpiderManEnte => .of .none
+  | .photographicReflexesAtTheBeginningOf => .of .creature
+  | .seismicTakedownWheneverYouCastA => .of .creature
+  | .sonicAttackWhenKlawEntersTa => .of .player
+  | .trickArrowsWheneverHawkeyeBec => .of .creature
+  | .unbreakableSkinWheneverLukeCageA => .of .none
+  | .waspSStingWhenTheWondrousWa => .of .creature
+  | .atTheBeginningOf => .of .nonland
+
+def allowsZeroTargets : MshTrigger → Bool
+  | .atTheBeginningOfCombatOnYourTurn => false
+  | .atTheBeginningOfCombatOnYourTurn2 => false
+  | .atTheBeginningOfCombatOnYourTurn3 => false
+  | .atTheBeginningOfCombatOnYourTurn4 => false
+  | .atTheBeginningOfCombatOnYourTurn5 => false
+  | .atTheBeginningOfTheUpkeepOfEnchantedCrea => false
+  | .atTheBeginningOfYourEndStep => false
+  | .atTheBeginningOfYourFirstMainPhase => false
+  | .atTheBeginningOfYourUpkeep => false
+  | .whenBullseyeEnters => false
+  | .whenCloakAndDaggerEnter => true
+  | .whenDoctorDoomEnters => false
+  | .whenElektraEnters => false
+  | .whenHellcatDies => false
+  | .whenJusticeEnters => true
+  | .whenKaZarEnters => false
+  | .whenKillmongerEnters => false
+  | .whenMjLnirEnters => true
+  | .whenNightNurseEnters => false
+  | .whenRedGuardianEnters => false
+  | .whenSpiderWomanEnters => false
+  | .whenTheRuinousWreckingCrewEnters => true
+  | .whenTheSentryEnters => false
+  | .whenThorEnters => false
+  | .whenUSAgentEnters => false
+  | .whenWhiteWidowEnters => true
+  | .whenWolverineEnters => true
+  | .whenThisAuraEnters => false
+  | .whenThisAuraEnters2 => true
+  | .whenThisAuraEnters3 => false
+  | .whenThisEquipmentEnters => false
+  | .whenThisEquipmentEnters2 => false
+  | .whenThisVehicleEnters => true
+  | .whenThisCreatureEnters => false
+  | .whenThisCreatureEnters2 => false
+  | .whenThisCreatureEnters3 => false
+  | .whenThisCreatureEnters4 => false
+  | .whenThisCreatureEnters5 => false
+  | .whenThisCreatureEnters6 => false
+  | .whenThisCreatureEnters7 => false
+  | .whenThisCreatureEnters8 => false
+  | .whenThisCreatureEnters9 => false
+  | .whenThisEnchantmentEnters => false
+  | .whenThisEnchantmentEnters2 => false
+  | .whenThisLandEnters => false
+  | .wheneverAntManAttacks => false
+  | .wheneverBlackWidowDealsCombatDamageToAPl => false
+  | .wheneverGrimReaperAttacks => false
+  | .wheneverIronManAttacks => false
+  | .wheneverKangAttacks => false
+  | .wheneverSuperAdaptoidEntersOrAttacks => false
+  | .wheneverTheMightyThorAttacks => false
+  | .wheneverWhiplashAttacks => false
+  | .wheneverAVillainYouControlDies => false
+  | .wheneverACreatureYouControlAttacksAlone => false
+  | .wheneverACreatureYouControlAttacksAlone2 => false
+  | .wheneverACreatureYouControlBecomesTappedD => false
+  | .wheneverACreatureYouControlIsDealtDamage => false
+  | .wheneverAPlayerCastsASpellThatTargetsSpe => false
+  | .wheneverAPlayerDrawsTheirSecondCardEachT => false
+  | .wheneverAPlayerOrPermanentBecomesTheTarge => false
+  | .wheneverAnEquipmentYouControlEnters => false
+  | .wheneverAnAttackingCreatureYouControlDies => false
+  | .wheneverAnEquippedCreatureYouControlAttack => false
+  | .wheneverAnotherVillainAndOrArtifactYouCon => false
+  | .wheneverAnotherVillainYouControlEnters => false
+  | .wheneverAnotherVillainYouControlEnters2 => true
+  | .wheneverAnotherVillainYouControlEnters3 => false
+  | .wheneverAnotherVillainYouControlEnters4 => false
+  | .wheneverAnotherArtifactYouControlEnters => false
+  | .wheneverAnotherCreatureYouControlEnters => false
+  | .wheneverAnotherCreatureYouControlWithDeath => false
+  | .wheneverAnotherNonlandPermanentYouControlI => false
+  | .wheneverAnotherNontokenHeroYouControlEnter => false
+  | .wheneverAnotherNontokenArtifactYouControlE => false
+  | .wheneverEnchantedCreatureAttacksOrBlocks => false
+  | .wheneverEquippedCreatureAttacksAlone => false
+  | .wheneverEquippedCreatureAttacks => false
+  | .wheneverEquippedCreatureBecomesTapped => false
+  | .wheneverOneOrMoreHeroesYouControlDealDam => false
+  | .wheneverOneOrMoreMerfolkYouControlAttack => false
+  | .wheneverOneOrMoreTokensYouControlEnter => false
+  | .wheneverYouAttack => false
+  | .wheneverYouAttack2 => false
+  | .wheneverYouAttack3 => false
+  | .wheneverYouCastAVillainSpell => false
+  | .wheneverYouCastANoncreatureSpellWithOneO => false
+  | .wheneverYouCastANoncreatureSpell => false
+  | .wheneverYouCastANoncreatureSpell2 => false
+  | .wheneverYouCastANoncreatureSpell3 => false
+  | .wheneverYouCastANoncreatureSpell4 => false
+  | .wheneverYouCastANoncreatureSpell5 => false
+  | .wheneverYouCastASpellThatTargetsACreatur => false
+  | .wheneverYouCastASpellThatTargetsACreatur2 => false
+  | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsOneOrMo => false
+  | .wheneverYouCastAnInstantOrSorcerySpellTh => false
+  | .wheneverYouDiscardACard => false
+  | .wheneverYouDrawACard => false
+  | .wheneverYouDrawACard2 => false
+  | .wheneverYouDrawYourSecondCardEachTurn => false
+  | .wheneverYouDrawYourSecondCardEachTurn2 => false
+  | .wheneverYouDrawYourSecondCardEachTurn3 => false
+  | .wheneverYouGainLife => true
+  | .wheneverYouGainLife2 => false
+  | .wheneverYouPutA11CounterOnACreature => false
+  | .wheneverYouPutA11CounterOnAnotherCrea => false
+  | .wheneverYouPutOneOrMore11CountersOnO => false
+  | .cyberneticSensesWheneverVivVision => false
+  | .doYouLikeSquirrelsWheneverTheUnbeata => false
+  | .enrageWheneverRedHulkIs => false
+  | .enrageWheneverTheIncredi => false
+  | .noOneDiesWhenSpiderManEnte => false
+  | .photographicReflexesAtTheBeginningOf => true
+  | .seismicTakedownWheneverYouCastA => false
+  | .sonicAttackWhenKlawEntersTa => false
+  | .trickArrowsWheneverHawkeyeBec => true
+  | .unbreakableSkinWheneverLukeCageA => false
+  | .waspSStingWhenTheWondrousWa => true
+  | .atTheBeginningOf => true
+
+def onceEachTurn : MshTrigger → Bool
+  | .atTheBeginningOfCombatOnYourTurn => false
+  | .atTheBeginningOfCombatOnYourTurn2 => false
+  | .atTheBeginningOfCombatOnYourTurn3 => false
+  | .atTheBeginningOfCombatOnYourTurn4 => false
+  | .atTheBeginningOfCombatOnYourTurn5 => false
+  | .atTheBeginningOfTheUpkeepOfEnchantedCrea => false
+  | .atTheBeginningOfYourEndStep => false
+  | .atTheBeginningOfYourFirstMainPhase => false
+  | .atTheBeginningOfYourUpkeep => false
+  | .whenBullseyeEnters => false
+  | .whenCloakAndDaggerEnter => false
+  | .whenDoctorDoomEnters => false
+  | .whenElektraEnters => false
+  | .whenHellcatDies => false
+  | .whenJusticeEnters => false
+  | .whenKaZarEnters => false
+  | .whenKillmongerEnters => false
+  | .whenMjLnirEnters => false
+  | .whenNightNurseEnters => false
+  | .whenRedGuardianEnters => false
+  | .whenSpiderWomanEnters => false
+  | .whenTheRuinousWreckingCrewEnters => false
+  | .whenTheSentryEnters => false
+  | .whenThorEnters => false
+  | .whenUSAgentEnters => false
+  | .whenWhiteWidowEnters => false
+  | .whenWolverineEnters => false
+  | .whenThisAuraEnters => false
+  | .whenThisAuraEnters2 => false
+  | .whenThisAuraEnters3 => false
+  | .whenThisEquipmentEnters => false
+  | .whenThisEquipmentEnters2 => false
+  | .whenThisVehicleEnters => false
+  | .whenThisCreatureEnters => false
+  | .whenThisCreatureEnters2 => false
+  | .whenThisCreatureEnters3 => false
+  | .whenThisCreatureEnters4 => false
+  | .whenThisCreatureEnters5 => false
+  | .whenThisCreatureEnters6 => false
+  | .whenThisCreatureEnters7 => false
+  | .whenThisCreatureEnters8 => false
+  | .whenThisCreatureEnters9 => false
+  | .whenThisEnchantmentEnters => false
+  | .whenThisEnchantmentEnters2 => false
+  | .whenThisLandEnters => false
+  | .wheneverAntManAttacks => false
+  | .wheneverBlackWidowDealsCombatDamageToAPl => false
+  | .wheneverGrimReaperAttacks => false
+  | .wheneverIronManAttacks => false
+  | .wheneverKangAttacks => false
+  | .wheneverSuperAdaptoidEntersOrAttacks => false
+  | .wheneverTheMightyThorAttacks => false
+  | .wheneverWhiplashAttacks => false
+  | .wheneverAVillainYouControlDies => false
+  | .wheneverACreatureYouControlAttacksAlone => false
+  | .wheneverACreatureYouControlAttacksAlone2 => false
+  | .wheneverACreatureYouControlBecomesTappedD => false
+  | .wheneverACreatureYouControlIsDealtDamage => true
+  | .wheneverAPlayerCastsASpellThatTargetsSpe => false
+  | .wheneverAPlayerDrawsTheirSecondCardEachT => false
+  | .wheneverAPlayerOrPermanentBecomesTheTarge => true
+  | .wheneverAnEquipmentYouControlEnters => false
+  | .wheneverAnAttackingCreatureYouControlDies => false
+  | .wheneverAnEquippedCreatureYouControlAttack => false
+  | .wheneverAnotherVillainAndOrArtifactYouCon => false
+  | .wheneverAnotherVillainYouControlEnters => false
+  | .wheneverAnotherVillainYouControlEnters2 => false
+  | .wheneverAnotherVillainYouControlEnters3 => true
+  | .wheneverAnotherVillainYouControlEnters4 => true
+  | .wheneverAnotherArtifactYouControlEnters => false
+  | .wheneverAnotherCreatureYouControlEnters => false
+  | .wheneverAnotherCreatureYouControlWithDeath => false
+  | .wheneverAnotherNonlandPermanentYouControlI => false
+  | .wheneverAnotherNontokenHeroYouControlEnter => false
+  | .wheneverAnotherNontokenArtifactYouControlE => false
+  | .wheneverEnchantedCreatureAttacksOrBlocks => false
+  | .wheneverEquippedCreatureAttacksAlone => false
+  | .wheneverEquippedCreatureAttacks => false
+  | .wheneverEquippedCreatureBecomesTapped => false
+  | .wheneverOneOrMoreHeroesYouControlDealDam => false
+  | .wheneverOneOrMoreMerfolkYouControlAttack => false
+  | .wheneverOneOrMoreTokensYouControlEnter => false
+  | .wheneverYouAttack => false
+  | .wheneverYouAttack2 => false
+  | .wheneverYouAttack3 => false
+  | .wheneverYouCastAVillainSpell => false
+  | .wheneverYouCastANoncreatureSpellWithOneO => false
+  | .wheneverYouCastANoncreatureSpell => false
+  | .wheneverYouCastANoncreatureSpell2 => false
+  | .wheneverYouCastANoncreatureSpell3 => false
+  | .wheneverYouCastANoncreatureSpell4 => false
+  | .wheneverYouCastANoncreatureSpell5 => false
+  | .wheneverYouCastASpellThatTargetsACreatur => false
+  | .wheneverYouCastASpellThatTargetsACreatur2 => false
+  | .wheneverYouCastASpellThatTargetsACreatur3 => false
+  | .wheneverYouCastASpellThatTargetsOneOrMo => false
+  | .wheneverYouCastAnInstantOrSorcerySpellTh => false
+  | .wheneverYouDiscardACard => false
+  | .wheneverYouDrawACard => false
+  | .wheneverYouDrawACard2 => false
+  | .wheneverYouDrawYourSecondCardEachTurn => false
+  | .wheneverYouDrawYourSecondCardEachTurn2 => false
+  | .wheneverYouDrawYourSecondCardEachTurn3 => false
+  | .wheneverYouGainLife => false
+  | .wheneverYouGainLife2 => false
+  | .wheneverYouPutA11CounterOnACreature => true
+  | .wheneverYouPutA11CounterOnAnotherCrea => true
+  | .wheneverYouPutOneOrMore11CountersOnO => false
+  | .cyberneticSensesWheneverVivVision => false
+  | .doYouLikeSquirrelsWheneverTheUnbeata => false
+  | .enrageWheneverRedHulkIs => false
+  | .enrageWheneverTheIncredi => false
+  | .noOneDiesWhenSpiderManEnte => false
+  | .photographicReflexesAtTheBeginningOf => false
+  | .seismicTakedownWheneverYouCastA => false
+  | .sonicAttackWhenKlawEntersTa => false
+  | .trickArrowsWheneverHawkeyeBec => false
+  | .unbreakableSkinWheneverLukeCageA => false
+  | .waspSStingWhenTheWondrousWa => false
+  | .atTheBeginningOf => false
+
+end MshTrigger
+
+namespace TriggeredAbility
 
 /-- Classification of this triggered ability. Exhaustive so a new constructor
 is a compile error here rather than silently matching `false` elsewhere. -/
@@ -4365,8 +5605,74 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYouAttackPumpTargetPerPlains =>
     { events := #[.youAttack], targeting := .of .creatureYouControl,
       resolution := .pumpTargetPerPlains }
-  | .printed text =>
-    { resolution := .printed text }
+  | .onCreatureYouControlAttacksAloneInvestigate =>
+    { events := #[.creatureYouControlAttacksAlone], resolution := .investigate }
+  | .onCreatureYouControlAttacksAlonePump p t =>
+    { events := #[.creatureYouControlAttacksAlone], resolution := .pumpCause p t }
+  | .onTappedForTeamworkPlusOneAndDraw =>
+    { events := #[.tappedForTeamwork], resolution := .plusOneOnSourceAndDraw }
+  | .onEachEndStepDrawIfAttackedOrEnteredSubtype subtype =>
+    { events := #[.eachEndStep], resolution := .drawIfAttackedOrEnteredSubtype subtype }
+  | .onAttackOthersOfSubtypeGetEqualToughness subtype =>
+    { events := #[.attacking], resolution := .othersOfSubtypeGetEqualSourceToughness subtype }
+  | .onEnterConnive =>
+    { events := #[.entering], resolution := .connive }
+  | .onYouDrawSecondCreateTokens kind =>
+    { events := #[.youDrawSecondCard], resolution := .createTokens kind 1 false }
+  | .onCreatureYouControlEntersScryAndPlan n =>
+    { events := #[.creatureYouControlEnters], resolution := .scryAndPlan n }
+  | .onCreaturesYouControlBecomeTappedLootAndPlan =>
+    { events := #[.creaturesYouControlBecomeTapped], resolution := .lootAndPlan }
+  | .onYouDrawSecondCreateVillainAndPlan =>
+    { events := #[.youDrawSecondCard], resolution := .createVillainAndPlan }
+  | .onVillainYouControlEntersDrainAndPlan n =>
+    { events := #[.subtypeYouControlEnters "Villain"], resolution := .drainAndPlan n }
+  | .onCreatureCardsToGyDrawLoseLifeAndPlan =>
+    { events := #[.creatureCardsPutIntoYourGy], resolution := .drawLoseLifeAndPlan }
+  | .onCastNoncreatureTreasureAndPlan =>
+    { events := #[.youCastNoncreature], resolution := .treasureTappedAndPlan }
+  | .onLandYouControlEntersPlusOneAndPlan =>
+    { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
+      resolution := .plusOneOnTargetAndPlan }
+  | .onFourthPlanDrawPlusOneEach =>
+    { events := #[.nthPlanCounter 4], resolution := .planFinishDrawPlusOneEach }
+  | .onFourthPlanReturnInstants =>
+    { events := #[.nthPlanCounter 4], targeting := .of .none,
+      resolution := .planFinishReturnInstants }
+  | .onSeventhPlanControlOpponent =>
+    { events := #[.nthPlanCounter 7], targeting := .of .opponent,
+      resolution := .planFinishControlOpponent }
+  | .onFifthPlanExileTopCast =>
+    { events := #[.nthPlanCounter 5], targeting := .of .opponent,
+      resolution := .planFinishExileTopCast }
+  | .onThirdPlanCreateRobots =>
+    { events := #[.nthPlanCounter 3], resolution := .planFinishCreateRobots 3 }
+  | .onFourthPlanDividedDamage =>
+    { events := #[.nthPlanCounter 4], targeting := .of .playerOrCreature,
+      resolution := .planFinishDividedDamage 7, dividedDamage := some (7, 2) }
+  | .onFourthPlanIndestructible =>
+    { events := #[.nthPlanCounter 4], targeting := .of .creatureYouControl,
+      resolution := .planFinishIndestructibleOnTarget }
+  | .onYouCastColorFromHandConnive color =>
+    { events := #[.youCastColorFromHand color], resolution := .connive }
+  | .onDealtDamagePlusOne =>
+    { events := #[.sourceDealtDamage], resolution := .onSource (.plusOne 1) }
+  | .onDiesCreateTokens kind n =>
+    { events := #[.dying], resolution := .createTokens kind n false }
+  | .onCombatDamageDraw n =>
+    { events := #[.dealsCombatDamageToPlayer], resolution := .draw n }
+  | .onEnterAttachToCreatureYouControl =>
+    { events := #[.entering], targeting := .of .creatureYouControl,
+      resolution := .attachSourceToTarget }
+  | .onArtifactYouControlEntersDrawOnce =>
+    { events := #[.artifactYouControlEnters], resolution := .draw 1,
+      onceEachTurn := true }
+  | .onYourEndStepDrawLoseLife =>
+    { events := #[.yourEndStep], resolution := .drawAndLoseLife1 }
+  | .msh t =>
+    { events := t.events, targeting := t.targeting,
+      allowsZeroTargets := t.allowsZeroTargets, resolution := .msh t,
+      onceEachTurn := t.onceEachTurn }
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -4739,7 +6045,50 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .chapter e => e.spec.phrase
   | .pumpTargetPerPlains =>
     "target creature you control gets +1/+1 until end of turn for each Plains you control"
-  | .printed text => text
+  | .investigate => "investigate"
+  | .plusOneOnSourceAndDraw =>
+    "put a +1/+1 counter on this and draw a card"
+  | .connive => "it connives"
+  | .targetConnive => "target creature you control connives"
+  | .pumpCause p t =>
+    s!"that creature gets {signedStat p}/{signedStat t} until end of turn"
+  | .othersOfSubtypeGetEqualSourceToughness subtype =>
+    let plural := if subtype == "Hero" then "Heroes" else StaticAbility.pluralSubtype subtype
+    s!"each other {plural} you control get +X/+X until end of turn, where X is this toughness"
+  | .drawIfAttackedOrEnteredSubtype subtype =>
+    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
+    s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
+  | .scryAndPlan n =>
+    s!"scry {n} and put a plan counter on this enchantment"
+  | .lootAndPlan =>
+    "draw a card, then discard a card and put a plan counter on this enchantment"
+  | .createVillainAndPlan =>
+    "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
+  | .drainAndPlan n =>
+    s!"each opponent loses {n} life and you gain {n} life. Put a plan counter on this enchantment"
+  | .drawLoseLifeAndPlan =>
+    "you draw a card, lose 1 life, and put a plan counter on this enchantment"
+  | .treasureTappedAndPlan =>
+    "create a tapped Treasure token and put a plan counter on this enchantment"
+  | .plusOneOnTargetAndPlan =>
+    "put a +1/+1 counter on target creature you control and a plan counter on this enchantment"
+  | .planFinishDrawPlusOneEach =>
+    "sacrifice it, draw a card, and put a +1/+1 counter on each creature you control"
+  | .planFinishReturnInstants =>
+    "sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand"
+  | .planFinishControlOpponent =>
+    "sacrifice it. When you do, you control target opponent during their next turn"
+  | .planFinishExileTopCast =>
+    "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
+  | .planFinishCreateRobots n =>
+    s!"sacrifice it and create {if n == 3 then "three" else toString n} 2/2 colorless Robot Villain artifact creature tokens"
+  | .planFinishDividedDamage n =>
+    s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
+  | .planFinishIndestructibleOnTarget =>
+    "sacrifice it. When you do, put an indestructible counter on target creature you control"
+  | .drawAndLoseLife1 =>
+    "you draw a card and lose 1 life"
+  | .msh t => t.toNotation
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -4825,18 +6174,72 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
   | .onPutCountersOnGoblinOrcArmyDamageOpp =>
     "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-  | .printed text => text
+  | .onCreatureYouControlAttacksAloneInvestigate =>
+    "Whenever a creature you control attacks alone, investigate."
+  | .onCreatureYouControlAttacksAlonePump p t =>
+    s!"Whenever a creature you control attacks alone, that creature gets {signedStat p}/{signedStat t} until end of turn."
+  | .onTappedForTeamworkPlusOneAndDraw =>
+    "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
+  | .onEnterConnive =>
+    "When this creature enters, it connives."
+  | .onCreatureYouControlEntersScryAndPlan n =>
+    s!"Whenever a creature you control enters, scry {n} and put a plan counter on this enchantment."
+  | .onCreaturesYouControlBecomeTappedLootAndPlan =>
+    "Whenever one or more creatures you control become tapped, draw a card, then discard a card and put a plan counter on this enchantment."
+  | .onYouDrawSecondCreateVillainAndPlan =>
+    "Whenever you draw your second card each turn, create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment."
+  | .onVillainYouControlEntersDrainAndPlan n =>
+    s!"Whenever a Villain you control enters, each opponent loses {n} life and you gain {n} life. Put a plan counter on this enchantment."
+  | .onCreatureCardsToGyDrawLoseLifeAndPlan =>
+    "Whenever one or more creature cards are put into your graveyard from anywhere, you draw a card, lose 1 life, and put a plan counter on this enchantment."
+  | .onCastNoncreatureTreasureAndPlan =>
+    "Whenever you cast a noncreature spell, create a tapped Treasure token and put a plan counter on this enchantment."
+  | .onLandYouControlEntersPlusOneAndPlan =>
+    "Whenever a land you control enters, put a +1/+1 counter on target creature you control and a plan counter on this enchantment."
+  | .onFourthPlanDrawPlusOneEach =>
+    "When the fourth plan counter is put on this enchantment, sacrifice it, draw a card, and put a +1/+1 counter on each creature you control."
+  | .onFourthPlanReturnInstants =>
+    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand."
+  | .onSeventhPlanControlOpponent =>
+    "When the seventh plan counter is put on this enchantment, sacrifice it. When you do, you control target opponent during their next turn."
+  | .onFifthPlanExileTopCast =>
+    "When the fifth plan counter is put on this enchantment, sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs."
+  | .onThirdPlanCreateRobots =>
+    "When the third plan counter is put on this enchantment, sacrifice it and create three 2/2 colorless Robot Villain artifact creature tokens."
+  | .onFourthPlanDividedDamage =>
+    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, it deals 7 damage divided as you choose among one or two targets."
+  | .onFourthPlanIndestructible =>
+    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, put an indestructible counter on target creature you control."
+  | .onYouDrawSecondCreateTokens kind =>
+    s!"Whenever you draw your second card each turn, {TokenKind.createPhrase kind 1}."
+  | .onEachEndStepDrawIfAttackedOrEnteredSubtype subtype =>
+    let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
+    s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
+  | .onAttackOthersOfSubtypeGetEqualToughness subtype =>
+    s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
+  | .onYouCastColorFromHandConnive color =>
+    s!"Whenever you cast a {color} spell from your hand, this connives."
+  | .onDealtDamagePlusOne =>
+    "Whenever this is dealt damage, put a +1/+1 counter on it."
+  | .onDiesCreateTokens kind n =>
+    s!"When this creature dies, {TokenKind.createPhrase kind n}."
+  | .onCombatDamageDraw n =>
+    s!"Whenever this deals combat damage to a player, {if n == 1 then "draw a card" else s!"draw {n} cards"}."
+  | .onEnterAttachToCreatureYouControl =>
+    "When this Equipment enters, attach it to target creature you control."
+  | .onArtifactYouControlEntersDrawOnce =>
+    "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn."
+  | .onYourEndStepDrawLoseLife =>
+    "At the beginning of your end step, you draw a card and lose 1 life."
+  | .msh t => t.toNotation
   | _ =>
-    match ab.resolution with
-    | .printed text => text
-    | _ =>
-      let t := ab.timing
-      if t.events.contains .equippedAttacksAlone then
-        "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
-      else
-        let once :=
-          if t.onceEachTurn then " This ability triggers only once each turn." else ""
-        s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
+    let t := ab.timing
+    if t.events.contains .equippedAttacksAlone then
+      "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
+    else
+      let once :=
+        if t.onceEachTurn then " This ability triggers only once each turn." else ""
+      s!"{eventPrefix t}{interveningClause t}, {resolutionPhrase t}.{once}"
 
 instance : ToString TriggeredAbility where
   toString := toNotation
@@ -5062,6 +6465,8 @@ structure CardDef where
   /-- You may cast creature spells from the top of your library
   (e.g. Elven Chorus). Does not grant flash or change timing. -/
   mayCastCreaturesFromTop : Bool := false
+  /-- You may play lands from the top of your library (e.g. Ka-Zar). -/
+  mayPlayLandsFromTop : Bool := false
   /-- Creatures you control have `{T}: Add one mana of any color`
   (e.g. Elven Chorus). -/
   grantCreaturesTapAddAnyColor : Bool := false
@@ -5084,6 +6489,15 @@ structure CardDef where
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
+  /-- Teamwork N (CR 702.194): optional additional cost to tap creatures with
+  total power N or more. -/
+  teamwork : Option Nat := none
+  /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
+  chooseBothIfTeamwork : Bool := false
+  /-- This permanent enters with this many shield counters. -/
+  entersWithShield : Nat := 0
+  /-- Back face of a modal double-faced card that can transform. -/
+  otherFace : Option CardDef := none
 deriving Repr, Inhabited
 
 namespace CardDef

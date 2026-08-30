@@ -1,0 +1,907 @@
+/-
+Copyright (c) 2026. All rights reserved.
+Released under Apache 2.0 license.
+Authors: MTG Engine Contributors
+-/
+
+/-!
+# Modeled Marvel Super Heroes abilities
+
+Named constructors for MSH abilities that are not already a shared HOB/HOC
+shape. Each constructor stores official Oracle wording in `toNotation` and
+resolves through `Game.applyMsh*` — not by logging leftover text.
+-/
+
+namespace Mtg.Engine
+
+/-- A triggered ability unique to MSH -/
+inductive MshTrigger where
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfCombatOnYourTurn
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfCombatOnYourTurn2
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfCombatOnYourTurn3
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfCombatOnYourTurn4
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfCombatOnYourTurn5
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfTheUpkeepOfEnchantedCrea
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfYourEndStep
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfYourFirstMainPhase
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOfYourUpkeep
+  /-- Modeled MSH ability. -/
+  | whenBullseyeEnters
+  /-- Modeled MSH ability. -/
+  | whenCloakAndDaggerEnter
+  /-- Modeled MSH ability. -/
+  | whenDoctorDoomEnters
+  /-- Modeled MSH ability. -/
+  | whenElektraEnters
+  /-- Modeled MSH ability. -/
+  | whenHellcatDies
+  /-- Modeled MSH ability. -/
+  | whenJusticeEnters
+  /-- Modeled MSH ability. -/
+  | whenKaZarEnters
+  /-- Modeled MSH ability. -/
+  | whenKillmongerEnters
+  /-- Modeled MSH ability. -/
+  | whenMjLnirEnters
+  /-- Modeled MSH ability. -/
+  | whenNightNurseEnters
+  /-- Modeled MSH ability. -/
+  | whenRedGuardianEnters
+  /-- Modeled MSH ability. -/
+  | whenSpiderWomanEnters
+  /-- Modeled MSH ability. -/
+  | whenTheRuinousWreckingCrewEnters
+  /-- Modeled MSH ability. -/
+  | whenTheSentryEnters
+  /-- Modeled MSH ability. -/
+  | whenThorEnters
+  /-- Modeled MSH ability. -/
+  | whenUSAgentEnters
+  /-- Modeled MSH ability. -/
+  | whenWhiteWidowEnters
+  /-- Modeled MSH ability. -/
+  | whenWolverineEnters
+  /-- Modeled MSH ability. -/
+  | whenThisAuraEnters
+  /-- Modeled MSH ability. -/
+  | whenThisAuraEnters2
+  /-- Modeled MSH ability. -/
+  | whenThisAuraEnters3
+  /-- Modeled MSH ability. -/
+  | whenThisEquipmentEnters
+  /-- Modeled MSH ability. -/
+  | whenThisEquipmentEnters2
+  /-- Modeled MSH ability. -/
+  | whenThisVehicleEnters
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters2
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters3
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters4
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters5
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters6
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters7
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters8
+  /-- Modeled MSH ability. -/
+  | whenThisCreatureEnters9
+  /-- Modeled MSH ability. -/
+  | whenThisEnchantmentEnters
+  /-- Modeled MSH ability. -/
+  | whenThisEnchantmentEnters2
+  /-- Modeled MSH ability. -/
+  | whenThisLandEnters
+  /-- Modeled MSH ability. -/
+  | wheneverAntManAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverBlackWidowDealsCombatDamageToAPl
+  /-- Modeled MSH ability. -/
+  | wheneverGrimReaperAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverIronManAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverKangAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverSuperAdaptoidEntersOrAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverTheMightyThorAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverWhiplashAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverAVillainYouControlDies
+  /-- Modeled MSH ability. -/
+  | wheneverACreatureYouControlAttacksAlone
+  /-- Modeled MSH ability. -/
+  | wheneverACreatureYouControlAttacksAlone2
+  /-- Modeled MSH ability. -/
+  | wheneverACreatureYouControlBecomesTappedD
+  /-- Modeled MSH ability. -/
+  | wheneverACreatureYouControlIsDealtDamage
+  /-- Modeled MSH ability. -/
+  | wheneverAPlayerCastsASpellThatTargetsSpe
+  /-- Modeled MSH ability. -/
+  | wheneverAPlayerDrawsTheirSecondCardEachT
+  /-- Modeled MSH ability. -/
+  | wheneverAPlayerOrPermanentBecomesTheTarge
+  /-- Modeled MSH ability. -/
+  | wheneverAnEquipmentYouControlEnters
+  /-- Modeled MSH ability. -/
+  | wheneverAnAttackingCreatureYouControlDies
+  /-- Modeled MSH ability. -/
+  | wheneverAnEquippedCreatureYouControlAttack
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherVillainAndOrArtifactYouCon
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherVillainYouControlEnters
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherVillainYouControlEnters2
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherVillainYouControlEnters3
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherVillainYouControlEnters4
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherArtifactYouControlEnters
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherCreatureYouControlEnters
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherCreatureYouControlWithDeath
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherNonlandPermanentYouControlI
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherNontokenHeroYouControlEnter
+  /-- Modeled MSH ability. -/
+  | wheneverAnotherNontokenArtifactYouControlE
+  /-- Modeled MSH ability. -/
+  | wheneverEnchantedCreatureAttacksOrBlocks
+  /-- Modeled MSH ability. -/
+  | wheneverEquippedCreatureAttacksAlone
+  /-- Modeled MSH ability. -/
+  | wheneverEquippedCreatureAttacks
+  /-- Modeled MSH ability. -/
+  | wheneverEquippedCreatureBecomesTapped
+  /-- Modeled MSH ability. -/
+  | wheneverOneOrMoreHeroesYouControlDealDam
+  /-- Modeled MSH ability. -/
+  | wheneverOneOrMoreMerfolkYouControlAttack
+  /-- Modeled MSH ability. -/
+  | wheneverOneOrMoreTokensYouControlEnter
+  /-- Modeled MSH ability. -/
+  | wheneverYouAttack
+  /-- Modeled MSH ability. -/
+  | wheneverYouAttack2
+  /-- Modeled MSH ability. -/
+  | wheneverYouAttack3
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastAVillainSpell
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpellWithOneO
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpell
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpell2
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpell3
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpell4
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastANoncreatureSpell5
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastASpellThatTargetsACreatur
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastASpellThatTargetsACreatur2
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastASpellThatTargetsACreatur3
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastASpellThatTargetsOneOrMo
+  /-- Modeled MSH ability. -/
+  | wheneverYouCastAnInstantOrSorcerySpellTh
+  /-- Modeled MSH ability. -/
+  | wheneverYouDiscardACard
+  /-- Modeled MSH ability. -/
+  | wheneverYouDrawACard
+  /-- Modeled MSH ability. -/
+  | wheneverYouDrawACard2
+  /-- Modeled MSH ability. -/
+  | wheneverYouDrawYourSecondCardEachTurn
+  /-- Modeled MSH ability. -/
+  | wheneverYouDrawYourSecondCardEachTurn2
+  /-- Modeled MSH ability. -/
+  | wheneverYouDrawYourSecondCardEachTurn3
+  /-- Modeled MSH ability. -/
+  | wheneverYouGainLife
+  /-- Modeled MSH ability. -/
+  | wheneverYouGainLife2
+  /-- Modeled MSH ability. -/
+  | wheneverYouPutA11CounterOnACreature
+  /-- Modeled MSH ability. -/
+  | wheneverYouPutA11CounterOnAnotherCrea
+  /-- Modeled MSH ability. -/
+  | wheneverYouPutOneOrMore11CountersOnO
+  /-- Modeled MSH ability. -/
+  | cyberneticSensesWheneverVivVision
+  /-- Modeled MSH ability. -/
+  | doYouLikeSquirrelsWheneverTheUnbeata
+  /-- Modeled MSH ability. -/
+  | enrageWheneverRedHulkIs
+  /-- Modeled MSH ability. -/
+  | enrageWheneverTheIncredi
+  /-- Modeled MSH ability. -/
+  | noOneDiesWhenSpiderManEnte
+  /-- Modeled MSH ability. -/
+  | photographicReflexesAtTheBeginningOf
+  /-- Modeled MSH ability. -/
+  | seismicTakedownWheneverYouCastA
+  /-- Modeled MSH ability. -/
+  | sonicAttackWhenKlawEntersTa
+  /-- Modeled MSH ability. -/
+  | trickArrowsWheneverHawkeyeBec
+  /-- Modeled MSH ability. -/
+  | unbreakableSkinWheneverLukeCageA
+  /-- Modeled MSH ability. -/
+  | waspSStingWhenTheWondrousWa
+  /-- Modeled MSH ability. -/
+  | atTheBeginningOf
+deriving Repr, Inhabited, BEq
+
+namespace MshTrigger
+
+/-- Official Oracle wording for this MshTrigger. -/
+def toNotation : MshTrigger → String
+  | .atTheBeginningOfCombatOnYourTurn => "At the beginning of combat on your turn, another target creature you control gets +X/+0 until end of turn, where X is War Machine's power."
+  | .atTheBeginningOfCombatOnYourTurn2 => "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."
+  | .atTheBeginningOfCombatOnYourTurn3 => "At the beginning of combat on your turn, put a +1/+1 counter on target creature you control."
+  | .atTheBeginningOfCombatOnYourTurn4 => "At the beginning of combat on your turn, target creature you control connives."
+  | .atTheBeginningOfCombatOnYourTurn5 => "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to The Invincible Iron Man."
+  | .atTheBeginningOfTheUpkeepOfEnchantedCrea => "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
+  | .atTheBeginningOfYourEndStep => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
+  | .atTheBeginningOfYourFirstMainPhase => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
+  | .atTheBeginningOfYourUpkeep => "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
+  | .whenBullseyeEnters => "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target."
+  | .whenCloakAndDaggerEnter => "When Cloak and Dagger enter, choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until Cloak and Dagger leave the battlefield."
+  | .whenDoctorDoomEnters => "When Doctor Doom enters, create two 3/3 colorless Robot Villain artifact creature tokens named Doombot."
+  | .whenElektraEnters => "When Elektra enters, destroy target creature an opponent controls with power 3 or less."
+  | .whenHellcatDies => "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
+  | .whenJusticeEnters => "When Justice enters, return up to one target nonland, nontoken permanent to its owner's hand."
+  | .whenKaZarEnters => "When Ka-Zar enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
+  | .whenKillmongerEnters => "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls."
+  | .whenMjLnirEnters => "When Mjölnir enters, it deals 4 damage to up to one target creature."
+  | .whenNightNurseEnters => "When Night Nurse enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand."
+  | .whenRedGuardianEnters => "When Red Guardian enters, destroy target creature an opponent controls that dealt damage this turn."
+  | .whenSpiderWomanEnters => "When Spider-Woman enters, tap target creature an opponent controls. That creature can't become untapped for as long as you control Spider-Woman."
+  | .whenTheRuinousWreckingCrewEnters => "When The Ruinous Wrecking Crew enters, choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice."
+  | .whenTheSentryEnters => "When The Sentry enters, target opponent creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
+  | .whenThorEnters => "When Thor enters, exile target Equipment, instant, or sorcery card from your graveyard. Until the end of your next turn, you may play that card."
+  | .whenUSAgentEnters => "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent."
+  | .whenWhiteWidowEnters => "When White Widow enters, choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand."
+  | .whenWolverineEnters => "When Wolverine enters, he fights up to one other target creature."
+  | .whenThisAuraEnters => "When this Aura enters, enchanted creature gains first strike until end of turn."
+  | .whenThisAuraEnters2 => "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
+  | .whenThisAuraEnters3 => "When this Aura enters, tap enchanted creature."
+  | .whenThisEquipmentEnters => "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
+  | .whenThisEquipmentEnters2 => "When this Equipment enters, attach it to target creature you control. Untap that creature."
+  | .whenThisVehicleEnters => "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .whenThisCreatureEnters => "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
+  | .whenThisCreatureEnters2 => "When this creature enters, create a Food token or a Treasure token."
+  | .whenThisCreatureEnters3 => "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
+  | .whenThisCreatureEnters4 => "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
+  | .whenThisCreatureEnters5 => "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
+  | .whenThisCreatureEnters6 => "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card."
+  | .whenThisCreatureEnters7 => "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
+  | .whenThisCreatureEnters8 => "When this creature enters, surveil 2."
+  | .whenThisCreatureEnters9 => "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
+  | .whenThisEnchantmentEnters => "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
+  | .whenThisEnchantmentEnters2 => "When this enchantment enters, target opponent discards two cards."
+  | .whenThisLandEnters => "When this land enters, surveil 1."
+  | .wheneverAntManAttacks => "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
+  | .wheneverBlackWidowDealsCombatDamageToAPl => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
+  | .wheneverGrimReaperAttacks => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
+  | .wheneverIronManAttacks => "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
+  | .wheneverKangAttacks => "Whenever Kang attacks, he connives."
+  | .wheneverSuperAdaptoidEntersOrAttacks => "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
+  | .wheneverTheMightyThorAttacks => "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
+  | .wheneverWhiplashAttacks => "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
+  | .wheneverAVillainYouControlDies => "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
+  | .wheneverACreatureYouControlAttacksAlone => "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
+  | .wheneverACreatureYouControlAttacksAlone2 => "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
+  | .wheneverACreatureYouControlBecomesTappedD => "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
+  | .wheneverACreatureYouControlIsDealtDamage => "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
+  | .wheneverAPlayerCastsASpellThatTargetsSpe => "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
+  | .wheneverAPlayerDrawsTheirSecondCardEachT => "Whenever a player draws their second card each turn, you draw a card."
+  | .wheneverAPlayerOrPermanentBecomesTheTarge => "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
+  | .wheneverAnEquipmentYouControlEnters => "Whenever an Equipment you control enters, draw a card."
+  | .wheneverAnAttackingCreatureYouControlDies => "Whenever an attacking creature you control dies, return that card to its owner's hand."
+  | .wheneverAnEquippedCreatureYouControlAttack => "Whenever an equipped creature you control attacks, it connives."
+  | .wheneverAnotherVillainAndOrArtifactYouCon => "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
+  | .wheneverAnotherVillainYouControlEnters => "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
+  | .wheneverAnotherVillainYouControlEnters2 => "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
+  | .wheneverAnotherVillainYouControlEnters3 => "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
+  | .wheneverAnotherVillainYouControlEnters4 => "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
+  | .wheneverAnotherArtifactYouControlEnters => "Whenever another artifact you control enters, put a +1/+1 counter on this creature."
+  | .wheneverAnotherCreatureYouControlEnters => "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
+  | .wheneverAnotherCreatureYouControlWithDeath => "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
+  | .wheneverAnotherNonlandPermanentYouControlI => "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
+  | .wheneverAnotherNontokenHeroYouControlEnter => "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
+  | .wheneverAnotherNontokenArtifactYouControlE => "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
+  | .wheneverEnchantedCreatureAttacksOrBlocks => "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
+  | .wheneverEquippedCreatureAttacksAlone => "Whenever equipped creature attacks alone, untap it and scry 1."
+  | .wheneverEquippedCreatureAttacks => "Whenever equipped creature attacks, tap target creature defending player controls."
+  | .wheneverEquippedCreatureBecomesTapped => "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
+  | .wheneverOneOrMoreHeroesYouControlDealDam => "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
+  | .wheneverOneOrMoreMerfolkYouControlAttack => "Whenever one or more Merfolk you control attack a player, draw a card."
+  | .wheneverOneOrMoreTokensYouControlEnter => "Whenever one or more tokens you control enter, you may draw a card."
+  | .wheneverYouAttack => "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."
+  | .wheneverYouAttack2 => "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
+  | .wheneverYouAttack3 => "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
+  | .wheneverYouCastAVillainSpell => "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
+  | .wheneverYouCastANoncreatureSpellWithOneO => "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
+  | .wheneverYouCastANoncreatureSpell => "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
+  | .wheneverYouCastANoncreatureSpell2 => "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
+  | .wheneverYouCastANoncreatureSpell3 => "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .wheneverYouCastANoncreatureSpell4 => "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
+  | .wheneverYouCastANoncreatureSpell5 => "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
+  | .wheneverYouCastASpellThatTargetsACreatur => "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
+  | .wheneverYouCastASpellThatTargetsACreatur2 => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
+  | .wheneverYouCastASpellThatTargetsACreatur3 => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
+  | .wheneverYouCastASpellThatTargetsOneOrMo => "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
+  | .wheneverYouCastAnInstantOrSorcerySpellTh => "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
+  | .wheneverYouDiscardACard => "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
+  | .wheneverYouDrawACard => "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
+  | .wheneverYouDrawACard2 => "Whenever you draw a card, put a +1/+1 counter on The Astonishing Ant-Man."
+  | .wheneverYouDrawYourSecondCardEachTurn => "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
+  | .wheneverYouDrawYourSecondCardEachTurn2 => "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
+  | .wheneverYouDrawYourSecondCardEachTurn3 => "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
+  | .wheneverYouGainLife => "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
+  | .wheneverYouGainLife2 => "Whenever you gain life, put a +1/+1 counter on Tigra."
+  | .wheneverYouPutA11CounterOnACreature => "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
+  | .wheneverYouPutA11CounterOnAnotherCrea => "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
+  | .wheneverYouPutOneOrMore11CountersOnO => "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
+  | .cyberneticSensesWheneverVivVision => "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
+  | .doYouLikeSquirrelsWheneverTheUnbeata => "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
+  | .enrageWheneverRedHulkIs => "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
+  | .enrageWheneverTheIncredi => "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
+  | .noOneDiesWhenSpiderManEnte => "No One Dies! — When Spider-Man enters, you may tap him. When you do, another target nonattacking creature you control gains indestructible until end of turn."
+  | .photographicReflexesAtTheBeginningOf => "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
+  | .seismicTakedownWheneverYouCastA => "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
+  | .sonicAttackWhenKlawEntersTa => "Sonic Attack — When Klaw enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."
+  | .trickArrowsWheneverHawkeyeBec => "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
+  | .unbreakableSkinWheneverLukeCageA => "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
+  | .waspSStingWhenTheWondrousWa => "Wasp's Sting — When The Wondrous Wasp enters, tap up to one target creature. It loses all abilities for as long as The Wondrous Wasp remains on the battlefield."
+  | .atTheBeginningOf => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
+
+instance : ToString MshTrigger where
+  toString := toNotation
+
+end MshTrigger
+/-- A static ability unique to MSH -/
+inductive MshStatic where
+  /-- Modeled MSH ability. -/
+  | aresAttacksEachCombatIfAble
+  /-- Modeled MSH ability. -/
+  | artifactSpellsYouCastCost1LessToCast
+  /-- Modeled MSH ability. -/
+  | asAnAdditionalCostToCastThisSpell
+  /-- Modeled MSH ability. -/
+  | asLongAsThereAreTwoOrMoreCreatureCards
+  /-- Modeled MSH ability. -/
+  | asLongAsThereAreTwoOrMoreCreatureCards2
+  /-- Modeled MSH ability. -/
+  | asLongAsYouControlAnArtifactCreatureOrA
+  /-- Modeled MSH ability. -/
+  | asLongAsYouVePutOneOrMore11Counters
+  /-- Modeled MSH ability. -/
+  | attackingCreatureTokensYouControlHaveFirst
+  /-- Modeled MSH ability. -/
+  | avianTelepathyWhenFalconEnters
+  /-- Modeled MSH ability. -/
+  | boastExileAnyNumberOfBlackCardsFromYou
+  /-- Modeled MSH ability. -/
+  | cosmicAwarenessAsLongAsAnOpponentHasCa
+  /-- Modeled MSH ability. -/
+  | creaturesWithFlyingCanTAttackYouOrBlock
+  /-- Modeled MSH ability. -/
+  | creaturesYouControlWith11CountersOnThe
+  /-- Modeled MSH ability. -/
+  | designedOnlyForKillingCreaturesYourOppon
+  /-- Modeled MSH ability. -/
+  | doubleAllDamageEquippedCreatureWouldDeal
+  /-- Modeled MSH ability. -/
+  | eachCreatureYouControlThatYouVePutOneOr
+  /-- Modeled MSH ability. -/
+  | eachPowerUpAbilityOfPermanentsYouControl
+  /-- Modeled MSH ability. -/
+  | embiggenFistWheneverYouCastASpellThat
+  /-- Modeled MSH ability. -/
+  | enchantedCreatureGets22
+  /-- Modeled MSH ability. -/
+  | enchantedCreatureGets44AndHasTrampleAn
+  /-- Modeled MSH ability. -/
+  | enchantedCreatureHasWard2
+  /-- Modeled MSH ability. -/
+  | equipWorthy1
+  /-- Modeled MSH ability. -/
+  | equippedCreatureGets11AndHasFlyingAnd
+  /-- Modeled MSH ability. -/
+  | extort
+  /-- Modeled MSH ability. -/
+  | ifQuicksilver
+  /-- Modeled MSH ability. -/
+  | ifACreatureYouControlWouldConnive
+  /-- Modeled MSH ability. -/
+  | ifASourceYouControlWouldDealNoncombatDam
+  /-- Modeled MSH ability. -/
+  | ifDamageWouldBeDealtToWolverine
+  /-- Modeled MSH ability. -/
+  | ifYouWouldPutOneOrMoreCountersOnAPerma
+  /-- Modeled MSH ability. -/
+  | improvise
+  /-- Modeled MSH ability. -/
+  | instantAndSorcerySpellsYouCastWithManaVa
+  /-- Modeled MSH ability. -/
+  | intangibilityGhostCanTBeBlocked
+  /-- Modeled MSH ability. -/
+  | ironManGets10ForEachOtherArtifactYou
+  /-- Modeled MSH ability. -/
+  | landfallWheneverALandYouControlEnters
+  /-- Modeled MSH ability. -/
+  | namorSPowerIsEqualToTheNumberOfMerfolk
+  /-- Modeled MSH ability. -/
+  | noncreatureSpellsYouCastHaveImprovise
+  /-- Modeled MSH ability. -/
+  | pay2LifeAddTwoManaOfAnyOneColorSpend
+  /-- Modeled MSH ability. -/
+  | pay2LifeCopyTargetActivatedOrTriggeredA
+  /-- Modeled MSH ability. -/
+  | powerUpAbilitiesOfOtherCreaturesYouContro
+  /-- Modeled MSH ability. -/
+  | sacrificeThisCreatureDestroyTargetNoncreat
+  /-- Modeled MSH ability. -/
+  | sneak1BB
+  /-- Modeled MSH ability. -/
+  | superAdaptoidSPowerIsEqualToTheNumberOf
+  /-- Modeled MSH ability. -/
+  | theRuinousWreckingCrewEntersWithX11Co
+  /-- Modeled MSH ability. -/
+  | wardDiscardACardOrPay2
+  /-- Modeled MSH ability. -/
+  | wardGetFivePoisonCounters
+  /-- Modeled MSH ability. -/
+  | winterSoldierGets20ForEachEquipmentAtt
+  /-- Modeled MSH ability. -/
+  | youHaveNoMaximumHandSize
+  /-- Modeled MSH ability. -/
+  | youMayActivateAbilitiesOfCreaturesYouCont
+  /-- Modeled MSH ability. -/
+  | youMayPlayLandsFromTheTopOfYourLibrary
+  /-- Modeled MSH ability. -/
+  | youMayPlayLandsFromYourGraveyard
+  /-- Modeled MSH ability. -/
+  | yourMaximumHandSizeIsTen
+  /-- Modeled MSH ability. -/
+  | enchantedCreatureLosesAllAbilitiesAndCant
+deriving Repr, Inhabited, BEq
+
+namespace MshStatic
+
+/-- Official Oracle wording for this MshStatic. -/
+def toNotation : MshStatic → String
+  | .aresAttacksEachCombatIfAble => "Ares attacks each combat if able."
+  | .artifactSpellsYouCastCost1LessToCast => "Artifact spells you cast cost {1} less to cast."
+  | .asAnAdditionalCostToCastThisSpell => "As an additional cost to cast this spell, discard a card or pay {2}."
+  | .asLongAsThereAreTwoOrMoreCreatureCards => "As long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1."
+  | .asLongAsThereAreTwoOrMoreCreatureCards2 => "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."
+  | .asLongAsYouControlAnArtifactCreatureOrA => "As long as you control an artifact creature or a Plan, Doctor Doom has indestructible."
+  | .asLongAsYouVePutOneOrMore11Counters => "As long as you've put one or more +1/+1 counters on Beast this turn, he has flying."
+  | .attackingCreatureTokensYouControlHaveFirst => "Attacking creature tokens you control have first strike."
+  | .avianTelepathyWhenFalconEnters => "Avian Telepathy — When Falcon enters, create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
+  | .boastExileAnyNumberOfBlackCardsFromYou => "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
+  | .cosmicAwarenessAsLongAsAnOpponentHasCa => "Cosmic Awareness — As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."
+  | .creaturesWithFlyingCanTAttackYouOrBlock => "Creatures with flying can't attack you or block creatures you control."
+  | .creaturesYouControlWith11CountersOnThe => "Creatures you control with +1/+1 counters on them have trample."
+  | .designedOnlyForKillingCreaturesYourOppon => "Designed Only for Killing — Creatures your opponents control get -1/-1."
+  | .doubleAllDamageEquippedCreatureWouldDeal => "Double all damage equipped creature would deal."
+  | .eachCreatureYouControlThatYouVePutOneOr => "Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof."
+  | .eachPowerUpAbilityOfPermanentsYouControl => "Each power-up ability of permanents you control can be activated an additional time."
+  | .embiggenFistWheneverYouCastASpellThat => "Embiggen Fist — Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
+  | .enchantedCreatureGets22 => "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
+  | .enchantedCreatureGets44AndHasTrampleAn => "Enchanted creature gets +4/+4 and has trample and ward {1}."
+  | .enchantedCreatureHasWard2 => "Enchanted creature has ward {2}."
+  | .equipWorthy1 => "Equip worthy {1}"
+  | .equippedCreatureGets11AndHasFlyingAnd => "Equipped creature gets +1/+1 and has flying and ward {1}."
+  | .extort => "Extort"
+  | .ifQuicksilver => "If Quicksilver, Brash Blur is in your opening hand, you may begin the game with him on the battlefield."
+  | .ifACreatureYouControlWouldConnive => "If a creature you control would connive, instead you draw a card, then that creature connives."
+  | .ifASourceYouControlWouldDealNoncombatDam => "If a source you control would deal noncombat damage to an opponent or a permanent an opponent controls, instead it deals that much damage plus X, where X is Hawkeye's power."
+  | .ifDamageWouldBeDealtToWolverine => "If damage would be dealt to Wolverine, instead that damage is dealt, but all other damage already dealt to him is healed."
+  | .ifYouWouldPutOneOrMoreCountersOnAPerma => "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
+  | .improvise => "Improvise"
+  | .instantAndSorcerySpellsYouCastWithManaVa => "Instant and sorcery spells you cast with mana value 4 or greater cost {X} less to cast, where X is The Scarlet Witch's power."
+  | .intangibilityGhostCanTBeBlocked => "Intangibility — Ghost can't be blocked."
+  | .ironManGets10ForEachOtherArtifactYou => "Iron Man gets +1/+0 for each other artifact you control."
+  | .landfallWheneverALandYouControlEnters => "Landfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\""
+  | .namorSPowerIsEqualToTheNumberOfMerfolk => "Namor's power is equal to the number of Merfolk you control."
+  | .noncreatureSpellsYouCastHaveImprovise => "Noncreature spells you cast have improvise."
+  | .pay2LifeAddTwoManaOfAnyOneColorSpend => "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn."
+  | .pay2LifeCopyTargetActivatedOrTriggeredA => "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn."
+  | .powerUpAbilitiesOfOtherCreaturesYouContro => "Power-up abilities of other creatures you control cost {3} less to activate."
+  | .sacrificeThisCreatureDestroyTargetNoncreat => "Sacrifice this creature: Destroy target noncreature artifact or noncreature enchantment. Activate only as a sorcery."
+  | .sneak1BB => "Sneak {1}{B}{B}"
+  | .superAdaptoidSPowerIsEqualToTheNumberOf => "Super-Adaptoid's power is equal to the number of legendary creatures you control."
+  | .theRuinousWreckingCrewEntersWithX11Co => "The Ruinous Wrecking Crew enters with X +1/+1 counters on it."
+  | .wardDiscardACardOrPay2 => "Ward—Discard a card or pay {2}."
+  | .wardGetFivePoisonCounters => "Ward—Get five poison counters."
+  | .winterSoldierGets20ForEachEquipmentAtt => "Winter Soldier gets +2/+0 for each Equipment attached to him."
+  | .youHaveNoMaximumHandSize => "You have no maximum hand size."
+  | .youMayActivateAbilitiesOfCreaturesYouCont => "You may activate abilities of creatures you control as though those creatures had haste."
+  | .youMayPlayLandsFromTheTopOfYourLibrary => "You may play lands from the top of your library."
+  | .youMayPlayLandsFromYourGraveyard => "You may play lands from your graveyard."
+  | .yourMaximumHandSizeIsTen => "Your maximum hand size is ten."
+  | .enchantedCreatureLosesAllAbilitiesAndCant => "Enchanted creature loses all abilities and can't become untapped."
+
+instance : ToString MshStatic where
+  toString := toNotation
+
+end MshStatic
+/-- A spell effect unique to MSH -/
+inductive MshSpell where
+  /-- Modeled MSH ability. -/
+  | anotherTargetCreatureYouControlGets20A
+  /-- Modeled MSH ability. -/
+  | artifactSpellsYouCastThisTurnCost1Less
+  /-- Modeled MSH ability. -/
+  | chooseTargetCreatureCardInYourGraveyardWi
+  /-- Modeled MSH ability. -/
+  | chooseTargetCreatureYouControlUntilEndOf
+  /-- Modeled MSH ability. -/
+  | chooseUpToTwoReturnThoseCardsFromYourG
+  /-- Modeled MSH ability. -/
+  | copyTargetActivatedOrTriggeredAbilityYouC
+  /-- Modeled MSH ability. -/
+  | createGalactusALegendary1616BlackElderA
+  /-- Modeled MSH ability. -/
+  | createX11GreenSquirrelCreatureTokensWhe
+  /-- Modeled MSH ability. -/
+  | createA21BlackVillainCreatureTokenWithM
+  /-- Modeled MSH ability. -/
+  | createATreasureTokenForEachVillainYouCon
+  /-- Modeled MSH ability. -/
+  | createATapped21BlackVillainCreatureToken
+  /-- Modeled MSH ability. -/
+  | creaturesYouControlGet11AndGainVigilan
+  /-- Modeled MSH ability. -/
+  | destroyUpToOneTargetArtifactOrEnchantment
+  /-- Modeled MSH ability. -/
+  | destroyUpToOneTargetNonlandPermanent
+  /-- Modeled MSH ability. -/
+  | drawACardActivateOnlyIfYouControlACrea
+  /-- Modeled MSH ability. -/
+  | exileAllCreaturesEachPlayerMayPutAnyNum
+  /-- Modeled MSH ability. -/
+  | exileAllTheCardsFromYourHandThenDrawTh
+  /-- Modeled MSH ability. -/
+  | forEachKindOfCounterOnTargetPermanentOr
+  /-- Modeled MSH ability. -/
+  | forEachNontokenCreatureYouControlCreateA
+  /-- Modeled MSH ability. -/
+  | gainControlOfTargetCreatureUntilEndOfTur
+  /-- Modeled MSH ability. -/
+  | ifThisEquipmentIsnTACreatureItBecomesA
+  /-- Modeled MSH ability. -/
+  | lookAtTheTopThreeCardsOfYourLibraryYou
+  /-- Modeled MSH ability. -/
+  | millFourCardsYouMayPutAHeroOrEnchantme
+  /-- Modeled MSH ability. -/
+  | millTwoCardsYouMayPutAPermanentCardFro
+  /-- Modeled MSH ability. -/
+  | putA11CounterAndADoubleStrikeCounter
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnAbominationHeFightsUp
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnHerculesHeGainsVigila
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnWhiteTigerAndCreateTh
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnThisCreatureAndCreate
+  /-- Modeled MSH ability. -/
+  | putFive11CountersOnHulk
+  /-- Modeled MSH ability. -/
+  | putThree11CountersOnHumanTorch
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnLoki
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnThanosChooseOddOr
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnVivVision
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnWonderMan
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnThisCreatureAndCrea
+  /-- Modeled MSH ability. -/
+  | returnThisCardFromYourGraveyardToTheBatt
+  /-- Modeled MSH ability. -/
+  | returnThisCardFromYourGraveyardToYourHan
+  /-- Modeled MSH ability. -/
+  | returnUpToOneTargetCreatureCardFromYour
+  /-- Modeled MSH ability. -/
+  | revealTheTopCardOfYourLibraryIfItSAn
+  /-- Modeled MSH ability. -/
+  | searchYourLibraryAndOrGraveyardForAnArti
+  /-- Modeled MSH ability. -/
+  | superSkrullDeals4DamageToTargetCreature
+  /-- Modeled MSH ability. -/
+  | superSkrullGets44UntilEndOfTurn
+  /-- Modeled MSH ability. -/
+  | tapTargetCreatureThisAbilityCosts1Less
+  /-- Modeled MSH ability. -/
+  | targetVillainYouControlConnives
+  /-- Modeled MSH ability. -/
+  | targetArtifactYouControlBecomesACopyOfA
+  /-- Modeled MSH ability. -/
+  | targetCreatureGets31UntilEndOfTurn
+  /-- Modeled MSH ability. -/
+  | targetCreatureYouControlThatSAttackingAlo
+  /-- Modeled MSH ability. -/
+  | targetPlayerGains2LifeThenSearchesTheir
+  /-- Modeled MSH ability. -/
+  | theNextRedOrGreenCreatureSpellYouCastTh
+  /-- Modeled MSH ability. -/
+  | theOwnerOfTargetCreatureAnOpponentControl
+  /-- Modeled MSH ability. -/
+  | thisSpellCosts1LessToCastIfYouControl
+  /-- Modeled MSH ability. -/
+  | thisSpellCosts2LessToCastIfItTargets
+  /-- Modeled MSH ability. -/
+  | thisSpellCosts2LessToCastIfThereAreT
+  /-- Modeled MSH ability. -/
+  | thisSpellCosts2LessToCastIfYouControl
+  /-- Modeled MSH ability. -/
+  | untilEndOfTurnReptilBecomesADinosaurHer
+  /-- Modeled MSH ability. -/
+  | whenYouCastThisSpellCopyItXTimesYouM
+  /-- Modeled MSH ability. -/
+  | whenYouNextCastAnInstantOrSorcerySpellW
+  /-- Modeled MSH ability. -/
+  | youMayDrawACardForEachArtifactYouContro
+  /-- Modeled MSH ability. -/
+  | youMayPutAHeroCreatureCardWithManaValue
+  /-- Modeled MSH ability. -/
+  | youMaySacrificeAnArtifactOrDiscardACard
+deriving Repr, Inhabited, BEq
+
+namespace MshSpell
+
+/-- Official Oracle wording for this MshSpell. -/
+def toNotation : MshSpell → String
+  | .anotherTargetCreatureYouControlGets20A => "Another target creature you control gets +2/+0 and gains hexproof until end of turn"
+  | .artifactSpellsYouCastThisTurnCost1Less => "Artifact spells you cast this turn cost {1} less to cast"
+  | .chooseTargetCreatureCardInYourGraveyardWi => "Choose target creature card in your graveyard with mana value 4 or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield."
+  | .chooseTargetCreatureYouControlUntilEndOf => "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
+  | .chooseUpToTwoReturnThoseCardsFromYourG => "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
+  | .copyTargetActivatedOrTriggeredAbilityYouC => "Copy target activated or triggered ability you control from a creature source. You may choose new targets for the copy"
+  | .createGalactusALegendary1616BlackElderA => "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+  | .createX11GreenSquirrelCreatureTokensWhe => "Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control"
+  | .createA21BlackVillainCreatureTokenWithM => "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn."
+  | .createATreasureTokenForEachVillainYouCon => "Create a Treasure token for each Villain you control"
+  | .createATapped21BlackVillainCreatureToken => "Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard"
+  | .creaturesYouControlGet11AndGainVigilan => "Creatures you control get +1/+1 and gain vigilance until end of turn"
+  | .destroyUpToOneTargetArtifactOrEnchantment => "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk"
+  | .destroyUpToOneTargetNonlandPermanent => "Destroy up to one target nonland permanent"
+  | .drawACardActivateOnlyIfYouControlACrea => "Draw a card. Activate only if you control a creature with toughness 4 or greater"
+  | .exileAllCreaturesEachPlayerMayPutAnyNum => "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
+  | .exileAllTheCardsFromYourHandThenDrawTh => "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+  | .forEachKindOfCounterOnTargetPermanentOr => "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
+  | .forEachNontokenCreatureYouControlCreateA => "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
+  | .gainControlOfTargetCreatureUntilEndOfTur => "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
+  | .ifThisEquipmentIsnTACreatureItBecomesA => "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
+  | .lookAtTheTopThreeCardsOfYourLibraryYou => "Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
+  | .millFourCardsYouMayPutAHeroOrEnchantme => "Mill four cards. You may put a Hero or enchantment card from among those cards into your hand"
+  | .millTwoCardsYouMayPutAPermanentCardFro => "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life."
+  | .putA11CounterAndADoubleStrikeCounter => "Put a +1/+1 counter and a double strike counter on Quicksilver"
+  | .putA11CounterOnAbominationHeFightsUp => "Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls"
+  | .putA11CounterOnHerculesHeGainsVigila => "Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn"
+  | .putA11CounterOnWhiteTigerAndCreateTh => "Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  | .putA11CounterOnThisCreatureAndCreate => "Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance"
+  | .putFive11CountersOnHulk => "Put five +1/+1 counters on Hulk"
+  | .putThree11CountersOnHumanTorch => "Put three +1/+1 counters on Human Torch"
+  | .putTwo11CountersOnLoki => "Put two +1/+1 counters on Loki"
+  | .putTwo11CountersOnThanosChooseOddOr => "Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
+  | .putTwo11CountersOnVivVision => "Put two +1/+1 counters on Viv Vision"
+  | .putTwo11CountersOnWonderMan => "Put two +1/+1 counters on Wonder Man"
+  | .putTwo11CountersOnThisCreatureAndCrea => "Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
+  | .returnThisCardFromYourGraveyardToTheBatt => "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
+  | .returnThisCardFromYourGraveyardToYourHan => "Return this card from your graveyard to your hand"
+  | .returnUpToOneTargetCreatureCardFromYour => "Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature"
+  | .revealTheTopCardOfYourLibraryIfItSAn => "Reveal the top card of your library. If it's an artifact card, draw a card"
+  | .searchYourLibraryAndOrGraveyardForAnArti => "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
+  | .superSkrullDeals4DamageToTargetCreature => "Super-Skrull deals 4 damage to target creature"
+  | .superSkrullGets44UntilEndOfTurn => "Super-Skrull gets +4/+4 until end of turn"
+  | .tapTargetCreatureThisAbilityCosts1Less => "Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less"
+  | .targetVillainYouControlConnives => "Target Villain you control connives"
+  | .targetArtifactYouControlBecomesACopyOfA => "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
+  | .targetCreatureGets31UntilEndOfTurn => "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
+  | .targetCreatureYouControlThatSAttackingAlo => "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
+  | .targetPlayerGains2LifeThenSearchesTheir => "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
+  | .theNextRedOrGreenCreatureSpellYouCastTh => "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .theOwnerOfTargetCreatureAnOpponentControl => "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
+  | .thisSpellCosts1LessToCastIfYouControl => "This spell costs {1} less to cast if you control a Villain.\nYou draw two cards and lose 2 life."
+  | .thisSpellCosts2LessToCastIfItTargets => "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card."
+  | .thisSpellCosts2LessToCastIfThereAreT => "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls."
+  | .thisSpellCosts2LessToCastIfYouControl => "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target."
+  | .untilEndOfTurnReptilBecomesADinosaurHer => "Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance"
+  | .whenYouCastThisSpellCopyItXTimesYouM => "When you cast this spell, copy it X times. You may choose new targets for the copies.\nPhoton Blast Barrage deals 1 damage to target creature."
+  | .whenYouNextCastAnInstantOrSorcerySpellW => "When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy"
+  | .youMayDrawACardForEachArtifactYouContro => "You may draw a card for each artifact you control. If you do, each opponent draws a card"
+  | .youMayPutAHeroCreatureCardWithManaValue => "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"
+  | .youMaySacrificeAnArtifactOrDiscardACard => "You may sacrifice an artifact or discard a card. If you do, draw two cards."
+
+instance : ToString MshSpell where
+  toString := toNotation
+
+end MshSpell
+/-- An activated effect unique to MSH -/
+inductive MshAbility where
+  /-- Modeled MSH ability. -/
+  | mentalOrganismPay3LifeMODOK
+  /-- Modeled MSH ability. -/
+  | tyrannosaurusRex6UntilEndOfTu
+  /-- Modeled MSH ability. -/
+  | addXManaOfAnyOneColorWhereXIsDocSams
+  /-- Modeled MSH ability. -/
+  | addFourManaInAnyCombinationOfColors
+  /-- Modeled MSH ability. -/
+  | addOneManaOfAnyColorSpendThisManaOnly
+  /-- Modeled MSH ability. -/
+  | addOneManaOfAnyColorSpendThisManaOnly2
+  /-- Modeled MSH ability. -/
+  | addOneManaOfAnyColorSpendThisManaOnly3
+  /-- Modeled MSH ability. -/
+  | addTwoManaOfAnyOneColorSpendThisManaO
+  /-- Modeled MSH ability. -/
+  | addBOrG
+  /-- Modeled MSH ability. -/
+  | addBOrR
+  /-- Modeled MSH ability. -/
+  | addBOrRActivateOnlyIfThisLandEnter
+  /-- Modeled MSH ability. -/
+  | addCCC
+  /-- Modeled MSH ability. -/
+  | addGOrU
+  /-- Modeled MSH ability. -/
+  | addGOrW
+  /-- Modeled MSH ability. -/
+  | addGOrWActivateOnlyIfThisLandEnter
+  /-- Modeled MSH ability. -/
+  | addROrG
+  /-- Modeled MSH ability. -/
+  | addROrGActivateOnlyIfThisLandEnter
+  /-- Modeled MSH ability. -/
+  | addROrW
+  /-- Modeled MSH ability. -/
+  | addUOrB
+  /-- Modeled MSH ability. -/
+  | addUOrBActivateOnlyIfThisLandEnter
+  /-- Modeled MSH ability. -/
+  | addUOrR
+  /-- Modeled MSH ability. -/
+  | addUThisManaCanTBeSpentToCastANona
+  /-- Modeled MSH ability. -/
+  | addW
+  /-- Modeled MSH ability. -/
+  | addWOrB
+  /-- Modeled MSH ability. -/
+  | addWOrU
+  /-- Modeled MSH ability. -/
+  | addWOrUActivateOnlyIfThisLandEnter
+  /-- Modeled MSH ability. -/
+  | n1BDiscardThisCard
+  /-- Modeled MSH ability. -/
+  | n2TDiscardACard
+  /-- Modeled MSH ability. -/
+  | n2BSacrificeAnArtifactOrCreatur
+  /-- Modeled MSH ability. -/
+  | n2GTRemoveAnyNumberOf11
+  /-- Modeled MSH ability. -/
+  | n2RDiscardThisCard
+  /-- Modeled MSH ability. -/
+  | n3TSacrificeAnArtifactOrDisca
+  /-- Modeled MSH ability. -/
+  | n3TSacrificeAnArtifact
+  /-- Modeled MSH ability. -/
+  | n3USacrificeThisArtifact
+  /-- Modeled MSH ability. -/
+  | tPutAStunCounterOnJessicaJones
+  /-- Modeled MSH ability. -/
+  | tSacrificeAnEquipmentAttachedTo
+  /-- Modeled MSH ability. -/
+  | harnessTheMindStone
+  /-- Modeled MSH ability. -/
+  | targetPlayerDrawsFourCards
+deriving Repr, Inhabited, BEq
+
+namespace MshAbility
+
+/-- Official Oracle wording for this MshAbility. -/
+def toNotation : MshAbility → String
+  | .mentalOrganismPay3LifeMODOK => "Mental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn."
+  | .tyrannosaurusRex6UntilEndOfTu => "Tyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample."
+  | .addXManaOfAnyOneColorWhereXIsDocSams => "Add X mana of any one color, where X is Doc Samson's power"
+  | .addFourManaInAnyCombinationOfColors => "Add four mana in any combination of colors"
+  | .addOneManaOfAnyColorSpendThisManaOnly => "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
+  | .addOneManaOfAnyColorSpendThisManaOnly2 => "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
+  | .addOneManaOfAnyColorSpendThisManaOnly3 => "Add one mana of any color. Spend this mana only to cast an artifact spell"
+  | .addTwoManaOfAnyOneColorSpendThisManaO => "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
+  | .addBOrG => "Add {B} or {G}"
+  | .addBOrR => "Add {B} or {R}"
+  | .addBOrRActivateOnlyIfThisLandEnter => "Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land"
+  | .addCCC => "Add {C}{C}{C}"
+  | .addGOrU => "Add {G} or {U}"
+  | .addGOrW => "Add {G} or {W}"
+  | .addGOrWActivateOnlyIfThisLandEnter => "Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land"
+  | .addROrG => "Add {R} or {G}"
+  | .addROrGActivateOnlyIfThisLandEnter => "Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land"
+  | .addROrW => "Add {R} or {W}"
+  | .addUOrB => "Add {U} or {B}"
+  | .addUOrBActivateOnlyIfThisLandEnter => "Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land"
+  | .addUOrR => "Add {U} or {R}"
+  | .addUThisManaCanTBeSpentToCastANona => "Add {U}. This mana can't be spent to cast a nonartifact spell"
+  | .addW => "Add {W}"
+  | .addWOrB => "Add {W} or {B}"
+  | .addWOrU => "Add {W} or {U}"
+  | .addWOrUActivateOnlyIfThisLandEnter => "Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land"
+  | .n1BDiscardThisCard => "{1}{B}, Discard this card: Search your library for a Plan card, reveal it, put it into your hand, then shuffle."
+  | .n2TDiscardACard => "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn."
+  | .n2BSacrificeAnArtifactOrCreatur => "{2}{B}, Sacrifice an artifact or creature: Draw a card."
+  | .n2GTRemoveAnyNumberOf11 => "{2}{G}, {T}, Remove any number of +1/+1 counters from The Astonishing Ant-Man: Create that many 1/1 green Insect creature tokens."
+  | .n2RDiscardThisCard => "{2}{R}, Discard this card: It deals 2 damage to each creature."
+  | .n3TSacrificeAnArtifactOrDisca => "{3}, {T}, Sacrifice an artifact or discard a nonland card: Bullseye deals 2 damage to any target."
+  | .n3TSacrificeAnArtifact => "{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery."
+  | .n3USacrificeThisArtifact => "{3}{U}, Sacrifice this artifact: Draw two cards."
+  | .tPutAStunCounterOnJessicaJones => "{T}, Put a stun counter on Jessica Jones: Exile the top X cards of your library, where X is Jessica Jones's power. You may play those cards this turn."
+  | .tSacrificeAnEquipmentAttachedTo => "{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery."
+  | .harnessTheMindStone => "Harness The Mind Stone"
+  | .targetPlayerDrawsFourCards => "Target player draws four cards"
+
+instance : ToString MshAbility where
+  toString := toNotation
+
+end MshAbility
+/-- A Saga chapter unique to MSH -/
+inductive MshChapter where
+  /-- Modeled MSH ability. -/
+  | gainControlOfUpToTwoTargetCreaturesWith
+  /-- Modeled MSH ability. -/
+  | harnessTheMindStone
+  /-- Modeled MSH ability. -/
+  | thisSagaDeals2DamageToEachNonVillainCre
+  /-- Modeled MSH ability. -/
+  | thisSagaDealsXDamageToTargetOpponentWhe
+deriving Repr, Inhabited, BEq
+
+namespace MshChapter
+
+/-- Official Oracle wording for this MshChapter. -/
+def toNotation : MshChapter → String
+  | .gainControlOfUpToTwoTargetCreaturesWith => "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield"
+  | .harnessTheMindStone => "Harness The Mind Stone"
+  | .thisSagaDeals2DamageToEachNonVillainCre => "This Saga deals 2 damage to each non-Villain creature and each opponent"
+  | .thisSagaDealsXDamageToTargetOpponentWhe => "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"
+
+instance : ToString MshChapter where
+  toString := toNotation
+
+end MshChapter
+end Mtg.Engine

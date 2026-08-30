@@ -645,6 +645,10 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [announce kicker (CR 702.32, {g.player p |>.name})]"
     | .chooseGift p =>
       s!" [announce gift (CR 702.185, {g.player p |>.name})]"
+    | .chooseTeamwork p =>
+      s!" [announce teamwork (CR 702.194, {g.player p |>.name})]"
+    | .chooseTeamworkCreatures p need =>
+      s!" [tap creatures for teamwork {need} (CR 702.194, {g.player p |>.name})]"
     | .chooseRingBearer p =>
       s!" [choose a Ring-bearer ({g.player p |>.name})]"
     | .maySacrificeAnotherBolg p _ =>
