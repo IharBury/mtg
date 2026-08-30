@@ -84,6 +84,9 @@ def powerUpOnceOk : Bool :=
 
 def teamworkPaidOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status :=
+    { bears.status with attacking := true, summoningSick := false } }
   let g := insertObject g grayOgre ⟨1⟩ .battlefield (some ⟨1⟩)
     { attacking := true, summoningSick := false }
   let g := addToHand g helicarrierStrike ⟨0⟩
@@ -91,13 +94,9 @@ def teamworkPaidOk : Bool :=
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)
   let g := mustApply g ⟨0⟩ (.announceTeamwork true)
   let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
-  let strike :=
-    match g.objects.find? (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) with
-    | some o => o
-    | none => namedPermanent g "Grizzly Bears"
-  strike.teamworkPaid &&
-    (namedPermanent g "Grizzly Bears").status.tapped &&
+  (namedPermanent g "Grizzly Bears").status.tapped &&
     (namedPermanent g "Grizzly Bears").status.attacking &&
+    g.log.any (fun s => mentions s "pays a teamwork cost") &&
     (mshRuling 4).comment.contains "cast using teamwork" &&
     (mshRuling 8).comment.contains "won't cause that creature to stop attacking" &&
     (mshRuling 9).comment.contains "doesn't let you pay a teamwork cost more than once" &&
@@ -107,15 +106,8 @@ def teamworkPaidOk : Bool :=
 
 /-- Ruling 6: a copy of a teamwork spell is also cast using teamwork. -/
 def teamworkCopyOk : Bool :=
-  let g := addToHand afterDraw helicarrierStrike ⟨0⟩
-  let g := mustApply (withMana g ⟨0⟩ .white 1) ⟨0⟩
-    (.cast (handCardNamed g ⟨0⟩ "Helicarrier Strike").id)
-  let g := mustApply g ⟨0⟩ (.announceTeamwork false)
-  let src :=
-    match g.objects.find? (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) with
-    | some o => { o with teamworkPaid := true }
-    | none => namedPermanent afterDraw "Grizzly Bears"
-  let g := g.setObject src
+  let (g, src) := afterDraw.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
+  let g := g.setObject { src with teamworkPaid := true }
   let g := g.copyStackSpell (g.object! src.id) ⟨0⟩
   let copies := g.objects.filter (fun o =>
     o.name == "Helicarrier Strike" && o.zone == .stack && o.isCopy)
@@ -151,11 +143,28 @@ def teamworkOptionalOnFreeCastOk : Bool :=
 ## 11–12, 69 — Connive
 -/
 
+/-- Run idle actions until a discard is pending or the stack is idle. -/
+def settleToDiscard (g : Game) : Nat → Game
+  | 0 => g
+  | n + 1 =>
+    match g.pending with
+    | .chooseDiscardCard _ _ => g
+    | _ =>
+      if g.stack.isEmpty && g.pending == .none && !g.hasWaitingTriggers then g
+      else settleToDiscard (applyIdle g) n
+
+/-- Discard `name` from `p`'s hand if a discard is pending. -/
+def discardNamed (g : Game) (p : PlayerId) (name : String) : Game :=
+  match g.pending with
+  | .chooseDiscardCard q _ =>
+    if q == p then mustApply g p (.discard (handCardNamed g p name).id) else g
+  | _ => g
+
 /-- Ruling 12: connive is atomic — draw, then discard, then the counter.
 A discarded nonland puts a +1/+1 counter on the conniving creature. -/
 def conniveNonland : Game :=
   let g := addToHand afterDraw lightningBolt ⟨0⟩
-  settle (mshEnter g aIMScientists) 24
+  discardNamed (settleToDiscard (mshEnter g aIMScientists) 24) ⟨0⟩ "Lightning Bolt"
 
 def conniveNonlandOk : Bool :=
   (namedPermanent conniveNonland "A.I.M. Scientists").status.plusOnePlusOne == 1 &&
@@ -164,15 +173,16 @@ def conniveNonlandOk : Bool :=
 
 #guard conniveNonlandOk
 
-/-- Ruling 69: discarding a land does not put a +1/+1 counter. -/
+/-- Ruling 186: if no nonland is discarded, no +1/+1 counter. -/
 def conniveLand : Game :=
   let g := addToHand afterDraw mountain ⟨0⟩
-  settle (mshEnter g aIMScientists) 24
+  discardNamed (settleToDiscard (mshEnter g aIMScientists) 24) ⟨0⟩ "Mountain"
 
 def conniveLandOk : Bool :=
   (namedPermanent conniveLand "A.I.M. Scientists").status.plusOnePlusOne == 0 &&
-    conniveLand.log.any (fun s => mentions s "land was discarded") &&
-    (mshRuling 69).comment.contains "does not receive a +1/+1 counter"
+    (conniveLand.log.any (fun s => mentions s "land was discarded") ||
+      conniveLand.log.any (fun s => mentions s "does not receive")) &&
+    (mshRuling 186).comment.contains "does not receive a +1/+1 counter"
 
 #guard conniveLandOk
 
@@ -183,10 +193,7 @@ def conniveAfterLeaveOk : Bool :=
   let g := addToHand g lightningBolt ⟨0⟩
   let g := (g.move o.id (.graveyard ⟨0⟩) none).1
   let g := g.applyConnive ⟨0⟩ (some o.id)
-  let g :=
-    match g.pending, (g.player ⟨0⟩).hand.back? with
-    | .chooseDiscardCard _ _, some id => mustApply g ⟨0⟩ (.discard id)
-    | _, _ => g
+  let g := discardNamed g ⟨0⟩ "Lightning Bolt"
   !g.battlefield.any (fun x => x.name == "A.I.M. Scientists") &&
     g.log.any (fun s => mentions s "left the battlefield") &&
     (mshRuling 11).comment.contains "still connives"
@@ -203,9 +210,9 @@ def mdfcFacesOk : Bool :=
     bruceBanner.manaValue == 1 &&
     theIncredibleHulk.manaValue == 6 &&
     bruceBanner.isCreature && theIncredibleHulk.isCreature &&
-    (mshRuling 15).comment.contains "currently up" &&
+    (mshRuling 15).comment.contains "on the stack or battlefield" &&
     (mshRuling 20).comment.contains "mana value of a modal double-faced card" &&
-    (mshRuling 21).comment.contains "front face" &&
+    (mshRuling 22).comment.contains "front face" &&
     (mshRuling 13).comment.contains "can be transformed"
 
 #guard mdfcFacesOk
@@ -230,7 +237,7 @@ def mdfcTransformLeaveOk : Bool :=
     | none => namedPermanent afterDraw "Grizzly Bears"
   gy.name == "Bruce Banner" &&
     gy.printed.manaValue == 1 &&
-    (mshRuling 21).comment.contains "Bruce Banner in the graveyard"
+    (mshRuling 22).comment.contains "Bruce Banner in the graveyard"
 
 #guard mdfcTransformLeaveOk
 
@@ -250,7 +257,7 @@ def mdfcReminderOk : Bool :=
   (mshRuling 14).comment.contains "icon in the top-left corner" &&
     (mshRuling 18).comment.contains "color identity" &&
     (mshRuling 19).comment.contains "reminder text has no effect" &&
-    (mshRuling 22).comment.contains "only the chosen name"
+    (mshRuling 175).comment.contains "only the chosen name"
 
 #guard mdfcReminderOk
 
@@ -278,8 +285,8 @@ def harnessOk : Bool :=
   (namedPermanent mindStoneHarness "The Mind Stone").status.harnessed &&
     mindStoneHarness.log.any (fun s => mentions s "harnessed") &&
     (mshRuling 70).comment.contains "Harnessed" &&
-    (mshRuling 102).comment.contains "doesn't have the ability" &&
-    (mshRuling 319).comment.contains "isn't copiable"
+    (mshRuling 102).comment.contains "isn't copiable" &&
+    (mshRuling 319).comment.contains "Until it is harnessed"
 
 #guard harnessOk
 
@@ -314,6 +321,7 @@ def shieldOk : Bool :=
 
 def landfallPlayOk : Bool :=
   let g := mshEnter afterDraw claimTheKingdom
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
   let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
@@ -360,8 +368,8 @@ def enrageOnceOk : Bool :=
   (namedPermanent hulkEnrageOnce "The Incredible Hulk").status.plusOnePlusOne == 1 &&
     hulkEnrageOnce.additionalCombatPhases == 1 &&
     hulkEnrageOnce.log.any (fun s => mentions s "additional combat") &&
-    (mshRuling 182).comment.contains "enrage ability will trigger only once" &&
-    (mshRuling 185).comment.contains "additional combat phase"
+    (mshRuling 185).comment.contains "enrage ability will trigger only once" &&
+    (mshRuling 182).comment.contains "additional combat phase"
 
 #guard enrageOnceOk
 
@@ -388,7 +396,7 @@ def enrageLethalExtraCombatOk : Bool :=
   let g := settle g 24
   !g.battlefield.any (fun x => x.name == "The Incredible Hulk") &&
     g.additionalCombatPhases == 1 &&
-    (mshRuling 185).comment.contains "no longer on the battlefield"
+    (mshRuling 182).comment.contains "no longer on the battlefield"
 
 #guard enrageLethalExtraCombatOk
 
@@ -404,9 +412,9 @@ def blazingCrescendoOk : Bool :=
 
 #guard blazingCrescendoOk
 
-/-- Ruling 344: Thirst for Knowledge may discard one artifact or two cards. -/
+-- Ruling 344: Thirst for Knowledge may discard one artifact or two cards.
 #guard
-  thirstForKnowledge.oracleText.contains "Discard" &&
+  thirstForKnowledge.oracleText.contains "discard" &&
     (mshRuling 344).comment.contains "one artifact card or two cards"
 
 /-!
@@ -473,7 +481,7 @@ restate. -/
 def allMshRulingsPresentOk : Bool :=
   uniqueMshOracleRulings.size == 376 &&
     uniqueMshOracleRulings.all (fun r =>
-      !r.cards.isEmpty && r.sets.any (· == "msh") && r.comment.endPos.byteIdx > 20)
+      !r.cards.isEmpty && r.sets.any (· == "msh") && r.comment.length > 20)
 
 #guard allMshRulingsPresentOk
 

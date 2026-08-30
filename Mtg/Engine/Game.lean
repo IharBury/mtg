@@ -6091,7 +6091,9 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       match g.findObject? sid with
       | some o =>
         if o.isOnBattlefield then
-          g.addPlusOnePlusOneTo o 1
+          let g := g.setObject { o with status := { o.status with
+            plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
+          g.logMsg s!"{o.name} gets a +1/+1 counter"
         else
           g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
       | none =>
