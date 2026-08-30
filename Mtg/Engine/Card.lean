@@ -1,6 +1,6 @@
 import Mtg.Engine.Color
 import Mtg.Engine.Mana
-import Mtg.Engine.MshAbilities
+import Mtg.Engine.ModeledAbilities
 import Mtg.Engine.TypeLine
 
 /-!
@@ -841,7 +841,7 @@ inductive SpellEffect where
   /-- Put `n` +1/+1 counters on target creature you control. -/
   | plusOneOnCreatureN (n : Nat)
   /-- A modeled MSH spell. -/
-  | msh (t : MshSpell)
+  | msh (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -1134,7 +1134,7 @@ inductive SpellResolution where
   /-- `n` +1/+1 counters on a creature you control. -/
   | plusOneOnCreatureN (n : Nat)
   /-- A modeled MSH spell. -/
-  | msh (t : MshSpell)
+  | msh (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1800,9 +1800,9 @@ inductive AbilityEffect where
   /-- The source connives. -/
   | connive
   /-- A modeled MSH activation. -/
-  | msh (t : MshAbility)
-  /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
-  | mshSpell (t : MshSpell)
+  | msh (t : ModeledAbility)
+  /-- A spell-shaped MSH activation (reuses `ModeledSpell`). -/
+  | mshSpell (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1931,9 +1931,9 @@ inductive AbilityResolution where
   /-- The source connives. -/
   | connive
   /-- A modeled MSH activation. -/
-  | msh (t : MshAbility)
-  /-- A spell-shaped MSH activation (reuses `MshSpell`). -/
-  | mshSpell (t : MshSpell)
+  | msh (t : ModeledAbility)
+  /-- A spell-shaped MSH activation (reuses `ModeledSpell`). -/
+  | mshSpell (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -2530,8 +2530,95 @@ inductive StaticAbility where
   | cantBeBlockedIfPowerAtMost (n : Int)
   /-- Prevent all damage that would be dealt to this permanent. -/
   | preventAllDamageToThis
-  /-- A modeled MSH static. -/
-  | msh (t : MshStatic)
+  /-- You have no maximum hand size. -/
+  | noMaximumHandSize
+  /-- Your maximum hand size is `n`. -/
+  | maximumHandSize (n : Nat)
+  /-- This creature's power is equal to the number of permanents you control
+  of this subtype (e.g. Namor and Merfolk). -/
+  | powerEqualSubtypeYouControl (subtype : String)
+  /-- This creature's power is equal to the number of legendary creatures
+  you control (e.g. Super-Adaptoid). -/
+  | powerEqualLegendaryCreaturesYouControl
+  /-- Spells of this card type you cast cost `{n}` less (e.g. artifact spells). -/
+  | typeSpellsCostLess (ty : CardType) (n : Nat)
+  /-- Improvise (CR 702.126). -/
+  | improvise
+  /-- Noncreature spells you cast have improvise. -/
+  | noncreatureSpellsHaveImprovise
+  /-- Extort (CR 702.83). -/
+  | extort
+  /-- Attacking creature tokens you control have these keywords. -/
+  | attackingTokensHave (k : Keywords)
+  /-- Each creature you put a +1/+1 counter on this turn has hexproof. -/
+  | hexproofIfPlusOneThisTurn
+  /-- You may play lands from your graveyard. -/
+  | mayPlayLandsFromGraveyard
+  /-- As long as an opponent has cast a spell this turn, you may cast spells
+  as though they had flash. -/
+  | flashIfOpponentCastThisTurn
+  /-- Ward — discard a card or pay `{n}`. -/
+  | wardDiscardOrPay (n : Nat)
+  /-- Ward — get `n` poison counters. -/
+  | wardPoisonCounters (n : Nat)
+  /-- This creature attacks each combat if able. -/
+  | attacksEachCombatIfAble
+  /-- Instant and sorcery spells you cast with mana value 4 or greater cost
+  {X} less, where X is this creature's power. -/
+  | instantSorceryCostLessEqualPower
+  /-- Each power-up ability of permanents you control can be activated an
+  additional time. -/
+  | extraPowerUpActivation
+  /-- Power-up abilities of other creatures you control cost `{n}` less. -/
+  | otherPowerUpCostsLess (n : Nat)
+  /-- You may activate abilities of creatures you control as though they had
+  haste. -/
+  | activateCreaturesAsThoughHaste
+  /-- If you would put one or more counters on a permanent you control, put
+  that many plus one of each of those kinds instead. -/
+  | extraCounterOnPermanents
+  /-- If this is in your opening hand, you may begin the game with it on
+  the battlefield. -/
+  | mayBeginOnBattlefield
+  /-- Enchanted creature has ward `{w}`. -/
+  | enchantedCreatureHasWard (w : Nat)
+  /-- Equipped creature gets +P/+T and has these keywords and ward `{w}`. -/
+  | equippedCreatureGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
+  /-- Creatures you control with +1/+1 counters on them have these keywords. -/
+  | creaturesWithPlusOneHave (k : Keywords)
+  /-- Creatures your opponents control get +P/+T. -/
+  | opponentsCreaturesGet (power toughness : Int)
+  /-- This gets +P/+0 for each other artifact you control. -/
+  | getsPowerPerOtherArtifact (power : Int)
+  /-- This gets +P/+0 for each Equipment attached to it. -/
+  | getsPowerPerAttachedEquipment (power : Int)
+  /-- As long as there are at least `min` creature cards in your graveyard,
+  this gets +P/+T. -/
+  | getsIfGyCreatureCards (min : Nat) (power toughness : Int)
+  /-- This has indestructible as long as you control an artifact creature
+  or a Plan. -/
+  | indestructibleIfArtifactCreatureOrPlan
+  /-- This has flying as long as you put a +1/+1 counter on it this turn. -/
+  | flyingIfPlusOneThisTurn
+  /-- Creatures with flying can't attack you or block creatures you control. -/
+  | flyingCantAttackYouOrBlockYours
+  /-- If a creature you control would connive, you draw first, then it connives. -/
+  | extraDrawOnConnive
+  /-- If a source you control would deal noncombat damage, it deals that
+  much plus this creature's power instead. -/
+  | noncombatDamagePlusSourcePower
+  /-- Double all damage equipped creature would deal. -/
+  | equippedDealsDoubleDamage
+  /-- If damage would be dealt to this, it is dealt but prior damage is healed. -/
+  | healOtherDamageWhenDealt
+  /-- This enters with X +1/+1 counters. -/
+  | entersWithXPlusOne
+  /-- Enchanted creature gets +P/+T and has these keywords, and may gain
+  additional types. -/
+  | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords)
+    (types : Array String)
+  /-- A modeled leftover static that is not yet a shared shape. -/
+  | msh (t : ModeledStatic)
 deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
@@ -2640,7 +2727,45 @@ inductive StaticShape where
   | subtypeSpellsCostLess (subtype : String) (n : Nat)
   | cantBeBlockedIfPowerAtMost (n : Int)
   | preventAllDamageToThis
-  | msh (t : MshStatic)
+  | noMaximumHandSize
+  | maximumHandSize (n : Nat)
+  | powerEqualSubtype (subtype : String)
+  | powerEqualLegendaryCreatures
+  | typeSpellsCostLess (ty : CardType) (n : Nat)
+  | improvise
+  | noncreatureSpellsHaveImprovise
+  | extort
+  | attackingTokensHave (k : Keywords)
+  | hexproofIfPlusOneThisTurn
+  | mayPlayLandsFromGraveyard
+  | flashIfOpponentCastThisTurn
+  | wardDiscardOrPay (n : Nat)
+  | wardPoisonCounters (n : Nat)
+  | attacksEachCombatIfAble
+  | instantSorceryCostLessEqualPower
+  | extraPowerUpActivation
+  | otherPowerUpCostsLess (n : Nat)
+  | activateCreaturesAsThoughHaste
+  | extraCounterOnPermanents
+  | mayBeginOnBattlefield
+  | enchantedHasWard (w : Nat)
+  | equippedGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
+  | creaturesWithPlusOneHave (k : Keywords)
+  | opponentsCreaturesGet (power toughness : Int)
+  | getsPowerPerOtherArtifact (power : Int)
+  | getsPowerPerAttachedEquipment (power : Int)
+  | getsIfGyCreatureCards (min : Nat) (power toughness : Int)
+  | indestructibleIfArtifactCreatureOrPlan
+  | flyingIfPlusOneThisTurn
+  | flyingCantAttackYouOrBlockYours
+  | extraDrawOnConnive
+  | noncombatDamagePlusSourcePower
+  | equippedDealsDoubleDamage
+  | healOtherDamageWhenDealt
+  | entersWithXPlusOne
+  | enchantedGetsHasAndTypes (power toughness : Int) (k : Keywords)
+    (types : Array String)
+  | msh (t : ModeledStatic)
 deriving Repr, Inhabited, BEq
 
 /-- Projections Game reads from a static shape. Exhaustive so a new shape is a
@@ -2699,6 +2824,14 @@ structure StaticMeta where
   equipTargetingThisCostLess : Option Nat := none
   /-- First equip is free if enduring story. -/
   firstEquipFreeIfEnduringStory : Bool := false
+  /-- You have no maximum hand size. -/
+  noMaximumHandSize : Bool := false
+  /-- Your maximum hand size, if this ability sets one. -/
+  maximumHandSize : Option Nat := none
+  /-- Power equal to permanents you control of this subtype. -/
+  powerEqualSubtype : Option String := none
+  /-- Power equal to legendary creatures you control. -/
+  powerEqualLegendaryCreatures : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Classification of a static shape for Game accessors. -/
@@ -2781,6 +2914,45 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .cantBeBlockedIfPowerAtMost n =>
     { cantBeBlockedIfPowerAtMost := some n }
   | .preventAllDamageToThis => {}
+  | .noMaximumHandSize => { noMaximumHandSize := true }
+  | .maximumHandSize n => { maximumHandSize := some n }
+  | .powerEqualSubtype subtype => { powerEqualSubtype := some subtype }
+  | .powerEqualLegendaryCreatures => { powerEqualLegendaryCreatures := true }
+  | .typeSpellsCostLess _ _ => {}
+  | .improvise => {}
+  | .noncreatureSpellsHaveImprovise => {}
+  | .extort => {}
+  | .attackingTokensHave _ => {}
+  | .hexproofIfPlusOneThisTurn => {}
+  | .mayPlayLandsFromGraveyard => {}
+  | .flashIfOpponentCastThisTurn => {}
+  | .wardDiscardOrPay _ => {}
+  | .wardPoisonCounters _ => {}
+  | .attacksEachCombatIfAble => {}
+  | .instantSorceryCostLessEqualPower => {}
+  | .extraPowerUpActivation => {}
+  | .otherPowerUpCostsLess _ => {}
+  | .activateCreaturesAsThoughHaste => {}
+  | .extraCounterOnPermanents => {}
+  | .mayBeginOnBattlefield => {}
+  | .enchantedHasWard w => { grantedWard := some w }
+  | .equippedGetsHasAndWard p t k w =>
+    { hostBonus := (p, t), hostKeywords := k, grantedWard := some w }
+  | .creaturesWithPlusOneHave _ => {}
+  | .opponentsCreaturesGet _ _ => {}
+  | .getsPowerPerOtherArtifact _ => {}
+  | .getsPowerPerAttachedEquipment _ => {}
+  | .getsIfGyCreatureCards _ _ _ => {}
+  | .indestructibleIfArtifactCreatureOrPlan => {}
+  | .flyingIfPlusOneThisTurn => {}
+  | .flyingCantAttackYouOrBlockYours => {}
+  | .extraDrawOnConnive => {}
+  | .noncombatDamagePlusSourcePower => {}
+  | .equippedDealsDoubleDamage => {}
+  | .healOtherDamageWhenDealt => {}
+  | .entersWithXPlusOne => {}
+  | .enchantedGetsHasAndTypes p t k _ =>
+    { hostBonus := (p, t), hostKeywords := k }
   | .msh _ => {}
 
 /-- Classification of this static ability. Exhaustive so a new constructor is a
@@ -2857,6 +3029,45 @@ def shape : StaticAbility → StaticShape
   | .subtypeSpellsCostLess subtype n => .subtypeSpellsCostLess subtype n
   | .cantBeBlockedIfPowerAtMost n => .cantBeBlockedIfPowerAtMost n
   | .preventAllDamageToThis => .preventAllDamageToThis
+  | .noMaximumHandSize => .noMaximumHandSize
+  | .maximumHandSize n => .maximumHandSize n
+  | .powerEqualSubtypeYouControl subtype => .powerEqualSubtype subtype
+  | .powerEqualLegendaryCreaturesYouControl => .powerEqualLegendaryCreatures
+  | .typeSpellsCostLess ty n => .typeSpellsCostLess ty n
+  | .improvise => .improvise
+  | .noncreatureSpellsHaveImprovise => .noncreatureSpellsHaveImprovise
+  | .extort => .extort
+  | .attackingTokensHave k => .attackingTokensHave k
+  | .hexproofIfPlusOneThisTurn => .hexproofIfPlusOneThisTurn
+  | .mayPlayLandsFromGraveyard => .mayPlayLandsFromGraveyard
+  | .flashIfOpponentCastThisTurn => .flashIfOpponentCastThisTurn
+  | .wardDiscardOrPay n => .wardDiscardOrPay n
+  | .wardPoisonCounters n => .wardPoisonCounters n
+  | .attacksEachCombatIfAble => .attacksEachCombatIfAble
+  | .instantSorceryCostLessEqualPower => .instantSorceryCostLessEqualPower
+  | .extraPowerUpActivation => .extraPowerUpActivation
+  | .otherPowerUpCostsLess n => .otherPowerUpCostsLess n
+  | .activateCreaturesAsThoughHaste => .activateCreaturesAsThoughHaste
+  | .extraCounterOnPermanents => .extraCounterOnPermanents
+  | .mayBeginOnBattlefield => .mayBeginOnBattlefield
+  | .enchantedCreatureHasWard w => .enchantedHasWard w
+  | .equippedCreatureGetsHasAndWard p t k w => .equippedGetsHasAndWard p t k w
+  | .creaturesWithPlusOneHave k => .creaturesWithPlusOneHave k
+  | .opponentsCreaturesGet p t => .opponentsCreaturesGet p t
+  | .getsPowerPerOtherArtifact p => .getsPowerPerOtherArtifact p
+  | .getsPowerPerAttachedEquipment p => .getsPowerPerAttachedEquipment p
+  | .getsIfGyCreatureCards min p t => .getsIfGyCreatureCards min p t
+  | .indestructibleIfArtifactCreatureOrPlan =>
+    .indestructibleIfArtifactCreatureOrPlan
+  | .flyingIfPlusOneThisTurn => .flyingIfPlusOneThisTurn
+  | .flyingCantAttackYouOrBlockYours => .flyingCantAttackYouOrBlockYours
+  | .extraDrawOnConnive => .extraDrawOnConnive
+  | .noncombatDamagePlusSourcePower => .noncombatDamagePlusSourcePower
+  | .equippedDealsDoubleDamage => .equippedDealsDoubleDamage
+  | .healOtherDamageWhenDealt => .healOtherDamageWhenDealt
+  | .entersWithXPlusOne => .entersWithXPlusOne
+  | .enchantedCreatureGetsHasAndTypes p t k types =>
+    .enchantedGetsHasAndTypes p t k types
   | .msh t => .msh t
 
 /-- Oracle-style reminder from `shape`, so a new constructor only updates that
@@ -3025,6 +3236,85 @@ def toNotation (ab : StaticAbility) : String :=
     s!"This creature can't be blocked if its power is {n} or less."
   | .preventAllDamageToThis =>
     "Prevent all damage that would be dealt to this."
+  | .noMaximumHandSize =>
+    "You have no maximum hand size."
+  | .maximumHandSize n =>
+    s!"Your maximum hand size is {n}."
+  | .powerEqualSubtype subtype =>
+    let plural := if subtype == "Merfolk" then "Merfolk" else pluralSubtype subtype
+    s!"This creature's power is equal to the number of {plural} you control."
+  | .powerEqualLegendaryCreatures =>
+    "This creature's power is equal to the number of legendary creatures you control."
+  | .typeSpellsCostLess ty n =>
+    s!"{ty} spells you cast cost \{{n}} less to cast."
+  | .improvise =>
+    "Improvise"
+  | .noncreatureSpellsHaveImprovise =>
+    "Noncreature spells you cast have improvise."
+  | .extort =>
+    "Extort"
+  | .attackingTokensHave k =>
+    s!"Attacking creature tokens you control have {k}."
+  | .hexproofIfPlusOneThisTurn =>
+    "Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof."
+  | .mayPlayLandsFromGraveyard =>
+    "You may play lands from your graveyard."
+  | .flashIfOpponentCastThisTurn =>
+    "As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."
+  | .wardDiscardOrPay n =>
+    s!"Ward—Discard a card or pay \{{n}}."
+  | .wardPoisonCounters n =>
+    let nWord := if n == 5 then "five" else toString n
+    s!"Ward—Get {nWord} poison counters."
+  | .attacksEachCombatIfAble =>
+    "This creature attacks each combat if able."
+  | .instantSorceryCostLessEqualPower =>
+    "Instant and sorcery spells you cast with mana value 4 or greater cost {X} less to cast, where X is this creature's power."
+  | .extraPowerUpActivation =>
+    "Each power-up ability of permanents you control can be activated an additional time."
+  | .otherPowerUpCostsLess n =>
+    s!"Power-up abilities of other creatures you control cost \{{n}} less to activate."
+  | .activateCreaturesAsThoughHaste =>
+    "You may activate abilities of creatures you control as though those creatures had haste."
+  | .extraCounterOnPermanents =>
+    "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
+  | .mayBeginOnBattlefield =>
+    "If this card is in your opening hand, you may begin the game with it on the battlefield."
+  | .enchantedHasWard w =>
+    s!"Enchanted creature has ward \{{w}}."
+  | .equippedGetsHasAndWard p t k w =>
+    s!"Equipped creature gets {signedStat p}/{signedStat t} and has {k} and ward \{{w}}."
+  | .creaturesWithPlusOneHave k =>
+    s!"Creatures you control with +1/+1 counters on them have {k}."
+  | .opponentsCreaturesGet p t =>
+    s!"Creatures your opponents control get {signedStat p}/{signedStat t}."
+  | .getsPowerPerOtherArtifact p =>
+    s!"This creature gets {signedStat p}/+0 for each other artifact you control."
+  | .getsPowerPerAttachedEquipment p =>
+    s!"This creature gets {signedStat p}/+0 for each Equipment attached to it."
+  | .getsIfGyCreatureCards min p t =>
+    s!"As long as there are {min} or more creature cards in your graveyard, this creature gets {signedStat p}/{signedStat t}."
+  | .indestructibleIfArtifactCreatureOrPlan =>
+    "As long as you control an artifact creature or a Plan, this has indestructible."
+  | .flyingIfPlusOneThisTurn =>
+    "As long as you've put one or more +1/+1 counters on this creature this turn, it has flying."
+  | .flyingCantAttackYouOrBlockYours =>
+    "Creatures with flying can't attack you or block creatures you control."
+  | .extraDrawOnConnive =>
+    "If a creature you control would connive, instead you draw a card, then that creature connives."
+  | .noncombatDamagePlusSourcePower =>
+    "If a source you control would deal noncombat damage to an opponent or a permanent an opponent controls, instead it deals that much damage plus X, where X is this creature's power."
+  | .equippedDealsDoubleDamage =>
+    "Double all damage equipped creature would deal."
+  | .healOtherDamageWhenDealt =>
+    "If damage would be dealt to this creature, instead that damage is dealt, but all other damage already dealt to it is healed."
+  | .entersWithXPlusOne =>
+    "This enters with X +1/+1 counters on it."
+  | .enchantedGetsHasAndTypes p t k types =>
+    let extra :=
+      if types.isEmpty then ""
+      else s!" and is a {String.intercalate " " types.toList} in addition to its other types"
+    s!"Enchanted creature gets {signedStat p}/{signedStat t} and has {k}{extra}."
   | .msh t => t.toNotation
 
 instance : ToString StaticAbility where
@@ -3209,7 +3499,7 @@ inductive ChapterEffect where
   /-- Put a +1/+1 counter on up to one target creature. -/
   | plusOneUpToOne
   /-- A modeled MSH Saga chapter. -/
-  | msh (t : MshChapter)
+  | msh (t : ModeledChapter)
   /-- A spell-shaped MSH Saga chapter (reuses `SpellEffect`). -/
   | spell (e : SpellEffect)
 deriving Repr, Inhabited, BEq
@@ -3800,8 +4090,27 @@ inductive TriggeredAbility where
   | onArtifactYouControlEntersDrawOnce
   /-- At the beginning of your end step, draw a card and lose 1 life. -/
   | onYourEndStepDrawLoseLife
-  /-- A modeled MSH trigger. -/
-  | msh (t : MshTrigger)
+  /-- When this permanent enters, surveil `n`. Resolves as a scry-shaped
+  look (cards may go to the graveyard). -/
+  | onEnterSurveil (n : Nat)
+  /-- Whenever this creature attacks, it connives. -/
+  | onAttackConnive
+  /-- Whenever you gain life, put a +1/+1 counter on this. -/
+  | onGainLifePlusOne
+  /-- Whenever another artifact you control enters, put a +1/+1 counter on this. -/
+  | onAnotherArtifactEntersPlusOne
+  /-- Whenever an Equipment you control enters, draw a card. -/
+  | onEquipmentYouControlEntersDraw
+  /-- Whenever an equipped creature you control attacks, it connives. -/
+  | onEquippedCreatureYouControlAttacksConnive
+  /-- At the beginning of combat on your turn, put a +1/+1 counter on target
+  creature you control. -/
+  | onCombatPlusOneOnCreatureYouControl
+  /-- At the beginning of combat on your turn, target creature you control
+  connives. -/
+  | onCombatTargetYouControlConnives
+  /-- A modeled leftover trigger that is not yet a shared shape. -/
+  | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -4670,7 +4979,7 @@ inductive TriggerResolution where
   /-- Draw a card and lose 1 life. -/
   | drawAndLoseLife1
   /-- Resolve a modeled MSH trigger. -/
-  | msh (t : MshTrigger)
+  | msh (t : ModeledTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -4709,12 +5018,12 @@ deriving Repr, Inhabited, BEq
 
 end TriggeredAbility
 
-namespace MshTrigger
+namespace ModeledTrigger
 
 /-- When this MSH trigger fires, how it targets, and once-each-turn
 lockout. Adding a constructor only requires updating `timing` instead of
 parallel match trees. `resolution` is always `.msh t`. -/
-def timing (t : MshTrigger) : TriggeredAbility.TriggerTiming :=
+def timing (t : ModeledTrigger) : TriggeredAbility.TriggerTiming :=
   let base : TriggeredAbility.TriggerTiming :=
     match t with
     | .atTheBeginningOfCombatOnYourTurn
@@ -4904,22 +5213,22 @@ def timing (t : MshTrigger) : TriggeredAbility.TriggerTiming :=
   { base with resolution := .msh t }
 
 /-- Events that fire this modeled MSH trigger. -/
-def events (t : MshTrigger) : Array TriggerEvent :=
+def events (t : ModeledTrigger) : Array TriggerEvent :=
   t.timing.events
 
 /-- Targeting when this trigger is put on the stack. -/
-def targeting (t : MshTrigger) : EffectTargeting :=
+def targeting (t : ModeledTrigger) : EffectTargeting :=
   t.timing.targeting
 
-def allowsZeroTargets (t : MshTrigger) : Bool :=
+def allowsZeroTargets (t : ModeledTrigger) : Bool :=
   t.timing.allowsZeroTargets
 
-def onceEachTurn (t : MshTrigger) : Bool :=
+def onceEachTurn (t : ModeledTrigger) : Bool :=
   t.timing.onceEachTurn
 
 /-- “Do this only once each turn” is a resolution choice, not a trigger
 lockout (MSH 69). -/
-def optionalOnceEachTurn (t : MshTrigger) : Bool :=
+def optionalOnceEachTurn (t : ModeledTrigger) : Bool :=
   t.timing.optionalOnceEachTurn
 
 #guard (timing .whenElektraEnters).events == #[TriggerEvent.entering]
@@ -4932,7 +5241,7 @@ def optionalOnceEachTurn (t : MshTrigger) : Bool :=
 #guard (timing .whenHellcatDies).resolution ==
   TriggeredAbility.TriggerResolution.msh .whenHellcatDies
 
-end MshTrigger
+end ModeledTrigger
 
 namespace TriggeredAbility
 
@@ -5444,6 +5753,24 @@ def timing : TriggeredAbility → TriggerTiming
       onceEachTurn := true }
   | .onYourEndStepDrawLoseLife =>
     { events := #[.yourEndStep], resolution := .drawAndLoseLife1 }
+  | .onEnterSurveil n =>
+    { events := #[.entering], resolution := .scry n }
+  | .onAttackConnive =>
+    { events := #[.attacking], resolution := .connive }
+  | .onGainLifePlusOne =>
+    { events := #[.youGainLife], resolution := .onSource (.plusOne 1) }
+  | .onAnotherArtifactEntersPlusOne =>
+    { events := #[.anotherArtifactEnters], resolution := .onSource (.plusOne 1) }
+  | .onEquipmentYouControlEntersDraw =>
+    { events := #[.equipmentYouControlEnters], resolution := .draw 1 }
+  | .onEquippedCreatureYouControlAttacksConnive =>
+    { events := #[.equippedCreatureYouControlAttacks], resolution := .connive }
+  | .onCombatPlusOneOnCreatureYouControl =>
+    { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
+      resolution := .onPermanent (.plusOne 1) }
+  | .onCombatTargetYouControlConnives =>
+    { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
+      resolution := .connive }
   | .msh t => t.timing
 
 /-- Damage amount and maximum number of targets when this ability divides
@@ -6007,6 +6334,8 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn."
   | .onYourEndStepDrawLoseLife =>
     "At the beginning of your end step, you draw a card and lose 1 life."
+  | .onEnterSurveil n =>
+    s!"When this permanent enters, surveil {n}."
   | .msh t => t.toNotation
   | _ =>
     let t := ab.timing
@@ -6149,6 +6478,9 @@ structure CardDef where
   /-- `{T}: Add one of these mana types` as a single choice ability
   (e.g. `{T}: Add {G} or {U}`). -/
   tapAddOneOf : Array ManaType := #[]
+  /-- `{T}: Add one of these types. Activate only if this land entered this
+  turn or if you control a basic land.` -/
+  tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
   /-- `{T}: Add one mana of any color` with no spending restriction. -/
   tapAddAnyColor : Bool := false
   /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
@@ -6403,10 +6735,19 @@ def mshTapAddRequiresEnteredOrBasic (c : CardDef) : Bool :=
     | .msh t => t.requiresEnteredOrBasic
     | _ => false)
 
+/-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
+def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
+  c.tapAddOneOfIfEnteredOrBasic ++ c.mshTapAddMana
+
+/-- True when a `{T}: Add` ability requires this land entered this turn or
+a basic land you control. -/
+def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
+  !c.tapAddOneOfIfEnteredOrBasic.isEmpty || c.mshTapAddRequiresEnteredOrBasic
+
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
-    c.mshTapAddMana ++
+    c.enteredOrBasicAddMana ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
@@ -7118,6 +7459,18 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
   .onPermanent (.pumpAndTrample 2 0)
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry 2
+#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .scry 2
+#guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
+  "When this permanent enters, surveil 1."
+#guard StaticAbility.toNotation .noMaximumHandSize ==
+  "You have no maximum hand size."
+#guard StaticAbility.toNotation (.maximumHandSize 10) ==
+  "Your maximum hand size is 10."
+#guard StaticAbility.toNotation (.powerEqualSubtypeYouControl "Merfolk") ==
+  "This creature's power is equal to the number of Merfolk you control."
+#guard StaticAbility.toNotation .improvise == "Improvise"
+#guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
+  "Artifact spells you cast cost {1} less to cast."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry 1
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife 2
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
@@ -7149,12 +7502,13 @@ instance : ToString CardDef where
 /-- True when this card itself has improvise (MSH). -/
 def hasImprovise (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
-    | .msh .improvise => true
+    | .improvise | .msh .improvise => true
     | _ => false)
 
 /-- True when this permanent grants improvise to noncreature spells you cast. -/
 def grantsImproviseToNoncreature (c : CardDef) : Bool :=
   c.staticAbilities.any (fun
+    | .noncreatureSpellsHaveImprovise
     | .msh .noncreatureSpellsYouCastHaveImprovise => true
     | _ => false)
 

@@ -39,6 +39,7 @@ def card (name : String) (types : Array CardType)
     (entersWithHopePerCreature : Bool := false)
     (entersTapped : Bool := false)
     (tapAddOneOf : Array ManaType := #[])
+    (tapAddOneOfIfEnteredOrBasic : Array ManaType := #[])
     (tapAddAnyColor : Bool := false)
     (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
@@ -91,7 +92,7 @@ def card (name : String) (types : Array CardType)
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
-  tapAddOneOf, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
+  tapAddOneOf, tapAddOneOfIfEnteredOrBasic, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
   flashIfYouControlSubtype, ward, flashback, colorIndicator,
   entersTappedUnlessLegendary, entersTappedUnlessEquipment,
   tapAddAnyColorForLegendary, costReductionEqualFlyingPower, crew,
@@ -499,6 +500,7 @@ def artifactCreature (name : String) (manaCost : ManaCost) (subtypes : Array Sub
 def land (name : String) (oracleText : String)
     (tapAddMana : Array ManaType := #[])
     (tapAddOneOf : Array ManaType := #[])
+    (tapAddOneOfIfEnteredOrBasic : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (supertypes : Array Supertype := #[])
@@ -513,7 +515,9 @@ def land (name : String) (oracleText : String)
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
     (supertypes := (if legendary then #[.legendary] else #[]) ++ supertypes)
     (tapAddMana := tapAddMana)
-    (tapAddOneOf := tapAddOneOf) (activatedAbilities := activatedAbilities)
+    (tapAddOneOf := tapAddOneOf)
+    (tapAddOneOfIfEnteredOrBasic := tapAddOneOfIfEnteredOrBasic)
+    (activatedAbilities := activatedAbilities)
     (entersTapped := entersTapped) (triggeredAbilities := triggeredAbilities)
     (staticAbilities := staticAbilities)
     (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
@@ -733,16 +737,16 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Modeled MSH trigger. -/
-def mshTrig (t : MshTrigger) : TriggeredAbility :=
+/-- Leftover modeled trigger. -/
+def leftoverTrig (t : ModeledTrigger) : TriggeredAbility :=
   .msh t
 
-/-- Modeled MSH static. -/
-def mshStatic (t : MshStatic) : StaticAbility :=
+/-- Leftover modeled static. -/
+def leftoverStatic (t : ModeledStatic) : StaticAbility :=
   .msh t
 
-/-- Modeled MSH activation. -/
-def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
+/-- Leftover modeled activation. -/
+def leftoverAct (t : ModeledAbility) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (powerUp : Bool := false)
     (onlyAsSorcery : Bool := false) : ActivatedAbility :=
   activated (.msh t) mana (tap := tap) (powerUp := powerUp)
@@ -754,22 +758,43 @@ def powerUpAbility (effect : AbilityEffect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
   activated effect mana (tap := tap) (powerUp := true)
 
-/-- MSH dual land: enters tapped, gains 1 life, `{T}: Add` two colors. -/
-def mshGainLifeDualLand (name : String) (oracleText : String)
-    (addColors : MshAbility) : CardDef :=
+/-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of these colors. -/
+def gainLifeDualLand (name : String) (oracleText : String)
+    (colors : Array ManaType) : CardDef :=
   land name oracleText
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (activatedAbilities := #[activated (.msh addColors) (tap := true)])
+    (tapAddOneOf := colors)
+
+/-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
+entered this turn or a basic land you control. -/
+def conditionalDualLand (name : String) (oracleText : String)
+    (colors : Array ManaType) : CardDef :=
+  land name oracleText
+    (tapAddMana := #[.colorless])
+    (tapAddOneOfIfEnteredOrBasic := colors)
+
+/-- MSH dual land: enters tapped, gains 1 life, `{T}: Add` two colors. -/
+def mshGainLifeDualLand (name : String) (oracleText : String)
+    (addColors : ModeledAbility) : CardDef :=
+  gainLifeDualLand name oracleText addColors.addManaTypes
 
 /-- MSH dual land: `{T}: Add {C}` plus a two-color tap that requires this
 land entered this turn or a basic land. -/
 def mshConditionalDualLand (name : String) (oracleText : String)
-    (addConditional : MshAbility) : CardDef :=
-  land name oracleText
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[mshAct addConditional (tap := true)])
+    (addConditional : ModeledAbility) : CardDef :=
+  conditionalDualLand name oracleText addConditional.addManaTypes
 
+#guard (gainLifeDualLand "Silent Plaza" ""
+  #[.colored .blue, .colored .black]).tapAddOneOf ==
+  #[.colored .blue, .colored .black]
+#guard (gainLifeDualLand "Silent Plaza" ""
+  #[.colored .blue, .colored .black]).triggeredAbilities == #[.onEnterGainLife 1]
+#guard (conditionalDualLand "Silent Lair" ""
+  #[.colored .blue, .colored .black]).tapAddOneOfIfEnteredOrBasic ==
+  #[.colored .blue, .colored .black]
+#guard (conditionalDualLand "Silent Lair" ""
+  #[.colored .blue, .colored .black]).requiresEnteredOrBasicAdd
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
