@@ -737,16 +737,16 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Modeled MSH trigger. -/
-def mshTrig (t : MshTrigger) : TriggeredAbility :=
+/-- Leftover modeled trigger. -/
+def leftoverTrig (t : ModeledTrigger) : TriggeredAbility :=
   .msh t
 
-/-- Modeled MSH static. -/
-def mshStatic (t : MshStatic) : StaticAbility :=
+/-- Leftover modeled static. -/
+def leftoverStatic (t : ModeledStatic) : StaticAbility :=
   .msh t
 
-/-- Modeled MSH activation. -/
-def mshAct (t : MshAbility) (mana : ManaCost := ManaCost.empty)
+/-- Leftover modeled activation. -/
+def leftoverAct (t : ModeledAbility) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (powerUp : Bool := false)
     (onlyAsSorcery : Bool := false) : ActivatedAbility :=
   activated (.msh t) mana (tap := tap) (powerUp := powerUp)
@@ -776,13 +776,13 @@ def conditionalDualLand (name : String) (oracleText : String)
 
 /-- MSH dual land: enters tapped, gains 1 life, `{T}: Add` two colors. -/
 def mshGainLifeDualLand (name : String) (oracleText : String)
-    (addColors : MshAbility) : CardDef :=
+    (addColors : ModeledAbility) : CardDef :=
   gainLifeDualLand name oracleText addColors.addManaTypes
 
 /-- MSH dual land: `{T}: Add {C}` plus a two-color tap that requires this
 land entered this turn or a basic land. -/
 def mshConditionalDualLand (name : String) (oracleText : String)
-    (addConditional : MshAbility) : CardDef :=
+    (addConditional : ModeledAbility) : CardDef :=
   conditionalDualLand name oracleText addConditional.addManaTypes
 
 #guard (gainLifeDualLand "Silent Plaza" ""

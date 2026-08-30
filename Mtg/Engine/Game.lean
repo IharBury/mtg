@@ -2116,6 +2116,12 @@ def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
                 o.printed.isToken && o.printed.isArtifact) |>.size)
           addStats acc (n, 0)
         else acc
+      | .opponentsCreaturesGet p t =>
+        if src.isOnBattlefield && target.isOnBattlefield && target.isCreature &&
+            src.controller.isSome && target.controller.isSome &&
+            src.controller != target.controller then
+          addStats acc (p, t)
+        else acc
       | _ =>
         match ab.lordPump? with
         | none => acc
@@ -2243,6 +2249,28 @@ def fatGraveyardPowerBonus (g : Game) (o : GameObject) : Int :=
       acc + p * (n : Int)
     | _ => acc) 0
 
+/-- Self +P/+T from leftover-lifted statics (other artifacts, attached
+Equipment, creature cards in graveyard). -/
+def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
+  if !o.isOnBattlefield then (0, 0)
+  else
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .getsPowerPerOtherArtifact p =>
+        let n : Int :=
+          Int.ofNat ((g.permanentsOf o.you).filter (fun x =>
+            x.id != o.id && x.printed.isArtifact) |>.size)
+        addStats acc (p * n, 0)
+      | .getsPowerPerAttachedEquipment p =>
+        let n : Int := Int.ofNat (g.attachedEquipmentCount o)
+        addStats acc (p * n, 0)
+      | .getsIfGyCreatureCards min pw tw =>
+        let gy :=
+          (g.player o.you).graveyard.filter (fun id =>
+            (g.object! id).printed.isCreature) |>.size
+        if gy >= min then addStats acc (pw, tw) else acc
+      | _ => acc) (0, 0)
+
 /-- +1/+1 for each artifact you control (Iron Man Armor until EOT). -/
 def artifactCountPump (g : Game) (o : GameObject) : Int × Int :=
   if !o.status.pumpPerArtifactUntilEot || !o.isOnBattlefield then (0, 0)
@@ -2258,7 +2286,7 @@ def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
       g.lordStatBonus o, g.enduringStorySelfBonus o, g.enduringStoryTeamBonus o,
       (g.mountainPowerBonus o, (0 : Int)),
       (g.fatGraveyardPowerBonus o, (0 : Int)),
-      g.artifactCountPump o].foldl
+      g.artifactCountPump o, g.leftoverSelfBonus o].foldl
     addStats (0, 0)
 
 /-- Power of `o` as last known information (CR 113.7a / 208.2). -/
@@ -3088,14 +3116,41 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
     | some src => src.isOnBattlefield
     | none => false)
 
+def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
+  let self :=
+    o.staticAbilities.foldl (fun acc ab =>
+      match ab with
+      | .flyingIfPlusOneThisTurn =>
+        if o.status.gotPlusOneThisTurn then Keywords.merge acc Keyword.flying else acc
+      | _ => acc) Keywords.none
+  let fromTeam :=
+    match o.controller with
+    | none => Keywords.none
+    | some p =>
+      (g.permanentsOf p).foldl (fun acc src =>
+        src.staticAbilities.foldl (fun acc ab =>
+          match ab with
+          | .creaturesWithPlusOneHave k =>
+            if o.isCreature && o.status.plusOnePlusOne > 0 then
+              Keywords.merge acc k
+            else acc
+          | .attackingTokensHave k =>
+            if o.isOnBattlefield && o.status.attacking && o.printed.isToken then
+              Keywords.merge acc k
+            else acc
+          | _ => acc) acc) Keywords.none
+  Keywords.merge self fromTeam
+
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
   let printedKw :=
     if g.retainsPrintedAbilities o then o.printed.keywords else Keywords.none
   let base :=
     Keywords.merge
-      (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
-        (g.attachedGrantedKeywords o))
-      (g.enduringStoryKeywords o)
+      (Keywords.merge
+        (Keywords.merge (Keywords.merge printedKw o.grantedUntilEot)
+          (g.attachedGrantedKeywords o))
+        (g.enduringStoryKeywords o))
+      (g.leftoverGrantedKeywords o)
   if o.status.shadow > 0 then { base with shadow := true } else base
 
 /-- Whether `o` currently has shadow (printed, granted, or from a counter).
@@ -3127,6 +3182,7 @@ def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
     | some p =>
       (g.permanentsOf p).any (fun src =>
         src.staticAbilities.any (fun
+          | .attackingTokensHave k => k.firstStrike
           | .msh .attackingCreatureTokensYouControlHaveFirst => true
           | _ => false))
 
@@ -3195,6 +3251,7 @@ Pairwise `canBlock` stays true; the two-or-more restriction is checked on the
 declaration as a whole (CR 509.1c). -/
 def hasMenace (g : Game) (o : GameObject) : Bool :=
   hasPrintedOrEot o (·.menace) ||
+  (g.leftoverGrantedKeywords o).menace ||
   (o.isOnBattlefield && o.status.plusOnePlusOne > 0 &&
     match o.controller with
     | none => false
@@ -3217,6 +3274,14 @@ Zero is always legal (the attacker is unblocked). -/
 def legalBlockerCount (g : Game) (attacker : GameObject) (n : Nat) : Bool :=
   let need := g.minBlockersRequired attacker
   n == 0 || need <= 1 || n >= need
+
+/-- Creatures with flying can't attack this player or block their creatures. -/
+def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any (fun o =>
+    o.staticAbilities.any (fun
+      | .flyingCantAttackYouOrBlockYours => true
+      | .msh .creaturesWithFlyingCanTAttackYouOrBlock => true
+      | _ => false))
 
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
 declaration (CR 509.1b). Menace is not a pairwise restriction. -/
@@ -3249,6 +3314,10 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
       | none => false)) &&
   (!g.hasFlying attacker ||
     g.hasFlying blocker || (g.currentKeywords blocker).reach) &&
+  !(g.hasFlying blocker &&
+    match attacker.controller with
+    | some p => g.leftoverFlyingRestriction p
+    | none => false) &&
   (!(g.hasShadow attacker) || g.hasShadow blocker) &&
   (!(g.hasShadow blocker) || g.hasShadow attacker) &&
   !(match attacker.status.cantBeBlockedByPlayer with
@@ -3313,6 +3382,7 @@ def hasHexproof (g : Game) (o : GameObject) : Bool :=
        (o.isCreature && o.status.gotPlusOneThisTurn &&
          (g.permanentsOf p).any (fun src =>
            src.printed.staticAbilities.any (fun
+             | .hexproofIfPlusOneThisTurn => true
              | .msh .eachCreatureYouControlThatYouVePutOneOr => true
              | _ => false))) ||
        (g.permanentsOf p).any (fun src =>
@@ -3336,10 +3406,23 @@ def hasDeathtouch (_g : Game) (o : GameObject) : Bool :=
 
 /-- Whether `o` has indestructible (CR 702.12). An until-end-of-turn effect can
 make it lose the keyword. -/
+def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+    o.staticAbilities.any (fun
+      | .indestructibleIfArtifactCreatureOrPlan => true
+      | .msh .asLongAsYouControlAnArtifactCreatureOrA => true
+      | _ => false) &&
+    match o.controller with
+    | none => false
+    | some p =>
+      (g.permanentsOf p).any (fun x =>
+        (x.isCreature && x.printed.isArtifact) || g.hasSubtype x "Plan")
+
 def hasIndestructible (g : Game) (o : GameObject) : Bool :=
   (o.printedOrUntilEot.indestructible ||
     o.status.indestructibleCounters > 0 ||
-    g.loreThresholdProtection o) &&
+    g.loreThresholdProtection o ||
+    g.leftoverIndestructible o) &&
   !(o.isOnBattlefield && o.status.untilEotLosesIndestructible)
 
 /-- Mana value of `o` (CR 202.3). `{X}` is the chosen value while the object
@@ -3354,6 +3437,7 @@ a static ability (CR 702.19, 604.2). -/
 def hasTrample (g : Game) (o : GameObject) : Bool :=
   o.printedOrUntilEot.trample ||
   o.status.trampleCounters > 0 ||
+  (g.leftoverGrantedKeywords o).trample ||
   (o.isOnBattlefield && g.battlefield.any (fun src =>
     g.grantsTrampleTo src o ||
       (src.attachedTo == some o.id &&
@@ -3774,6 +3858,7 @@ Cycling and other activated abilities of those cards are still illegal. -/
 def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun x =>
     x.staticAbilities.any (fun
+      | .mayPlayLandsFromGraveyard => true
       | .msh .youMayPlayLandsFromYourGraveyard => true
       | _ => false))
 
@@ -4715,6 +4800,7 @@ def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
     | some p =>
       n + ((g.permanentsOf p).filter (fun o =>
         o.printed.staticAbilities.any (fun
+          | .extraCounterOnPermanents => true
           | .msh .ifYouWouldPutOneOrMoreCountersOnAPerma => true
           | _ => false))).size
 
@@ -4738,6 +4824,19 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       let g := g.setObject { o with status :=
         { o.status with shield := o.status.shield + n } }
       g.logMsg s!"{o.name} enters with {n} shield counter(s)"
+    else g
+  let o := g.object! o.id
+  let g :=
+    if o.staticAbilities.any (fun
+        | .entersWithXPlusOne => true
+        | .msh .theRuinousWreckingCrewEntersWithX11Co => true
+        | _ => false) then
+      let n := g.extraCountersOn o.controller (o.chosenX.getD 0)
+      if n == 0 then g
+      else
+        let g := g.setObject { o with status :=
+          { o.status with plusOnePlusOne := o.status.plusOnePlusOne + n } }
+        g.logMsg s!"{o.name} enters with {n} +1/+1 counter(s)"
     else g
   let o := g.object! o.id
   let g := g.setObject { o with status := { o.status with enteredThisTurn := true } }
@@ -5367,6 +5466,7 @@ the battlefield when that spell was cast. -/
 def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     o.staticAbilities.any (fun
+      | .flashIfOpponentCastThisTurn => true
       | .msh .cosmicAwarenessAsLongAsAnOpponentHasCa => true
       | _ => false)) &&
     (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
@@ -5700,6 +5800,10 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
         acc := acc.push .discardEnchantmentInstantOrSorcery
       | .wardSacrificeLegendary =>
         acc := acc.push .sacrificeLegendary
+      | .wardDiscardOrPay n =>
+        acc := acc.push (.discardOrPay n)
+      | .wardPoisonCounters _ =>
+        acc := acc.push .fivePoison
       | .msh .wardDiscardACardOrPay2 =>
         acc := acc.push (.discardOrPay 2)
       | .msh .wardGetFivePoisonCounters =>
@@ -6399,6 +6503,7 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
 /-- Ares and similar “attacks each combat if able” statics (MSH 130). -/
 def hasAttacksIfAble (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
+    | .attacksEachCombatIfAble => true
     | .msh .aresAttacksEachCombatIfAble => true
     | _ => false) ||
     o.printed.oracleText.contains "attacks each combat if able"
@@ -6682,6 +6787,7 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
           let reduces :=
             o.staticAbilities.any (fun ab =>
               match ab with
+              | .instantSorceryCostLessEqualPower => true
               | .msh .instantAndSorcerySpellsYouCastWithManaVa => true
               | _ => false)
           if reduces then acc + (g.power o).toNat else acc) 0
@@ -6745,6 +6851,7 @@ def playsWithoutPayingManaCost (g : Game) (card : GameObject)
 def grantsExtraPowerUp (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun ab =>
     match ab with
+    | .extraPowerUpActivation => true
     | .msh .eachPowerUpAbilityOfPermanentsYouControl => true
     | _ => false)
 
@@ -6756,14 +6863,21 @@ def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
 def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun ab =>
     match ab with
+    | .otherPowerUpCostsLess _ => true
     | .msh .powerUpAbilitiesOfOtherCreaturesYouContro => true
     | _ => false)
 
 /-- Generic mana subtracted from other creatures' power-up costs by Hulk
 (MSH ruling 127: only generic mana). -/
 def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) : Nat :=
-  3 * ((g.permanentsOf p).filter (fun o =>
-    o.id != sourceId && grantsHulkPowerUpReduction o)).size
+  (g.permanentsOf p).foldl (fun acc o =>
+    if o.id == sourceId then acc
+    else
+      o.printed.staticAbilities.foldl (fun acc ab =>
+        match ab with
+        | .otherPowerUpCostsLess n => acc + n
+        | .msh .powerUpAbilitiesOfOtherCreaturesYouContro => acc + 3
+        | _ => acc) acc) 0
 
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (source : Option GameObject := none) (chosenX : Option Nat := none) : ManaCost :=
@@ -7151,6 +7265,7 @@ def announceDividedDamage (g : Game) (p : PlayerId)
 def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     o.staticAbilities.any (fun
+      | .activateCreaturesAsThoughHaste => true
       | .msh .youMayActivateAbilitiesOfCreaturesYouCont => true
       | _ => false))
 
@@ -7347,8 +7462,15 @@ def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
 has left (MSH / CR 701.47). -/
 def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
+  let extraDraw :=
+    (g.permanentsOf controller).any (fun o =>
+      o.staticAbilities.any (fun
+        | .extraDrawOnConnive => true
+        | .msh .ifACreatureYouControlWouldConnive => true
+        | _ => false))
   let g := { g with conniveSource := sourceId }
   let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
+  let g := if extraDraw then g.draw controller 1 else g
   let g := g.draw controller 1
   if (g.player controller).hand.isEmpty then
     let g := { g with conniveSource := none }
@@ -7485,6 +7607,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   else
   let healsOther :=
     o.printed.staticAbilities.any (fun
+      | .healOtherDamageWhenDealt => true
       | .msh .ifDamageWouldBeDealtToWolverine => true
       | _ => false)
   let o :=
@@ -7536,6 +7659,7 @@ the time the damage would be dealt (MSH 305). -/
 def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
     if o.staticAbilities.any (fun
+      | .noncombatDamagePlusSourcePower => true
       | .msh .ifASourceYouControlWouldDealNoncombatDam => true
       | _ => false) then
       acc + g.power o
@@ -7547,6 +7671,7 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
     (g.battlefield.filter (fun o =>
       o.attachedTo == some src.id &&
         o.staticAbilities.any (fun
+          | .equippedDealsDoubleDamage => true
           | .msh .doubleAllDamageEquippedCreatureWouldDeal => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
@@ -8569,7 +8694,7 @@ def applyExtort (g : Game) (pay : Bool) : Game :=
 
 /-- Queue a reflexive MSH trigger. The first ability has no targets; the
 second is chosen after the "if you do" (MSH 359–369). -/
-def queueMshReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+def queueModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (kind : Nat) (paid : Nat := 0) : Game :=
   { g with
       pendingMshReflexive := some (controller, sourceId, kind)
@@ -8581,10 +8706,10 @@ def ifPaid (g : Game) (paid : Nat) (unpaid : String) (act : Game → Game) : Gam
   if paid == 0 then g.logMsg unpaid else act g
 
 /-- Queue a reflexive trigger when a cost (`paid`) was actually paid. -/
-def queueMshReflexiveIfPaid (g : Game) (controller : PlayerId)
+def queueModeledReflexiveIfPaid (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (kind : Nat) (paid : Nat) (unpaid : String) :
     Game :=
-  g.ifPaid paid unpaid fun g => g.queueMshReflexive controller sourceId kind paid
+  g.ifPaid paid unpaid fun g => g.queueModeledReflexive controller sourceId kind paid
 
 /-- Sacrifice the Plan if it is still on the battlefield. `gone` is logged
 when the source left; `missing` when it was never found. -/
@@ -8612,7 +8737,7 @@ def sacrificePlanThenQueueReflexive (g : Game) (controller : PlayerId)
       s!"{name} is no longer on the battlefield. The reflexive ability doesn't trigger.")
     (missing :=
       "The Plan is no longer on the battlefield. The reflexive ability doesn't trigger.")
-  if stillThere then g.queueMshReflexive controller sourceId kind else g
+  if stillThere then g.queueModeledReflexive controller sourceId kind else g
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn (Doom Reigns Supreme). -/
@@ -8649,7 +8774,7 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
 
 /-- Resolve the pending MSH reflexive trigger with the now-chosen targets.
 If every target is illegal, nothing happens (MSH 125). -/
-def applyMshReflexive (g : Game) (targets : Array Target := #[])
+def applyModeledReflexive (g : Game) (targets : Array Target := #[])
     (division : Array Nat := #[]) : Game :=
   match g.pendingMshReflexive with
   | none => g.logMsg "No reflexive triggered ability is pending"
@@ -8907,7 +9032,7 @@ def applyWorldsWithinWorlds (g : Game) (controller : PlayerId)
 
 /-- Resolve a modeled MSH trigger. Performs the printed effect: tokens, draw,
 damage, destroy, attach, exile, or pump. -/
-def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
+def applyModeledTrigger (g : Game) (controller : PlayerId) (t : ModeledTrigger)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (sourceName : String := "This creature")
     (lastKnownPower : Option Int := none) : Game :=
@@ -9009,16 +9134,16 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     | some src =>
       if src.isOnBattlefield && !src.status.tapped then
         let g := g.applyPermanentAction src PermanentAction.tap
-        g.queueMshReflexive controller sourceId 0
+        g.queueModeledReflexive controller sourceId 0
       else
         g.logMsg "Spider-Man is not tapped this way. The reflexive ability doesn't trigger."
     | none =>
       g.logMsg "Spider-Man is no longer on the battlefield. The reflexive ability doesn't trigger."
   | .whenBullseyeEnters =>
-    g.queueMshReflexive controller sourceId 1
+    g.queueModeledReflexive controller sourceId 1
   | .trickArrowsWheneverHawkeyeBec =>
     let paid := (lastKnownPower.getD (0 : Int)).toNat
-    g.queueMshReflexiveIfPaid controller sourceId 2 paid
+    g.queueModeledReflexiveIfPaid controller sourceId 2 paid
       "Hawkeye didn't pay. The reflexive ability doesn't trigger."
   | .wheneverWhiplashAttacks =>
     let x :=
@@ -9100,7 +9225,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       if o.isOnBattlefield then
         let g := g.addPlusOnePlusOneTo o 1
         let o := g.object! o.id
-        g.queueMshReflexive controller sourceId 8 o.status.plusOnePlusOne
+        g.queueModeledReflexive controller sourceId 8 o.status.plusOnePlusOne
       else
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | none =>
@@ -9114,13 +9239,13 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
       g.logMsg "No other creature was sacrificed. The reflexive ability doesn't trigger."
     | some victim =>
       let g := g.sacrificeToGraveyard victim "Killmonger"
-      g.queueMshReflexive controller sourceId 7
+      g.queueModeledReflexive controller sourceId 7
   | .wheneverGrimReaperAttacks =>
-    g.queueMshReflexiveIfPaid controller sourceId 6
+    g.queueModeledReflexiveIfPaid controller sourceId 6
       (lastKnownPower.getD (0 : Int)).toNat
       "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
   | .wheneverYouCastANoncreatureSpell5 =>
-    g.queueMshReflexiveIfPaid controller sourceId 9
+    g.queueModeledReflexiveIfPaid controller sourceId 9
       (lastKnownPower.getD (0 : Int)).toNat
       "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
   | .wheneverAPlayerCastsASpellThatTargetsSpe =>
@@ -9576,7 +9701,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
         s!"{sourceName} resolves"
 
 /-- Resolve a modeled MSH spell. -/
-def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
+def applyModeledSpell (g : Game) (controller : PlayerId) (t : ModeledSpell)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (putOnBottom := false) : Game :=
   match t with
@@ -9754,7 +9879,7 @@ def applyMshSpell (g : Game) (controller : PlayerId) (t : MshSpell)
     g
 
 /-- Resolve a modeled MSH activation. -/
-def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
+def applyModeledAbility (g : Game) (controller : PlayerId) (t : ModeledAbility)
     (targets : Array Target) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Game :=
   if t == .n2TDiscardACard then
@@ -9831,7 +9956,7 @@ def applyMshAbility (g : Game) (controller : PlayerId) (t : MshAbility)
     g.draw controller 1
 
 /-- Resolve a modeled MSH Saga chapter. -/
-def applyMshChapter (g : Game) (controller : PlayerId) (t : MshChapter)
+def applyModeledChapter (g : Game) (controller : PlayerId) (t : ModeledChapter)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   let text := t.toNotation
   if text.contains "damage" then
@@ -10547,7 +10672,7 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)
   | .msh t =>
-    g.applyMshSpell controller t targets none
+    g.applyModeledSpell controller t targets none
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -10841,9 +10966,9 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .connive =>
     g.applyConnive controller sourceId
   | .msh t =>
-    g.applyMshAbility controller t targets sourceId lastKnownPower
+    g.applyModeledAbility controller t targets sourceId lastKnownPower
   | .mshSpell t =>
-    g.applyMshSpell controller t targets sourceId
+    g.applyModeledSpell controller t targets sourceId
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -11346,7 +11471,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
     g.withLegalKindPermanent controller .creature targets (fun g o =>
       g.addPlusOnePlusOneTo o 1) sourceId none
   | .msh t =>
-    g.applyMshChapter controller t targets sourceId
+    g.applyModeledChapter controller t targets sourceId
   | .spell e =>
     g.applyEffect controller e targets
 
@@ -12412,7 +12537,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     let g := g.draw controller 1
     g.loseLife controller 1
   | .msh t =>
-    g.applyMshTrigger controller t sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller t sourceId targets sourceName lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
@@ -12635,7 +12760,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       | some none => defender
       | none => defender
     let dest ← g.resolveAttackDestination p want
-    g := g.setObject { o with status := { o.status with
+    if g.hasFlying o && g.leftoverFlyingRestriction dest then
+      throw s!"{o.name} can't attack {(g.player dest).name}"
+    g := g.setObject { o with status := { o.status with }
       attacking := true
       attackingWhom := some dest
       declaredAsAttackerThisTurn := true
@@ -13421,6 +13548,7 @@ def promptBottom (g : Game) (p : PlayerId) : Game :=
 (Quicksilver; MSH 84). -/
 def beginsOnBattlefieldFromOpeningHand (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
+    | .mayBeginOnBattlefield => true
     | .msh .ifQuicksilver => true
     | _ => false)
 

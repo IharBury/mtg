@@ -8,19 +8,19 @@ import Mtg.Engine.Color
 import Mtg.Engine.Mana
 
 /-!
-# Leftover set-specific ability constructors
+# Leftover modeled ability constructors
 
 Reusable ability shapes live on `TriggeredAbility`, `StaticAbility`,
 `SpellEffect`, `AbilityEffect`, and `CardDef` so any set can use them.
-Constructors here are leftover MSH wordings that are not yet a shared
+Constructors here are leftover wordings that are not yet a shared
 shape. Each stores official Oracle text in `toNotation` and resolves
-through `Game.applyMsh*` — not by logging leftover text.
+through `Game.applyModeled*` — not by logging leftover text.
 -/
 
 namespace Mtg.Engine
 
-/-- A triggered ability unique to MSH -/
-inductive MshTrigger where
+/-- A leftover modeled trigger that is not yet a shared shape. -/
+inductive ModeledTrigger where
   /-- Modeled MSH ability. -/
   | atTheBeginningOfCombatOnYourTurn
   /-- Modeled MSH ability. -/
@@ -265,10 +265,10 @@ inductive MshTrigger where
   | atTheBeginningOf
 deriving Repr, Inhabited, BEq
 
-namespace MshTrigger
+namespace ModeledTrigger
 
-/-- Official Oracle wording for this MshTrigger. -/
-def toNotation : MshTrigger → String
+/-- Official Oracle wording for this ModeledTrigger. -/
+def toNotation : ModeledTrigger → String
   | .atTheBeginningOfCombatOnYourTurn => "At the beginning of combat on your turn, another target creature you control gets +X/+0 until end of turn, where X is War Machine's power."
   | .atTheBeginningOfCombatOnYourTurn2 => "At the beginning of combat on your turn, create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment."
   | .atTheBeginningOfCombatOnYourTurn3 => "At the beginning of combat on your turn, put a +1/+1 counter on target creature you control."
@@ -391,12 +391,12 @@ def toNotation : MshTrigger → String
   | .waspSStingWhenTheWondrousWa => "Wasp's Sting — When The Wondrous Wasp enters, tap up to one target creature. It loses all abilities for as long as The Wondrous Wasp remains on the battlefield."
   | .atTheBeginningOf => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
 
-instance : ToString MshTrigger where
+instance : ToString ModeledTrigger where
   toString := toNotation
 
-end MshTrigger
-/-- A static ability unique to MSH -/
-inductive MshStatic where
+end ModeledTrigger
+/-- A leftover modeled static that is not yet a shared shape. -/
+inductive ModeledStatic where
   /-- Modeled MSH ability. -/
   | aresAttacksEachCombatIfAble
   /-- Modeled MSH ability. -/
@@ -503,10 +503,10 @@ inductive MshStatic where
   | enchantedCreatureLosesAllAbilitiesAndCant
 deriving Repr, Inhabited, BEq
 
-namespace MshStatic
+namespace ModeledStatic
 
-/-- Official Oracle wording for this MshStatic. -/
-def toNotation : MshStatic → String
+/-- Official Oracle wording for this ModeledStatic. -/
+def toNotation : ModeledStatic → String
   | .aresAttacksEachCombatIfAble => "Ares attacks each combat if able."
   | .artifactSpellsYouCastCost1LessToCast => "Artifact spells you cast cost {1} less to cast."
   | .asAnAdditionalCostToCastThisSpell => "As an additional cost to cast this spell, discard a card or pay {2}."
@@ -560,12 +560,12 @@ def toNotation : MshStatic → String
   | .yourMaximumHandSizeIsTen => "Your maximum hand size is ten."
   | .enchantedCreatureLosesAllAbilitiesAndCant => "Enchanted creature loses all abilities and can't become untapped."
 
-instance : ToString MshStatic where
+instance : ToString ModeledStatic where
   toString := toNotation
 
-end MshStatic
-/-- A spell effect unique to MSH -/
-inductive MshSpell where
+end ModeledStatic
+/-- A leftover modeled spell effect that is not yet a shared shape. -/
+inductive ModeledSpell where
   /-- Modeled MSH ability. -/
   | anotherTargetCreatureYouControlGets20A
   /-- Modeled MSH ability. -/
@@ -690,10 +690,10 @@ inductive MshSpell where
   | youMaySacrificeAnArtifactOrDiscardACard
 deriving Repr, Inhabited, BEq
 
-namespace MshSpell
+namespace ModeledSpell
 
-/-- Official Oracle wording for this MshSpell. -/
-def toNotation : MshSpell → String
+/-- Official Oracle wording for this ModeledSpell. -/
+def toNotation : ModeledSpell → String
   | .anotherTargetCreatureYouControlGets20A => "Another target creature you control gets +2/+0 and gains hexproof until end of turn"
   | .artifactSpellsYouCastThisTurnCost1Less => "Artifact spells you cast this turn cost {1} less to cast"
   | .chooseTargetCreatureCardInYourGraveyardWi => "Choose target creature card in your graveyard with mana value 4 or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield."
@@ -756,12 +756,12 @@ def toNotation : MshSpell → String
   | .youMayPutAHeroCreatureCardWithManaValue => "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"
   | .youMaySacrificeAnArtifactOrDiscardACard => "You may sacrifice an artifact or discard a card. If you do, draw two cards."
 
-instance : ToString MshSpell where
+instance : ToString ModeledSpell where
   toString := toNotation
 
-end MshSpell
-/-- An activated effect unique to MSH -/
-inductive MshAbility where
+end ModeledSpell
+/-- A leftover modeled activation that is not yet a shared shape. -/
+inductive ModeledAbility where
   /-- Modeled MSH ability. -/
   | mentalOrganismPay3LifeMODOK
   /-- Modeled MSH ability. -/
@@ -840,10 +840,10 @@ inductive MshAbility where
   | targetPlayerDrawsFourCards
 deriving Repr, Inhabited, BEq
 
-namespace MshAbility
+namespace ModeledAbility
 
-/-- Official Oracle wording for this MshAbility. -/
-def toNotation : MshAbility → String
+/-- Official Oracle wording for this ModeledAbility. -/
+def toNotation : ModeledAbility → String
   | .mentalOrganismPay3LifeMODOK => "Mental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn."
   | .tyrannosaurusRex6UntilEndOfTu => "Tyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample."
   | .addXManaOfAnyOneColorWhereXIsDocSams => "Add X mana of any one color, where X is Doc Samson's power"
@@ -883,12 +883,12 @@ def toNotation : MshAbility → String
   | .harnessTheMindStone => "Harness The Mind Stone"
   | .targetPlayerDrawsFourCards => "Target player draws four cards"
 
-instance : ToString MshAbility where
+instance : ToString ModeledAbility where
   toString := toNotation
 
 /-- `{T}: Add` types this modeled MSH ability produces for the demo `tap`
 command and other mana-ability payment (CR 605.3a). -/
-def addManaTypes : MshAbility → Array ManaType
+def addManaTypes : ModeledAbility → Array ManaType
   | .addW => #[.colored .white]
   | .addWOrB => #[.colored .white, .colored .black]
   | .addWOrU | .addWOrUActivateOnlyIfThisLandEnter =>
@@ -911,7 +911,7 @@ def addManaTypes : MshAbility → Array ManaType
 
 /-- True when the add ability may be activated only if this land entered this
 turn or if you control a basic land. -/
-def requiresEnteredOrBasic : MshAbility → Bool
+def requiresEnteredOrBasic : ModeledAbility → Bool
   | .addUOrBActivateOnlyIfThisLandEnter
   | .addBOrRActivateOnlyIfThisLandEnter
   | .addGOrWActivateOnlyIfThisLandEnter
@@ -925,9 +925,9 @@ def requiresEnteredOrBasic : MshAbility → Bool
 #guard requiresEnteredOrBasic .addUOrBActivateOnlyIfThisLandEnter
 #guard !(requiresEnteredOrBasic .addUOrB)
 
-end MshAbility
-/-- A Saga chapter unique to MSH -/
-inductive MshChapter where
+end ModeledAbility
+/-- A leftover modeled Saga chapter that is not yet a shared shape. -/
+inductive ModeledChapter where
   /-- Modeled MSH ability. -/
   | gainControlOfUpToTwoTargetCreaturesWith
   /-- Modeled MSH ability. -/
@@ -938,17 +938,17 @@ inductive MshChapter where
   | thisSagaDealsXDamageToTargetOpponentWhe
 deriving Repr, Inhabited, BEq
 
-namespace MshChapter
+namespace ModeledChapter
 
-/-- Official Oracle wording for this MshChapter. -/
-def toNotation : MshChapter → String
+/-- Official Oracle wording for this ModeledChapter. -/
+def toNotation : ModeledChapter → String
   | .gainControlOfUpToTwoTargetCreaturesWith => "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield"
   | .harnessTheMindStone => "Harness The Mind Stone"
   | .thisSagaDeals2DamageToEachNonVillainCre => "This Saga deals 2 damage to each non-Villain creature and each opponent"
   | .thisSagaDealsXDamageToTargetOpponentWhe => "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"
 
-instance : ToString MshChapter where
+instance : ToString ModeledChapter where
   toString := toNotation
 
-end MshChapter
+end ModeledChapter
 end Mtg.Engine
