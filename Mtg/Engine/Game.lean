@@ -1125,6 +1125,10 @@ structure Game where
   /-- Remaining discards for Thirst for Knowledge (MSH 344). An artifact
   card finishes the requirement early. -/
   thirstDiscardsLeft : Nat := 0
+  /-- Remaining discards for a required multi-card discard such as “discard
+  two cards”. Unlike `thirstDiscardsLeft`, an artifact does not end this
+  early. -/
+  pendingDiscardsLeft : Nat := 0
   /-- Ward payments still to announce after the current one (CR 702.21). -/
   wardQueue : Array WardObligation := #[]
 deriving Repr, Inhabited
@@ -2750,9 +2754,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
     if q != p then g
     else
       match remaining.find? (fun r => g.stillInGame r) with
-      | none => { g with pending := .none }
+      | none => { g with pending := .none, pendingDiscardsLeft := 0 }
       | some np =>
         { g with
+          pendingDiscardsLeft := 0
           pending := .chooseDiscardCard np
             (remaining.filter (fun r => r != np && g.stillInGame r)) }
   | .chooseTriggerToStack q =>
@@ -7312,8 +7317,13 @@ def beginSacrificeCreatures (g : Game) (players : Array PlayerId)
     { g with pending := .chooseSacrificeCreature p chosen rest }
       |>.logMsg s!"{(g.player p).name} must sacrifice a creature"
 
-/-- Ask the next player who has a card to discard, or resume priority. -/
-def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
+/-- Ask the next player who has a card to discard, or resume priority.
+`count` is how many cards that player must discard, one at a time. Calling
+this twice does not queue two discards; it would replace the pending choice. -/
+def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1) :
+    Game :=
+  let g :=
+    if count > 1 then { g with pendingDiscardsLeft := count } else g
   match g.nextActorWithHandCard players with
   | none =>
     let skipped := players.filter (fun p => (g.player p).hand.isEmpty)
@@ -7324,7 +7334,8 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
         { g with conniveSource := none }.logMsg
           "No card is discarded; the conniving creature does not receive a +1/+1 counter"
       else g
-    { g with pending := .none, thirstDiscardsLeft := 0 }.receivePriority g.activePlayer
+    { g with pending := .none, thirstDiscardsLeft := 0, pendingDiscardsLeft := 0 }
+      |>.receivePriority g.activePlayer
   | some (p, rest) =>
     { g with pending := .chooseDiscardCard p rest }
       |>.logMsg s!"{(g.player p).name} must discard a card"
@@ -7332,11 +7343,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) : Game :=
 /-- Draw `cards`, then start `discardRounds` discard choices for `p`. -/
 def drawThenBeginDiscard (g : Game) (p : PlayerId) (cards : Nat := 1)
     (discardRounds : Nat := 1) : Game :=
-  Id.run do
-    let mut g := g.draw p cards
-    for _ in [0:discardRounds] do
-      g := g.beginDiscardCards #[p]
-    return g
+  (g.draw p cards).beginDiscardCards #[p] discardRounds
 
 /-- Draw, then discard. If a nonland is discarded and the source is still on
 the battlefield, put a +1/+1 counter on it. The creature still connives if it
@@ -9315,8 +9322,7 @@ def applyMshTrigger (g : Game) (controller : PlayerId) (t : MshTrigger)
     g.withLegalKindTarget controller .opponent targets (fun g tgt =>
       match tgt with
       | Target.player pid =>
-        let g := g.beginDiscardCards #[pid]
-        g.beginDiscardCards #[pid]
+        g.beginDiscardCards #[pid] 2
       | _ => g) sourceId none
   | .wheneverKangAttacks =>
     g.drawThenBeginDiscard controller
@@ -13647,6 +13653,13 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       let g := { g with thirstDiscardsLeft := left }
       if left == 0 then
         return { g with pending := .none }.receivePriority g.activePlayer
+      else
+        return g.beginDiscardCards #[p]
+    if g.pendingDiscardsLeft > 0 then
+      let left := g.pendingDiscardsLeft - 1
+      let g := { g with pendingDiscardsLeft := left }
+      if left == 0 then
+        return g.beginDiscardCards remaining
       else
         return g.beginDiscardCards #[p]
     return g.beginDiscardCards remaining
