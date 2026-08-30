@@ -339,7 +339,7 @@ def uncontrolledPermanent : Game :=
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
 #guard attercop.triggeredAbilities.size == 1
-#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
+#guard attercop.triggeredAbilities == #[(.onLandYouControlEntersGets 1 1)]
 #guard mentions landrovalHorizonWitness.summary "flying"
 #guard mentions landrovalHorizonWitness.summary "Whenever two or more creatures"
 #guard mentions soldierOfTheGreyHost.summary "flash"
@@ -622,7 +622,7 @@ def uncontrolledPermanent : Game :=
 #guard
   let c := creature "Silent Attercop" ManaCost.empty #["Spider"] 2 1
     (keywords := Keyword.reach.merge Keyword.deathtouch)
-    (triggeredAbilities := #[.onLandYouControlEntersGets1])
+    (triggeredAbilities := #[(.onLandYouControlEntersGets 1 1)])
   mentions c.summary "reach" &&
     mentions c.summary "deathtouch" &&
     mentions c.abilitiesText "land you control enters" &&
@@ -9190,7 +9190,7 @@ def agentQuarrel : Game :=
 
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
-#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets1]
+#guard attercop.triggeredAbilities == #[(.onLandYouControlEntersGets 1 1)]
 #guard attercop.power == some 2
 #guard attercop.toughness == some 1
 
@@ -9226,7 +9226,7 @@ def attercopLandPlayed : Game :=
 #guard attercopLandPlayed.hasPriority ⟨0⟩
 #guard attercopLandPlayed.stack.size == 1
 #guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).triggeredAbility ==
-  some .onLandYouControlEntersGets1
+  some (.onLandYouControlEntersGets 1 1)
 #guard (attercopLandPlayed.object! attercopLandPlayed.stack.back!.objectId).sourceId ==
   some (namedPermanent attercopLandPlayed "Attercop").id
 #guard attercopLandPlayed.stack.back!.targets.isEmpty
@@ -9250,7 +9250,7 @@ def attercopLandfallResolved : Game := passBoth attercopLandPlayed
 #guard
   let id := (namedPermanent attercopLandfallResolved "Attercop").id
   let g := attercopLandfallResolved.applyTriggeredAbility ⟨0⟩
-    .onLandYouControlEntersGets1 (some id)
+    (.onLandYouControlEntersGets 1 1) (some id)
   g.power (namedPermanent g "Attercop") == 4 &&
     g.toughness (namedPermanent g "Attercop") == 3
 
@@ -9306,10 +9306,10 @@ def twoAttercopsLandPlayed : Game := applyIdle twoAttercopsLandPending
 
 #guard twoAttercopsLandPlayed.stack.size == 2
 #guard (twoAttercopsLandPlayed.object! twoAttercopsLandPlayed.stack.back!.objectId).triggeredAbility ==
-  some .onLandYouControlEntersGets1
+  some (.onLandYouControlEntersGets 1 1)
 #guard (twoAttercopsLandPlayed.object!
   twoAttercopsLandPlayed.stack[0]!.objectId).triggeredAbility ==
-  some .onLandYouControlEntersGets1
+  some (.onLandYouControlEntersGets 1 1)
 
 def twoAttercopsPumped : Game := passBoth (passBoth twoAttercopsLandPlayed)
 
@@ -9409,7 +9409,7 @@ def attercopWoodElvesResolved : Game :=
 #guard attercopWoodElvesResolved.stack.size == 1
 #guard (attercopWoodElvesResolved.object!
   attercopWoodElvesResolved.stack.back!.objectId).triggeredAbility ==
-  some .onLandYouControlEntersGets1
+  some (.onLandYouControlEntersGets 1 1)
 #guard attercopWoodElvesResolved.log.any (fun s => mentions s "landfall trigger is put on the stack")
 
 def attercopWoodElvesPumped : Game := passBoth attercopWoodElvesResolved
@@ -12316,14 +12316,14 @@ def chiefAttackResolved : Game := passBoth chiefAttackDeclared
 /-- Dori creates an untapped Treasure; Long-Bodied Grey Dog creates a tapped one. -/
 def doriTreasure : Game :=
   (addPermanent started doriBearerOfFriends ⟨0⟩ ⟨0⟩).applyTriggeredAbility
-    ⟨0⟩ .onEnterCreateTreasure none
+    ⟨0⟩ (.onEnterCreateTokens .treasure 1) none
 
 #guard doriTreasure.battlefield.any (fun o =>
   o.name == "Treasure" && o.printed.isToken && !o.status.tapped)
 
 def dogTreasure : Game :=
   (addPermanent started longBodiedGreyDog ⟨0⟩ ⟨0⟩).applyTriggeredAbility
-    ⟨0⟩ .onEnterCreateTreasureTapped none
+    ⟨0⟩ (.onEnterCreateTokens .treasure 1 true) none
 
 #guard dogTreasure.battlefield.any (fun o =>
   o.name == "Treasure" && o.printed.isToken && o.status.tapped)

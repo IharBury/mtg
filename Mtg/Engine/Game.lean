@@ -10748,16 +10748,12 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
   | .mill n =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.mill pid n)
-  | .drawThenDiscard =>
-    g.drawThenBeginDiscard controller
+  | .drawThenDiscard n =>
+    g.drawThenBeginDiscard controller n
   | .addAnyColor =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) })
     g.logMsg s!"{(g.player controller).name} adds one mana of any color"
-  | .drawThenDiscardN n =>
-    g.drawThenBeginDiscard controller n
-  | .createTreasure n =>
-    g.createTreasureTokens controller n
   | .recruit =>
     g.beginRecruit controller
   | .scry n =>
@@ -11659,10 +11655,6 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.beginRecruit controller
   | .youRecruit =>
     g.beginRecruit controller
-  | .createTreasureTapped =>
-    g.createTreasureTokens controller 1 (tapped := true)
-  | .createTreasure =>
-    g.createTreasureTokens controller 1
   | .exileTop =>
     g.resolveExileTopPlayUntilEndOfNextTurn controller
   | .untapPlusOneIfSubtype subtype =>

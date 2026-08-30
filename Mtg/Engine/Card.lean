@@ -1700,24 +1700,18 @@ inductive AbilityEffect where
   | destroyTargetArtifactOrEnchantment
   /-- Target player mills `n` cards. -/
   | millPlayer (n : Nat)
-  /-- Draw a card, then discard a card. -/
-  | drawThenDiscard
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscard (n : Nat)
   /-- Add one mana of any color (e.g. Treasure). -/
   | addAnyColor
   /-- Destroy target permanent. -/
   | destroyTargetPermanent
-  /-- Put `n` +1/+1 counters on target creature you control. -/
-  | plusOneOnTarget (n : Nat)
-  /-- Put `n` +1/+1 counters on target creature you control of this subtype. -/
-  | plusOneOnTargetSubtype (n : Nat) (subtype : String)
-  /-- Put `n` +1/+1 counters on target creature you control of any listed subtype. -/
-  | plusOneOnTargetAnySubtype (n : Nat) (subtypes : Array String)
+  /-- Put `n` +1/+1 counters on target creature you control. An empty
+  `subtypes` list means any creature you control; otherwise the target must
+  have one of the listed subtypes. -/
+  | plusOneOnTarget (n : Nat) (subtypes : Array String := #[])
   /-- Target creature with power `n` or less can't be blocked this turn. -/
   | targetCantBeBlockedPowerAtMost (n : Int)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscardN (n : Nat)
-  /-- Create `n` Treasure tokens. -/
-  | createTreasure (n : Nat)
   /-- Recruit (draw, discard; if nonland, create a Human Soldier). -/
   | recruit
   /-- Scry `n`. -/
@@ -1844,14 +1838,10 @@ inductive AbilityResolution where
   | creaturesYouControlPump (power toughness : Int)
   /-- Target player mills `n` cards. -/
   | mill (n : Nat)
-  /-- Draw a card, then discard a card. -/
-  | drawThenDiscard
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscard (n : Nat)
   /-- Add one mana of any color. -/
   | addAnyColor
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscardN (n : Nat)
-  /-- Create `n` Treasure tokens. -/
-  | createTreasure (n : Nat)
   /-- Recruit. -/
   | recruit
   /-- Scry `n`. -/
@@ -1984,28 +1974,21 @@ def spec : AbilityEffect → AbilityMeta
       resolution := .onPermanent .destroy }
   | .millPlayer n =>
     { targeting := .of .player, resolution := .mill n }
-  | .drawThenDiscard =>
-    { resolution := .drawThenDiscard }
+  | .drawThenDiscard n =>
+    { resolution := .drawThenDiscard n }
   | .addAnyColor =>
     { resolution := .addAnyColor }
   | .destroyTargetPermanent =>
     { targeting := .of .permanent, castKind := .destroyColorless,
       resolution := .onPermanent .destroy }
-  | .plusOneOnTarget n =>
-    { targeting := .of .creatureYouControl, resolution := .onPermanent (.plusOne n) }
-  | .plusOneOnTargetSubtype n subtype =>
-    { targeting := .of (.creatureYouControlSubtype subtype),
-      resolution := .onPermanent (.plusOne n) }
-  | .plusOneOnTargetAnySubtype n subtypes =>
-    { targeting := .of (.creatureYouControlAnySubtype subtypes),
+  | .plusOneOnTarget n subtypes =>
+    { targeting :=
+        .of (if subtypes.isEmpty then .creatureYouControl
+             else .creatureYouControlAnySubtype subtypes),
       resolution := .onPermanent (.plusOne n) }
   | .targetCantBeBlockedPowerAtMost n =>
     { targeting := .of (.creaturePowerAtMost n),
       resolution := .onPermanent .cantBeBlocked }
-  | .drawThenDiscardN n =>
-    { resolution := .drawThenDiscardN n }
-  | .createTreasure n =>
-    { resolution := .createTreasure n }
   | .recruit =>
     { resolution := .recruit }
   | .scry n =>
@@ -2154,15 +2137,10 @@ def toNotation (e : AbilityEffect) : String :=
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .mill n =>
     s!"{noun} mills {n} cards"
-  | .drawThenDiscard =>
-    "Draw a card, then discard a card"
+  | .drawThenDiscard n =>
+    s!"Draw {cardPhrase n}, then discard a card"
   | .addAnyColor =>
     "Add one mana of any color"
-  | .drawThenDiscardN n =>
-    s!"Draw {cardPhrase n}, then discard a card"
-  | .createTreasure n =>
-    if n == 1 then "Create a Treasure token"
-    else s!"Create {n} Treasure tokens"
   | .recruit =>
     "Recruit"
   | .scry n =>
@@ -3612,9 +3590,6 @@ inductive TriggeredAbility where
   /-- Landfall — Whenever a land you control enters, put a +1/+1 counter on
   target creature you control (e.g. Beorn's Hospitality). -/
   | onLandYouControlEntersPlusOnePlusOne
-  /-- Landfall — Whenever a land you control enters, this creature gets +1/+1
-  until end of turn (e.g. Attercop). -/
-  | onLandYouControlEntersGets1
   /-- When this permanent enters, it deals `amount` damage divided as you
   choose among one to `maxTargets` targets (e.g. Gandalf, Spark Starter). -/
   | onEnterDealDividedDamage (amount maxTargets : Nat)
@@ -3709,10 +3684,6 @@ inductive TriggeredAbility where
   | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
   /-- When this permanent enters, put a +1/+1 counter on target creature. -/
   | onEnterPlusOneOnCreature
-  /-- When this permanent enters, create a tapped Treasure token. -/
-  | onEnterCreateTreasureTapped
-  /-- When this permanent enters, create a Treasure token. -/
-  | onEnterCreateTreasure
   /-- When this permanent enters, exile the top card; you may play it. -/
   | onEnterExileTop
   /-- When this permanent enters, recruit. -/
@@ -3750,8 +3721,9 @@ inductive TriggeredAbility where
   | onEnterOrAttackRecruit
   /-- At the beginning of your upkeep, create `n` tokens. -/
   | onYourUpkeepCreateTokens (kind : TokenKind) (n : Nat)
-  /-- When this permanent enters, create `n` tokens. -/
-  | onEnterCreateTokens (kind : TokenKind) (n : Nat)
+  /-- When this permanent enters, create `n` tokens. `tapped` is Treasure-style
+  “create a tapped …” wording. -/
+  | onEnterCreateTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
   /-- Landfall — create `n` tokens. -/
   | onLandYouControlEntersCreateTokens (kind : TokenKind) (n : Nat)
   /-- Whenever you attack, recruit. -/
@@ -4732,10 +4704,6 @@ inductive TriggerResolution where
   | recruit
   /-- You recruit. -/
   | youRecruit
-  /-- Create a tapped Treasure token. -/
-  | createTreasureTapped
-  /-- Create a Treasure token. -/
-  | createTreasure
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
   /-- Untap the target; if it has this subtype, put a +1/+1 counter on it. -/
@@ -5273,8 +5241,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onLandYouControlEntersPlusOnePlusOne =>
     { events := #[.landYouControlEnters], targeting := .of .creatureYouControl,
       resolution := .onPermanent (.plusOne 1) }
-  | .onLandYouControlEntersGets1 =>
-    { events := #[.landYouControlEnters], resolution := .onSource (.pump 1 1) }
   | .onEnterDealDividedDamage amount maxTargets =>
     { events := #[.entering], targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
@@ -5360,10 +5326,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterPlusOneOnCreature =>
     { events := #[.entering], targeting := .of .creature,
       resolution := .onPermanent (.plusOne 1) }
-  | .onEnterCreateTreasureTapped =>
-    { events := #[.entering], resolution := .createTreasureTapped }
-  | .onEnterCreateTreasure =>
-    { events := #[.entering], resolution := .createTreasure }
   | .onEnterExileTop =>
     { events := #[.entering], resolution := .exileTop }
   | .onEnterRecruit =>
@@ -5403,8 +5365,8 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering, .attacking], resolution := .recruit }
   | .onYourUpkeepCreateTokens kind n =>
     { events := #[.yourUpkeep], resolution := .createTokens kind n false }
-  | .onEnterCreateTokens kind n =>
-    { events := #[.entering], resolution := .createTokens kind n false }
+  | .onEnterCreateTokens kind n tapped =>
+    { events := #[.entering], resolution := .createTokens kind n tapped }
   | .onLandYouControlEntersCreateTokens kind n =>
     { events := #[.landYouControlEnters], resolution := .createTokens kind n false }
   | .onYouAttackRecruit =>
@@ -5528,7 +5490,7 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering, .opponentDrawsExceptFirstDrawStep],
       targeting := .of .playerOrCreature, resolution := .deal1ThenAmassOrcs }
   | .onOpponentDrawsSecondCreateTreasure =>
-    { events := #[.opponentDrawsSecondCard], resolution := .createTreasure }
+    { events := #[.opponentDrawsSecondCard], resolution := .createTokens .treasure 1 false }
   | .onAttackWithTotalPowerUntapExtraCombat _n =>
     { events := #[.youAttackWithTotalPower],
       resolution := .untapAttackersExtraCombat, onceEachTurn := true }
@@ -5937,10 +5899,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "recruit"
   | .youRecruit =>
     "you recruit"
-  | .createTreasureTapped =>
-    "create a tapped Treasure token"
-  | .createTreasure =>
-    "create a Treasure token"
   | .exileTop =>
     "exile the top card of your library. Until the end of your next turn, you may play that card"
   | .sourceGetsAndTeamTrample p =>
@@ -7175,6 +7133,29 @@ instance : ToString CardDef where
 #guard AbilityEffect.resolution .searchBasicLandTapped == .searchBasicLand
 #guard !AbilityEffect.requiresTarget .searchBasicLandTapped
 #guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
+#guard AbilityEffect.toNotation (.drawThenDiscard 1) ==
+  "Draw a card, then discard a card"
+#guard AbilityEffect.toNotation (.drawThenDiscard 2) ==
+  "Draw 2 cards, then discard a card"
+#guard AbilityEffect.toNotation (.createTokens .treasure 1) ==
+  "Create a Treasure token"
+#guard AbilityEffect.toNotation (.plusOneOnTarget 2) ==
+  "Put 2 +1/+1 counters on target creature you control"
+#guard AbilityEffect.toNotation (.plusOneOnTarget 2 #["Elf"]) ==
+  "Put 2 +1/+1 counters on target Elf you control"
+#guard AbilityEffect.toNotation (.plusOneOnTarget 2 #["Goblin", "Orc"]) ==
+  "Put 2 +1/+1 counters on target Goblin or Orc you control"
+#guard AbilityEffect.targetKind (.plusOneOnTarget 2) == .creatureYouControl
+#guard AbilityEffect.targetKind (.plusOneOnTarget 2 #["Elf"]) ==
+  .creatureYouControlAnySubtype #["Elf"]
+#guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
+  "When this permanent enters, create a Treasure token."
+#guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1 true) ==
+  "When this permanent enters, create a tapped Treasure token."
+#guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1) ==
+  .createTokens .treasure 1 false
+#guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1 true) ==
+  .createTokens .treasure 1 true
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
@@ -7282,7 +7263,7 @@ instance : ToString CardDef where
   "When this permanent enters, target opponent sacrifices a creature of their choice."
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPlusOnePlusOne ==
   "Whenever a land you control enters, put a +1/+1 counter on target creature you control."
-#guard TriggeredAbility.toNotation .onLandYouControlEntersGets1 ==
+#guard TriggeredAbility.toNotation (.onLandYouControlEntersGets 1 1) ==
   "Whenever a land you control enters, this creature gets +1/+1 until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
@@ -7334,7 +7315,7 @@ instance : ToString CardDef where
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
 #guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersPlusOnePlusOne).isNone
-#guard (TriggeredAbility.dividedDamage? .onLandYouControlEntersGets1).isNone
+#guard (TriggeredAbility.dividedDamage? (.onLandYouControlEntersGets 1 1)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onEnterDraw 1)).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterSearchForest).isNone
 #guard (TriggeredAbility.dividedDamage? .onEnterTargetOpponentSacrificesCreature).isNone
@@ -7390,10 +7371,10 @@ instance : ToString CardDef where
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
 #guard TriggeredAbility.firesOn .onLandYouControlEntersPlusOnePlusOne .landYouControlEnters
-#guard TriggeredAbility.firesOn .onLandYouControlEntersGets1 .landYouControlEnters
+#guard TriggeredAbility.firesOn (.onLandYouControlEntersGets 1 1) .landYouControlEnters
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .landYouControlEnters
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
-#guard !TriggeredAbility.requiresTarget .onLandYouControlEntersGets1
+#guard !TriggeredAbility.requiresTarget (.onLandYouControlEntersGets 1 1)
 #guard TriggeredAbility.targetKind .onLandYouControlEntersPlusOnePlusOne ==
   .creatureYouControl
 #guard TriggeredAbility.targetKind .onAttackSetOtherBasePT ==
@@ -7440,7 +7421,7 @@ instance : ToString CardDef where
 #guard !TriggeredAbility.allowsZeroTargets .onEnterOrAttackReturnElfGainLife
 #guard !TriggeredAbility.allowsZeroTargets .onEnterTargetOpponentSacrificesCreature
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
-#guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersGets1
+#guard !TriggeredAbility.allowsZeroTargets (.onLandYouControlEntersGets 1 1)
 #guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .dying
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .dying
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
@@ -7480,7 +7461,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.resolution .onEnterSearchForest == .searchForest
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
   .opponentSacrificesCreature
-#guard TriggeredAbility.resolution .onLandYouControlEntersGets1 ==
+#guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
   .onSource (.pump 1 1)
 #guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
   .onPermanent (.plusOne 1)
