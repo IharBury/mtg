@@ -562,7 +562,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let c := artifact "Silent Bauble" ManaCost.empty
     "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-  textForStackedAbility c (Effect.toNotation (Effect.ofAbility .searchBasicLandTapped)) ==
+  textForStackedAbility c (Effect.toNotation (Effect.searchBasicLandTapped)) ==
     c.oracleText
 
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
@@ -1564,7 +1564,7 @@ def freeKnight : CardDef :=
     (oracleText :=
       "{2}: This creature gets +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
     (activatedAbilities := #[
-      activated (Effect.ofAbility (.sourceGets 1 1)) (ManaCost.ofGeneric 2)
+      activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
         (costReductionIfYouControlLegendary := 2)])
 
 def testLegend : CardDef :=

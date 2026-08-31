@@ -266,11 +266,11 @@ where
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend a once-only X power-up at X = 0.
-      !(ab.effect == Effect.ofAbility .plusOneX && maxAffordableX g p manaCost == 0) &&
+      !(ab.effect == Effect.plusOneX && maxAffordableX g p manaCost == 0) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
-      !(ab.effect == Effect.ofAbility .attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
+      !(ab.effect == Effect.attachToTargetCreatureYouControl && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
-      !(ab.effect == Effect.ofAbility .targetCantBeBlockedThisTurn &&
+      !(ab.effect == Effect.targetCantBeBlockedThisTurn &&
         !(g.permanentsOf p).any (fun c => c.isCreature && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&

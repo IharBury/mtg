@@ -7027,6 +7027,663 @@ def ofCasting (e : CastLeftover) : Effect := ofTrigger (.casting e)
 /-- Convert a leftover draw / discard / life / +1/+1-counter effect. -/
 def ofResource (e : ResourceLeftover) : Effect := ofTrigger (.resource e)
 
+/-- Printed leftover constructors as unified `Effect` values.
+Call sites should use these instead of leftover inductives. -/
+
+def dealDamage (amount : Nat) : Effect :=
+  ofSpell (.dealDamage amount)
+
+def pump (power toughness : Int) : Effect :=
+  ofSpell (.pump power toughness)
+
+def destroyCreatureWithFlying : Effect :=
+  ofSpell .destroyCreatureWithFlying
+
+def destroyCreature : Effect :=
+  ofSpell .destroyCreature
+
+def plusOnePlusOneTrampleHexproof : Effect :=
+  ofSpell .plusOnePlusOneTrampleHexproof
+
+def dealDamageToCreature (amount : Nat) : Effect :=
+  ofSpell (.dealDamageToCreature amount)
+
+def dealDamageLoseIndestructibleExile (amount : Nat) : Effect :=
+  ofSpell (.dealDamageLoseIndestructibleExile amount)
+
+def creatureYouControlDealsPowerToOppCreature : Effect :=
+  ofSpell .creatureYouControlDealsPowerToOppCreature
+
+def playAdditionalLandThisTurn : Effect :=
+  ofSpell .playAdditionalLandThisTurn
+
+def destroyArtifactOrLandNonflyersCantBlock : Effect :=
+  ofSpell .destroyArtifactOrLandNonflyersCantBlock
+
+def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
+  ofSpell (.destroyTargetCreatureControllerLosesLife life)
+
+def allCreaturesGet (power toughness : Int) : Effect :=
+  ofSpell (.allCreaturesGet power toughness)
+
+def drawAndLoseLife (cards life : Nat) : Effect :=
+  ofSpell (.drawAndLoseLife cards life)
+
+def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
+  ofSpell (.targetPlayerDrawLoseLife cards life)
+
+def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
+  ofSpell (.creaturesTargetPlayerGet power toughness)
+
+def pumpAndLifelink (power toughness : Int) : Effect :=
+  ofSpell (.pumpAndLifelink power toughness)
+
+def pumpAndExileIfDies (power toughness : Int) : Effect :=
+  ofSpell (.pumpAndExileIfDies power toughness)
+
+def exileGraveyardCreaturesGrantCast : Effect :=
+  ofSpell .exileGraveyardCreaturesGrantCast
+
+def draw (n : Nat) : Effect :=
+  ofSpell (.draw n)
+
+def drawThenDiscard (n : Nat) : Effect :=
+  ofSpell (.drawThenDiscard n)
+
+def scry (n : Nat) : Effect :=
+  ofSpell (.scry n)
+
+def tapScryDraw (scryN drawN : Nat) : Effect :=
+  ofSpell (.tapScryDraw scryN drawN)
+
+def tapOneOrTwoCreatures : Effect :=
+  ofSpell .tapOneOrTwoCreatures
+
+def grantHexproofIndestructible : Effect :=
+  ofSpell .grantHexproofIndestructible
+
+def plusOneUpToOneAndPlayerGainsLife (life : Nat) : Effect :=
+  ofSpell (.plusOneUpToOneAndPlayerGainsLife life)
+
+def counterSpell : Effect :=
+  ofSpell .counterSpell
+
+def counterUnlessPays (n : Nat) : Effect :=
+  ofSpell (.counterUnlessPays n)
+
+def counterCreatureSpellPTAtMost (n : Nat) : Effect :=
+  ofSpell (.counterCreatureSpellPTAtMost n)
+
+def counterExilePermanentMayCast : Effect :=
+  ofSpell .counterExilePermanentMayCast
+
+def putOnTopOrBottom : Effect :=
+  ofSpell .putOnTopOrBottom
+
+def untapPumpMaybeAttach (power toughness : Int) : Effect :=
+  ofSpell (.untapPumpMaybeAttach power toughness)
+
+def exchangeControlSharingType : Effect :=
+  ofSpell .exchangeControlSharingType
+
+def returnSpellDraw : Effect :=
+  ofSpell .returnSpellDraw
+
+def creaturesYouControlGet (power toughness : Int) : Effect :=
+  ofSpell (.creaturesYouControlGet power toughness)
+
+def destroyArtifactOrEnchantmentGainLife (life : Nat) : Effect :=
+  ofSpell (.destroyArtifactOrEnchantmentGainLife life)
+
+def destroyCreaturePowerAtLeast (n : Int) : Effect :=
+  ofSpell (.destroyCreaturePowerAtLeast n)
+
+def becomeArtifactGainIndestructible : Effect :=
+  ofSpell .becomeArtifactGainIndestructible
+
+def pumpAndGrantKeywords (power toughness : Int) (k : Keywords) : Effect :=
+  ofSpell (.pumpAndGrantKeywords power toughness k)
+
+def amassGoblins (n : Nat) : Effect :=
+  ofSpell (.amassGoblins n)
+
+def drawLoseLifeThenAmass (n : Nat) : Effect :=
+  ofSpell (.drawLoseLifeThenAmass n)
+
+def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
+  ofSpell (.returnCreatureFromGyThenAmass n)
+
+def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
+  ofSpell (.counterThenRecruitIfMvAtMost n)
+
+def plusOneThenFight (n : Nat) : Effect :=
+  ofSpell (.plusOneThenFight n)
+
+def plusOneThenEachOtherIfFromGy : Effect :=
+  ofSpell .plusOneThenEachOtherIfFromGy
+
+def drawIfFromGy (n fromGy : Nat) : Effect :=
+  ofSpell (.drawIfFromGy n fromGy)
+
+def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
+  ofSpell (.amassGoblinsOrFromGy n fromGy)
+
+def searchLegendaryCreatureToHand : Effect :=
+  ofSpell .searchLegendaryCreatureToHand
+
+def dealDamageToEachOppCreature (n : Nat) : Effect :=
+  ofSpell (.dealDamageToEachOppCreature n)
+
+def destroyTargetArtifact : Effect :=
+  ofSpell .destroyTargetArtifact
+
+def targetPlayerDraw (n : Nat) : Effect :=
+  ofSpell (.targetPlayerDraw n)
+
+def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
+  ofSpell (.dealDamageToCreatureExileIfDies n)
+
+def destroyArtifactToken : Effect :=
+  ofSpell .destroyArtifactToken
+
+def addRedPerOppArtifacts : Effect :=
+  ofSpell .addRedPerOppArtifacts
+
+def dealDamageToEachNonDragon (n : Nat) : Effect :=
+  ofSpell (.dealDamageToEachNonDragon n)
+
+def chooseTypeReturnOthers : Effect :=
+  ofSpell .chooseTypeReturnOthers
+
+def drawEqualToughnessThenPutCreatures : Effect :=
+  ofSpell .drawEqualToughnessThenPutCreatures
+
+def millThenPutInstantOrSorcery (n : Nat) : Effect :=
+  ofSpell (.millThenPutInstantOrSorcery n)
+
+def millThenPutLands (n max : Nat) : Effect :=
+  ofSpell (.millThenPutLands n max)
+
+def exileThenReturnYouControl : Effect :=
+  ofSpell .exileThenReturnYouControl
+
+def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
+  ofSpell (.dealDamageToEachNonDragonThenAddDragonMana n)
+
+def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
+  ofSpell (.millThenPutAllInstantsOrSorceries n)
+
+def exileAttackersSearchBasics : Effect :=
+  ofSpell .exileAttackersSearchBasics
+
+def createTokensX (kind : TokenKind) : Effect :=
+  ofSpell (.createTokensX kind)
+
+def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
+  ofSpell (.exileTopPlayIfYouControlSubtype n subtype)
+
+def returnSpellCantCastIfGift : Effect :=
+  ofSpell .returnSpellCantCastIfGift
+
+def exileTopXOppPlayForLife : Effect :=
+  ofSpell .exileTopXOppPlayForLife
+
+def riddlesInTheDark : Effect :=
+  ofSpell .riddlesInTheDark
+
+def supperForSpiders : Effect :=
+  ofSpell .supperForSpiders
+
+def eaglesAreComing : Effect :=
+  ofSpell .eaglesAreComing
+
+def lookAtTopLandsGainLife (n life : Nat) : Effect :=
+  ofSpell (.lookAtTopLandsGainLife n life)
+
+def gainControlOppArtifacts : Effect :=
+  ofSpell .gainControlOppArtifacts
+
+def damageOppCreaturesEqualOtherSpellsMv : Effect :=
+  ofSpell .damageOppCreaturesEqualOtherSpellsMv
+
+def phaseOutKicker : Effect :=
+  ofSpell .phaseOutKicker
+
+def dealDamageToAttackerOrBlocker (n teamworkN : Nat) : Effect :=
+  ofSpell (.dealDamageToAttackerOrBlocker n teamworkN)
+
+def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
+  ofSpell (.dealDamageThenControllerIfTeamwork n extra)
+
+def grantDoubleStrikeTeamworkTrample : Effect :=
+  ofSpell .grantDoubleStrikeTeamworkTrample
+
+def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
+  ofSpell (.counterUnlessPaysTeamwork n teamworkN)
+
+def exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat) : Effect :=
+  ofSpell (.exileCreatureMvAtMostOrAnyIfTeamwork n life)
+
+def returnGyCreatureMvAtMostOrAny (n : Nat) : Effect :=
+  ofSpell (.returnGyCreatureMvAtMostOrAny n)
+
+def revealTopPutCreatures (n : Nat) : Effect :=
+  ofSpell (.revealTopPutCreatures n)
+
+def createTokens (kind : TokenKind) (n : Nat) : Effect :=
+  ofSpell (.createTokens kind n)
+
+def exileCreatureToughnessAtLeast (n : Int) : Effect :=
+  ofSpell (.exileCreatureToughnessAtLeast n)
+
+def exileEnchantmentMvAtLeast (n : Nat) : Effect :=
+  ofSpell (.exileEnchantmentMvAtLeast n)
+
+def returnOneOrTwoNonlands : Effect :=
+  ofSpell .returnOneOrTwoNonlands
+
+def grantDeathtouch : Effect :=
+  ofSpell .grantDeathtouch
+
+def destroyNoncreatureArtifact : Effect :=
+  ofSpell .destroyNoncreatureArtifact
+
+def plusOneOnCreature : Effect :=
+  ofSpell .plusOneOnCreature
+
+def targetPlayerCreatesTokens (kind : TokenKind) (n : Nat) : Effect :=
+  ofSpell (.targetPlayerCreatesTokens kind n)
+
+def destroyCreatureSurveil : Effect :=
+  ofSpell .destroyCreatureSurveil
+
+def investigatePumpFlyingUntap : Effect :=
+  ofSpell .investigatePumpFlyingUntap
+
+def plusOneLifelinkIndestructible : Effect :=
+  ofSpell .plusOneLifelinkIndestructible
+
+def dealDamageToEachCreature (n : Nat) : Effect :=
+  ofSpell (.dealDamageToEachCreature n)
+
+def destroyLandSearchBasic : Effect :=
+  ofSpell .destroyLandSearchBasic
+
+def doublePowerAndToughness : Effect :=
+  ofSpell .doublePowerAndToughness
+
+def returnGySubtypeToHand (subtype : String) : Effect :=
+  ofSpell (.returnGySubtypeToHand subtype)
+
+def grantVigilanceUnblockable : Effect :=
+  ofSpell .grantVigilanceUnblockable
+
+def becomeArtifactCreature44Flying : Effect :=
+  ofSpell .becomeArtifactCreature44Flying
+
+def drawThreeDiscardUnlessArtifact : Effect :=
+  ofSpell .drawThreeDiscardUnlessArtifact
+
+def eachOpponentLosesLife (n : Nat) : Effect :=
+  ofSpell (.eachOpponentLosesLife n)
+
+def fight : Effect :=
+  ofSpell .fight
+
+def fightUpToOne : Effect :=
+  ofSpell .fightUpToOne
+
+def plusOneOnEachYouControl : Effect :=
+  ofSpell .plusOneOnEachYouControl
+
+def plusOneOnCreatureN (n : Nat) : Effect :=
+  ofSpell (.plusOneOnCreatureN n)
+
+def pumpThenDraw (power toughness : Int) : Effect :=
+  ofSpell (.pumpThenDraw power toughness)
+
+def pumpThenExileTopPlay (power toughness : Int) : Effect :=
+  ofSpell (.pumpThenExileTopPlay power toughness)
+
+def creatureYouControlDealsTwicePower : Effect :=
+  ofSpell .creatureYouControlDealsTwicePower
+
+def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int) : Effect :=
+  ofSpell (.createTokensThenTeamPump kind n power toughness)
+
+def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
+  ofSpell (.createTokensPerSubtype kind subtype)
+
+def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
+  ofSpell (.creaturesYouControlGetAndGrant power toughness k)
+
+def destroyUpToOneNonland : Effect :=
+  ofSpell .destroyUpToOneNonland
+
+def createGalactus : Effect :=
+  ofSpell .createGalactus
+
+def worldsWithinWorlds : Effect :=
+  ofSpell .worldsWithinWorlds
+
+def exileHandDrawPlayUntilNext : Effect :=
+  ofSpell .exileHandDrawPlayUntilNext
+
+def copyNontokenCreaturesYouControl : Effect :=
+  ofSpell .copyNontokenCreaturesYouControl
+
+def gainControlUntilEotOrNextIfVillain : Effect :=
+  ofSpell .gainControlUntilEotOrNextIfVillain
+
+def millThenPutPermanentGainLife (n life : Nat) : Effect :=
+  ofSpell (.millThenPutPermanentGainLife n life)
+
+def searchLibraryOrGyArtifactCreatureX : Effect :=
+  ofSpell .searchLibraryOrGyArtifactCreatureX
+
+def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
+  ofSpell (.gainLifeSearchBasicPlusOne life)
+
+def nextFreeRGCreature : Effect :=
+  ofSpell .nextFreeRGCreature
+
+def ownerPutsLibraryThenConnive : Effect :=
+  ofSpell .ownerPutsLibraryThenConnive
+
+def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
+  ofSpell (.copyThisSpellXTimesThenDamage n)
+
+def mayDrawPerArtifactOppsDraw : Effect :=
+  ofSpell .mayDrawPerArtifactOppsDraw
+
+def mayPutHeroMvOrDraw (n : Nat) : Effect :=
+  ofSpell (.mayPutHeroMvOrDraw n)
+
+def maySacArtifactOrDiscardDraw (cards : Nat) : Effect :=
+  ofSpell (.maySacArtifactOrDiscardDraw cards)
+
+def chooseTargetDoubleAndTrample : Effect :=
+  ofSpell .chooseTargetDoubleAndTrample
+
+def returnUpToTwoGyModal : Effect :=
+  ofSpell .returnUpToTwoGyModal
+
+def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
+  ofSpell (.artifactSpellsCostLessThisTurn n)
+
+def searchBasicLandTapped : Effect :=
+  ofAbility .searchBasicLandTapped
+
+def searchLandTypeToHand (landType : String) : Effect :=
+  ofAbility (.searchLandTypeToHand landType)
+
+def exileTopPlayUntilEndOfNextTurn : Effect :=
+  ofAbility .exileTopPlayUntilEndOfNextTurn
+
+def dealDamageToTargetCreature (amount : Nat) : Effect :=
+  ofAbility (.dealDamageToTargetCreature amount)
+
+def destroyTargetColorlessNonland : Effect :=
+  ofAbility .destroyTargetColorlessNonland
+
+def attachToTargetCreatureYouControl : Effect :=
+  ofAbility .attachToTargetCreatureYouControl
+
+def becomeBearCreatureWithLandsPT : Effect :=
+  ofAbility .becomeBearCreatureWithLandsPT
+
+def sourceGets (power toughness : Int) : Effect :=
+  ofAbility (.sourceGets power toughness)
+
+def putPlusOnePlusOneOnSource (n : Nat) : Effect :=
+  ofAbility (.putPlusOnePlusOneOnSource n)
+
+def targetCantBeBlockedThisTurn : Effect :=
+  ofAbility .targetCantBeBlockedThisTurn
+
+def returnFromGraveyardTapped : Effect :=
+  ofAbility .returnFromGraveyardTapped
+
+def returnFromGraveyardToHand : Effect :=
+  ofAbility .returnFromGraveyardToHand
+
+def destroyTargetArtifactOrEnchantment : Effect :=
+  ofAbility .destroyTargetArtifactOrEnchantment
+
+def millPlayer (n : Nat) : Effect :=
+  ofAbility (.millPlayer n)
+
+def addAnyColor : Effect :=
+  ofAbility .addAnyColor
+
+def destroyTargetPermanent : Effect :=
+  ofAbility .destroyTargetPermanent
+
+def plusOneOnTarget (n : Nat) (subtypes : Array String := #[]) : Effect :=
+  ofAbility (.plusOneOnTarget n subtypes)
+
+def targetCantBeBlockedPowerAtMost (n : Int) : Effect :=
+  ofAbility (.targetCantBeBlockedPowerAtMost n)
+
+def recruit : Effect :=
+  ofAbility .recruit
+
+def gainLife (n : Nat) : Effect :=
+  ofAbility (.gainLife n)
+
+def ownerShuffleSourceDraw (n : Nat) : Effect :=
+  ofAbility (.ownerShuffleSourceDraw n)
+
+def returnFromGyAttachPowerAtMost (n : Int) : Effect :=
+  ofAbility (.returnFromGyAttachPowerAtMost n)
+
+def addMana (types : Array ManaType) : Effect :=
+  ofAbility (.addMana types)
+
+def searchBasicLandToHand : Effect :=
+  ofAbility .searchBasicLandToHand
+
+def searchTwoBasicsSplit : Effect :=
+  ofAbility .searchTwoBasicsSplit
+
+def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
+  ofAbility (.creaturesYouControlGetOppsLoseLife power toughness life)
+
+def goblinsAndOrcsGainMenace : Effect :=
+  ofAbility .goblinsAndOrcsGainMenace
+
+def exileThenReturnNextEnd : Effect :=
+  ofAbility .exileThenReturnNextEnd
+
+def searchBasicBeholdElfUntap : Effect :=
+  ofAbility .searchBasicBeholdElfUntap
+
+def twoPlayersDraw : Effect :=
+  ofAbility .twoPlayersDraw
+
+def discardLegendarySameNameDraw : Effect :=
+  ofAbility .discardLegendarySameNameDraw
+
+def dealDamageToAny (n : Nat) : Effect :=
+  ofAbility (.dealDamageToAny n)
+
+def drawEqualSacrificedPowerThenDiscard : Effect :=
+  ofAbility .drawEqualSacrificedPowerThenDiscard
+
+def arwenShare : Effect :=
+  ofAbility .arwenShare
+
+def grantCombatDamageCreateTreasure : Effect :=
+  ofAbility .grantCombatDamageCreateTreasure
+
+def putShadowCounter : Effect :=
+  ofAbility .putShadowCounter
+
+def damageEachOpponent (n : Nat) : Effect :=
+  ofAbility (.damageEachOpponent n)
+
+def chooseTwoDestroyRest : Effect :=
+  ofAbility .chooseTwoDestroyRest
+
+def blackGateUnblockable : Effect :=
+  ofAbility .blackGateUnblockable
+
+def burdenThenDraw : Effect :=
+  ofAbility .burdenThenDraw
+
+def teamGainDoubleStrike : Effect :=
+  ofAbility .teamGainDoubleStrike
+
+def sourceGainsIndestructibleTap : Effect :=
+  ofAbility .sourceGainsIndestructibleTap
+
+def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
+  ofAbility (.plusOneOnEachOtherSubtype subtype n)
+
+def plusOneAndIndestructibleCounter : Effect :=
+  ofAbility .plusOneAndIndestructibleCounter
+
+def plusOneAndDraw (plus cards : Nat) : Effect :=
+  ofAbility (.plusOneAndDraw plus cards)
+
+def plusOneAndExtraTurn : Effect :=
+  ofAbility .plusOneAndExtraTurn
+
+def plusOneX : Effect :=
+  ofAbility .plusOneX
+
+def eachOppDiscardThenPlusOne : Effect :=
+  ofAbility .eachOppDiscardThenPlusOne
+
+def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
+  ofAbility (.lookAtTopPutHeroEquipVehicle n)
+
+def transform : Effect :=
+  ofAbility .transform
+
+def drawX : Effect :=
+  ofAbility .drawX
+
+def lookAtTopRevealArtifact (n : Nat) : Effect :=
+  ofAbility (.lookAtTopRevealArtifact n)
+
+def connive : Effect :=
+  ofAbility .connive
+
+def addAnyColorSpendOnlyHero : Effect :=
+  ofAbility .addAnyColorSpendOnlyHero
+
+def addAnyColorSpendOnlyVillain : Effect :=
+  ofAbility .addAnyColorSpendOnlyVillain
+
+def addAnyColorSpendOnlyArtifactSpell : Effect :=
+  ofAbility .addAnyColorSpendOnlyArtifactSpell
+
+def addTwoAnyColorCreatureSources : Effect :=
+  ofAbility .addTwoAnyColorCreatureSources
+
+def addBlueCantNonartifact : Effect :=
+  ofAbility .addBlueCantNonartifact
+
+def addAnyColorEqualToSourcePower : Effect :=
+  ofAbility .addAnyColorEqualToSourcePower
+
+def addFourAnyCombination : Effect :=
+  ofAbility .addFourAnyCombination
+
+def addTwoAnyColorEquipment : Effect :=
+  ofAbility .addTwoAnyColorEquipment
+
+def drawPerDiscardedThisTurn : Effect :=
+  ofAbility .drawPerDiscardedThisTurn
+
+def createTokensEqualRemovedPlusOnes (kind : TokenKind) : Effect :=
+  ofAbility (.createTokensEqualRemovedPlusOnes kind)
+
+def exileTopXPlayThisTurn : Effect :=
+  ofAbility .exileTopXPlayThisTurn
+
+def copyControlledAbility (fromCreature : Bool) : Effect :=
+  ofAbility (.copyControlledAbility fromCreature)
+
+def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
+  ofAbility (.createTokensEqualSubtype kind subtype)
+
+def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
+  ofAbility (.createTappedTokens kind n)
+
+def destroyUpToOneThenPlusOne : Effect :=
+  ofAbility .destroyUpToOneThenPlusOne
+
+def proliferateEachKind : Effect :=
+  ofAbility .proliferateEachKind
+
+def equipmentBecomesConstructHero : Effect :=
+  ofAbility .equipmentBecomesConstructHero
+
+def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
+  ofAbility (.lookAtTopRevealSubtype n subtype)
+
+def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
+  ofAbility (.millThenPutHeroOrEnchantment n)
+
+def plusOneAndDoubleStrikeCounter : Effect :=
+  ofAbility .plusOneAndDoubleStrikeCounter
+
+def plusOneThenFightUpToOne : Effect :=
+  ofAbility .plusOneThenFightUpToOne
+
+def plusOneAndGrant (k : Keywords) : Effect :=
+  ofAbility (.plusOneAndGrant k)
+
+def plusOneAndCreateTigerGod : Effect :=
+  ofAbility .plusOneAndCreateTigerGod
+
+def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
+  ofAbility (.plusOneAndCreateTokens n kind)
+
+def plusTwoThenOddEvenDestroy : Effect :=
+  ofAbility .plusTwoThenOddEvenDestroy
+
+def returnFromGyFinalityAttach : Effect :=
+  ofAbility .returnFromGyFinalityAttach
+
+def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
+  ofAbility (.returnGyCreatureThenPlusOne n)
+
+def revealTopDrawIfArtifact : Effect :=
+  ofAbility .revealTopDrawIfArtifact
+
+def copyArtifactYouControlNotLegendary : Effect :=
+  ofAbility .copyArtifactYouControlNotLegendary
+
+def pumpAttackingAloneGainLife : Effect :=
+  ofAbility .pumpAttackingAloneGainLife
+
+def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
+  ofAbility (.becomeDinosaurHero power toughness k)
+
+def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
+  ofAbility .nextInstantSorceryCopyIfMvAtMostSourcePower
+
+def harnessInfinityStone : Effect :=
+  ofAbility .harnessInfinityStone
+
+def destroyTargetNoncreatureArtOrEnch : Effect :=
+  ofAbility .destroyTargetNoncreatureArtOrEnch
+
+def targetSubtypeConnives (subtype : String) : Effect :=
+  ofAbility (.targetSubtypeConnives subtype)
+
+def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
+  ofAbility (.anotherYouControlGetsAndGrant p t k)
+
+def tapTargetCreature : Effect :=
+  ofAbility .tapTargetCreature
+
+def targetGets (p t : Int) : Effect :=
+  ofAbility (.targetGets p t)
+
 instance : Coe SpellLeftover Effect where
   coe := ofSpell
 
@@ -8865,13 +9522,13 @@ instance : ToString CardDef where
   leftoverOracleLines c ==
     ["Spew Flame {4}{R}", "Sorcery — Adventure",
       "Spew Flame deals 5 damage to target creature."]
-#guard (Effect.ofSpell (.dealDamage 3)).targetKind == .playerOrCreature
-#guard (Effect.ofSpell (.dealDamage 3)).resolution == Resolution.onPermanent (.dealDamage 3)
-#guard (Effect.ofSpell (.dealDamage 3)).phrase == "deals 3 damage to any target"
-#guard (Effect.ofSpell (.dealDamage 3)).spellResolution == .onPermanent (.dealDamage 3)
-#guard (Effect.ofAbility (.draw 2)).resolution == Resolution.draw 2
-#guard (Effect.ofAbility (.scry 1)).resolution == Resolution.scry 1
-#guard (Effect.ofAbility (.gainLife 3)).abilityResolution == .gainLife 3
+#guard (Effect.dealDamage 3).targetKind == .playerOrCreature
+#guard (Effect.dealDamage 3).resolution == Resolution.onPermanent (.dealDamage 3)
+#guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
+#guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
+#guard (Effect.draw 2).resolution == Resolution.draw 2
+#guard (Effect.scry 1).resolution == Resolution.scry 1
+#guard (Effect.gainLife 3).abilityResolution == .gainLife 3
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
 #guard (Effect.ofChapter .recruit).asChapter? == some .recruit
 #guard (Effect.ofChapter (.draw 2)).asChapter? == some (.draw 2)
@@ -9070,7 +9727,7 @@ instance : ToString CardDef where
   let c : CardDef := {
     name := "Silent Club"
     types := #[.instant]
-    spellEffect := some (Effect.ofSpell (.dealDamage 4))
+    spellEffect := some (Effect.dealDamage 4)
     additionalCostSacrificeArtifactOrCreature := true
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
@@ -9368,7 +10025,7 @@ instance : ToString CardDef where
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
-    effect := Effect.ofAbility (.searchLandTypeToHand "Mountain")
+    effect := Effect.searchLandTypeToHand "Mountain"
     activateFromHand := true
   }
   toString ab ==
@@ -9376,13 +10033,13 @@ instance : ToString CardDef where
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-    effect := Effect.ofAbility .searchBasicLandTapped
+    effect := Effect.searchBasicLandTapped
   }
   (toString ab).startsWith "{2}, {T}, Sacrifice:"
 #guard
   let ab : ActivatedAbility := {
     cost := { payLife := 2 }
-    effect := Effect.ofAbility (.sourceGets 2 2)
+    effect := Effect.sourceGets 2 2
     onceEachTurn := true
   }
   toString ab ==
@@ -9390,8 +10047,8 @@ instance : ToString CardDef where
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
-    effect := Effect.ofAbility (.dealDamageToTargetCreature 2)
-    otherModes := #[Effect.ofAbility .destroyTargetColorlessNonland]
+    effect := Effect.dealDamageToTargetCreature 2
+    otherModes := #[Effect.destroyTargetColorlessNonland]
   }
   ab.isModal &&
     (toString ab).startsWith "{1}, Sacrifice: Choose one —" &&
@@ -9581,7 +10238,7 @@ instance : ToString CardDef where
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 3 }
-    effect := Effect.ofAbility .attachToTargetCreatureYouControl
+    effect := Effect.attachToTargetCreatureYouControl
     onlyAsSorcery := true
   }
   (toString ab).startsWith "{3}: Attach this Equipment" &&
@@ -9832,7 +10489,7 @@ end AdventureFace
     name := "Spew Flame"
     manaCost := ManaCost.ofGenericAndColor 4 .red
     oracleText := "Spew Flame deals 5 damage to target creature."
-    spellEffect := some (Effect.ofSpell (.dealDamageToCreature 5))
+    spellEffect := some (Effect.dealDamageToCreature 5)
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
@@ -9843,7 +10500,7 @@ end AdventureFace
     name := "Till and Tend"
     manaCost := ManaCost.ofGenericAndColor 1 .green
     oracleText := "You may play an additional land this turn."
-    spellEffect := some (Effect.ofSpell .playAdditionalLandThisTurn)
+    spellEffect := some (Effect.playAdditionalLandThisTurn)
   }
   let c := adv.toCardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
@@ -9882,7 +10539,7 @@ def isForestCard (c : CardDef) : Bool :=
       name := "Spew Flame"
       manaCost := ManaCost.ofGenericAndColor 4 .red
       oracleText := ""
-      spellEffect := some (Effect.ofSpell (.dealDamageToCreature 5))
+      spellEffect := some (Effect.dealDamageToCreature 5)
     }
   }
   c.choosableNames == #["Smaug, the Great Calamity", "Spew Flame"]

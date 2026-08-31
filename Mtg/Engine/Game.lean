@@ -1889,7 +1889,7 @@ def foodToken : CardDef := {
   oracleText := "{2}, {T}, Sacrifice this artifact: You gain 3 life."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-    effect := Effect.ofAbility (.gainLife 3)
+    effect := Effect.gainLife 3
   }]
   isToken := true
 }
@@ -1931,7 +1931,7 @@ def axeToken : CardDef := {
   staticAbilities := #[.equippedCreatureGets 1 0]
   activatedAbilities := #[
     { cost := { mana := ManaCost.ofGeneric 2 }
-      effect := Effect.ofAbility .attachToTargetCreatureYouControl
+      effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   ]
   isToken := true
@@ -1945,7 +1945,7 @@ def clueToken : CardDef := {
   oracleText := "{2}, Sacrifice this token: Draw a card."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
-    effect := Effect.ofAbility (.draw 1)
+    effect := Effect.draw 1
   }]
   isToken := true
 }
@@ -8810,7 +8810,7 @@ def sturdyShieldToken : CardDef :=
     staticAbilities := #[.equippedCreatureGets 1 2]
     activatedAbilities := #[
       { cost := { mana := ManaCost.ofGeneric 2 }
-        effect := Effect.ofAbility .attachToTargetCreatureYouControl
+        effect := Effect.attachToTargetCreatureYouControl
         onlyAsSorcery := true }]
     isToken := true }
 
@@ -10732,7 +10732,7 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
   | .discardLegendarySameNameDraw =>
     g.draw controller 2
   | .dealDamageToAny n =>
-    g.applyEffect controller (Effect.ofSpell (.dealDamage n)) targets
+    g.applyEffect controller (Effect.dealDamage n) targets
   | .drawEqualSacrificedPowerThenDiscard =>
     let n :=
       match sourceId.bind g.findObject? with
@@ -11680,7 +11680,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         let t := targets[i]!
         let n := dividedDamage[i]?.getD 0
         if n > 0 then
-          g := g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[t]
+          g := g.applyEffect controller (Effect.dealDamage n) #[t]
       return g
   | .damageFromLastKnownPower =>
     let n := (lastKnownPower.getD 0).toNat
@@ -11857,19 +11857,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .damageEqualTreasures =>
     let n := g.countSubtype controller "Treasure"
-    g.applyEffect controller (Effect.ofSpell (.dealDamage n)) targets
+    g.applyEffect controller (Effect.dealDamage n) targets
   | .loseLifeCreateTreasure =>
     let g := g.loseLife controller 1
     g.createTreasureTokens controller 1
   | .dealDamageDestroyIfSubtype n subtype =>
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
-      | Target.player _pid => g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[tgt]
+      | Target.player _pid => g.applyEffect controller (Effect.dealDamage n) #[tgt]
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
-          let g := g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[tgt]
+          let g := g.applyEffect controller (Effect.dealDamage n) #[tgt]
           if g.hasSubtype o subtype then
             match g.findObject? oid with
             | some o =>
@@ -12032,7 +12032,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
   | .deal1ThenAmassOrcs =>
-    let g := g.applyEffect controller (Effect.ofSpell (.dealDamage 1)) targets
+    let g := g.applyEffect controller (Effect.dealDamage 1) targets
     g.amassOrcs controller 1
   | .untapAttackersExtraCombat =>
     Id.run do

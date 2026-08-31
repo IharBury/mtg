@@ -323,7 +323,7 @@ def keywordTokens (prepared : String) : Option (List String) :=
 
 /-- Equip `{cost}` printed as the keyword rather than the reminder. -/
 def isEquipAbility (ab : ActivatedAbility) : Bool :=
-  ab.effect == Effect.ofAbility .attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
+  ab.effect == Effect.attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
 
 /-- Typecycling land type when this is a cycling activation from hand. -/
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=

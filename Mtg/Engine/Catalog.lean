@@ -583,7 +583,7 @@ def foodToken : CardDef :=
     (subtypes := #["Food"])
     (activatedAbilities := #[{
       cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-      effect := Effect.ofAbility (.gainLife 3)
+      effect := Effect.gainLife 3
     }])
     (isToken := true)
 
@@ -665,12 +665,12 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
 def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=
-  activated (Effect.ofAbility .attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 
 /-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated (Effect.ofAbility .attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
+  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipWorthy := true)
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
@@ -697,7 +697,7 @@ def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
 card, put it into your hand, then shuffle (CR 702.29). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
     ActivatedAbility :=
-  activated (Effect.ofAbility (.searchLandTypeToHand landType)) mana
+  activated (Effect.searchLandTypeToHand landType) mana
     (discardSource := true) (activateFromHand := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
@@ -713,7 +713,7 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
 def damageInstant (name : String) (amount : Nat) : CardDef :=
   instant name (ManaCost.ofColor .red)
     s!"{name} deals {amount} damage to any target."
-    (some (Effect.ofSpell (.dealDamage amount)))
+    (some (Effect.dealDamage amount))
 
 def grizzlyBears : CardDef :=
   creature "Grizzly Bears" (ManaCost.ofGenericAndColor 1 .green) #["Bear"] 2 2
@@ -758,7 +758,7 @@ def shock : CardDef := damageInstant "Shock" 2
 def giantGrowth : CardDef :=
   instant "Giant Growth" (ManaCost.ofColor .green)
     "Target creature gets +3/+3 until end of turn."
-    (some (Effect.ofSpell (.pump 3 3)))
+    (some (Effect.pump 3 3))
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
@@ -799,8 +799,8 @@ def conditionalDualLand (name : String) (oracleText : String)
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
-#guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (Effect.ofSpell (.dealDamage 1)))).isInstant
-#guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.ofSpell (.dealDamage 1)))).isSorcery
+#guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isInstant
+#guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isSorcery
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
 #guard grizzlyBears.hasSorcerySpeed
@@ -822,15 +822,15 @@ def conditionalDualLand (name : String) (oracleText : String)
   "Haste (This creature can attack and {T} as soon as it comes under your control.)"
 #guard giantSpider.oracleText == "Reach (This creature can block creatures with flying.)"
 #guard (giantSpider.summary.splitOn "reach").length > 1
-#guard giantGrowth.spellEffect == some (Effect.ofSpell (.pump 3 3))
+#guard giantGrowth.spellEffect == some (Effect.pump 3 3)
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect ==
-  Effect.ofAbility .attachToTargetCreatureYouControl
-#guard (activated (Effect.ofAbility (.sourceGets 2 2)) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
-#guard (activated (Effect.ofAbility (.sourceGets 2 2)) (payLife := 2) (onceEachTurn := true)).onceEachTurn
+  Effect.attachToTargetCreatureYouControl
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
-  (Effect.ofSpell (.dealDamageToCreature 5))).subtypes.any (· == "Adventure")
+  (Effect.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant
 #guard !grizzlyBears.hasType .instant
 #guard lightningBolt.hasCastKind .burn
@@ -856,7 +856,7 @@ def conditionalDualLand (name : String) (oracleText : String)
   #[.colored .blue, .colored .black]).entersTapped
 #guard (conditionalDualLand "Silent Keep" ""
   #[.colored .blue, .colored .black]).tapAddMana == #[.colorless]
-#guard (powerUpAbility (Effect.ofAbility (.putPlusOnePlusOneOnSource 1)) (ManaCost.ofGeneric 3)).powerUp
+#guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
   (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
 #guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura
