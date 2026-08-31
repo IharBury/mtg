@@ -874,8 +874,54 @@ inductive SpellEffect where
   | plusOneOnEachYouControl
   /-- Put `n` +1/+1 counters on target creature you control. -/
   | plusOneOnCreatureN (n : Nat)
-  /-- A leftover modeled MSH spell. -/
-  | leftover (t : LeftoverSpell)
+  /-- Target creature gets +P/+T, then draw a card. -/
+  | pumpThenDraw (power toughness : Int)
+  /-- Target creature gets +P/+T, then exile the top card and play it. -/
+  | pumpThenExileTopPlay (power toughness : Int)
+  /-- Target creature you control deals damage equal to twice its power. -/
+  | creatureYouControlDealsTwicePower
+  /-- Create `n` tokens of `kind`, then creatures you control get +P/+T. -/
+  | createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int)
+  /-- Create a token of `kind` for each permanent you control of `subtype`. -/
+  | createTokensPerSubtype (kind : TokenKind) (subtype : String)
+  /-- Creatures you control get +P/+T and gain these keywords. -/
+  | creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords)
+  /-- Destroy up to one target nonland permanent. -/
+  | destroyUpToOneNonland
+  /-- Create Galactus, a legendary 16/16 black Elder Alien token. -/
+  | createGalactus
+  /-- Exile all creatures, then each player may put creatures from hand. -/
+  | worldsWithinWorlds
+  /-- Exile your hand, draw that many, and play the exiled cards. -/
+  | exileHandDrawPlayUntilNext
+  /-- Copy each nontoken creature you control, except the copies aren't legendary. -/
+  | copyNontokenCreaturesYouControl
+  /-- Gain control until EOT, or until your next turn if you control a bigger Villain. -/
+  | gainControlUntilEotOrNextIfVillain
+  /-- Mill `n`, you may put a milled permanent into your hand, gain `life`. -/
+  | millThenPutPermanentGainLife (n life : Nat)
+  /-- Search library and/or graveyard for an artifact creature with MV ≤ X. -/
+  | searchLibraryOrGyArtifactCreatureX
+  /-- Target player gains `life`, searches a basic, and +1/+1 on up to one. -/
+  | gainLifeSearchBasicPlusOne (life : Nat)
+  /-- The next red or green creature spell this turn is free. -/
+  | nextFreeRGCreature
+  /-- Owner puts the creature second from top or on the bottom; you may connive. -/
+  | ownerPutsLibraryThenConnive
+  /-- When you cast this, copy it X times; it deals `n` damage to a creature. -/
+  | copyThisSpellXTimesThenDamage (n : Nat)
+  /-- You may draw a card for each artifact you control; if you do, opponents draw. -/
+  | mayDrawPerArtifactOppsDraw
+  /-- You may put a Hero creature with MV `n` or less from hand; otherwise draw. -/
+  | mayPutHeroMvOrDraw (n : Nat)
+  /-- You may sacrifice an artifact or discard; if you do, draw `cards`. -/
+  | maySacArtifactOrDiscardDraw (cards : Nat)
+  /-- Choose a creature you control; double its P/T and it gains trample. -/
+  | chooseTargetDoubleAndTrample
+  /-- Choose up to two graveyard cards among artifact/creature/enchantment/land. -/
+  | returnUpToTwoGyModal
+  /-- Artifact spells you cast this turn cost `{n}` less. -/
+  | artifactSpellsCostLessThisTurn (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -1167,8 +1213,54 @@ inductive SpellResolution where
   | plusOneOnEachYouControl
   /-- `n` +1/+1 counters on a creature you control. -/
   | plusOneOnCreatureN (n : Nat)
-  /-- A leftover modeled MSH spell. -/
-  | leftover (t : LeftoverSpell)
+  /-- Pump then draw. -/
+  | pumpThenDraw (power toughness : Int)
+  /-- Pump then exile the top card to play. -/
+  | pumpThenExileTopPlay (power toughness : Int)
+  /-- Controlled creature deals twice its power. -/
+  | creatureYouControlDealsTwicePower
+  /-- Create tokens, then pump the team. -/
+  | createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int)
+  /-- Create a token per controlled subtype. -/
+  | createTokensPerSubtype (kind : TokenKind) (subtype : String)
+  /-- Team pump and grant keywords. -/
+  | creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords)
+  /-- Destroy up to one nonland. -/
+  | destroyUpToOneNonland
+  /-- Create Galactus. -/
+  | createGalactus
+  /-- Worlds Within Worlds. -/
+  | worldsWithinWorlds
+  /-- Exile hand, draw, play exiled cards. -/
+  | exileHandDrawPlayUntilNext
+  /-- Copy nontoken creatures you control. -/
+  | copyNontokenCreaturesYouControl
+  /-- Gain control until EOT or next turn if a bigger Villain. -/
+  | gainControlUntilEotOrNextIfVillain
+  /-- Mill, maybe take a permanent, gain life. -/
+  | millThenPutPermanentGainLife (n life : Nat)
+  /-- Search library or graveyard for an artifact creature. -/
+  | searchLibraryOrGyArtifactCreatureX
+  /-- Gain life, search a basic, +1/+1 on up to one. -/
+  | gainLifeSearchBasicPlusOne (life : Nat)
+  /-- Next red or green creature is free. -/
+  | nextFreeRGCreature
+  /-- Owner puts the creature into their library; you may connive. -/
+  | ownerPutsLibraryThenConnive
+  /-- Copy this spell X times, then deal damage. -/
+  | copyThisSpellXTimesThenDamage (n : Nat)
+  /-- Maybe draw per artifact; opponents draw if you do. -/
+  | mayDrawPerArtifactOppsDraw
+  /-- Maybe put a Hero from hand; otherwise draw. -/
+  | mayPutHeroMvOrDraw (n : Nat)
+  /-- Maybe sacrifice or discard, then draw. -/
+  | maySacArtifactOrDiscardDraw (cards : Nat)
+  /-- Double P/T and grant trample. -/
+  | chooseTargetDoubleAndTrample
+  /-- Return up to two modal graveyard cards. -/
+  | returnUpToTwoGyModal
+  /-- Artifact spells cost less this turn. -/
+  | artifactSpellsCostLessThisTurn (n : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1476,8 +1568,69 @@ def spec : SpellEffect → SpellMeta
   | .plusOneOnCreatureN n =>
     { targeting := .of .creatureYouControl, castKind := .pump,
       resolution := .plusOneOnCreatureN n }
-  | .leftover t =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .leftover t }
+  | .pumpThenDraw p t =>
+    { targeting := .of .creature, castKind := .pump, resolution := .pumpThenDraw p t }
+  | .pumpThenExileTopPlay p t =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .pumpThenExileTopPlay p t }
+  | .creatureYouControlDealsTwicePower =>
+    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
+      resolution := .creatureYouControlDealsTwicePower }
+  | .createTokensThenTeamPump kind n p t =>
+    { targeting := .of .none, castKind := .pump,
+      resolution := .createTokensThenTeamPump kind n p t }
+  | .createTokensPerSubtype kind subtype =>
+    { targeting := .of .none, castKind := .extraLand,
+      resolution := .createTokensPerSubtype kind subtype }
+  | .creaturesYouControlGetAndGrant p t k =>
+    { targeting := .of .none, castKind := .massPump,
+      resolution := .creaturesYouControlGetAndGrant p t k }
+  | .destroyUpToOneNonland =>
+    { targeting := .of .nonland, castKind := .destroyArtifactOrLand,
+      allowsZeroTargets := true, resolution := .destroyUpToOneNonland }
+  | .createGalactus =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .createGalactus }
+  | .worldsWithinWorlds =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .worldsWithinWorlds }
+  | .exileHandDrawPlayUntilNext =>
+    { targeting := .of .none, castKind := .draw, resolution := .exileHandDrawPlayUntilNext }
+  | .copyNontokenCreaturesYouControl =>
+    { targeting := .of .none, castKind := .extraLand,
+      resolution := .copyNontokenCreaturesYouControl }
+  | .gainControlUntilEotOrNextIfVillain =>
+    { targeting := .of .creature, castKind := .pump,
+      resolution := .gainControlUntilEotOrNextIfVillain }
+  | .millThenPutPermanentGainLife n life =>
+    { targeting := .of .none, castKind := .draw,
+      resolution := .millThenPutPermanentGainLife n life }
+  | .searchLibraryOrGyArtifactCreatureX =>
+    { targeting := .of .none, castKind := .extraLand,
+      resolution := .searchLibraryOrGyArtifactCreatureX }
+  | .gainLifeSearchBasicPlusOne life =>
+    { targeting := .of .upToOneCreatureThenPlayer, castKind := .draw,
+      resolution := .gainLifeSearchBasicPlusOne life }
+  | .nextFreeRGCreature =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .nextFreeRGCreature }
+  | .ownerPutsLibraryThenConnive =>
+    { targeting := .of .oppCreature, castKind := .counter,
+      resolution := .ownerPutsLibraryThenConnive }
+  | .copyThisSpellXTimesThenDamage n =>
+    { targeting := .of .creature, castKind := .creatureDamage,
+      resolution := .copyThisSpellXTimesThenDamage n }
+  | .mayDrawPerArtifactOppsDraw =>
+    { targeting := .of .none, castKind := .draw, resolution := .mayDrawPerArtifactOppsDraw }
+  | .mayPutHeroMvOrDraw n =>
+    { targeting := .of .none, castKind := .draw, resolution := .mayPutHeroMvOrDraw n }
+  | .maySacArtifactOrDiscardDraw n =>
+    { targeting := .of .none, castKind := .draw, resolution := .maySacArtifactOrDiscardDraw n }
+  | .chooseTargetDoubleAndTrample =>
+    { targeting := .of .creatureYouControl, castKind := .pump,
+      resolution := .chooseTargetDoubleAndTrample }
+  | .returnUpToTwoGyModal =>
+    { targeting := .of .none, castKind := .draw, resolution := .returnUpToTwoGyModal }
+  | .artifactSpellsCostLessThisTurn n =>
+    { targeting := .of .none, castKind := .extraLand,
+      resolution := .artifactSpellsCostLessThisTurn n }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1690,7 +1843,65 @@ def toNotation (e : SpellEffect) : String :=
   | .plusOneOnCreatureN n =>
     let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
     s!"put {counters} on {noun}"
-  | .leftover t => t.toNotation
+  | .pumpThenDraw p t =>
+    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nDraw a card."
+  | .pumpThenExileTopPlay p t =>
+    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
+  | .creatureYouControlDealsTwicePower =>
+    "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
+  | .createTokensThenTeamPump kind n p t =>
+    let tokens := TokenKind.createPhrase kind n
+    let tokenCap :=
+      match tokens.toList with
+      | c :: rest => String.ofList (c.toUpper :: rest)
+      | [] => tokens
+    s!"{tokenCap}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
+  | .createTokensPerSubtype kind subtype =>
+    s!"Create a {kind.oracleNoun} for each {subtype} you control"
+  | .creaturesYouControlGetAndGrant p t k =>
+    let joined :=
+      match k.toList with
+      | [a] => a
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {joined} until end of turn"
+  | .destroyUpToOneNonland =>
+    "Destroy up to one target nonland permanent"
+  | .createGalactus =>
+    "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
+  | .worldsWithinWorlds =>
+    "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
+  | .exileHandDrawPlayUntilNext =>
+    "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+  | .copyNontokenCreaturesYouControl =>
+    "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
+  | .gainControlUntilEotOrNextIfVillain =>
+    "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
+  | .millThenPutPermanentGainLife n life =>
+    s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
+  | .searchLibraryOrGyArtifactCreatureX =>
+    "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
+  | .gainLifeSearchBasicPlusOne life =>
+    s!"Target player gains {life} life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
+  | .nextFreeRGCreature =>
+    "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .ownerPutsLibraryThenConnive =>
+    "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
+  | .copyThisSpellXTimesThenDamage n =>
+    s!"When you cast this spell, copy it X times. You may choose new targets for the copies.\ndeals {n} damage to target creature."
+  | .mayDrawPerArtifactOppsDraw =>
+    "You may draw a card for each artifact you control. If you do, each opponent draws a card"
+  | .mayPutHeroMvOrDraw n =>
+    s!"You may put a Hero creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
+  | .maySacArtifactOrDiscardDraw cards =>
+    let draw := if cards == 1 then "a card" else s!"{cards} cards"
+    s!"You may sacrifice an artifact or discard a card. If you do, draw {draw}."
+  | .chooseTargetDoubleAndTrample =>
+    "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
+  | .returnUpToTwoGyModal =>
+    "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
+  | .artifactSpellsCostLessThisTurn n =>
+    s!"Artifact spells you cast this turn cost \{{n}} less to cast"
 
 end SpellEffect
 
@@ -7163,6 +7374,15 @@ structure CardDef where
   /-- This spell costs this much generic mana less if it targets an attacking
   nontoken creature (e.g. Uneasy Partings). -/
   costReductionIfTargetAttackingNontoken : Nat := 0
+  /-- This spell costs this much generic mana less if it targets an attacking
+  creature (e.g. Depower). -/
+  costReductionIfTargetAttacking : Nat := 0
+  /-- This spell costs this much generic mana less if you control a permanent
+  of this subtype (e.g. Visions of Villainy, Truck Toss). -/
+  costReductionIfYouControl : Option (Nat × String) := none
+  /-- This spell costs this much generic mana less if your graveyard has at
+  least this many creature cards (e.g. Punishing Punch). -/
+  costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array SpellEffect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/

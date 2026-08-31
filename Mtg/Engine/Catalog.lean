@@ -33,6 +33,9 @@ def card (name : String) (types : Array CardType)
     (costReductionIfTargetDamaged : Nat := 0)
     (costReductionIfTargetTapped : Nat := 0)
     (costReductionIfTargetAttackingNontoken : Nat := 0)
+    (costReductionIfTargetAttacking : Nat := 0)
+    (costReductionIfYouControl : Option (Nat × String) := none)
+    (costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none)
     (tapAddMana : Array ManaType := #[])
     (tapAddManaForEach : Array TapAddForEach := #[])
     (tapAddAnyColorEqualToPower : Bool := false)
@@ -92,6 +95,8 @@ def card (name : String) (types : Array CardType)
   additionalCostOrPayGeneric, additionalCostDiscardOrPayGeneric,
   costReductionIfCreatureDied, costReductionIfTargetDamaged,
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
+  costReductionIfTargetAttacking, costReductionIfYouControl,
+  costReductionIfGyCreaturesAtLeast,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
   tapAddOneOf, tapAddOneOfIfEnteredOrBasic, tapAddAnyColor, tapSacrificeAddAnyColor, isToken, cantBeCountered,
