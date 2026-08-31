@@ -13410,10 +13410,12 @@ def dealAssignedCombatDamage (g : Game) : Game :=
             for o in g.permanentsOf pid do
               for ab in o.printed.triggeredAbilities do
                 match ab with
-                | TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens
-                    subtype _ _ =>
-                  if o.id != src.id && g.hasSubtype src subtype then
-                    g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
+                | TriggeredAbility.onShared _ (.createTokens ..) opts =>
+                  match opts.watchedSubtype with
+                  | some subtype =>
+                    if o.id != src.id && g.hasSubtype src subtype then
+                      g := g.queueTrigger pid o ab .dealsCombatDamageToPlayerOrBattle
+                  | none => pure ()
                 | _ => pure ()
           if g.hasSubtype src "Army" then
             g := g.putControlledTriggers pid .armyYouControlCombatDamage
