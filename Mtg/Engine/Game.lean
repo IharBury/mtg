@@ -4194,6 +4194,8 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .permanentOrPlayer =>
     playerTargets g.livingPlayers ++
       g.legalPermanentTargets caster (·.isOnBattlefield)
+  | .upToTwoCreaturesTotalMvAtMost n =>
+    g.legalCreatureTargets caster (fun o => o.printed.manaValue ≤ n)
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -5056,6 +5058,11 @@ def manaSources (g : Game) (p : PlayerId) : Array (GameObject × Array ManaType)
 def countSubtype (g : Game) (p : PlayerId) (subtype : String) : Nat :=
   (g.permanentsOf p).filter (fun o => g.hasSubtype o subtype) |>.size
 
+/-- Greatest mana value among permanents `p` controls matching `pred`. -/
+def greatestManaValueAmong (g : Game) (p : PlayerId) (pred : GameObject → Bool) : Nat :=
+  (g.permanentsOf p).foldl (fun acc o =>
+    if pred o then max acc o.printed.manaValue else acc) 0
+
 /-- Colors among legendary creatures and planeswalkers `p` controls (Mox Amber).
 Colorless is not a color; a colorless legend contributes nothing. -/
 def legendaryManaColors (g : Game) (p : PlayerId) : ColorSet :=
@@ -5379,7 +5386,8 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
           | _ => false)
       else legal
     | none => legal
-  if kind == .twoNonlandsSharingType then
+  match kind with
+  | .twoNonlandsSharingType =>
     match already[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
@@ -5393,7 +5401,22 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
           | _ => false)
       | none => legal
     | _ => legal
-  else legal
+  | .upToTwoCreaturesTotalMvAtMost n =>
+    match already[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some first =>
+        legal.filter (fun t =>
+          match t with
+          | Target.permanent oid =>
+            match g.findObject? oid with
+            | some other =>
+              first.printed.manaValue + other.printed.manaValue ≤ n
+            | none => false
+          | _ => false)
+      | none => legal
+    | _ => legal
+  | _ => legal
 
 /-- Required and maximum announced targets for `obj` (CR 601.2c). Spells
 such as Gaze in Wonder require one target and allow a second; every target
@@ -9739,39 +9762,6 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
 
-/-- Resolve a modeled MSH Saga chapter. -/
-def applyModeledChapter (g : Game) (controller : PlayerId) (t : ModeledChapter)
-    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
-  let text := t.toNotation
-  if text.contains "damage" then
-    g.applyDamageToKindTarget controller .opponent targets 2
-  else if text.contains "next red or green" then
-    { g with pendingFreeRGCreature := some controller }
-      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  else if text.contains "gain control" || text.contains "Gain control" then
-    g.withSourceStillOnBattlefield sourceId (fun g src =>
-      targets.foldl (fun (g : Game) (t : Target) =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield then
-              let g :=
-                if (g.player controller).lost then
-                  g.logMsg s!"{o.name} does not change control (CR 800.4b)"
-                else
-                  g.setObject { o with
-                    controller := some controller
-                    controlChanged := true
-                    controlUntilSourceLeaves := some src.id }
-              g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
-            else g
-          | none => g
-        | _ => g) g)
-      "The Super Hero Civil War has left the battlefield. You won't gain control."
-  else
-    g.createKindTokens controller .treasure 1
-
 /-- Avengers Disassembled: if the land mode was chosen and that target is
 illegal, the spell does not resolve — even the untargeted damage mode
 (MSH 207). If the land is legal but indestructible, its controller still
@@ -11561,8 +11551,36 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
   | .plusOneUpToOne =>
     g.withLegalKindPermanent controller .creature targets (fun g o =>
       g.addPlusOnePlusOneTo o 1) sourceId none
-  | .msh t =>
-    g.applyModeledChapter controller t targets sourceId
+  | .gainControlOfUpToTwoCreaturesTotalMvAtMost _n =>
+    g.withSourceStillOnBattlefield sourceId (fun g src =>
+      targets.foldl (fun (g : Game) (t : Target) =>
+        match t with
+        | Target.permanent id =>
+          match g.findObject? id with
+          | some o =>
+            if o.isOnBattlefield then
+              let g :=
+                if (g.player controller).lost then
+                  g.logMsg s!"{o.name} does not change control (CR 800.4b)"
+                else
+                  g.setObject { o with
+                    controller := some controller
+                    controlChanged := true
+                    controlUntilSourceLeaves := some src.id }
+              g.logMsg s!"{(g.player controller).name} gains control of {o.name}"
+            else g
+          | none => g
+        | _ => g) g)
+      "The Super Hero Civil War has left the battlefield. You won't gain control."
+  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+    let g :=
+      g.dealDamageToEachCreatureMatching n (fun o => !g.hasSubtype o subtype)
+    g.forEachOpponent controller (fun g pid => g.dealDamageToPlayer pid n)
+  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
+    let x := g.greatestManaValueAmong controller (·.printed.isArtifact)
+    g.withLegalKindPlayer controller .opponent targets
+      (fun g pid => g.dealDamageToPlayer pid x)
+      sourceId (some "The target is no longer legal")
   | .spell e =>
     g.applyEffect controller e targets
 

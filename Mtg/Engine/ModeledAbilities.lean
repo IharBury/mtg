@@ -19,7 +19,7 @@ inductives (`StepEffect`, `DeathEffect`, `ThisAttackEffect`,
 Reusable leftover *statics* now live on `StaticAbility`. Reusable leftover
 *spells* now live on `SpellEffect`. Reusable leftover *activations* now
 live on `AbilityEffect` and `ActivatedAbility` / `ActivationCost` fields.
-Leftover Saga chapters remain here on `ModeledChapter`.
+Reusable leftover *Saga chapters* now live on `ChapterEffect`.
 -/
 
 namespace Mtg.Engine
@@ -50,29 +50,4 @@ end RestrictedManaSpend
 #guard RestrictedManaSpend.spendClause .artifactSpell ==
   "to cast an artifact spell"
 
-/-- A leftover modeled Saga chapter that is not yet a shared shape. -/
-inductive ModeledChapter where
-  /-- Modeled MSH ability. -/
-  | gainControlOfUpToTwoTargetCreaturesWith
-  /-- Modeled MSH ability. -/
-  | harnessTheMindStone
-  /-- Modeled MSH ability. -/
-  | thisSagaDeals2DamageToEachNonVillainCre
-  /-- Modeled MSH ability. -/
-  | thisSagaDealsXDamageToTargetOpponentWhe
-deriving Repr, Inhabited, BEq
-
-namespace ModeledChapter
-
-/-- Official Oracle wording for this ModeledChapter. -/
-def toNotation : ModeledChapter → String
-  | .gainControlOfUpToTwoTargetCreaturesWith => "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield"
-  | .harnessTheMindStone => "Harness The Mind Stone"
-  | .thisSagaDeals2DamageToEachNonVillainCre => "This Saga deals 2 damage to each non-Villain creature and each opponent"
-  | .thisSagaDealsXDamageToTargetOpponentWhe => "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"
-
-instance : ToString ModeledChapter where
-  toString := toNotation
-
-end ModeledChapter
 end Mtg.Engine

@@ -367,6 +367,8 @@ inductive EffectTargetKind where
   | noncreatureArtifactOrEnchantment
   /-- Target permanent or player. -/
   | permanentOrPlayer
+  /-- Up to two target creatures whose total mana value is `n` or less. -/
+  | upToTwoCreaturesTotalMvAtMost (n : Nat)
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -574,6 +576,9 @@ def spec : EffectTargetKind → Spec
     { noun := "target noncreature artifact or noncreature enchantment" }
   | .permanentOrPlayer =>
     { noun := "target permanent or player", prefer := .ownThenOpponent }
+  | .upToTwoCreaturesTotalMvAtMost n =>
+    { count := 2
+      noun := s!"up to two target creatures with total mana value {n} or less" }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -4127,8 +4132,15 @@ inductive ChapterEffect where
   | returnCreatureFromGyMvAtMost (n : Nat)
   /-- Put a +1/+1 counter on up to one target creature. -/
   | plusOneUpToOne
-  /-- A modeled MSH Saga chapter. -/
-  | msh (t : ModeledChapter)
+  /-- Gain control of up to two creatures with total mana value `n` or less
+  for as long as this Saga remains. -/
+  | gainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat)
+  /-- This Saga deals `n` damage to each creature that is not this subtype
+  and to each opponent. -/
+  | dealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String)
+  /-- This Saga deals X damage to target opponent, where X is the greatest
+  mana value among artifacts you control. -/
+  | dealXDamageToTargetOpponentGreatestArtifactMv
   /-- A spell-shaped MSH Saga chapter (reuses `SpellEffect`). -/
   | spell (e : SpellEffect)
 deriving Repr, Inhabited, BEq
@@ -4194,8 +4206,18 @@ def spec : ChapterEffect → Spec
   | .plusOneUpToOne =>
     { targeting := .of .creature, allowsZeroTargets := true
       phrase := "put a +1/+1 counter on up to one target creature" }
-  | .msh t =>
-    { phrase := t.toNotation }
+  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
+    { targeting := .of (.upToTwoCreaturesTotalMvAtMost n)
+      allowsZeroTargets := true
+      phrase :=
+        s!"Gain control of up to two target creatures with total mana value {n} or less for as long as this Saga remains on the battlefield" }
+  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
+    { phrase :=
+        s!"This Saga deals {n} damage to each non-{subtype} creature and each opponent" }
+  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
+    { targeting := .of .opponent
+      phrase :=
+        "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control" }
   | .spell e =>
     { targeting := e.spec.targeting
       allowsZeroTargets := e.allowsZeroTargets
@@ -8314,6 +8336,16 @@ instance : ToString CardDef where
   "up to one target creature"
 #guard EffectTargetKind.announcedNoun .upToOneCreatureThenPlayer 1 ==
   "target player"
+#guard EffectTargetKind.noun (.upToTwoCreaturesTotalMvAtMost 6) ==
+  "up to two target creatures with total mana value 6 or less"
+#guard EffectTargetKind.spec (.upToTwoCreaturesTotalMvAtMost 6) ==
+  { count := 2
+    noun := "up to two target creatures with total mana value 6 or less" }
+#guard (ChapterEffect.gainControlOfUpToTwoCreaturesTotalMvAtMost 6).spec.allowsZeroTargets
+#guard (ChapterEffect.dealDamageToEachNonSubtypeAndOpponents 2 "Villain").spec.phrase ==
+  "This Saga deals 2 damage to each non-Villain creature and each opponent"
+#guard ChapterEffect.dealXDamageToTargetOpponentGreatestArtifactMv.spec.targeting.kind ==
+  .opponent
 #guard TriggerEvent.spec .entering ==
   { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
 #guard TriggerEvent.spec .attacking ==
