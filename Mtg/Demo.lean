@@ -677,7 +677,8 @@ def helpInteractive (controlAll : Bool := false)
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
   discard <id>         Discard a card; if you do, draw (CR 701.9)
   attach <id>          Attach that Equipment you control
-  decline              Decline an optional discard, attach, cast, put, or choose no target
+  connive              Have the entering Villain connive (Baron Strucker)
+  decline              Decline an optional discard, attach, cast, put, connive, or choose no target
   attack               Attack with every creature that can
   attack <id> [id...]  Attack with the listed creatures
   attack [id...] [at] <name|opponent>  Attack those (or all that can) at that player
@@ -720,6 +721,8 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "attach <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "optional discard, attach").length > 1
+#guard ((helpInteractive false).splitOn "connive").length > 1
+#guard ((helpInteractive false).splitOn "Baron Strucker").length > 1
 #guard ((helpInteractive false).splitOn "choose no target").length > 1
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
 #guard ((helpInteractive false).splitOn "autopay").length > 1
@@ -2463,13 +2466,20 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   applyObjectCommand g p tokens discardUsage .discard
 
 def declineUsage : String := "usage: decline"
+def conniveUsage : String := "usage: connive"
 
-/-- Decline an optional discard, attach, cast, put-from-hand, or choose no
+/-- Decline an optional discard, attach, cast, put-from-hand, connive, or choose no
 target for an “up to one” instance of the word “target” (CR 115.1c / 601.2c). -/
 def applyDecline (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] => g.apply p .decline
   | _ => throw declineUsage
+
+/-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
+def applyConniveChoice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
+  match commandTokens tokens with
+  | [] => g.apply p .haveVillainConnive
+  | _ => throw conniveUsage
 
 def attachUsage : String := "usage: attach <id>"
 
@@ -2505,6 +2515,24 @@ def applyAttach (g : Game) (p : PlayerId) (tokens : List String) : Except String
     g'.pending == .none &&
     g'.log.any (fun s => Tests.mentions s "discards Forest")
   | .error _ => false
+
+#guard
+  match applyConniveChoice Tests.struckerMayConnive ⟨0⟩ ["extra"] with
+  | .error msg => msg == conniveUsage
+  | .ok _ => false
+
+#guard
+  match applyConniveChoice Tests.struckerMayConnive ⟨0⟩ [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed &&
+      (g'.player ⟨0⟩).hand.size == (Tests.struckerMayConnive.player ⟨0⟩).hand.size + 1 &&
+      g'.log.any (fun s => Tests.mentions s "connives")
+  | .error _ => false
+
+#guard
+  match applyConniveChoice Tests.spearMayDiscard ⟨0⟩ [] with
+  | .error msg => Tests.mentions msg "Not time to have a Villain connive"
+  | .ok _ => false
 
 #guard
   match applyDecline Tests.spearMayDiscard ⟨0⟩ ["extra"] with
@@ -3317,6 +3345,7 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "scry" => applyScry g p args
   | "discard" => applyDiscard g p args
   | "attach" => applyAttach g p args
+  | "connive" => applyConniveChoice g p args
   | "decline" => applyDecline g p args
   | "shuffle" => applyShuffle g args
   | "order" => applyOrder g args
@@ -3719,6 +3748,21 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyInteractiveAsActor Tests.spearMayDiscard "decline" [] with
   | .ok g' => g'.pending == .none && g'.hasPriority ⟨0⟩
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.struckerMayConnive "connive" [] with
+  | .ok g' =>
+    (Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed &&
+      g'.log.any (fun s => Tests.mentions s "connives")
+  | .error _ => false
+
+#guard
+  match applyInteractiveAsActor Tests.struckerMayConnive "decline" [] with
+  | .ok g' =>
+    !(Tests.namedPermanent g' "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed &&
+      g'.pending == .none &&
+      g'.log.any (fun s => Tests.mentions s "declines to have the Villain connive")
   | .error _ => false
 
 #guard

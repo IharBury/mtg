@@ -179,6 +179,8 @@ inductive Action where
   /-- Decline an optional “you may discard a card”, or choose no target for an
   “up to one” trigger (CR 608.2d / 601.2c). -/
   | decline
+  /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
+  | haveVillainConnive
   /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
   | payGeneric
   /-- Put the pending card on top of its owner's library. -/

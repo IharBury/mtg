@@ -192,6 +192,8 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.cast o.id)
       | none => some .decline
+    | .mayHaveVillainConnive _ _ _ =>
+      some .haveVillainConnive
     | .resolveRandom _ =>
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none

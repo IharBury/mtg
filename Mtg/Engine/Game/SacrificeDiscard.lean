@@ -130,6 +130,52 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       | none =>
         g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
 
+/-- Villain that would connive for Baron Strucker: an announced target, the
+causing object's id stored as last-known power, or the newest other Villain
+that entered this turn. -/
+def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectId)
+    (targets : Array Target) (lastKnownPower : Option Int) : Option ObjectId :=
+  match targets[0]? with
+  | some (Target.permanent id) => some id
+  | _ =>
+    match lastKnownPower with
+    | some n => some ⟨n.toNat⟩
+    | none =>
+      let cands :=
+        (g.permanentsOf controller).filter (fun x =>
+          x.id != sourceId && g.hasSubtype x "Villain" && x.status.enteredThisTurn)
+      if cands.isEmpty then none
+      else
+        some (cands.foldl (fun acc x =>
+          if x.timestamp > acc.timestamp then x else acc) cands[0]!).id
+
+/-- Ask whether to have the entering Villain connive (MSH 422). -/
+def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
+    (sourceId villainId : ObjectId) : Game :=
+  let who :=
+    match g.findObject? villainId with
+    | some o => o.name
+    | none => "the Villain"
+  { g with pending := .mayHaveVillainConnive controller sourceId villainId }.logMsg
+    s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
+
+/-- Accept Baron Strucker's optional connive (MSH 422). -/
+def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .mayHaveVillainConnive q sourceId villainId =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may have the Villain connive"
+    let g := { g with pending := .none }
+    let g :=
+      match g.findObject? sourceId with
+      | some src =>
+        g.setObject { src with status :=
+          { src.status with optionalOnceUsed := true } }
+      | none => g
+    let g := g.applyConnive p (some villainId)
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to have a Villain connive"
+
 /-- After paying K'un-Lun's optional cost, draw a card. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) : Game :=
   let g := { g with pending := .none }

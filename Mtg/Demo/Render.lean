@@ -713,6 +713,12 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
+    | .mayHaveVillainConnive p _ villainId =>
+      let who :=
+        match g.findObject? villainId with
+        | some o => o.name
+        | none => "the Villain"
+      s!" [may have {who} connive ({g.player p |>.name})]"
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p =>

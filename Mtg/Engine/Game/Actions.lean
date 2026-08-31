@@ -45,6 +45,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .scry top bottom => g.finishScry p top bottom
   | .discard id => g.discardForDraw p id
   | .decline => g.decline p
+  | .haveVillainConnive => g.haveVillainConnive p
   | .payGeneric => g.payGeneric p
   | .chooseTop => g.chooseLibrarySide p true
   | .chooseBottom => g.chooseLibrarySide p false
@@ -104,6 +105,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseTapOrUntap p _ => who p
     | .maySacArtifactOrDiscard p => who p
     | .mayPutArtifactFromHand p _ => who p
+    | .mayHaveVillainConnive p _ _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p

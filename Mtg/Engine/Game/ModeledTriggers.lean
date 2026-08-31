@@ -169,13 +169,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         g.logMsg
           "The optional connive was already chosen this turn. This instance has no effect."
       else
-        match targets[0]? with
-        | some (Target.permanent id) =>
-          let g := g.setObject { src with status :=
-            { src.status with optionalOnceUsed := true } }
-          g.applyConnive controller (some id)
-        | _ =>
+        match g.villainConniveTarget? controller src.id targets lastKnownPower with
+        | none =>
           g.logMsg "The Villain does not connive"
+        | some vid =>
+          g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
     match g.lastDiedAttacker.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"

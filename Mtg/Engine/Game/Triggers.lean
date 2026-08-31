@@ -122,7 +122,8 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       else g
     let copies := g.extraTriggerCopies controller source + 1
     let wt : WaitingTrigger := {
-      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }
+      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
+      causeId := cause.map (·.id) }
     Id.run do
       let mut g := g
       for _ in [0:copies] do
@@ -376,9 +377,18 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   else
     match g.waitingTriggers.findIdx? (fun w =>
       w.controller == wt.controller && w.source.id == wt.source.id &&
-        w.ability == wt.ability && w.event == wt.event) with
+        w.ability == wt.ability && w.event == wt.event &&
+        w.causeId == wt.causeId) with
     | none => g
     | some i => { g with waitingTriggers := g.waitingTriggers.eraseIdx! i }
+
+/-- Last-known power, or the causing object's id for Baron Strucker's optional
+connive (MSH 422). -/
+def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option Int)
+    (causeId : Option ObjectId) : Option Int :=
+  match ab.shared, causeId with
+  | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
+  | _, _ => lastKnownPower
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
@@ -389,7 +399,8 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
       for wt in wts do
         g := g.removeWaitingTrigger wt
         g := g.putQueuedTrigger wt.controller wt.source wt.ability wt.event
-          wt.lastKnownPower wt.lastKnownToughness
+          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
+          wt.lastKnownToughness
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
@@ -408,7 +419,8 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
       let mut g := { g with waitingTriggers := g.waitingTriggers.filter (·.event != event) }
       for wt in waiting do
         g := g.putQueuedTrigger wt.controller wt.source wt.ability event
-          wt.lastKnownPower wt.lastKnownToughness
+          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
+          wt.lastKnownToughness
       return g.promptTriggerTargetsIfNeeded
 
 /-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers

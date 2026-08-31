@@ -782,6 +782,8 @@ def mountainLine (g : Game) : String :=
   mentions (objectLine g spear) s!"*equipping {bears.id} Grizzly Bears*" &&
   mentions (header spearMayDiscard) "may discard a card, then draw 2"
 
+#guard mentions (header struckerMayConnive) "may have Red Guardian, Super-Soldier connive"
+
 #guard
   let g := spearEquipped
   let bears := namedPermanent g "Grizzly Bears"

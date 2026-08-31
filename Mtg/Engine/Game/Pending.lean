@@ -154,6 +154,8 @@ inductive Pending where
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
+  /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
+  | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq

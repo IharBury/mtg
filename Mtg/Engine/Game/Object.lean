@@ -255,6 +255,9 @@ structure WaitingTrigger where
   event : TriggerEvent := .dying
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
+  /-- Object that caused this trigger, if any (the entering Villain for
+  Baron Strucker; MSH 422). -/
+  causeId : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/

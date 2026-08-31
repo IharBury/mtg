@@ -277,7 +277,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if g.hasSubtype entered "Villain" then
-        g.putControlledTriggers p .anotherVillainEnters (excludeId := some entered.id)
+        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
+          g.putMatchingSourceTriggers p o .anotherVillainEnters
+            (cause := some entered))
       else g
     let g :=
       if entered.printed.isArtifact then
