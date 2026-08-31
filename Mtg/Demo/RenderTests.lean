@@ -1564,7 +1564,7 @@ def freeKnight : CardDef :=
     (oracleText :=
       "{2}: This creature gets +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
     (activatedAbilities := #[
-      activated (.sourceGets 1 1) (ManaCost.ofGeneric 2)
+      activated (Effect.ofAbility (.sourceGets 1 1)) (ManaCost.ofGeneric 2)
         (costReductionIfYouControlLegendary := 2)])
 
 def testLegend : CardDef :=
