@@ -1432,7 +1432,7 @@ def hobbitCards : Array CardDef := #[
 #guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
 #guard raggedShortSpear.activatedAbilities.size == 1
 #guard raggedShortSpear.activatedAbilities[0]!.onlyAsSorcery
-#guard raggedShortSpear.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
+#guard raggedShortSpear.activatedAbilities[0]!.effect == Effect.ofAbility .attachToTargetCreatureYouControl
 #guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
 #guard crudeBentBlade.isEquipment
@@ -1442,7 +1442,7 @@ def hobbitCards : Array CardDef := #[
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard crudeBentBlade.activatedAbilities.size == 1
 #guard crudeBentBlade.activatedAbilities[0]!.onlyAsSorcery
-#guard crudeBentBlade.activatedAbilities[0]!.effect == .attachToTargetCreatureYouControl
+#guard crudeBentBlade.activatedAbilities[0]!.effect == Effect.ofAbility .attachToTargetCreatureYouControl
 #guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
 #guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
 #guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
@@ -1479,7 +1479,7 @@ def hobbitCards : Array CardDef := #[
 #guard !beornsHospitality.isCreature
 #guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
 #guard beornsHospitality.activatedAbilities.size == 1
-#guard beornsHospitality.activatedAbilities[0]!.effect == .becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.ofAbility .becomeBearCreatureWithLandsPT
 #guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
 #guard (beornsHospitality.summary.splitOn "Landfall").length > 1
@@ -1495,7 +1495,7 @@ def hobbitCards : Array CardDef := #[
 #guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
 #guard guardianOfTheHalls.keywords.trample
 #guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.ofAbility (.putPlusOnePlusOneOnSource 3)
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
 #guard guardianOfTheHalls.power == some 2
@@ -1503,7 +1503,7 @@ def hobbitCards : Array CardDef := #[
 #guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
 #guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
 #guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.effect == Effect.ofAbility (.sourceGets 2 2)
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.onceEachTurn
 #guard desolationProwler.power == some 2
@@ -1540,7 +1540,7 @@ def hobbitCards : Array CardDef := #[
 #guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
 #guard gollumTheAbandoned.activatedAbilities[0]!.activateFromGraveyard
 #guard gollumTheAbandoned.activatedAbilities[0]!.onlyAsSorcery
-#guard gollumTheAbandoned.activatedAbilities[0]!.effect == .returnFromGraveyardToHand
+#guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.ofAbility .returnFromGraveyardToHand
 #guard gnashingOfTeeth.isModal
 #guard gnashingOfTeeth.spellModes ==
   #[Effect.ofSpell (.pumpAndExileIfDies (-5) (-5)),

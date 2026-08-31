@@ -877,7 +877,7 @@ def hobbitEternalCards : Array CardDef := #[
 
 #guard roguesPassage.isLand
 #guard roguesPassage.activatedAbilities.size == 1
-#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.effect == Effect.ofAbility .targetCantBeBlockedThisTurn
 #guard roguesPassage.activatedAbilities[0]!.cost.tap
 #guard roguesPassage.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 4)
 #guard roguesPassage.tapAddMana == #[.colorless]
@@ -936,9 +936,9 @@ def hobbitEternalCards : Array CardDef := #[
 #guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
 #guard goblinCratermaker.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard goblinCratermaker.activatedAbilities[0]!.isModal
-#guard goblinCratermaker.activatedAbilities[0]!.effect == .dealDamageToTargetCreature 2
+#guard goblinCratermaker.activatedAbilities[0]!.effect == Effect.ofAbility (.dealDamageToTargetCreature 2)
 #guard goblinCratermaker.activatedAbilities[0]!.otherModes ==
-  #[.destroyTargetColorlessNonland]
+  #[Effect.ofAbility .destroyTargetColorlessNonland]
 #guard (goblinCratermaker.summary.splitOn "Choose one").length > 1
 #guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
 #guard smiteTheDeathless.isInstant
@@ -956,7 +956,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard oliphaunt.activatedAbilities.size == 1
 #guard oliphaunt.activatedAbilities[0]!.activateFromHand
 #guard oliphaunt.activatedAbilities[0]!.cost.discardSource
-#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
+#guard oliphaunt.activatedAbilities[0]!.effect == Effect.ofAbility (.searchLandTypeToHand "Mountain")
 #guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard oliphaunt.power == some 6
 #guard oliphaunt.toughness == some 4
@@ -964,13 +964,13 @@ def hobbitEternalCards : Array CardDef := #[
 #guard (oliphaunt.summary.splitOn "+2/+0").length > 1
 #guard (oliphaunt.summary.splitOn "Mountaincycling").length > 1
 #guard goblinFireleaper.activatedAbilities.size == 1
-#guard goblinFireleaper.activatedAbilities[0]!.effect == .sourceGets 1 0
+#guard goblinFireleaper.activatedAbilities[0]!.effect == Effect.ofAbility (.sourceGets 1 0)
 #guard goblinFireleaper.activatedAbilities[0]!.cost.mana == (ManaCost.ofGenericAndColor 1 .red)
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
 #guard (goblinFireleaper.summary.splitOn "+1/+0").length > 1
 #guard (goblinFireleaper.summary.splitOn "dies").length > 1
 #guard infernoTitan.activatedAbilities.size == 1
-#guard infernoTitan.activatedAbilities[0]!.effect == .sourceGets 1 0
+#guard infernoTitan.activatedAbilities[0]!.effect == Effect.ofAbility (.sourceGets 1 0)
 #guard infernoTitan.activatedAbilities[0]!.cost.mana == (ManaCost.ofColor .red)
 #guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
 #guard infernoTitan.power == some 6
@@ -985,7 +985,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard hauntOfTheDeadMarshes.activatedAbilities.size == 1
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.activateFromGraveyard
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.onlyIfYouControlLegendary
-#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.effect == .returnFromGraveyardTapped
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.effect == Effect.ofAbility .returnFromGraveyardTapped
 #guard languish.spellEffect == some (Effect.ofSpell (.allCreaturesGet (-4) (-4)))
 #guard !languish.requiresTarget
 #guard shadowOfTheEnemy.spellEffect == some (Effect.ofSpell .exileGraveyardCreaturesGrantCast)
@@ -995,7 +995,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard trollOfKhazadDum.activatedAbilities.size == 1
 #guard trollOfKhazadDum.activatedAbilities[0]!.activateFromHand
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.discardSource
-#guard trollOfKhazadDum.activatedAbilities[0]!.effect == .searchLandTypeToHand "Swamp"
+#guard trollOfKhazadDum.activatedAbilities[0]!.effect == Effect.ofAbility (.searchLandTypeToHand "Swamp")
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
 #guard bitterDownfall.spellEffect == some (Effect.ofSpell (.destroyTargetCreatureControllerLosesLife 2))
@@ -1017,14 +1017,14 @@ def hobbitEternalCards : Array CardDef := #[
 #guard nightsWhisper.hasCastKind .draw
 #guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
 #guard (nightsWhisper.summary.splitOn "lose 2 life").length > 1
-#guard theOneRing.activatedAbilities[0]!.effect == .burdenThenDraw
+#guard theOneRing.activatedAbilities[0]!.effect == Effect.ofAbility .burdenThenDraw
 #guard theOneRing.triggeredAbilities ==
   #[.onEnterIfCastProtectionEverything, .onYourUpkeepLoseLifePerBurden]
 #guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
 #guard arwenMortalQueen.entersWithIndestructibleCounter
-#guard arwenMortalQueen.activatedAbilities[0]!.effect == .arwenShare
+#guard arwenMortalQueen.activatedAbilities[0]!.effect == Effect.ofAbility .arwenShare
 #guard callForthTheTempest.spellEffect == some (Effect.ofSpell .damageOppCreaturesEqualOtherSpellsMv)
 #guard galadrielSDismissal.spellEffect == some (Effect.ofSpell .phaseOutKicker)
 #guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]

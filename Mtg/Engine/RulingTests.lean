@@ -462,7 +462,7 @@ and illegal from the battlefield. -/
 def oliphauntCycleShape : Bool :=
   oliphauntCycleAbility.cost.discardSource &&
     oliphauntCycleAbility.activateFromHand &&
-    oliphauntCycleAbility.effect == .searchLandTypeToHand "Mountain"
+    oliphauntCycleAbility.effect == Effect.ofAbility (.searchLandTypeToHand "Mountain")
 
 #guard oliphauntCycleShape
 def oliphauntCycleAtEndOk : Bool :=
@@ -3802,7 +3802,7 @@ def aragornMulticolorOrderOk : Bool :=
 -/
 
 def troopOneLandTappedOk : Bool :=
-  troopOfPonies.activatedAbilities[0]!.effect == .searchTwoBasicsSplit &&
+  troopOfPonies.activatedAbilities[0]!.effect == Effect.ofAbility .searchTwoBasicsSplit &&
     (ruling 202).comment.contains "put it onto the battlefield tapped"
 
 #guard troopOneLandTappedOk
@@ -4106,7 +4106,7 @@ def meditatorOverwritesSetPTOk : Bool :=
 
 def typeChangeLastsOk : Bool :=
   beornsHospitality.activatedAbilities[0]!.effect ==
-      .becomeBearCreatureWithLandsPT &&
+      Effect.ofAbility .becomeBearCreatureWithLandsPT &&
     (ruling 287).comment.contains "lasts indefinitely" &&
     (ruling 303).comment.contains "don't wear off during the cleanup step" &&
     (ruling 304).comment.contains "lasts indefinitely"

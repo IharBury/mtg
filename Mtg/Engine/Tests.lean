@@ -347,7 +347,7 @@ def uncontrolledPermanent : Game :=
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
 #guard roguesPassage.activatedAbilities.size == 1
-#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.effect == Effect.ofAbility .targetCantBeBlockedThisTurn
 #guard roguesPassage.activatedAbilities[0]!.cost.tap
 #guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
 #guard mentions orcishSiegemaster.summary "trample"
@@ -428,7 +428,7 @@ def uncontrolledPermanent : Game :=
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
-#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
+#guard oliphaunt.activatedAbilities[0]!.effect == Effect.ofAbility (.searchLandTypeToHand "Mountain")
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -463,7 +463,7 @@ def uncontrolledPermanent : Game :=
 #guard mentions desolationProwler.summary "Pay 2 life"
 #guard mentions desolationProwler.summary "+2/+2"
 #guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.effect == Effect.ofAbility (.sourceGets 2 2)
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.onceEachTurn
 #guard mentions raveningWarg.summary "deathtouch"
@@ -495,7 +495,7 @@ def uncontrolledPermanent : Game :=
 #guard mentions guardianOfTheHalls.summary "+1/+1"
 #guard guardianOfTheHalls.keywords.trample
 #guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.ofAbility (.putPlusOnePlusOneOnSource 3)
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
   ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard mentions improvisedClub.summary "additional cost"
@@ -1767,7 +1767,7 @@ def hunterAbility : ActivatedAbility :=
 
 #guard snowslopeHunter.activatedAbilities.size == 1
 #guard hunterAbility.cost.sacrificeAnotherCreatureOrArtifact
-#guard hunterAbility.effect == .exileTopPlayUntilEndOfNextTurn
+#guard hunterAbility.effect == Effect.ofAbility .exileTopPlayUntilEndOfNextTurn
 #guard hunterAbility.onlyDuringYourTurn
 #guard hunterAbility.onceEachTurn
 #guard !hunterAbility.onlyAsSorcery
@@ -3361,8 +3361,9 @@ def cratermakerAbility : ActivatedAbility :=
 
 #guard cratermakerAbility.isModal
 #guard cratermakerAbility.cost.sacrificeSource
-#guard cratermakerAbility.effect == .dealDamageToTargetCreature 2
-#guard cratermakerAbility.otherModes == #[.destroyTargetColorlessNonland]
+#guard cratermakerAbility.effect == Effect.ofAbility (.dealDamageToTargetCreature 2)
+#guard cratermakerAbility.otherModes ==
+  #[Effect.ofAbility .destroyTargetColorlessNonland]
 #guard cratermakerReady.canActivate ⟨0⟩ (cratermakerSource cratermakerReady) cratermakerAbility
 #guard !(cratermakerReady.canActivate ⟨1⟩ (cratermakerSource cratermakerReady)
   cratermakerAbility)
@@ -4854,7 +4855,7 @@ def hospitalityLandfallSetup : Game :=
 
 #guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
 #guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities[0]!.effect == .becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.ofAbility .becomeBearCreatureWithLandsPT
 
 def hospitalityLandPlayed : Game :=
   mustApply hospitalityLandfallSetup ⟨0⟩
@@ -5306,7 +5307,7 @@ def agentGandalfOnly : Game :=
 def fireleaperAbility : ActivatedAbility :=
   goblinFireleaper.activatedAbilities[0]!
 
-#guard fireleaperAbility.effect == .sourceGets 1 0
+#guard fireleaperAbility.effect == Effect.ofAbility (.sourceGets 1 0)
 #guard fireleaperAbility.cost.mana == ManaCost.ofGenericAndColor 1 .red
 #guard !fireleaperAbility.effect.requiresTarget
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
@@ -5405,7 +5406,7 @@ def fireleaperAtEndStep : Game := skipTo fireleaperReady .end 80
 def prowlerAbility : ActivatedAbility :=
   desolationProwler.activatedAbilities[0]!
 
-#guard prowlerAbility.effect == .sourceGets 2 2
+#guard prowlerAbility.effect == Effect.ofAbility (.sourceGets 2 2)
 #guard prowlerAbility.cost.payLife == 2
 #guard prowlerAbility.cost.mana == ManaCost.empty
 #guard !prowlerAbility.cost.tap
@@ -6751,7 +6752,7 @@ def afterCrusherTrample : Game :=
 def titanAbility : ActivatedAbility :=
   infernoTitan.activatedAbilities[0]!
 
-#guard titanAbility.effect == .sourceGets 1 0
+#guard titanAbility.effect == Effect.ofAbility (.sourceGets 1 0)
 #guard titanAbility.cost.mana == ManaCost.ofColor .red
 #guard !titanAbility.effect.requiresTarget
 #guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
@@ -7384,7 +7385,7 @@ def clubSacrificesFireleaper : Game :=
 def guardianAbility : ActivatedAbility :=
   guardianOfTheHalls.activatedAbilities[0]!
 
-#guard guardianAbility.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianAbility.effect == Effect.ofAbility (.putPlusOnePlusOneOnSource 3)
 #guard guardianAbility.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard !guardianAbility.effect.requiresTarget
 #guard guardianOfTheHalls.keywords.trample
@@ -9458,7 +9459,7 @@ def passageReady : Game :=
 def passageSource (g : Game) : GameObject :=
   namedPermanent g "Rogue's Passage"
 
-#guard passageAbility.effect == .targetCantBeBlockedThisTurn
+#guard passageAbility.effect == Effect.ofAbility .targetCantBeBlockedThisTurn
 #guard passageAbility.cost.tap
 #guard passageAbility.cost.mana == ManaCost.ofGeneric 4
 #guard passageAbility.effect.requiresTarget
@@ -12681,7 +12682,7 @@ def thranduilSource (g : Game) : GameObject :=
   let abs := thranduilWithGuardianGy.activatedAbilitiesOf o
   o.printed.activatedAbilities.isEmpty &&
     abs.size == 1 &&
-    abs[0]!.effect == .putPlusOnePlusOneOnSource 3 &&
+    abs[0]!.effect == Effect.ofAbility (.putPlusOnePlusOneOnSource 3) &&
     abs[0]!.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 
 #guard
@@ -13174,7 +13175,7 @@ def loreAfterFirstMain : Game :=
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
 #guard supportedCatalogCards.any (fun c => c.name == "Stature, Size Shifter")
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
-#guard statureSizeShifter.activatedAbilities[0]!.effect == .plusOneX
+#guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.ofAbility .plusOneX
 #guard statureSizeShifter.activatedAbilities[0]!.powerUp
 #guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
   ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)

@@ -648,7 +648,7 @@ structure ProposedSpell where
   /-- Discard the source from hand as part of the activation cost (CR 702.29). -/
   discardSource : Bool := false
   /-- Modes of a modal activated ability, announced at CR 601.2b. -/
-  abilityModes : Array AbilityEffect := #[]
+  abilityModes : Array Effect := #[]
   /-- Override the announced targeting shape (e.g. Equip Human). -/
   targetKindOverride : Option EffectTargetKind := none
   /-- The proposed spell will be kicked if this is true. -/
@@ -1889,7 +1889,7 @@ def foodToken : CardDef := {
   oracleText := "{2}, {T}, Sacrifice this artifact: You gain 3 life."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-    effect := .gainLife 3
+    effect := Effect.ofAbility (.gainLife 3)
   }]
   isToken := true
 }
@@ -1931,7 +1931,7 @@ def axeToken : CardDef := {
   staticAbilities := #[.equippedCreatureGets 1 0]
   activatedAbilities := #[
     { cost := { mana := ManaCost.ofGeneric 2 }
-      effect := .attachToTargetCreatureYouControl
+      effect := Effect.ofAbility .attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   ]
   isToken := true
@@ -1945,7 +1945,7 @@ def clueToken : CardDef := {
   oracleText := "{2}, Sacrifice this token: Draw a card."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
-    effect := .draw 1
+    effect := Effect.ofAbility (.draw 1)
   }]
   isToken := true
 }
@@ -5296,7 +5296,7 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   | none => pool[0]?
 
 /-- Legal targets for an activated-ability effect (CR 115.1 / 601.2c / 702.11b). -/
-def legalAbilityTargets (g : Game) (p : PlayerId) (e : AbilityEffect) : Array Target :=
+def legalAbilityTargets (g : Game) (p : PlayerId) (e : Effect) : Array Target :=
   g.legalTargetsForKind p e.targetKind
 
 /-- The spell, activated ability, or triggered ability currently waiting for
@@ -5469,7 +5469,7 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
   | none => false
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
-def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
+def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
   !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e).isEmpty
 
 /-- Whether this activated ability currently has a legal target, or does not
@@ -5542,21 +5542,21 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
 
 /-- Default mode index for a modal activated ability (CR 601.2b). Prefers
 dealing damage to an opposing creature, then destroying a colorless nonland. -/
-def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array AbilityEffect) : Option Nat :=
-  let choosable : Array (Nat × AbilityEffect) :=
+def defaultAbilityMode (g : Game) (p : PlayerId) (modes : Array Effect) : Option Nat :=
+  let choosable : Array (Nat × Effect) :=
     Id.run do
-      let mut acc : Array (Nat × AbilityEffect) := #[]
+      let mut acc : Array (Nat × Effect) := #[]
       for i in [0:modes.size] do
         let e := modes[i]!
         if g.modeIsChoosable p e then
           acc := acc.push (i, e)
       return acc
-  let findKind (pred : AbilityEffect → Bool) : Option Nat :=
+  let findKind (pred : Effect → Bool) : Option Nat :=
     (choosable.find? (fun (_, e) => pred e)).map (·.1)
   let damageIdx :=
-    findKind (fun e => e.castKind == .creatureDamage)
+    findKind (fun e => e.abilityKind == .creatureDamage)
   let destroyIdx :=
-    findKind (fun e => e.castKind == .destroyColorless)
+    findKind (fun e => e.abilityKind == .destroyColorless)
   let oppHasCreature :=
     (g.permanentsOf (g.opponent p)).any (·.isCreature)
   let hasColorless := g.battlefield.any (·.isColorlessNonland)
@@ -7175,7 +7175,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if !g.modeIsChoosable p chosen then
         throw "That mode requires a target (CR 700.2d)"
       let some obj := g.findObject? prop.spellId | throw "The ability left the stack"
-      let g := g.setObject { obj with abilityEffect := some (Effect.ofAbility chosen) }
+      let g := g.setObject { obj with abilityEffect := some chosen }
       let g := g.logMsg
         s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
       if chosen.requiresTarget then
@@ -7468,7 +7468,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
   let (g, abilityObj) := g.putStackAbility o p
-    (abilityEffect := if ab.isModal then none else some (Effect.ofAbility ab.effect))
+    (abilityEffect := if ab.isModal then none else some ab.effect)
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
@@ -8807,7 +8807,7 @@ def sturdyShieldToken : CardDef :=
     staticAbilities := #[.equippedCreatureGets 1 2]
     activatedAbilities := #[
       { cost := { mana := ManaCost.ofGeneric 2 }
-        effect := .attachToTargetCreatureYouControl
+        effect := Effect.ofAbility .attachToTargetCreatureYouControl
         onlyAsSorcery := true }]
     isToken := true }
 

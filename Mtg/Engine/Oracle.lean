@@ -323,12 +323,12 @@ def keywordTokens (prepared : String) : Option (List String) :=
 
 /-- Equip `{cost}` printed as the keyword rather than the reminder. -/
 def isEquipAbility (ab : ActivatedAbility) : Bool :=
-  ab.effect == .attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
+  ab.effect == Effect.ofAbility .attachToTargetCreatureYouControl && ab.onlyAsSorcery && !ab.isModal
 
 /-- Typecycling land type when this is a cycling activation from hand. -/
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.activateFromHand && ab.cost.discardSource then
-    match ab.effect with
+    match ab.effect.abilityResolution with
     | .searchLandTypeToHand t =>
       if t == "Plan" then none else some t
     | _ => none
@@ -368,7 +368,7 @@ def activatedOracleLineFromParts (ab : ActivatedAbility) : String :=
      else "")
   let body :=
     if ab.isModal then
-      let modes := ab.allModes.toList.map AbilityEffect.toNotation
+      let modes := ab.allModes.toList.map Effect.toNotation
       s!"Choose one — {String.intercalate "; " modes}"
     else
       ab.effect.toNotation

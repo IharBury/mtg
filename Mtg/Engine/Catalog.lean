@@ -583,7 +583,7 @@ def foodToken : CardDef :=
     (subtypes := #["Food"])
     (activatedAbilities := #[{
       cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-      effect := .gainLife 3
+      effect := Effect.ofAbility (.gainLife 3)
     }])
     (isToken := true)
 
@@ -652,7 +652,9 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     putStunCounterOnSource := putStunCounterOnSource
     sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
-  effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+  effect := Effect.ofAbility effect
+  otherModes := otherModes.map Effect.ofAbility
+  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
   onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
@@ -823,7 +825,8 @@ def conditionalDualLand (name : String) (oracleText : String)
 #guard giantGrowth.spellEffect == some (Effect.ofSpell (.pump 3 3))
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
-#guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
+#guard (equipAbility (ManaCost.ofGeneric 3)).effect ==
+  Effect.ofAbility .attachToTargetCreatureYouControl
 #guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
 #guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
