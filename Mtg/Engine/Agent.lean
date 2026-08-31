@@ -31,6 +31,12 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
       | some (src, t) => some (.tapForMana src.id t)
       | none => some .pay
 
+/-- Discard the newest card in hand, or decline with an empty hand. -/
+def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
+  match (g.player p).hand.back? with
+  | some id => some (.discard id)
+  | none => some .decline
+
 /-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
 def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Action :=
   if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
@@ -86,9 +92,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .scry _ n =>
       some (.scry (g.scryLookedIds p n) #[])
     | .mayDiscardDraw _ _ =>
-      match (g.player p).hand.back? with
-      | some id => some (.discard id)
-      | none => some .decline
+      discardBackOrDecline g p
     | .chooseAdditionalCost _ =>
       match g.proposedSpell with
       | some prop =>
@@ -102,9 +106,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       | some o => some (.sacrifice o.id)
       | none => some .pass
     | .chooseDiscardCard _ _ =>
-      match (g.player p).hand.back? with
-      | some id => some (.discard id)
-      | none => some .decline
+      discardBackOrDecline g p
     | .assignCombatDamage _ _ =>
       some (.assignCombatDamage #[])
     | .chooseLegend _ _ ids =>
@@ -130,13 +132,11 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       payGenericOrTapFirstSource g p n
     | .payWard _ _ cost =>
       match cost with
-      | .genericMana n | .discardOrPay n =>
-        match cost with
-        | .discardOrPay _ =>
-          match (g.player p).hand.back? with
-          | some id => some (.discard id)
-          | none => payGenericOrTapFirstSource g p n
-        | _ => payGenericOrTapFirstSource g p n
+      | .genericMana n => payGenericOrTapFirstSource g p n
+      | .discardOrPay n =>
+        match (g.player p).hand.back? with
+        | some id => some (.discard id)
+        | none => payGenericOrTapFirstSource g p n
       | .discardEnchantmentInstantOrSorcery =>
         match (g.player p).hand.find? (fun id =>
           match g.findObject? id with
@@ -151,9 +151,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
         | none => some .decline
       | .fivePoison => some .pay
     | .recruitDiscard _ =>
-      match (g.player p).hand.back? with
-      | some id => some (.discard id)
-      | none => some .decline
+      discardBackOrDecline g p
     | .chooseKicker _ =>
       some (.announceKicker false)
     | .chooseGift _ =>
@@ -189,10 +187,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .maySacArtifactOrDiscard _ =>
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.sacrifice o.id)
-      | none =>
-        match (g.player p).hand.back? with
-        | some id => some (.discard id)
-        | none => some .decline
+      | none => discardBackOrDecline g p
     | .mayPutArtifactFromHand _ _ =>
       match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.cast o.id)

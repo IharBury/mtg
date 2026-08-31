@@ -295,13 +295,39 @@ def canSeeScry (viewer : Option PlayerId) (scrying : PlayerId) : Bool :=
   | none => true
   | some v => v == scrying
 
+/-- A pending look at library cards (scry, or a Cosmic Cube may-cast) with
+the wording pieces shared by the board block and the player section. -/
+structure LibraryLook where
+  player : PlayerId
+  /-- Looked-at cards, last = current top. -/
+  ids : Array ObjectId
+  /-- Board-block heading (`Scry`, `May cast`). -/
+  boardTitle : String
+  /-- Player-section label (`scry 2`, `may cast`). -/
+  label : String
+  /-- Extra parenthetical detail (`mana value ≤ 3`). -/
+  detail : Option String := none
+  /-- What other players see instead of the faces (`is scrying 2`). -/
+  hiddenActivity : String
+
+/-- The pending library look, if a player is looking at cards. -/
+def libraryLook? (g : Game) : Option LibraryLook :=
+  match g.pending with
+  | .scry p n =>
+    some { player := p, ids := g.scryLookedIds p n, boardTitle := "Scry",
+           label := s!"scry {n}", hiddenActivity := s!"is scrying {n}" }
+  | .mayCastFromLooked p ids maxMv =>
+    some { player := p, ids, boardTitle := "May cast", label := "may cast",
+           detail := some s!"mana value ≤ {maxMv}",
+           hiddenActivity := "is looking at cards" }
+  | _ => none
+
 /-- Cards `p` is looking at while scrying or choosing a Cosmic Cube cast
 (last = current top). Empty if `p` is not looking. -/
 def scryLook (g : Game) (p : PlayerId) : Array ObjectId :=
-  match g.pending with
-  | .scry q n => if q == p then g.scryLookedIds p n else #[]
-  | .mayCastFromLooked q ids _ => if q == p then ids else #[]
-  | _ => #[]
+  match libraryLook? g with
+  | some look => if look.player == p then look.ids else #[]
+  | none => #[]
 
 /-- A looked-at library card: object id plus the face, as when looking at a
 card in hand. -/
@@ -315,51 +341,36 @@ def scryLookedLines (g : Game) (p : PlayerId) (n : Nat) : List String :=
 /-- Board-state section for a pending scry. Other players see that a scry is
 happening, not the card faces. -/
 def scryLookBlock (g : Game) (viewer : Option PlayerId := none) : Option String :=
-  match g.pending with
-  | .scry p n =>
-    if canSeeScry viewer p then
-      let cards := scryLookedLines g p n
-      if cards.isEmpty then none
-      else some <| "Scry (top last):\n  " ++ String.intercalate "\n  " cards
-    else
-      some s!"{(g.player p).name} is scrying {n}"
-  | .mayCastFromLooked p ids maxMv =>
-    if canSeeScry viewer p then
-      let cards := ids.toList.map (scryCardLine g)
+  match libraryLook? g with
+  | none => none
+  | some look =>
+    if canSeeScry viewer look.player then
+      let cards := look.ids.toList.map (scryCardLine g)
       if cards.isEmpty then none
       else
+        let detail := (look.detail.map (· ++ ", ")).getD ""
         some <|
-          s!"May cast (mana value ≤ {maxMv}, top last):\n  " ++
+          s!"{look.boardTitle} ({detail}top last):\n  " ++
             String.intercalate "\n  " cards
     else
-      some s!"{(g.player p).name} is looking at cards"
-  | _ => none
+      some s!"{(g.player look.player).name} {look.hiddenActivity}"
 
 /-- Looking-at lines inside a player's `state` block while they scry. -/
 def scryLookSection (g : Game) (pl : Player) (viewer : Option PlayerId) : Option String :=
-  match g.pending with
-  | .scry p n =>
-    if p != pl.id then none
-    else if canSeeScry viewer p then
-      let cards := scryLookedLines g p n
+  match libraryLook? g with
+  | none => none
+  | some look =>
+    if look.player != pl.id then none
+    else if canSeeScry viewer look.player then
+      let cards := look.ids.toList.map (scryCardLine g)
       if cards.isEmpty then none
       else
+        let detail := (look.detail.map (", " ++ ·)).getD ""
         some <| String.intercalate "\n"
-          (s!"  Looking at (scry {n}, top last):" :: cards.map (fun c => s!"    {c}"))
-    else
-      some s!"  Looking at (scry {n}): (hidden)"
-  | .mayCastFromLooked p ids maxMv =>
-    if p != pl.id then none
-    else if canSeeScry viewer p then
-      let cards := ids.toList.map (scryCardLine g)
-      if cards.isEmpty then none
-      else
-        some <| String.intercalate "\n"
-          (s!"  Looking at (may cast, mana value ≤ {maxMv}, top last):" ::
+          (s!"  Looking at ({look.label}{detail}, top last):" ::
             cards.map (fun c => s!"    {c}"))
     else
-      some s!"  Looking at (may cast): (hidden)"
-  | _ => none
+      some s!"  Looking at ({look.label}): (hidden)"
 
 /-- Permanents currently attached to `hostId`. -/
 def attachmentsOf (g : Game) (hostId : ObjectId) : Array GameObject :=
