@@ -2,19 +2,35 @@ name: Lean Action CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+# One run per PR (or ref). Cancel superseded PR work; keep main runs so their
+# Lake cache is saved for later jobs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v5
+
+      - name: Restore elan toolchain
+        uses: actions/cache@v5
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
+
       - uses: leanprover/lean-action@v1
         with:
           # Fail if Lean or Lake logs any warning (e.g. deprecations).
           build-args: "--wfail"
+
       - name: Check example games
         run: |
           set -euo pipefail
@@ -24,12 +40,32 @@ jobs:
             echo "No example game files found in examples/"
             exit 1
           fi
-          status=0
+          demo=.lake/build/bin/mtg-demo
+          if [[ ! -x "$demo" ]]; then
+            echo "Built demo not found at $demo"
+            exit 1
+          fi
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          pids=()
           for f in "${files[@]}"; do
-            echo "Checking $f"
-            if ! lake exe mtg-demo -- --check --input "$f"; then
-              echo "FAIL: $f is not a valid complete game"
+            name=$(basename "$f")
+            (
+              echo "Checking $f"
+              if ! "$demo" --check --input "$f"; then
+                echo "FAIL: $f is not a valid complete game"
+                exit 1
+              fi
+            ) >"$tmp/$name.log" 2>&1 &
+            pids+=($!)
+          done
+          status=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
               status=1
             fi
+          done
+          for f in "${files[@]}"; do
+            cat "$tmp/$(basename "$f").log"
           done
           exit "$status"
