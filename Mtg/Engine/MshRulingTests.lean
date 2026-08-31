@@ -356,7 +356,7 @@ def planTypeOk : Bool :=
 def mindStoneHarness : Game :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
-  g.applyModeledAbility ⟨0⟩ .harnessTheMindStone #[] (some o.id)
+  g.applyAbilityEffect ⟨0⟩ .harnessInfinityStone #[] (some o.id)
 
 def harnessOk : Bool :=
   (namedPermanent mindStoneHarness "The Mind Stone").status.harnessed &&
@@ -372,7 +372,7 @@ def infinityInactiveUntilHarnessedOk : Bool :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
   let before := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
-  let g := g.applyModeledAbility ⟨0⟩ .harnessTheMindStone #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .harnessInfinityStone #[] (some o.id)
   let o := namedPermanent g "The Mind Stone"
   let after := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
   before.waitingTriggers.isEmpty && after.waitingTriggers.size > 0
@@ -551,7 +551,7 @@ def heroSourceOk : Bool :=
   let tower := namedPermanent g "Avengers Tower"
   let cap := namedPermanent g "Captain America, Super-Soldier"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .hero) #[] (some tower.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
   let pool := (g.player ⟨0⟩).manaPool
   let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
   let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
@@ -559,18 +559,18 @@ def heroSourceOk : Bool :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .hero) #[] (some tower.id)
+    gCh.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
   let gGy := addToGraveyard g braveBrawler ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Brave Brawler"
   let gGy :=
-    gGy.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .hero) #[] (some tower.id)
+    gGy.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
   let gHand := addToHand g braveBrawler ⟨0⟩
   let hand := handCardNamed gHand ⟨0⟩ "Brave Brawler"
   let gHand :=
-    gHand.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .hero) #[] (some tower.id)
+    gHand.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
   let (gSp, spell) := g.allocObject captainAmericaSuperSoldier ⟨0⟩ .stack (some ⟨0⟩)
   let gSp :=
-    gSp.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .hero) #[] (some tower.id)
+    gSp.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
   pool.heroWhite == 1 &&
     !pool.canPay (ManaCost.ofColor .white) &&
     pool.canPay (ManaCost.ofColor .white) false false true &&
@@ -594,17 +594,17 @@ def villainSourceOk : Bool :=
   let hideout := namedPermanent g "Villainous Hideout"
   let elektra := namedPermanent g "Elektra, Daughter of the Hand"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .villain) #[] (some hideout.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
   let gCh :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .villain) #[] (some hideout.id)
+    gCh.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
   let gGy := addToGraveyard g elektraDaughterOfTheHand ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Elektra, Daughter of the Hand"
   let gGy :=
-    gGy.applyModeledAbility ⟨0⟩ (.addOneManaOfAnyColorSpendOnly .villain) #[] (some hideout.id)
+    gGy.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
   pool.villainBlack == 1 &&
     !pool.canPay (ManaCost.ofColor .black) &&
     pool.canPay (ManaCost.ofColor .black) false false false true &&
@@ -656,7 +656,7 @@ def winterSoldierFinalityOk : Bool :=
       x.name == "Winter Soldier, Icy Assassin" && x.zone == .graveyard ⟨0⟩) with
     | some x => x
     | none => namedPermanent afterDraw "Grizzly Bears"
-  let g := g.applyModeledAbility ⟨0⟩ .returnThisCardFromYourGraveyardToTheBatt #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .returnFromGyFinalityAttach #[] (some o.id)
   (namedPermanent g "Winter Soldier, Icy Assassin").status.finality ≥ 1
 
 #guard winterSoldierFinalityOk
@@ -1071,7 +1071,7 @@ def creatureAndArtifactSourceOk : Bool :=
   let artifactLegal :=
     g.legalTargetsForKind ⟨0⟩ .stackAbilityFromArtifactSource
   let gMana :=
-    g.applyModeledAbility ⟨0⟩ .addTwoManaOfAnyOneColorSpendThisManaO #[] (some shang.id)
+    g.applyAbilityEffect ⟨0⟩ .addTwoAnyColorCreatureSources #[] (some shang.id)
   let pool := (gMana.player ⟨0⟩).manaPool
   creatureLegal.contains (Target.card bearAb.id) &&
     !creatureLegal.contains (Target.card stoneAb.id) &&
@@ -1341,7 +1341,7 @@ def illegalTargetDoesNothingOk : Bool :=
   let gCruel :=
     gGone.applyEffect ⟨0⟩ (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3) gone
   let gCrowd :=
-    gGone.applyModeledAbility ⟨0⟩ .targetCreatureYouControlThatSAttackingAlo gone
+    gGone.applyAbilityEffect ⟨0⟩ .pumpAttackingAloneGainLife gone
   let gLandfall :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     let plan := namedPermanent g "Claim the Kingdom"
@@ -1646,7 +1646,7 @@ def powerUpStillHappensIfSourceLeftOk : Bool :=
   let o := namedPermanent g "White Tiger, Ava Ayala"
   let (g, _) := g.move o.id (.graveyard ⟨0⟩) none
   let g := g.applyAbilityEffect ⟨0⟩
-    (.msh .putA11CounterOnWhiteTigerAndCreateTh) #[] (some o.id)
+    .plusOneAndCreateTigerGod #[] (some o.id)
   g.battlefield.any (fun x => x.name == "The Tiger God") &&
     (mshRuling 338).comment.contains "you'll still create The Tiger God" &&
     (mshRuling 301).comment.contains "you'll still create" &&
@@ -1672,7 +1672,7 @@ def doublePowerAndToughnessOk : Bool :=
 def hydraulicHelperRestrictedBlueOk : Bool :=
   let g := addPermanent afterDraw hydraulicHelper ⟨0⟩ ⟨0⟩
   let helper := namedPermanent g "Hydraulic Helper"
-  let g := g.applyModeledAbility ⟨0⟩ .addUThisManaCanTBeSpentToCastANona #[] (some helper.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .addBlueCantNonartifact #[] (some helper.id)
   let p := (g.player ⟨0⟩).manaPool
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
@@ -1877,7 +1877,7 @@ def shuriCopyUntilEotOk : Bool :=
   let g := addPermanent g sHIELDDeploymentDrone ⟨0⟩ ⟨0⟩
   let destId := (namedPermanent g "Aerial Doombot").id
   let src := namedPermanent g "S.H.I.E.L.D. Deployment Drone"
-  let g := g.applyModeledAbility ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+  let g := g.applyAbilityEffect ⟨0⟩ .copyArtifactYouControlNotLegendary
     #[Target.permanent destId, Target.permanent src.id]
   let dest := g.object! destId
   dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
@@ -1891,7 +1891,7 @@ def shuriCopyUntilEotOk : Bool :=
      let g2 := addPermanent g2 aerialDoombot ⟨0⟩ ⟨0⟩
      let dest := namedPermanent g2 "Aerial Doombot"
      let destName := dest.printed.name
-     let g2 := g2.applyModeledAbility ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+     let g2 := g2.applyAbilityEffect ⟨0⟩ .copyArtifactYouControlNotLegendary
        #[Target.permanent dest.id]
      (g2.object! dest.id).printed.name == destName) &&
     (mshRuling 120).comment.contains "exactly what was printed" &&
@@ -2175,7 +2175,7 @@ def jessicaJonesLastKnownXOk : Bool :=
   let pw := g.power jj
   let lib0 := (g.player ⟨0⟩).library.size
   let (g, _) := g.move jj.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledAbility ⟨0⟩ .tPutAStunCounterOnJessicaJones #[]
+  let g := g.applyAbilityEffect ⟨0⟩ .exileTopXPlayThisTurn #[]
     (some jj.id) (some pw)
   (g.player ⟨0⟩).library.size == lib0 - pw.toNat &&
     (g.objects.filter (fun o =>
@@ -2526,7 +2526,7 @@ def mistyKnightDiscardCountOk : Bool :=
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDiscardedThisTurn := 2 })
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyModeledAbility ⟨0⟩ .n2TDiscardACard #[] (some misty.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .drawPerDiscardedThisTurn #[] (some misty.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 &&
     !(g.objects.any (fun o =>
       o.zone == .graveyard ⟨0⟩ &&
@@ -2703,7 +2703,7 @@ creature types and keeps Equipment. -/
 def ironManArmorTypesOk : Bool :=
   let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
   let armor := namedPermanent g "Iron Man Armor"
-  let g := g.applyModeledAbility ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+  let g := g.applyAbilityEffect ⟨0⟩ .equipmentBecomesConstructHero #[]
     (some armor.id)
   let armor := namedPermanent g "Iron Man Armor"
   armor.isCreature &&
@@ -2953,10 +2953,10 @@ def squirrelGirlXOnceOk : Bool :=
   let squirrels (g : Game) : Nat :=
     (g.battlefield.filter (fun o => o.hasSubtype "Squirrel")).size
   let n0 := squirrels g
-  let g := g.applyModeledAbility ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+  let g := g.applyAbilityEffect ⟨0⟩ (.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
   let n1 := squirrels g
   n0 == 1 && n1 == 2 &&
-    (let g := g.applyModeledAbility ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+    (let g := g.applyAbilityEffect ⟨0⟩ (.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
      squirrels g == 4) &&
     (mshRuling 307).comment.contains "calculated only once"
 
@@ -3447,7 +3447,7 @@ def scarletWitchXManaValueOk : Bool :=
 def lokiLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw lokiLaufeyson ⟨0⟩ ⟨0⟩
   let loki := namedPermanent g "Loki Laufeyson"
-  let g := g.applyModeledAbility ⟨0⟩ .whenYouNextCastAnInstantOrSorcerySpellW #[]
+  let g := g.applyAbilityEffect ⟨0⟩ .nextInstantSorceryCopyIfMvAtMostSourcePower #[]
     (some loki.id)
   let (g, _) := g.move loki.id (.graveyard ⟨0⟩) none
   let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
@@ -4034,11 +4034,11 @@ def humanTorchInterveningOk : Bool :=
 def reptilLastResolvesOk : Bool :=
   let g := addPermanent afterDraw reptilDinomorpher ⟨0⟩ ⟨0⟩
   let r := namedPermanent g "Reptil, Dinomorpher"
-  let g := g.applyModeledAbility ⟨0⟩ .untilEndOfTurnReptilBecomesADinosaurHer #[] (some r.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
     r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
-    (let g := g.applyModeledAbility ⟨0⟩ .tyrannosaurusRex6UntilEndOfTu #[] (some r.id)
+    (let g := g.applyAbilityEffect ⟨0⟩ (.becomeDinosaurHero 6 6 Keyword.trample) #[] (some r.id)
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
        r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
@@ -4056,7 +4056,7 @@ def ironManArmorUnattachOk : Bool :=
   let g := g.attachSourceTo armor ogre
   let armor := namedPermanent g "Iron Man Armor"
   armor.attachedTo == some ogre.id &&
-    (let g := g.applyModeledAbility ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ .equipmentBecomesConstructHero #[]
        (some armor.id)
      let armor := namedPermanent g "Iron Man Armor"
      armor.attachedTo.isNone &&
@@ -4148,7 +4148,7 @@ def baxterActivationLockOk : Bool :=
     (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
      let bax := namedPermanent g "Baxter Building"
      !g.canActivate ⟨0⟩ bax ab) &&
-    (let g := g.applyModeledAbility ⟨0⟩ .drawACardActivateOnlyIfYouControlACrea #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (.draw 1) #[]
        (some bax.id)
      (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 265).comment.contains "no player may take actions" &&
@@ -4164,7 +4164,7 @@ def arnimActivationLockOk : Bool :=
   let arnim := namedPermanent g "Arnim Zola, Bio-Fanatic"
   let ab := arnim.printed.activatedAbilities[0]!
   g.canActivate ⟨0⟩ arnim ab &&
-    (let g := g.applyModeledAbility ⟨0⟩ .createATapped21BlackVillainCreatureToken #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (.createTappedTokens .villain21menace 1) #[]
        (some arnim.id)
      g.battlefield.any (fun o =>
        o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&

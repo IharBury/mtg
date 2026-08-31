@@ -619,7 +619,15 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     (discardLegendarySameName : Bool := false)
     (sacrificeArtifact : Bool := false)
     (powerUp : Bool := false)
-    (equipWorthy : Bool := false) :
+    (equipWorthy : Bool := false)
+    (sacrificeArtifactOrCreature : Bool := false)
+    (sacrificeArtifactOrDiscardNonland : Bool := false)
+    (removeAnyNumberPlusOne : Bool := false)
+    (putStunCounterOnSource : Bool := false)
+    (sacrificeEquipmentAttachedToSource : Bool := false)
+    (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
+    (onlyIfGyCreaturesAtLeast : Nat := 0)
+    (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none) :
     ActivatedAbility := {
   cost := {
     mana := mana
@@ -635,11 +643,18 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
     discardLegendarySameName := discardLegendarySameName
     sacrificeArtifact := sacrificeArtifact
+    sacrificeArtifactOrCreature := sacrificeArtifactOrCreature
+    sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland
+    removeAnyNumberPlusOne := removeAnyNumberPlusOne
+    putStunCounterOnSource := putStunCounterOnSource
+    sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
   effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
   onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
+  onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
+  costReductionIfTargetPowerAtMost
 }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
@@ -744,17 +759,6 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Leftover modeled activation. -/
-def leftoverAct (t : ModeledAbility) (mana : ManaCost := ManaCost.empty)
-    (tap : Bool := false) (powerUp : Bool := false)
-    (onlyAsSorcery : Bool := false) (payLife : Nat := 0)
-    (onceEachTurn : Bool := false) (onlyDuringYourTurn : Bool := false)
-    (sacrificeSource : Bool := false) : ActivatedAbility :=
-  activated (.msh t) mana (tap := tap) (powerUp := powerUp)
-    (onlyAsSorcery := onlyAsSorcery) (payLife := payLife)
-    (onceEachTurn := onceEachTurn) (onlyDuringYourTurn := onlyDuringYourTurn)
-    (sacrificeSource := sacrificeSource)
-
 /-- Activated ability that is a power-up (activate only once; reduced if
 the source entered this turn). -/
 def powerUpAbility (effect : AbilityEffect) (mana : ManaCost)
@@ -776,17 +780,6 @@ def conditionalDualLand (name : String) (oracleText : String)
   land name oracleText
     (tapAddMana := #[.colorless])
     (tapAddOneOfIfEnteredOrBasic := colors)
-
-/-- MSH dual land: enters tapped, gains 1 life, `{T}: Add` two colors. -/
-def mshGainLifeDualLand (name : String) (oracleText : String)
-    (addColors : ModeledAbility) : CardDef :=
-  gainLifeDualLand name oracleText addColors.addManaTypes
-
-/-- MSH dual land: `{T}: Add {C}` plus a two-color tap that requires this
-land entered this turn or a basic land. -/
-def mshConditionalDualLand (name : String) (oracleText : String)
-    (addConditional : ModeledAbility) : CardDef :=
-  conditionalDualLand name oracleText addConditional.addManaTypes
 
 #guard (gainLifeDualLand "Silent Plaza" ""
   #[.colored .blue, .colored .black]).tapAddOneOf ==
@@ -853,9 +846,10 @@ def mshConditionalDualLand (name : String) (oracleText : String)
   (legendary := true)).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (legendary := true)).hasType .creature
-#guard (mshGainLifeDualLand "Silent Plaza" "" (.addOneOf .blue .black)).entersTapped
-#guard (mshConditionalDualLand "Silent Keep" ""
-  (.addOneOf .blue .black true)).tapAddMana == #[.colorless]
+#guard (gainLifeDualLand "Silent Plaza" ""
+  #[.colored .blue, .colored .black]).entersTapped
+#guard (conditionalDualLand "Silent Keep" ""
+  #[.colored .blue, .colored .black]).tapAddMana == #[.colorless]
 #guard (powerUpAbility (.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
   (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)

@@ -4178,6 +4178,22 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
   | .artEnchCardInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o =>
       o.printed.isArtifact || o.printed.isEnchantment)
+  | .artifactYouControl =>
+    g.legalPermanentTargets caster (fun o =>
+      o.controlledBy caster && o.isOnBattlefield && o.printed.isArtifact)
+  | .twoArtifactsYouControl => #[]
+  | .attackingAloneCreatureYouControl =>
+    let attackers :=
+      g.legalCreatureTargets caster (fun o =>
+        o.controlledBy caster && o.status.attacking)
+    if attackers.size == 1 then attackers else #[]
+  | .noncreatureArtifactOrEnchantment =>
+    g.legalPermanentTargets caster (fun o =>
+      o.isOnBattlefield && !o.isCreature &&
+        (o.printed.isArtifact || o.printed.isEnchantment))
+  | .permanentOrPlayer =>
+    playerTargets g.livingPlayers ++
+      g.legalPermanentTargets caster (·.isOnBattlefield)
 
 /-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
 `sourceId` excludes the source of an “another” creature. Shapes with
@@ -5389,7 +5405,8 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
     if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
   | none =>
     match obj.abilityEffect with
-    | some e => (e.targetCount, e.targetCount)
+    | some e =>
+      if e.allowsZeroTargets then (0, e.targetCount) else (e.targetCount, e.targetCount)
     | none =>
       match obj.triggeredAbility with
       | some ab =>
@@ -5422,7 +5439,7 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
 
 /-- Whether `e` currently has a legal target, or does not require one. -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : AbilityEffect) : Bool :=
-  !e.requiresTarget || !(g.legalAbilityTargets p e).isEmpty
+  !e.requiresTarget || e.allowsZeroTargets || !(g.legalAbilityTargets p e).isEmpty
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one. Equip restricted to a creature subtype uses that targeting
@@ -7384,19 +7401,18 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
-  match ab.effect with
-  | .msh .drawACardActivateOnlyIfYouControlACrea =>
-    if !(g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= 4) then
-      throw s!"{o.name}'s ability can be activated only if you control a creature with toughness 4 or greater"
-  | .msh .createATapped21BlackVillainCreatureToken =>
+  if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
+      !(g.permanentsOf p).any (fun x =>
+        x.isCreature && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
+    throw s!"{o.name}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
+  if ab.onlyIfGyCreaturesAtLeast != 0 then
     let gy :=
       (g.player p).graveyard.filter (fun id =>
         match g.findObject? id with
         | some c => c.printed.isCreature
         | none => false) |>.size
-    if gy < 2 then
-      throw s!"{o.name}'s ability can be activated only if there are two or more creature cards in your graveyard"
-  | _ => pure ()
+    if gy < ab.onlyIfGyCreaturesAtLeast then
+      throw s!"{o.name}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
   if !g.abilityCanChooseTarget p ab then
     throw s!"{o.name}'s ability requires a target"
 
@@ -9723,174 +9739,6 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
 
-/-- Resolve a modeled MSH activation. -/
-def applyModeledAbility (g : Game) (controller : PlayerId) (t : ModeledAbility)
-    (targets : Array Target) (sourceId : Option ObjectId := none)
-    (lastKnownPower : Option Int := none) : Game :=
-  match t with
-  | .targetCreatureYouControlThatSAttackingAlo =>
-    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
-      let g := g.pumpPermanent o 1 0
-      g.gainLife controller 1)
-      sourceId (some "The target is no longer legal. You won't gain life.")
-  | .targetArtifactYouControlBecomesACopyOfA =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent a), some (Target.permanent b) =>
-      match g.findObject? a, g.findObject? b with
-      | some dest, some src =>
-        if dest.isOnBattlefield && src.isOnBattlefield &&
-            dest.controlledBy controller && src.controlledBy controller &&
-            dest.printed.isArtifact && src.printed.isArtifact then
-          g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
-        else
-          g.logMsg "The target is no longer legal. The ability has no effect."
-      | _, _ =>
-        g.logMsg "The target is no longer legal. The ability has no effect."
-    | _, _ =>
-      g.logMsg "The target is no longer legal. The ability has no effect."
-  | .whenYouNextCastAnInstantOrSorcerySpellW =>
-    let pw :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.power o else o.power
-      | none => (0 : Int)
-    { g with pendingLokiCopy := some (controller, sourceId, pw) }
-      |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
-  | .copyTargetActivatedOrTriggeredAbilityYouC =>
-    match targets[0]? with
-    | some (Target.card id) | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .stack then g.copyStackAbility o controller
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g
-  | .createX11GreenSquirrelCreatureTokensWhe =>
-    let n := g.countSubtype controller "Squirrel"
-    g.createKindTokens controller .squirrel11green n
-  | .ifThisEquipmentIsnTACreatureItBecomesA =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if !o.isOnBattlefield then
-        g.logMsg "The Equipment is no longer in play"
-      else if o.isCreature then
-        g.logMsg s!"{o.name} is already a creature"
-      else
-        let wasAttached := o.attachedTo.isSome
-        let g :=
-          if wasAttached then
-            g.setObject { o with attachedTo := none }
-              |>.logMsg s!"{o.name} becomes unattached"
-          else g
-        let o := g.object! o.id
-        g.setUntilEotForm o (0, 0) Keyword.flying
-          s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
-          (types := some #["Construct", "Hero"])
-          (additionalCreature := true) (additionalArtifact := true)
-          (pumpPerArtifact := true)
-    | none => g.logMsg "The Equipment is no longer in play"
-  | .untilEndOfTurnReptilBecomesADinosaurHer =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.setUntilEotForm o (3, 5) (Keyword.reach.merge Keyword.vigilance)
-        s!"{o.name} becomes a 3/5 Dinosaur Hero with reach and vigilance"
-        (types := some #["Dinosaur", "Hero"]))
-      "The source is no longer in play"
-  | .drawACardActivateOnlyIfYouControlACrea =>
-    g.draw controller 1
-  | .createATapped21BlackVillainCreatureToken =>
-    g.createKindTokens controller .villain21menace 1 (tapped := true)
-  | .anotherTargetCreatureYouControlGets20A
-  | .tapTargetCreatureThisAbilityCosts1Less
-  | .revealTheTopCardOfYourLibraryIfItSAn
-  | .returnUpToOneTargetCreatureCardFromYour
-  | .putA11CounterAndADoubleStrikeCounter
-  | .putA11CounterOnHerculesHeGainsVigila
-  | .putA11CounterOnThisCreatureAndCreate
-  | .forEachKindOfCounterOnTargetPermanentOr
-  | .destroyUpToOneTargetArtifactOrEnchantment
-  | .putA11CounterOnWhiteTigerAndCreateTh
-  | .putA11CounterOnAbominationHeFightsUp
-  | .putTwo11CountersOnThanosChooseOddOr
-  | .returnThisCardFromYourGraveyardToTheBatt
-  | .putTwo11CountersOnThisCreatureAndCrea
-  | .lookAtTheTopThreeCardsOfYourLibraryYou
-  | .targetVillainYouControlConnives
-  | .millFourCardsYouMayPutAHeroOrEnchantme =>
-    g.applyLeftoverTextEffect controller t.toNotation targets sourceId
-  | _ =>
-  if t == .n2TDiscardACard then
-    g.draw controller (g.player controller).cardsDiscardedThisTurn
-  else if t == .tyrannosaurusRex6UntilEndOfTu then
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.setUntilEotForm o (6, 6) Keyword.trample
-        s!"{o.name} becomes a 6/6 Dinosaur Hero with trample"
-        (types := some #["Dinosaur", "Hero"]))
-      "The source is no longer in play"
-  else if t == .tPutAStunCounterOnJessicaJones then
-    let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
-    g.exileTopPlayThisTurn controller x
-  else
-  let text := t.toNotation
-  if t == .harnessTheMindStone then
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.mapObjectStatus o (fun s => { s with harnessed := true })
-      g.logMsg s!"{o.name} is harnessed") "The source is no longer in play"
-  else if text.contains "connive" then
-    g.applyConnive controller sourceId
-  else if text.contains "draws four" || text.contains "Draw four" then
-    g.draw controller 4
-  else if text.contains "Draw two cards" || text.contains "Draw a card" then
-    g.draw controller (if text.contains "two" then 2 else 1)
-  else if text.contains "creature sources" then
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add (.colored .green) 2 (creatureRestricted := true) })
-  else if text.contains "Add " && text.contains "Hero" then
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
-  else if text.contains "Add " && text.contains "Villain" then
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
-  else if text.contains "can't be spent to cast a nonartifact" ||
-      text.contains "This mana can't be spent to cast a Nona" then
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add (.colored .blue) 1 (cantNonartifact := true) })
-  else if text.contains "Add X mana" then
-    let x :=
-      match sourceId.bind g.findObject? with
-      | some o => (g.power o).toNat
-      | none => 0
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add (.colored .green) x })
-  else if text.contains "Add " then
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool := pl.manaPool.add (.colored .white) })
-  else if text.contains "Tiger God" then
-    g.createNamedToken controller tigerGodToken
-  else if text.contains "Hero creature token" || text.contains "create the Hero" then
-    g.createKindTokens controller .soldier11white 1
-  else if text.contains "Robot Villain" then
-    g.createKindTokens controller .villain21menace 1
-  else if text.contains "each opponent" && text.contains "discard" then
-    g.beginDiscardCards ((g.livingOpponents controller).map (·.id))
-  else if text.contains "Doombot" then
-    g.createKindTokens controller .doombot 1
-  else if text.contains "Insect" then
-    g.createKindTokens controller .insect11green 1
-  else if text.contains "deals" && text.contains "damage" then
-    g.applyDamageToKindTarget controller .playerOrCreature targets 2
-  else if text.contains "-4/-4" then
-    g.withLegalKindPermanent controller .creature targets
-      (fun g o => g.pumpPermanent o (-4) (-4)) sourceId none
-  else if text.contains "+1/+1" then
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  else
-    g.draw controller 1
-
 /-- Resolve a modeled MSH Saga chapter. -/
 def applyModeledChapter (g : Game) (controller : PlayerId) (t : ModeledChapter)
     (targets : Array Target) (sourceId : Option ObjectId) : Game :=
@@ -10986,8 +10834,179 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.logLookAtTop controller n
   | .connive =>
     g.applyConnive controller sourceId
-  | .msh t =>
-    g.applyModeledAbility controller t targets sourceId lastKnownPower
+  | .addAnyColorSpendOnly kind =>
+    match kind with
+    | .hero =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool :=
+          pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
+    | .villain =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool :=
+          pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
+    | .artifactSpell =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
+  | .addTwoAnyColorCreatureSources =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .green) 2 (creatureRestricted := true) })
+  | .addBlueCantNonartifact =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .blue) 1 (cantNonartifact := true) })
+  | .addAnyColorEqualToSourcePower =>
+    let x :=
+      match sourceId.bind g.findObject? with
+      | some o => (g.power o).toNat
+      | none => 0
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored .green) x })
+  | .addFourAnyCombination =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored .white) 4 })
+  | .addTwoAnyColorEquipment =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .white) 2 })
+  | .drawPerDiscardedThisTurn =>
+    g.draw controller (g.player controller).cardsDiscardedThisTurn
+  | .dealDamageToEachCreature n =>
+    g.dealDamageToEachCreatureMatching n
+  | .createTokensEqualRemovedPlusOnes kind =>
+    g.createKindTokens controller kind 1
+  | .exileTopXPlayThisTurn =>
+    let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
+    g.exileTopPlayThisTurn controller x
+  | .targetPlayerDraw n =>
+    g.withLegalKindPlayer controller effect.targetKind targets
+      (fun g pid => g.draw pid n)
+  | .copyControlledAbility _ =>
+    match targets[0]? with
+    | some (Target.card id) | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .stack then g.copyStackAbility o controller
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g
+  | .createTokensEqualSubtype kind subtype =>
+    let n := g.countSubtype controller subtype
+    g.createKindTokens controller kind n
+  | .createTappedTokens kind n =>
+    g.createKindTokens controller kind n (tapped := true)
+  | .destroyUpToOneThenPlusOne =>
+    let g :=
+      g.withLegalKindPermanent controller .artifactOrEnchantment targets
+        (fun g o => g.applyPermanentAction o .destroy) sourceId none
+    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
+      "The source is no longer in play"
+  | .proliferateEachKind =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .proliferateEachKind) targets sourceId
+  | .equipmentBecomesConstructHero =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then
+        g.logMsg "The Equipment is no longer in play"
+      else if o.isCreature then
+        g.logMsg s!"{o.name} is already a creature"
+      else
+        let wasAttached := o.attachedTo.isSome
+        let g :=
+          if wasAttached then
+            g.setObject { o with attachedTo := none }
+              |>.logMsg s!"{o.name} becomes unattached"
+          else g
+        let o := g.object! o.id
+        g.setUntilEotForm o (0, 0) Keyword.flying
+          s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
+          (types := some #["Construct", "Hero"])
+          (additionalCreature := true) (additionalArtifact := true)
+          (pumpPerArtifact := true)
+    | none => g.logMsg "The Equipment is no longer in play"
+  | .lookAtTopRevealSubtype n _subtype =>
+    g.logLookAtTop controller n
+  | .millThenPutHeroOrEnchantment n =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation (.millThenPutHeroOrEnchantment n)) targets sourceId
+  | .plusOneAndDoubleStrikeCounter =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .plusOneAndDoubleStrikeCounter) targets sourceId
+  | .plusOneThenFightUpToOne =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .plusOneThenFightUpToOne) targets sourceId
+  | .plusOneAndGrant k =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.addPlusOnePlusOneTo o 1
+      g.grantUntilEotLogged o k) "The source is no longer in play"
+  | .plusOneAndCreateTigerGod =>
+    let g :=
+      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
+        "The source is no longer in play"
+    g.createNamedToken controller tigerGodToken
+  | .plusOneAndCreateTokens n kind =>
+    let g :=
+      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o n)
+        "The source is no longer in play"
+    g.createKindTokens controller kind 1
+  | .plusTwoThenOddEvenDestroy =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .plusTwoThenOddEvenDestroy) targets sourceId
+  | .returnFromGyFinalityAttach =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .returnFromGyFinalityAttach) targets sourceId
+  | .returnGyCreatureThenPlusOne n =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation (.returnGyCreatureThenPlusOne n)) targets sourceId
+  | .revealTopDrawIfArtifact =>
+    g.applyLeftoverTextEffect controller
+      (AbilityEffect.toNotation .revealTopDrawIfArtifact) targets sourceId
+  | .copyArtifactYouControlNotLegendary =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent a), some (Target.permanent b) =>
+      match g.findObject? a, g.findObject? b with
+      | some dest, some src =>
+        if dest.isOnBattlefield && src.isOnBattlefield &&
+            dest.controlledBy controller && src.controlledBy controller &&
+            dest.printed.isArtifact && src.printed.isArtifact then
+          g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
+        else
+          g.logMsg "The target is no longer legal. The ability has no effect."
+      | _, _ =>
+        g.logMsg "The target is no longer legal. The ability has no effect."
+    | _, _ =>
+      g.logMsg "The target is no longer legal. The ability has no effect."
+  | .pumpAttackingAloneGainLife =>
+    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
+      let g := g.pumpPermanent o 1 0
+      g.gainLife controller 1)
+      sourceId (some "The target is no longer legal. You won't gain life.")
+  | .becomeDinosaurHero p t k =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.setUntilEotForm o (p, t) k
+        s!"{o.name} becomes a {p}/{t} Dinosaur Hero"
+        (types := some #["Dinosaur", "Hero"]))
+      "The source is no longer in play"
+  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
+    let pw :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.power o else o.power
+      | none => (0 : Int)
+    { g with pendingLokiCopy := some (controller, sourceId, pw) }
+      |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
+  | .harnessInfinityStone =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      let g := g.mapObjectStatus o (fun s => { s with harnessed := true })
+      g.logMsg s!"{o.name} is harnessed") "The source is no longer in play"
+  | .destroyTargetNoncreatureArtOrEnch =>
+    g.withLegalKindPermanent controller .noncreatureArtifactOrEnchantment targets
+      (fun g o => g.applyPermanentAction o .destroy) sourceId none
+  | .targetSubtypeConnives _ =>
+    match targets[0]? with
+    | some (Target.permanent id) => g.applyConnive controller (some id)
+    | _ => g.applyConnive controller none
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
