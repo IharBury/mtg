@@ -192,7 +192,7 @@ def crowdOfTrueBelievers : CardDef :=
     (oracleText := "{T}: Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life.")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[leftoverAct .targetCreatureYouControlThatSAttackingAlo (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated .pumpAttackingAloneGainLife (ManaCost.empty) (tap := true)])
 
 def helicarrierStrike : CardDef :=
   card "Helicarrier Strike" #[.instant] ({ symbols := #[.colored .white] })
@@ -253,7 +253,8 @@ def theMindStone : CardDef :=
     (oracleText := "Indestructible\n{T}: Add {W}.\n{5}{W}, {T}: Harness The Mind Stone. (Once harnessed, its ∞ ability is active.)\n∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control.")
     (keywords := Keyword.indestructible)
     (triggeredAbilities := #[.onStep .harnessedFlicker])
-    (activatedAbilities := #[activated (.msh .addW) (ManaCost.empty) (tap := true), activated (.msh .harnessTheMindStone) ({ symbols := #[.generic 5, .colored .white] }) (tap := true)])
+    (tapAddMana := #[.colored .white])
+    (activatedAbilities := #[activated .harnessInfinityStone ({ symbols := #[.generic 5, .colored .white] }) (tap := true)])
 
 def mockingbirdAceAgent : CardDef :=
   card "Mockingbird, Ace Agent" #[.creature] ({ symbols := #[.generic 3, .colored .white] })
@@ -330,7 +331,7 @@ def patriotShieldWielder : CardDef :=
     (oracleText := "{2}, {T}: Another target creature you control gets +2/+0 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)")
     (power := some 2)
     (toughness := some 2)
-    (activatedAbilities := #[leftoverAct .anotherTargetCreatureYouControlGets20A ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def politicalTriumph : CardDef :=
   card "Political Triumph" #[.enchantment] ({ symbols := #[.colored .white] })
@@ -353,7 +354,8 @@ def raftSecurityOfficer : CardDef :=
     (oracleText := "{2}, {T}: Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less.")
     (power := some 1)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .tapTargetCreatureThisAbilityCosts1Less ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated .tapTargetCreature ({ symbols := #[.generic 2] }) (tap := true)
+      (costReductionIfTargetPowerAtMost := some (1, 3))])
 
 def redGuardianSuperSoldier : CardDef :=
   card "Red Guardian, Super-Soldier" #[.creature] ({ symbols := #[.generic 2, .colored .white] })
@@ -501,7 +503,7 @@ def echoPerceptiveProdigy : CardDef :=
     (power := some 1)
     (toughness := some 4)
     (keywords := Keyword.vigilance)
-    (activatedAbilities := #[leftoverAct .copyTargetActivatedOrTriggeredAbilityYouC ({ symbols := #[.generic 1] }) (tap := true)])
+    (activatedAbilities := #[activated (.copyControlledAbility true) ({ symbols := #[.generic 1] }) (tap := true)])
 
 def falconWingedWonder : CardDef :=
   card "Falcon, Winged Wonder" #[.creature] ({ symbols := #[.generic 4, .colored .blue] })
@@ -532,7 +534,7 @@ def futuristForge : CardDef :=
   card "Futurist Forge" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
     (oracleText := "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards.")
     (triggeredAbilities := #[.onEnterDraw 1])
-    (activatedAbilities := #[leftoverAct .n3USacrificeThisArtifact])
+    (activatedAbilities := #[activated (.draw 2) ({ symbols := #[.generic 3, .colored .blue] }) (sacrificeSource := true)])
 
 def giantSizedFlyingAnt : CardDef :=
   card "Giant-Sized Flying Ant" #[.creature] ({ symbols := #[.generic 3, .colored .blue] })
@@ -550,7 +552,7 @@ def hydraulicHelper : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.defender)
-    (activatedAbilities := #[activated (.msh .addUThisManaCanTBeSpentToCastANona) (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated .addBlueCantNonartifact (ManaCost.empty) (tap := true)])
 
 def iAmIronMan : CardDef :=
   card "I Am Iron Man" #[.instant] ({ symbols := #[.generic 2, .colored .blue] })
@@ -566,7 +568,7 @@ def ironLadDivergingDestiny : CardDef :=
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.vigilance)
     (mayLookAtTopAnytime := true)
-    (activatedAbilities := #[leftoverAct .revealTheTopCardOfYourLibraryIfItSAn (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated .revealTopDrawIfArtifact (ManaCost.empty) (tap := true)])
 
 def ironheartCleverChampion : CardDef :=
   card "Ironheart, Clever Champion" #[.artifact, .creature] ({ symbols := #[.generic 4, .colored .blue] })
@@ -708,7 +710,7 @@ def shuriWakandanInventor : CardDef :=
     (power := some 2)
     (toughness := some 1)
     (staticAbilities := #[.typeSpellsCostLess .artifact 1])
-    (activatedAbilities := #[leftoverAct .targetArtifactYouControlBecomesACopyOfA ({ symbols := #[.generic 1] }) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated .copyArtifactYouControlNotLegendary ({ symbols := #[.generic 1] }) (tap := true) (onlyAsSorcery := true)])
 
 def statureSizeShifter : CardDef :=
   card "Stature, Size Shifter" #[.creature] ({ symbols := #[.colored .blue] })
@@ -797,7 +799,8 @@ def arnimZolaBioFanatic : CardDef :=
     (oracleText := "{3}, {T}: Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard. (It can't be blocked except by two or more creatures.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .createATapped21BlackVillainCreatureToken ({ symbols := #[.generic 3] }) (tap := true)])
+    (activatedAbilities := #[activated (.createTappedTokens .villain21menace 1) ({ symbols := #[.generic 3] }) (tap := true)
+      (onlyIfGyCreaturesAtLeast := 2)])
 
 def baronHelmutZemo : CardDef :=
   card "Baron Helmut Zemo" #[.creature] ({ symbols := #[.colored .black, .colored .black, .colored .black] })
@@ -922,7 +925,8 @@ def kingpinSEnforcers : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.lifelink)
-    (activatedAbilities := #[leftoverAct .n2BSacrificeAnArtifactOrCreatur])
+    (activatedAbilities := #[activated (.draw 1) ({ symbols := #[.generic 2, .colored .black] })
+      (sacrificeArtifactOrCreature := true)])
 
 def klawSonicSubjugator : CardDef :=
   card "Klaw, Sonic Subjugator" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -950,7 +954,8 @@ def theMastersOfEvil : CardDef :=
     (power := some 5)
     (toughness := some 6)
     (staticAbilities := #[StaticAbility.otherCreaturesGet #["Villain"] 2 1])
-    (activatedAbilities := #[leftoverAct .n1BDiscardThisCard])
+    (activatedAbilities := #[activated (.searchLandTypeToHand "Plan") ({ symbols := #[.generic 1, .colored .black] })
+      (discardSource := true) (activateFromHand := true)])
 
 def mODOK : CardDef :=
   card "M.O.D.O.K." #[.artifact, .creature] ({ symbols := #[.generic 3, .colored .black, .colored .black] })
@@ -961,7 +966,7 @@ def mODOK : CardDef :=
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.lifelink)
     (staticAbilities := #[StaticAbility.opponentsCreaturesGet (-1) (-1)])
-    (activatedAbilities := #[leftoverAct .mentalOrganismPay3LifeMODOK])
+    (activatedAbilities := #[activated .connive (payLife := 3) (onlyDuringYourTurn := true)])
 
 def moonstoneHarshMistress : CardDef :=
   card "Moonstone, Harsh Mistress" #[.creature] ({ symbols := #[.generic 3, .colored .black] })
@@ -1011,8 +1016,9 @@ def roninShadowStalker : CardDef :=
     (oracleText := "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn.\n{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery.")
     (power := some 3)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .pay2LifeAddTwoManaOfAnyOneColorSpend
-      (payLife := 2) (onceEachTurn := true), leftoverAct .tSacrificeAnEquipmentAttachedTo])
+    (activatedAbilities := #[activated .addTwoAnyColorEquipment (payLife := 2) (onceEachTurn := true),
+      activated (.targetGets (-4) (-4)) (tap := true) (sacrificeEquipmentAttachedToSource := true)
+        (onlyAsSorcery := true)])
 
 def roxxonBrutes : CardDef :=
   card "Roxxon Brutes" #[.creature] ({ symbols := #[.generic 4, .colored .black] })
@@ -1041,7 +1047,7 @@ def superSkrull : CardDef :=
     (power := some 4)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (.createTokens .wall04defender 1) ({ symbols := #[.generic 2, .colored .white] }), activated (.sourceGets 4 4) ({ symbols := #[.generic 3, .colored .green] }), activated (.dealDamageToTargetCreature 4) ({ symbols := #[.generic 4, .colored .red] }), activated (.msh .targetPlayerDrawsFourCards) ({ symbols := #[.generic 5, .colored .blue] })])
+    (activatedAbilities := #[activated (.createTokens .wall04defender 1) ({ symbols := #[.generic 2, .colored .white] }), activated (.sourceGets 4 4) ({ symbols := #[.generic 3, .colored .green] }), activated (.dealDamageToTargetCreature 4) ({ symbols := #[.generic 4, .colored .red] }), activated (.targetPlayerDraw 4) ({ symbols := #[.generic 5, .colored .blue] })])
 
 def swordsmanSharpScoundrel : CardDef :=
   card "Swordsman, Sharp Scoundrel" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -1071,7 +1077,7 @@ def unlivingLegionnaire : CardDef :=
     (power := some 3)
     (toughness := some 2)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[leftoverAct .returnUpToOneTargetCreatureCardFromYour ({ symbols := #[.generic 5, .colored .black, .colored .black] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.returnGyCreatureThenPlusOne 2) ({ symbols := #[.generic 5, .colored .black, .colored .black] }) (powerUp := true)])
 
 def visionsOfVillainy : CardDef :=
   card "Visions of Villainy" #[.instant] ({ symbols := #[.generic 2, .colored .black] })
@@ -1228,7 +1234,7 @@ def jessicaJonesPrivateEye : CardDef :=
     (oracleText := "{T}, Put a stun counter on Jessica Jones: Exile the top X cards of your library, where X is Jessica Jones's power. You may play those cards this turn. (If a permanent with a stun counter would become untapped, remove one from it instead.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .tPutAStunCounterOnJessicaJones])
+    (activatedAbilities := #[activated .exileTopXPlayThisTurn (tap := true) (putStunCounterOnSource := true)])
 
 def kUnLunWarrior : CardDef :=
   card "K'un-Lun Warrior" #[.creature] ({ symbols := #[.generic 1, .colored .red] })
@@ -1259,7 +1265,7 @@ def lokiLaufeyson : CardDef :=
     (oracleText := "{1}, {T}: When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy.\nPower-up — {4}{R}: Put two +1/+1 counters on Loki. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
     (power := some 2)
     (toughness := some 1)
-    (activatedAbilities := #[leftoverAct .whenYouNextCastAnInstantOrSorcerySpellW ({ symbols := #[.generic 1] }) (tap := true), powerUpAbility (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 4, .colored .red] })])
+    (activatedAbilities := #[activated .nextInstantSorceryCopyIfMvAtMostSourcePower ({ symbols := #[.generic 1] }) (tap := true), powerUpAbility (.putPlusOnePlusOneOnSource 2) ({ symbols := #[.generic 4, .colored .red] })])
 
 def machinesmithAutomaton : CardDef :=
   card "Machinesmith Automaton" #[.artifact, .creature] ({ symbols := #[.generic 2, .colored .red] })
@@ -1277,7 +1283,7 @@ def mistyKnightHeroForHire : CardDef :=
     (oracleText := "{2}, {T}, Discard a card: Draw a card for each card you've discarded this turn.")
     (power := some 3)
     (toughness := some 1)
-    (activatedAbilities := #[activated (.msh .n2TDiscardACard)
+    (activatedAbilities := #[activated .drawPerDiscardedThisTurn
       ({ symbols := #[.generic 2] }) (tap := true) (discardACard := true)])
 
 def mjLnirHammerOfThor : CardDef :=
@@ -1287,7 +1293,9 @@ def mjLnirHammerOfThor : CardDef :=
     (oracleText := "When Mjölnir enters, it deals 4 damage to up to one target creature.\nDouble all damage equipped creature would deal.\nEquip worthy {1} (A creature is worthy if it's a legendary non-Villain that's red and/or white.)\n{2}{R}, Discard this card: It deals 2 damage to each creature.")
     (triggeredAbilities := #[.onEnter (.dealDamageUpToOne 4)])
     (staticAbilities := #[StaticAbility.equippedDealsDoubleDamage])
-    (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1), leftoverAct .n2RDiscardThisCard])
+    (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1),
+      activated (.dealDamageToEachCreature 2) ({ symbols := #[.generic 2, .colored .red] })
+        (discardSource := true) (activateFromHand := true)])
 
 def photonBlastBarrage : CardDef :=
   card "Photon Blast Barrage" #[.sorcery] ({ symbols := #[.x, .colored .red, .colored .red] })
@@ -1303,7 +1311,7 @@ def quicksilverBrashBlur : CardDef :=
     (toughness := some 1)
     (keywords := Keyword.haste)
     (staticAbilities := #[StaticAbility.mayBeginOnBattlefield])
-    (activatedAbilities := #[leftoverAct .putA11CounterAndADoubleStrikeCounter ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
+    (activatedAbilities := #[activated .plusOneAndDoubleStrikeCounter ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
 
 def redHulk : CardDef :=
   card "Red Hulk" #[.creature] ({ symbols := #[.generic 4, .colored .red, .colored .red] })
@@ -1430,7 +1438,7 @@ def docSamsonSuperPsychiatrist : CardDef :=
     (power := some 3)
     (toughness := some 6)
     (staticAbilities := #[StaticAbility.extraCounterOnPermanents])
-    (activatedAbilities := #[activated (.msh .addXManaOfAnyOneColorWhereXIsDocSams) (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated .addAnyColorEqualToSourcePower (ManaCost.empty) (tap := true)])
 
 def earthSMightiestHeroes : CardDef :=
   card "Earth's Mightiest Heroes" #[.sorcery] ({ symbols := #[.generic 4, .colored .green, .colored .green] })
@@ -1458,7 +1466,7 @@ def guerrillaGorilla : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.reach)
-    (activatedAbilities := #[leftoverAct .sacrificeThisCreatureDestroyTargetNoncreat
+    (activatedAbilities := #[activated .destroyTargetNoncreatureArtOrEnch
       (sacrificeSource := true) (onlyAsSorcery := true)])
 
 def hellcatUndyingVigilante : CardDef :=
@@ -1478,7 +1486,7 @@ def herculesPrinceOfPower : CardDef :=
     (oracleText := "Power-up — {4}{G}: Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
     (power := some 3)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .putA11CounterOnHerculesHeGainsVigila ({ symbols := #[.generic 4, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)) ({ symbols := #[.generic 4, .colored .green] }) (powerUp := true)])
 
 def heroicFeast : CardDef :=
   card "Heroic Feast" #[.enchantment] ({ symbols := #[.generic 2, .colored .green] })
@@ -1541,7 +1549,7 @@ def petAvengers : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.reach)
-    (activatedAbilities := #[leftoverAct .putA11CounterOnThisCreatureAndCreate ({ symbols := #[.generic 6, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.plusOneAndCreateTokens 1 .hero32vigilance) ({ symbols := #[.generic 6, .colored .green] }) (powerUp := true)])
 
 def powerfulBroker : CardDef :=
   card "Powerful Broker" #[.creature] ({ symbols := #[.generic 2, .colored .green] })
@@ -1549,7 +1557,7 @@ def powerfulBroker : CardDef :=
     (oracleText := "{T}: For each kind of counter on target permanent or player, give that permanent or player another counter of that kind. Activate only as a sorcery.")
     (power := some 3)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .forEachKindOfCounterOnTargetPermanentOr (ManaCost.empty) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated .proliferateEachKind (ManaCost.empty) (tap := true) (onlyAsSorcery := true)])
 
 def punishingPunch : CardDef :=
   card "Punishing Punch" #[.instant] ({ symbols := #[.generic 2, .colored .green] })
@@ -1569,7 +1577,8 @@ def reptilDinomorpher : CardDef :=
     (oracleText := "Brontosaurus — {3}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance.\nTyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample.")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[leftoverAct .untilEndOfTurnReptilBecomesADinosaurHer ({ symbols := #[.generic 3] }), leftoverAct .tyrannosaurusRex6UntilEndOfTu])
+    (activatedAbilities := #[activated (.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) ({ symbols := #[.generic 3] }),
+      activated (.becomeDinosaurHero 6 6 Keyword.trample) ({ symbols := #[.generic 6] })])
 
 def restorativeTechnique : CardDef :=
   card "Restorative Technique" #[.sorcery] ({ symbols := #[.generic 2, .colored .green] })
@@ -1583,7 +1592,7 @@ def rickJonesDestinedSidekick : CardDef :=
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
     (power := some 0)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .millFourCardsYouMayPutAHeroOrEnchantme ({ symbols := #[.generic 3] }) (tap := true)])
+    (activatedAbilities := #[activated (.millThenPutHeroOrEnchantment 4) ({ symbols := #[.generic 3] }) (tap := true)])
 
 def savageLandDinosaur : CardDef :=
   card "Savage Land Dinosaur" #[.creature] ({ symbols := #[.generic 4, .colored .green, .colored .green] })
@@ -1611,7 +1620,7 @@ def shangChiMasterOfKungFu : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (staticAbilities := #[StaticAbility.activateCreaturesAsThoughHaste])
-    (activatedAbilities := #[activated (.msh .addTwoManaOfAnyOneColorSpendThisManaO) (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated .addTwoAnyColorCreatureSources (ManaCost.empty) (tap := true)])
 
 def sheHulkJadeDefender : CardDef :=
   card "She-Hulk, Jade Defender" #[.creature] ({ symbols := #[.generic 3, .colored .green] })
@@ -1621,7 +1630,7 @@ def sheHulkJadeDefender : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := (Keyword.reach).merge Keyword.trample)
-    (activatedAbilities := #[leftoverAct .destroyUpToOneTargetArtifactOrEnchantment ({ symbols := #[.generic 4, .colored .green, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated .destroyUpToOneThenPlusOne ({ symbols := #[.generic 4, .colored .green, .colored .green] }) (powerUp := true)])
 
 def superStrength : CardDef :=
   card "Super Strength" #[.enchantment] ({ symbols := #[.generic 4, .colored .green] })
@@ -1664,7 +1673,7 @@ def theUnbeatableSquirrelGirl : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (triggeredAbilities := #[.onEnterOrAttack .createSquirrel])
-    (activatedAbilities := #[leftoverAct .createX11GreenSquirrelCreatureTokensWhe ({ symbols := #[.generic 1, .colored .green, .colored .green, .colored .green] })])
+    (activatedAbilities := #[activated (.createTokensEqualSubtype .squirrel11green "Squirrel") ({ symbols := #[.generic 1, .colored .green, .colored .green, .colored .green] })])
 
 def undercoverSkrull : CardDef :=
   card "Undercover Skrull" #[.creature] ({ symbols := #[.generic 1, .colored .green] })
@@ -1691,7 +1700,7 @@ def whiteTigerAvaAyala : CardDef :=
     (oracleText := "Power-up — {5}{G}: Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\" (Activate each power-up ability only once. Reduce the cost by her mana cost if she entered this turn.)")
     (power := some 2)
     (toughness := some 2)
-    (activatedAbilities := #[leftoverAct .putA11CounterOnWhiteTigerAndCreateTh ({ symbols := #[.generic 5, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated .plusOneAndCreateTigerGod ({ symbols := #[.generic 5, .colored .green] }) (powerUp := true)])
 
 def worldWarHulk : CardDef :=
   card "World War Hulk" #[.enchantment] ({ symbols := #[.generic 3, .colored .green, .colored .green] })
@@ -1707,7 +1716,7 @@ def abominationTerrifyingTitan : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := Keyword.trample)
-    (activatedAbilities := #[leftoverAct .putA11CounterOnAbominationHeFightsUp ({ symbols := #[.generic 5, .hybrid .red .green, .hybrid .red .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated .plusOneThenFightUpToOne ({ symbols := #[.generic 5, .hybrid .red .green, .hybrid .red .green] }) (powerUp := true)])
 
 def absorbingMan : CardDef :=
   card "Absorbing Man" #[.creature] ({ symbols := #[.generic 1, .colored .green, .colored .blue] })
@@ -1757,7 +1766,8 @@ def theAstonishingAntMan : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (triggeredAbilities := #[.onDrawPlusOne])
-    (activatedAbilities := #[leftoverAct .n2GTRemoveAnyNumberOf11])
+    (activatedAbilities := #[activated (.createTokensEqualRemovedPlusOnes .insect11green)
+      ({ symbols := #[.generic 2, .colored .green] }) (tap := true) (removeAnyNumberPlusOne := true)])
 
 def avengersUnderSiege : CardDef :=
   card "Avengers: Under Siege" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .red] })
@@ -1802,7 +1812,8 @@ def bullseyeDeathDealer : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (triggeredAbilities := #[.onEnter .maySacOrDiscardNonlandThenDamage])
-    (activatedAbilities := #[leftoverAct .n3TSacrificeAnArtifactOrDisca])
+    (activatedAbilities := #[activated (.dealDamageToAny 2) ({ symbols := #[.generic 3] })
+      (tap := true) (sacrificeArtifactOrDiscardNonland := true)])
 
 def captainAmericaLivingLegend : CardDef :=
   card "Captain America, Living Legend" #[.creature] ({ symbols := #[.generic 1, .colored .white, .colored .blue] })
@@ -1958,7 +1969,7 @@ def scientistSupremeOfAIM : CardDef :=
     (oracleText := "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn. (Mana abilities can't be targeted.)")
     (power := some 2)
     (toughness := some 2)
-    (activatedAbilities := #[leftoverAct .pay2LifeCopyTargetActivatedOrTriggeredA
+    (activatedAbilities := #[activated (.copyControlledAbility false)
       (payLife := 2) (onlyDuringYourTurn := true) (onceEachTurn := true)])
 
 def theSerpentSociety : CardDef :=
@@ -2035,7 +2046,7 @@ def thanosTheMadTitan : CardDef :=
     (power := some 4)
     (toughness := some 4)
     (keywords := (Keyword.deathtouch).merge Keyword.lifelink)
-    (activatedAbilities := #[leftoverAct .putTwo11CountersOnThanosChooseOddOr ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
+    (activatedAbilities := #[activated .plusTwoThenOddEvenDestroy ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
 
 def thorOdinson : CardDef :=
   card "Thor Odinson" #[.creature] ({ symbols := #[.generic 3, .colored .red, .colored .white] })
@@ -2089,7 +2100,8 @@ def winterSoldierIcyAssassin : CardDef :=
     (toughness := some 2)
     (keywords := (Keyword.vigilance).merge Keyword.menace)
     (staticAbilities := #[StaticAbility.getsPowerPerAttachedEquipment 2])
-    (activatedAbilities := #[leftoverAct .returnThisCardFromYourGraveyardToTheBatt ({ symbols := #[.generic 3, .colored .white, .colored .black] })])
+    (activatedAbilities := #[activated .returnFromGyFinalityAttach ({ symbols := #[.generic 3, .colored .white, .colored .black] })
+      (activateFromGraveyard := true)])
 
 def wolverineFierceFighter : CardDef :=
   card "Wolverine, Fierce Fighter" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .green] })
@@ -2118,7 +2130,7 @@ def arcReactor : CardDef :=
     (oracleText := "Improvise (Your artifacts can help cast this spell. Each artifact you tap after you're done activating mana abilities pays for {1}.)\nThis artifact enters tapped.\n{T}: Add {C}{C}{C}.")
     (entersTapped := true)
     (staticAbilities := #[.improvise])
-    (activatedAbilities := #[activated (.msh .addCCC) (ManaCost.empty) (tap := true)])
+    (activatedAbilities := #[activated (.addMana #[.colorless, .colorless, .colorless]) (ManaCost.empty) (tap := true)])
 
 def captainAmericaSShield : CardDef :=
   equipment "Captain America's Shield" ({ symbols := #[.generic 2] })
@@ -2160,7 +2172,7 @@ def ironManArmor : CardDef :=
     (oracleText := "When this Equipment enters, attach it to target creature you control.\nEquipped creature gets +2/+1 and has flying.\n{2}: If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn.\nEquip {2}")
     (triggeredAbilities := #[.onEnterAttachToCreatureYouControl])
     (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 2 1 Keyword.flying])
-    (activatedAbilities := #[leftoverAct .ifThisEquipmentIsnTACreatureItBecomesA ({ symbols := #[.generic 2] }), equipAbility ({ symbols := #[.generic 2] })])
+    (activatedAbilities := #[activated .equipmentBecomesConstructHero ({ symbols := #[.generic 2] }), equipAbility ({ symbols := #[.generic 2] })])
 
 def sHIELDHelicarrier : CardDef :=
   card "S.H.I.E.L.D. Helicarrier" #[.artifact] ({ symbols := #[.generic 4] })
@@ -2203,7 +2215,7 @@ def ultronDrone : CardDef :=
     (oracleText := "Power-up — {6}: Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token. (Activate each power-up ability only once. Reduce the cost by its mana cost if it entered this turn.)")
     (power := some 2)
     (toughness := some 3)
-    (activatedAbilities := #[leftoverAct .putTwo11CountersOnThisCreatureAndCrea ({ symbols := #[.generic 6] }) (powerUp := true)])
+    (activatedAbilities := #[activated (.plusOneAndCreateTokens 2 .robotVillain22) ({ symbols := #[.generic 6] }) (powerUp := true)])
 
 def vibraniumEnergyDaggers : CardDef :=
   card "Vibranium Energy Daggers" #[.artifact] ({ symbols := #[.generic 1] })
@@ -2253,13 +2265,16 @@ def avengersTower : CardDef :=
   card "Avengers Tower" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .hero)) (ManaCost.empty) (tap := true), leftoverAct .lookAtTheTopThreeCardsOfYourLibraryYou ({ symbols := #[.generic 4] }) (tap := true)])
+    (activatedAbilities := #[activated (.addAnyColorSpendOnly .hero) (ManaCost.empty) (tap := true),
+      activated (.lookAtTopRevealSubtype 3 "Hero") ({ symbols := #[.generic 4] }) (tap := true)])
 
 def baxterBuilding : CardDef :=
   card "Baxter Building" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{4}, {T}: Add four mana in any combination of colors.\n{4}, {T}: Draw a card. Activate only if you control a creature with toughness 4 or greater.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh .addFourManaInAnyCombinationOfColors) ({ symbols := #[.generic 4] }) (tap := true), leftoverAct .drawACardActivateOnlyIfYouControlACrea ({ symbols := #[.generic 4] }) (tap := true)])
+    (activatedAbilities := #[activated .addFourAnyCombination ({ symbols := #[.generic 4] }) (tap := true),
+      activated (.draw 1) ({ symbols := #[.generic 4] }) (tap := true)
+        (onlyIfYouControlCreatureToughnessAtLeast := 4)])
 
 def birninZanaPlaza : CardDef :=
   gainLifeDualLand "Birnin Zana Plaza"
@@ -2270,7 +2285,9 @@ def castleDoom : CardDef :=
   card "Castle Doom" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .artifactSpell)) (ManaCost.empty) (tap := true), leftoverAct .n3TSacrificeAnArtifact])
+    (activatedAbilities := #[activated (.addAnyColorSpendOnly .artifactSpell) (ManaCost.empty) (tap := true),
+      activated (.createTokens .doombot 1) ({ symbols := #[.generic 3] }) (tap := true)
+        (sacrificeArtifact := true) (onlyAsSorcery := true)])
 
 def darkFortress : CardDef :=
   conditionalDualLand "Dark Fortress"
@@ -2338,7 +2355,8 @@ def villainousHideout : CardDef :=
   card "Villainous Hideout" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.msh (.addOneManaOfAnyColorSpendOnly .villain)) (ManaCost.empty) (tap := true), leftoverAct .targetVillainYouControlConnives ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
+    (activatedAbilities := #[activated (.addAnyColorSpendOnly .villain) (ManaCost.empty) (tap := true),
+      activated (.targetSubtypeConnives "Villain") ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
 
 /-- All unique MSH card names, including both faces of transforming cards
 and the five basic lands printed in the set. -/

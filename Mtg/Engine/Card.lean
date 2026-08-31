@@ -357,6 +357,16 @@ inductive EffectTargetKind where
   | equipmentInstantOrSorceryInYourGraveyard
   /-- Target artifact or enchantment card in your graveyard. -/
   | artEnchCardInYourGraveyard
+  /-- Target artifact you control. -/
+  | artifactYouControl
+  /-- Two target artifacts you control. -/
+  | twoArtifactsYouControl
+  /-- Target creature you control that's attacking alone. -/
+  | attackingAloneCreatureYouControl
+  /-- Target noncreature artifact or noncreature enchantment. -/
+  | noncreatureArtifactOrEnchantment
+  /-- Target permanent or player. -/
+  | permanentOrPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Default demonstration-agent choice among legal targets (CR 601.2c).
@@ -551,6 +561,19 @@ def spec : EffectTargetKind → Spec
   | .artEnchCardInYourGraveyard =>
     { noun := "target artifact or enchantment card from your graveyard",
       prefer := .last }
+  | .artifactYouControl =>
+    { noun := "target artifact you control", prefer := .own }
+  | .twoArtifactsYouControl =>
+    { count := 2
+      noun := "target artifact you control and a second target artifact you control"
+      prefer := .own
+      slots := #[.artifactYouControl, .artifactYouControl] }
+  | .attackingAloneCreatureYouControl =>
+    { noun := "target creature you control that's attacking alone", prefer := .own }
+  | .noncreatureArtifactOrEnchantment =>
+    { noun := "target noncreature artifact or noncreature enchantment" }
+  | .permanentOrPlayer =>
+    { noun := "target permanent or player", prefer := .ownThenOpponent }
 
 /-- How many targets must be announced for this shape (CR 601.2c). -/
 def targetCount (k : EffectTargetKind) : Nat :=
@@ -2039,8 +2062,82 @@ inductive AbilityEffect where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- A leftover modeled MSH activation. -/
-  | msh (t : ModeledAbility)
+  /-- Add one mana of any color, spendable only as `kind` describes. -/
+  | addAnyColorSpendOnly (kind : RestrictedManaSpend)
+  /-- Add two mana of any one color, spendable only on creature-source abilities. -/
+  | addTwoAnyColorCreatureSources
+  /-- Add {U} that can't be spent to cast a nonartifact spell. -/
+  | addBlueCantNonartifact
+  /-- Add X mana of any one color, where X is this creature's power. -/
+  | addAnyColorEqualToSourcePower
+  /-- Add four mana in any combination of colors. -/
+  | addFourAnyCombination
+  /-- Add two mana of any one color, spendable only on Equipment spells or equip. -/
+  | addTwoAnyColorEquipment
+  /-- Draw a card for each card you've discarded this turn. -/
+  | drawPerDiscardedThisTurn
+  /-- This deals `n` damage to each creature. -/
+  | dealDamageToEachCreature (n : Nat)
+  /-- Create that many tokens of this kind (X = removed +1/+1 counters). -/
+  | createTokensEqualRemovedPlusOnes (kind : TokenKind)
+  /-- Exile the top X cards; you may play them this turn. -/
+  | exileTopXPlayThisTurn
+  /-- Target player draws `n` cards. -/
+  | targetPlayerDraw (n : Nat)
+  /-- Copy target activated or triggered ability you control from this source type. -/
+  | copyControlledAbility (fromCreature : Bool)
+  /-- Create tokens equal to the number of permanents you control of this subtype. -/
+  | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
+  /-- Create `n` tapped tokens of this kind. -/
+  | createTappedTokens (kind : TokenKind) (n : Nat)
+  /-- Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this. -/
+  | destroyUpToOneThenPlusOne
+  /-- For each kind of counter on target permanent or player, give another of that kind. -/
+  | proliferateEachKind
+  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
+  | equipmentBecomesConstructHero
+  /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
+  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
+  /-- Mill `n`. You may put a Hero or enchantment card from among them into your hand. -/
+  | millThenPutHeroOrEnchantment (n : Nat)
+  /-- Put a +1/+1 counter and a double strike counter on this. -/
+  | plusOneAndDoubleStrikeCounter
+  /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
+  | plusOneThenFightUpToOne
+  /-- Put a +1/+1 counter on this. It gains these keywords until end of turn. -/
+  | plusOneAndGrant (k : Keywords)
+  /-- Put a +1/+1 counter on this and create The Tiger God. -/
+  | plusOneAndCreateTigerGod
+  /-- Put `n` +1/+1 counters on this and create a token of this kind. -/
+  | plusOneAndCreateTokens (n : Nat) (kind : TokenKind)
+  /-- Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with that MV. -/
+  | plusTwoThenOddEvenDestroy
+  /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
+  | returnFromGyFinalityAttach
+  /-- Return up to one target creature card from your graveyard to your hand. Put `n` +1/+1 counters on this. -/
+  | returnGyCreatureThenPlusOne (n : Nat)
+  /-- Reveal the top card. If it's an artifact, draw a card. -/
+  | revealTopDrawIfArtifact
+  /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
+  | copyArtifactYouControlNotLegendary
+  /-- Target creature you control that's attacking alone gets +1/+0. You gain 1 life. -/
+  | pumpAttackingAloneGainLife
+  /-- Until end of turn, this becomes a Dinosaur Hero with base P/T and these keywords. -/
+  | becomeDinosaurHero (power toughness : Int) (k : Keywords)
+  /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
+  | nextInstantSorceryCopyIfMvAtMostSourcePower
+  /-- Harness this Infinity Stone. -/
+  | harnessInfinityStone
+  /-- Destroy target noncreature artifact or noncreature enchantment. -/
+  | destroyTargetNoncreatureArtOrEnch
+  /-- Target permanent you control of this subtype connives. -/
+  | targetSubtypeConnives (subtype : String)
+  /-- Another target creature you control gets +P/+T and gains these keywords. -/
+  | anotherYouControlGetsAndGrant (p t : Int) (k : Keywords)
+  /-- Tap target creature. -/
+  | tapTargetCreature
+  /-- Target creature gets +P/+T until end of turn. -/
+  | targetGets (p t : Int)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -2164,8 +2261,76 @@ inductive AbilityResolution where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- A leftover modeled MSH activation. -/
-  | msh (t : ModeledAbility)
+  /-- Add one mana of any color, spendable only as `kind` describes. -/
+  | addAnyColorSpendOnly (kind : RestrictedManaSpend)
+  /-- Add two mana of any one color, spendable only on creature-source abilities. -/
+  | addTwoAnyColorCreatureSources
+  /-- Add {U} that can't be spent to cast a nonartifact spell. -/
+  | addBlueCantNonartifact
+  /-- Add X mana of any one color, where X is this creature's power. -/
+  | addAnyColorEqualToSourcePower
+  /-- Add four mana in any combination of colors. -/
+  | addFourAnyCombination
+  /-- Add two mana of any one color, spendable only on Equipment spells or equip. -/
+  | addTwoAnyColorEquipment
+  /-- Draw a card for each card you've discarded this turn. -/
+  | drawPerDiscardedThisTurn
+  /-- This deals `n` damage to each creature. -/
+  | dealDamageToEachCreature (n : Nat)
+  /-- Create that many tokens of this kind (X = removed +1/+1 counters). -/
+  | createTokensEqualRemovedPlusOnes (kind : TokenKind)
+  /-- Exile the top X cards; you may play them this turn. -/
+  | exileTopXPlayThisTurn
+  /-- Target player draws `n` cards. -/
+  | targetPlayerDraw (n : Nat)
+  /-- Copy target activated or triggered ability you control from this source type. -/
+  | copyControlledAbility (fromCreature : Bool)
+  /-- Create tokens equal to the number of permanents you control of this subtype. -/
+  | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
+  /-- Create `n` tapped tokens of this kind. -/
+  | createTappedTokens (kind : TokenKind) (n : Nat)
+  /-- Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this. -/
+  | destroyUpToOneThenPlusOne
+  /-- For each kind of counter on target permanent or player, give another of that kind. -/
+  | proliferateEachKind
+  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
+  | equipmentBecomesConstructHero
+  /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
+  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
+  /-- Mill `n`. You may put a Hero or enchantment card from among them into your hand. -/
+  | millThenPutHeroOrEnchantment (n : Nat)
+  /-- Put a +1/+1 counter and a double strike counter on this. -/
+  | plusOneAndDoubleStrikeCounter
+  /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
+  | plusOneThenFightUpToOne
+  /-- Put a +1/+1 counter on this. It gains these keywords until end of turn. -/
+  | plusOneAndGrant (k : Keywords)
+  /-- Put a +1/+1 counter on this and create The Tiger God. -/
+  | plusOneAndCreateTigerGod
+  /-- Put `n` +1/+1 counters on this and create a token of this kind. -/
+  | plusOneAndCreateTokens (n : Nat) (kind : TokenKind)
+  /-- Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with that MV. -/
+  | plusTwoThenOddEvenDestroy
+  /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
+  | returnFromGyFinalityAttach
+  /-- Return up to one target creature card from your graveyard to your hand. Put `n` +1/+1 counters on this. -/
+  | returnGyCreatureThenPlusOne (n : Nat)
+  /-- Reveal the top card. If it's an artifact, draw a card. -/
+  | revealTopDrawIfArtifact
+  /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
+  | copyArtifactYouControlNotLegendary
+  /-- Target creature you control that's attacking alone gets +1/+0. You gain 1 life. -/
+  | pumpAttackingAloneGainLife
+  /-- Until end of turn, this becomes a Dinosaur Hero with base P/T and these keywords. -/
+  | becomeDinosaurHero (power toughness : Int) (k : Keywords)
+  /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
+  | nextInstantSorceryCopyIfMvAtMostSourcePower
+  /-- Harness this Infinity Stone. -/
+  | harnessInfinityStone
+  /-- Destroy target noncreature artifact or noncreature enchantment. -/
+  | destroyTargetNoncreatureArtOrEnch
+  /-- Target permanent you control of this subtype connives. -/
+  | targetSubtypeConnives (subtype : String)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -2175,6 +2340,8 @@ structure AbilityMeta where
   targeting : EffectTargeting := .of .none
   castKind : AbilityCastKind := .other
   resolution : AbilityResolution := .searchBasicLand
+  /-- True when zero targets is a legal announcement (CR 115.1c). -/
+  allowsZeroTargets : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace AbilityEffect
@@ -2312,13 +2479,94 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .lookAtTopRevealArtifact n }
   | .connive =>
     { resolution := .connive }
-  | .msh t =>
-    match t with
-    | .copyTargetActivatedOrTriggeredAbilityYouC =>
-      { targeting := .of .stackAbilityFromCreatureSource,
-        resolution := .msh t }
-    | _ =>
-      { resolution := .msh t }
+  | .addAnyColorSpendOnly kind =>
+    { resolution := .addAnyColorSpendOnly kind }
+  | .addTwoAnyColorCreatureSources =>
+    { resolution := .addTwoAnyColorCreatureSources }
+  | .addBlueCantNonartifact =>
+    { resolution := .addBlueCantNonartifact }
+  | .addAnyColorEqualToSourcePower =>
+    { resolution := .addAnyColorEqualToSourcePower }
+  | .addFourAnyCombination =>
+    { resolution := .addFourAnyCombination }
+  | .addTwoAnyColorEquipment =>
+    { resolution := .addTwoAnyColorEquipment }
+  | .drawPerDiscardedThisTurn =>
+    { resolution := .drawPerDiscardedThisTurn }
+  | .dealDamageToEachCreature n =>
+    { castKind := .creatureDamage, resolution := .dealDamageToEachCreature n }
+  | .createTokensEqualRemovedPlusOnes kind =>
+    { resolution := .createTokensEqualRemovedPlusOnes kind }
+  | .exileTopXPlayThisTurn =>
+    { resolution := .exileTopXPlayThisTurn }
+  | .targetPlayerDraw n =>
+    { targeting := .of .player, resolution := .targetPlayerDraw n }
+  | .copyControlledAbility fromCreature =>
+    { targeting :=
+        .of (if fromCreature then .stackAbilityFromCreatureSource
+             else .stackAbilityFromArtifactSource),
+      resolution := .copyControlledAbility fromCreature }
+  | .createTokensEqualSubtype kind subtype =>
+    { resolution := .createTokensEqualSubtype kind subtype }
+  | .createTappedTokens kind n =>
+    { resolution := .createTappedTokens kind n }
+  | .destroyUpToOneThenPlusOne =>
+    { targeting := .of .artifactOrEnchantment, castKind := .destroyColorless,
+      allowsZeroTargets := true, resolution := .destroyUpToOneThenPlusOne }
+  | .proliferateEachKind =>
+    { targeting := .of .permanentOrPlayer, resolution := .proliferateEachKind }
+  | .equipmentBecomesConstructHero =>
+    { resolution := .equipmentBecomesConstructHero }
+  | .lookAtTopRevealSubtype n subtype =>
+    { resolution := .lookAtTopRevealSubtype n subtype }
+  | .millThenPutHeroOrEnchantment n =>
+    { resolution := .millThenPutHeroOrEnchantment n }
+  | .plusOneAndDoubleStrikeCounter =>
+    { resolution := .plusOneAndDoubleStrikeCounter }
+  | .plusOneThenFightUpToOne =>
+    { targeting := .of .oppCreature, allowsZeroTargets := true,
+      resolution := .plusOneThenFightUpToOne }
+  | .plusOneAndGrant k =>
+    { resolution := .plusOneAndGrant k }
+  | .plusOneAndCreateTigerGod =>
+    { resolution := .plusOneAndCreateTigerGod }
+  | .plusOneAndCreateTokens n kind =>
+    { resolution := .plusOneAndCreateTokens n kind }
+  | .plusTwoThenOddEvenDestroy =>
+    { resolution := .plusTwoThenOddEvenDestroy }
+  | .returnFromGyFinalityAttach =>
+    { resolution := .returnFromGyFinalityAttach }
+  | .returnGyCreatureThenPlusOne n =>
+    { targeting := .of .creatureCardInYourGraveyard, allowsZeroTargets := true,
+      resolution := .returnGyCreatureThenPlusOne n }
+  | .revealTopDrawIfArtifact =>
+    { resolution := .revealTopDrawIfArtifact }
+  | .copyArtifactYouControlNotLegendary =>
+    { targeting := .of .twoArtifactsYouControl,
+      resolution := .copyArtifactYouControlNotLegendary }
+  | .pumpAttackingAloneGainLife =>
+    { targeting := .of .attackingAloneCreatureYouControl,
+      resolution := .pumpAttackingAloneGainLife }
+  | .becomeDinosaurHero p t k =>
+    { resolution := .becomeDinosaurHero p t k }
+  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
+    { resolution := .nextInstantSorceryCopyIfMvAtMostSourcePower }
+  | .harnessInfinityStone =>
+    { resolution := .harnessInfinityStone }
+  | .destroyTargetNoncreatureArtOrEnch =>
+    { targeting := .of .noncreatureArtifactOrEnchantment,
+      castKind := .destroyColorless,
+      resolution := .destroyTargetNoncreatureArtOrEnch }
+  | .targetSubtypeConnives subtype =>
+    { targeting := .of (.creatureYouControlSubtype subtype),
+      resolution := .targetSubtypeConnives subtype }
+  | .anotherYouControlGetsAndGrant p t k =>
+    { targeting := .of .anotherCreatureYouControl,
+      resolution := .onPermanent (.pumpAndGrant p t k) }
+  | .tapTargetCreature =>
+    { targeting := .of .creature, resolution := .onPermanent .tap }
+  | .targetGets p t =>
+    { targeting := .of .creature, resolution := .onPermanent (.pump p t) }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -2346,6 +2594,10 @@ def castKind (e : AbilityEffect) : AbilityCastKind :=
 /-- How this effect resolves (CR 608). -/
 def resolution (e : AbilityEffect) : AbilityResolution :=
   e.spec.resolution
+
+/-- True when zero targets is a legal announcement (CR 115.1c). -/
+def allowsZeroTargets (e : AbilityEffect) : Bool :=
+  e.spec.allowsZeroTargets
 
 /-- Oracle-style reminder from targeting and resolution, so a new constructor
 only updates `spec`. Source-deals-damage uses the creature as the subject
@@ -2463,7 +2715,97 @@ def toNotation (e : AbilityEffect) : String :=
     s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
   | .connive =>
     "This creature connives"
-  | .msh t => t.toNotation
+  | .addAnyColorSpendOnly kind =>
+    s!"Add one mana of any color. Spend this mana only {kind.spendClause}"
+  | .addTwoAnyColorCreatureSources =>
+    "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
+  | .addBlueCantNonartifact =>
+    "Add {U}. This mana can't be spent to cast a nonartifact spell"
+  | .addAnyColorEqualToSourcePower =>
+    "Add X mana of any one color, where X is this creature's power"
+  | .addFourAnyCombination =>
+    "Add four mana in any combination of colors"
+  | .addTwoAnyColorEquipment =>
+    "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
+  | .drawPerDiscardedThisTurn =>
+    "Draw a card for each card you've discarded this turn"
+  | .dealDamageToEachCreature n =>
+    s!"This deals {n} damage to each creature"
+  | .createTokensEqualRemovedPlusOnes kind =>
+    s!"Create that many {kind.pluralNoun}"
+  | .exileTopXPlayThisTurn =>
+    "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
+  | .targetPlayerDraw n =>
+    s!"{noun} draws {cardPhrase n}"
+  | .copyControlledAbility fromCreature =>
+    let src := if fromCreature then "a creature" else "an artifact"
+    s!"Copy target activated or triggered ability you control from {src} source. You may choose new targets for the copy"
+  | .createTokensEqualSubtype kind subtype =>
+    s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
+  | .createTappedTokens kind n =>
+    capitalizeAscii (TokenKind.createPhrase kind n (tapped := true))
+  | .destroyUpToOneThenPlusOne =>
+    "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this"
+  | .proliferateEachKind =>
+    "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
+  | .equipmentBecomesConstructHero =>
+    "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
+  | .lookAtTopRevealSubtype n subtype =>
+    s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
+  | .millThenPutHeroOrEnchantment n =>
+    s!"Mill {n} cards. You may put a Hero or enchantment card from among those cards into your hand"
+  | .plusOneAndDoubleStrikeCounter =>
+    "Put a +1/+1 counter and a double strike counter on this"
+  | .plusOneThenFightUpToOne =>
+    "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls"
+  | .plusOneAndGrant k =>
+    let joined :=
+      if k.vigilance && k.indestructible && k.haste then
+        "vigilance, indestructible, and haste"
+      else
+        match k.toList with
+        | [a] => a
+        | [a, b] => s!"{a} and {b}"
+        | [a, b, c] => s!"{a}, {b}, and {c}"
+        | ks => String.intercalate ", " ks
+    s!"Put a +1/+1 counter on this. He gains {joined} until end of turn"
+  | .plusOneAndCreateTigerGod =>
+    "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  | .plusOneAndCreateTokens n kind =>
+    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
+    let token := TokenKind.createPhrase kind 1
+    s!"Put {counters} on this creature and {token}"
+  | .plusTwoThenOddEvenDestroy =>
+    "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
+  | .returnFromGyFinalityAttach =>
+    "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
+  | .returnGyCreatureThenPlusOne n =>
+    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
+    s!"Return up to one target creature card from your graveyard to your hand. Put {counters} on this creature"
+  | .revealTopDrawIfArtifact =>
+    "Reveal the top card of your library. If it's an artifact card, draw a card"
+  | .copyArtifactYouControlNotLegendary =>
+    "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
+  | .pumpAttackingAloneGainLife =>
+    "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
+  | .becomeDinosaurHero p t k =>
+    let joined :=
+      if k.reach && k.vigilance then "reach and vigilance"
+      else if k.trample then "trample"
+      else
+        match k.toList with
+        | [a] => a
+        | [a, b] => s!"{a} and {b}"
+        | ks => String.intercalate ", " ks
+    s!"Until end of turn, this becomes a Dinosaur Hero with base power and toughness {p}/{t} and gains {joined}"
+  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
+    "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
+  | .harnessInfinityStone =>
+    "Harness this"
+  | .destroyTargetNoncreatureArtOrEnch =>
+    "Destroy target noncreature artifact or noncreature enchantment"
+  | .targetSubtypeConnives subtype =>
+    s!"Target {subtype} you control connives"
 
 instance : ToString AbilityEffect where
   toString := toNotation
@@ -2495,6 +2837,16 @@ structure ActivationCost where
   discardLegendarySameName : Bool := false
   /-- Sacrifice an artifact you control (Stone-Giant). -/
   sacrificeArtifact : Bool := false
+  /-- Sacrifice an artifact or creature you control. -/
+  sacrificeArtifactOrCreature : Bool := false
+  /-- Sacrifice an artifact or discard a nonland card. -/
+  sacrificeArtifactOrDiscardNonland : Bool := false
+  /-- Remove any number of +1/+1 counters from the source. -/
+  removeAnyNumberPlusOne : Bool := false
+  /-- Put a stun counter on the source. -/
+  putStunCounterOnSource : Bool := false
+  /-- Sacrifice an Equipment attached to the source. -/
+  sacrificeEquipmentAttachedToSource : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace ActivationCost
@@ -2519,6 +2871,16 @@ def toNotation (c : ActivationCost) : String :=
      | some t => [s!"Sacrifice another {t}"]
      | none => []) ++
     (if c.discardACard then ["Discard a card"] else []) ++
+    (if c.sacrificeArtifactOrCreature then
+      ["Sacrifice an artifact or creature"] else []) ++
+    (if c.sacrificeArtifactOrDiscardNonland then
+      ["Sacrifice an artifact or discard a nonland card"] else []) ++
+    (if c.removeAnyNumberPlusOne then
+      ["Remove any number of +1/+1 counters from this"] else []) ++
+    (if c.putStunCounterOnSource then
+      ["Put a stun counter on this"] else []) ++
+    (if c.sacrificeEquipmentAttachedToSource then
+      ["Sacrifice an Equipment attached to this"] else []) ++
     (if c.tapAnUntappedCreatureYouControl then
       ["Tap an untapped creature you control"] else []) ++
     (if c.removeIndestructibleCounter then
@@ -2575,6 +2937,13 @@ structure ActivatedAbility where
   /-- Equip worthy: attach only to a legendary non-Villain red or white
   creature (MSH 118 / 119). Other attach effects ignore this. -/
   equipWorthy : Bool := false
+  /-- “Activate only if you control a creature with toughness `n` or greater.” -/
+  onlyIfYouControlCreatureToughnessAtLeast : Nat := 0
+  /-- “Activate only if there are `n` or more creature cards in your graveyard.” -/
+  onlyIfGyCreaturesAtLeast : Nat := 0
+  /-- This ability costs this much generic mana less if it targets a creature
+  with power at most this value. -/
+  costReductionIfTargetPowerAtMost : Option (Nat × Int) := none
 deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
@@ -2582,6 +2951,10 @@ namespace ActivatedAbility
 /-- Every mode of this ability; a non-modal ability is a singleton. -/
 def allModes (ab : ActivatedAbility) : Array AbilityEffect :=
   #[ab.effect] ++ ab.otherModes
+
+/-- True when zero targets is a legal announcement (CR 115.1c). -/
+def allowsZeroTargets (ab : ActivatedAbility) : Bool :=
+  ab.effect.allowsZeroTargets
 
 /-- True when the player must choose among two or more modes (CR 700.2). -/
 def isModal (ab : ActivatedAbility) : Bool :=
@@ -7648,20 +8021,18 @@ an explicit `tapAddMana` list. -/
 def simpleTapAddMana (c : CardDef) : Array ManaType :=
   c.basicLandMana.map ManaType.colored ++ c.tapAddMana
 
-/-- `{T}: Add` types from modeled MSH mana abilities (e.g. Hidden Lair). -/
+/-- `{T}: Add` types from modeled activated mana abilities. -/
 def mshTapAddMana (c : CardDef) : Array ManaType :=
   c.activatedAbilities.foldl (fun acc ab =>
     match ab.effect with
-    | .msh t => acc ++ t.addManaTypes
+    | .addMana types => acc ++ types
+    | .addBlueCantNonartifact => acc ++ #[.colored .blue]
     | _ => acc) #[]
 
-/-- True when a modeled MSH `{T}: Add` ability requires this land entered
+/-- True when a modeled `{T}: Add` ability requires this land entered
 this turn or a basic land you control. -/
-def mshTapAddRequiresEnteredOrBasic (c : CardDef) : Bool :=
-  c.activatedAbilities.any (fun ab =>
-    match ab.effect with
-    | .msh t => t.requiresEnteredOrBasic
-    | _ => false)
+def mshTapAddRequiresEnteredOrBasic (_c : CardDef) : Bool :=
+  false
 
 /-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
 def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
@@ -7672,6 +8043,15 @@ a basic land you control. -/
 def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
   !c.tapAddOneOfIfEnteredOrBasic.isEmpty || c.mshTapAddRequiresEnteredOrBasic
 
+/-- True when an activated ability adds any color of mana. -/
+def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
+  c.activatedAbilities.any (fun ab =>
+    match ab.effect with
+    | .addAnyColor | .addAnyColorSpendOnly _ | .addAnyColorEqualToSourcePower
+    | .addTwoAnyColorCreatureSources | .addFourAnyCombination
+    | .addTwoAnyColorEquipment => true
+    | _ => false)
+
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
@@ -7679,7 +8059,8 @@ def manaAbilities (c : CardDef) : Array ManaType :=
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
         c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
-        c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity then
+        c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity ||
+        c.hasAnyColorActivatedAdd then
       (Color.all.map ManaType.colored).toArray
      else #[])
 

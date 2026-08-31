@@ -78,7 +78,8 @@ def stripAbilityWord (s : String) : String :=
         h == "Solar Beam" || h == "Density Control" || h == "Technopathy" ||
         h == "Trick Arrows" || h == "Radar Sense" ||
         h == "Photographic Reflexes" || h == "Cybernetic Senses" ||
-        h == "Designed Only for Killing"
+        h == "Designed Only for Killing" ||
+        h == "Mental Organism" || h == "Tyrannosaurus Rex"
       if h.isEmpty || (h.contains ' ' && !known) then s
       else (String.intercalate "—" rest).trimAscii.copy
   | [] => s
@@ -197,6 +198,8 @@ def normalizePhrases (s : String) : String :=
     ("sacrifice this", "sacrifice"),
     ("sacrifice another creature or artifact", "sacrifice an artifact or creature"),
     ("sacrifice another artifact or creature", "sacrifice an artifact or creature"),
+    ("he gains", "this gains"),
+    ("she gains", "this gains"),
     ("he deals", "this deals"),
     ("she deals", "this deals"),
     ("it deals", "this deals"),
@@ -326,7 +329,8 @@ def isEquipAbility (ab : ActivatedAbility) : Bool :=
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.activateFromHand && ab.cost.discardSource then
     match ab.effect with
-    | .searchLandTypeToHand t => some t
+    | .searchLandTypeToHand t =>
+      if t == "Plan" then none else some t
     | _ => none
   else none
 
@@ -339,6 +343,10 @@ def activatedOracleLineFromParts (ab : ActivatedAbility) : String :=
     (if ab.costReductionPerEquipment != 0 then
       s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
      else "") ++
+    (match ab.costReductionIfTargetPowerAtMost with
+     | some (n, p) =>
+       s!" This ability costs \{{n}} less to activate if it targets a creature with power {p} or less."
+     | none => "") ++
     (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
     (if ab.onlyDuringYourTurn && ab.onceEachTurn then
       " Activate only during your turn and only once each turn."
@@ -348,7 +356,16 @@ def activatedOracleLineFromParts (ab : ActivatedAbility) : String :=
     (if ab.onlyIfYouControlLegendary then
       " Activate only if you control a legendary creature." else "") ++
     (if ab.onlyIfYouAttackedWithTwoOrMore then
-      " Activate only if you attacked with two or more creatures this turn." else "")
+      " Activate only if you attacked with two or more creatures this turn." else "") ++
+    (if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 then
+      s!" Activate only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater."
+     else "") ++
+    (if ab.onlyIfGyCreaturesAtLeast != 0 then
+      let cards :=
+        if ab.onlyIfGyCreaturesAtLeast == 1 then "a creature card"
+        else s!"{ab.onlyIfGyCreaturesAtLeast} or more creature cards"
+      s!" Activate only if there are {cards} in your graveyard."
+     else "")
   let body :=
     if ab.isModal then
       let modes := ab.allModes.toList.map AbilityEffect.toNotation
@@ -372,17 +389,7 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
   else
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
-    | none =>
-      match ab.effect with
-      | .msh t =>
-        let text := t.toNotation.trimAscii.copy
-        if text.contains ':' &&
-            (text.startsWith "{" || text.startsWith "Pay " ||
-              text.startsWith "Sacrifice" || text.contains "—") then
-          if text.endsWith "." then text else s!"{text}."
-        else
-          activatedOracleLineFromParts ab
-      | _ => activatedOracleLineFromParts ab
+    | none => activatedOracleLineFromParts ab
 
 /-- Oracle-style line for a one-shot spell effect. -/
 def spellEffectLine (cardName : String) (e : SpellEffect) : String :=
