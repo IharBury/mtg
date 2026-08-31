@@ -17,189 +17,87 @@ inductives (`StepEffect`, `DeathEffect`, `ThisAttackEffect`,
 `EnterOrAttackEffect`, `WatchEffect`, `YouAttackEffect`, `CastEffect`,
 `ResourceEffect`) with one `TriggeredAbility` constructor each.
 Reusable leftover *statics* now live on `StaticAbility`. Leftover spells
-and activations remain here.
+live on `LeftoverSpell` with one `SpellEffect.leftover` constructor.
+Leftover activations remain here on `ModeledAbility`.
 -/
 
 namespace Mtg.Engine
 
 /-- A leftover modeled spell effect that is not yet a shared shape. -/
-inductive ModeledSpell where
-  /-- Modeled MSH ability. -/
-  | anotherTargetCreatureYouControlGets20A
-  /-- Modeled MSH ability. -/
+inductive LeftoverSpell where
+  /-- Modeled MSH spell. -/
   | artifactSpellsYouCastThisTurnCost1Less
-  /-- Modeled MSH ability. -/
-  | chooseTargetCreatureCardInYourGraveyardWi
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | chooseTargetCreatureYouControlUntilEndOf
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | chooseUpToTwoReturnThoseCardsFromYourG
-  /-- Modeled MSH ability. -/
-  | copyTargetActivatedOrTriggeredAbilityYouC
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | createGalactusALegendary1616BlackElderA
-  /-- Modeled MSH ability. -/
-  | createX11GreenSquirrelCreatureTokensWhe
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | createA21BlackVillainCreatureTokenWithM
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | createATreasureTokenForEachVillainYouCon
-  /-- Modeled MSH ability. -/
-  | createATapped21BlackVillainCreatureToken
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | creaturesYouControlGet11AndGainVigilan
-  /-- Modeled MSH ability. -/
-  | destroyUpToOneTargetArtifactOrEnchantment
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | destroyUpToOneTargetNonlandPermanent
-  /-- Modeled MSH ability. -/
-  | drawACardActivateOnlyIfYouControlACrea
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | exileAllCreaturesEachPlayerMayPutAnyNum
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | exileAllTheCardsFromYourHandThenDrawTh
-  /-- Modeled MSH ability. -/
-  | forEachKindOfCounterOnTargetPermanentOr
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | forEachNontokenCreatureYouControlCreateA
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | gainControlOfTargetCreatureUntilEndOfTur
-  /-- Modeled MSH ability. -/
-  | ifThisEquipmentIsnTACreatureItBecomesA
-  /-- Modeled MSH ability. -/
-  | lookAtTheTopThreeCardsOfYourLibraryYou
-  /-- Modeled MSH ability. -/
-  | millFourCardsYouMayPutAHeroOrEnchantme
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | millTwoCardsYouMayPutAPermanentCardFro
-  /-- Modeled MSH ability. -/
-  | putA11CounterAndADoubleStrikeCounter
-  /-- Modeled MSH ability. -/
-  | putA11CounterOnAbominationHeFightsUp
-  /-- Modeled MSH ability. -/
-  | putA11CounterOnHerculesHeGainsVigila
-  /-- Modeled MSH ability. -/
-  | putA11CounterOnWhiteTigerAndCreateTh
-  /-- Modeled MSH ability. -/
-  | putA11CounterOnThisCreatureAndCreate
-  /-- Modeled MSH ability. -/
-  | putFive11CountersOnHulk
-  /-- Modeled MSH ability. -/
-  | putThree11CountersOnHumanTorch
-  /-- Modeled MSH ability. -/
-  | putTwo11CountersOnLoki
-  /-- Modeled MSH ability. -/
-  | putTwo11CountersOnThanosChooseOddOr
-  /-- Modeled MSH ability. -/
-  | putTwo11CountersOnVivVision
-  /-- Modeled MSH ability. -/
-  | putTwo11CountersOnWonderMan
-  /-- Modeled MSH ability. -/
-  | putTwo11CountersOnThisCreatureAndCrea
-  /-- Modeled MSH ability. -/
-  | returnThisCardFromYourGraveyardToTheBatt
-  /-- Modeled MSH ability. -/
-  | returnThisCardFromYourGraveyardToYourHan
-  /-- Modeled MSH ability. -/
-  | returnUpToOneTargetCreatureCardFromYour
-  /-- Modeled MSH ability. -/
-  | revealTheTopCardOfYourLibraryIfItSAn
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | searchYourLibraryAndOrGraveyardForAnArti
-  /-- Modeled MSH ability. -/
-  | superSkrullDeals4DamageToTargetCreature
-  /-- Modeled MSH ability. -/
-  | superSkrullGets44UntilEndOfTurn
-  /-- Modeled MSH ability. -/
-  | tapTargetCreatureThisAbilityCosts1Less
-  /-- Modeled MSH ability. -/
-  | targetVillainYouControlConnives
-  /-- Modeled MSH ability. -/
-  | targetArtifactYouControlBecomesACopyOfA
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | targetCreatureGets31UntilEndOfTurn
-  /-- Modeled MSH ability. -/
-  | targetCreatureYouControlThatSAttackingAlo
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | targetPlayerGains2LifeThenSearchesTheir
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | theNextRedOrGreenCreatureSpellYouCastTh
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | theOwnerOfTargetCreatureAnOpponentControl
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | thisSpellCosts1LessToCastIfYouControl
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | thisSpellCosts2LessToCastIfItTargets
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | thisSpellCosts2LessToCastIfThereAreT
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | thisSpellCosts2LessToCastIfYouControl
-  /-- Modeled MSH ability. -/
-  | untilEndOfTurnReptilBecomesADinosaurHer
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | whenYouCastThisSpellCopyItXTimesYouM
-  /-- Modeled MSH ability. -/
-  | whenYouNextCastAnInstantOrSorcerySpellW
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | youMayDrawACardForEachArtifactYouContro
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | youMayPutAHeroCreatureCardWithManaValue
-  /-- Modeled MSH ability. -/
+  /-- Modeled MSH spell. -/
   | youMaySacrificeAnArtifactOrDiscardACard
 deriving Repr, Inhabited, BEq
 
-namespace ModeledSpell
+namespace LeftoverSpell
 
-/-- Official Oracle wording for this ModeledSpell. -/
-def toNotation : ModeledSpell → String
-  | .anotherTargetCreatureYouControlGets20A => "Another target creature you control gets +2/+0 and gains hexproof until end of turn"
+/-- Official Oracle wording for this leftover spell. -/
+def toNotation : LeftoverSpell → String
   | .artifactSpellsYouCastThisTurnCost1Less => "Artifact spells you cast this turn cost {1} less to cast"
-  | .chooseTargetCreatureCardInYourGraveyardWi => "Choose target creature card in your graveyard with mana value 4 or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield."
   | .chooseTargetCreatureYouControlUntilEndOf => "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
   | .chooseUpToTwoReturnThoseCardsFromYourG => "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
-  | .copyTargetActivatedOrTriggeredAbilityYouC => "Copy target activated or triggered ability you control from a creature source. You may choose new targets for the copy"
   | .createGalactusALegendary1616BlackElderA => "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-  | .createX11GreenSquirrelCreatureTokensWhe => "Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control"
   | .createA21BlackVillainCreatureTokenWithM => "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn."
   | .createATreasureTokenForEachVillainYouCon => "Create a Treasure token for each Villain you control"
-  | .createATapped21BlackVillainCreatureToken => "Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard"
   | .creaturesYouControlGet11AndGainVigilan => "Creatures you control get +1/+1 and gain vigilance until end of turn"
-  | .destroyUpToOneTargetArtifactOrEnchantment => "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk"
   | .destroyUpToOneTargetNonlandPermanent => "Destroy up to one target nonland permanent"
-  | .drawACardActivateOnlyIfYouControlACrea => "Draw a card. Activate only if you control a creature with toughness 4 or greater"
   | .exileAllCreaturesEachPlayerMayPutAnyNum => "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
   | .exileAllTheCardsFromYourHandThenDrawTh => "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
-  | .forEachKindOfCounterOnTargetPermanentOr => "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
   | .forEachNontokenCreatureYouControlCreateA => "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
   | .gainControlOfTargetCreatureUntilEndOfTur => "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
-  | .ifThisEquipmentIsnTACreatureItBecomesA => "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
-  | .lookAtTheTopThreeCardsOfYourLibraryYou => "Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
-  | .millFourCardsYouMayPutAHeroOrEnchantme => "Mill four cards. You may put a Hero or enchantment card from among those cards into your hand"
   | .millTwoCardsYouMayPutAPermanentCardFro => "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life."
-  | .putA11CounterAndADoubleStrikeCounter => "Put a +1/+1 counter and a double strike counter on Quicksilver"
-  | .putA11CounterOnAbominationHeFightsUp => "Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls"
-  | .putA11CounterOnHerculesHeGainsVigila => "Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn"
-  | .putA11CounterOnWhiteTigerAndCreateTh => "Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .putA11CounterOnThisCreatureAndCreate => "Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance"
-  | .putFive11CountersOnHulk => "Put five +1/+1 counters on Hulk"
-  | .putThree11CountersOnHumanTorch => "Put three +1/+1 counters on Human Torch"
-  | .putTwo11CountersOnLoki => "Put two +1/+1 counters on Loki"
-  | .putTwo11CountersOnThanosChooseOddOr => "Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
-  | .putTwo11CountersOnVivVision => "Put two +1/+1 counters on Viv Vision"
-  | .putTwo11CountersOnWonderMan => "Put two +1/+1 counters on Wonder Man"
-  | .putTwo11CountersOnThisCreatureAndCrea => "Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
-  | .returnThisCardFromYourGraveyardToTheBatt => "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
-  | .returnThisCardFromYourGraveyardToYourHan => "Return this card from your graveyard to your hand"
-  | .returnUpToOneTargetCreatureCardFromYour => "Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature"
-  | .revealTheTopCardOfYourLibraryIfItSAn => "Reveal the top card of your library. If it's an artifact card, draw a card"
   | .searchYourLibraryAndOrGraveyardForAnArti => "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
-  | .superSkrullDeals4DamageToTargetCreature => "Super-Skrull deals 4 damage to target creature"
-  | .superSkrullGets44UntilEndOfTurn => "Super-Skrull gets +4/+4 until end of turn"
-  | .tapTargetCreatureThisAbilityCosts1Less => "Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less"
-  | .targetVillainYouControlConnives => "Target Villain you control connives"
-  | .targetArtifactYouControlBecomesACopyOfA => "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
   | .targetCreatureGets31UntilEndOfTurn => "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
-  | .targetCreatureYouControlThatSAttackingAlo => "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
   | .targetPlayerGains2LifeThenSearchesTheir => "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
   | .theNextRedOrGreenCreatureSpellYouCastTh => "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
   | .theOwnerOfTargetCreatureAnOpponentControl => "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
@@ -207,17 +105,15 @@ def toNotation : ModeledSpell → String
   | .thisSpellCosts2LessToCastIfItTargets => "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card."
   | .thisSpellCosts2LessToCastIfThereAreT => "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls."
   | .thisSpellCosts2LessToCastIfYouControl => "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target."
-  | .untilEndOfTurnReptilBecomesADinosaurHer => "Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance"
   | .whenYouCastThisSpellCopyItXTimesYouM => "When you cast this spell, copy it X times. You may choose new targets for the copies.\nPhoton Blast Barrage deals 1 damage to target creature."
-  | .whenYouNextCastAnInstantOrSorcerySpellW => "When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy"
   | .youMayDrawACardForEachArtifactYouContro => "You may draw a card for each artifact you control. If you do, each opponent draws a card"
   | .youMayPutAHeroCreatureCardWithManaValue => "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"
   | .youMaySacrificeAnArtifactOrDiscardACard => "You may sacrifice an artifact or discard a card. If you do, draw two cards."
 
-instance : ToString ModeledSpell where
+instance : ToString LeftoverSpell where
   toString := toNotation
 
-end ModeledSpell
+end LeftoverSpell
 /-- How leftover “add one mana of any color; spend only …” restricts the mana. -/
 inductive RestrictedManaSpend where
   /-- Hero spells and Hero sources. -/
@@ -291,6 +187,58 @@ inductive ModeledAbility where
   | harnessTheMindStone
   /-- Modeled MSH ability. -/
   | targetPlayerDrawsFourCards
+  /-- Modeled MSH ability. -/
+  | anotherTargetCreatureYouControlGets20A
+  /-- Modeled MSH ability. -/
+  | copyTargetActivatedOrTriggeredAbilityYouC
+  /-- Modeled MSH ability. -/
+  | createX11GreenSquirrelCreatureTokensWhe
+  /-- Modeled MSH ability. -/
+  | createATapped21BlackVillainCreatureToken
+  /-- Modeled MSH ability. -/
+  | destroyUpToOneTargetArtifactOrEnchantment
+  /-- Modeled MSH ability. -/
+  | drawACardActivateOnlyIfYouControlACrea
+  /-- Modeled MSH ability. -/
+  | forEachKindOfCounterOnTargetPermanentOr
+  /-- Modeled MSH ability. -/
+  | ifThisEquipmentIsnTACreatureItBecomesA
+  /-- Modeled MSH ability. -/
+  | lookAtTheTopThreeCardsOfYourLibraryYou
+  /-- Modeled MSH ability. -/
+  | millFourCardsYouMayPutAHeroOrEnchantme
+  /-- Modeled MSH ability. -/
+  | putA11CounterAndADoubleStrikeCounter
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnAbominationHeFightsUp
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnHerculesHeGainsVigila
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnWhiteTigerAndCreateTh
+  /-- Modeled MSH ability. -/
+  | putA11CounterOnThisCreatureAndCreate
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnThanosChooseOddOr
+  /-- Modeled MSH ability. -/
+  | putTwo11CountersOnThisCreatureAndCrea
+  /-- Modeled MSH ability. -/
+  | returnThisCardFromYourGraveyardToTheBatt
+  /-- Modeled MSH ability. -/
+  | returnUpToOneTargetCreatureCardFromYour
+  /-- Modeled MSH ability. -/
+  | revealTheTopCardOfYourLibraryIfItSAn
+  /-- Modeled MSH ability. -/
+  | tapTargetCreatureThisAbilityCosts1Less
+  /-- Modeled MSH ability. -/
+  | targetVillainYouControlConnives
+  /-- Modeled MSH ability. -/
+  | targetArtifactYouControlBecomesACopyOfA
+  /-- Modeled MSH ability. -/
+  | targetCreatureYouControlThatSAttackingAlo
+  /-- Modeled MSH ability. -/
+  | untilEndOfTurnReptilBecomesADinosaurHer
+  /-- Modeled MSH ability. -/
+  | whenYouNextCastAnInstantOrSorcerySpellW
 deriving Repr, Inhabited, BEq
 
 namespace ModeledAbility
@@ -330,6 +278,32 @@ def toNotation : ModeledAbility → String
       "Sacrifice this creature: Destroy target noncreature artifact or noncreature enchantment. Activate only as a sorcery."
   | .harnessTheMindStone => "Harness The Mind Stone"
   | .targetPlayerDrawsFourCards => "Target player draws four cards"
+  | .anotherTargetCreatureYouControlGets20A => "Another target creature you control gets +2/+0 and gains hexproof until end of turn"
+  | .copyTargetActivatedOrTriggeredAbilityYouC => "Copy target activated or triggered ability you control from a creature source. You may choose new targets for the copy"
+  | .createX11GreenSquirrelCreatureTokensWhe => "Create X 1/1 green Squirrel creature tokens, where X is the number of Squirrels you control"
+  | .createATapped21BlackVillainCreatureToken => "Create a tapped 2/1 black Villain creature token with menace. Activate only if there are two or more creature cards in your graveyard"
+  | .destroyUpToOneTargetArtifactOrEnchantment => "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on She-Hulk"
+  | .drawACardActivateOnlyIfYouControlACrea => "Draw a card. Activate only if you control a creature with toughness 4 or greater"
+  | .forEachKindOfCounterOnTargetPermanentOr => "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
+  | .ifThisEquipmentIsnTACreatureItBecomesA => "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
+  | .lookAtTheTopThreeCardsOfYourLibraryYou => "Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
+  | .millFourCardsYouMayPutAHeroOrEnchantme => "Mill four cards. You may put a Hero or enchantment card from among those cards into your hand"
+  | .putA11CounterAndADoubleStrikeCounter => "Put a +1/+1 counter and a double strike counter on Quicksilver"
+  | .putA11CounterOnAbominationHeFightsUp => "Put a +1/+1 counter on Abomination. He fights up to one target creature an opponent controls"
+  | .putA11CounterOnHerculesHeGainsVigila => "Put a +1/+1 counter on Hercules. He gains vigilance, indestructible, and haste until end of turn"
+  | .putA11CounterOnWhiteTigerAndCreateTh => "Put a +1/+1 counter on White Tiger and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
+  | .putA11CounterOnThisCreatureAndCreate => "Put a +1/+1 counter on this creature and create a 3/2 white Hero creature token with vigilance"
+  | .putTwo11CountersOnThanosChooseOddOr => "Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
+  | .putTwo11CountersOnThisCreatureAndCrea => "Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
+  | .returnThisCardFromYourGraveyardToTheBatt => "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
+  | .returnUpToOneTargetCreatureCardFromYour => "Return up to one target creature card from your graveyard to your hand. Put two +1/+1 counters on this creature"
+  | .revealTheTopCardOfYourLibraryIfItSAn => "Reveal the top card of your library. If it's an artifact card, draw a card"
+  | .tapTargetCreatureThisAbilityCosts1Less => "Tap target creature. This ability costs {1} less to activate if it targets a creature with power 3 or less"
+  | .targetVillainYouControlConnives => "Target Villain you control connives"
+  | .targetArtifactYouControlBecomesACopyOfA => "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
+  | .targetCreatureYouControlThatSAttackingAlo => "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
+  | .untilEndOfTurnReptilBecomesADinosaurHer => "Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance"
+  | .whenYouNextCastAnInstantOrSorcerySpellW => "When you next cast an instant or sorcery spell with mana value less than or equal to Loki's power this turn, copy that spell. You may choose new targets for the copy"
 
 instance : ToString ModeledAbility where
   toString := toNotation

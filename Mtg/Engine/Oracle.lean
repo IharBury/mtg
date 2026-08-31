@@ -382,14 +382,6 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
           if text.endsWith "." then text else s!"{text}."
         else
           activatedOracleLineFromParts ab
-      | .mshSpell t =>
-        let text := t.toNotation.trimAscii.copy
-        if text.contains ':' &&
-            (text.startsWith "{" || text.startsWith "Pay " ||
-              text.startsWith "Sacrifice" || text.contains "—") then
-          if text.endsWith "." then text else s!"{text}."
-        else
-          activatedOracleLineFromParts ab
       | _ => activatedOracleLineFromParts ab
 
 /-- Oracle-style line for a one-shot spell effect. -/
@@ -631,7 +623,7 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.becomeArtifactCreature44Flying) =>
       ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
         "Draw a card."]
-    | some (.msh t) =>
+    | some (.leftover t) =>
       t.toNotation.splitOn "\n" |>.filterMap (fun s =>
         let s := s.trimAscii.copy
         if s.isEmpty then none
