@@ -1063,9 +1063,9 @@ def creatureAndArtifactSourceOk : Bool :=
   let stone := namedPermanent g "The Mind Stone"
   let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
   let (g, bearAb) := g.putStackAbility bears ⟨0⟩
-    (abilityEffect := some (Effect.draw 1))
+    (abilityEffect := some (Effect.ofAbility (.draw 1)))
   let (g, stoneAb) := g.putStackAbility stone ⟨0⟩
-    (abilityEffect := some (Effect.draw 1))
+    (abilityEffect := some (Effect.ofAbility (.draw 1)))
   let creatureLegal :=
     g.legalTargetsForKind ⟨0⟩ .stackAbilityFromCreatureSource
   let artifactLegal :=
@@ -4149,7 +4149,7 @@ def baxterActivationLockOk : Bool :=
     (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
      let bax := namedPermanent g "Baxter Building"
      !g.canActivate ⟨0⟩ bax ab) &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.draw 1) #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.draw 1)) #[]
        (some bax.id)
      (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 265).comment.contains "no player may take actions" &&

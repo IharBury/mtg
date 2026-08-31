@@ -29,7 +29,7 @@ def dwarvenProvisioner : CardDef :=
   creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
     (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
     (activatedAbilities := #[
-      activated (Effect.creaturesYouControlGet 1 1) (ManaCost.ofGenericAndColor 3 .white)])
+      activated (Effect.ofAbility (.creaturesYouControlGet 1 1)) (ManaCost.ofGenericAndColor 3 .white)])
 
 def velvetwingButterflies : CardDef :=
   creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
@@ -626,7 +626,7 @@ def throrsMap : CardDef :=
     (supertypes := #[.legendary])
     (triggeredAbilities := #[.onEnterSearchBasicToHand])
     (activatedAbilities := #[
-      activated (Effect.drawThenDiscard 1) (ManaCost.ofGeneric 2) (tap := true)])
+      activated (Effect.ofAbility (.drawThenDiscard 1)) (ManaCost.ofGeneric 2) (tap := true)])
 
 def theBlackArrow : CardDef :=
   equipment "The Black Arrow" (ManaCost.ofGeneric 3)
@@ -664,7 +664,7 @@ def oinTheBrave : CardDef :=
     (keywords := Keyword.storied)
     (staticAbilities := #[.getsAndHasIfEnduringStory 1 0 Keyword.haste])
     (activatedAbilities := #[
-      activated (Effect.draw 1) (ManaCost.ofGeneric 1) (tap := true)
+      activated (Effect.ofAbility (.draw 1)) (ManaCost.ofGeneric 1) (tap := true)
         (discardACard := true)])
 
 def bomburGentleDreamer : CardDef :=
@@ -733,7 +733,7 @@ def theLonelyMountain : CardDef :=
     (subtypes := #["Mountain"])
     (entersTappedUnlessEquipment := true)
     (activatedAbilities := #[
-      activated (Effect.createTokens .dwarf 1) (ManaCost.ofGenericAndColor 4 .red)
+      activated (Effect.ofAbility (.createTokens .dwarf 1)) (ManaCost.ofGenericAndColor 4 .red)
         (tap := true) (onlyAsSorcery := true) (costReductionPerEquipment := 1)])
 
 def thranduilSindarinLiege : CardDef :=

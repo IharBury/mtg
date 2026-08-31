@@ -92,7 +92,7 @@ def esquireOfTheKing : CardDef :=
   creature "Esquire of the King" (ManaCost.ofColor .white) #["Human", "Soldier"] 1 1
     (oracleText := "{4}{W}, {T}: Creatures you control get +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
     (activatedAbilities := #[
-      activated (Effect.creaturesYouControlGet 1 1)
+      activated (Effect.ofAbility (.creaturesYouControlGet 1 1))
         (ManaCost.ofGenericAndColor 4 .white) (tap := true)
         (costReductionIfYouControlLegendary := 2)])
 
@@ -135,7 +135,7 @@ def captainOfUmbar : CardDef :=
   creature "Captain of Umbar" (ManaCost.ofGenericAndColor 2 .blue) #["Human", "Pirate"] 2 3
     (oracleText := "{1}, {T}: Draw a card, then discard a card.")
     (activatedAbilities := #[
-      activated (Effect.drawThenDiscard 1) (ManaCost.ofGeneric 1) (tap := true)])
+      activated (Effect.ofAbility (.drawThenDiscard 1)) (ManaCost.ofGeneric 1) (tap := true)])
 
 def minasTirithGarrison : CardDef :=
   card "Minas Tirith Garrison" #[.creature] (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Soldier"]
@@ -382,7 +382,7 @@ def rivendell : CardDef :=
     (tapAddMana := #[.colored .blue])
     (entersTappedUnlessLegendary := true)
     (activatedAbilities := #[
-      activated (Effect.scry 2) (ManaCost.ofGenericAndColor 1 .blue) (tap := true)
+      activated (Effect.ofAbility (.scry 2)) (ManaCost.ofGenericAndColor 1 .blue) (tap := true)
         (onlyIfYouControlLegendary := true)])
 
 def delightedHalfling : CardDef :=
@@ -396,7 +396,7 @@ def relicOfSauron : CardDef :=
     "{T}: Add two mana in any combination of {U}, {B}, and/or {R}.\n{3}, {T}: Draw two cards, then discard a card."
     (tapAddTwoAmong := #[.colored .blue, .colored .black, .colored .red])
     (activatedAbilities := #[
-      activated (Effect.drawThenDiscard 2) (ManaCost.ofGeneric 3) (tap := true)])
+      activated (Effect.ofAbility (.drawThenDiscard 2)) (ManaCost.ofGeneric 3) (tap := true)])
 
 def longLostLances : CardDef :=
   artifact "Long-Lost Lances" (ManaCost.ofGeneric 2)
@@ -453,7 +453,7 @@ def treasureVault : CardDef :=
     (oracleText := "{T}: Add {C}.\n{X}{X}, {T}, Sacrifice this land: Create X Treasure tokens.")
     (tapAddMana := #[.colorless])
     (activatedAbilities := #[
-      activated (Effect.createTokensX .treasure) { symbols := #[.x, .x] }
+      activated (Effect.ofAbility (.createTokensX .treasure)) { symbols := #[.x, .x] }
         (tap := true) (sacrificeSource := true)])
 
 def aragornAndArwenWed : CardDef :=
@@ -469,7 +469,7 @@ def minasTirith : CardDef :=
     (tapAddMana := #[.colored .white])
     (entersTappedUnlessLegendary := true)
     (activatedAbilities := #[
-      activated (Effect.draw 1) (ManaCost.ofGenericAndColor 1 .white) (tap := true)
+      activated (Effect.ofAbility (.draw 1)) (ManaCost.ofGenericAndColor 1 .white) (tap := true)
         (onlyIfYouAttackedWithTwoOrMore := true)])
 
 def theShire : CardDef :=
@@ -478,7 +478,7 @@ def theShire : CardDef :=
     (tapAddMana := #[.colored .green])
     (entersTappedUnlessLegendary := true)
     (activatedAbilities := #[
-      activated (Effect.createTokens .food 1) (ManaCost.ofGenericAndColor 1 .green)
+      activated (Effect.ofAbility (.createTokens .food 1)) (ManaCost.ofGenericAndColor 1 .green)
         (tap := true) (tapAnUntappedCreatureYouControl := true)])
 
 def thranduilTheStrategist : CardDef :=
