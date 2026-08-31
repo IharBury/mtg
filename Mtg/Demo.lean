@@ -1956,7 +1956,7 @@ def applyX (g : Game) (p : PlayerId) (tokens : List String) : Except String Game
     | .ok g'' =>
       g''.pending == .chooseTargets ⟨0⟩ &&
       (g''.object! g''.stack.back!.objectId).abilityEffect ==
-        some .destroyTargetColorlessNonland
+        some (Effect.destroyTargetColorlessNonland)
     | .error _ => false
 
 def castUsage : String := "usage: cast <id> [adventure]"

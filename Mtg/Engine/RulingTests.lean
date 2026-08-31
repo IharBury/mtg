@@ -168,7 +168,7 @@ def twoArmiesThenAmassOrcsOk : Bool :=
 #guard twoArmiesThenAmassOrcsOk
 
 /-- Ruling 18: untargeted amass still creates the Army. -/
-def untargetedAmass : Game := started.applyEffect ⟨0⟩ (.amassGoblins 1) #[]
+def untargetedAmass : Game := started.applyEffect ⟨0⟩ (Effect.amassGoblins 1) #[]
 
 #guard untargetedAmass.battlefield.any (fun o => untargetedAmass.hasSubtype o "Army")
 
@@ -462,7 +462,7 @@ and illegal from the battlefield. -/
 def oliphauntCycleShape : Bool :=
   oliphauntCycleAbility.cost.discardSource &&
     oliphauntCycleAbility.activateFromHand &&
-    oliphauntCycleAbility.effect == .searchLandTypeToHand "Mountain"
+    oliphauntCycleAbility.effect == Effect.searchLandTypeToHand "Mountain"
 
 #guard oliphauntCycleShape
 def oliphauntCycleAtEndOk : Bool :=
@@ -1996,13 +1996,13 @@ def rivendellNeedsLegendOk : Bool :=
 
 /-- Ruling 188: illegal target means the whole spell does not resolve. -/
 def knotsIllegal : Game :=
-  afterDraw.applyEffect ⟨0⟩ (.tapScryDraw 1 1) #[.player ⟨1⟩]
+  afterDraw.applyEffect ⟨0⟩ (Effect.tapScryDraw 1 1) #[.player ⟨1⟩]
 
 def knotsAlreadyTapped : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.setObject { bears with status := { bears.status with tapped := true } }
-  g.applyEffect ⟨0⟩ (.tapScryDraw 1 1) #[.permanent (namedPermanent g "Grizzly Bears").id]
+  g.applyEffect ⟨0⟩ (Effect.tapScryDraw 1 1) #[.permanent (namedPermanent g "Grizzly Bears").id]
 
 def knotsOk : Bool :=
   knotsIllegal.log.any (fun s => mentions s "doesn't resolve") &&
@@ -2118,10 +2118,10 @@ def settleExilesAttackers : Game :=
     (fun s => { s with attacking := true })
   let g := g.mapObjectStatus (g.object! tok.id)
     (fun s => { s with attacking := true })
-  g.applyEffect ⟨0⟩ .exileAttackersSearchBasics #[.player ⟨1⟩]
+  g.applyEffect ⟨0⟩ (Effect.exileAttackersSearchBasics) #[.player ⟨1⟩]
 
 def settleOk : Bool :=
-  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
+  settleTheWreckage.spellEffect == some (Effect.exileAttackersSearchBasics) &&
     settleExilesAttackers.log.any (fun s => mentions s "may search for 2") &&
     !(settleExilesAttackers.battlefield.any (·.status.attacking)) &&
     (ruling 55).comment.contains "find fewer basic land cards" &&
@@ -2461,7 +2461,7 @@ def withProtection : Game :=
   afterDraw.modifyPlayer ⟨1⟩ (fun pl => { pl with protectionFromEverything := true })
 
 def protectionFromEverythingOk : Bool :=
-  let ts := withProtection.legalTargets ⟨0⟩ (.dealDamage 3)
+  let ts := withProtection.legalTargets ⟨0⟩ (Effect.dealDamage 3)
   !ts.any (fun t => t == Target.player ⟨1⟩) &&
     (let g := withProtection.dealDamageToPlayer ⟨1⟩ 5
      (g.player ⟨1⟩).life == 20 &&
@@ -3781,7 +3781,7 @@ def arwenLegalTargetSharesOk : Bool :=
 -/
 
 def testWGCharm : CardDef :=
-  instant "WG Charm" (ManaCost.ofColors [.white, .green]) "Draw a card." (some (.draw 1))
+  instant "WG Charm" (ManaCost.ofColors [.white, .green]) "Draw a card." (some (Effect.draw 1))
 
 def aragornMulticolorWaiting : Game :=
   let g := addPermanent afterDraw aragornTheUniter ⟨0⟩ ⟨0⟩
@@ -3802,7 +3802,7 @@ def aragornMulticolorOrderOk : Bool :=
 -/
 
 def troopOneLandTappedOk : Bool :=
-  troopOfPonies.activatedAbilities[0]!.effect == .searchTwoBasicsSplit &&
+  troopOfPonies.activatedAbilities[0]!.effect == Effect.searchTwoBasicsSplit &&
     (ruling 202).comment.contains "put it onto the battlefield tapped"
 
 #guard troopOneLandTappedOk
@@ -3815,7 +3815,7 @@ def dwarvenWarriorsPowerRaisedStillUnblockableOk : Bool :=
   let g := addPermanent afterDraw dwarvenWarriors ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ (.targetCantBeBlockedPowerAtMost 2)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.targetCantBeBlockedPowerAtMost 2)
     #[Target.permanent bear.id]
   let g := g.pumpPermanent (namedPermanent g "Grizzly Bears") 3 0
   g.hasCantBeBlocked (namedPermanent g "Grizzly Bears") &&
@@ -3829,7 +3829,7 @@ def dwarvenWarriorsAfterBlockNoUnblockOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bear := namedPermanent g "Grizzly Bears"
   let g := g.mapObjectStatus bear (fun s => { s with blocked := true })
-  let g := g.applyAbilityEffect ⟨0⟩ (.targetCantBeBlockedPowerAtMost 2)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.targetCantBeBlockedPowerAtMost 2)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   (namedPermanent g "Grizzly Bears").status.blocked &&
     (ruling 272).comment.contains "it has no effect"
@@ -3879,8 +3879,8 @@ def pathmakerPowerAllZonesOk : Bool :=
 -/
 
 def extraLandCumulativeOk : Bool :=
-  let g := afterDraw.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
-  let g := g.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
   g.landPlaysAllowed ⟨0⟩ == 3 &&
     (ruling 288).comment.contains "cumulative with other effects"
 
@@ -4056,8 +4056,8 @@ def lastLightDragonOnlyOk : Bool :=
 -/
 
 def settleTargetsPlayerOk : Bool :=
-  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
-    SpellEffect.targetKind .exileAttackersSearchBasics == .player &&
+  settleTheWreckage.spellEffect == some (Effect.exileAttackersSearchBasics) &&
+    Effect.exileAttackersSearchBasics.targetKind == .player &&
     (ruling 263).comment.contains "targets only the player"
 
 #guard settleTargetsPlayerOk
@@ -4106,7 +4106,7 @@ def meditatorOverwritesSetPTOk : Bool :=
 
 def typeChangeLastsOk : Bool :=
   beornsHospitality.activatedAbilities[0]!.effect ==
-      .becomeBearCreatureWithLandsPT &&
+      Effect.becomeBearCreatureWithLandsPT &&
     (ruling 287).comment.contains "lasts indefinitely" &&
     (ruling 303).comment.contains "don't wear off during the cleanup step" &&
     (ruling 304).comment.contains "lasts indefinitely"
@@ -4118,7 +4118,7 @@ def typeChangeLastsOk : Bool :=
 -/
 
 def chooseExistingCreatureTypeOk : Bool :=
-  raiseThePalisade.spellEffect == some .chooseTypeReturnOthers &&
+  raiseThePalisade.spellEffect == some (Effect.chooseTypeReturnOthers) &&
     (ruling 307).comment.contains "existing creature type" &&
     (ruling 350).comment.contains "existing creature type"
 
@@ -4206,7 +4206,7 @@ def eaglesRescueIllegalStaysOk : Bool :=
   let g := addToGraveyard afterDraw eaglesRescue ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let rescue := namedGraveyardCard g ⟨0⟩ "Eagle's Rescue"
-  let g := g.applyAbilityEffect ⟨0⟩ (.returnFromGyAttachPowerAtMost 1)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.returnFromGyAttachPowerAtMost 1)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id] (some rescue.id)
   g.objects.any (fun o => o.name == "Eagle's Rescue" && o.zone == .graveyard ⟨0⟩) &&
     (ruling 194).comment.contains "remains in your graveyard"
@@ -4603,7 +4603,7 @@ def blackGateMostLifeAndLaterCreatureOk : Bool :=
 def uneasyPartingsOwnerChoosesOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.applyEffect ⟨0⟩ .putOnTopOrBottom
+  let g := g.applyEffect ⟨0⟩ (Effect.putOnTopOrBottom)
     #[Target.permanent bear.id]
   (match g.pending with
    | .chooseLibraryPlacement p id => p == ⟨1⟩ && id == bear.id

@@ -24,8 +24,8 @@ def card (name : String) (types : Array CardType)
     (oracleText : String := "") (power : Option Int := none)
     (toughness : Option Int := none) (keywords : Keywords := Keywords.none)
     (supertypes : Array Supertype := #[])
-    (spellEffect : Option SpellEffect := none)
-    (spellModes : Array SpellEffect := #[])
+    (spellEffect : Option Effect := none)
+    (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
     (additionalCostOrPayGeneric : Option Nat := none)
     (additionalCostDiscardOrPayGeneric : Option Nat := none)
@@ -91,7 +91,10 @@ def card (name : String) (types : Array CardType)
     (mayLookAtTopAnytime : Bool := false)
     (mayPlayLandsFromTop : Bool := false) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
-  supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
+  supertypes,
+  spellEffect := spellEffect,
+  spellModes := spellModes,
+  additionalCostSacrificeArtifactOrCreature,
   additionalCostOrPayGeneric, additionalCostDiscardOrPayGeneric,
   costReductionIfCreatureDied, costReductionIfTargetDamaged,
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
@@ -253,8 +256,8 @@ def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Su
 
 /-- Instant or sorcery with an optional one-shot effect or modal modes. -/
 def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
-    (oracleText : String) (spellEffect : Option SpellEffect := none)
-    (spellModes : Array SpellEffect := #[])
+    (oracleText : String) (spellEffect : Option Effect := none)
+    (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
     (additionalCostOrPayGeneric : Option Nat := none)
     (costReductionIfCreatureDied : Nat := 0)
@@ -301,8 +304,8 @@ def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 def instant (name : String) (manaCost : ManaCost) (oracleText : String)
-    (spellEffect : Option SpellEffect := none)
-    (spellModes : Array SpellEffect := #[])
+    (spellEffect : Option Effect := none)
+    (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
     (additionalCostOrPayGeneric : Option Nat := none)
     (costReductionIfCreatureDied : Nat := 0)
@@ -350,8 +353,8 @@ def instant (name : String) (manaCost : ManaCost) (oracleText : String)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
-    (spellEffect : Option SpellEffect := none)
-    (spellModes : Array SpellEffect := #[])
+    (spellEffect : Option Effect := none)
+    (spellModes : Array Effect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
     (additionalCostOrPayGeneric : Option Nat := none)
     (costReductionIfCreatureDied : Nat := 0)
@@ -423,8 +426,8 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (saga := saga)
 
 /-- A catalog Saga chapter with parsed numerals and a real effect. -/
-def chapter (roman effect : String) (ce : ChapterEffect) : SagaChapter :=
-  SagaChapter.of roman effect ce
+def chapter (roman effect : String) (e : Effect) : SagaChapter :=
+  SagaChapter.of roman effect e
 
 /-- A Saga enchantment (CR 714). -/
 def saga (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -580,7 +583,7 @@ def foodToken : CardDef :=
     (subtypes := #["Food"])
     (activatedAbilities := #[{
       cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
-      effect := .gainLife 3
+      effect := Effect.gainLife 3
     }])
     (isToken := true)
 
@@ -597,12 +600,12 @@ def elfToken : CardDef :=
   tokenCreature "Elf" #["Elf"] 1 1 .green
 
 /-- An activated ability (CR 602.1). -/
-def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
+def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (sacrificeSource : Bool := false)
     (sacrificeAnotherCreatureOrArtifact : Bool := false)
     (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
     (onceEachTurn : Bool := false)
-    (otherModes : Array AbilityEffect := #[]) (payLife : Nat := 0)
+    (otherModes : Array Effect := #[]) (payLife : Nat := 0)
     (activateFromGraveyard : Bool := false)
     (activateFromHand : Bool := false)
     (onlyIfYouControlLegendary : Bool := false)
@@ -649,7 +652,9 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
     putStunCounterOnSource := putStunCounterOnSource
     sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
   }
-  effect, otherModes, onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+  effect := effect
+  otherModes := otherModes
+  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
   activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
   costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
   onlyIfYouAttackedWithTwoOrMore, powerUp, equipWorthy
@@ -660,12 +665,12 @@ def activated (effect : AbilityEffect) (mana : ManaCost := ManaCost.empty)
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
 def equipAbility (mana : ManaCost) (subtype : Option String := none) : ActivatedAbility :=
-  activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipSubtype := subtype)
 
 /-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated .attachToTargetCreatureYouControl mana (onlyAsSorcery := true)
+  activated (Effect.attachToTargetCreatureYouControl) mana (onlyAsSorcery := true)
     (equipWorthy := true)
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
@@ -692,12 +697,12 @@ def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
 card, put it into your hand, then shuffle (CR 702.29). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
     ActivatedAbility :=
-  activated (.searchLandTypeToHand landType) mana
+  activated (Effect.searchLandTypeToHand landType) mana
     (discardSource := true) (activateFromHand := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
-    (spellEffect : SpellEffect) (cardType : CardType := .sorcery)
+    (spellEffect : Effect) (cardType : CardType := .sorcery)
     (additionalCostSacrificeCreature : Bool := false) : AdventureFace := {
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
   oracleText, spellEffect := some spellEffect,
@@ -708,7 +713,7 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
 def damageInstant (name : String) (amount : Nat) : CardDef :=
   instant name (ManaCost.ofColor .red)
     s!"{name} deals {amount} damage to any target."
-    (some (.dealDamage amount))
+    (some (Effect.dealDamage amount))
 
 def grizzlyBears : CardDef :=
   creature "Grizzly Bears" (ManaCost.ofGenericAndColor 1 .green) #["Bear"] 2 2
@@ -753,7 +758,7 @@ def shock : CardDef := damageInstant "Shock" 2
 def giantGrowth : CardDef :=
   instant "Giant Growth" (ManaCost.ofColor .green)
     "Target creature gets +3/+3 until end of turn."
-    (some (.pump 3 3))
+    (some (Effect.pump 3 3))
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
@@ -761,7 +766,7 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 
 /-- Activated ability that is a power-up (activate only once; reduced if
 the source entered this turn). -/
-def powerUpAbility (effect : AbilityEffect) (mana : ManaCost)
+def powerUpAbility (effect : Effect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
   activated effect mana (tap := tap) (powerUp := true)
 
@@ -794,8 +799,8 @@ def conditionalDualLand (name : String) (oracleText : String)
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
-#guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (.dealDamage 1))).isInstant
-#guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (.dealDamage 1))).isSorcery
+#guard (instant "Silent Bolt" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isInstant
+#guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isSorcery
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
 #guard grizzlyBears.hasSorcerySpeed
@@ -817,21 +822,22 @@ def conditionalDualLand (name : String) (oracleText : String)
   "Haste (This creature can attack and {T} as soon as it comes under your control.)"
 #guard giantSpider.oracleText == "Reach (This creature can block creatures with flying.)"
 #guard (giantSpider.summary.splitOn "reach").length > 1
-#guard giantGrowth.spellEffect == some (.pump 3 3)
+#guard giantGrowth.spellEffect == some (Effect.pump 3 3)
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
-#guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
-#guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
-#guard (activated (.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
+#guard (equipAbility (ManaCost.ofGeneric 3)).effect ==
+  Effect.attachToTargetCreatureYouControl
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
-  (.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
+  (Effect.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant
 #guard !grizzlyBears.hasType .instant
 #guard lightningBolt.hasCastKind .burn
 #guard giantGrowth.hasCastKind .pump
 #guard !lightningBolt.hasCastKind .pump
-#guard (lightningBolt.spellEffect.map SpellEffect.castKind) == some .burn
-#guard (giantGrowth.spellEffect.map SpellEffect.castKind) == some .pump
+#guard (lightningBolt.spellEffect.map Effect.castKind) == some .burn
+#guard (giantGrowth.spellEffect.map Effect.castKind) == some .pump
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
 #guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
   (subtypes := #["Equipment"])).isEquipment
@@ -850,7 +856,7 @@ def conditionalDualLand (name : String) (oracleText : String)
   #[.colored .blue, .colored .black]).entersTapped
 #guard (conditionalDualLand "Silent Keep" ""
   #[.colored .blue, .colored .black]).tapAddMana == #[.colorless]
-#guard (powerUpAbility (.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
+#guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
   (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
 #guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura

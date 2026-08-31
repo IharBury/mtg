@@ -347,7 +347,7 @@ def uncontrolledPermanent : Game :=
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
 #guard roguesPassage.activatedAbilities.size == 1
-#guard roguesPassage.activatedAbilities[0]!.effect == .targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[0]!.effect == Effect.targetCantBeBlockedThisTurn
 #guard roguesPassage.activatedAbilities[0]!.cost.tap
 #guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
 #guard mentions orcishSiegemaster.summary "trample"
@@ -384,12 +384,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions quarrel.summary "deals damage equal to its power"
 #guard quarrel.isInstant
 #guard quarrel.requiresTarget
-#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
 #guard mentions smiteTheDeathless.summary "loses indestructible"
 #guard mentions smiteTheDeathless.summary "exile it instead"
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
-#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteTheDeathless.spellEffect == some (Effect.dealDamageLoseIndestructibleExile 3)
 #guard mentions woodElves.summary "Forest card"
 #guard woodElves.triggeredAbilities.size == 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -428,7 +428,7 @@ def uncontrolledPermanent : Game :=
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
-#guard oliphaunt.activatedAbilities[0]!.effect == .searchLandTypeToHand "Mountain"
+#guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal
@@ -463,7 +463,7 @@ def uncontrolledPermanent : Game :=
 #guard mentions desolationProwler.summary "Pay 2 life"
 #guard mentions desolationProwler.summary "+2/+2"
 #guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == .sourceGets 2 2
+#guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.onceEachTurn
 #guard mentions raveningWarg.summary "deathtouch"
@@ -479,7 +479,7 @@ def uncontrolledPermanent : Game :=
 #guard gollumSilentSlinker.toughness == some 3
 #guard mentions bilbosDeadlySlice.summary "Destroy target creature"
 #guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
@@ -495,19 +495,19 @@ def uncontrolledPermanent : Game :=
 #guard mentions guardianOfTheHalls.summary "+1/+1"
 #guard guardianOfTheHalls.keywords.trample
 #guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
   ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard mentions improvisedClub.summary "additional cost"
 #guard mentions improvisedClub.summary "4 damage"
 #guard improvisedClub.isInstant
-#guard improvisedClub.spellEffect == some (.dealDamage 4)
+#guard improvisedClub.spellEffect == some (Effect.dealDamage 4)
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
 #guard improvisedClub.requiresTarget
 #guard mentions fireOfOrthanc.summary "artifact or land"
 #guard mentions fireOfOrthanc.summary "can't block this turn"
 #guard fireOfOrthanc.isSorcery
-#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.spellEffect == some (Effect.destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthanc.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
@@ -613,7 +613,7 @@ def uncontrolledPermanent : Game :=
   let c := enchantment "Silent Hospitality" ManaCost.empty ""
     (triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne])
     (activatedAbilities := #[
-      activated .becomeBearCreatureWithLandsPT
+      activated (Effect.becomeBearCreatureWithLandsPT)
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "land you control enters" &&
     mentions c.abilitiesText "Bear creature" &&
@@ -652,7 +652,7 @@ def uncontrolledPermanent : Game :=
 #guard
   let c := card "Silent Fireleaper" #[.creature]
     (activatedAbilities := #[
-      activated (.sourceGets 1 0) (ManaCost.ofGenericAndColor 1 .red)])
+      activated (Effect.sourceGets 1 0) (ManaCost.ofGenericAndColor 1 .red)])
     (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
@@ -662,7 +662,7 @@ def uncontrolledPermanent : Game :=
   let c := land "Silent Passage" ""
     (tapAddMana := #[.colorless])
     (activatedAbilities := #[
-      activated .targetCantBeBlockedThisTurn (ManaCost.ofGeneric 4) (tap := true)])
+      activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 4) (tap := true)])
   mentions c.abilitiesText "{T}: Add {C}" &&
     mentions c.abilitiesText "can't be blocked this turn" &&
     mentions c.abilitiesText "{4}" &&
@@ -670,7 +670,7 @@ def uncontrolledPermanent : Game :=
 
 #guard
   let c := card "Silent Titan" #[.creature]
-    (activatedAbilities := #[activated (.sourceGets 1 0) (ManaCost.ofColor .red)])
+    (activatedAbilities := #[activated (Effect.sourceGets 1 0) (ManaCost.ofColor .red)])
     (triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "enters or attacks" &&
@@ -703,7 +703,7 @@ def uncontrolledPermanent : Game :=
   let c := creature "Silent Guardian" ManaCost.empty #[] 2 2
     (keywords := Keyword.trample)
     (activatedAbilities := #[
-      activated (.putPlusOnePlusOneOnSource 3)
+      activated (Effect.putPlusOnePlusOneOnSource 3)
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "Put 3 +1/+1 counters" &&
     mentions c.abilitiesText "{5}{G}{G}" &&
@@ -971,7 +971,7 @@ def afterExceptionCleanup : Game := passBoth cleanupWithSBA
 
 /-- Lightning Bolt to a player (CR 120.3a) changes that player's life total. -/
 def afterBolt : Game :=
-  started.applyEffect ⟨0⟩ (.dealDamage 3) #[Target.player ⟨1⟩]
+  started.applyEffect ⟨0⟩ (Effect.dealDamage 3) #[Target.player ⟨1⟩]
 
 #guard (started.player ⟨1⟩).life == 20
 #guard (afterBolt.player ⟨1⟩).life == 17
@@ -1767,7 +1767,7 @@ def hunterAbility : ActivatedAbility :=
 
 #guard snowslopeHunter.activatedAbilities.size == 1
 #guard hunterAbility.cost.sacrificeAnotherCreatureOrArtifact
-#guard hunterAbility.effect == .exileTopPlayUntilEndOfNextTurn
+#guard hunterAbility.effect == Effect.exileTopPlayUntilEndOfNextTurn
 #guard hunterAbility.onlyDuringYourTurn
 #guard hunterAbility.onceEachTurn
 #guard !hunterAbility.onlyAsSorcery
@@ -2167,7 +2167,7 @@ def siegeVsWurmResolved : Game :=
 def siegePumpedGiantResolved : Game :=
   let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
-  let g := g.applyEffect ⟨0⟩ (.pump 2 0)
+  let g := g.applyEffect ⟨0⟩ (Effect.pump 2 0)
     #[Target.permanent (namedPermanent g "Hill Giant").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
@@ -3361,8 +3361,9 @@ def cratermakerAbility : ActivatedAbility :=
 
 #guard cratermakerAbility.isModal
 #guard cratermakerAbility.cost.sacrificeSource
-#guard cratermakerAbility.effect == .dealDamageToTargetCreature 2
-#guard cratermakerAbility.otherModes == #[.destroyTargetColorlessNonland]
+#guard cratermakerAbility.effect == Effect.dealDamageToTargetCreature 2
+#guard cratermakerAbility.otherModes ==
+  #[Effect.destroyTargetColorlessNonland]
 #guard cratermakerReady.canActivate ⟨0⟩ (cratermakerSource cratermakerReady) cratermakerAbility
 #guard !(cratermakerReady.canActivate ⟨1⟩ (cratermakerSource cratermakerReady)
   cratermakerAbility)
@@ -3419,7 +3420,7 @@ def cratermakerModeChosen : Game :=
 
 #guard cratermakerModeChosen.pending == .chooseTargets ⟨0⟩
 #guard (cratermakerModeChosen.object! cratermakerModeChosen.stack.back!.objectId).abilityEffect ==
-  some (.dealDamageToTargetCreature 2)
+  some (Effect.dealDamageToTargetCreature 2)
 #guard cratermakerModeChosen.log.any (fun s =>
   mentions s "chooses a mode: This creature deals 2 damage")
 #guard cratermakerModeChosen.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
@@ -3978,7 +3979,7 @@ def resolvedWargPump : Game := passBoth paidWargPump
 def zeroWithCounter : Game :=
   let g := addPermanent started zeroZero ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Zero/Zero").id
-  g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof #[Target.permanent id]
+  g.applyEffect ⟨0⟩ (Effect.plusOnePlusOneTrampleHexproof) #[Target.permanent id]
 
 #guard zeroWithCounter.power (namedPermanent zeroWithCounter "Zero/Zero") == 1
 #guard zeroWithCounter.toughness (namedPermanent zeroWithCounter "Zero/Zero") == 1
@@ -3997,7 +3998,7 @@ def afterWargPumpCleanup : Game := passBoth (skipTo resolvedWargPump .end 80)
 def afterWargTrampleCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof
+  let g := g.applyEffect ⟨0⟩ (Effect.plusOnePlusOneTrampleHexproof)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
@@ -4044,7 +4045,7 @@ def resolvedNissaBoltPlayer : Game := passBoth paidNissaBoltPlayer
 
 -- After hexproof wears off, the same creature is a legal Lightning Bolt target.
 #guard
-  (afterWargPumpCleanup.legalTargets ⟨1⟩ (.dealDamage 3)).contains
+  (afterWargPumpCleanup.legalTargets ⟨1⟩ (Effect.dealDamage 3)).contains
     (Target.permanent (namedPermanent afterWargPumpCleanup "Grizzly Bears").id)
 
 /-- The agent casts Warg Tactics to destroy a flyer when that is the playable spell. -/
@@ -4633,7 +4634,7 @@ def bladeEquipped : Game := passBoth paidBladeEquip
 def vowMayAttach : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
 #guard
@@ -4687,7 +4688,7 @@ def vowDeclined : Game := mustApply vowMayAttach ⟨0⟩ .decline
 def vowOnBears : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
 
 #guard vowOnBears.pending == .none
@@ -4697,7 +4698,7 @@ def vowOnBears : Game :=
 /-- No Equipment: the player is still asked, and the heuristic declines. -/
 def vowMayAttachNoGear : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
 #guard
@@ -4854,7 +4855,7 @@ def hospitalityLandfallSetup : Game :=
 
 #guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
 #guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities[0]!.effect == .becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeBearCreatureWithLandsPT
 
 def hospitalityLandPlayed : Game :=
   mustApply hospitalityLandfallSetup ⟨0⟩
@@ -5306,7 +5307,7 @@ def agentGandalfOnly : Game :=
 def fireleaperAbility : ActivatedAbility :=
   goblinFireleaper.activatedAbilities[0]!
 
-#guard fireleaperAbility.effect == .sourceGets 1 0
+#guard fireleaperAbility.effect == Effect.sourceGets 1 0
 #guard fireleaperAbility.cost.mana == ManaCost.ofGenericAndColor 1 .red
 #guard !fireleaperAbility.effect.requiresTarget
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
@@ -5338,7 +5339,7 @@ def proposedFireleaper : Game :=
 #guard proposedFireleaper.proposedSpell.isSome
 #guard proposedFireleaper.stack.size == 1
 #guard (proposedFireleaper.object! proposedFireleaper.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 1 0)
+  some (Effect.sourceGets 1 0)
 #guard (namedPermanent proposedFireleaper "Goblin Fireleaper").isOnBattlefield
 #guard proposedFireleaper.log.any (fun s => mentions s "begins activating Goblin Fireleaper")
 
@@ -5405,7 +5406,7 @@ def fireleaperAtEndStep : Game := skipTo fireleaperReady .end 80
 def prowlerAbility : ActivatedAbility :=
   desolationProwler.activatedAbilities[0]!
 
-#guard prowlerAbility.effect == .sourceGets 2 2
+#guard prowlerAbility.effect == Effect.sourceGets 2 2
 #guard prowlerAbility.cost.payLife == 2
 #guard prowlerAbility.cost.mana == ManaCost.empty
 #guard !prowlerAbility.cost.tap
@@ -5440,7 +5441,7 @@ def activatedProwler : Game :=
 #guard activatedProwler.hasPriority ⟨0⟩
 #guard activatedProwler.stack.size == 1
 #guard (activatedProwler.object! activatedProwler.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 2 2)
+  some (Effect.sourceGets 2 2)
 #guard (activatedProwler.player ⟨0⟩).life == 18
 #guard activatedProwler.log.any (fun s => mentions s "begins activating Desolation Prowler")
 #guard activatedProwler.log.any (fun s => mentions s "pays 2 life (18 life)")
@@ -5775,7 +5776,7 @@ def galionOnCounteredElves : Game :=
 /-- Uses Galion's actual P/T at resolution, including pumps (CR 613.3b ruling). -/
 def galionPumpedResolved : Game :=
   let g := galionAndElves
-  let g := g.applyEffect ⟨0⟩ (.pump 2 2)
+  let g := g.applyEffect ⟨0⟩ (Effect.pump 2 2)
     #[Target.permanent (namedPermanent g "Galion, Elvenking's Butler").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
@@ -5792,7 +5793,7 @@ def galionPumpedResolved : Game :=
 
 /-- Later changes to Galion do not update the other creature. -/
 def galionPumpedAfterResolve : Game :=
-  galionResolved.applyEffect ⟨0⟩ (.pump 3 0)
+  galionResolved.applyEffect ⟨0⟩ (Effect.pump 3 0)
     #[Target.permanent (namedPermanent galionResolved "Galion, Elvenking's Butler").id]
 
 #guard galionPumpedAfterResolve.power
@@ -6402,8 +6403,8 @@ def beornSetup : Game :=
 
 -- Extra land grants stack (CR 305.2b).
 #guard
-  let g := afterDraw.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
-  let g := g.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.playAdditionalLandThisTurn) #[]
   (g.player ⟨0⟩).additionalLandsThisTurn == 2 && g.landPlaysAllowed ⟨0⟩ == 3
 
 def proposedTillAndTend : Game :=
@@ -6751,7 +6752,7 @@ def afterCrusherTrample : Game :=
 def titanAbility : ActivatedAbility :=
   infernoTitan.activatedAbilities[0]!
 
-#guard titanAbility.effect == .sourceGets 1 0
+#guard titanAbility.effect == Effect.sourceGets 1 0
 #guard titanAbility.cost.mana == ManaCost.ofColor .red
 #guard !titanAbility.effect.requiresTarget
 #guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
@@ -6910,7 +6911,7 @@ def proposedTitanPump : Game :=
 #guard proposedTitanPump.proposedSpell.isSome
 #guard proposedTitanPump.stack.size == 1
 #guard (proposedTitanPump.object! proposedTitanPump.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 1 0)
+  some (Effect.sourceGets 1 0)
 #guard proposedTitanPump.log.any (fun s => mentions s "begins activating Inferno Titan")
 
 def paidTitanPump : Game :=
@@ -7384,7 +7385,7 @@ def clubSacrificesFireleaper : Game :=
 def guardianAbility : ActivatedAbility :=
   guardianOfTheHalls.activatedAbilities[0]!
 
-#guard guardianAbility.effect == .putPlusOnePlusOneOnSource 3
+#guard guardianAbility.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianAbility.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard !guardianAbility.effect.requiresTarget
 #guard guardianOfTheHalls.keywords.trample
@@ -7425,7 +7426,7 @@ def proposedGuardian : Game :=
 #guard proposedGuardian.proposedSpell.isSome
 #guard proposedGuardian.stack.size == 1
 #guard (proposedGuardian.object! proposedGuardian.stack.back!.objectId).abilityEffect ==
-  some (.putPlusOnePlusOneOnSource 3)
+  some (Effect.putPlusOnePlusOneOnSource 3)
 #guard (namedPermanent proposedGuardian "Guardian of the Halls").isOnBattlefield
 #guard proposedGuardian.log.any (fun s => mentions s "begins activating Guardian of the Halls")
 
@@ -8715,7 +8716,7 @@ def pathmakerGrowsWithLand : Game :=
 
 /-- Pumps, counters, lords, and Auras apply on top of the land-count base. -/
 def pathmakerPumped : Game :=
-  pathmakerWithLands.applyEffect ⟨0⟩ (.pump 2 2)
+  pathmakerWithLands.applyEffect ⟨0⟩ (Effect.pump 2 2)
     #[Target.permanent (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").id]
 
 #guard pathmakerPumped.power (namedPermanent pathmakerPumped "Mirkwood Pathmaker") == 4
@@ -8804,11 +8805,11 @@ def fireOfOrthancSetup : Game :=
 
 #guard fireOfOrthanc.isSorcery
 #guard fireOfOrthanc.requiresTarget
-#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.spellEffect == some (Effect.destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthancSetup.canCast ⟨0⟩ (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc")
 #guard fireOfOrthancSetup.asSorcery? ⟨0⟩
 #guard
-  (fireOfOrthancSetup.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+  (fireOfOrthancSetup.legalTargets ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)).contains
     (Target.permanent (namedPermanent fireOfOrthancSetup "Forest").id)
 
 -- Cannot cast with no artifact or land.
@@ -8830,9 +8831,9 @@ def fireOfOrthancSetup : Game :=
   let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
-  (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+  (g.legalTargets ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)).contains
     (Target.permanent (namedPermanent g "Wayfarer's Bauble").id) &&
-    !(g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    !(g.legalTargets ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 
 -- Own lands are legal; hexproof on an opponent's land is not (CR 702.11b).
@@ -8840,7 +8841,7 @@ def fireOfOrthancSetup : Game :=
   let g := addPermanent afterDraw mountain ⟨0⟩ ⟨0⟩
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc") &&
-    (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (g.legalTargets ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)).contains
       (Target.permanent (namedPermanent g "Mountain").id)
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
@@ -8909,7 +8910,7 @@ def resolvedFireOfOrthanc : Game := passBoth paidFireOfOrthanc
 -- Destroying an artifact also sets the can't-block effect.
 #guard
   let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Wayfarer's Bauble").id]
   !(g.battlefield.any (fun o => o.name == "Wayfarer's Bauble")) &&
     g.creaturesWithoutFlyingCantBlock &&
@@ -8930,7 +8931,7 @@ def fireOfOrthancReadyToBlock : Game :=
   let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Forest").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
@@ -8953,7 +8954,7 @@ def fireOfOrthancFlyerReadyToBlock : Game :=
   let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Forest").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
@@ -9006,10 +9007,10 @@ def quarrelSetup : Game :=
 
 #guard quarrel.isInstant
 #guard quarrel.requiresTarget
-#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
 #guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
 #guard quarrelSetup.asSorcery? ⟨0⟩
-#guard (quarrelSetup.legalTargets ⟨0⟩ .creatureYouControlDealsPowerToOppCreature).size == 2
+#guard (quarrelSetup.legalTargets ⟨0⟩ (Effect.creatureYouControlDealsPowerToOppCreature)).size == 2
 
 -- Cannot cast with no creature you control.
 #guard
@@ -9458,7 +9459,7 @@ def passageReady : Game :=
 def passageSource (g : Game) : GameObject :=
   namedPermanent g "Rogue's Passage"
 
-#guard passageAbility.effect == .targetCantBeBlockedThisTurn
+#guard passageAbility.effect == Effect.targetCantBeBlockedThisTurn
 #guard passageAbility.cost.tap
 #guard passageAbility.cost.mana == ManaCost.ofGeneric 4
 #guard passageAbility.effect.requiresTarget
@@ -9509,7 +9510,7 @@ def proposedPassage : Game :=
 #guard proposedPassage.proposedSpell.isSome
 #guard proposedPassage.stack.size == 1
 #guard (proposedPassage.object! proposedPassage.stack.back!.objectId).abilityEffect ==
-  some .targetCantBeBlockedThisTurn
+  some (Effect.targetCantBeBlockedThisTurn)
 #guard (namedPermanent proposedPassage "Rogue's Passage").isOnBattlefield
 #guard !(namedPermanent proposedPassage "Rogue's Passage").status.tapped
 #guard proposedPassage.log.any (fun s => mentions s "begins activating Rogue's Passage")
@@ -9711,10 +9712,10 @@ def smiteSetup : Game := smiteOn grizzlyBears
 
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
-#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteTheDeathless.spellEffect == some (Effect.dealDamageLoseIndestructibleExile 3)
 #guard smiteSetup.canCast ⟨0⟩ (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless")
 #guard smiteSetup.asSorcery? ⟨0⟩
-#guard (smiteSetup.legalTargets ⟨0⟩ (.dealDamageLoseIndestructibleExile 3)).size == 1
+#guard (smiteSetup.legalTargets ⟨0⟩ (Effect.dealDamageLoseIndestructibleExile 3)).size == 1
 
 -- Cannot cast with no creature on the battlefield.
 #guard
@@ -9811,7 +9812,7 @@ def afterSmiteWurmCleanup : Game :=
 /-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
 def indestructibleSurvivesDamage : Game :=
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ (.dealDamage 3)
+  let g := g.applyEffect ⟨0⟩ (Effect.dealDamage 3)
     #[Target.permanent (namedPermanent g "Indestructible Beast").id]
   g.receivePriority ⟨0⟩
 
@@ -9836,7 +9837,7 @@ def indestructibleZeroDies : Game :=
 /-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b). -/
 def destroyIndestructibleFlyer : Game :=
   let g := addPermanent afterDraw indestructibleFlyer ⟨1⟩ ⟨1⟩
-  g.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+  g.applyEffect ⟨0⟩ (Effect.destroyCreatureWithFlying)
     #[Target.permanent (namedPermanent g "Indestructible Flyer").id]
 
 #guard destroyIndestructibleFlyer.battlefield.any (fun o =>
@@ -9881,7 +9882,7 @@ def resolvedSmiteOnIndestructibleFlyer : Game :=
   (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).indestructible
 
 def smiteFlyerThenDestroy : Game :=
-  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ (Effect.destroyCreatureWithFlying)
     #[Target.permanent
       (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").id]
 
@@ -10274,7 +10275,7 @@ def resolvedQuarrelWarg : Game :=
 #guard nightsWhisper.isSorcery
 #guard nightsWhisper.hasSorcerySpeed
 #guard !nightsWhisper.hasInstantSpeed
-#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard nightsWhisper.spellEffect == some (Effect.drawAndLoseLife 2 2)
 #guard nightsWhisper.hasCastKind .draw
 #guard !nightsWhisper.requiresTarget
 #guard mentions nightsWhisper.summary "draw two cards"
@@ -10284,7 +10285,7 @@ def resolvedQuarrelWarg : Game :=
 #guard
   let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) swamp ⟨0⟩
   let beforeHand := (g.player ⟨0⟩).hand.size
-  let g := g.applyEffect ⟨0⟩ (.drawAndLoseLife 2 2) #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.drawAndLoseLife 2 2) #[]
   (g.player ⟨0⟩).hand.size == beforeHand + 2 &&
     (g.player ⟨0⟩).life == 18 &&
     (g.handObjects ⟨0⟩).any (fun o => o.name == "Swamp") &&
@@ -10296,7 +10297,7 @@ def resolvedQuarrelWarg : Game :=
 
 -- Losing 0 life does nothing (CR 118.9). Drawing 0 cards is a no-op.
 #guard
-  let g := afterDraw.applyEffect ⟨0⟩ (.drawAndLoseLife 0 0) #[]
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.drawAndLoseLife 0 0) #[]
   (g.player ⟨0⟩).life == 20 &&
     (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     !g.log.any (fun s => mentions s "loses 0 life")
@@ -11262,7 +11263,7 @@ def thorExilePlayOk : Bool :=
   let g := addToGraveyard g lightningBolt ⟨0⟩
   let thor := namedPermanent g "Thor, God of Thunder"
   let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .exileGyPlayUntilNextTurn)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterExileGyPlayUntilNextTurn)
     (some thor.id) #[Target.card bolt.id]
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
   | some bolt =>
@@ -11280,7 +11281,7 @@ def wolverineFightOk : Bool :=
   let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
   let w := namedPermanent g "Wolverine, Fierce Fighter"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .fightUpToOne)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
     (some w.id) #[Target.permanent baloth.id]
   (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
     (namedPermanent g "Rumbling Baloth").status.damage > 0
@@ -11293,7 +11294,7 @@ def justiceBounceOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let j := namedPermanent g "Justice, Vance Astrovik"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .returnNonlandNontoken)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterReturnNonlandNontoken)
     (some j.id) #[Target.permanent bears.id]
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
@@ -11652,7 +11653,7 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 #guard bilbosDeadlySlice.isInstant
 #guard !bilbosDeadlySlice.hasSorcerySpeed
 #guard bilbosDeadlySlice.hasInstantSpeed
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard bilbosDeadlySlice.requiresTarget
 #guard mentions bilbosDeadlySlice.summary "Destroy target creature"
@@ -11665,7 +11666,7 @@ def bilbosDeadlySliceSetup : Game :=
 #guard bilbosDeadlySliceSetup.canCast ⟨0⟩
   (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
-  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ .destroyCreature).contains
+  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
     (Target.permanent (namedPermanent bilbosDeadlySliceSetup "Grizzly Bears").id)
 
 -- Cannot cast with no creature.
@@ -11688,12 +11689,12 @@ def bilbosDeadlySliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
-    (g.legalTargets ⟨0⟩ .destroyCreature).contains
+    (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 #guard
   let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
-  (g.legalTargets ⟨0⟩ .destroyCreature).contains
+  (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
     (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
 #guard
   let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
@@ -11777,7 +11778,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 -- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b).
 #guard
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyCreature
+  let g := g.applyEffect ⟨0⟩ (Effect.destroyCreature)
     #[Target.permanent (namedPermanent g "Indestructible Beast").id]
   g.battlefield.any (fun o => o.name == "Indestructible Beast") &&
     g.log.any (fun s => mentions s "is indestructible and isn't destroyed")
@@ -11944,10 +11945,10 @@ def gazeSetup : Game :=
   let g := readyMain (emptyHand g ⟨0⟩)
   withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
 
-#guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
+#guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
 #guard
   match velvetwingButterflies.adventure with
-  | some adv => adv.spellEffect == some .tapOneOrTwoCreatures
+  | some adv => adv.spellEffect == some (Effect.tapOneOrTwoCreatures)
   | none => false
 
 def gazeProposed : Game :=
@@ -12028,12 +12029,12 @@ def gazeResolvedOne : Game :=
 /- Meager Meal (Gollum adventure): up to one target creature, then target
 player, in that card-text order (CR 601.2c / 115.1c). -/
 
-#guard SpellEffect.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetKind ==
   .upToOneCreatureThenPlayer
-#guard SpellEffect.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard
   match gollumSilentSlinker.adventure with
-  | some adv => adv.spellEffect == some (.plusOneUpToOneAndPlayerGainsLife 2)
+  | some adv => adv.spellEffect == some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
   | none => false
 
 /-- Gollum in hand, a creature you control, an opposing creature, and {B}. -/
@@ -12564,7 +12565,7 @@ def giganticBigBearUncounterable : Game :=
 
 /-- Rage into the Valley draws, loses life, and amasses Goblins. -/
 def rageAmass : Game :=
-  started.applyEffect ⟨0⟩ (.drawLoseLifeThenAmass 2) #[]
+  started.applyEffect ⟨0⟩ (Effect.drawLoseLifeThenAmass 2) #[]
 
 #guard
   (rageAmass.player ⟨0⟩).life == 19 &&
@@ -12597,12 +12598,12 @@ def banquetFoods : Game :=
 
 /-- Tidings of War from hand amasses 1; from the graveyard it would amass 3. -/
 def tidingsFromHandAmass1 : Bool :=
-  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+  (started.applyEffect ⟨0⟩ (Effect.amassGoblinsOrFromGy 1 3) #[]
     (castFromGraveyard := false)).battlefield.any (fun o =>
       o.name == "Goblin Army" && o.status.plusOnePlusOne == 1)
 
 def tidingsFromGraveyardAmass3 : Bool :=
-  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+  (started.applyEffect ⟨0⟩ (Effect.amassGoblinsOrFromGy 1 3) #[]
     (castFromGraveyard := true)).battlefield.any (fun o =>
       o.name == "Goblin Army" && o.status.plusOnePlusOne == 3)
 
@@ -12681,7 +12682,7 @@ def thranduilSource (g : Game) : GameObject :=
   let abs := thranduilWithGuardianGy.activatedAbilitiesOf o
   o.printed.activatedAbilities.isEmpty &&
     abs.size == 1 &&
-    abs[0]!.effect == .putPlusOnePlusOneOnSource 3 &&
+    abs[0]!.effect == Effect.putPlusOnePlusOneOnSource 3 &&
     abs[0]!.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 
 #guard
@@ -12745,7 +12746,7 @@ def thranduilTappedForCopiedGreen : Game :=
 /-!
 # Supported Saga cards (CR 714)
 
-Catalog Sagas store structured `ChapterEffect`s. Entering a Saga puts a lore
+Catalog Sagas store structured chapter `Effect`s. Entering a Saga puts a lore
 counter on it and the matching chapter goes on the stack.
 -/
 
@@ -13174,7 +13175,7 @@ def loreAfterFirstMain : Game :=
 #guard supportedCatalogCards.any (fun c => c.name == "The Sensational She-Hulk")
 #guard supportedCatalogCards.any (fun c => c.name == "Stature, Size Shifter")
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
-#guard statureSizeShifter.activatedAbilities[0]!.effect == .plusOneX
+#guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
 #guard statureSizeShifter.activatedAbilities[0]!.powerUp
 #guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
   ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
@@ -13464,7 +13465,7 @@ def proposedStature : Game :=
 #guard proposedStature.pending == .chooseX ⟨0⟩
 #guard proposedStature.proposedSpell.isSome
 #guard (proposedStature.object! proposedStature.stack.back!.objectId).abilityEffect ==
-  some .plusOneX
+  some (Effect.plusOneX)
 #guard proposedStature.log.any (fun s => mentions s "begins activating Stature")
 #guard proposedStature.log.any (fun s => mentions s "must choose a value for X")
 
