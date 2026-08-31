@@ -12,7 +12,8 @@ import Mtg.Engine.Tests
 These tests check Gatherer / Scryfall `wotc` comments — rulings issued by
 judges — not the rules text printed on the cards and not
 `CardDef.matchesOracleText`. Each `#guard` is tagged with the ruling id
-from `uniqueHobHocOracleRulings`.
+from `uniqueOracleRulings`. Comments shared with MSH cards keep this same
+id so the ruling is set-independent.
 -/
 
 namespace Mtg.Engine.RulingTests
@@ -21,10 +22,11 @@ open Mtg.Engine
 open Mtg.Engine.Catalog
 open Mtg.Engine.Tests
 
-/-- Look up a unique HOB/HOC judge ruling by 1-based id. -/
+/-- Look up a unique judge ruling by 1-based id in `uniqueOracleRulings`. -/
 def ruling (id : Nat) : OracleRuling :=
-  uniqueHobHocOracleRulings[id - 1]!
+  uniqueOracleRulings[id - 1]!
 
+#guard uniqueOracleRulingCount == 728
 #guard uniqueHobHocOracleRulingCount == 359
 #guard (List.range 359).all (fun i => (ruling (i + 1)).id == i + 1)
 #guard !(ruling 1).comment.contains "Whenever"

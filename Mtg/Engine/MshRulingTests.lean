@@ -2,7 +2,7 @@ import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Marvel
 import Mtg.Engine.Game
-import Mtg.Engine.MshOracleRulings
+import Mtg.Engine.OracleRulings
 import Mtg.Engine.Tests
 
 /-!
@@ -11,7 +11,8 @@ import Mtg.Engine.Tests
 These tests check official MSH release-note and Gatherer / Scryfall `wotc`
 comments — rulings issued by judges — not the rules text printed on the
 cards and not `CardDef.matchesOracleText`. Each `#guard` is tagged with the
-ruling id from `uniqueMshOracleRulings`.
+ruling id from `uniqueOracleRulings`. Comments that also appear on HOB or
+HOC cards keep that shared id so the same ruling applies across sets.
 -/
 
 namespace Mtg.Engine.MshRulingTests
@@ -20,15 +21,16 @@ open Mtg.Engine
 open Mtg.Engine.Catalog
 open Mtg.Engine.Tests
 
-/-- Look up a unique MSH judge ruling by 1-based id. -/
+/-- Look up a unique judge ruling by 1-based id in `uniqueOracleRulings`. -/
 def mshRuling (id : Nat) : OracleRuling :=
-  uniqueMshOracleRulings[id - 1]!
+  uniqueOracleRulings[id - 1]!
 
 #guard uniqueMshOracleRulingCount == 376
-#guard (List.range 376).all (fun i => (mshRuling (i + 1)).id == i + 1)
-#guard (mshRuling 1).comment.contains "Power-up"
-#guard (mshRuling 4).comment.contains "cast using teamwork"
-#guard (mshRuling 23).comment.contains "Plan is an enchantment type"
+#guard uniqueOracleRulingCount == 728
+#guard uniqueMshOracleRulings.all (fun r => (mshRuling r.id).id == r.id)
+#guard (mshRuling 360).comment.contains "Power-up"
+#guard (mshRuling 363).comment.contains "cast using teamwork"
+#guard (mshRuling 382).comment.contains "Plan is an enchantment type"
 #guard uniqueMshOracleRulings.all (fun r => r.sets.any (· == "msh"))
 
 def mshEnter (g : Game) (card : CardDef) : Game :=
@@ -70,10 +72,10 @@ def graveyardCardNamed (g : Game) (p : PlayerId) (name : String) : GameObject :=
   | none => panic! s!"expected {name} in graveyard"
 
 /-!
-## 1–3 — Power-up
+## 360–362 — Power-up
 -/
 
-/-- Ruling 1 / 2: Power-up is an activated ability; cost is reduced by the
+/-- Ruling 360 / 2: Power-up is an activated ability; cost is reduced by the
 permanent's mana cost if it entered this turn. Aerial Doombot `{5}{U}`
 minus `{U}` is `{5}`. -/
 def aerialPowerUpEntered : Game := mshEnter afterDraw aerialDoombot
@@ -84,12 +86,12 @@ def powerUpReductionOk : Bool :=
   ab.powerUp && o.status.enteredThisTurn &&
     aerialPowerUpEntered.activationManaCost ⟨0⟩ ab (some o) ==
       ({ symbols := #[.generic 5] } : ManaCost) &&
-    (mshRuling 1).comment.contains "Activate only once" &&
-    (mshRuling 2).comment.contains "reduced by that permanent's mana cost"
+    (mshRuling 360).comment.contains "Activate only once" &&
+    (mshRuling 361).comment.contains "reduced by that permanent's mana cost"
 
 #guard powerUpReductionOk
 
-/-- Ruling 2: without the enters-this-turn flag the printed cost is used. -/
+/-- Ruling 361: without the enters-this-turn flag the printed cost is used. -/
 def aerialPowerUpLater : Game := addPermanent afterDraw aerialDoombot ⟨0⟩ ⟨0⟩
 
 #guard
@@ -98,7 +100,7 @@ def aerialPowerUpLater : Game := addPermanent afterDraw aerialDoombot ⟨0⟩ �
   aerialPowerUpLater.activationManaCost ⟨0⟩ ab (some o) ==
     ({ symbols := #[.generic 5, .colored .blue] } : ManaCost)
 
-/-- Ruling 3: activating power-up marks it used, so it cannot be activated
+/-- Ruling 362: activating power-up marks it used, so it cannot be activated
 again even if the ability does not resolve. -/
 def powerUpOnceOk : Bool :=
   let g := mshEnter afterDraw braveBrawler
@@ -107,12 +109,12 @@ def powerUpOnceOk : Bool :=
   let g := g.mapObjectStatus o (fun s => { s with powerUpUsed := true })
   let o := namedPermanent g "Brave Brawler"
   !g.canActivate ⟨0⟩ o ab &&
-    (mshRuling 3).comment.contains "can't be activated again"
+    (mshRuling 362).comment.contains "can't be activated again"
 
 #guard powerUpOnceOk
 
 /-!
-## 4–10 — Teamwork
+## 363–369 — Teamwork
 -/
 
 def teamworkPaidOk : Bool :=
@@ -130,17 +132,17 @@ def teamworkPaidOk : Bool :=
   (namedPermanent g "Grizzly Bears").status.tapped &&
     (namedPermanent g "Grizzly Bears").status.attacking &&
     g.log.any (fun s => mentions s "pays a teamwork cost") &&
-    (mshRuling 4).comment.contains "cast using teamwork" &&
-    (mshRuling 8).comment.contains "won't cause that creature to stop attacking" &&
-    (mshRuling 9).comment.contains "doesn't let you pay a teamwork cost more than once" &&
-    (mshRuling 10).comment.contains "haven't controlled continuously" &&
-    (mshRuling 63).comment.contains "total cost of a spell" &&
-    (mshRuling 65).comment.contains "additional costs" &&
-    (mshRuling 313).comment.contains "total cost of a spell"
+    (mshRuling 363).comment.contains "cast using teamwork" &&
+    (mshRuling 367).comment.contains "won't cause that creature to stop attacking" &&
+    (mshRuling 368).comment.contains "doesn't let you pay a teamwork cost more than once" &&
+    (mshRuling 369).comment.contains "haven't controlled continuously" &&
+    (mshRuling 416).comment.contains "total cost of a spell" &&
+    (mshRuling 418).comment.contains "additional costs" &&
+    (mshRuling 665).comment.contains "total cost of a spell"
 
 #guard teamworkPaidOk
 
-/-- Ruling 6: a copy of a teamwork spell is also cast using teamwork. -/
+/-- Ruling 365: a copy of a teamwork spell is also cast using teamwork. -/
 def teamworkCopyOk : Bool :=
   let (g, src) := afterDraw.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.setObject { src with teamworkPaid := true }
@@ -148,11 +150,11 @@ def teamworkCopyOk : Bool :=
   let copies := g.objects.filter (fun o =>
     o.name == "Helicarrier Strike" && o.zone == .stack && o.isCopy)
   copies.size == 1 && copies[0]!.teamworkPaid &&
-    (mshRuling 6).comment.contains "copy was also cast using teamwork"
+    (mshRuling 365).comment.contains "copy was also cast using teamwork"
 
 #guard teamworkCopyOk
 
-/-- Ruling 7: putting a teamwork permanent onto the battlefield does not
+/-- Ruling 366: putting a teamwork permanent onto the battlefield does not
 let you pay teamwork. Helicarrier Strike is an instant, so the flag is
 only on spells that were cast. -/
 def teamworkNotPaidWhenNotCastOk : Bool :=
@@ -163,11 +165,11 @@ def teamworkNotPaidWhenNotCastOk : Bool :=
     (match g.apply ⟨0⟩ (.announceTeamwork true) with
      | .error _ => true
      | .ok _ => false) &&
-    (mshRuling 7).comment.contains "without casting it"
+    (mshRuling 366).comment.contains "without casting it"
 
 #guard teamworkNotPaidWhenNotCastOk
 
-/-- Ruling 5: casting without paying the mana cost still allows optional
+/-- Ruling 364: casting without paying the mana cost still allows optional
 additional costs such as teamwork. -/
 def teamworkOptionalOnFreeCastOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
@@ -185,14 +187,14 @@ def teamworkOptionalOnFreeCastOk : Bool :=
      let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Grizzly Bears").id])
      (namedPermanent g "Grizzly Bears").status.tapped &&
        g.log.any (fun s => mentions s "pays a teamwork cost")) &&
-    (mshRuling 5).comment.contains "without paying its mana cost" &&
+    (mshRuling 364).comment.contains "without paying its mana cost" &&
     helicarrierStrike.teamwork.isSome &&
-    (mshRuling 230).comment.contains "teamwork costs"
+    (mshRuling 582).comment.contains "teamwork costs"
 
 #guard teamworkOptionalOnFreeCastOk
 
 /-!
-## 11–12, 69 — Connive
+## 370–371, 422 — Connive
 -/
 
 /-- Run idle actions until a discard is pending or the stack is idle. -/
@@ -212,7 +214,7 @@ def discardNamed (g : Game) (p : PlayerId) (name : String) : Game :=
     if q == p then mustApply g p (.discard (handCardNamed g p name).id) else g
   | _ => g
 
-/-- Ruling 12: connive is atomic — draw, then discard, then the counter.
+/-- Ruling 371: connive is atomic — draw, then discard, then the counter.
 A discarded nonland puts a +1/+1 counter on the conniving creature. -/
 def conniveNonland : Game :=
   let g := addToHand afterDraw lightningBolt ⟨0⟩
@@ -221,11 +223,11 @@ def conniveNonland : Game :=
 def conniveNonlandOk : Bool :=
   (namedPermanent conniveNonland "A.I.M. Scientists").status.plusOnePlusOne == 1 &&
     conniveNonland.log.any (fun s => mentions s "connives") &&
-    (mshRuling 12).comment.contains "no player may take any other actions"
+    (mshRuling 371).comment.contains "no player may take any other actions"
 
 #guard conniveNonlandOk
 
-/-- Ruling 186: if no nonland is discarded, no +1/+1 counter. -/
+/-- Ruling 538: if no nonland is discarded, no +1/+1 counter. -/
 def conniveLand : Game :=
   let g := addToHand afterDraw mountain ⟨0⟩
   discardNamed (settleToDiscard (mshEnter g aIMScientists) 24) ⟨0⟩ "Mountain"
@@ -234,11 +236,11 @@ def conniveLandOk : Bool :=
   (namedPermanent conniveLand "A.I.M. Scientists").status.plusOnePlusOne == 0 &&
     (conniveLand.log.any (fun s => mentions s "land was discarded") ||
       conniveLand.log.any (fun s => mentions s "does not receive")) &&
-    (mshRuling 186).comment.contains "does not receive a +1/+1 counter"
+    (mshRuling 538).comment.contains "does not receive a +1/+1 counter"
 
 #guard conniveLandOk
 
-/-- Ruling 11: the creature still connives after it has left; no counter. -/
+/-- Ruling 370: the creature still connives after it has left; no counter. -/
 def conniveAfterLeaveOk : Bool :=
   let g := addPermanent afterDraw aIMScientists ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "A.I.M. Scientists"
@@ -248,12 +250,12 @@ def conniveAfterLeaveOk : Bool :=
   let g := discardNamed g ⟨0⟩ "Lightning Bolt"
   !g.battlefield.any (fun x => x.name == "A.I.M. Scientists") &&
     g.log.any (fun s => mentions s "left the battlefield") &&
-    (mshRuling 11).comment.contains "still connives"
+    (mshRuling 370).comment.contains "still connives"
 
 #guard conniveAfterLeaveOk
 
 /-!
-## 13–22 — Modal double-faced cards
+## 372–381 — Modal double-faced cards
 -/
 
 def mdfcFacesOk : Bool :=
@@ -267,14 +269,14 @@ def mdfcFacesOk : Bool :=
      g.objectManaValue banner == 1 &&
        (let g := g.applyAbilityEffect ⟨0⟩ (Effect.transform) #[] (some banner.id)
         g.objectManaValue (namedPermanent g "The Incredible Hulk") == 6)) &&
-    (mshRuling 15).comment.contains "on the stack or battlefield" &&
-    (mshRuling 20).comment.contains "mana value of a modal double-faced card" &&
-    (mshRuling 22).comment.contains "front face" &&
-    (mshRuling 13).comment.contains "can be transformed"
+    (mshRuling 374).comment.contains "on the stack or battlefield" &&
+    (mshRuling 379).comment.contains "mana value of a modal double-faced card" &&
+    (mshRuling 381).comment.contains "front face" &&
+    (mshRuling 372).comment.contains "can be transformed"
 
 #guard mdfcFacesOk
 
-/-- Ruling 13 / 15 / 21: transforming uses the other face on the battlefield;
+/-- Ruling 372 / 15 / 21: transforming uses the other face on the battlefield;
 leaving play restores the front face. -/
 def mdfcTransformLeave : Game :=
   let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
@@ -294,11 +296,11 @@ def mdfcTransformLeaveOk : Bool :=
     | none => namedPermanent afterDraw "Grizzly Bears"
   gy.name == "Bruce Banner" &&
     gy.printed.manaValue == 1 &&
-    (mshRuling 22).comment.contains "Bruce Banner in the graveyard"
+    (mshRuling 381).comment.contains "Bruce Banner in the graveyard"
 
 #guard mdfcTransformLeaveOk
 
-/-- Ruling 16 / 17: legality uses the face being played; putting onto the
+/-- Ruling 375 / 17: legality uses the face being played; putting onto the
 battlefield without casting uses the front face. -/
 def mdfcFrontFacePutOk : Bool :=
   let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
@@ -311,12 +313,12 @@ def mdfcFrontFacePutOk : Bool :=
   (namedPermanent g "Bruce Banner").printed.name == "Bruce Banner" &&
     !(namedPermanent g "Bruce Banner").status.transformed &&
     greenFaces == #["The Incredible Hulk"] &&
-    (mshRuling 16).comment.contains "cast green spells" &&
-    (mshRuling 17).comment.contains "front face"
+    (mshRuling 375).comment.contains "cast green spells" &&
+    (mshRuling 376).comment.contains "front face"
 
 #guard mdfcFrontFacePutOk
 
-/-- Ruling 14 / 18 / 19: reminder icons have no rules; Commander color
+/-- Ruling 373 / 18 / 19: reminder icons have no rules; Commander color
 identity of an MDFC is both faces combined, and that does not change the
 front face's battlefield color. -/
 def mdfcReminderOk : Bool :=
@@ -331,26 +333,26 @@ def mdfcReminderOk : Bool :=
     theIncredibleHulk.faceColorIdentity.contains .red &&
     theIncredibleHulk.faceColorIdentity.contains .green &&
     !theIncredibleHulk.faceColorIdentity.contains .blue &&
-    (mshRuling 14).comment.contains "icon in the top-left corner" &&
-    (mshRuling 18).comment.contains "color identity" &&
-    (mshRuling 19).comment.contains "reminder text has no effect" &&
-    (mshRuling 175).comment.contains "only the chosen name"
+    (mshRuling 373).comment.contains "icon in the top-left corner" &&
+    (mshRuling 377).comment.contains "color identity" &&
+    (mshRuling 378).comment.contains "reminder text has no effect" &&
+    (mshRuling 527).comment.contains "only the chosen name"
 
 #guard mdfcReminderOk
 
 /-!
-## 23 — Plan
+## 382 — Plan
 -/
 
 def planTypeOk : Bool :=
   claimTheKingdom.subtypes.any (· == "Plan") &&
     claimTheKingdom.hasType .enchantment &&
-    (mshRuling 23).comment.contains "no rules meaning"
+    (mshRuling 382).comment.contains "no rules meaning"
 
 #guard planTypeOk
 
 /-!
-## 70, 102, 319 — Harness / Infinity
+## 423, 455, 671 — Harness / Infinity
 -/
 
 def mindStoneHarness : Game :=
@@ -361,13 +363,13 @@ def mindStoneHarness : Game :=
 def harnessOk : Bool :=
   (namedPermanent mindStoneHarness "The Mind Stone").status.harnessed &&
     mindStoneHarness.log.any (fun s => mentions s "harnessed") &&
-    (mshRuling 70).comment.contains "Harnessed" &&
-    (mshRuling 102).comment.contains "isn't copiable" &&
-    (mshRuling 319).comment.contains "Until it is harnessed"
+    (mshRuling 423).comment.contains "Harnessed" &&
+    (mshRuling 455).comment.contains "isn't copiable" &&
+    (mshRuling 671).comment.contains "Until it is harnessed"
 
 #guard harnessOk
 
-/-- Ruling 102: the ∞ trigger is not active until the Stone is harnessed. -/
+/-- Ruling 455: the ∞ trigger is not active until the Stone is harnessed. -/
 def infinityInactiveUntilHarnessedOk : Bool :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
@@ -380,20 +382,20 @@ def infinityInactiveUntilHarnessedOk : Bool :=
 #guard infinityInactiveUntilHarnessedOk
 
 /-!
-## 71, 81 — Shield counters
+## 424, 434 — Shield counters
 -/
 
 def shieldOk : Bool :=
   let g := mshEnter afterDraw captainAmericaSuperSoldier
   let o := namedPermanent g "Captain America, Super-Soldier"
   o.status.shield == 1 &&
-    ((mshRuling 71).comment.contains "shield counter" ||
-      (mshRuling 81).comment.contains "shield")
+    ((mshRuling 424).comment.contains "shield counter" ||
+      (mshRuling 434).comment.contains "shield")
 
 #guard shieldOk
 
 /-!
-## 25–26, 32 — Landfall (Claim the Kingdom)
+## 19–20, 21 — Landfall (Claim the Kingdom)
 -/
 
 def landfallPlayOk : Bool :=
@@ -402,12 +404,12 @@ def landfallPlayOk : Bool :=
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
   let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
-    (mshRuling 25).comment.contains "doesn't trigger if a permanent already" &&
-    (mshRuling 26).comment.contains "triggers whenever a land you control enters"
+    (mshRuling 378).comment.contains "doesn't trigger if a permanent already" &&
+    (mshRuling 379).comment.contains "triggers whenever a land you control enters"
 
 #guard landfallPlayOk
 
-/-- Ruling 25: a nonland entering does not trigger landfall. -/
+/-- Ruling 378: a nonland entering does not trigger landfall. -/
 def landfallNonlandOk : Bool :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -416,19 +418,19 @@ def landfallNonlandOk : Bool :=
 #guard landfallNonlandOk
 
 /-!
-## 77–80, 82 — Attacks alone
+## 430–433, 435 — Attacks alone
 -/
 
 def attacksAloneOk : Bool :=
   agent13SharonCarter.triggeredAbilities.any (fun ab =>
     ab == .onCreatureYouControlAttacksAloneInvestigate) &&
-    ((mshRuling 77).comment.contains "attacks alone" ||
-      (mshRuling 80).comment.contains "declared as an attacker")
+    ((mshRuling 430).comment.contains "attacks alone" ||
+      (mshRuling 433).comment.contains "declared as an attacker")
 
 #guard attacksAloneOk
 
 /-!
-## 182, 185 — Enrage (The Incredible Hulk)
+## 534, 537 — Enrage (The Incredible Hulk)
 -/
 
 def hulkEnrageOnce : Game :=
@@ -443,12 +445,12 @@ def enrageOnceOk : Bool :=
   (namedPermanent hulkEnrageOnce "The Incredible Hulk").status.plusOnePlusOne == 1 &&
     hulkEnrageOnce.additionalCombatPhases == 1 &&
     hulkEnrageOnce.log.any (fun s => mentions s "additional combat") &&
-    (mshRuling 185).comment.contains "enrage ability will trigger only once" &&
-    (mshRuling 182).comment.contains "additional combat phase"
+    (mshRuling 537).comment.contains "enrage ability will trigger only once" &&
+    (mshRuling 534).comment.contains "additional combat phase"
 
 #guard enrageOnceOk
 
-/-- Ruling 182: simultaneous damage (two marks before priority) is one trigger. -/
+/-- Ruling 534: simultaneous damage (two marks before priority) is one trigger. -/
 def enrageSimultaneous : Game :=
   let g := addPermanent afterDraw theIncredibleHulk ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Incredible Hulk"
@@ -461,7 +463,7 @@ def enrageSimultaneous : Game :=
 
 #guard (namedPermanent enrageSimultaneous "The Incredible Hulk").status.plusOnePlusOne == 1
 
-/-- Ruling 185: lethal damage still grants the extra combat if he was attacking. -/
+/-- Ruling 537: lethal damage still grants the extra combat if he was attacking. -/
 def enrageLethalExtraCombatOk : Bool :=
   let g := addPermanent afterDraw theIncredibleHulk ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Incredible Hulk"
@@ -471,23 +473,23 @@ def enrageLethalExtraCombatOk : Bool :=
   let g := settle g 24
   !g.battlefield.any (fun x => x.name == "The Incredible Hulk") &&
     g.additionalCombatPhases == 1 &&
-    (mshRuling 182).comment.contains "no longer on the battlefield"
+    (mshRuling 534).comment.contains "no longer on the battlefield"
 
 #guard enrageLethalExtraCombatOk
 
 /-!
-## 356, 372–374 — Blazing Crescendo timing / illegal target
+## 708, 724–726 — Blazing Crescendo timing / illegal target
 -/
 
 def blazingCrescendoOk : Bool :=
   blazingCrescendo.spellEffect.isSome &&
-    (mshRuling 215).comment.contains "illegal target" &&
-    (mshRuling 33).comment.contains "normal timing rules" &&
-    (mshRuling 372).comment.contains "You pay all costs"
+    (mshRuling 567).comment.contains "illegal target" &&
+    (mshRuling 388).comment.contains "normal timing rules" &&
+    (mshRuling 724).comment.contains "You pay all costs"
 
 #guard blazingCrescendoOk
 
-/-- Ruling 344: Thirst for Knowledge may discard one artifact or two cards. -/
+/-- Ruling 696: Thirst for Knowledge may discard one artifact or two cards. -/
 def thirstDiscardUnlessArtifactOk : Bool :=
   let g0 := addToHand afterDraw theMindStone ⟨0⟩
   let g0 := addToHand g0 lightningBolt ⟨0⟩
@@ -511,7 +513,7 @@ def thirstDiscardUnlessArtifactOk : Bool :=
           (.discard (handCardNamed gTwo ⟨0⟩ "Mountain").id)
         gTwo.thirstDiscardsLeft == 0 &&
           gTwo.pending == .none)) &&
-    (mshRuling 344).comment.contains "one artifact card or two cards"
+    (mshRuling 696).comment.contains "one artifact card or two cards"
 
 #guard thirstDiscardUnlessArtifactOk
 
@@ -528,13 +530,13 @@ def fizzleIllegalTargetOk : Bool :=
 def xIsZeroOffStackOk : Bool :=
   bruceBanner.activatedAbilities.any (fun ab =>
     ab.cost.mana.symbols.any (fun s => match s with | .x => true | _ => false)) &&
-    ((mshRuling 43).comment.contains "X is 0" ||
+    ((mshRuling 397).comment.contains "X is 0" ||
       uniqueMshOracleRulings.any (fun r => r.comment.contains "X is 0"))
 
 #guard xIsZeroOffStackOk
 
 def tokenExileCeasesOk : Bool :=
-  (mshRuling 24).comment.contains "token is exiled" &&
+  (mshRuling 159).comment.contains "token is exiled" &&
     treasureToken.isToken
 
 #guard tokenExileCeasesOk
@@ -581,7 +583,7 @@ def heroSourceOk : Bool :=
       (discardSource := true)) &&
     paidOk gSp (dummyProposal gSp .spell spell (ManaCost.ofColor .white)) &&
     captainAmericaSuperSoldier.hasSubtype "Hero" &&
-    (mshRuling 72).comment.contains "Hero source"
+    (mshRuling 425).comment.contains "Hero source"
 
 #guard heroSourceOk
 
@@ -612,7 +614,7 @@ def villainSourceOk : Bool :=
     paidOk gCh (dummyProposal gCh .activatedAbility chameleon (ManaCost.ofColor .black)) &&
     paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofColor .black)) &&
     elektraDaughterOfTheHand.hasSubtype "Villain" &&
-    (mshRuling 73).comment.contains "Villain source"
+    (mshRuling 426).comment.contains "Villain source"
 
 #guard villainSourceOk
 
@@ -630,9 +632,9 @@ def finalityExileOk : Bool :=
        !g.objects.any (fun x =>
          x.name == "Grizzly Bears" && x.zone == .graveyard ⟨0⟩) &&
        g.log.any (fun s => mentions s "finality counter")) &&
-    (mshRuling 27).comment.contains "exiled instead" &&
-    (mshRuling 29).comment.contains "any permanent" &&
-    (mshRuling 31).comment.contains "redundant"
+    (mshRuling 383).comment.contains "exiled instead" &&
+    (mshRuling 385).comment.contains "any permanent" &&
+    (mshRuling 387).comment.contains "redundant"
 
 #guard finalityExileOk
 
@@ -643,7 +645,7 @@ def finalityOtherZoneOk : Bool :=
   let o := namedPermanent g "Grizzly Bears"
   let g := g.returnToHand o.id ⟨0⟩
   (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Grizzly Bears") &&
-    (mshRuling 28).comment.contains "owner's hand"
+    (mshRuling 384).comment.contains "owner's hand"
 
 #guard finalityOtherZoneOk
 
@@ -661,11 +663,11 @@ def winterSoldierFinalityOk : Bool :=
 
 def daredevilLookOk : Bool :=
   daredevilManWithoutFear.mayLookAtTopAnytime &&
-    (mshRuling 113).comment.contains "look at the top card"
+    (mshRuling 466).comment.contains "look at the top card"
 
 #guard daredevilLookOk
 
-/-- Ruling 90: Ant-Man's second ability triggers on any +1/+1 counter. -/
+/-- Ruling 443: Ant-Man's second ability triggers on any +1/+1 counter. -/
 def antManAnyCounterOk : Bool :=
   let g := addPermanent afterDraw antManColonyCommander ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -681,12 +683,12 @@ def antManAnyCounterOk : Bool :=
        (let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
         (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
           t.event == TriggerEvent.youPutPlusOne)).size == 1)) &&
-    (mshRuling 90).comment.contains "for any reason"
+    (mshRuling 443).comment.contains "for any reason"
 
 #guard antManAnyCounterOk
 
 /-!
-## 39, 54–56, 257, 331 — Improvise
+## 393, 407–409, 609, 683 — Improvise
 -/
 
 def improviseReduceOk : Bool :=
@@ -696,12 +698,12 @@ def improviseReduceOk : Bool :=
     (Game.improviseReduce cost 3) == ({ symbols := #[.colored .blue] } : ManaCost) &&
     arcReactor.hasImprovise &&
     ironheartCleverChampion.grantsImproviseToNoncreature &&
-    (mshRuling 54).comment.contains "cost of casting the spell" &&
-    (mshRuling 55).comment.contains "Improvise can't pay" &&
-    (mshRuling 56).comment.contains "doesn't change a spell's mana cost" &&
-    (mshRuling 257).comment.contains "Multiple instances of improvise" &&
-    (mshRuling 331).comment.contains "first choose the value for X" &&
-    (mshRuling 39).comment.contains "isn't an alternative cost"
+    (mshRuling 407).comment.contains "cost of casting the spell" &&
+    (mshRuling 408).comment.contains "Improvise can't pay" &&
+    (mshRuling 409).comment.contains "doesn't change a spell's mana cost" &&
+    (mshRuling 609).comment.contains "Multiple instances of improvise" &&
+    (mshRuling 683).comment.contains "first choose the value for X" &&
+    (mshRuling 393).comment.contains "isn't an alternative cost"
 
 #guard improviseReduceOk
 
@@ -718,20 +720,20 @@ def improviseTapOk : Bool :=
 
 #guard improviseTapOk
 
-/-- Ruling 45: a tapped artifact cannot be tapped again for improvise. -/
+/-- Ruling 399: a tapped artifact cannot be tapped again for improvise. -/
 def improviseAlreadyTappedOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
   let g := g.setObject { tok with status := { tok.status with tapped := true } }
   match g.tapArtifactsForImprovise ⟨0⟩ #[tok.id] with
   | .error msg =>
     msg.contains "already tapped" &&
-      (mshRuling 45).comment.contains "won't be able to tap it again"
+      (mshRuling 399).comment.contains "won't be able to tap it again"
   | .ok _ => false
 
 #guard improviseAlreadyTappedOk
 
 /-!
-## 76, 159, 174, 181 — Boast
+## 429, 511, 526, 533 — Boast
 -/
 
 def boastWindowOk : Bool :=
@@ -745,14 +747,14 @@ def boastWindowOk : Bool :=
        g.canActivateBoast o &&
          (let g := g.markBoastUsed o
           !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
-    (mshRuling 76).comment.contains "declared as an attacker" &&
-    (mshRuling 159).comment.contains "never declared as an attacker" &&
-    (mshRuling 174).comment.contains "only once" &&
-    (mshRuling 181).comment.contains "hasn't been activated yet that turn"
+    (mshRuling 429).comment.contains "declared as an attacker" &&
+    (mshRuling 511).comment.contains "never declared as an attacker" &&
+    (mshRuling 526).comment.contains "only once" &&
+    (mshRuling 533).comment.contains "hasn't been activated yet that turn"
 
 #guard boastWindowOk
 
-/-- Ruling 159: entering attacking does not unlock boast. -/
+/-- Ruling 511: entering attacking does not unlock boast. -/
 def boastEnteredAttackingOk : Bool :=
   let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Baron Helmut Zemo"
@@ -762,7 +764,7 @@ def boastEnteredAttackingOk : Bool :=
 #guard boastEnteredAttackingOk
 
 /-!
-## 157, 284 — Sneak
+## 510, 636 — Sneak
 -/
 
 def sneakCostOk : Bool :=
@@ -773,8 +775,8 @@ def sneakCostOk : Bool :=
      g.canCastForSneak ⟨0⟩ && !g.canCastForSneak ⟨1⟩) &&
     (let g := { afterDraw with step := .declareAttackers, activePlayer := ⟨0⟩ }
      !g.canCastForSneak ⟨0⟩) &&
-    (mshRuling 157).comment.contains "enters tapped and attacking" &&
-    (mshRuling 284).comment.contains "declare blockers step"
+    (mshRuling 510).comment.contains "enters tapped and attacking" &&
+    (mshRuling 636).comment.contains "declare blockers step"
 
 #guard sneakCostOk
 
@@ -808,7 +810,7 @@ def sneakWrongStepOk : Bool :=
 #guard sneakWrongStepOk
 
 /-!
-## 118–119 — Equip worthy
+## 471–472 — Equip worthy
 -/
 
 def equipWorthyOk : Bool :=
@@ -855,13 +857,13 @@ def equipWorthyOk : Bool :=
           (some (namedPermanent g "Super-Soldier Serum").id)
           #[Target.permanent hammer.id]
         (namedPermanent g "Mjölnir, Hammer of Thor").attachedTo == some loki.id)) &&
-    (mshRuling 118).comment.contains "isn't worthy" &&
-    (mshRuling 119).comment.contains "Equip worthy"
+    (mshRuling 471).comment.contains "isn't worthy" &&
+    (mshRuling 472).comment.contains "Equip worthy"
 
 #guard equipWorthyOk
 
 /-!
-## 320, 347 — Vibranium tokens
+## 672, 699 — Vibranium tokens
 -/
 
 def vibraniumTokenOk : Bool :=
@@ -870,8 +872,8 @@ def vibraniumTokenOk : Bool :=
   o.printed.isToken && o.printed.hasSubtype "Vibranium" &&
     o.printed.keywords.indestructible &&
     g.hasIndestructible o &&
-    (mshRuling 320).comment.contains "predefined token" &&
-    (mshRuling 347).comment.contains "isn't a nonartifact spell"
+    (mshRuling 672).comment.contains "predefined token" &&
+    (mshRuling 699).comment.contains "isn't a nonartifact spell"
 
 #guard vibraniumTokenOk
 
@@ -888,46 +890,46 @@ def vibraniumManaOk : Bool :=
 
 #guard vibraniumManaOk
 
-/-- Ruling 163 / 274 / 281: one shield counter prevents one damage or destroy. -/
+/-- Ruling 515 / 274 / 281: one shield counter prevents one damage or destroy. -/
 def shieldPreventsDestroyOk : Bool :=
   let g := mshEnter afterDraw captainAmericaSuperSoldier
   let o := namedPermanent g "Captain America, Super-Soldier"
   let g := g.destroyPermanent o
   g.battlefield.any (fun x => x.name == "Captain America, Super-Soldier") &&
     (namedPermanent g "Captain America, Super-Soldier").status.shield == 0 &&
-    (mshRuling 274).comment.contains "isn't the same as regenerating" &&
-    (mshRuling 281).comment.contains "sacrificing"
+    (mshRuling 626).comment.contains "isn't the same as regenerating" &&
+    (mshRuling 633).comment.contains "sacrificing"
 
 #guard shieldPreventsDestroyOk
 
-/-- Ruling 43 / 161: {X} is 0 off the stack. -/
+/-- Ruling 397 / 161: {X} is 0 off the stack. -/
 def xOffStackIsZeroOk : Bool :=
   photonBlastBarrage.manaCost.symbols.any (fun
     | .x => true
     | _ => false) &&
     photonBlastBarrage.manaValue == 2 &&
-    ((mshRuling 43).comment.contains "X is 0" ||
-      (mshRuling 161).comment.contains "X is 0")
+    ((mshRuling 397).comment.contains "X is 0" ||
+      (mshRuling 513).comment.contains "X is 0")
 
 #guard xOffStackIsZeroOk
 
-/-- Ruling 24 / 158: an exiled token ceases to exist. -/
+/-- Ruling 159 / 158: an exiled token ceases to exist. -/
 def tokenExileCeasesToExistOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
   let (g, _) := g.move tok.id .exile none
   let g := g.checkSBA
   !g.objects.any (fun o => o.name == "Treasure") &&
     g.log.any (fun s => mentions s "ceases to exist") &&
-    (mshRuling 24).comment.contains "cease to exist" &&
-    (mshRuling 158).comment.contains "ceases to exist"
+    (mshRuling 159).comment.contains "cease to exist" &&
+    (mshRuling 502).comment.contains "ceases to exist"
 
 #guard tokenExileCeasesToExistOk
 
 /-!
-## 103, 127, 337, 341–342 — Power-up interactions
+## 456, 480, 689, 693–694 — Power-up interactions
 -/
 
-/-- Ruling 103: Bold Biochemist's power-up still draws if it has left. -/
+/-- Ruling 456: Bold Biochemist's power-up still draws if it has left. -/
 def boldBiochemistDrawsAfterLeaveOk : Bool :=
   let g := addPermanent afterDraw boldBiochemist ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Bold Biochemist"
@@ -936,11 +938,11 @@ def boldBiochemistDrawsAfterLeaveOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.plusOneAndDraw 1 2) #[] (some o.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 &&
     !g.battlefield.any (fun x => x.name == "Bold Biochemist") &&
-    (mshRuling 103).comment.contains "you'll still draw two cards"
+    (mshRuling 456).comment.contains "you'll still draw two cards"
 
 #guard boldBiochemistDrawsAfterLeaveOk
 
-/-- Ruling 127: Hulk reduces only generic mana on other creatures' power-up. -/
+/-- Ruling 480: Hulk reduces only generic mana on other creatures' power-up. -/
 def hulkPowerUpGenericOnlyOk : Bool :=
   let g := addPermanent afterDraw hulkGammaGoliath ⟨0⟩ ⟨0⟩
   let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
@@ -949,11 +951,11 @@ def hulkPowerUpGenericOnlyOk : Bool :=
   let cost := g.activationManaCost ⟨0⟩ ab (some bot)
   cost.coloredCount .blue == 1 &&
     cost.manaValue == ab.cost.mana.manaValue - 3 &&
-    (mshRuling 127).comment.contains "only the amount of generic mana"
+    (mshRuling 480).comment.contains "only the amount of generic mana"
 
 #guard hulkPowerUpGenericOnlyOk
 
-/-- Ruling 337 / 342: Wonder Man lets each power-up be activated twice,
+/-- Ruling 689 / 342: Wonder Man lets each power-up be activated twice,
 including his own. -/
 def wonderManExtraPowerUpOk : Bool :=
   let g := addPermanent afterDraw wonderManHollywoodHero ⟨0⟩ ⟨0⟩
@@ -966,12 +968,12 @@ def wonderManExtraPowerUpOk : Bool :=
      g.canActivate ⟨0⟩ o ab &&
        (let g := g.mapObjectStatus o (fun s => { s with powerUpActivations := 2 })
         !g.canActivate ⟨0⟩ (namedPermanent g "Wonder Man, Hollywood Hero") ab)) &&
-    (mshRuling 337).comment.contains "twice rather than once" &&
-    (mshRuling 342).comment.contains "own power-up ability"
+    (mshRuling 689).comment.contains "twice rather than once" &&
+    (mshRuling 694).comment.contains "own power-up ability"
 
 #guard wonderManExtraPowerUpOk
 
-/-- Ruling 341: each Wonder Man adds one extra activation. -/
+/-- Ruling 693: each Wonder Man adds one extra activation. -/
 def twoWonderMenThreeActivationsOk : Bool :=
   let g := addPermanent afterDraw wonderManHollywoodHero ⟨0⟩ ⟨0⟩
   let g := addPermanent g wonderManHollywoodHero ⟨0⟩ ⟨0⟩
@@ -979,13 +981,13 @@ def twoWonderMenThreeActivationsOk : Bool :=
     (g.permanentsOf ⟨0⟩).filter Game.grantsExtraPowerUp |>.size
   n == 2 &&
     g.powerUpActivationLimit ⟨0⟩ == 3 &&
-    (mshRuling 341).comment.contains "two of him"
+    (mshRuling 693).comment.contains "two of him"
 
 #guard twoWonderMenThreeActivationsOk
 
 /-!
-## 21, 35, 42, 44, 50, 60, 63–65, 67, 74–75, 83, 87, 91,
-## 128, 152–154, 162, 168, 176, 313 — Shared CR on MSH cards
+## 380, 390, 396, 398, 404, 413, 416–418, 420, 427–428, 436, 440, 444,
+## 481, 505–507, 514, 520, 528, 665 — Shared CR on MSH cards
 -/
 
 def mdfcPlayFaceOk : Bool :=
@@ -995,15 +997,15 @@ def mdfcPlayFaceOk : Bool :=
     g.objectManaValue card == 1 &&
     bruceBanner.manaValue <= 2 &&
     theIncredibleHulk.manaValue > 2 &&
-    (mshRuling 21).comment.contains "face you're playing"
+    (mshRuling 380).comment.contains "face you're playing"
 
 #guard mdfcPlayFaceOk
 
 def activatedVsTriggeredWordingOk : Bool :=
   aerialDoombot.activatedAbilities.any (·.powerUp) &&
     claimTheKingdom.triggeredAbilities.size > 0 &&
-    (mshRuling 35).comment.contains "colon" &&
-    (mshRuling 64).comment.contains "when"
+    (mshRuling 390).comment.contains "colon" &&
+    (mshRuling 417).comment.contains "when"
 
 #guard activatedVsTriggeredWordingOk
 
@@ -1017,7 +1019,7 @@ def equipmentTapIndependentOk : Bool :=
   let g := g.mapObjectStatus cap (fun s => { s with tapped := true })
   let sh := namedPermanent g "Captain America's Shield"
   !sh.status.tapped &&
-    (mshRuling 42).comment.contains "doesn't become tapped"
+    (mshRuling 396).comment.contains "doesn't become tapped"
 
 #guard equipmentTapIndependentOk
 
@@ -1027,7 +1029,7 @@ def xZeroWithoutPayingOk : Bool :=
   let card := { card with playPermission := some {
     player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   g.playManaCost card photonBlastBarrage == ManaCost.zero &&
-    (mshRuling 44).comment.contains "choose 0"
+    (mshRuling 398).comment.contains "choose 0"
 
 #guard xZeroWithoutPayingOk
 
@@ -1039,18 +1041,18 @@ def copyKeepsXAndIsNotCastOk : Bool :=
     o.name == "Photon Blast Barrage" && o.zone == .stack && o.isCopy)
   copies.size == 1 && copies[0]!.chosenX == some 3 &&
     copies[0]!.isCopy &&
-    (mshRuling 50).comment.contains "same value of X" &&
-    (mshRuling 60).comment.contains "not \"cast.\"" &&
-    (mshRuling 67).comment.contains "additional costs for the copy"
+    (mshRuling 404).comment.contains "same value of X" &&
+    (mshRuling 413).comment.contains "not \"cast.\"" &&
+    (mshRuling 420).comment.contains "additional costs for the copy"
 
 #guard copyKeepsXAndIsNotCastOk
 
 def totalCostIncludesAdditionalOk : Bool :=
   helicarrierStrike.teamwork == some 2 &&
     helicarrierStrike.manaCost.manaValue == 1 &&
-    (mshRuling 63).comment.contains "total cost of a spell" &&
-    (mshRuling 65).comment.contains "additional costs" &&
-    (mshRuling 313).comment.contains "total cost of a spell"
+    (mshRuling 416).comment.contains "total cost of a spell" &&
+    (mshRuling 418).comment.contains "additional costs" &&
+    (mshRuling 665).comment.contains "total cost of a spell"
 
 #guard totalCostIncludesAdditionalOk
 
@@ -1089,9 +1091,9 @@ def creatureAndArtifactSourceOk : Bool :=
      paidOk gGy (dummyProposal gGy .activatedAbility gy (ManaCost.ofGeneric 2))) &&
     (let (gSp, spell) := gMana.allocObject grizzlyBears ⟨0⟩ .stack (some ⟨0⟩)
      reversedPay gSp (dummyProposal gSp .spell spell (ManaCost.ofGeneric 2))) &&
-    (mshRuling 74).comment.contains "creature source" &&
-    (mshRuling 75).comment.contains "creature" &&
-    (mshRuling 87).comment.contains "artifact source"
+    (mshRuling 427).comment.contains "creature source" &&
+    (mshRuling 428).comment.contains "creature" &&
+    (mshRuling 440).comment.contains "artifact source"
 
 #guard creatureAndArtifactSourceOk
 
@@ -1100,7 +1102,7 @@ def poisonTenLosesOk : Bool :=
   let g := g.checkSBA
   (g.player ⟨0⟩).lost &&
     g.log.any (fun s => mentions s "poison") &&
-    (mshRuling 83).comment.contains "ten or more poison"
+    (mshRuling 436).comment.contains "ten or more poison"
 
 #guard poisonTenLosesOk
 
@@ -1111,7 +1113,7 @@ def copiesYouDontCastCeaseOk : Bool :=
   let (g, _) := g.move copy.id .exile none
   let g := g.checkSBA
   !g.objects.any (fun o => o.isCopy) &&
-    (mshRuling 91).comment.contains "cease to exist"
+    (mshRuling 444).comment.contains "cease to exist"
 
 #guard copiesYouDontCastCeaseOk
 
@@ -1144,7 +1146,7 @@ def hybridBlackCountsOk : Bool :=
        gMix.objects.filter (fun o =>
          o.zone == .graveyard ⟨0⟩) |>.map (·.id)
      !gMix.canPayZemoBoast ⟨0⟩ idsMix) &&
-    (mshRuling 128).comment.contains "Hybrid mana symbols that include black"
+    (mshRuling 481).comment.contains "Hybrid mana symbols that include black"
 
 #guard hybridBlackCountsOk
 
@@ -1169,17 +1171,17 @@ def xIsZeroInZonesOk : Bool :=
     g.objectManaValue gy == 2 &&
     g.objectManaValue lib == 2 &&
     g.objectManaValue bf == 2 &&
-    (mshRuling 43).comment.contains "X is 0" &&
-    (mshRuling 152).comment.contains "X is 0" &&
-    (mshRuling 153).comment.contains "X is 0" &&
-    (mshRuling 154).comment.contains "X is 0" &&
-    (mshRuling 161).comment.contains "X is 0" &&
-    (mshRuling 162).comment.contains "X is 0" &&
-    (mshRuling 168).comment.contains "value chosen for X"
+    (mshRuling 397).comment.contains "X is 0" &&
+    (mshRuling 505).comment.contains "X is 0" &&
+    (mshRuling 506).comment.contains "X is 0" &&
+    (mshRuling 507).comment.contains "X is 0" &&
+    (mshRuling 513).comment.contains "X is 0" &&
+    (mshRuling 514).comment.contains "X is 0" &&
+    (mshRuling 520).comment.contains "value chosen for X"
 
 #guard xIsZeroInZonesOk
 
-/-- Ruling 176: tapping an already-tapped creature is not becoming tapped. -/
+/-- Ruling 528: tapping an already-tapped creature is not becoming tapped. -/
 def tapAlreadyTappedOk : Bool :=
   let g := addPermanent afterDraw captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Captain America, Living Legend"
@@ -1190,12 +1192,12 @@ def tapAlreadyTappedOk : Bool :=
   o.status.tapped && o2.status.tapped &&
     logContains g "already tapped" &&
     !logContains g "becomes tapped" &&
-    (mshRuling 176).comment.contains "already tapped"
+    (mshRuling 528).comment.contains "already tapped"
 
 #guard tapAlreadyTappedOk
 
 /-!
-## 37–38, 58, 100–101 — Exile leaves Auras and Equipment behind
+## 392–89, 411, 453–454 — Exile leaves Auras and Equipment behind
 -/
 
 def exileUnattachesOk : Bool :=
@@ -1213,10 +1215,10 @@ def exileUnattachesOk : Bool :=
   let eq := namedPermanent g "Captain America's Shield"
   aura.zone == .graveyard ⟨0⟩ &&
     eq.isOnBattlefield && eq.attachedTo.isNone &&
-    (mshRuling 37).comment.contains "Equipment will become unattached" &&
-    (mshRuling 38).comment.contains "remain on the battlefield" &&
-    (mshRuling 100).comment.contains "Auras attached" &&
-    (mshRuling 101).comment.contains "Equipment attached"
+    (mshRuling 392).comment.contains "Equipment will become unattached" &&
+    (mshRuling 89).comment.contains "remain on the battlefield" &&
+    (mshRuling 453).comment.contains "Auras attached" &&
+    (mshRuling 454).comment.contains "Equipment attached"
 
 #guard exileUnattachesOk
 
@@ -1236,12 +1238,12 @@ def returnedIsNewObjectOk : Bool :=
   back.id != oldId &&
     back.status.plusOnePlusOne == 0 &&
     !back.status.attacking &&
-    (mshRuling 58).comment.contains "new object"
+    (mshRuling 411).comment.contains "new object"
 
 #guard returnedIsNewObjectOk
 
 /-!
-## 32, 69, 78–79, 82, 85–86, 111 — Landfall / once each turn / attacks
+## 21, 422, 431–432, 435, 438–439, 464 — Landfall / once each turn / attacks
 -/
 
 def landfallEachAbilityOk : Bool :=
@@ -1250,11 +1252,11 @@ def landfallEachAbilityOk : Bool :=
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
   let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
-    (mshRuling 32).comment.contains "each landfall ability"
+    (mshRuling 380).comment.contains "each landfall ability"
 
 #guard landfallEachAbilityOk
 
-/-- Ruling 69: declining the optional connive does not lock the ability;
+/-- Ruling 422: declining the optional connive does not lock the ability;
 choosing it does, and already-stacked instances then do nothing. -/
 def onceEachTurnConniveWordingOk : Bool :=
   let villainWait (g : Game) : Nat :=
@@ -1292,7 +1294,7 @@ def onceEachTurnConniveWordingOk : Bool :=
           (some struckerId) #[Target.permanent rg.id]
         (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
           gNo.log.any (fun s => mentions s "no effect"))) &&
-    (mshRuling 69).comment.contains "Do this only once each turn"
+    (mshRuling 422).comment.contains "Do this only once each turn"
 
 #guard onceEachTurnConniveWordingOk
 
@@ -1301,21 +1303,21 @@ def enterAttackingNotDeclaredOk : Bool :=
   let o := namedPermanent g "Baron Helmut Zemo"
   let g := g.setObject { o with status := { o.status with attacking := true } }
   !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo") &&
-    (mshRuling 85).comment.contains "never declared as an attacking creature" &&
-    (mshRuling 86).comment.contains "never declared" &&
-    (mshRuling 111).comment.contains "enter attacking"
+    (mshRuling 438).comment.contains "never declared as an attacking creature" &&
+    (mshRuling 439).comment.contains "never declared" &&
+    (mshRuling 464).comment.contains "enter attacking"
 
 #guard enterAttackingNotDeclaredOk
 
 def attacksAloneWordingOk : Bool :=
-  (mshRuling 78).comment.contains "attacks alone" &&
-    (mshRuling 79).comment.contains "declare attackers step" &&
-    (mshRuling 82).comment.contains "currently attacking"
+  (mshRuling 431).comment.contains "attacks alone" &&
+    (mshRuling 432).comment.contains "declare attackers step" &&
+    (mshRuling 435).comment.contains "currently attacking"
 
 #guard attacksAloneWordingOk
 
 /-!
-## 209–219 — Illegal targets cause the spell or ability to do nothing
+## 561–571 — Illegal targets cause the spell or ability to do nothing
 -/
 
 /-- Rulings 209–219: an illegal creature target fizzles the whole spell or
@@ -1366,17 +1368,17 @@ def illegalTargetDoesNothingOk : Bool :=
     !(namedPermanent gAbsorb "Absorbing Man").printed.subtypes.any (· == "Bear") &&
     !(namedPermanent gTask "Taskmaster, Mercenary Mimic").printed.subtypes.any
       (· == "Bear") &&
-    (mshRuling 209).comment.contains "won't gain life" &&
-    (mshRuling 210).comment.contains "Cruel Alliance" &&
-    (mshRuling 211).comment.contains "Depower" &&
-    (mshRuling 212).comment.contains "Hour of Defeat" &&
-    (mshRuling 213).comment.contains "Pym Particles" &&
-    (mshRuling 214).comment.contains "Repulsor Blast" &&
-    (mshRuling 215).comment.contains "illegal target" &&
-    (mshRuling 216).comment.contains "will not resolve" &&
-    (mshRuling 217).comment.contains "Taskmaster" &&
-    (mshRuling 218).comment.contains "landfall ability" &&
-    (mshRuling 219).comment.contains "Absorbing Man"
+    (mshRuling 561).comment.contains "won't gain life" &&
+    (mshRuling 562).comment.contains "Cruel Alliance" &&
+    (mshRuling 563).comment.contains "Depower" &&
+    (mshRuling 564).comment.contains "Hour of Defeat" &&
+    (mshRuling 565).comment.contains "Pym Particles" &&
+    (mshRuling 566).comment.contains "Repulsor Blast" &&
+    (mshRuling 567).comment.contains "illegal target" &&
+    (mshRuling 568).comment.contains "will not resolve" &&
+    (mshRuling 569).comment.contains "Taskmaster" &&
+    (mshRuling 570).comment.contains "landfall ability" &&
+    (mshRuling 571).comment.contains "Absorbing Man"
 
 #guard illegalTargetDoesNothingOk
 
@@ -1386,12 +1388,12 @@ def fizzleWhenTargetLeftOk : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move host.id (.graveyard ⟨1⟩) none
   g.legalTargets ⟨0⟩ (Effect.pump 3 3) |>.isEmpty &&
-    (mshRuling 180).comment.contains "illegal target"
+    (mshRuling 532).comment.contains "illegal target"
 
 #guard fizzleWhenTargetLeftOk
 
 /-!
-## 30, 113, 240, 243 — Look at the top card
+## 386, 466, 592, 595 — Look at the top card
 -/
 
 def lookAtTopRestrictionOk : Bool :=
@@ -1403,15 +1405,15 @@ def lookAtTopRestrictionOk : Bool :=
     daredevilManWithoutFear.mayLookAtTopAnytime &&
     ironLadDivergingDestiny.mayLookAtTopAnytime &&
     kaZarOfTheSavageLand.mayLookAtTopAnytime &&
-    (mshRuling 30).comment.contains "can't look at the n" &&
-    (mshRuling 113).comment.contains "look at the top card" &&
-    (mshRuling 240).comment.contains "look at the top card" &&
-    (mshRuling 243).comment.contains "look at the top card"
+    (mshRuling 386).comment.contains "can't look at the n" &&
+    (mshRuling 466).comment.contains "look at the top card" &&
+    (mshRuling 592).comment.contains "look at the top card" &&
+    (mshRuling 595).comment.contains "look at the top card"
 
 #guard lookAtTopRestrictionOk
 
 /-!
-## 320 already covered; 345–347 Vibranium spend
+## 672 already covered; 697–699 Vibranium spend
 -/
 
 def vibraniumSpendNotOnNonartifactOk : Bool :=
@@ -1434,13 +1436,13 @@ def vibraniumSpendNotOnNonartifactOk : Bool :=
       paidOk g (dummyProposal g .activatedAbility stone (ManaCost.ofGeneric 1)) &&
       paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofGeneric 1)) &&
       reversedPay gBolt (dummyProposal gBolt .spell bolt (ManaCost.ofGeneric 1)) &&
-      (mshRuling 345).comment.contains "isn't a nonartifact spell" &&
-      (mshRuling 347).comment.contains "isn't a nonartifact spell"
+      (mshRuling 697).comment.contains "isn't a nonartifact spell" &&
+      (mshRuling 699).comment.contains "isn't a nonartifact spell"
 
 #guard vibraniumSpendNotOnNonartifactOk
 
 /-!
-## 376 — Maximum hand size is checked only in cleanup
+## 728 — Maximum hand size is checked only in cleanup
 -/
 
 def maxHandSizeCleanupOnlyOk : Bool :=
@@ -1464,12 +1466,12 @@ def maxHandSizeCleanupOnlyOk : Bool :=
      before > 7 &&
        (gMain.player ⟨0⟩).hand.size == 7 &&
        (gKeep.discardToMaxHandSize.player ⟨0⟩).hand.size == before) &&
-    (mshRuling 376).comment.contains "cleanup step" &&
-    (mshRuling 184).comment.contains "maximum hand size"
+    (mshRuling 728).comment.contains "cleanup step" &&
+    (mshRuling 536).comment.contains "maximum hand size"
 
 #guard maxHandSizeCleanupOnlyOk
 
-/-- Ruling 288: Ms. Marvel's granted set-power overwrites a previous set P/T. -/
+/-- Ruling 640: Ms. Marvel's granted set-power overwrites a previous set P/T. -/
 def msMarvelOverwritesSetPowerOk : Bool :=
   let g := addPermanent afterDraw msMarvelKamalaKhan ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Ms. Marvel, Kamala Khan"
@@ -1480,7 +1482,7 @@ def msMarvelOverwritesSetPowerOk : Bool :=
   let o := namedPermanent g "Ms. Marvel, Kamala Khan"
   let fromHand := Int.ofNat (g.player ⟨0⟩).hand.size
   g.power o == fromHand + (o.status.plusOnePlusOne : Int) &&
-    (mshRuling 288).comment.contains "overwrite any previous effects"
+    (mshRuling 640).comment.contains "overwrite any previous effects"
 
 #guard msMarvelOverwritesSetPowerOk
 
@@ -1498,9 +1500,9 @@ def docSamsonExtraCountersOk : Bool :=
      let b := namedPermanent g2 "Grizzly Bears"
      let g2 := g2.addPlusOnePlusOneTo b 1
      (namedPermanent g2 "Grizzly Bears").status.plusOnePlusOne == 5) &&
-    (mshRuling 165).comment.contains "that many plus one" &&
-    (mshRuling 224).comment.contains "two or more effects" &&
-    (mshRuling 238).comment.contains "two Doc Samsons"
+    (mshRuling 517).comment.contains "that many plus one" &&
+    (mshRuling 576).comment.contains "two or more effects" &&
+    (mshRuling 590).comment.contains "two Doc Samsons"
 
 #guard docSamsonExtraCountersOk
 
@@ -1514,7 +1516,7 @@ def namorPowerAllZonesOk : Bool :=
        (let (g, _) := g.move namor.id (.graveyard ⟨0⟩) none
         let gy := namedGraveyardCard g ⟨0⟩ "Namor the Sub-Mariner"
         g.characteristicBasePower gy == 1)) &&
-    (mshRuling 289).comment.contains "works in all zones"
+    (mshRuling 641).comment.contains "works in all zones"
 
 #guard namorPowerAllZonesOk
 
@@ -1522,7 +1524,7 @@ def superAdaptoidPowerAllZonesOk : Bool :=
   let g := addPermanent afterDraw superAdaptoid ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Super-Adaptoid"
   g.power o == 1 &&
-    (mshRuling 290).comment.contains "works in all zones"
+    (mshRuling 642).comment.contains "works in all zones"
 
 #guard superAdaptoidPowerAllZonesOk
 
@@ -1534,9 +1536,9 @@ def iAmIronManSetsPTOk : Bool :=
   let o := namedPermanent g "Grizzly Bears"
   g.power o == 4 && g.toughness o == 4 &&
     o.isCreature && o.types.any (· == .artifact) &&
-    (mshRuling 129).comment.contains "overwrite any previous effects" &&
-    (mshRuling 135).comment.contains "doesn't count as \"crewing\"" &&
-    (mshRuling 89).comment.contains "artifact creature"
+    (mshRuling 482).comment.contains "overwrite any previous effects" &&
+    (mshRuling 488).comment.contains "doesn't count as \"crewing\"" &&
+    (mshRuling 442).comment.contains "artifact creature"
 
 #guard iAmIronManSetsPTOk
 
@@ -1553,8 +1555,8 @@ def frozenInIceCantUntapOk : Bool :=
     (let g := g.applyPermanentAction host PermanentAction.untap
      (namedPermanent g "Grizzly Bears").status.tapped &&
        logContains g "can't become untapped") &&
-    (mshRuling 166).comment.contains "won't untap" &&
-    (mshRuling 202).comment.contains "can't be paid"
+    (mshRuling 518).comment.contains "won't untap" &&
+    (mshRuling 554).comment.contains "can't be paid"
 
 #guard frozenInIceCantUntapOk
 
@@ -1567,8 +1569,8 @@ def spiderWomanCantUntapOk : Bool :=
     (some wasp.id) #[Target.permanent host.id]
   let host := namedPermanent g "Grizzly Bears"
   host.status.tapped && g.hostCantBecomeUntapped host &&
-    (mshRuling 167).comment.contains "won't untap" &&
-    (mshRuling 203).comment.contains "can't be paid"
+    (mshRuling 519).comment.contains "won't untap" &&
+    (mshRuling 555).comment.contains "can't be paid"
 
 #guard spiderWomanCantUntapOk
 
@@ -1584,9 +1586,9 @@ def hulklingGreaterStatOk : Bool :=
     (some hulkling.id) #[Target.permanent giant.id]
   (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1 &&
     fires &&
-    (mshRuling 156).comment.contains "+1/+1 counters on it" &&
-    (mshRuling 328).comment.contains "power to power" &&
-    (mshRuling 332).comment.contains "won't trigger at all"
+    (mshRuling 509).comment.contains "+1/+1 counters on it" &&
+    (mshRuling 680).comment.contains "power to power" &&
+    (mshRuling 684).comment.contains "won't trigger at all"
 
 #guard hulklingGreaterStatOk
 
@@ -1597,7 +1599,7 @@ def hulklingSmallerDoesNotTriggerOk : Bool :=
   let g := g.afterPermanentEnters bot
   !g.waitingTriggers.any (fun t =>
     t.source.name == "Hulkling, Burgeoning Bruiser") &&
-    (mshRuling 332).comment.contains "neither stat"
+    (mshRuling 684).comment.contains "neither stat"
 
 #guard hulklingSmallerDoesNotTriggerOk
 
@@ -1608,8 +1610,8 @@ def wolverineHealsOtherDamageOk : Bool :=
   let o := namedPermanent g "Wolverine, Fierce Fighter"
   let g := g.markDamageOn o 2 "Wolverine is dealt 2 damage"
   (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2 &&
-    (mshRuling 316).comment.contains "remove all damage" &&
-    (mshRuling 340).comment.contains "replacement effect"
+    (mshRuling 668).comment.contains "remove all damage" &&
+    (mshRuling 692).comment.contains "replacement effect"
 
 #guard wolverineHealsOtherDamageOk
 
@@ -1621,10 +1623,10 @@ def shieldRemovesOneOk : Bool :=
   let g := g.markDamageOn o 5 "Cap is dealt 5 damage"
   let o := namedPermanent g "Captain America, Super-Soldier"
   o.status.shield == 1 && o.status.damage == 0 &&
-    (mshRuling 163).comment.contains "only one shield counter" &&
-    (mshRuling 71).comment.contains "not keyword counters" &&
-    (mshRuling 274).comment.contains "isn't the same as regenerating" &&
-    (mshRuling 281).comment.contains "sacrificing"
+    (mshRuling 515).comment.contains "only one shield counter" &&
+    (mshRuling 424).comment.contains "not keyword counters" &&
+    (mshRuling 626).comment.contains "isn't the same as regenerating" &&
+    (mshRuling 633).comment.contains "sacrificing"
 
 #guard shieldRemovesOneOk
 
@@ -1636,8 +1638,8 @@ def shieldUnpreventableStillRemovesOk : Bool :=
   let g := g.markDamageOn o 3 "unpreventable" (unpreventable := true)
   let o := namedPermanent g "Captain America, Super-Soldier"
   o.status.shield == 0 && o.status.damage == 3 &&
-    (mshRuling 164).comment.contains "unpreventable damage" &&
-    (mshRuling 81).comment.contains "unpreventable damage"
+    (mshRuling 516).comment.contains "unpreventable damage" &&
+    (mshRuling 434).comment.contains "unpreventable damage"
 
 #guard shieldUnpreventableStillRemovesOk
 
@@ -1648,10 +1650,10 @@ def powerUpStillHappensIfSourceLeftOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩
     (Effect.plusOneAndCreateTigerGod) #[] (some o.id)
   g.battlefield.any (fun x => x.name == "The Tiger God") &&
-    (mshRuling 338).comment.contains "you'll still create The Tiger God" &&
-    (mshRuling 301).comment.contains "you'll still create" &&
-    (mshRuling 318).comment.contains "You'll create" &&
-    (mshRuling 261).comment.contains "each opponent will still discard"
+    (mshRuling 690).comment.contains "you'll still create The Tiger God" &&
+    (mshRuling 653).comment.contains "you'll still create" &&
+    (mshRuling 670).comment.contains "You'll create" &&
+    (mshRuling 613).comment.contains "each opponent will still discard"
 
 #guard powerUpStillHappensIfSourceLeftOk
 
@@ -1664,8 +1666,8 @@ def doublePowerAndToughnessOk : Bool :=
     #[Target.permanent host.id]
   let o := namedPermanent g "Grizzly Bears"
   g.power o == p0 + p0 && g.toughness o == t0 + t0 &&
-    (mshRuling 314).comment.contains "gets +X/+Y" &&
-    (mshRuling 315).comment.contains "gets +X/+Y"
+    (mshRuling 666).comment.contains "gets +X/+Y" &&
+    (mshRuling 667).comment.contains "gets +X/+Y"
 
 #guard doublePowerAndToughnessOk
 
@@ -1684,7 +1686,7 @@ def hydraulicHelperRestrictedBlueOk : Bool :=
     paidOk g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .blue)) &&
     paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofColor .blue)) &&
     reversedPay gBolt (dummyProposal gBolt .spell bolt (ManaCost.ofColor .blue)) &&
-    (mshRuling 345).comment.contains "isn't a nonartifact spell"
+    (mshRuling 697).comment.contains "isn't a nonartifact spell"
 
 #guard hydraulicHelperRestrictedBlueOk
 
@@ -1695,13 +1697,13 @@ def copyKeepsChosenXOk : Bool :=
   let copies := g.objects.filter (fun o =>
     o.name == "Photon Blast Barrage" && o.zone == .stack && o.isCopy)
   copies.size == 1 && copies[0]!.chosenX == some 4 &&
-    (mshRuling 114).comment.contains "same target as the original" &&
-    (mshRuling 208).comment.contains "same targets unless" &&
-    (mshRuling 294).comment.contains "same targets unless" &&
-    (mshRuling 324).comment.contains "creates X copies" &&
-    (mshRuling 268).comment.contains "creates copies even if" &&
-    (mshRuling 49).comment.contains "division and number of targets" &&
-    (mshRuling 51).comment.contains "same mode or modes"
+    (mshRuling 467).comment.contains "same target as the original" &&
+    (mshRuling 560).comment.contains "same targets unless" &&
+    (mshRuling 646).comment.contains "same targets unless" &&
+    (mshRuling 676).comment.contains "creates X copies" &&
+    (mshRuling 620).comment.contains "creates copies even if" &&
+    (mshRuling 403).comment.contains "division and number of targets" &&
+    (mshRuling 405).comment.contains "same mode or modes"
 
 #guard copyKeepsChosenXOk
 
@@ -1717,8 +1719,8 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
     (let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
        none #[]
      !(namedPermanent g "Grizzly Bears").status.tapped) &&
-    (mshRuling 104).comment.contains "became tapped earlier" &&
-    (mshRuling 124).comment.contains "already tapped"
+    (mshRuling 457).comment.contains "became tapped earlier" &&
+    (mshRuling 477).comment.contains "already tapped"
 
 #guard capLivingLegendFirstTapUntapsOk
 
@@ -1731,18 +1733,18 @@ def secondCardDrawnAfterEnterOk : Bool :=
   let g := g.draw ⟨0⟩ 1
   g.waitingTriggers.any (fun t => t.source.name == "Kang, Temporal Tyrant") &&
     g.waitingTriggers.any (fun t => t.source.name == "Kid Loki") &&
-    (mshRuling 98).comment.contains "second card" &&
-    (mshRuling 110).comment.contains "second card" &&
-    (mshRuling 244).comment.contains "second card" &&
-    (mshRuling 245).comment.contains "second card" &&
-    (mshRuling 246).comment.contains "second card" &&
-    (mshRuling 249).comment.contains "second card" &&
-    (mshRuling 255).comment.contains "second card" &&
-    (mshRuling 277).comment.contains "second card"
+    (mshRuling 451).comment.contains "second card" &&
+    (mshRuling 463).comment.contains "second card" &&
+    (mshRuling 596).comment.contains "second card" &&
+    (mshRuling 597).comment.contains "second card" &&
+    (mshRuling 598).comment.contains "second card" &&
+    (mshRuling 601).comment.contains "second card" &&
+    (mshRuling 607).comment.contains "second card" &&
+    (mshRuling 629).comment.contains "second card"
 
 #guard secondCardDrawnAfterEnterOk
 
-/-- Ruling 97: Kid Loki hexproof applies to creatures that got +1/+1 earlier. -/
+/-- Ruling 450: Kid Loki hexproof applies to creatures that got +1/+1 earlier. -/
 def kidLokiHexproofAfterCountersOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
@@ -1752,7 +1754,7 @@ def kidLokiHexproofAfterCountersOk : Bool :=
     (let g := addPermanent g kidLoki ⟨0⟩ ⟨0⟩
      let bears := namedPermanent g "Grizzly Bears"
      g.hasHexproof bears &&
-       (mshRuling 97).comment.contains "Kid Loki")
+       (mshRuling 450).comment.contains "Kid Loki")
 
 #guard kidLokiHexproofAfterCountersOk
 
@@ -1780,12 +1782,12 @@ def leaveBeforeResolveExileOk : Bool :=
        (some lock.id) #[Target.permanent bears.id]
      onBattlefield g "Grizzly Bears" &&
        !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile)) &&
-    (mshRuling 149).comment.contains "won't be exiled" &&
-    (mshRuling 141).comment.contains "won't be exiled"
+    (mshRuling 502).comment.contains "won't be exiled" &&
+    (mshRuling 494).comment.contains "won't be exiled"
 
 #guard leaveBeforeResolveExileOk
 
-/-- Ruling 132 / 204 / 225: Cloak and Dagger still reveal if they left. -/
+/-- Ruling 485 / 204 / 225: Cloak and Dagger still reveal if they left. -/
 def cloakAndDaggerRevealIfLeftOk : Bool :=
   let g := addToHand afterDraw lightningBolt ⟨1⟩
   let g := addPermanent g cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
@@ -1798,8 +1800,8 @@ def cloakAndDaggerRevealIfLeftOk : Bool :=
   logContains g "reveals their hand" &&
     onBattlefield g "Grizzly Bears" &&
     !g.objects.any (fun o => o.name == "Grizzly Bears" && o.zone == .exile) &&
-    (mshRuling 132).comment.contains "still reveal" &&
-    (mshRuling 225).comment.contains "still do as much as it can"
+    (mshRuling 485).comment.contains "still reveal" &&
+    (mshRuling 577).comment.contains "still do as much as it can"
 
 #guard cloakAndDaggerRevealIfLeftOk
 
@@ -1818,7 +1820,7 @@ def secretInvasionLeaveOk : Bool :=
   onBattlefield g "Hill Giant" &&
     onBattlefield g "Grizzly Bears" &&
     (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears" &&
-    (mshRuling 140).comment.contains "won't be exiled"
+    (mshRuling 493).comment.contains "won't be exiled"
 
 #guard secretInvasionLeaveOk
 
@@ -1838,8 +1840,8 @@ def absorbingManCopyOk : Bool :=
     am.copyRestore.isSome &&
     am.copyUntilNextTurn &&
     g.waitingTriggers.size == before &&
-    (mshRuling 121).comment.contains "exactly what was printed" &&
-    (mshRuling 322).comment.contains "neither entering nor leaving"
+    (mshRuling 474).comment.contains "exactly what was printed" &&
+    (mshRuling 674).comment.contains "neither entering nor leaving"
 
 #guard absorbingManCopyOk
 
@@ -1865,8 +1867,8 @@ def taskmasterCopyOk : Bool :=
        (some tm.id) #[Target.card gy.id]
      (namedPermanent g2 "Taskmaster, Mercenary Mimic").printed.power ==
        hillGiant.power) &&
-    (mshRuling 122).comment.contains "exactly what was printed" &&
-    (mshRuling 326).comment.contains "neither entering nor leaving"
+    (mshRuling 475).comment.contains "exactly what was printed" &&
+    (mshRuling 678).comment.contains "neither entering nor leaving"
 
 #guard taskmasterCopyOk
 
@@ -1894,9 +1896,9 @@ def shuriCopyUntilEotOk : Bool :=
      let g2 := g2.applyAbilityEffect ⟨0⟩ (Effect.copyArtifactYouControlNotLegendary)
        #[Target.permanent dest.id]
      (g2.object! dest.id).printed.name == destName) &&
-    (mshRuling 120).comment.contains "exactly what was printed" &&
-    (mshRuling 188).comment.contains "won't have any effect" &&
-    (mshRuling 330).comment.contains "neither entering nor leaving"
+    (mshRuling 473).comment.contains "exactly what was printed" &&
+    (mshRuling 540).comment.contains "won't have any effect" &&
+    (mshRuling 682).comment.contains "neither entering nor leaving"
 
 #guard shuriCopyUntilEotOk
 
@@ -1918,8 +1920,8 @@ def secretInvasionCopyOk : Bool :=
     (let aura := namedPermanent g "Secret Invasion"
      let (g, _) := g.move aura.id (.graveyard ⟨0⟩) none
      (namedPermanent g "Grizzly Bears").printed.name == "Grizzly Bears") &&
-    (mshRuling 325).comment.contains "exactly what was printed" &&
-    (mshRuling 329).comment.contains "neither entering nor leaving"
+    (mshRuling 677).comment.contains "exactly what was printed" &&
+    (mshRuling 681).comment.contains "neither entering nor leaving"
 
 #guard secretInvasionCopyOk
 
@@ -1946,9 +1948,9 @@ def sheHulkDamageOnceOk : Bool :=
           "The Sensational She-Hulk" (some 5)
         (namedPermanent g "Hill Giant").status.damage == 3 &&
           logContains g "no effect")) &&
-    (mshRuling 95).comment.contains "won't trigger again that turn" &&
-    (mshRuling 142).comment.contains "may still have her deal damage" &&
-    (mshRuling 160).comment.contains "total amount of damage"
+    (mshRuling 448).comment.contains "won't trigger again that turn" &&
+    (mshRuling 495).comment.contains "may still have her deal damage" &&
+    (mshRuling 512).comment.contains "total amount of damage"
 
 #guard sheHulkDamageOnceOk
 
@@ -1971,16 +1973,16 @@ def copyStackAbilityOk : Bool :=
     copies[0]!.triggeredAbility.isSome &&
     g.stack.size == 2 &&
     g.stack.back!.objectId == copies[0]!.id &&
-    (mshRuling 34).comment.contains "won't apply to copying" &&
-    (mshRuling 40).comment.contains "won't cause abilities that trigger" &&
-    (mshRuling 47).comment.contains "same value of X" &&
-    (mshRuling 61).comment.contains "same targets as the ability" &&
-    (mshRuling 62).comment.contains "resolve before the original" &&
-    (mshRuling 302).comment.contains "same as the source of the original"
+    (mshRuling 389).comment.contains "won't apply to copying" &&
+    (mshRuling 394).comment.contains "won't cause abilities that trigger" &&
+    (mshRuling 401).comment.contains "same value of X" &&
+    (mshRuling 414).comment.contains "same targets as the ability" &&
+    (mshRuling 415).comment.contains "resolve before the original" &&
+    (mshRuling 654).comment.contains "same as the source of the original"
 
 #guard copyStackAbilityOk
 
-/-- Ruling 96: Worlds Within Worlds exiles creatures, then hand creatures
+/-- Ruling 449: Worlds Within Worlds exiles creatures, then hand creatures
 enter, then the exiled cards return to hands. -/
 def worldsWithinWorldsOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
@@ -1997,11 +1999,11 @@ def worldsWithinWorldsOk : Bool :=
      | some o => o.zone == .exile
      | none =>
        g.objects.any (fun o => o.name == "Worlds Within Worlds" && o.zone == .exile)) &&
-    (mshRuling 96).comment.contains "Worlds Within Worlds"
+    (mshRuling 449).comment.contains "Worlds Within Worlds"
 
 #guard worldsWithinWorldsOk
 
-/-- Ruling 131: Captain America's attack pump uses last-known toughness. -/
+/-- Ruling 484: Captain America's attack pump uses last-known toughness. -/
 def capWingsLastKnownToughnessOk : Bool :=
   let g := addPermanent afterDraw captainAmericaWingsOfFreedom ⟨0⟩ ⟨0⟩
   let g := addPermanent g sheHulkJadeDefender ⟨0⟩ ⟨0⟩
@@ -2015,12 +2017,12 @@ def capWingsLastKnownToughnessOk : Bool :=
     (.onAttackOthersOfSubtypeGetEqualToughness "Hero") (some cap.id)
     #[] #[] none (some tw)
   g.toughness (namedPermanent g "She-Hulk, Jade Defender") == she0 + tw &&
-    (mshRuling 131).comment.contains "last existed on the battlefield" &&
-    (mshRuling 310).comment.contains "determined only once"
+    (mshRuling 484).comment.contains "last existed on the battlefield" &&
+    (mshRuling 662).comment.contains "determined only once"
 
 #guard capWingsLastKnownToughnessOk
 
-/-- Ruling 147 / 321: Viv Vision draws using last-known power if she left. -/
+/-- Ruling 500 / 321: Viv Vision draws using last-known power if she left. -/
 def vivVisionLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw vivVisionTeenSynthezoid ⟨0⟩ ⟨0⟩
   let viv := namedPermanent g "Viv Vision, Teen Synthezoid"
@@ -2033,12 +2035,12 @@ def vivVisionLastKnownPowerOk : Bool :=
     #[] "Viv Vision" (some pw)
   pw >= 4 &&
     (g.player ⟨0⟩).hand.size == hand0 + 1 &&
-    (mshRuling 147).comment.contains "last existed on the battlefield" &&
-    (mshRuling 321).comment.contains "checks Viv Vision's power only as it resolves"
+    (mshRuling 500).comment.contains "last existed on the battlefield" &&
+    (mshRuling 673).comment.contains "checks Viv Vision's power only as it resolves"
 
 #guard vivVisionLastKnownPowerOk
 
-/-- Ruling 148: War Machine's combat pump uses last-known power. -/
+/-- Ruling 501: War Machine's combat pump uses last-known power. -/
 def warMachineLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw warMachineLegacyOfIron ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -2052,8 +2054,8 @@ def warMachineLastKnownPowerOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onCombatAnotherGetsSourcePower (some wm.id)
     #[Target.permanent bears.id] #[] (some pw)
   g.power (namedPermanent g "Grizzly Bears") == p0 + pw &&
-    (mshRuling 148).comment.contains "last existed on the battlefield" &&
-    (mshRuling 308).comment.contains "calculated only once"
+    (mshRuling 501).comment.contains "last existed on the battlefield" &&
+    (mshRuling 660).comment.contains "calculated only once"
 
 #guard warMachineLastKnownPowerOk
 
@@ -2141,7 +2143,7 @@ def ironManCombatPutNonEquipmentOk : Bool :=
 
 #guard ironManCombatPutNonEquipmentOk
 
-/-- Ruling 137: Political Triumph still draws and counters if it left. -/
+/-- Ruling 490: Political Triumph still draws and counters if it left. -/
 def politicalTriumphLeftOk : Bool :=
   let g := addPermanent afterDraw politicalTriumph ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -2151,22 +2153,22 @@ def politicalTriumphLeftOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDrawPlusOneEach (some plan.id)
   (g.player ⟨0⟩).hand.size == hand0 + 1 &&
     (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
-    (mshRuling 137).comment.contains "won't be able to sacrifice it"
+    (mshRuling 490).comment.contains "won't be able to sacrifice it"
 
 #guard politicalTriumphLeftOk
 
-/-- Ruling 139: Robot Domination still creates tokens if it left. -/
+/-- Ruling 492: Robot Domination still creates tokens if it left. -/
 def robotDominationLeftOk : Bool :=
   let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
   let plan := namedPermanent g "Robot Domination"
   let (g, _) := g.move plan.id (.graveyard ⟨0⟩) none
   let g := g.applyTriggeredAbility ⟨0⟩ .onThirdPlanCreateRobots (some plan.id)
   (g.battlefield.filter (fun o => o.name == "Robot Villain")).size == 3 &&
-    (mshRuling 139).comment.contains "You'll create the Robot"
+    (mshRuling 492).comment.contains "You'll create the Robot"
 
 #guard robotDominationLeftOk
 
-/-- Ruling 136: Jessica Jones exiles X using last-known power if she left. -/
+/-- Ruling 489: Jessica Jones exiles X using last-known power if she left. -/
 def jessicaJonesLastKnownXOk : Bool :=
   let g := addPermanent afterDraw jessicaJonesPrivateEye ⟨0⟩ ⟨0⟩
   let jj := namedPermanent g "Jessica Jones, Private Eye"
@@ -2180,12 +2182,12 @@ def jessicaJonesLastKnownXOk : Bool :=
   (g.player ⟨0⟩).library.size == lib0 - pw.toNat &&
     (g.objects.filter (fun o =>
       o.zone == .exile && o.playPermission.isSome)).size == pw.toNat &&
-    (mshRuling 136).comment.contains "last existed on the battlefield" &&
-    (mshRuling 306).comment.contains "calculated only once"
+    (mshRuling 489).comment.contains "last existed on the battlefield" &&
+    (mshRuling 658).comment.contains "calculated only once"
 
 #guard jessicaJonesLastKnownXOk
 
-/-- Ruling 150: Whiplash drain uses last-known attached Equipment. -/
+/-- Ruling 503: Whiplash drain uses last-known attached Equipment. -/
 def whiplashLastKnownEquipmentOk : Bool :=
   let g := addPermanent afterDraw whiplashVengefulEngineer ⟨0⟩ ⟨0⟩
   let g := addPermanent g captainAmericaSShield ⟨0⟩ ⟨0⟩
@@ -2205,8 +2207,8 @@ def whiplashLastKnownEquipmentOk : Bool :=
   n == 2 &&
     (g.player ⟨1⟩).life + n == life0 &&
     (g.player ⟨0⟩).life == you0 + n &&
-    (mshRuling 150).comment.contains "last existed on the battlefield" &&
-    (mshRuling 309).comment.contains "calculated only once"
+    (mshRuling 503).comment.contains "last existed on the battlefield" &&
+    (mshRuling 661).comment.contains "calculated only once"
 
 #guard whiplashLastKnownEquipmentOk
 
@@ -2231,12 +2233,12 @@ def mshReflexiveNoTargetFirstOk : Bool :=
        (let bears := namedPermanent g "Grizzly Bears"
         let g := g.applyModeledReflexive #[Target.permanent bears.id]
         (namedPermanent g "Grizzly Bears").status.untilEotKeywords.indestructible)) &&
-    (mshRuling 359).comment.contains "reflexive" &&
-    (mshRuling 367).comment.contains "reflexive"
+    (mshRuling 711).comment.contains "reflexive" &&
+    (mshRuling 719).comment.contains "reflexive"
 
 #guard mshReflexiveNoTargetFirstOk
 
-/-- Ruling 125: Hawkeye's first trigger has no modes; paying queues the second. -/
+/-- Ruling 478: Hawkeye's first trigger has no modes; paying queues the second. -/
 def hawkeyeReflexivePayOk : Bool :=
   let g := addPermanent afterDraw hawkeyeMasterMarksman ⟨0⟩ ⟨0⟩
   let hawk := namedPermanent g "Hawkeye, Master Marksman"
@@ -2251,11 +2253,11 @@ def hawkeyeReflexivePayOk : Bool :=
        (let life1 := (g.player ⟨1⟩).life
         let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
         (g.player ⟨1⟩).life + 2 == life1)) &&
-    (mshRuling 125).comment.contains "reflexive"
+    (mshRuling 478).comment.contains "reflexive"
 
 #guard hawkeyeReflexivePayOk
 
-/-- Ruling 360: Claim the Kingdom's first ability only sacrifices; the
+/-- Ruling 712: Claim the Kingdom's first ability only sacrifices; the
 indestructible counter is a reflexive second trigger. -/
 def claimTheKingdomReflexiveOk : Bool :=
   let g := addPermanent afterDraw claimTheKingdom ⟨0⟩ ⟨0⟩
@@ -2275,11 +2277,11 @@ def claimTheKingdomReflexiveOk : Bool :=
      let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanIndestructible (some plan.id)
      !g.pendingMshReflexive.isSome &&
        (namedPermanent g "Grizzly Bears").status.indestructibleCounters == 0) &&
-    (mshRuling 360).comment.contains "reflexive"
+    (mshRuling 712).comment.contains "reflexive"
 
 #guard claimTheKingdomReflexiveOk
 
-/-- Ruling 361: Construct a Cosmic Cube queues control of an opponent. -/
+/-- Ruling 713: Construct a Cosmic Cube queues control of an opponent. -/
 def constructACosmicCubeReflexiveOk : Bool :=
   let g := addPermanent afterDraw constructACosmicCube ⟨0⟩ ⟨0⟩
   let plan := namedPermanent g "Construct a Cosmic Cube"
@@ -2288,11 +2290,11 @@ def constructACosmicCubeReflexiveOk : Bool :=
     g.pendingMshReflexive.isSome &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
-    (mshRuling 361).comment.contains "reflexive"
+    (mshRuling 713).comment.contains "reflexive"
 
 #guard constructACosmicCubeReflexiveOk
 
-/-- Ruling 362: Doom Reigns Supreme exiles the opponent's top cards only
+/-- Ruling 714: Doom Reigns Supreme exiles the opponent's top cards only
 after the Plan is sacrificed. -/
 def doomReignsSupremeReflexiveOk : Bool :=
   let g := addPermanent afterDraw doomReignsSupreme ⟨0⟩ ⟨0⟩
@@ -2305,11 +2307,11 @@ def doomReignsSupremeReflexiveOk : Bool :=
      (g.player ⟨1⟩).library.size == lib0 - 5 &&
        (g.objects.filter (fun o =>
          o.zone == .exile && o.playPermission.isSome)).size == 5) &&
-    (mshRuling 362).comment.contains "reflexive"
+    (mshRuling 714).comment.contains "reflexive"
 
 #guard doomReignsSupremeReflexiveOk
 
-/-- Ruling 363: Grim Reaper's pay is the first ability; the return is
+/-- Ruling 715: Grim Reaper's pay is the first ability; the return is
 reflexive. -/
 def grimReaperReflexiveOk : Bool :=
   let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
@@ -2326,11 +2328,11 @@ def grimReaperReflexiveOk : Bool :=
         let bears := namedPermanent g "Grizzly Bears"
         bears.status.tapped && bears.status.attacking &&
           bears.status.finality ≥ 1)) &&
-    (mshRuling 363).comment.contains "reflexive"
+    (mshRuling 715).comment.contains "reflexive"
 
 #guard grimReaperReflexiveOk
 
-/-- Ruling 364: Killmonger only destroys if another creature was
+/-- Ruling 716: Killmonger only destroys if another creature was
 sacrificed. -/
 def killmongerReflexiveOk : Bool :=
   let g := addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
@@ -2348,7 +2350,7 @@ def killmongerReflexiveOk : Bool :=
      let km := namedPermanent g "Killmonger, Scourge of Wakanda"
      let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) (some km.id)
      !g.pendingMshReflexive.isSome) &&
-    (mshRuling 364).comment.contains "reflexive"
+    (mshRuling 716).comment.contains "reflexive"
 
 #guard killmongerReflexiveOk
 
@@ -2370,12 +2372,12 @@ def redHulkReflexiveOk : Bool :=
      let (g, _) := g.move hulk.id (.graveyard ⟨0⟩) none
      let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchRedHulk) (some hulk.id)
      !g.pendingMshReflexive.isSome) &&
-    (mshRuling 273).comment.contains "must survive the damage" &&
-    (mshRuling 365).comment.contains "reflexive"
+    (mshRuling 625).comment.contains "must survive the damage" &&
+    (mshRuling 717).comment.contains "reflexive"
 
 #guard redHulkReflexiveOk
 
-/-- Ruling 366: Speed's pay queues a haste-only blocker restriction. -/
+/-- Ruling 718: Speed's pay queues a haste-only blocker restriction. -/
 def speedYoungAvengerReflexiveOk : Bool :=
   let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -2398,11 +2400,11 @@ def speedYoungAvengerReflexiveOk : Bool :=
           (let g := g.mapObjectStatus bears (·.grantUntilEot Keyword.haste)
            g.canBlock (namedPermanent g "Grizzly Bears")
              (namedPermanent g "Speed, Young Avenger")))) &&
-    (mshRuling 366).comment.contains "reflexive"
+    (mshRuling 718).comment.contains "reflexive"
 
 #guard speedYoungAvengerReflexiveOk
 
-/-- Ruling 368: Death to Our Enemies deals 7 only after the sacrifice. -/
+/-- Ruling 720: Death to Our Enemies deals 7 only after the sacrifice. -/
 def deathToOurEnemiesReflexiveOk : Bool :=
   let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
   let plan := namedPermanent g "Death to Our Enemies"
@@ -2412,11 +2414,11 @@ def deathToOurEnemiesReflexiveOk : Bool :=
     g.pendingMshReflexive.isSome &&
     (let g := g.applyModeledReflexive #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life + 7 == life0) &&
-    (mshRuling 368).comment.contains "reflexive"
+    (mshRuling 720).comment.contains "reflexive"
 
 #guard deathToOurEnemiesReflexiveOk
 
-/-- Ruling 369: Rewrite History returns instants and sorceries only after
+/-- Ruling 721: Rewrite History returns instants and sorceries only after
 the Plan is sacrificed. -/
 def rewriteHistoryReflexiveOk : Bool :=
   let g := addPermanent afterDraw rewriteHistory ⟨0⟩ ⟨0⟩
@@ -2433,7 +2435,7 @@ def rewriteHistoryReflexiveOk : Bool :=
      (g.player ⟨0⟩).hand.size == hand0 + 2 &&
        (g.handObjects ⟨0⟩).any (fun o => o.name == "Helicarrier Strike") &&
        (g.handObjects ⟨0⟩).any (fun o => o.name == "Hour of Defeat")) &&
-    (mshRuling 369).comment.contains "reflexive"
+    (mshRuling 721).comment.contains "reflexive"
 
 #guard rewriteHistoryReflexiveOk
 
@@ -2464,8 +2466,8 @@ def speedballRetargetOk : Bool :=
         match g.stackEntry? bolt.id with
         | some e => e.targets[0]? == some (Target.permanent bears.id)
         | none => false)) &&
-    (mshRuling 283).comment.contains "resolves even if that spell" &&
-    (mshRuling 370).comment.contains "You may change any number of the targets"
+    (mshRuling 635).comment.contains "resolves even if that spell" &&
+    (mshRuling 722).comment.contains "You may change any number of the targets"
 
 #guard speedballRetargetOk
 
@@ -2506,14 +2508,14 @@ def kingpinExtortAndToughnessOk : Bool :=
      g.power kp == 1 &&
        g.toughness kp == 5 &&
        g.combatDamageToAssign kp true == 5) &&
-    (mshRuling 287).comment.contains "doesn't actually change any creature's power" &&
-    (mshRuling 292).comment.contains "total amount of life lost" &&
-    (mshRuling 296).comment.contains "doesn't target any player" &&
-    (mshRuling 371).comment.contains "maximum of one time"
+    (mshRuling 639).comment.contains "doesn't actually change any creature's power" &&
+    (mshRuling 644).comment.contains "total amount of life lost" &&
+    (mshRuling 648).comment.contains "doesn't target any player" &&
+    (mshRuling 723).comment.contains "maximum of one time"
 
 #guard kingpinExtortAndToughnessOk
 
-/-- Ruling 375: Misty Knight draws for each discard this turn even if those
+/-- Ruling 727: Misty Knight draws for each discard this turn even if those
 cards left the graveyard. -/
 def mistyKnightDiscardCountOk : Bool :=
   let g := addPermanent afterDraw mistyKnightHeroForHire ⟨0⟩ ⟨0⟩
@@ -2531,11 +2533,11 @@ def mistyKnightDiscardCountOk : Bool :=
     !(g.objects.any (fun o =>
       o.zone == .graveyard ⟨0⟩ &&
         (o.name == "Lightning Bolt" || o.name == "Giant Growth"))) &&
-    (mshRuling 375).comment.contains "even if those cards are no longer"
+    (mshRuling 727).comment.contains "even if those cards are no longer"
 
 #guard mistyKnightDiscardCountOk
 
-/-- Ruling 94: Ares returns himself if he dies while attacking. -/
+/-- Ruling 447: Ares returns himself if he dies while attacking. -/
 def aresDiesAttackingOk : Bool :=
   let g := addPermanent afterDraw aresGodOfWar ⟨0⟩ ⟨0⟩
   let ares := namedPermanent g "Ares, God of War"
@@ -2547,11 +2549,11 @@ def aresDiesAttackingOk : Bool :=
     (some ares.id)
   (g.handObjects ⟨0⟩).any (fun o => o.name == "Ares, God of War") &&
     !g.battlefield.any (fun o => o.name == "Ares, God of War") &&
-    (mshRuling 94).comment.contains "Ares himself"
+    (mshRuling 447).comment.contains "Ares himself"
 
 #guard aresDiesAttackingOk
 
-/-- Ruling 99: Attuma triggers once per player attacked with Merfolk. -/
+/-- Ruling 452: Attuma triggers once per player attacked with Merfolk. -/
 def attumaMerfolkOncePerPlayerOk : Bool :=
   let g := addPermanent afterDraw attumaAtlanteanWarlord ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -2591,11 +2593,11 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
          #[(namedPermanent g "Attuma, Atlantean Warlord").id,
            (namedPermanent g "Grizzly Bears").id]
      merfolkWaits two == 2) &&
-    (mshRuling 99).comment.contains "once for each player"
+    (mshRuling 452).comment.contains "once for each player"
 
 #guard attumaMerfolkOncePerPlayerOk
 
-/-- Ruling 286: Avengers Assemble! still draws if the Hero left after
+/-- Ruling 638: Avengers Assemble! still draws if the Hero left after
 attacking. -/
 def avengersAssembleHeroLeftOk : Bool :=
   let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
@@ -2609,11 +2611,11 @@ def avengersAssembleHeroLeftOk : Bool :=
     (.onEachEndStepDrawIfAttackedOrEnteredSubtype "Hero") (some assem.id)
   (g.player ⟨0⟩).hand.size == hand0 + 1 &&
     !g.battlefield.any (fun o => o.name == "Misty Knight, Hero for Hire") &&
-    (mshRuling 286).comment.contains "doesn't need to still be on the battlefield"
+    (mshRuling 638).comment.contains "doesn't need to still be on the battlefield"
 
 #guard avengersAssembleHeroLeftOk
 
-/-- Ruling 280: Shang-Chi lets you activate tap abilities immediately but
+/-- Ruling 632: Shang-Chi lets you activate tap abilities immediately but
 does not grant haste. -/
 def shangChiActivateNotHasteOk : Bool :=
   -- `addPermanent` clears summoning sickness; insert Shang-Chi as sick.
@@ -2625,11 +2627,11 @@ def shangChiActivateNotHasteOk : Bool :=
     !g.canAttack shang &&
     !g.hasHaste shang &&
     g.canActivate ⟨0⟩ shang ab &&
-    (mshRuling 280).comment.contains "doesn't grant haste"
+    (mshRuling 632).comment.contains "doesn't grant haste"
 
 #guard shangChiActivateNotHasteOk
 
-/-- Ruling 272: Red Guardian can destroy a creature that dealt damage even
+/-- Ruling 624: Red Guardian can destroy a creature that dealt damage even
 if the recipient has left. -/
 def redGuardianDealtDamageOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
@@ -2652,7 +2654,7 @@ def redGuardianDealtDamageOk : Bool :=
      let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter (Effect.enterDestroy .oppCreatureDealtDamageThisTurn))
        (some rg.id) #[Target.permanent bears.id]
      g.battlefield.any (fun o => o.name == "Grizzly Bears")) &&
-    (mshRuling 272).comment.contains "dealt damage this turn"
+    (mshRuling 624).comment.contains "dealt damage this turn"
 
 #guard redGuardianDealtDamageOk
 
@@ -2667,15 +2669,15 @@ def controlAnotherPlayerOk : Bool :=
     (let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
      let g := { g with controlOnNextTakenTurn := true }
      g.controlsPlayer ⟨0⟩ ⟨1⟩ && g.controlOnNextTakenTurn) &&
-    (mshRuling 221).comment.contains "next turn they actually take" &&
-    (mshRuling 259).comment.contains "overwrite each other" &&
-    (mshRuling 300).comment.contains "still the active player" &&
-    (mshRuling 346).comment.contains "can't use your own" &&
-    (mshRuling 358).comment.contains "don't control any of that player's permanents"
+    (mshRuling 573).comment.contains "next turn they actually take" &&
+    (mshRuling 611).comment.contains "overwrite each other" &&
+    (mshRuling 652).comment.contains "still the active player" &&
+    (mshRuling 698).comment.contains "can't use your own" &&
+    (mshRuling 710).comment.contains "don't control any of that player's permanents"
 
 #guard controlAnotherPlayerOk
 
-/-- Ruling 105: Captain Mar-Vell grants flash if an opponent has already
+/-- Ruling 458: Captain Mar-Vell grants flash if an opponent has already
 cast a spell this turn, even if he entered afterward. -/
 def captainMarVellFlashOk : Bool :=
   let g := addPermanent afterDraw captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
@@ -2694,11 +2696,11 @@ def captainMarVellFlashOk : Bool :=
      !gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears") &&
        (let gLate := addPermanent gLate captainMarVellSpaceBorn ⟨0⟩ ⟨0⟩
         gLate.canCast ⟨0⟩ (handCardNamed gLate ⟨0⟩ "Grizzly Bears"))) &&
-    (mshRuling 105).comment.contains "as though they had flash"
+    (mshRuling 458).comment.contains "as though they had flash"
 
 #guard captainMarVellFlashOk
 
-/-- Ruling 88: becoming a Construct Hero artifact creature replaces
+/-- Ruling 441: becoming a Construct Hero artifact creature replaces
 creature types and keeps Equipment. -/
 def ironManArmorTypesOk : Bool :=
   let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
@@ -2723,11 +2725,11 @@ def ironManArmorTypesOk : Bool :=
      !ogre.hasSubtype "Ogre" &&
        ogre.hasSubtype "Construct" &&
        ogre.hasSubtype "Hero") &&
-    (mshRuling 88).comment.contains "replaces any existing creature types"
+    (mshRuling 441).comment.contains "replaces any existing creature types"
 
 #guard ironManArmorTypesOk
 
-/-- Ruling 138: Robot Domination does not see creature cards that go to
+/-- Ruling 491: Robot Domination does not see creature cards that go to
 the graveyard at the same time it leaves, and an animated copy is not a
 creature card. -/
 def robotDominationSimultaneousOk : Bool :=
@@ -2751,12 +2753,12 @@ def robotDominationSimultaneousOk : Bool :=
      let (g, _) :=
        g.move (namedPermanent g "Robot Domination").id (.graveyard ⟨0⟩) none
      !gyWait g) &&
-    (mshRuling 138).comment.contains "won't trigger at all" &&
-    (mshRuling 276).comment.contains "creature cards are put into your graveyard"
+    (mshRuling 491).comment.contains "won't trigger at all" &&
+    (mshRuling 628).comment.contains "creature cards are put into your graveyard"
 
 #guard robotDominationSimultaneousOk
 
-/-- Ruling 223: two attackers are never attacking alone, even at
+/-- Ruling 575: two attackers are never attacking alone, even at
 different players. -/
 def attacksAloneDestinationsOk : Bool :=
   let alone (g : Game) : Bool :=
@@ -2784,16 +2786,16 @@ def attacksAloneDestinationsOk : Bool :=
      let one :=
        g.putAttackTriggersOnStack ⟨0⟩ #[(namedPermanent g "Grizzly Bears").id]
      alone one) &&
-    (mshRuling 77).comment.contains "attacks alone" &&
-    (mshRuling 78).comment.contains "attacks alone" &&
-    (mshRuling 79).comment.contains "declare attackers step" &&
-    (mshRuling 80).comment.contains "declared as an attacker" &&
-    (mshRuling 82).comment.contains "currently attacking" &&
-    (mshRuling 223).comment.contains "neither attacking creature is attacking alone"
+    (mshRuling 430).comment.contains "attacks alone" &&
+    (mshRuling 431).comment.contains "attacks alone" &&
+    (mshRuling 432).comment.contains "declare attackers step" &&
+    (mshRuling 433).comment.contains "declared as an attacker" &&
+    (mshRuling 435).comment.contains "currently attacking" &&
+    (mshRuling 575).comment.contains "neither attacking creature is attacking alone"
 
 #guard attacksAloneDestinationsOk
 
-/-- Ruling 333: Daredevil lets you play the exiled card whether or not
+/-- Ruling 685: Daredevil lets you play the exiled card whether or not
 it is a Hero; Hero-ness only grants the pump. -/
 def daredevilPlayExiledOk : Bool :=
   let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
@@ -2818,11 +2820,11 @@ def daredevilPlayExiledOk : Bool :=
        g.mayPlayFromExile ⟨0⟩ o &&
          (namedPermanent g "Daredevil, Man Without Fear").status.pump == (2, 1)
      | none => false) &&
-    (mshRuling 333).comment.contains "You may play the exiled card"
+    (mshRuling 685).comment.contains "You may play the exiled card"
 
 #guard daredevilPlayExiledOk
 
-/-- Ruling 84: opening-hand actions happen after mulligans, starting
+/-- Ruling 437: opening-hand actions happen after mulligans, starting
 player first, then the first turn begins. -/
 def quicksilverOpeningHandOk : Bool :=
   let g := addToHand afterDraw quicksilverBrashBlur ⟨0⟩
@@ -2836,23 +2838,23 @@ def quicksilverOpeningHandOk : Bool :=
     (match p0, p1 with
      | some a, some b => a.timestamp < b.timestamp
      | _, _ => false) &&
-    (mshRuling 84).comment.contains "opening hand"
+    (mshRuling 437).comment.contains "opening hand"
 
 #guard quicksilverOpeningHandOk
 
-/-- Ruling 187: a copy cast without paying its mana cost has X = 0. -/
+/-- Ruling 539: a copy cast without paying its mana cost has X = 0. -/
 def freeCopyXIsZeroOk : Bool :=
   let g := addToHand afterDraw photonBlastBarrage ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Photon Blast Barrage"
   let card := { card with playPermission := some {
     player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
   g.playManaCost card photonBlastBarrage == ManaCost.zero &&
-    (mshRuling 187).comment.contains "choose 0 as the value of X" &&
-    (mshRuling 52).comment.contains "can't choose to cast it for any alternative"
+    (mshRuling 539).comment.contains "choose 0 as the value of X" &&
+    (mshRuling 197).comment.contains "can't choose to cast it for any alternative"
 
 #guard freeCopyXIsZeroOk
 
-/-- Ruling 130: Ares must attack if able, but not if he is sick, tapped,
+/-- Ruling 483: Ares must attack if able, but not if he is sick, tapped,
 or attacking would cost. -/
 def aresAttacksIfAbleOk : Bool :=
   let g := addPermanent afterDraw aresGodOfWar ⟨0⟩ ⟨0⟩
@@ -2864,11 +2866,11 @@ def aresAttacksIfAbleOk : Bool :=
     (let g := g.mapObjectStatus ares (fun s => { s with tapped := true })
      !g.mustAttackIfAble (namedPermanent g "Ares, God of War")) &&
     !g.mustAttackIfAble ares (attackRequiresCost := true) &&
-    (mshRuling 130).comment.contains "doesn't have to attack"
+    (mshRuling 483).comment.contains "doesn't have to attack"
 
 #guard aresAttacksIfAbleOk
 
-/-- Ruling 305: Hawkeye's plus-X is calculated when the noncombat damage
+/-- Ruling 657: Hawkeye's plus-X is calculated when the noncombat damage
 would be dealt. -/
 def hawkeyeNoncombatXOk : Bool :=
   let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
@@ -2889,7 +2891,7 @@ def hawkeyeNoncombatXOk : Bool :=
      let bears := namedPermanent g "Grizzly Bears"
      let g := g.dealDamageFrom "Gray Ogre" bears 2 (source := some ogre)
      (namedPermanent g "Grizzly Bears").status.damage == 2) &&
-    (mshRuling 305).comment.contains "calculated at the time"
+    (mshRuling 657).comment.contains "calculated at the time"
 
 #guard hawkeyeNoncombatXOk
 
@@ -2908,11 +2910,11 @@ def exilePlayFollowsTimingOk : Bool :=
     (let gCombat := { g with step := .beginningOfCombat }
      !gCombat.asSorcery? ⟨0⟩ &&
        !gCombat.canCast ⟨0⟩ (gCombat.object! exiled)) &&
-    (mshRuling 33).comment.contains "normal timing rules" &&
-    (mshRuling 68).comment.contains "normal timing rules" &&
-    (mshRuling 372).comment.contains "normal timing rules" &&
-    (mshRuling 373).comment.contains "normal timing rules" &&
-    (mshRuling 374).comment.contains "timing rules"
+    (mshRuling 388).comment.contains "normal timing rules" &&
+    (mshRuling 421).comment.contains "normal timing rules" &&
+    (mshRuling 724).comment.contains "normal timing rules" &&
+    (mshRuling 725).comment.contains "normal timing rules" &&
+    (mshRuling 726).comment.contains "timing rules"
 
 #guard exilePlayFollowsTimingOk
 
@@ -2941,12 +2943,12 @@ def crossbonesVillainOnceOk : Bool :=
        (some xb.id)
      (namedPermanent g "Crossbones, Malicious Mercenary").status.plusOnePlusOne == 1 &&
        (g.player ⟨1⟩).life == 18) &&
-    (mshRuling 133).comment.contains "same time as other Villains" &&
-    (mshRuling 189).comment.contains "trigger only once"
+    (mshRuling 486).comment.contains "same time as other Villains" &&
+    (mshRuling 541).comment.contains "trigger only once"
 
 #guard crossbonesVillainOnceOk
 
-/-- Ruling 307: Squirrel Girl's X is the squirrel count as the ability
+/-- Ruling 659: Squirrel Girl's X is the squirrel count as the ability
 resolves. -/
 def squirrelGirlXOnceOk : Bool :=
   let g := addPermanent afterDraw theUnbeatableSquirrelGirl ⟨0⟩ ⟨0⟩
@@ -2958,7 +2960,7 @@ def squirrelGirlXOnceOk : Bool :=
   n0 == 1 && n1 == 2 &&
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
      squirrels g == 4) &&
-    (mshRuling 307).comment.contains "calculated only once"
+    (mshRuling 659).comment.contains "calculated only once"
 
 #guard squirrelGirlXOnceOk
 
@@ -2984,12 +2986,12 @@ def linkedExileCopyOk : Bool :=
        (let (g, _) := g.move cd.id (.graveyard ⟨0⟩) none
         g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
           g.battlefield.any (fun o => o.name == "Gray Ogre"))) &&
-    (mshRuling 171).comment.contains "linked to a second ability" &&
-    (mshRuling 172).comment.contains "linked to a second ability"
+    (mshRuling 523).comment.contains "linked to a second ability" &&
+    (mshRuling 524).comment.contains "linked to a second ability"
 
 #guard linkedExileCopyOk
 
-/-- Ruling 174: boast can be activated only once even if there is another
+/-- Ruling 526: boast can be activated only once even if there is another
 combat. -/
 def boastOncePerTurnOk : Bool :=
   let g := addPermanent afterDraw baronHelmutZemo ⟨0⟩ ⟨0⟩
@@ -3003,11 +3005,11 @@ def boastOncePerTurnOk : Bool :=
      !g.canActivateBoast z &&
        (let g := { g with additionalCombatPhases := 1 }
         !g.canActivateBoast (namedPermanent g "Baron Helmut Zemo"))) &&
-    (mshRuling 174).comment.contains "only once"
+    (mshRuling 526).comment.contains "only once"
 
 #guard boastOncePerTurnOk
 
-/-- Ruling 173: a token that dealt first-strike damage and then lost first
+/-- Ruling 525: a token that dealt first-strike damage and then lost first
 strike does not also deal regular combat damage. -/
 def okoyeFirstStrikeLossOk : Bool :=
   let g := addPermanent afterDraw okoyeDoraMilajeLeader ⟨0⟩ ⟨0⟩
@@ -3024,7 +3026,7 @@ def okoyeFirstStrikeLossOk : Bool :=
      let tok := g.object! tok.id
      !g.hasFirstStrike tok &&
        !(g.creaturesAssigningCombatDamage true).any (fun o => o.id == tok.id)) &&
-    (mshRuling 173).comment.contains "won't also deal normal combat damage"
+    (mshRuling 525).comment.contains "won't also deal normal combat damage"
 
 #guard okoyeFirstStrikeLossOk
 
@@ -3054,8 +3056,8 @@ def nickFuryNightEnter : Game :=
   let g := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ (Effect.transform) #[] (some hulk.id)
   (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk" &&
     logContains g "can't transform"
-#guard (mshRuling 191).comment.contains "daybound"
-#guard (mshRuling 192).comment.contains "front face up"
+#guard (mshRuling 543).comment.contains "daybound"
+#guard (mshRuling 544).comment.contains "front face up"
 
 def nickFuryDayboundOk : Bool :=
   let banner := namedPermanent nickFuryDayEnter "Bruce Banner"
@@ -3068,8 +3070,8 @@ def nickFuryDayboundOk : Bool :=
     hulk.status.cantTransform &&
     (namedPermanent gBlocked "The Incredible Hulk").name == "The Incredible Hulk" &&
     logContains gBlocked "can't transform" &&
-    (mshRuling 191).comment.contains "daybound" &&
-    (mshRuling 192).comment.contains "front face up"
+    (mshRuling 543).comment.contains "daybound" &&
+    (mshRuling 544).comment.contains "front face up"
 
 #guard nickFuryDayboundOk
 
@@ -3085,9 +3087,9 @@ def controlPlayerChoicesOk : Bool :=
     !g.canSeeAs ⟨1⟩ ⟨0⟩ &&
     (g.visibleHand ⟨0⟩ ⟨1⟩).any (fun o => o.name == "Lightning Bolt") &&
     (g.visibleHand ⟨1⟩ ⟨0⟩).isEmpty &&
-    (mshRuling 334).comment.contains "continue to make your own choices" &&
-    (mshRuling 335).comment.contains "you can see all cards" &&
-    (mshRuling 336).comment.contains "you make all choices"
+    (mshRuling 686).comment.contains "continue to make your own choices" &&
+    (mshRuling 687).comment.contains "you can see all cards" &&
+    (mshRuling 688).comment.contains "you make all choices"
 
 #guard controlPlayerChoicesOk
 
@@ -3106,10 +3108,10 @@ def controlPlayerLimitsOk : Bool :=
     g.canConcedeAs ⟨1⟩ ⟨1⟩ &&
     (let g := g.concede ⟨1⟩
      (g.player ⟨1⟩).lost) &&
-    (mshRuling 349).comment.contains "sideboard" &&
-    (mshRuling 350).comment.contains "tournament rules" &&
-    (mshRuling 351).comment.contains "can't make any illegal decisions" &&
-    (mshRuling 352).comment.contains "can't make the player"
+    (mshRuling 701).comment.contains "sideboard" &&
+    (mshRuling 702).comment.contains "tournament rules" &&
+    (mshRuling 703).comment.contains "can't make any illegal decisions" &&
+    (mshRuling 704).comment.contains "can't make the player"
 
 #guard controlPlayerLimitsOk
 
@@ -3129,10 +3131,10 @@ def copyTokenOriginalOk : Bool :=
     dest.printed.toughness == some 1 &&
     dest.status.plusOnePlusOne == 0 &&
     !dest.status.tapped &&
-    (mshRuling 193).comment.contains "original characteristics of that token" &&
-    (mshRuling 196).comment.contains "original characteristics of that token" &&
-    (mshRuling 197).comment.contains "original characteristics of that token" &&
-    (mshRuling 200).comment.contains "original characteristics of that token"
+    (mshRuling 545).comment.contains "original characteristics of that token" &&
+    (mshRuling 548).comment.contains "original characteristics of that token" &&
+    (mshRuling 549).comment.contains "original characteristics of that token" &&
+    (mshRuling 552).comment.contains "original characteristics of that token"
 
 #guard copyTokenOriginalOk
 
@@ -3151,12 +3153,12 @@ def copyOfCopyOk : Bool :=
   let forge := g.object! forge.id
   dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
     forge.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
-    (mshRuling 194).comment.contains "copy of whatever that permanent copied" &&
-    (mshRuling 198).comment.contains "copy of whatever" &&
-    (mshRuling 199).comment.contains "whatever that creature copied" &&
-    (mshRuling 201).comment.contains "copy of whatever that permanent copied" &&
-    (mshRuling 155).comment.contains "whatever that creature copied" &&
-    (mshRuling 195).comment.contains "whatever that artifact copied"
+    (mshRuling 546).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 550).comment.contains "copy of whatever" &&
+    (mshRuling 551).comment.contains "whatever that creature copied" &&
+    (mshRuling 553).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 508).comment.contains "whatever that creature copied" &&
+    (mshRuling 547).comment.contains "whatever that artifact copied"
 
 #guard copyOfCopyOk
 
@@ -3172,10 +3174,10 @@ def copyTokenEntersAbilitiesOk : Bool :=
     tok.status.plusOnePlusOne == 0 &&
     tok.printed.isToken &&
     g.waitingTriggers.size > before &&
-    (mshRuling 92).comment.contains "enters abilities of each copied" &&
-    (mshRuling 93).comment.contains "enters abilities of the copied" &&
-    (mshRuling 115).comment.contains "exactly what was printed" &&
-    (mshRuling 304).comment.contains "exactly what was printed"
+    (mshRuling 445).comment.contains "enters abilities of each copied" &&
+    (mshRuling 446).comment.contains "enters abilities of the copied" &&
+    (mshRuling 468).comment.contains "exactly what was printed" &&
+    (mshRuling 656).comment.contains "exactly what was printed"
 
 #guard copyTokenEntersAbilitiesOk
 
@@ -3204,15 +3206,15 @@ def copyStackAbilityDetailsOk : Bool :=
     last.chosenMode == some 1 &&
     last.dividedDamage == #[2, 1] &&
     last.targets.size == 1 &&
-    (mshRuling 36).comment.contains "choices will be made separately" &&
-    (mshRuling 46).comment.contains "division can't be changed" &&
-    (mshRuling 48).comment.contains "same mode" &&
-    (mshRuling 66).comment.contains "can't choose to pay any activation" &&
-    (mshRuling 116).comment.contains "not just one with targets" &&
-    (mshRuling 117).comment.contains "doesn't cause any object to gain" &&
-    (mshRuling 278).comment.contains "not just one with targets" &&
-    (mshRuling 279).comment.contains "doesn't cause any object to gain" &&
-    (mshRuling 303).comment.contains "same as the source of the original"
+    (mshRuling 391).comment.contains "choices will be made separately" &&
+    (mshRuling 400).comment.contains "division can't be changed" &&
+    (mshRuling 402).comment.contains "same mode" &&
+    (mshRuling 419).comment.contains "can't choose to pay any activation" &&
+    (mshRuling 469).comment.contains "not just one with targets" &&
+    (mshRuling 470).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 630).comment.contains "not just one with targets" &&
+    (mshRuling 631).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 655).comment.contains "same as the source of the original"
 
 #guard copyStackAbilityDetailsOk
 
@@ -3246,9 +3248,9 @@ def hulklingRecheckOk : Bool :=
      let g := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[Target.permanent bot.id]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 1) &&
-    (mshRuling 134).comment.contains "stat comparison will happen again" &&
-    (mshRuling 183).comment.contains "trigger multiple times" &&
-    (mshRuling 327).comment.contains "stat that's greater changes"
+    (mshRuling 487).comment.contains "stat comparison will happen again" &&
+    (mshRuling 535).comment.contains "trigger multiple times" &&
+    (mshRuling 679).comment.contains "stat that's greater changes"
 
 #guard hulklingRecheckOk
 
@@ -3281,8 +3283,8 @@ def doctorDoomDamageTrackedOk : Bool :=
           { s with untilEotKeywords := Keywords.none })
         let g := g.checkSBA
         onBattlefield g "Doctor Doom")) &&
-    (mshRuling 112).comment.contains "tracked even if he has indestructible" &&
-    (mshRuling 293).comment.contains "first time that state-based actions"
+    (mshRuling 465).comment.contains "tracked even if he has indestructible" &&
+    (mshRuling 645).comment.contains "first time that state-based actions"
 
 #guard doctorDoomDamageTrackedOk
 
@@ -3309,12 +3311,12 @@ def wondrousWaspLoseAbilitiesOk : Bool :=
        !g.hasFlying storm &&
        (let g := g.mapObjectStatus storm (·.grantUntilEot Keyword.flying)
         g.hasFlying (namedPermanent g "Storm, Windrider"))) &&
-    (mshRuling 145).comment.contains "won't lose its abilities" &&
-    (mshRuling 190).comment.contains "will keep that ability"
+    (mshRuling 498).comment.contains "won't lose its abilities" &&
+    (mshRuling 542).comment.contains "will keep that ability"
 
 #guard wondrousWaspLoseAbilitiesOk
 
-/-- Ruling 143: Super Hero Civil War leaving skips the control change. -/
+/-- Ruling 496: Super Hero Civil War leaving skips the control change. -/
 def superHeroCivilWarLeaveOk : Bool :=
   let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -3331,11 +3333,11 @@ def superHeroCivilWarLeaveOk : Bool :=
      let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
        (some saga.id) #[Target.permanent bears.id]
      (namedPermanent g "Grizzly Bears").controlledBy ⟨0⟩) &&
-    (mshRuling 143).comment.contains "won't gain control"
+    (mshRuling 496).comment.contains "won't gain control"
 
 #guard superHeroCivilWarLeaveOk
 
-/-- Ruling 151: an artifact Villain entering fires HYDRA Assault Robot once. -/
+/-- Ruling 504: an artifact Villain entering fires HYDRA Assault Robot once. -/
 def hydraAssaultOnceOk : Bool :=
   let g := addPermanent afterDraw hYDRAAssaultRobot ⟨0⟩ ⟨0⟩
   let g := addPermanent g ultronDrone ⟨0⟩ ⟨0⟩
@@ -3345,22 +3347,22 @@ def hydraAssaultOnceOk : Bool :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.source.name == "HYDRA Assault Robot")).size
   n == 1 &&
-    (mshRuling 151).comment.contains "trigger only once"
+    (mshRuling 504).comment.contains "trigger only once"
 
 #guard hydraAssaultOnceOk
 
-/-- Ruling 317: token creatures dying do not trigger Robot Domination. -/
+/-- Ruling 669: token creatures dying do not trigger Robot Domination. -/
 def robotDominationTokenOk : Bool :=
   let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none
   !g.waitingTriggers.any (fun (t : WaitingTrigger) =>
     t.event == TriggerEvent.creatureCardsPutIntoYourGy) &&
-    (mshRuling 317).comment.contains "Token creatures"
+    (mshRuling 669).comment.contains "Token creatures"
 
 #guard robotDominationTokenOk
 
-/-- Ruling 297: Avengers Assemble! does not trigger if neither condition
+/-- Ruling 649: Avengers Assemble! does not trigger if neither condition
 was met. -/
 def avengersAssembleNoTriggerOk : Bool :=
   let g := addPermanent afterDraw avengersAssemble ⟨0⟩ ⟨0⟩
@@ -3369,7 +3371,7 @@ def avengersAssembleNoTriggerOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onEachEndStepDrawIfAttackedOrEnteredSubtype "Hero") (some assem.id)
   (g.player ⟨0⟩).hand.size == hand0 &&
-    (mshRuling 297).comment.contains "won't trigger at all"
+    (mshRuling 649).comment.contains "won't trigger at all"
 
 #guard avengersAssembleNoTriggerOk
 
@@ -3389,13 +3391,13 @@ def blockedStaysBlockedOk : Bool :=
     (·.grantUntilEot Keyword.flying)
   (namedPermanent g "Grizzly Bears").status.blocked &&
     g.hasFlying (namedPermanent g "Grizzly Bears") &&
-    (mshRuling 262).comment.contains "won't cause him to become unblocked" &&
-    (mshRuling 263).comment.contains "won't cause her to become unblocked" &&
-    (mshRuling 264).comment.contains "won't be able to make that block illegal"
+    (mshRuling 614).comment.contains "won't cause him to become unblocked" &&
+    (mshRuling 615).comment.contains "won't cause her to become unblocked" &&
+    (mshRuling 616).comment.contains "won't be able to make that block illegal"
 
 #guard blockedStaysBlockedOk
 
-/-- Ruling 263: once Stature is blocked at high power, shrinking her to 1
+/-- Ruling 615: once Stature is blocked at high power, shrinking her to 1
 does not make her unblocked. -/
 def statureBlockedThenShrunkOk : Bool :=
   let g := addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
@@ -3416,17 +3418,17 @@ def statureBlockedThenShrunkOk : Bool :=
 
 #guard statureBlockedThenShrunkOk
 
-/-- Ruling 258: multiple lifelink instances are redundant. -/
+/-- Ruling 610: multiple lifelink instances are redundant. -/
 def yellowjacketLifelinkRedundantOk : Bool :=
   let g := addPermanent afterDraw yellowjacketHeartlessMarauder ⟨0⟩ ⟨0⟩
   let yj := namedPermanent g "Yellowjacket, Heartless Marauder"
   let g := g.mapObjectStatus yj (·.grantUntilEot Keyword.lifelink)
   g.hasLifelink (namedPermanent g "Yellowjacket, Heartless Marauder") &&
-    (mshRuling 258).comment.contains "Multiple instances of lifelink"
+    (mshRuling 610).comment.contains "Multiple instances of lifelink"
 
 #guard yellowjacketLifelinkRedundantOk
 
-/-- Ruling 169: Scarlet Witch uses the chosen X when checking mana value. -/
+/-- Ruling 521: Scarlet Witch uses the chosen X when checking mana value. -/
 def scarletWitchXManaValueOk : Bool :=
   let g := addPermanent afterDraw theScarletWitch ⟨0⟩ ⟨0⟩
   let (g, spell) := g.allocObject photonBlastBarrage ⟨0⟩ (.hand ⟨0⟩) (some ⟨0⟩)
@@ -3439,11 +3441,11 @@ def scarletWitchXManaValueOk : Bool :=
   let unreduced := g.applyCastCostReductions cheap photonBlastBarrage start
   reduced.manaValue == 2 &&
     unreduced.manaValue == 3 &&
-    (mshRuling 169).comment.contains "value chosen for X"
+    (mshRuling 521).comment.contains "value chosen for X"
 
 #guard scarletWitchXManaValueOk
 
-/-- Ruling 109: Loki compares mana value to last-known power if he left. -/
+/-- Ruling 462: Loki compares mana value to last-known power if he left. -/
 def lokiLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw lokiLaufeyson ⟨0⟩ ⟨0⟩
   let loki := namedPermanent g "Loki Laufeyson"
@@ -3456,11 +3458,11 @@ def lokiLastKnownPowerOk : Bool :=
   let copies := g.objects.filter (fun o =>
     o.zone == .stack && o.isCopy && o.printed.name == "Lightning Bolt")
   copies.size == 1 &&
-    (mshRuling 109).comment.contains "last time he was on the battlefield"
+    (mshRuling 462).comment.contains "last time he was on the battlefield"
 
 #guard lokiLastKnownPowerOk
 
-/-- Ruling 270: H.E.R.B.I.E. putting a land onto the battlefield is not
+/-- Ruling 622: H.E.R.B.I.E. putting a land onto the battlefield is not
 playing a land. -/
 def herbieLandNotPlayOk : Bool :=
   let g := addToHand afterDraw forest ⟨0⟩
@@ -3479,11 +3481,11 @@ def herbieLandNotPlayOk : Bool :=
   g.battlefield.any (fun o =>
       o.printed.isLand && o.status.tapped && o.status.enteredThisTurn) &&
     (g.player ⟨0⟩).landsPlayedThisTurn == played0 &&
-    (mshRuling 270).comment.contains "doesn't count as playing a land"
+    (mshRuling 622).comment.contains "doesn't count as playing a land"
 
 #guard herbieLandNotPlayOk
 
-/-- Ruling 146 / 312: Tigra does not get a counter in time to survive
+/-- Ruling 499 / 312: Tigra does not get a counter in time to survive
 simultaneous lethal damage, and life gain is one event. -/
 def tigraLethalLifeOk : Bool :=
   let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
@@ -3492,12 +3494,12 @@ def tigraLethalLifeOk : Bool :=
   let g := g.gainLife ⟨0⟩ 3
   let g := g.checkSBA
   !onBattlefield g "Tigra, Feline Fury" &&
-    (mshRuling 146).comment.contains "won't receive a counter" &&
-    (mshRuling 312).comment.contains "just once"
+    (mshRuling 499).comment.contains "won't receive a counter" &&
+    (mshRuling 664).comment.contains "just once"
 
 #guard tigraLethalLifeOk
 
-/-- Ruling 295: Thunderbolts returns a Villain as a Hero from the moment
+/-- Ruling 647: Thunderbolts returns a Villain as a Hero from the moment
 it enters. -/
 def thunderboltsHeroTypeOk : Bool :=
   let g := addPermanent afterDraw thunderboltsConspiracy ⟨0⟩ ⟨0⟩
@@ -3512,11 +3514,11 @@ def thunderboltsHeroTypeOk : Bool :=
   g.hasSubtype o "Hero" &&
     o.status.finality == 1 &&
     g.waitingTriggers.size >= before &&
-    (mshRuling 295).comment.contains "Hero in addition to its other types"
+    (mshRuling 647).comment.contains "Hero in addition to its other types"
 
 #guard thunderboltsHeroTypeOk
 
-/-- Ruling 144: The Void attacks if able, but not while sick, tapped, or
+/-- Ruling 497: The Void attacks if able, but not while sick, tapped, or
 if attacking would require an unpaid cost. -/
 def theVoidAttacksIfAbleOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ Game.theVoidToken
@@ -3528,7 +3530,7 @@ def theVoidAttacksIfAbleOk : Bool :=
        (let g := g.mapObjectStatus tok (fun s => { s with tapped := true })
         !g.mustAttackIfAble (g.object! tok.id) &&
           !g.mustAttackIfAble tok (attackRequiresCost := true))) &&
-    (mshRuling 144).comment.contains "doesn't attack"
+    (mshRuling 497).comment.contains "doesn't attack"
 
 #guard theVoidAttacksIfAbleOk
 
@@ -3576,21 +3578,21 @@ def castTriggerBeforeSpellOk : Bool :=
      gAb.waitingTriggers.any (fun (t : WaitingTrigger) =>
          t.source.name == "Loki, God of Mischief") &&
        gAb.objects.any (fun o => o.id == ab.id && o.zone == .stack)) &&
-    (mshRuling 107).comment.contains "resolves before the spell" &&
-    (mshRuling 108).comment.contains "doesn't trigger multiple times" &&
-    (mshRuling 123).comment.contains "doesn't trigger multiple times" &&
-    (mshRuling 260).comment.contains "resolves before the spell" &&
-    (mshRuling 269).comment.contains "resolves before the spell" &&
-    (mshRuling 271).comment.contains "resolves before the spell" &&
-    (mshRuling 282).comment.contains "resolves before the spell" &&
-    (mshRuling 285).comment.contains "resolves before the spell" &&
-    (mshRuling 311).comment.contains "resolves before the spell" &&
-    (mshRuling 339).comment.contains "resolves before the spell" &&
-    (mshRuling 239).comment.contains "resolves before the spell" &&
-    (mshRuling 247).comment.contains "resolves before the ability" &&
-    (mshRuling 248).comment.contains "resolves before the spell" &&
-    (mshRuling 250).comment.contains "resolves before the spell" &&
-    (mshRuling 251).comment.contains "resolves before the spell"
+    (mshRuling 460).comment.contains "resolves before the spell" &&
+    (mshRuling 461).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 476).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 612).comment.contains "resolves before the spell" &&
+    (mshRuling 621).comment.contains "resolves before the spell" &&
+    (mshRuling 623).comment.contains "resolves before the spell" &&
+    (mshRuling 634).comment.contains "resolves before the spell" &&
+    (mshRuling 637).comment.contains "resolves before the spell" &&
+    (mshRuling 663).comment.contains "resolves before the spell" &&
+    (mshRuling 691).comment.contains "resolves before the spell" &&
+    (mshRuling 591).comment.contains "resolves before the spell" &&
+    (mshRuling 599).comment.contains "resolves before the ability" &&
+    (mshRuling 600).comment.contains "resolves before the spell" &&
+    (mshRuling 602).comment.contains "resolves before the spell" &&
+    (mshRuling 603).comment.contains "resolves before the spell"
 
 #guard castTriggerBeforeSpellOk
 
@@ -3602,13 +3604,13 @@ def lifeGainOnceOk : Bool :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.source.name == "Tigra, Feline Fury")).size
   n == 1 &&
-    (mshRuling 41).comment.contains "separate life-gaining event" &&
-    (mshRuling 53).comment.contains "triggers only once" &&
-    (mshRuling 126).comment.contains "just once"
+    (mshRuling 395).comment.contains "separate life-gaining event" &&
+    (mshRuling 406).comment.contains "triggers only once" &&
+    (mshRuling 479).comment.contains "just once"
 
 #guard lifeGainOnceOk
 
-/-- Ruling 291: Hawkeye's extra damage is dealt by the original source. -/
+/-- Ruling 643: Hawkeye's extra damage is dealt by the original source. -/
 def hawkeyeSameSourceOk : Bool :=
   let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
   let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
@@ -3619,11 +3621,11 @@ def hawkeyeSameSourceOk : Bool :=
   let g := g.dealDamageFrom src.name bears 1 (source := some src)
   (namedPermanent g "Grizzly Bears").status.damage == 1 + g.power hawk &&
     logContains g "Aerial Doombot deals" &&
-    (mshRuling 291).comment.contains "same source as the original"
+    (mshRuling 643).comment.contains "same source as the original"
 
 #guard hawkeyeSameSourceOk
 
-/-- Ruling 178: if all of a source's damage is prevented, Hawkeye's extra
+/-- Ruling 530: if all of a source's damage is prevented, Hawkeye's extra
 damage no longer applies. -/
 def hawkeyePreventionSkipsExtraOk : Bool :=
   let g := addPermanent afterDraw hawkeyeYoungAvenger ⟨0⟩ ⟨0⟩
@@ -3642,11 +3644,11 @@ def hawkeyePreventionSkipsExtraOk : Bool :=
        (source := some src)
      (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
        gPrev.log.any (fun s => mentions s "prevented")) &&
-    (mshRuling 178).comment.contains "chooses an order"
+    (mshRuling 530).comment.contains "chooses an order"
 
 #guard hawkeyePreventionSkipsExtraOk
 
-/-- Ruling 348: The Ruinous Wrecking Crew cannot choose the same mode twice. -/
+/-- Ruling 700: The Ruinous Wrecking Crew cannot choose the same mode twice. -/
 def wreckingCrewModesOnceOk : Bool :=
   let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Ruinous Wrecking Crew"
@@ -3654,22 +3656,22 @@ def wreckingCrewModesOnceOk : Bool :=
   let o := namedPermanent g "The Ruinous Wrecking Crew"
   o.status.chosenModes.contains 0 &&
     !o.status.chosenModes.contains 1 &&
-    (mshRuling 348).comment.contains "can't choose the same mode"
+    (mshRuling 700).comment.contains "can't choose the same mode"
 
 #guard wreckingCrewModesOnceOk
 
-/-- Ruling 59: tapping an artifact does not turn off its static abilities. -/
+/-- Ruling 412: tapping an artifact does not turn off its static abilities. -/
 def improviseStaticsWhileTappedOk : Bool :=
   let g := addPermanent afterDraw ironheartCleverChampion ⟨0⟩ ⟨0⟩
   let ih := namedPermanent g "Ironheart, Clever Champion"
   let g := g.mapObjectStatus ih (fun s => { s with tapped := true })
   g.spellHasImprovise helicarrierStrike ⟨0⟩ &&
     (namedPermanent g "Ironheart, Clever Champion").status.tapped &&
-    (mshRuling 59).comment.contains "won't cause its abilities to stop"
+    (mshRuling 412).comment.contains "won't cause its abilities to stop"
 
 #guard improviseStaticsWhileTappedOk
 
-/-- Ruling 229: tap an artifact for improvise, then it can still be
+/-- Ruling 581: tap an artifact for improvise, then it can still be
 sacrificed as an additional cost. -/
 def improviseThenSacrificeOk : Bool :=
   let (g, tok) := afterDraw.createToken ⟨0⟩ treasureToken
@@ -3677,12 +3679,12 @@ def improviseThenSacrificeOk : Bool :=
   | .ok g =>
     (g.object! tok.id).status.tapped &&
       (g.object! tok.id).isOnBattlefield &&
-      (mshRuling 229).comment.contains "tap that permanent"
+      (mshRuling 581).comment.contains "tap that permanent"
   | .error _ => false
 
 #guard improviseThenSacrificeOk
 
-/-- Ruling 57: a Two-Headed Giant teammate's life gain is not "you gain life". -/
+/-- Ruling 410: a Two-Headed Giant teammate's life gain is not "you gain life". -/
 def twoHeadedGiantTeammateLifeOk : Bool :=
   let g := addPermanent afterDraw tigraFelineFury ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with teammate := some ⟨1⟩ })
@@ -3690,21 +3692,21 @@ def twoHeadedGiantTeammateLifeOk : Bool :=
   let g := g.gainLife ⟨1⟩ 3
   !(g.waitingTriggers.any (fun (t : WaitingTrigger) =>
       t.source.name == "Tigra, Feline Fury")) &&
-    (mshRuling 57).comment.contains "Two-Headed Giant"
+    (mshRuling 410).comment.contains "Two-Headed Giant"
 
 #guard twoHeadedGiantTeammateLifeOk
 
-/-- Ruling 236: controlling a player in Two-Headed Giant controls the team. -/
+/-- Ruling 588: controlling a player in Two-Headed Giant controls the team. -/
 def twoHeadedGiantControlTeamOk : Bool :=
   let g := afterDraw.modifyPlayer ⟨1⟩ (fun pl => { pl with teammate := some ⟨0⟩ })
   let g := g.setPlayerControl ⟨0⟩ ⟨1⟩
   g.controlsPlayer ⟨0⟩ ⟨1⟩ &&
     g.controlsPlayer ⟨0⟩ ⟨0⟩ &&
-    (mshRuling 236).comment.contains "gain control of each player"
+    (mshRuling 588).comment.contains "gain control of each player"
 
 #guard twoHeadedGiantControlTeamOk
 
-/-- Ruling 106 / 239: each targeting spell grants Iron Fist another tap
+/-- Ruling 459 / 239: each targeting spell grants Iron Fist another tap
 ability; the trigger waits above the spell. -/
 def ironFistMultipleGrantsOk : Bool :=
   let g := addPermanent afterDraw ironFistLivingWeapon ⟨0⟩ ⟨0⟩
@@ -3715,11 +3717,11 @@ def ironFistMultipleGrantsOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingIronFistTap)
     (some fist.id)
   (namedPermanent g "Iron Fist, Living Weapon").status.ironFistTapGrants == 2 &&
-    (mshRuling 106).comment.contains "multiple instances"
+    (mshRuling 459).comment.contains "multiple instances"
 
 #guard ironFistMultipleGrantsOk
 
-/-- Ruling 170: an Aura returns without targeting and can attach through
+/-- Ruling 522: an Aura returns without targeting and can attach through
 hexproof. -/
 def mindStoneAuraReturnOk : Bool :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
@@ -3735,7 +3737,7 @@ def mindStoneAuraReturnOk : Bool :=
   let aura := namedPermanent g "Super-Soldier Serum"
   aura.attachedTo == some (namedPermanent g "Grizzly Bears").id &&
     g.log.any (fun s => mentions s "does not target") &&
-    (mshRuling 170).comment.contains "doesn't target anything"
+    (mshRuling 522).comment.contains "doesn't target anything"
 
 #guard mindStoneAuraReturnOk
 
@@ -3765,13 +3767,13 @@ def mjolnirDoubleOk : Bool :=
        (source := some (namedPermanent gPrev "Gray Ogre"))
      (namedPermanent gPrev "Grizzly Bears").status.damage == 0 &&
        gPrev.log.any (fun s => mentions s "prevented")) &&
-    (mshRuling 177).comment.contains "chooses the order" &&
-    (mshRuling 179).comment.contains "divided or assigned before doubling" &&
-    (mshRuling 237).comment.contains "multiplied by four"
+    (mshRuling 529).comment.contains "chooses the order" &&
+    (mshRuling 531).comment.contains "divided or assigned before doubling" &&
+    (mshRuling 589).comment.contains "multiplied by four"
 
 #guard mjolnirDoubleOk
 
-/-- Ruling 179: combat assignment is doubled after the split. -/
+/-- Ruling 531: combat assignment is doubled after the split. -/
 def mjolnirCombatDivideOk : Bool :=
   let g := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
@@ -3790,7 +3792,7 @@ def mjolnirCombatDivideOk : Bool :=
 
 #guard mjolnirCombatDivideOk
 
-/-- Ruling 204: a creature not controlled by the target opponent is illegal,
+/-- Ruling 556: a creature not controlled by the target opponent is illegal,
 but the ability may still reveal. -/
 def cloakIllegalCreatureStillResolvesOk : Bool :=
   let g := addToHand afterDraw lightningBolt ⟨1⟩
@@ -3802,11 +3804,11 @@ def cloakIllegalCreatureStillResolvesOk : Bool :=
     (some cloak.id) #[Target.player ⟨1⟩, Target.permanent bears.id]
   logContains g "illegal target" &&
     onBattlefield g "Grizzly Bears" &&
-    (mshRuling 204).comment.contains "illegal target"
+    (mshRuling 556).comment.contains "illegal target"
 
 #guard cloakIllegalCreatureStillResolvesOk
 
-/-- Ruling 234: a card exiled from hand returns to hand when Cloak leaves. -/
+/-- Ruling 586: a card exiled from hand returns to hand when Cloak leaves. -/
 def cloakReturnToHandOk : Bool :=
   let g := addToHand afterDraw lightningBolt ⟨1⟩
   let g := addPermanent g cloakAndDaggerEntwined ⟨0⟩ ⟨0⟩
@@ -3815,11 +3817,11 @@ def cloakReturnToHandOk : Bool :=
   let g := g.exileUntilSourceLeaves (some cloak.id) bolt
   let (g, _) := g.move cloak.id (.graveyard ⟨0⟩) none
   (g.handObjects ⟨1⟩).any (fun o => o.name == "Lightning Bolt") &&
-    (mshRuling 234).comment.contains "returns to their hand"
+    (mshRuling 586).comment.contains "returns to their hand"
 
 #guard cloakReturnToHandOk
 
-/-- Ruling 205: if the enchanted creature left, Serum does not move Equipment. -/
+/-- Ruling 557: if the enchanted creature left, Serum does not move Equipment. -/
 def serumHostLeftOk : Bool :=
   let g := addPermanent afterDraw superSoldierSerum ⟨0⟩ ⟨0⟩
   let g := addPermanent g vibraniumEnergyDaggers ⟨0⟩ ⟨0⟩
@@ -3832,11 +3834,11 @@ def serumHostLeftOk : Bool :=
     (some serum.id) #[Target.permanent eq.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo == some ogre.id &&
     logContains g "Equipment stays" &&
-    (mshRuling 205).comment.contains "remain attached"
+    (mshRuling 557).comment.contains "remain attached"
 
 #guard serumHostLeftOk
 
-/-- Ruling 206: if either fight target is illegal, HULK SMASH deals no damage. -/
+/-- Ruling 558: if either fight target is illegal, HULK SMASH deals no damage. -/
 def hulkSmashIllegalFizzleOk : Bool :=
   let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -3846,11 +3848,11 @@ def hulkSmashIllegalFizzleOk : Bool :=
   let g := g.applyEffect ⟨0⟩ (Effect.creatureYouControlDealsPowerToOppCreature)
     #[Target.permanent ogre.id, Target.permanent bears.id]
   (namedPermanent g "Gray Ogre").status.damage == 0 &&
-    (mshRuling 206).comment.contains "no damage will be dealt"
+    (mshRuling 558).comment.contains "no damage will be dealt"
 
 #guard hulkSmashIllegalFizzleOk
 
-/-- Ruling 207: an illegal land target fizzles Avengers Disassembled entirely. -/
+/-- Ruling 559: an illegal land target fizzles Avengers Disassembled entirely. -/
 def avengersDisassembledFizzleOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
@@ -3862,11 +3864,11 @@ def avengersDisassembledFizzleOk : Bool :=
     (let gOk := g.applyAvengersDisassembled ⟨0⟩ true true (some land.id)
      (namedPermanent gOk "Grizzly Bears").status.damage == 3 &&
        logContains gOk "may search") &&
-    (mshRuling 207).comment.contains "won't resolve"
+    (mshRuling 559).comment.contains "won't resolve"
 
 #guard avengersDisassembledFizzleOk
 
-/-- Ruling 220: Klaw reveals the whole hand if it is smaller than N. -/
+/-- Ruling 572: Klaw reveals the whole hand if it is smaller than N. -/
 def klawRevealAllOk : Bool :=
   let g :=
     (afterDraw.player ⟨1⟩).hand.foldl (fun acc id =>
@@ -3880,11 +3882,11 @@ def klawRevealAllOk : Bool :=
     (some klaw.id) #[Target.player ⟨1⟩]
   (g.handObjects ⟨1⟩).size == 1 &&
     logContains g "if fewer than" &&
-    (mshRuling 220).comment.contains "reveal all the cards"
+    (mshRuling 572).comment.contains "reveal all the cards"
 
 #guard klawRevealAllOk
 
-/-- Ruling 222: Ultron's token becomes a creature only after it enters. -/
+/-- Ruling 574: Ultron's token becomes a creature only after it enters. -/
 def ultronAfterEnterOk : Bool :=
   let g := addPermanent afterDraw ultronArtificialMalevolence ⟨0⟩ ⟨0⟩
   let g := addPermanent g theMindStone ⟨0⟩ ⟨0⟩
@@ -3903,11 +3905,11 @@ def ultronAfterEnterOk : Bool :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
       t.event == TriggerEvent.creatureYouControlEnters)).size == before &&
     g.log.any (fun s => mentions s "after it enters") &&
-    (mshRuling 222).comment.contains "doesn't become a 2/2"
+    (mshRuling 574).comment.contains "doesn't become a 2/2"
 
 #guard ultronAfterEnterOk
 
-/-- Ruling 226: original division stands; an illegal target is skipped. -/
+/-- Ruling 578: original division stands; an illegal target is skipped. -/
 def deathToOurEnemiesDivisionOk : Bool :=
   let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -3917,11 +3919,11 @@ def deathToOurEnemiesDivisionOk : Bool :=
   let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
   let gGone := gGone.applyModeledReflexive #[Target.player ⟨1⟩, Target.permanent bears.id]
   (gGone.player ⟨1⟩).life == 16 &&
-    (mshRuling 226).comment.contains "no damage is dealt to the illegal target"
+    (mshRuling 578).comment.contains "no damage is dealt to the illegal target"
 
 #guard deathToOurEnemiesDivisionOk
 
-/-- Ruling 354: each target of Death to Our Enemies' reflexive must receive
+/-- Ruling 706: each target of Death to Our Enemies' reflexive must receive
 at least 1 of the 7 damage; a 0-damage share is illegal and deals nothing. -/
 def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
   let g := addPermanent afterDraw deathToOurEnemies ⟨0⟩ ⟨0⟩
@@ -3939,7 +3941,7 @@ def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
     gZero.log.any (fun s => mentions s "at least 1 damage") &&
     (gOk.player ⟨1⟩).life == life0 - 1 &&
     (namedPermanent gOk "Grizzly Bears").status.damage == 6 &&
-    (mshRuling 354).comment.contains "Each target must receive at least 1 damage"
+    (mshRuling 706).comment.contains "Each target must receive at least 1 damage"
 
 #guard deathToOurEnemiesEachTargetAtLeastOneOk
 
@@ -3957,12 +3959,12 @@ def zemoBoastThisActivationOk : Bool :=
        g2.stack.any (fun e =>
          (g2.object! e.objectId).name == "Helicarrier Strike") &&
        g2.log.any (fun s => mentions s "as the ability resolves")) &&
-    (mshRuling 227).comment.contains "copy only the cards exiled" &&
-    (mshRuling 353).comment.contains "while Baron Helmut Zemo's boast ability is resolving"
+    (mshRuling 579).comment.contains "copy only the cards exiled" &&
+    (mshRuling 705).comment.contains "while Baron Helmut Zemo's boast ability is resolving"
 
 #guard zemoBoastThisActivationOk
 
-/-- Ruling 228: if every Vision mode was chosen, the ability does nothing. -/
+/-- Ruling 580: if every Vision mode was chosen, the ability does nothing. -/
 def visionModesExhaustedOk : Bool :=
   let g := addPermanent afterDraw theVision ⟨0⟩ ⟨0⟩
   let vis := namedPermanent g "The Vision"
@@ -3972,11 +3974,11 @@ def visionModesExhaustedOk : Bool :=
     (some (namedPermanent g "The Vision").id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     logContains g "removed from the stack" &&
-    (mshRuling 228).comment.contains "removed from the stack"
+    (mshRuling 580).comment.contains "removed from the stack"
 
 #guard visionModesExhaustedOk
 
-/-- Ruling 231: if either Swordsman target is illegal, the Equipment stays. -/
+/-- Ruling 583: if either Swordsman target is illegal, the Equipment stays. -/
 def swordsmanIllegalOk : Bool :=
   let g := addPermanent afterDraw swordsmanSharpScoundrel ⟨0⟩ ⟨0⟩
   let g := addPermanent g vibraniumEnergyDaggers ⟨0⟩ ⟨0⟩
@@ -3990,11 +3992,11 @@ def swordsmanIllegalOk : Bool :=
     #[Target.permanent eq.id, Target.permanent ogre.id]
   (namedPermanent g "Vibranium Energy Daggers").attachedTo.isNone &&
     logContains g "won't move" &&
-    (mshRuling 231).comment.contains "Equipment won't move"
+    (mshRuling 583).comment.contains "Equipment won't move"
 
 #guard swordsmanIllegalOk
 
-/-- Ruling 232: Hyde's second mode must remove a counter if able. -/
+/-- Ruling 584: Hyde's second mode must remove a counter if able. -/
 def hydeMustRemoveOk : Bool :=
   let g := addPermanent afterDraw misterHydeMonsterWithin ⟨0⟩ ⟨0⟩
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
@@ -4009,11 +4011,11 @@ def hydeMustRemoveOk : Bool :=
        "Mister Hyde, Monster Within" (some (1 : Int))
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
        (g.player ⟨0⟩).hand.size >= 1) &&
-    (mshRuling 232).comment.contains "must remove a counter"
+    (mshRuling 584).comment.contains "must remove a counter"
 
 #guard hydeMustRemoveOk
 
-/-- Ruling 233: Human Torch needs another Hero both to trigger and to resolve. -/
+/-- Ruling 585: Human Torch needs another Hero both to trigger and to resolve. -/
 def humanTorchInterveningOk : Bool :=
   let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
   let torch := namedPermanent g "Human Torch, Johnny Storm"
@@ -4027,7 +4029,7 @@ def humanTorchInterveningOk : Bool :=
      let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
        #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life == 19) &&
-    (mshRuling 233).comment.contains "won't trigger"
+    (mshRuling 585).comment.contains "won't trigger"
 
 #guard humanTorchInterveningOk
 
@@ -4043,12 +4045,12 @@ def reptilLastResolvesOk : Bool :=
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
        r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
-    (mshRuling 235).comment.contains "last one to resolve" &&
-    (mshRuling 275).comment.contains "overwrite all previous effects"
+    (mshRuling 587).comment.contains "last one to resolve" &&
+    (mshRuling 627).comment.contains "overwrite all previous effects"
 
 #guard reptilLastResolvesOk
 
-/-- Ruling 241: Iron Man Armor unattaches when it becomes a creature. -/
+/-- Ruling 593: Iron Man Armor unattaches when it becomes a creature. -/
 def ironManArmorUnattachOk : Bool :=
   let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
@@ -4063,7 +4065,7 @@ def ironManArmorUnattachOk : Bool :=
      armor.attachedTo.isNone &&
        armor.isCreature &&
        armor.hasSubtype "Equipment" &&
-       (mshRuling 241).comment.contains "become unattached")
+       (mshRuling 593).comment.contains "become unattached")
 
 #guard ironManArmorUnattachOk
 
@@ -4084,12 +4086,12 @@ def ironManArtifactEnteredOk : Bool :=
         let g := g.putAttackTriggersOnStack ⟨0⟩ #[iron.id]
         g.waitingTriggers.any (fun (t : WaitingTrigger) =>
           t.source.name == "Iron Man, Master of Machines"))) &&
-    (mshRuling 242).comment.contains "artifact entered" &&
-    (mshRuling 323).comment.contains "won't trigger at all"
+    (mshRuling 594).comment.contains "artifact entered" &&
+    (mshRuling 675).comment.contains "won't trigger at all"
 
 #guard ironManArtifactEnteredOk
 
-/-- Ruling 252: Wrecking Crew modes run in printed order, so a destroyed
+/-- Ruling 604: Wrecking Crew modes run in printed order, so a destroyed
 token is not sacrificed. -/
 def wreckingCrewPrintedOrderOk : Bool :=
   let g := addPermanent afterDraw theRuinousWreckingCrew ⟨0⟩ ⟨0⟩
@@ -4100,7 +4102,7 @@ def wreckingCrewPrintedOrderOk : Bool :=
     (some crew.id) #[Target.permanent tok.id, Target.permanent tok.id]
   !g.battlefield.any (fun o => o.id == tok.id) &&
     g.log.any (fun s => mentions s "can't be sacrificed" || mentions s "destroyed") &&
-    (mshRuling 252).comment.contains "printed order"
+    (mshRuling 604).comment.contains "printed order"
 
 #guard wreckingCrewPrintedOrderOk
 
@@ -4118,12 +4120,12 @@ def moleManPlayLandOk : Bool :=
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
      let ab := cyc.printed.activatedAbilities[0]!
      !gCyc.canActivate ⟨0⟩ cyc ab) &&
-    (mshRuling 253).comment.contains "doesn't allow you to activate" &&
-    (mshRuling 254).comment.contains "only one land per turn"
+    (mshRuling 605).comment.contains "doesn't allow you to activate" &&
+    (mshRuling 606).comment.contains "only one land per turn"
 
 #guard moleManPlayLandOk
 
-/-- Ruling 256: Moon Girl's 6/6 overwrites a prior set-P/T; pumps and
+/-- Ruling 608: Moon Girl's 6/6 overwrites a prior set-P/T; pumps and
 counters still apply. -/
 def moonGirlOverwriteOk : Bool :=
   let g := addPermanent afterDraw moonGirlAndDevilDinosaur ⟨0⟩ ⟨0⟩
@@ -4134,7 +4136,7 @@ def moonGirlOverwriteOk : Bool :=
     (some (namedPermanent g "Moon Girl and Devil Dinosaur").id)
   let mg := namedPermanent g "Moon Girl and Devil Dinosaur"
   g.power mg == 8 && g.toughness mg == 8 &&
-    (mshRuling 256).comment.contains "overwrite any previous effects"
+    (mshRuling 608).comment.contains "overwrite any previous effects"
 
 #guard moonGirlOverwriteOk
 
@@ -4152,12 +4154,12 @@ def baxterActivationLockOk : Bool :=
     (let g := g.applyAbilityEffect ⟨0⟩ (Effect.abilityDraw 1) #[]
        (some bax.id)
      (g.player ⟨0⟩).hand.size >= 1) &&
-    (mshRuling 265).comment.contains "no player may take actions" &&
-    (mshRuling 267).comment.contains "doesn't check again"
+    (mshRuling 617).comment.contains "no player may take actions" &&
+    (mshRuling 619).comment.contains "doesn't check again"
 
 #guard baxterActivationLockOk
 
-/-- Ruling 266: Arnim Zola checks the graveyard only as you activate. -/
+/-- Ruling 618: Arnim Zola checks the graveyard only as you activate. -/
 def arnimActivationLockOk : Bool :=
   let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
@@ -4169,11 +4171,11 @@ def arnimActivationLockOk : Bool :=
        (some arnim.id)
      g.battlefield.any (fun o =>
        o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
-    (mshRuling 266).comment.contains "won't stop the ability from resolving"
+    (mshRuling 618).comment.contains "won't stop the ability from resolving"
 
 #guard arnimActivationLockOk
 
-/-- Ruling 298: Ten Rings draws through replacement effects. -/
+/-- Ruling 650: Ten Rings draws through replacement effects. -/
 def tenRingsReplacementOk : Bool :=
   let g := addPermanent afterDraw theTenRings ⟨0⟩ ⟨0⟩
   let g := addPermanent g aerialDoombot ⟨0⟩ ⟨0⟩
@@ -4185,11 +4187,11 @@ def tenRingsReplacementOk : Bool :=
   let g := { g with step := .end }
   let g := g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepDrawToTen) (some rings.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 * (10 - hand0) &&
-    (mshRuling 298).comment.contains "replacement effects"
+    (mshRuling 650).comment.contains "replacement effects"
 
 #guard tenRingsReplacementOk
 
-/-- Ruling 299: the owner chooses second-from-top versus bottom. -/
+/-- Ruling 651: the owner chooses second-from-top versus bottom. -/
 def tricksterOwnerChoosesOk : Bool :=
   let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
   let ogre := namedPermanent g "Gray Ogre"
@@ -4202,11 +4204,11 @@ def tricksterOwnerChoosesOk : Bool :=
      let lib := (gTop.player ⟨1⟩).library
      lib.size ≥ 2 &&
        (gTop.object! lib[lib.size - 2]!).name == "Gray Ogre") &&
-    (mshRuling 299).comment.contains "second from the top"
+    (mshRuling 651).comment.contains "second from the top"
 
 #guard tricksterOwnerChoosesOk
 
-/-- Ruling 343: World War Hulk frees only the next red or green creature. -/
+/-- Ruling 695: World War Hulk frees only the next red or green creature. -/
 def worldWarHulkNextOnlyOk : Bool :=
   let g := addToHand afterDraw grayOgre ⟨0⟩
   let g := addToHand g grizzlyBears ⟨0⟩
@@ -4219,11 +4221,11 @@ def worldWarHulkNextOnlyOk : Bool :=
         g.pendingFreeRGCreature.isNone &&
           (let bears := handCardNamed g ⟨0⟩ "Grizzly Bears"
            (g.playManaCost bears bears.printed).includesManaPayment))) &&
-    (mshRuling 343).comment.contains "only affects the next"
+    (mshRuling 695).comment.contains "only affects the next"
 
 #guard worldWarHulkNextOnlyOk
 
-/-- Ruling 355: Grim Reaper's return can attack a different player. -/
+/-- Ruling 707: Grim Reaper's return can attack a different player. -/
 def grimReaperOtherDestinationOk : Bool :=
   let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
@@ -4232,7 +4234,7 @@ def grimReaperOtherDestinationOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   bears.status.attacking &&
     bears.status.attackingWhom == some ⟨1⟩ &&
-    (mshRuling 355).comment.contains "doesn't have to be the same player"
+    (mshRuling 707).comment.contains "doesn't have to be the same player"
 
 #guard grimReaperOtherDestinationOk
 
@@ -4246,7 +4248,7 @@ def cosmicCubeSetup : Game :=
   let g := addToLibraryTop g mountain ⟨0⟩
   addToLibraryTop g lightningBolt ⟨0⟩
 
-/-- Ruling 356: Cosmic Cube looks at the top six and waits for the controller. -/
+/-- Ruling 708: Cosmic Cube looks at the top six and waits for the controller. -/
 def cosmicCubePending : Game :=
   let cube := namedPermanent cosmicCubeSetup "Cosmic Cube"
   cosmicCubeSetup.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast) (some cube.id)
@@ -4293,8 +4295,8 @@ def castAsResolvesOk : Bool :=
            (gDec.findObject? id).any (·.name == "Lightning Bolt"))) &&
       gEx.objects.any (fun o => o.name == "Helicarrier Strike" && o.zone == .stack) &&
       gEx.log.any (fun s => mentions s "as the ability resolves") &&
-      (mshRuling 356).comment.contains "can't wait to cast one later" &&
-      (mshRuling 357).comment.contains "can't wait to cast them later"
+      (mshRuling 708).comment.contains "can't wait to cast one later" &&
+      (mshRuling 709).comment.contains "can't wait to cast them later"
   | _ => false
 
 #guard castAsResolvesOk
@@ -4304,221 +4306,221 @@ def castAsResolvesOk : Bool :=
 -- controlling another player, and card-specific wording). Cite each id
 -- so a missing inventory entry fails this suite.
 def remainingMshRulingWordingOk : Bool :=
-  (mshRuling 16).comment.contains "cast green spells" &&
-    (mshRuling 34).comment.contains "won't apply to copying" &&
-    (mshRuling 36).comment.contains "choices will be made separately" &&
-    (mshRuling 40).comment.contains "won't cause abilities that trigger" &&
-    (mshRuling 41).comment.contains "separate life-gaining event" &&
-    (mshRuling 45).comment.contains "won't be able to tap it again" &&
-    (mshRuling 46).comment.contains "division can't be changed" &&
-    (mshRuling 47).comment.contains "same value of X" &&
-    (mshRuling 48).comment.contains "same mode" &&
-    (mshRuling 52).comment.contains "can't choose to cast it for any alternative" &&
-    (mshRuling 53).comment.contains "triggers only once" &&
-    (mshRuling 57).comment.contains "Two-Headed Giant" &&
-    (mshRuling 59).comment.contains "won't cause its abilities to stop" &&
-    (mshRuling 61).comment.contains "same targets as the ability" &&
-    (mshRuling 62).comment.contains "resolve before the original" &&
-    (mshRuling 66).comment.contains "can't choose to pay any activation" &&
-    (mshRuling 68).comment.contains "normal timing rules" &&
-    (mshRuling 84).comment.contains "opening hand" &&
-    (mshRuling 88).comment.contains "replaces any existing creature types" &&
-    (mshRuling 92).comment.contains "enters abilities of each copied" &&
-    (mshRuling 93).comment.contains "enters abilities of the copied" &&
-    (mshRuling 94).comment.contains "Ares himself" &&
-    (mshRuling 95).comment.contains "won't trigger again that turn" &&
-    (mshRuling 96).comment.contains "Worlds Within Worlds" &&
-    (mshRuling 97).comment.contains "Kid Loki" &&
-    (mshRuling 98).comment.contains "second card" &&
-    (mshRuling 99).comment.contains "once for each player" &&
-    (mshRuling 105).comment.contains "as though they had flash" &&
-    (mshRuling 106).comment.contains "multiple instances" &&
-    (mshRuling 107).comment.contains "resolves before the spell" &&
-    (mshRuling 108).comment.contains "doesn't trigger multiple times" &&
-    (mshRuling 109).comment.contains "last time he was on the battlefield" &&
-    (mshRuling 110).comment.contains "second card" &&
-    (mshRuling 112).comment.contains "tracked even if he has indestructible" &&
-    (mshRuling 115).comment.contains "exactly what was printed" &&
-    (mshRuling 116).comment.contains "not just one with targets" &&
-    (mshRuling 117).comment.contains "doesn't cause any object to gain" &&
-    (mshRuling 120).comment.contains "exactly what was printed" &&
-    (mshRuling 121).comment.contains "exactly what was printed" &&
-    (mshRuling 122).comment.contains "exactly what was printed" &&
-    (mshRuling 123).comment.contains "doesn't trigger multiple times" &&
-    (mshRuling 125).comment.contains "reflexive" &&
-    (mshRuling 126).comment.contains "just once" &&
-    (mshRuling 130).comment.contains "doesn't have to attack" &&
-    (mshRuling 131).comment.contains "last existed on the battlefield" &&
-    (mshRuling 132).comment.contains "before their last ability resolves" &&
-    (mshRuling 133).comment.contains "same time as other Villains" &&
-    (mshRuling 134).comment.contains "stat comparison will happen again" &&
-    (mshRuling 136).comment.contains "last existed on the battlefield" &&
-    (mshRuling 137).comment.contains "won't be able to sacrifice it" &&
-    (mshRuling 138).comment.contains "won't trigger at all" &&
-    (mshRuling 139).comment.contains "You'll create the Robot" &&
-    (mshRuling 140).comment.contains "won't be exiled" &&
-    (mshRuling 141).comment.contains "won't be exiled" &&
-    (mshRuling 142).comment.contains "may still have her deal damage" &&
-    (mshRuling 143).comment.contains "won't gain control" &&
-    (mshRuling 144).comment.contains "doesn't attack" &&
-    (mshRuling 145).comment.contains "won't lose its abilities" &&
-    (mshRuling 146).comment.contains "won't receive a counter" &&
-    (mshRuling 147).comment.contains "last existed on the battlefield" &&
-    (mshRuling 148).comment.contains "last existed on the battlefield" &&
-    (mshRuling 149).comment.contains "won't be exiled" &&
-    (mshRuling 150).comment.contains "last existed on the battlefield" &&
-    (mshRuling 151).comment.contains "trigger only once" &&
-    (mshRuling 155).comment.contains "whatever that creature copied" &&
-    (mshRuling 160).comment.contains "total amount of damage" &&
-    (mshRuling 169).comment.contains "value chosen for X" &&
-    (mshRuling 170).comment.contains "doesn't target anything" &&
-    (mshRuling 171).comment.contains "linked to a second ability" &&
-    (mshRuling 172).comment.contains "linked to a second ability" &&
-    (mshRuling 173).comment.contains "won't also deal normal combat damage" &&
-    (mshRuling 177).comment.contains "chooses the order" &&
-    (mshRuling 178).comment.contains "chooses an order" &&
-    (mshRuling 179).comment.contains "divided or assigned before doubling" &&
-    (mshRuling 183).comment.contains "trigger multiple times" &&
-    (mshRuling 187).comment.contains "choose 0 as the value of X" &&
-    (mshRuling 188).comment.contains "won't have any effect" &&
-    (mshRuling 189).comment.contains "trigger only once" &&
-    (mshRuling 190).comment.contains "will keep that ability" &&
-    (mshRuling 191).comment.contains "daybound" &&
-    (mshRuling 192).comment.contains "front face up" &&
-    (mshRuling 193).comment.contains "original characteristics of that token" &&
-    (mshRuling 194).comment.contains "copy of whatever that permanent copied" &&
-    (mshRuling 195).comment.contains "whatever that artifact copied" &&
-    (mshRuling 196).comment.contains "original characteristics of that token" &&
-    (mshRuling 197).comment.contains "original characteristics of that token" &&
-    (mshRuling 198).comment.contains "copy of whatever that permanent copied" &&
-    (mshRuling 199).comment.contains "copy of whatever that creature copied" &&
-    (mshRuling 200).comment.contains "original characteristics of that token" &&
-    (mshRuling 201).comment.contains "copy of whatever that permanent copied" &&
-    (mshRuling 204).comment.contains "illegal target" &&
-    (mshRuling 205).comment.contains "remain attached" &&
-    (mshRuling 206).comment.contains "no damage will be dealt" &&
-    (mshRuling 207).comment.contains "won't resolve" &&
-    (mshRuling 220).comment.contains "reveal all the cards" &&
-    (mshRuling 221).comment.contains "next turn they actually take" &&
-    (mshRuling 222).comment.contains "doesn't become a 2/2" &&
-    (mshRuling 223).comment.contains "neither attacking creature is attacking alone" &&
-    (mshRuling 225).comment.contains "still do as much as it can" &&
-    (mshRuling 226).comment.contains "no damage is dealt to the illegal target" &&
-    (mshRuling 227).comment.contains "copy only the cards exiled" &&
-    (mshRuling 228).comment.contains "removed from the stack" &&
-    (mshRuling 229).comment.contains "tap that permanent" &&
-    (mshRuling 230).comment.contains "teamwork costs" &&
-    (mshRuling 231).comment.contains "Equipment won't move" &&
-    (mshRuling 232).comment.contains "must remove a counter" &&
-    (mshRuling 233).comment.contains "won't trigger" &&
-    (mshRuling 234).comment.contains "returns to their hand" &&
-    (mshRuling 235).comment.contains "last one to resolve" &&
-    (mshRuling 236).comment.contains "gain control of each player" &&
-    (mshRuling 237).comment.contains "multiplied by four" &&
-    (mshRuling 239).comment.contains "resolves before the spell" &&
-    (mshRuling 241).comment.contains "become unattached" &&
-    (mshRuling 242).comment.contains "artifact entered" &&
-    (mshRuling 244).comment.contains "second card" &&
-    (mshRuling 245).comment.contains "second card" &&
-    (mshRuling 246).comment.contains "second card" &&
-    (mshRuling 247).comment.contains "resolves before the ability" &&
-    (mshRuling 248).comment.contains "resolves before the spell" &&
-    (mshRuling 249).comment.contains "second card" &&
-    (mshRuling 250).comment.contains "resolves before the spell" &&
-    (mshRuling 251).comment.contains "resolves before the spell" &&
-    (mshRuling 252).comment.contains "printed order" &&
-    (mshRuling 253).comment.contains "doesn't allow you to activate" &&
-    (mshRuling 254).comment.contains "only one land per turn" &&
-    (mshRuling 255).comment.contains "second card" &&
-    (mshRuling 256).comment.contains "overwrite any previous effects" &&
-    (mshRuling 258).comment.contains "Multiple instances of lifelink" &&
-    (mshRuling 259).comment.contains "overwrite each other" &&
-    (mshRuling 260).comment.contains "resolves before the spell" &&
-    (mshRuling 262).comment.contains "won't cause him to become unblocked" &&
-    (mshRuling 263).comment.contains "won't cause her to become unblocked" &&
-    (mshRuling 264).comment.contains "won't be able to make that block illegal" &&
-    (mshRuling 265).comment.contains "no player may take actions" &&
-    (mshRuling 266).comment.contains "won't stop the ability from resolving" &&
-    (mshRuling 267).comment.contains "doesn't check again" &&
-    (mshRuling 269).comment.contains "resolves before the spell" &&
-    (mshRuling 270).comment.contains "doesn't count as playing a land" &&
-    (mshRuling 271).comment.contains "resolves before the spell" &&
-    (mshRuling 272).comment.contains "dealt damage this turn" &&
-    (mshRuling 273).comment.contains "must survive the damage" &&
-    (mshRuling 275).comment.contains "overwrite all previous effects" &&
-    (mshRuling 276).comment.contains "creature cards are put into your graveyard" &&
-    (mshRuling 277).comment.contains "second card" &&
-    (mshRuling 278).comment.contains "not just one with targets" &&
-    (mshRuling 279).comment.contains "doesn't cause any object to gain" &&
-    (mshRuling 280).comment.contains "doesn't grant haste" &&
-    (mshRuling 282).comment.contains "resolves before the spell" &&
-    (mshRuling 283).comment.contains "resolves before the spell" &&
-    (mshRuling 285).comment.contains "resolves before the spell" &&
-    (mshRuling 286).comment.contains "doesn't need to still be on the battlefield" &&
-    (mshRuling 287).comment.contains "doesn't actually change any creature's power" &&
-    (mshRuling 291).comment.contains "same source as the original" &&
-    (mshRuling 292).comment.contains "total amount of life lost" &&
-    (mshRuling 293).comment.contains "first time that state-based actions" &&
-    (mshRuling 295).comment.contains "Hero in addition to its other types" &&
-    (mshRuling 296).comment.contains "doesn't target any player" &&
-    (mshRuling 297).comment.contains "won't trigger at all" &&
-    (mshRuling 298).comment.contains "replacement effects" &&
-    (mshRuling 299).comment.contains "second from the top" &&
-    (mshRuling 300).comment.contains "still the active player" &&
-    (mshRuling 302).comment.contains "same as the source of the original" &&
-    (mshRuling 303).comment.contains "same as the source of the original" &&
-    (mshRuling 304).comment.contains "exactly what was printed" &&
-    (mshRuling 305).comment.contains "calculated at the time" &&
-    (mshRuling 306).comment.contains "calculated only once" &&
-    (mshRuling 307).comment.contains "calculated only once" &&
-    (mshRuling 308).comment.contains "calculated only once" &&
-    (mshRuling 309).comment.contains "calculated only once" &&
-    (mshRuling 310).comment.contains "determined only once" &&
-    (mshRuling 311).comment.contains "resolves before the spell" &&
-    (mshRuling 312).comment.contains "just once" &&
-    (mshRuling 317).comment.contains "Token creatures" &&
-    (mshRuling 321).comment.contains "checks Viv Vision's power only as it resolves" &&
-    (mshRuling 322).comment.contains "neither entering nor leaving" &&
-    (mshRuling 323).comment.contains "won't trigger at all" &&
-    (mshRuling 325).comment.contains "exactly what was printed" &&
-    (mshRuling 326).comment.contains "neither entering nor leaving" &&
-    (mshRuling 327).comment.contains "stat that's greater changes" &&
-    (mshRuling 329).comment.contains "neither entering nor leaving" &&
-    (mshRuling 330).comment.contains "neither entering nor leaving" &&
-    (mshRuling 333).comment.contains "You may play the exiled card" &&
-    (mshRuling 334).comment.contains "continue to make your own choices" &&
-    (mshRuling 335).comment.contains "you can see all cards" &&
-    (mshRuling 336).comment.contains "you make all choices" &&
-    (mshRuling 339).comment.contains "resolves before the spell" &&
-    (mshRuling 343).comment.contains "only affects the next" &&
-    (mshRuling 346).comment.contains "can't use your own" &&
-    (mshRuling 348).comment.contains "can't choose the same mode" &&
-    (mshRuling 349).comment.contains "sideboard" &&
-    (mshRuling 350).comment.contains "tournament rules" &&
-    (mshRuling 351).comment.contains "can't make any illegal decisions" &&
-    (mshRuling 352).comment.contains "can't make the player" &&
-    (mshRuling 353).comment.contains "while Baron Helmut Zemo's boast ability is resolving" &&
-    (mshRuling 354).comment.contains "Each target must receive at least 1 damage" &&
-    (mshRuling 355).comment.contains "doesn't have to be the same player" &&
-    (mshRuling 356).comment.contains "can't wait to cast one later" &&
-    (mshRuling 357).comment.contains "can't wait to cast them later" &&
-    (mshRuling 358).comment.contains "You don't control any of that player's permanents" &&
-    (mshRuling 359).comment.contains "reflexive" &&
-    (mshRuling 360).comment.contains "reflexive" &&
-    (mshRuling 361).comment.contains "reflexive" &&
-    (mshRuling 362).comment.contains "reflexive" &&
-    (mshRuling 363).comment.contains "reflexive" &&
-    (mshRuling 364).comment.contains "reflexive" &&
-    (mshRuling 365).comment.contains "reflexive" &&
-    (mshRuling 366).comment.contains "reflexive" &&
-    (mshRuling 367).comment.contains "reflexive" &&
-    (mshRuling 368).comment.contains "reflexive" &&
-    (mshRuling 369).comment.contains "reflexive" &&
-    (mshRuling 370).comment.contains "You may change any number of the targets" &&
-    (mshRuling 371).comment.contains "maximum of one time" &&
-    (mshRuling 373).comment.contains "normal timing rules" &&
-    (mshRuling 374).comment.contains "timing rules" &&
-    (mshRuling 375).comment.contains "even if those cards are no longer"
+  (mshRuling 375).comment.contains "cast green spells" &&
+    (mshRuling 389).comment.contains "won't apply to copying" &&
+    (mshRuling 391).comment.contains "choices will be made separately" &&
+    (mshRuling 394).comment.contains "won't cause abilities that trigger" &&
+    (mshRuling 395).comment.contains "separate life-gaining event" &&
+    (mshRuling 399).comment.contains "won't be able to tap it again" &&
+    (mshRuling 400).comment.contains "division can't be changed" &&
+    (mshRuling 401).comment.contains "same value of X" &&
+    (mshRuling 402).comment.contains "same mode" &&
+    (mshRuling 197).comment.contains "can't choose to cast it for any alternative" &&
+    (mshRuling 406).comment.contains "triggers only once" &&
+    (mshRuling 410).comment.contains "Two-Headed Giant" &&
+    (mshRuling 412).comment.contains "won't cause its abilities to stop" &&
+    (mshRuling 414).comment.contains "same targets as the ability" &&
+    (mshRuling 415).comment.contains "resolve before the original" &&
+    (mshRuling 419).comment.contains "can't choose to pay any activation" &&
+    (mshRuling 421).comment.contains "normal timing rules" &&
+    (mshRuling 437).comment.contains "opening hand" &&
+    (mshRuling 441).comment.contains "replaces any existing creature types" &&
+    (mshRuling 445).comment.contains "enters abilities of each copied" &&
+    (mshRuling 446).comment.contains "enters abilities of the copied" &&
+    (mshRuling 447).comment.contains "Ares himself" &&
+    (mshRuling 448).comment.contains "won't trigger again that turn" &&
+    (mshRuling 449).comment.contains "Worlds Within Worlds" &&
+    (mshRuling 450).comment.contains "Kid Loki" &&
+    (mshRuling 451).comment.contains "second card" &&
+    (mshRuling 452).comment.contains "once for each player" &&
+    (mshRuling 458).comment.contains "as though they had flash" &&
+    (mshRuling 459).comment.contains "multiple instances" &&
+    (mshRuling 460).comment.contains "resolves before the spell" &&
+    (mshRuling 461).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 462).comment.contains "last time he was on the battlefield" &&
+    (mshRuling 463).comment.contains "second card" &&
+    (mshRuling 465).comment.contains "tracked even if he has indestructible" &&
+    (mshRuling 468).comment.contains "exactly what was printed" &&
+    (mshRuling 469).comment.contains "not just one with targets" &&
+    (mshRuling 470).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 473).comment.contains "exactly what was printed" &&
+    (mshRuling 474).comment.contains "exactly what was printed" &&
+    (mshRuling 475).comment.contains "exactly what was printed" &&
+    (mshRuling 476).comment.contains "doesn't trigger multiple times" &&
+    (mshRuling 478).comment.contains "reflexive" &&
+    (mshRuling 479).comment.contains "just once" &&
+    (mshRuling 483).comment.contains "doesn't have to attack" &&
+    (mshRuling 484).comment.contains "last existed on the battlefield" &&
+    (mshRuling 485).comment.contains "before their last ability resolves" &&
+    (mshRuling 486).comment.contains "same time as other Villains" &&
+    (mshRuling 487).comment.contains "stat comparison will happen again" &&
+    (mshRuling 489).comment.contains "last existed on the battlefield" &&
+    (mshRuling 490).comment.contains "won't be able to sacrifice it" &&
+    (mshRuling 491).comment.contains "won't trigger at all" &&
+    (mshRuling 492).comment.contains "You'll create the Robot" &&
+    (mshRuling 493).comment.contains "won't be exiled" &&
+    (mshRuling 494).comment.contains "won't be exiled" &&
+    (mshRuling 495).comment.contains "may still have her deal damage" &&
+    (mshRuling 496).comment.contains "won't gain control" &&
+    (mshRuling 497).comment.contains "doesn't attack" &&
+    (mshRuling 498).comment.contains "won't lose its abilities" &&
+    (mshRuling 499).comment.contains "won't receive a counter" &&
+    (mshRuling 500).comment.contains "last existed on the battlefield" &&
+    (mshRuling 501).comment.contains "last existed on the battlefield" &&
+    (mshRuling 502).comment.contains "won't be exiled" &&
+    (mshRuling 503).comment.contains "last existed on the battlefield" &&
+    (mshRuling 504).comment.contains "trigger only once" &&
+    (mshRuling 508).comment.contains "whatever that creature copied" &&
+    (mshRuling 512).comment.contains "total amount of damage" &&
+    (mshRuling 521).comment.contains "value chosen for X" &&
+    (mshRuling 522).comment.contains "doesn't target anything" &&
+    (mshRuling 523).comment.contains "linked to a second ability" &&
+    (mshRuling 524).comment.contains "linked to a second ability" &&
+    (mshRuling 525).comment.contains "won't also deal normal combat damage" &&
+    (mshRuling 529).comment.contains "chooses the order" &&
+    (mshRuling 530).comment.contains "chooses an order" &&
+    (mshRuling 531).comment.contains "divided or assigned before doubling" &&
+    (mshRuling 535).comment.contains "trigger multiple times" &&
+    (mshRuling 539).comment.contains "choose 0 as the value of X" &&
+    (mshRuling 540).comment.contains "won't have any effect" &&
+    (mshRuling 541).comment.contains "trigger only once" &&
+    (mshRuling 542).comment.contains "will keep that ability" &&
+    (mshRuling 543).comment.contains "daybound" &&
+    (mshRuling 544).comment.contains "front face up" &&
+    (mshRuling 545).comment.contains "original characteristics of that token" &&
+    (mshRuling 546).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 547).comment.contains "whatever that artifact copied" &&
+    (mshRuling 548).comment.contains "original characteristics of that token" &&
+    (mshRuling 549).comment.contains "original characteristics of that token" &&
+    (mshRuling 550).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 551).comment.contains "copy of whatever that creature copied" &&
+    (mshRuling 552).comment.contains "original characteristics of that token" &&
+    (mshRuling 553).comment.contains "copy of whatever that permanent copied" &&
+    (mshRuling 556).comment.contains "illegal target" &&
+    (mshRuling 557).comment.contains "remain attached" &&
+    (mshRuling 558).comment.contains "no damage will be dealt" &&
+    (mshRuling 559).comment.contains "won't resolve" &&
+    (mshRuling 572).comment.contains "reveal all the cards" &&
+    (mshRuling 573).comment.contains "next turn they actually take" &&
+    (mshRuling 574).comment.contains "doesn't become a 2/2" &&
+    (mshRuling 575).comment.contains "neither attacking creature is attacking alone" &&
+    (mshRuling 577).comment.contains "still do as much as it can" &&
+    (mshRuling 578).comment.contains "no damage is dealt to the illegal target" &&
+    (mshRuling 579).comment.contains "copy only the cards exiled" &&
+    (mshRuling 580).comment.contains "removed from the stack" &&
+    (mshRuling 581).comment.contains "tap that permanent" &&
+    (mshRuling 582).comment.contains "teamwork costs" &&
+    (mshRuling 583).comment.contains "Equipment won't move" &&
+    (mshRuling 584).comment.contains "must remove a counter" &&
+    (mshRuling 585).comment.contains "won't trigger" &&
+    (mshRuling 586).comment.contains "returns to their hand" &&
+    (mshRuling 587).comment.contains "last one to resolve" &&
+    (mshRuling 588).comment.contains "gain control of each player" &&
+    (mshRuling 589).comment.contains "multiplied by four" &&
+    (mshRuling 591).comment.contains "resolves before the spell" &&
+    (mshRuling 593).comment.contains "become unattached" &&
+    (mshRuling 594).comment.contains "artifact entered" &&
+    (mshRuling 596).comment.contains "second card" &&
+    (mshRuling 597).comment.contains "second card" &&
+    (mshRuling 598).comment.contains "second card" &&
+    (mshRuling 599).comment.contains "resolves before the ability" &&
+    (mshRuling 600).comment.contains "resolves before the spell" &&
+    (mshRuling 601).comment.contains "second card" &&
+    (mshRuling 602).comment.contains "resolves before the spell" &&
+    (mshRuling 603).comment.contains "resolves before the spell" &&
+    (mshRuling 604).comment.contains "printed order" &&
+    (mshRuling 605).comment.contains "doesn't allow you to activate" &&
+    (mshRuling 606).comment.contains "only one land per turn" &&
+    (mshRuling 607).comment.contains "second card" &&
+    (mshRuling 608).comment.contains "overwrite any previous effects" &&
+    (mshRuling 610).comment.contains "Multiple instances of lifelink" &&
+    (mshRuling 611).comment.contains "overwrite each other" &&
+    (mshRuling 612).comment.contains "resolves before the spell" &&
+    (mshRuling 614).comment.contains "won't cause him to become unblocked" &&
+    (mshRuling 615).comment.contains "won't cause her to become unblocked" &&
+    (mshRuling 616).comment.contains "won't be able to make that block illegal" &&
+    (mshRuling 617).comment.contains "no player may take actions" &&
+    (mshRuling 618).comment.contains "won't stop the ability from resolving" &&
+    (mshRuling 619).comment.contains "doesn't check again" &&
+    (mshRuling 621).comment.contains "resolves before the spell" &&
+    (mshRuling 622).comment.contains "doesn't count as playing a land" &&
+    (mshRuling 623).comment.contains "resolves before the spell" &&
+    (mshRuling 624).comment.contains "dealt damage this turn" &&
+    (mshRuling 625).comment.contains "must survive the damage" &&
+    (mshRuling 627).comment.contains "overwrite all previous effects" &&
+    (mshRuling 628).comment.contains "creature cards are put into your graveyard" &&
+    (mshRuling 629).comment.contains "second card" &&
+    (mshRuling 630).comment.contains "not just one with targets" &&
+    (mshRuling 631).comment.contains "doesn't cause any object to gain" &&
+    (mshRuling 632).comment.contains "doesn't grant haste" &&
+    (mshRuling 634).comment.contains "resolves before the spell" &&
+    (mshRuling 635).comment.contains "resolves before the spell" &&
+    (mshRuling 637).comment.contains "resolves before the spell" &&
+    (mshRuling 638).comment.contains "doesn't need to still be on the battlefield" &&
+    (mshRuling 639).comment.contains "doesn't actually change any creature's power" &&
+    (mshRuling 643).comment.contains "same source as the original" &&
+    (mshRuling 644).comment.contains "total amount of life lost" &&
+    (mshRuling 645).comment.contains "first time that state-based actions" &&
+    (mshRuling 647).comment.contains "Hero in addition to its other types" &&
+    (mshRuling 648).comment.contains "doesn't target any player" &&
+    (mshRuling 649).comment.contains "won't trigger at all" &&
+    (mshRuling 650).comment.contains "replacement effects" &&
+    (mshRuling 651).comment.contains "second from the top" &&
+    (mshRuling 652).comment.contains "still the active player" &&
+    (mshRuling 654).comment.contains "same as the source of the original" &&
+    (mshRuling 655).comment.contains "same as the source of the original" &&
+    (mshRuling 656).comment.contains "exactly what was printed" &&
+    (mshRuling 657).comment.contains "calculated at the time" &&
+    (mshRuling 658).comment.contains "calculated only once" &&
+    (mshRuling 659).comment.contains "calculated only once" &&
+    (mshRuling 660).comment.contains "calculated only once" &&
+    (mshRuling 661).comment.contains "calculated only once" &&
+    (mshRuling 662).comment.contains "determined only once" &&
+    (mshRuling 663).comment.contains "resolves before the spell" &&
+    (mshRuling 664).comment.contains "just once" &&
+    (mshRuling 669).comment.contains "Token creatures" &&
+    (mshRuling 673).comment.contains "checks Viv Vision's power only as it resolves" &&
+    (mshRuling 674).comment.contains "neither entering nor leaving" &&
+    (mshRuling 675).comment.contains "won't trigger at all" &&
+    (mshRuling 677).comment.contains "exactly what was printed" &&
+    (mshRuling 678).comment.contains "neither entering nor leaving" &&
+    (mshRuling 679).comment.contains "stat that's greater changes" &&
+    (mshRuling 681).comment.contains "neither entering nor leaving" &&
+    (mshRuling 682).comment.contains "neither entering nor leaving" &&
+    (mshRuling 685).comment.contains "You may play the exiled card" &&
+    (mshRuling 686).comment.contains "continue to make your own choices" &&
+    (mshRuling 687).comment.contains "you can see all cards" &&
+    (mshRuling 688).comment.contains "you make all choices" &&
+    (mshRuling 691).comment.contains "resolves before the spell" &&
+    (mshRuling 695).comment.contains "only affects the next" &&
+    (mshRuling 698).comment.contains "can't use your own" &&
+    (mshRuling 700).comment.contains "can't choose the same mode" &&
+    (mshRuling 701).comment.contains "sideboard" &&
+    (mshRuling 702).comment.contains "tournament rules" &&
+    (mshRuling 703).comment.contains "can't make any illegal decisions" &&
+    (mshRuling 704).comment.contains "can't make the player" &&
+    (mshRuling 705).comment.contains "while Baron Helmut Zemo's boast ability is resolving" &&
+    (mshRuling 706).comment.contains "Each target must receive at least 1 damage" &&
+    (mshRuling 707).comment.contains "doesn't have to be the same player" &&
+    (mshRuling 708).comment.contains "can't wait to cast one later" &&
+    (mshRuling 709).comment.contains "can't wait to cast them later" &&
+    (mshRuling 710).comment.contains "You don't control any of that player's permanents" &&
+    (mshRuling 711).comment.contains "reflexive" &&
+    (mshRuling 712).comment.contains "reflexive" &&
+    (mshRuling 713).comment.contains "reflexive" &&
+    (mshRuling 714).comment.contains "reflexive" &&
+    (mshRuling 715).comment.contains "reflexive" &&
+    (mshRuling 716).comment.contains "reflexive" &&
+    (mshRuling 717).comment.contains "reflexive" &&
+    (mshRuling 718).comment.contains "reflexive" &&
+    (mshRuling 719).comment.contains "reflexive" &&
+    (mshRuling 720).comment.contains "reflexive" &&
+    (mshRuling 721).comment.contains "reflexive" &&
+    (mshRuling 722).comment.contains "You may change any number of the targets" &&
+    (mshRuling 723).comment.contains "maximum of one time" &&
+    (mshRuling 725).comment.contains "normal timing rules" &&
+    (mshRuling 726).comment.contains "timing rules" &&
+    (mshRuling 727).comment.contains "even if those cards are no longer"
 
 #guard remainingMshRulingWordingOk
 
