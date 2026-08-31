@@ -4620,8 +4620,6 @@ inductive SharedTriggerWhen where
   | enter
   /-- Whenever this creature attacks. -/
   | attack
-  /-- Whenever this creature enters or attacks. -/
-  | enterOrAttack
   /-- When this creature dies. -/
   | dies
   /-- Whenever you attack. -/
@@ -4690,8 +4688,10 @@ inductive SharedTriggerWhen where
   | anotherSubtypeOrEquipmentEnters
   /-- Whenever this deals combat damage to a player or battle. -/
   | combatDamageToPlayerOrBattle
-  /-- Whenever you cast a green spell and whenever a Forest you control enters. -/
-  | castGreenOrForestEnters
+  /-- Whenever you cast a green spell. -/
+  | youCastGreen
+  /-- Whenever a Forest you control enters. -/
+  | forestYouControlEnters
   /-- Whenever you cast an instant or sorcery spell. -/
   | youCastInstantOrSorcery
   /-- Whenever an Equipment you control enters. -/
@@ -4742,8 +4742,8 @@ inductive SharedTriggerWhen where
   | tokenYouControlEnters
   /-- Reflexive trigger after Bolg's sacrifice. -/
   | bolgSacrificedForReflexive
-  /-- When this enters and whenever an opponent draws except their first draw-step card. -/
-  | enterOrOpponentDrawsExceptFirst
+  /-- Whenever an opponent draws except their first draw-step card. -/
+  | opponentDrawsExceptFirst
   /-- Whenever you attack with creatures with total power at least a listed amount. -/
   | youAttackWithTotalPower
   /-- Delayed Eagles Bird Soldier trigger. -/
@@ -4772,6 +4772,8 @@ inductive SharedTriggerWhen where
   | creatureCardsPutIntoYourGy
   /-- When the `n`th plan counter is put on this. -/
   | nthPlanCounter (n : Nat)
+  /-- Triggers when at least one of the two given conditions triggers. -/
+  | or (a b : SharedTriggerWhen)
   /-- Use the events stored on the shared effect (leftover family wrappers). -/
   | fromEffect
 deriving Repr, Inhabited, BEq
@@ -6169,11 +6171,21 @@ end TriggeredAbility
 
 namespace SharedTriggerWhen
 
+/-- Whenever this creature enters or attacks. -/
+def enterOrAttack : SharedTriggerWhen := .or .enter .attack
+
+/-- Whenever you cast a green spell and whenever a Forest you control enters. -/
+def castGreenOrForestEnters : SharedTriggerWhen :=
+  .or .youCastGreen .forestYouControlEnters
+
+/-- When this enters and whenever an opponent draws except their first draw-step card. -/
+def enterOrOpponentDrawsExceptFirst : SharedTriggerWhen :=
+  .or .enter .opponentDrawsExceptFirst
+
 /-- Events this reusable trigger watches. -/
 def events : SharedTriggerWhen → Array TriggerEvent
   | .enter => #[.entering]
   | .attack => #[.attacking]
-  | .enterOrAttack => #[.entering, .attacking]
   | .dies => #[.dying]
   | .youAttack => #[.youAttack]
   | .youAttackWithElves => #[.youAttackWithElves]
@@ -6208,7 +6220,8 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
   | .anotherSubtypeOrEquipmentEnters => #[.anotherSubtypeOrEquipmentYouControlEnters]
   | .combatDamageToPlayerOrBattle => #[.dealsCombatDamageToPlayerOrBattle]
-  | .castGreenOrForestEnters => #[.youCastGreen, .forestYouControlEnters]
+  | .youCastGreen => #[.youCastGreen]
+  | .forestYouControlEnters => #[.forestYouControlEnters]
   | .youCastInstantOrSorcery => #[.youCastInstantOrSorcery]
   | .equipmentYouControlEnters => #[.equipmentYouControlEnters]
   | .anotherCreatureYouControlEnters => #[.anotherCreatureYouControlEnters]
@@ -6234,8 +6247,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .cascade => #[]
   | .tokenYouControlEnters => #[.tokenYouControlEnters]
   | .bolgSacrificedForReflexive => #[.bolgSacrificedForReflexive]
-  | .enterOrOpponentDrawsExceptFirst =>
-    #[.entering, .opponentDrawsExceptFirstDrawStep]
+  | .opponentDrawsExceptFirst => #[.opponentDrawsExceptFirstDrawStep]
   | .youAttackWithTotalPower => #[.youAttackWithTotalPower]
   | .eaglesCreateBirds => #[.eaglesCreateBirds]
   | .opponentCastsMatchingParity => #[.opponentCastsMatchingParity]
@@ -6250,6 +6262,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .subtypeYouControlEnters subtype => #[.subtypeYouControlEnters subtype]
   | .creatureCardsPutIntoYourGy => #[.creatureCardsPutIntoYourGy]
   | .nthPlanCounter n => #[.nthPlanCounter n]
+  | .or a b => a.events ++ b.events
   | .fromEffect => #[]
 
 end SharedTriggerWhen
@@ -6815,7 +6828,7 @@ def onCastColorCreateTokens (c : Color) (kind : TokenKind) (n : Nat) :
     TriggeredAbility :=
   .triggered (.youCastColor c) (.createTokens kind n)
 def onEnterOrAttackCreateWall : TriggeredAbility :=
-  .triggered .enterOrAttack (.createTokens .wall 1)
+  .triggered (.or .enter .attack) (.createTokens .wall 1)
 def onEnterAmassGoblins (n : Nat) : TriggeredAbility :=
   .triggered .enter (.amassGoblins n)
 def onDiesAmassGoblins (n : Nat) : TriggeredAbility :=
@@ -6825,21 +6838,22 @@ def onYouAttackAmassGoblins (n : Nat) : TriggeredAbility :=
 def onCastNoncreatureAmassGoblins (n : Nat) : TriggeredAbility :=
   .triggered .youCastNoncreature (.amassGoblins n)
 def onEnterOrAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .enterOrAttack (.amassGoblins n)
+  .triggered (.or .enter .attack) (.amassGoblins n)
 def onCreatureCardLeavesYourGyAmassGoblins (n : Nat) : TriggeredAbility :=
   .triggered .creatureCardLeavesYourGy (.amassGoblins n)
 def onEnterRecruit : TriggeredAbility := .triggered .enter .recruit
 def onDiesRecruit : TriggeredAbility := .triggered .dies .recruit
-def onEnterOrAttackRecruit : TriggeredAbility := .triggered .enterOrAttack .recruit
+def onEnterOrAttackRecruit : TriggeredAbility :=
+  .triggered (.or .enter .attack) .recruit
 def onYouAttackRecruit : TriggeredAbility := .triggered .youAttack .recruit
 def onEnterDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
   .triggered .enter (.dividedDamage amount maxTargets)
 def onEnterOrAttackDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
-  .triggered .enterOrAttack (.dividedDamage amount maxTargets)
+  .triggered (.or .enter .attack) (.dividedDamage amount maxTargets)
 def onEnterPlusOneOnCreature : TriggeredAbility :=
   .triggered .enter (.plusOneOn .creature)
 def onEnterOrAttackPlusOneOnCreature : TriggeredAbility :=
-  .triggered .enterOrAttack (.plusOneOn .creature)
+  .triggered (.or .enter .attack) (.plusOneOn .creature)
 def onLandYouControlEntersPlusOnePlusOne : TriggeredAbility :=
   .triggered .landYouControlEnters (.plusOneOn .creatureYouControl)
 def onCombatPlusOneOnCreatureYouControl : TriggeredAbility :=
@@ -6935,7 +6949,8 @@ def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
 def onCastColorDamageOpponent (color : Color) (n : Nat) : TriggeredAbility :=
   .triggered (.youCastColor color) (.damageEachOpponent n)
 def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
-  .triggered .castGreenOrForestEnters (.plusOneOn .creatureYouControl)
+  .triggered (.or .youCastGreen .forestYouControlEnters)
+    (.plusOneOn .creatureYouControl)
 def onAttackOtherGets2AndTrample : TriggeredAbility :=
   .triggered .attack (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
 def onEnterMayDiscardDraw (n : Nat) : TriggeredAbility :=
@@ -6983,9 +6998,9 @@ def onAttackFerociousPlusOneEach : TriggeredAbility :=
 def onAttackFerociousSourceGetsAndTeamTrample (power : Int) : TriggeredAbility :=
   .triggered .attack (.sourceGetsAndTeamTrample power) .ferocious
 def onEnterOrAttackHoneEachEquipment : TriggeredAbility :=
-  .triggered .enterOrAttack .honeEachEquipment
+  .triggered (.or .enter .attack) .honeEachEquipment
 def onEnterOrAttackPlusOneEachOtherGainLife : TriggeredAbility :=
-  .triggered .enterOrAttack .plusOneEachOtherGainLife
+  .triggered (.or .enter .attack) .plusOneEachOtherGainLife
 def onLandYouControlEntersBecomePT (power toughness : Int) : TriggeredAbility :=
   .triggered .landYouControlEnters (.becomePT power toughness)
 def onCastNoncreaturePumpAndDamageOpponents (n : Nat) : TriggeredAbility :=
@@ -7046,7 +7061,7 @@ def onArmyCombatDamageRingTempts : TriggeredAbility :=
 def onAttackSetOtherBasePT : TriggeredAbility :=
   .triggered .attack .setOtherBasePT
 def onEnterOrAttackReturnElfGainLife : TriggeredAbility :=
-  .triggered .enterOrAttack .returnElfGainLife
+  .triggered (.or .enter .attack) .returnElfGainLife
 def onDiesDealDamageEqualToPowerToOppCreature : TriggeredAbility :=
   .triggered .dies .damageFromLastKnownPower
 def onEnterExileOppGyCardOppsLoseLife (life : Nat) : TriggeredAbility :=
@@ -7144,7 +7159,7 @@ def onEquippedAttacksCreateSpirits : TriggeredAbility :=
 def onCombatDamageCreateTreasuresEqualPlayerArtifacts : TriggeredAbility :=
   .triggered .combatDamageToPlayer .createTreasuresEqualDamagedPlayerArtifacts
 def onEnterOrOpponentDrawsDeal1AmassOrcs : TriggeredAbility :=
-  .triggered .enterOrOpponentDrawsExceptFirst .deal1ThenAmassOrcs
+  .triggered (.or .enter .opponentDrawsExceptFirst) .deal1ThenAmassOrcs
 def onAttackWithTotalPowerUntapExtraCombat (n : Int) : TriggeredAbility :=
   .triggered .youAttackWithTotalPower (.untapAttackersExtraCombat n) .once
 def onDelayedEaglesCreateBirds : TriggeredAbility :=
@@ -7263,7 +7278,7 @@ def onDeath (e : DeathEffect) : TriggeredAbility :=
 def onThisAttack (e : ThisAttackEffect) : TriggeredAbility :=
   .triggered .attack (.thisAttack e)
 def onEnterOrAttack (e : EnterOrAttackEffect) : TriggeredAbility :=
-  .triggered .enterOrAttack (.enterOrAttack e)
+  .triggered (.or .enter .attack) (.enterOrAttack e)
 def onWatch (e : WatchEffect) : TriggeredAbility :=
   .triggered .fromEffect (.watch e)
 def onYouAttacking (e : YouAttackEffect) : TriggeredAbility :=
@@ -8952,6 +8967,13 @@ instance : ToString CardDef where
   .triggered .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy 3)
 #guard SharedTriggerWhen.anyPlayerCastsSecondSpell.events ==
   #[.anyPlayerCastsSecondSpell]
+#guard SharedTriggerWhen.enterOrAttack == .or .enter .attack
+#guard SharedTriggerWhen.enterOrAttack.events == #[.entering, .attacking]
+#guard SharedTriggerWhen.castGreenOrForestEnters ==
+  .or .youCastGreen .forestYouControlEnters
+#guard SharedTriggerWhen.enterOrOpponentDrawsExceptFirst ==
+  .or .enter .opponentDrawsExceptFirst
+#guard (.or .enter .attack).events == #[.entering, .attacking]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
   .triggered .eachBeginCombat (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1))
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
