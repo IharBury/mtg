@@ -394,7 +394,8 @@ def superSoldierSerum : CardDef :=
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nEnchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types.\nWhenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it.")
     (triggeredAbilities := #[.onWatch .enchantedAttachEquipment])
-    (staticAbilities := #[leftoverStatic .enchantedCreatureGets22])
+    (staticAbilities := #[StaticAbility.enchantedCreatureGetsHasAndTypes 2 2
+      (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]])
 
 def takeUpTheShield : CardDef :=
   card "Take Up the Shield" #[.instant] ({ symbols := #[.generic 1, .colored .white] })
@@ -524,7 +525,7 @@ def frozenInIce : CardDef :=
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature loses all abilities and can't become untapped.")
     (triggeredAbilities := #[.onEnterEnchanted .tap])
-    (staticAbilities := #[leftoverStatic .enchantedCreatureLosesAllAbilitiesAndCant])
+    (staticAbilities := #[StaticAbility.enchantedLosesAbilitiesCantUntap])
 
 def futuristForge : CardDef :=
   card "Futurist Forge" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
@@ -805,7 +806,7 @@ def baronHelmutZemo : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (triggeredAbilities := #[.onYouCastColorFromHandConnive .black])
-    (staticAbilities := #[leftoverStatic .boastExileAnyNumberOfBlackCardsFromYou])
+    (staticAbilities := #[StaticAbility.boast])
 
 def baronStruckerHYDRAOverlord : CardDef :=
   card "Baron Strucker, HYDRA Overlord" #[.creature] ({ symbols := #[.generic 2, .colored .black] })
@@ -884,7 +885,7 @@ def elektraDaughterOfTheHand : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (triggeredAbilities := #[.onEnter (.destroy (.oppCreaturePowerAtMost 3))])
-    (staticAbilities := #[leftoverStatic .sneak1BB])
+    (staticAbilities := #[StaticAbility.sneak (ManaCost.ofGenericAndColors 1 [.black, .black])])
 
 def grimReaperLethalLegionnaire : CardDef :=
   card "Grim Reaper, Lethal Legionnaire" #[.creature] ({ symbols := #[.generic 3, .colored .black] })
@@ -958,7 +959,7 @@ def mODOK : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.flying).merge Keyword.lifelink)
-    (staticAbilities := #[leftoverStatic .designedOnlyForKillingCreaturesYourOppon])
+    (staticAbilities := #[StaticAbility.opponentsCreaturesGet (-1) (-1)])
     (activatedAbilities := #[leftoverAct .mentalOrganismPay3LifeMODOK])
 
 def moonstoneHarshMistress : CardDef :=
@@ -1009,8 +1010,8 @@ def roninShadowStalker : CardDef :=
     (oracleText := "Pay 2 life: Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities. Activate only once each turn.\n{T}, Sacrifice an Equipment attached to Ronin: Target creature gets -4/-4 until end of turn. Activate only as a sorcery.")
     (power := some 3)
     (toughness := some 3)
-    (staticAbilities := #[leftoverStatic .pay2LifeAddTwoManaOfAnyOneColorSpend])
-    (activatedAbilities := #[leftoverAct .tSacrificeAnEquipmentAttachedTo])
+    (activatedAbilities := #[leftoverAct .pay2LifeAddTwoManaOfAnyOneColorSpend
+      (payLife := 2) (onceEachTurn := true), leftoverAct .tSacrificeAnEquipmentAttachedTo])
 
 def roxxonBrutes : CardDef :=
   card "Roxxon Brutes" #[.creature] ({ symbols := #[.generic 4, .colored .black] })
@@ -1299,7 +1300,7 @@ def quicksilverBrashBlur : CardDef :=
     (power := some 1)
     (toughness := some 1)
     (keywords := Keyword.haste)
-    (staticAbilities := #[leftoverStatic .ifQuicksilver])
+    (staticAbilities := #[StaticAbility.mayBeginOnBattlefield])
     (activatedAbilities := #[activated (.mshSpell .putA11CounterAndADoubleStrikeCounter) ({ symbols := #[.generic 4, .colored .red] }) (powerUp := true)])
 
 def redHulk : CardDef :=
@@ -1454,7 +1455,8 @@ def guerrillaGorilla : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := Keyword.reach)
-    (staticAbilities := #[leftoverStatic .sacrificeThisCreatureDestroyTargetNoncreat])
+    (activatedAbilities := #[leftoverAct .sacrificeThisCreatureDestroyTargetNoncreat
+      (sacrificeSource := true) (onlyAsSorcery := true)])
 
 def hellcatUndyingVigilante : CardDef :=
   card "Hellcat, Undying Vigilante" #[.creature] ({ symbols := #[.colored .green, .colored .green] })
@@ -1526,7 +1528,8 @@ def moleManMoloidMaster : CardDef :=
     (oracleText := "You may play lands from your graveyard.\nLandfall — Whenever a land you control enters, create a 1/1 green Minion creature token named Moloid with \"Whenever this token attacks, you may mill a card.\"")
     (power := some 1)
     (toughness := some 1)
-    (staticAbilities := #[StaticAbility.mayPlayLandsFromGraveyard, leftoverStatic .landfallWheneverALandYouControlEnters])
+    (staticAbilities := #[StaticAbility.mayPlayLandsFromGraveyard])
+    (triggeredAbilities := #[.onLandYouControlEntersCreateTokens .moloid 1])
 
 def petAvengers : CardDef :=
   card "Pet Avengers" #[.creature] ({ symbols := #[.generic 3, .colored .green] })
@@ -1620,7 +1623,8 @@ def superStrength : CardDef :=
   card "Super Strength" #[.enchantment] ({ symbols := #[.generic 4, .colored .green] })
     (subtypes := #["Aura"])
     (oracleText := "Enchant creature\nEnchanted creature gets +4/+4 and has trample and ward {1}. (Whenever enchanted creature becomes the target of a spell or ability an opponent controls, counter it unless that player pays {1}.)")
-    (staticAbilities := #[leftoverStatic .enchantedCreatureGets44AndHasTrampleAn])
+    (staticAbilities := #[StaticAbility.enchantedCreatureGetsHasAndWard 4 4
+      Keyword.trample 1])
 
 def theThingBenGrimm : CardDef :=
   card "The Thing, Ben Grimm" #[.creature] ({ symbols := #[.generic 5, .colored .green] })
@@ -1664,7 +1668,7 @@ def undercoverSkrull : CardDef :=
     (oracleText := "As long as there are two or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types.\n{T}: Add one mana of any color.")
     (power := some 1)
     (toughness := some 1)
-    (staticAbilities := #[leftoverStatic .asLongAsThereAreTwoOrMoreCreatureCards2])
+    (staticAbilities := #[StaticAbility.getsAndAllTypesIfGyCreatureCards 2 2 2])
     (activatedAbilities := #[activated (.addAnyColor) (ManaCost.empty) (tap := true)])
 
 def wakandanRoyalGuard : CardDef :=
@@ -1765,7 +1769,7 @@ def beastEruditeAerialist : CardDef :=
     (power := some 3)
     (toughness := some 3)
     (triggeredAbilities := #[.onCombatDamageDraw 1])
-    (staticAbilities := #[leftoverStatic .asLongAsYouVePutOneOrMore11Counters])
+    (staticAbilities := #[StaticAbility.flyingIfPlusOneThisTurn])
 
 def blackPantherVanguard : CardDef :=
   card "Black Panther, Vanguard" #[.creature] ({ symbols := #[.generic 2, .colored .green, .colored .white] })
@@ -1950,7 +1954,8 @@ def scientistSupremeOfAIM : CardDef :=
     (oracleText := "Pay 2 life: Copy target activated or triggered ability you control from an artifact source. You may choose new targets for the copy. Activate only during your turn and only once each turn. (Mana abilities can't be targeted.)")
     (power := some 2)
     (toughness := some 2)
-    (staticAbilities := #[leftoverStatic .pay2LifeCopyTargetActivatedOrTriggeredA])
+    (activatedAbilities := #[leftoverAct .pay2LifeCopyTargetActivatedOrTriggeredA
+      (payLife := 2) (onlyDuringYourTurn := true) (onceEachTurn := true)])
 
 def theSerpentSociety : CardDef :=
   card "The Serpent Society" #[.creature] ({ symbols := #[.generic 1, .colored .black, .colored .green] })
@@ -2044,7 +2049,8 @@ def titaniaRuggedRumbler : CardDef :=
     (oracleText := "As an additional cost to cast this spell, discard a card or pay {2}.\nWard—Discard a card or pay {2}. (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player discards a card or pays {2}.)")
     (power := some 5)
     (toughness := some 5)
-    (staticAbilities := #[leftoverStatic .asAnAdditionalCostToCastThisSpell, StaticAbility.wardDiscardOrPay 2])
+    (additionalCostDiscardOrPayGeneric := some 2)
+    (staticAbilities := #[StaticAbility.wardDiscardOrPay 2])
 
 def uSAgentJohnWalker : CardDef :=
   card "U.S.Agent, John Walker" #[.creature] ({ symbols := #[.generic 3, .hybrid .white .black] })
@@ -2078,7 +2084,7 @@ def winterSoldierIcyAssassin : CardDef :=
     (power := some 2)
     (toughness := some 2)
     (keywords := (Keyword.vigilance).merge Keyword.menace)
-    (staticAbilities := #[leftoverStatic .winterSoldierGets20ForEachEquipmentAtt])
+    (staticAbilities := #[StaticAbility.getsPowerPerAttachedEquipment 2])
     (activatedAbilities := #[activated (.mshSpell .returnThisCardFromYourGraveyardToTheBatt) ({ symbols := #[.generic 3, .colored .white, .colored .black] })])
 
 def wolverineFierceFighter : CardDef :=
@@ -2090,7 +2096,7 @@ def wolverineFierceFighter : CardDef :=
     (toughness := some 5)
     (keywords := Keyword.haste)
     (triggeredAbilities := #[.onEnter .fightUpToOne])
-    (staticAbilities := #[leftoverStatic .ifDamageWouldBeDealtToWolverine])
+    (staticAbilities := #[StaticAbility.healOtherDamageWhenDealt])
 
 def worldsWithinWorlds : CardDef :=
   card "Worlds Within Worlds" #[.sorcery] ({ symbols := #[.generic 5, .colored .green, .colored .blue] })

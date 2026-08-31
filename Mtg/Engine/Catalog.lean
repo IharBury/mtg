@@ -28,6 +28,7 @@ def card (name : String) (types : Array CardType)
     (spellModes : Array SpellEffect := #[])
     (additionalCostSacrificeArtifactOrCreature : Bool := false)
     (additionalCostOrPayGeneric : Option Nat := none)
+    (additionalCostDiscardOrPayGeneric : Option Nat := none)
     (costReductionIfCreatureDied : Nat := 0)
     (costReductionIfTargetDamaged : Nat := 0)
     (costReductionIfTargetTapped : Nat := 0)
@@ -88,7 +89,8 @@ def card (name : String) (types : Array CardType)
     (mayPlayLandsFromTop : Bool := false) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
   supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
-  additionalCostOrPayGeneric, costReductionIfCreatureDied, costReductionIfTargetDamaged,
+  additionalCostOrPayGeneric, additionalCostDiscardOrPayGeneric,
+  costReductionIfCreatureDied, costReductionIfTargetDamaged,
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
   tapAddMana, tapAddManaForEach, tapAddAnyColorEqualToPower,
   tapAddAnyColorForInstantOrSorcery, entersWithHopePerCreature, entersTapped,
@@ -737,16 +739,16 @@ def giantGrowth : CardDef :=
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
   Array.replicate n c
 
-/-- Leftover modeled static. -/
-def leftoverStatic (t : ModeledStatic) : StaticAbility :=
-  .msh t
-
 /-- Leftover modeled activation. -/
 def leftoverAct (t : ModeledAbility) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (powerUp : Bool := false)
-    (onlyAsSorcery : Bool := false) : ActivatedAbility :=
+    (onlyAsSorcery : Bool := false) (payLife : Nat := 0)
+    (onceEachTurn : Bool := false) (onlyDuringYourTurn : Bool := false)
+    (sacrificeSource : Bool := false) : ActivatedAbility :=
   activated (.msh t) mana (tap := tap) (powerUp := powerUp)
-    (onlyAsSorcery := onlyAsSorcery)
+    (onlyAsSorcery := onlyAsSorcery) (payLife := payLife)
+    (onceEachTurn := onceEachTurn) (onlyDuringYourTurn := onlyDuringYourTurn)
+    (sacrificeSource := sacrificeSource)
 
 /-- Activated ability that is a power-up (activate only once; reduced if
 the source entered this turn). -/

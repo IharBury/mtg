@@ -1646,14 +1646,12 @@ def powerEqualSubtype? (o : GameObject) : Option String :=
   o.staticAbilities.foldl (fun acc ab =>
     match acc, ab with
     | none, .powerEqualSubtypeYouControl s => some s
-    | none, .msh .namorSPowerIsEqualToTheNumberOfMerfolk => some "Merfolk"
     | acc, _ => acc) none
 
 /-- True when `o` is Super-Adaptoid's characteristic-defining power (MSH 290). -/
 def hasSuperAdaptoidPowerCda (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .powerEqualLegendaryCreaturesYouControl => true
-    | .msh .superAdaptoidSPowerIsEqualToTheNumberOf => true
     | _ => false)
 
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
@@ -1990,6 +1988,10 @@ def doombotToken : CardDef :=
 def insect11greenToken : CardDef :=
   creatureToken "Insect" #["Insect"] 1 1 (some .green)
 
+/-- A 1/1 green Minion creature token named Moloid. -/
+def moloidToken : CardDef :=
+  creatureToken "Moloid" #["Minion"] 1 1 (some .green)
+
 /-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
 def alien11redHasteToken : CardDef := {
   name := "Alien"
@@ -2041,6 +2043,7 @@ def tokenPrinted (k : TokenKind) : CardDef :=
   | .doombot => doombotToken
   | .insect11green => insect11greenToken
   | .vibranium => vibraniumToken
+  | .moloid => moloidToken
 
 /-- Create `n` tokens of `kind`. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
@@ -2299,7 +2302,8 @@ def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
       | .getsPowerPerAttachedEquipment p =>
         let n : Int := Int.ofNat (g.attachedEquipmentCount o)
         addStats acc (p * n, 0)
-      | .getsIfGyCreatureCards min pw tw =>
+      | .getsIfGyCreatureCards min pw tw
+      | .getsAndAllTypesIfGyCreatureCards min pw tw =>
         let gy :=
           (g.player o.you).graveyard.filter (fun id =>
             (g.object! id).printed.isCreature) |>.size
@@ -3143,7 +3147,7 @@ def attachedLosesAbilities (g : Game) (o : GameObject) : Bool :=
     aura.attachedTo == some o.id &&
       aura.staticAbilities.any (fun
         | .enchantedLosesAbilitiesDoesntUntap => true
-        | .msh .enchantedCreatureLosesAllAbilitiesAndCant => true
+        | .enchantedLosesAbilitiesCantUntap => true
         | _ => false))
 
 /-- Printed abilities still apply unless The Wondrous Wasp (or similar)
@@ -3222,7 +3226,6 @@ def okoyeGrantsFirstStrike (g : Game) (o : GameObject) : Bool :=
       (g.permanentsOf p).any (fun src =>
         src.staticAbilities.any (fun
           | .attackingTokensHave k => k.firstStrike
-          | .msh .attackingCreatureTokensYouControlHaveFirst => true
           | _ => false))
 
 /-- Whether `o` has first strike, printed or granted (CR 702.7). -/
@@ -3319,7 +3322,6 @@ def leftoverFlyingRestriction (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     o.staticAbilities.any (fun
       | .flyingCantAttackYouOrBlockYours => true
-      | .msh .creaturesWithFlyingCanTAttackYouOrBlock => true
       | _ => false))
 
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
@@ -3422,7 +3424,6 @@ def hasHexproof (g : Game) (o : GameObject) : Bool :=
          (g.permanentsOf p).any (fun src =>
            src.printed.staticAbilities.any (fun
              | .hexproofIfPlusOneThisTurn => true
-             | .msh .eachCreatureYouControlThatYouVePutOneOr => true
              | _ => false))) ||
        (g.permanentsOf p).any (fun src =>
          src.status.shield > 0 &&
@@ -3449,7 +3450,6 @@ def leftoverIndestructible (g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
     o.staticAbilities.any (fun
       | .indestructibleIfArtifactCreatureOrPlan => true
-      | .msh .asLongAsYouControlAnArtifactCreatureOrA => true
       | _ => false) &&
     match o.controller with
     | none => false
@@ -3905,7 +3905,6 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun x =>
     x.staticAbilities.any (fun
       | .mayPlayLandsFromGraveyard => true
-      | .msh .youMayPlayLandsFromYourGraveyard => true
       | _ => false))
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -4767,7 +4766,7 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
   let extortN :=
     (g.permanentsOf caster).filter (fun o =>
       o.staticAbilities.any (fun
-        | .extort | .msh .extort => true
+        | .extort => true
         | _ => false)) |>.size
   let g :=
     if extortN == 0 then g
@@ -4870,7 +4869,6 @@ def extraCountersOn (g : Game) (controller : Option PlayerId) (n : Nat) : Nat :=
       n + ((g.permanentsOf p).filter (fun o =>
         o.printed.staticAbilities.any (fun
           | .extraCounterOnPermanents => true
-          | .msh .ifYouWouldPutOneOrMoreCountersOnAPerma => true
           | _ => false))).size
 
 /-- After a permanent enters, put its enters triggers and “another … enters”
@@ -4898,7 +4896,6 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
   let g :=
     if o.staticAbilities.any (fun
         | .entersWithXPlusOne => true
-        | .msh .theRuinousWreckingCrewEntersWithX11Co => true
         | _ => false) then
       let n := g.extraCountersOn o.controller (o.chosenX.getD 0)
       if n == 0 then g
@@ -5536,7 +5533,6 @@ def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     o.staticAbilities.any (fun
       | .flashIfOpponentCastThisTurn => true
-      | .msh .cosmicAwarenessAsLongAsAnOpponentHasCa => true
       | _ => false)) &&
     (g.livingOpponents p).any (fun pl => pl.spellsCastThisTurn > 0)
 
@@ -5872,10 +5868,6 @@ def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
       | .wardDiscardOrPay n =>
         acc := acc.push (.discardOrPay n)
       | .wardPoisonCounters _ =>
-        acc := acc.push .fivePoison
-      | .msh .wardDiscardACardOrPay2 =>
-        acc := acc.push (.discardOrPay 2)
-      | .msh .wardGetFivePoisonCounters =>
         acc := acc.push .fivePoison
       | _ =>
         match ab.grantedWard? with
@@ -6573,7 +6565,6 @@ def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool
 def hasAttacksIfAble (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .attacksEachCombatIfAble => true
-    | .msh .aresAttacksEachCombatIfAble => true
     | _ => false) ||
     o.printed.oracleText.contains "attacks each combat if able"
 
@@ -6857,7 +6848,6 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
             o.staticAbilities.any (fun ab =>
               match ab with
               | .instantSorceryCostLessEqualPower => true
-              | .msh .instantAndSorcerySpellsYouCastWithManaVa => true
               | _ => false)
           if reduces then acc + (g.power o).toNat else acc) 0
     else 0
@@ -6921,7 +6911,6 @@ def grantsExtraPowerUp (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun ab =>
     match ab with
     | .extraPowerUpActivation => true
-    | .msh .eachPowerUpAbilityOfPermanentsYouControl => true
     | _ => false)
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
@@ -6933,7 +6922,6 @@ def grantsHulkPowerUpReduction (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun ab =>
     match ab with
     | .otherPowerUpCostsLess _ => true
-    | .msh .powerUpAbilitiesOfOtherCreaturesYouContro => true
     | _ => false)
 
 /-- Generic mana subtracted from other creatures' power-up costs by Hulk
@@ -6945,7 +6933,6 @@ def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) 
       o.printed.staticAbilities.foldl (fun acc ab =>
         match ab with
         | .otherPowerUpCostsLess n => acc + n
-        | .msh .powerUpAbilitiesOfOtherCreaturesYouContro => acc + 3
         | _ => acc) acc) 0
 
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
@@ -7335,7 +7322,6 @@ def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any (fun o =>
     o.staticAbilities.any (fun
       | .activateCreaturesAsThoughHaste => true
-      | .msh .youMayActivateAbilitiesOfCreaturesYouCont => true
       | _ => false))
 
 /-- Shared activation legality (CR 602.3). `canActivate` is this check as a
@@ -7537,7 +7523,6 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (g.permanentsOf controller).any (fun o =>
       o.staticAbilities.any (fun
         | .extraDrawOnConnive => true
-        | .msh .ifACreatureYouControlWouldConnive => true
         | _ => false))
   let g := { g with conniveSource := sourceId }
   let g := g.logMsg s!"{(g.player controller).name}'s creature connives"
@@ -7693,7 +7678,6 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let healsOther :=
     o.printed.staticAbilities.any (fun
       | .healOtherDamageWhenDealt => true
-      | .msh .ifDamageWouldBeDealtToWolverine => true
       | _ => false)
   let o :=
     if healsOther && n > 0 then
@@ -7745,7 +7729,6 @@ def hawkeyeNoncombatBonus (g : Game) (sourceController : PlayerId) : Int :=
   (g.permanentsOf sourceController).foldl (fun acc o =>
     if o.staticAbilities.any (fun
       | .noncombatDamagePlusSourcePower => true
-      | .msh .ifASourceYouControlWouldDealNoncombatDam => true
       | _ => false) then
       acc + g.power o
     else acc) (0 : Int)
@@ -7757,7 +7740,6 @@ def mjolnirMultiplier (g : Game) (src : GameObject) : Nat :=
       o.attachedTo == some src.id &&
         o.staticAbilities.any (fun
           | .equippedDealsDoubleDamage => true
-          | .msh .doubleAllDamageEquippedCreatureWouldDeal => true
           | _ => false))).size
   if n == 0 then 1 else Nat.pow 2 n
 
@@ -7944,7 +7926,7 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
       aura.attachedTo == some o.id &&
         aura.staticAbilities.any (fun
           | .enchantedLosesAbilitiesDoesntUntap => true
-          | .msh .enchantedCreatureLosesAllAbilitiesAndCant => true
+          | .enchantedLosesAbilitiesCantUntap => true
           | _ => false))
   let granted :=
     o.status.cantUntapGrantedBy.any (fun sid =>
@@ -7956,12 +7938,12 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
 /-- Timestamp-ordered maximum hand size (MSH 184 / 376). `10000` is "no maximum". -/
 def grantsNoMaxHandSize (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun
-    | .noMaximumHandSize | .msh .youHaveNoMaximumHandSize => true
+    | .noMaximumHandSize => true
     | _ => false)
 
 def grantsMaxHandSizeTen (o : GameObject) : Bool :=
   o.printed.staticAbilities.any (fun
-    | .maximumHandSize 10 | .msh .yourMaximumHandSizeIsTen => true
+    | .maximumHandSize 10 => true
     | .maximumHandSize _ => false
     | _ => false)
 
@@ -13836,7 +13818,6 @@ def promptBottom (g : Game) (p : PlayerId) : Game :=
 def beginsOnBattlefieldFromOpeningHand (o : GameObject) : Bool :=
   o.staticAbilities.any (fun
     | .mayBeginOnBattlefield => true
-    | .msh .ifQuicksilver => true
     | _ => false)
 
 /-- After mulligans, the starting player takes opening-hand actions first,
