@@ -1816,7 +1816,8 @@ structure Spec where
   phrase : String := ""
 deriving Repr, Inhabited, BEq
 
-/-- Classification of this chapter effect. -/
+/-- Classification of this chapter effect. SharedTrigger.timing reads this
+before `Effect.ofChapter` exists. -/
 def spec : ChapterLeftover → Spec
   | .dealDamageToOppCreature n =>
     { targeting := .of .oppCreature
@@ -5798,6 +5799,77 @@ def ofChapter (e : ChapterLeftover) : Effect :=
     resolution := Resolution.trigger (SharedTrigger.chapter 0 e)
     phrase := s.phrase }
 
+/-- Printed leftover chapter constructors as unified `Effect` values. -/
+
+def chapterDealDamageToOppCreature (n : Nat) : Effect :=
+  ofChapter (.dealDamageToOppCreature n)
+
+def chapterDestroyOppArtifact : Effect :=
+  ofChapter .destroyOppArtifact
+
+def chapterAddMana (mana : ManaType) : Effect :=
+  ofChapter (.addMana mana)
+
+def chapterSearchBasicLandToHand : Effect :=
+  ofChapter .searchBasicLandToHand
+
+def chapterGainLandfallCreateElf : Effect :=
+  ofChapter .gainLandfallCreateElf
+
+def chapterElvesGetVigilance (power : Int) : Effect :=
+  ofChapter (.elvesGetVigilance power)
+
+def chapterOpponentDiscardsNonland : Effect :=
+  ofChapter .opponentDiscardsNonland
+
+def chapterAmassGoblins (n : Nat) : Effect :=
+  ofChapter (.amassGoblins n)
+
+def chapterOpponentLosesYouGain (n : Nat) : Effect :=
+  ofChapter (.opponentLosesYouGain n)
+
+def chapterGrantHexproofWhileRemains : Effect :=
+  ofChapter .grantHexproofWhileRemains
+
+def chapterPreventDamageWhileRemains : Effect :=
+  ofChapter .preventDamageWhileRemains
+
+def chapterDraw (n : Nat) : Effect :=
+  ofChapter (.draw n)
+
+def chapterSearchBasicPlainsExileGainLife (max life : Nat) : Effect :=
+  ofChapter (.searchBasicPlainsExileGainLife max life)
+
+def chapterReturnLinkedExileToHand : Effect :=
+  ofChapter .returnLinkedExileToHand
+
+def chapterGrantAttackPumpPerPlainsThisTurn : Effect :=
+  ofChapter .grantAttackPumpPerPlainsThisTurn
+
+def chapterBlinkUntilEndStep : Effect :=
+  ofChapter .blinkUntilEndStep
+
+def chapterTreasureThenDragonIfFour : Effect :=
+  ofChapter .treasureThenDragonIfFour
+
+def chapterRecruit : Effect :=
+  ofChapter .recruit
+
+def chapterReturnCreatureFromGyMvAtMost (n : Nat) : Effect :=
+  ofChapter (.returnCreatureFromGyMvAtMost n)
+
+def chapterPlusOneUpToOne : Effect :=
+  ofChapter .plusOneUpToOne
+
+def chapterGainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat) : Effect :=
+  ofChapter (.gainControlOfUpToTwoCreaturesTotalMvAtMost n)
+
+def chapterDealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String) : Effect :=
+  ofChapter (.dealDamageToEachNonSubtypeAndOpponents n subtype)
+
+def chapterDealXDamageToTargetOpponentGreatestArtifactMv : Effect :=
+  ofChapter .dealXDamageToTargetOpponentGreatestArtifactMv
+
 /-- Pack a unified spell `Effect` as a leftover Saga chapter. -/
 def chapterSpell (e : Effect) : ChapterLeftover :=
   .spell {
@@ -8548,8 +8620,8 @@ instance : ToString CardDef where
 #guard (Effect.scry 1).resolution == Resolution.scry 1
 #guard (Effect.gainLife 3).abilityResolution == .gainLife 3
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
-#guard (Effect.ofChapter .recruit).asChapter? == some .recruit
-#guard (Effect.ofChapter (.draw 2)).asChapter? == some (.draw 2)
+#guard (Effect.chapterRecruit).asChapter? == some .recruit
+#guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
 #guard (Effect.ofEnter (.dealDamageUpToOne 4)).allowsZeroTargets
 #guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
@@ -8633,10 +8705,10 @@ instance : ToString CardDef where
 #guard EffectTargetKind.spec (.upToTwoCreaturesTotalMvAtMost 6) ==
   { count := 2
     noun := "up to two target creatures with total mana value 6 or less" }
-#guard (ChapterLeftover.gainControlOfUpToTwoCreaturesTotalMvAtMost 6).spec.allowsZeroTargets
-#guard (ChapterLeftover.dealDamageToEachNonSubtypeAndOpponents 2 "Villain").spec.phrase ==
+#guard (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6).allowsZeroTargets
+#guard (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain").phrase ==
   "This Saga deals 2 damage to each non-Villain creature and each opponent"
-#guard ChapterLeftover.dealXDamageToTargetOpponentGreatestArtifactMv.spec.targeting.kind ==
+#guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.targetKind ==
   .opponent
 #guard TriggerEvent.spec .entering ==
   { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
@@ -9531,7 +9603,7 @@ def isBasicLandCard (c : CardDef) : Bool :=
 #guard parseChapterNumbers "I" == #[1]
 #guard parseChapterNumbers "III, IV" == #[3, 4]
 #guard parseChapterNumbers "I, II, III, IV" == #[1, 2, 3, 4]
-#guard (SagaChapter.of "III, IV" "Add {R}." (Effect.ofChapter (.addMana (.colored .red)))).chapterNumbers ==
+#guard (SagaChapter.of "III, IV" "Add {R}." (Effect.chapterAddMana (.colored .red))).chapterNumbers ==
   #[3, 4]
 
 /-- A land card with the given land type (CR 205.3i / 305.7). -/
