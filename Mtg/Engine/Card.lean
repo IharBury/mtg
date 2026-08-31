@@ -2609,6 +2609,8 @@ inductive Resolution where
   | addMana (types : Array ManaType)
   /-- Draw `n` cards, then discard a card. -/
   | drawThenDiscard (n : Nat)
+  /-- Apply each resolution in the given list, in order. -/
+  | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
   | spell (r : SpellResolution)
   /-- Activated-ability-only resolution leftover. -/
@@ -2669,6 +2671,13 @@ def spellResolution (e : Effect) : SpellResolution :=
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n _ => .createTokens kind n
   | .onSource a => .onPermanent a
+  | .sequence rs =>
+    match rs with
+    | [.spell (.drawAndLoseLife 1 1), .amassGoblins n] => .drawLoseLifeThenAmass n
+    | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
+      .createTokensThenTeamPump kind n p t
+    | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
+    | _ => .extraLand
   | .gainLife _ | .recruit | .addMana _ | .ability _ | .trigger _ => .extraLand
 
 /-- Recover the leftover activated-ability resolution. -/
@@ -2684,6 +2693,14 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .drawThenDiscard n => .drawThenDiscard n
   | .createTokens kind n _ => .createTokens kind n
   | .addMana types => .addMana types
+  | .sequence rs =>
+    match rs with
+    | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
+    | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
+    | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
+    | [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)] =>
+      .creaturesYouControlGetOppsLoseLife p t life
+    | _ => .draw 0
   | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
@@ -5470,6 +5487,11 @@ end SharedTrigger
 
 namespace Resolution
 
+/-- Nested `sequence` constructors, left to right. -/
+def flatten : Resolution → List Resolution
+  | .sequence rs => rs.flatMap flatten
+  | r => [r]
+
 /-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
 def ofSpell : SpellResolution → Resolution
   | .draw n => .draw n
@@ -5478,6 +5500,12 @@ def ofSpell : SpellResolution → Resolution
   | .drawThenDiscard n => .drawThenDiscard n
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
+  | .drawLoseLifeThenAmass n =>
+    .sequence [.spell (.drawAndLoseLife 1 1), .amassGoblins n]
+  | .createTokensThenTeamPump kind n p t =>
+    .sequence [.createTokens kind n, .spell (.creaturesYouControlPump p t)]
+  | .destroyArtifactOrEnchantmentGainLife n =>
+    .sequence [.onPermanent .destroy, .gainLife n]
   | r => .spell r
 
 /-- Lift an activated-ability resolution onto the shared `Resolution` vocabulary. -/
@@ -5491,6 +5519,15 @@ def ofAbility : AbilityResolution → Resolution
   | .drawThenDiscard n => .drawThenDiscard n
   | .createTokens kind n => .createTokens kind n
   | .addMana types => .addMana types
+  | .plusOneAndDraw plus cards =>
+    .sequence [.onSource (.plusOne plus), .draw cards]
+  | .destroyUpToOneThenPlusOne =>
+    .sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+  | .plusOneAndCreateTokens n kind =>
+    .sequence [.onSource (.plusOne n), .createTokens kind 1]
+  | .creaturesYouControlGetOppsLoseLife p t life =>
+    .sequence
+      [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)]
   | r => .ability r
 
 /-- Store a shared trigger on `Resolution`. Timing stays on the nested
@@ -5510,6 +5547,41 @@ def toTrigger : Resolution → TriggeredAbility.TriggerResolution
   | .createTokens kind n tapped => .createTokens kind n tapped
   | .addMana types => .addMana types
   | .drawThenDiscard n => .drawThenDiscardN n
+  | .sequence rs =>
+    match (rs.flatMap flatten).head? with
+    | some (.draw n) => .draw n
+    | some (.scry n) => .scry n
+    | some (.onPermanent a) => .onPermanent a
+    | some (.onSource a) => .onSource a
+    | some (.gainLife n) => .gainLife n
+    | some (.recruit) => .recruit
+    | some (.amassGoblins n) => .amassGoblins n
+    | some (.createTokens kind n tapped) => .createTokens kind n tapped
+    | some (.addMana types) => .addMana types
+    | some (.drawThenDiscard n) => .drawThenDiscardN n
+    | some (.trigger e) => e.timing.resolution
+    | some (.spell r) =>
+      match r with
+      | .onPermanent a => .onPermanent a
+      | .draw n => .draw n
+      | .scry n => .scry n
+      | .drawThenDiscard n => .drawThenDiscardN n
+      | .amassGoblins n => .amassGoblins n
+      | .createTokens kind n => .createTokens kind n false
+      | _ => .pumpGreatestPower
+    | some (.ability r) =>
+      match r with
+      | .onPermanent a => .onPermanent a
+      | .onSource a => .onSource a
+      | .draw n => .draw n
+      | .scry n => .scry n
+      | .gainLife n => .gainLife n
+      | .recruit => .recruit
+      | .drawThenDiscard n => .drawThenDiscardN n
+      | .createTokens kind n => .createTokens kind n false
+      | .addMana types => .addMana types
+      | _ => .pumpGreatestPower
+    | some (.sequence _) | none => .pumpGreatestPower
   | .trigger e => e.timing.resolution
   | .spell r =>
     match r with
@@ -8714,6 +8786,28 @@ instance : ToString CardDef where
 #guard (Effect.draw 2).resolution == Resolution.draw 2
 #guard (Effect.scry 1).resolution == Resolution.scry 1
 #guard (Effect.gainLife 3).abilityResolution == .gainLife 3
+#guard (Effect.drawLoseLifeThenAmass 2).resolution ==
+  Resolution.sequence [.spell (.drawAndLoseLife 1 1), .amassGoblins 2]
+#guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
+  Resolution.sequence
+    [.createTokens .villain21menace 1, .spell (.creaturesYouControlPump 1 0)]
+#guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
+  Resolution.sequence [.onPermanent .destroy, .gainLife 2]
+#guard (Effect.plusOneAndDraw 1 2).resolution ==
+  Resolution.sequence [.onSource (.plusOne 1), .draw 2]
+#guard Effect.destroyUpToOneThenPlusOne.resolution ==
+  Resolution.sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+#guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).resolution ==
+  Resolution.sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
+#guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
+  Resolution.sequence
+    [.ability (.creaturesYouControlPump 1 0), .spell (.eachOpponentLosesLife 1)]
+#guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
+  .drawLoseLifeThenAmass 2
+#guard (Effect.plusOneAndDraw 1 2).abilityResolution == .plusOneAndDraw 1 2
+#guard Resolution.flatten
+    (.sequence [.sequence [.draw 1, .gainLife 1], .amassGoblins 2]) ==
+  [.draw 1, .gainLife 1, .amassGoblins 2]
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
 #guard (Effect.chapterRecruit).asChapter? == some .recruit
 #guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
