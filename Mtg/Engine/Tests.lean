@@ -849,6 +849,8 @@ def applyIdle (g : Game) : Game :=
     mustApply g p .decline
   | .mayPutArtifactFromHand _ _, some p =>
     mustApply g p .decline
+  | .mayHaveVillainConnive _ _ _, some p =>
+    mustApply g p .decline
   | .chooseTargets _, some p =>
     match g.objectAwaitingTargets with
     | none => panic! "expected a proposed spell or trigger while choosing targets"
@@ -13225,6 +13227,54 @@ def capEntered : Game := mshEnter afterDraw captainAmericaSuperSoldier
 
 #guard (namedPermanent capEntered "Captain America, Super-Soldier").status.shield == 1
 #guard capEntered.log.any (fun s => mentions s "shield counter")
+
+/-- Advance by idle actions until Baron Strucker's optional connive is pending. -/
+def skipToMayHaveVillainConnive (g : Game) : Nat → Game
+  | 0 => panic! "skipToMayHaveVillainConnive fuel exhausted"
+  | n + 1 =>
+    match g.pending with
+    | .mayHaveVillainConnive .. => g
+    | _ =>
+      if g.over then panic! "game over while waiting for Baron Strucker"
+      else skipToMayHaveVillainConnive (applyIdle g) n
+
+/-- Baron Strucker asks whether the entering Villain connives (MSH 422). -/
+def struckerMayConnive : Game :=
+  let g := addToHand afterDraw lightningBolt ⟨0⟩
+  let g := addPermanent g baronStruckerHYDRAOverlord ⟨0⟩ ⟨0⟩
+  let g := addPermanent g redGuardianSuperSoldier ⟨0⟩ ⟨0⟩
+  let g := g.afterPermanentEnters (namedPermanent g "Red Guardian, Super-Soldier")
+  skipToMayHaveVillainConnive (g.receivePriority ⟨0⟩) 24
+
+#guard
+  match struckerMayConnive.pending with
+  | .mayHaveVillainConnive ⟨0⟩ src vid =>
+    src == (namedPermanent struckerMayConnive "Baron Strucker, HYDRA Overlord").id &&
+      vid == (namedPermanent struckerMayConnive "Red Guardian, Super-Soldier").id
+  | _ => false
+#guard struckerMayConnive.actor == some ⟨0⟩
+#guard !struckerMayConnive.hasPriority ⟨0⟩
+#guard struckerMayConnive.log.any (fun s => mentions s "may have Red Guardian")
+#guard
+  match Agent.choose struckerMayConnive ⟨0⟩ with
+  | some .haveVillainConnive => true
+  | _ => false
+
+def struckerConnived : Game :=
+  mustApply struckerMayConnive ⟨0⟩ .haveVillainConnive
+
+#guard (namedPermanent struckerConnived "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed
+#guard (struckerConnived.player ⟨0⟩).hand.size ==
+  (struckerMayConnive.player ⟨0⟩).hand.size + 1
+#guard struckerConnived.log.any (fun s => mentions s "connives")
+
+def struckerDeclinedConnive : Game :=
+  mustApply struckerMayConnive ⟨0⟩ .decline
+
+#guard !(namedPermanent struckerDeclinedConnive "Baron Strucker, HYDRA Overlord").status.optionalOnceUsed
+#guard (struckerDeclinedConnive.player ⟨0⟩).hand.size ==
+  (struckerMayConnive.player ⟨0⟩).hand.size
+#guard struckerDeclinedConnive.log.any (fun s => mentions s "declines to have the Villain connive")
 
 /-- A.I.M. Scientists connives on enter: draw, then discard. -/
 def scientistsConnive : Game := settle (mshEnter afterDraw aIMScientists) 24

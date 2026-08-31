@@ -8428,28 +8428,37 @@ def onceEachTurnConniveWordingOk : Bool :=
   w1 == 1 &&
     !strucker.status.firedOnceEachTurn &&
     !strucker.status.optionalOnceUsed &&
-    (let gDec := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+    (let gAsk := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
        (some struckerId)
-     let strucker := namedPermanent gDec "Baron Strucker, HYDRA Overlord"
-     !strucker.status.optionalOnceUsed &&
-       (gDec.player ⟨0⟩).hand.size == (g.player ⟨0⟩).hand.size &&
-       (let g2 := addPermanent gDec baronHelmutZemo ⟨0⟩ ⟨0⟩
-        let g2 := g2.afterPermanentEnters (namedPermanent g2 "Baron Helmut Zemo")
-        villainWait g2 == w1 + 1)) &&
+     match gAsk.pending with
+     | .mayHaveVillainConnive ⟨0⟩ src vid =>
+       src == struckerId && vid == rg.id &&
+         (let gDec := mustApply gAsk ⟨0⟩ .decline
+          let strucker := namedPermanent gDec "Baron Strucker, HYDRA Overlord"
+          !strucker.status.optionalOnceUsed &&
+            (gDec.player ⟨0⟩).hand.size == (g.player ⟨0⟩).hand.size &&
+            (let g2 := addPermanent gDec baronHelmutZemo ⟨0⟩ ⟨0⟩
+             let g2 := g2.afterPermanentEnters (namedPermanent g2 "Baron Helmut Zemo")
+             villainWait g2 == w1 + 1))
+     | _ => false) &&
     (let hand0 := (g.player ⟨0⟩).hand.size
-     let gYes := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+     let gAsk := g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
        (some struckerId) #[Target.permanent rg.id]
-     let strucker := namedPermanent gYes "Baron Strucker, HYDRA Overlord"
-     strucker.status.optionalOnceUsed &&
-       (gYes.player ⟨0⟩).hand.size == hand0 + 1 &&
-       (let wYes := villainWait gYes
-        let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
-        let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
-        villainWait g3 == wYes) &&
-       (let gNo := gYes.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
-          (some struckerId) #[Target.permanent rg.id]
-        (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
-          gNo.log.any (fun s => mentions s "no effect"))) &&
+     match gAsk.pending with
+     | .mayHaveVillainConnive ⟨0⟩ _ _ =>
+       let gYes := mustApply gAsk ⟨0⟩ .haveVillainConnive
+       let strucker := namedPermanent gYes "Baron Strucker, HYDRA Overlord"
+       strucker.status.optionalOnceUsed &&
+         (gYes.player ⟨0⟩).hand.size == hand0 + 1 &&
+         (let wYes := villainWait gYes
+          let g3 := addPermanent gYes baronHelmutZemo ⟨0⟩ ⟨0⟩
+          let g3 := g3.afterPermanentEnters (namedPermanent g3 "Baron Helmut Zemo")
+          villainWait g3 == wYes) &&
+         (let gNo := gYes.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchVillainConniveOnce)
+            (some struckerId) #[Target.permanent rg.id]
+          (gNo.player ⟨0⟩).hand.size == (gYes.player ⟨0⟩).hand.size &&
+            gNo.log.any (fun s => mentions s "no effect"))
+     | _ => false) &&
     (mshRuling 422).comment.contains "Do this only once each turn"
 
 #guard onceEachTurnConniveWordingOk

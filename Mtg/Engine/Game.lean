@@ -590,6 +590,9 @@ structure WaitingTrigger where
   event : TriggerEvent := .dying
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
+  /-- Object that caused this trigger, if any (the entering Villain for
+  Baron Strucker; MSH 422). -/
+  causeId : Option ObjectId := none
 deriving Repr, Inhabited
 
 /-- Waiting-trigger snapshots of `source`'s printed abilities that fire on `event`. -/
@@ -810,6 +813,8 @@ inductive Pending where
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
+  /-- You may have this entering Villain connive (Baron Strucker; MSH 422). -/
+  | mayHaveVillainConnive (player : PlayerId) (sourceId : ObjectId) (villainId : ObjectId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -983,6 +988,8 @@ inductive Action where
   /-- Decline an optional “you may discard a card”, or choose no target for an
   “up to one” trigger (CR 608.2d / 601.2c). -/
   | decline
+  /-- Have the entering Villain connive (Baron Strucker; MSH 422). -/
+  | haveVillainConnive
   /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
   | payGeneric
   /-- Put the pending card on top of its owner's library. -/
@@ -2846,7 +2853,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
   | .maySacArtifactOrDiscard q | .mayPutArtifactFromHand q _
-  | .declareMulligan q =>
+  | .mayHaveVillainConnive q _ _ | .declareMulligan q =>
     if q == p then { g with pending := .none } else g
   | .resolveRandom _ => g
 
@@ -4359,7 +4366,8 @@ def queueTrigger (g : Game) (controller : PlayerId) (source : GameObject)
       else g
     let copies := g.extraTriggerCopies controller source + 1
     let wt : WaitingTrigger := {
-      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness }
+      controller, source, ability := ab, event, lastKnownPower, lastKnownToughness,
+      causeId := cause.map (·.id) }
     Id.run do
       let mut g := g
       for _ in [0:copies] do
@@ -4613,9 +4621,18 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   else
     match g.waitingTriggers.findIdx? (fun w =>
       w.controller == wt.controller && w.source.id == wt.source.id &&
-        w.ability == wt.ability && w.event == wt.event) with
+        w.ability == wt.ability && w.event == wt.event &&
+        w.causeId == wt.causeId) with
     | none => g
     | some i => { g with waitingTriggers := g.waitingTriggers.eraseIdx! i }
+
+/-- Last-known power, or the causing object's id for Baron Strucker's optional
+connive (MSH 422). -/
+def lastKnownPowerForTrigger (ab : TriggeredAbility) (lastKnownPower : Option Int)
+    (causeId : Option ObjectId) : Option Int :=
+  match ab.shared, causeId with
+  | .watch .villainConniveOnce, some id => some (Int.ofNat id.raw)
+  | _, _ => lastKnownPower
 
 /-- Put these waiting triggers on the stack in the given order (CR 603.3 / 603.3d). -/
 def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
@@ -4626,7 +4643,8 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
       for wt in wts do
         g := g.removeWaitingTrigger wt
         g := g.putQueuedTrigger wt.controller wt.source wt.ability wt.event
-          wt.lastKnownPower wt.lastKnownToughness
+          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
+          wt.lastKnownToughness
       return g.promptTriggerTargetsIfNeeded
 
 /-- Put queued triggers for `event` onto the stack (CR 603.3). The event spec
@@ -4645,7 +4663,8 @@ def flushWaitingTriggers (g : Game) (event : TriggerEvent) : Game :=
       let mut g := { g with waitingTriggers := g.waitingTriggers.filter (·.event != event) }
       for wt in waiting do
         g := g.putQueuedTrigger wt.controller wt.source wt.ability event
-          wt.lastKnownPower wt.lastKnownToughness
+          (lastKnownPowerForTrigger wt.ability wt.lastKnownPower wt.causeId)
+          wt.lastKnownToughness
       return g.promptTriggerTargetsIfNeeded
 
 /-- CR 704.3 / 603.3b: check state-based actions, then put waiting triggers
@@ -4986,7 +5005,9 @@ def afterPermanentEnters (g : Game) (o : GameObject) : Game :=
       else g
     let g :=
       if g.hasSubtype entered "Villain" then
-        g.putControlledTriggers p .anotherVillainEnters (excludeId := some entered.id)
+        g.foldControlledPermanents p (excludeId := some entered.id) (fun g o =>
+          g.putMatchingSourceTriggers p o .anotherVillainEnters
+            (cause := some entered))
       else g
     let g :=
       if entered.printed.isArtifact then
@@ -7607,6 +7628,52 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
       | none =>
         g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
 
+/-- Villain that would connive for Baron Strucker: an announced target, the
+causing object's id stored as last-known power, or the newest other Villain
+that entered this turn. -/
+def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectId)
+    (targets : Array Target) (lastKnownPower : Option Int) : Option ObjectId :=
+  match targets[0]? with
+  | some (Target.permanent id) => some id
+  | _ =>
+    match lastKnownPower with
+    | some n => some ⟨n.toNat⟩
+    | none =>
+      let cands :=
+        (g.permanentsOf controller).filter (fun x =>
+          x.id != sourceId && g.hasSubtype x "Villain" && x.status.enteredThisTurn)
+      if cands.isEmpty then none
+      else
+        some (cands.foldl (fun acc x =>
+          if x.timestamp > acc.timestamp then x else acc) cands[0]!).id
+
+/-- Ask whether to have the entering Villain connive (MSH 422). -/
+def beginMayHaveVillainConnive (g : Game) (controller : PlayerId)
+    (sourceId villainId : ObjectId) : Game :=
+  let who :=
+    match g.findObject? villainId with
+    | some o => o.name
+    | none => "the Villain"
+  { g with pending := .mayHaveVillainConnive controller sourceId villainId }.logMsg
+    s!"{(g.player controller).name} may have {who} connive (do this only once each turn)"
+
+/-- Accept Baron Strucker's optional connive (MSH 422). -/
+def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
+  match g.pending with
+  | .mayHaveVillainConnive q sourceId villainId =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may have the Villain connive"
+    let g := { g with pending := .none }
+    let g :=
+      match g.findObject? sourceId with
+      | some src =>
+        g.setObject { src with status :=
+          { src.status with optionalOnceUsed := true } }
+      | none => g
+    let g := g.applyConnive p (some villainId)
+    return g.receivePriority g.activePlayer
+  | _ => throw "Not time to have a Villain connive"
+
 /-- After paying K'un-Lun's optional cost, draw a card. -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) : Game :=
   let g := { g with pending := .none }
@@ -9432,13 +9499,11 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
         g.logMsg
           "The optional connive was already chosen this turn. This instance has no effect."
       else
-        match targets[0]? with
-        | some (Target.permanent id) =>
-          let g := g.setObject { src with status :=
-            { src.status with optionalOnceUsed := true } }
-          g.applyConnive controller (some id)
-        | _ =>
+        match g.villainConniveTarget? controller src.id targets lastKnownPower with
+        | none =>
           g.logMsg "The Villain does not connive"
+        | some vid =>
+          g.beginMayHaveVillainConnive controller src.id vid
   | (.death .attackingReturnHand) =>
     match g.lastDiedAttacker.bind g.findObject? with
     | none => g.logMsg "The attacking creature is no longer in the graveyard"
@@ -14468,6 +14533,12 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       s!"{(g.player p).name} declines to put an artifact onto the battlefield"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
+  | .mayHaveVillainConnive q _ _ =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline to have the Villain connive"
+    let g := g.logMsg s!"{(g.player p).name} declines to have the Villain connive"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
   | _ => throw "Not time to decline"
 
 def keepOpeningHand (g : Game) (p : PlayerId) : Except String Game := do
@@ -14735,6 +14806,7 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .scry top bottom => g.finishScry p top bottom
   | .discard id => g.discardForDraw p id
   | .decline => g.decline p
+  | .haveVillainConnive => g.haveVillainConnive p
   | .payGeneric => g.payGeneric p
   | .chooseTop => g.chooseLibrarySide p true
   | .chooseBottom => g.chooseLibrarySide p false
@@ -14794,6 +14866,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseTapOrUntap p _ => who p
     | .maySacArtifactOrDiscard p => who p
     | .mayPutArtifactFromHand p _ => who p
+    | .mayHaveVillainConnive p _ _ => who p
     | .resolveRandom req =>
       match req with
       | .shuffleLibrary p => some p
