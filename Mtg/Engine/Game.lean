@@ -4384,11 +4384,8 @@ def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
           match ch.chapterEffect with
           | none => g
           | some ce =>
-            match ce.asChapter? with
-            | some chapter =>
-              g.queueTrigger p saga (TriggeredAbility.sagaChapter lore chapter)
-                .sagaChapter
-            | none => g) g
+            g.queueTrigger p saga (TriggeredAbility.sagaChapter lore ce)
+              .sagaChapter) g
   | _, _ => g
 
 /-- Add `n` lore counters one at a time (CR 714.3c). -/
@@ -11455,9 +11452,12 @@ def chooseTapOrUntap (g : Game) (p : PlayerId) (idx : Nat) (targetId : ObjectId)
   | _ => throw "Not time to choose tap or untap"
 
 /-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
-def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterLeftover)
+def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     (sourceId : Option ObjectId) (targets : Array Target) : Game :=
-  match e with
+  match e.asChapter? with
+  | none => g.applyEffect controller e targets
+  | some ch =>
+  match ch with
   | .dealDamageToOppCreature n =>
     g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
       g.dealDamageToPermanent o n) sourceId (some "The target is no longer legal")
@@ -12564,8 +12564,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       (g.livingOpponents controller).foldl (fun acc pl =>
         acc.beginSacrificeCreature pl.id) g
     g.temptWithTheRing controller
-  | .chapter e =>
-    g.applyChapterEffect controller e sourceId targets
+  | .chapter _ =>
+    g.applyChapterEffect controller ab.effect sourceId targets
   | .pumpTargetPerPlains =>
     let n := g.countSubtype controller "Plains"
     g.withLegalTriggerPermanent controller ab sourceId targets (fun g o =>

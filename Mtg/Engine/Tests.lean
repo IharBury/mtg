@@ -12746,7 +12746,7 @@ def thranduilTappedForCopiedGreen : Game :=
 /-!
 # Supported Saga cards (CR 714)
 
-Catalog Sagas store structured `ChapterLeftover`s. Entering a Saga puts a lore
+Catalog Sagas store structured chapter `Effect`s. Entering a Saga puts a lore
 counter on it and the matching chapter goes on the stack.
 -/
 

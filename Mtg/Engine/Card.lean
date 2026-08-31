@@ -1747,7 +1747,7 @@ deriving Repr, Inhabited, BEq
 /-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
 Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
 wording. -/
-inductive ChapterLeftover where
+inductive ChapterResolution where
   /-- This Saga deals `n` damage to target creature an opponent controls. -/
   | dealDamageToOppCreature (n : Nat)
   /-- Destroy target artifact an opponent controls. -/
@@ -1806,7 +1806,7 @@ inductive ChapterLeftover where
   | spell (s : ChapterSpell)
 deriving Repr, Inhabited, BEq
 
-namespace ChapterLeftover
+namespace ChapterResolution
 
 /-- Targeting and “up to one” for this chapter. Exhaustive so a new
 constructor is a compile error here rather than silently targeting nothing. -/
@@ -1818,7 +1818,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Classification of this chapter effect. SharedTrigger.timing reads this
 before `Effect.ofChapter` exists. -/
-def spec : ChapterLeftover → Spec
+def spec : ChapterResolution → Spec
   | .dealDamageToOppCreature n =>
     { targeting := .of .oppCreature
       phrase := s!"this Saga deals {n} damage to target creature an opponent controls" }
@@ -1885,7 +1885,7 @@ def spec : ChapterLeftover → Spec
       allowsZeroTargets := s.allowsZeroTargets
       phrase := s.phrase }
 
-end ChapterLeftover
+end ChapterResolution
 
 /-- Leftover “When ⟨this⟩ enters” wordings that do not already match a more
 specific `TriggeredAbility` constructor. One `onEnter` constructor keeps the
@@ -2709,7 +2709,7 @@ inductive SharedTrigger where
   /-- Opponents sac damagers; the Ring tempts you. -/
   | sacDamagersRingTempts
   /-- A Saga chapter. -/
-  | chapter (n : Nat) (e : ChapterLeftover)
+  | chapter (n : Nat) (e : ChapterResolution)
   /-- +1/+1 on this and draw. -/
   | plusOneOnSourceAndDraw
   /-- Draw if you attacked with or a subtype entered. -/
@@ -2920,7 +2920,7 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
-def asChapter? (e : Effect) : Option ChapterLeftover :=
+def asChapter? (e : Effect) : Option ChapterResolution :=
   match e.resolution with
   | .trigger (.chapter _ ce) => some ce
   | _ => none
@@ -4956,7 +4956,7 @@ inductive TriggerResolution where
   /-- Each opponent sacrifices a creature that damaged you; the Ring tempts you. -/
   | sacDamagersRingTempts
   /-- Resolve a printed Saga chapter. -/
-  | chapter (effect : ChapterLeftover)
+  | chapter (effect : ChapterResolution)
   /-- Target creature you control gets +1/+1 per Plains you control. -/
   | pumpTargetPerPlains
   /-- Investigate (create a Clue). -/
@@ -5791,8 +5791,8 @@ end Resolution
 namespace Effect
 
 /-- Convert a printed Saga chapter to the unified `Effect`.
-Always wraps the original `ChapterLeftover` so `asChapter?` can recover it. -/
-def ofChapter (e : ChapterLeftover) : Effect :=
+Always wraps the original `ChapterResolution` so `asChapter?` can recover it. -/
+def ofChapter (e : ChapterResolution) : Effect :=
   let s := e.spec
   { targeting := s.targeting
     allowsZeroTargets := s.allowsZeroTargets
@@ -5871,7 +5871,7 @@ def chapterDealXDamageToTargetOpponentGreatestArtifactMv : Effect :=
   ofChapter .dealXDamageToTargetOpponentGreatestArtifactMv
 
 /-- Pack a unified spell `Effect` as a leftover Saga chapter. -/
-def chapterSpell (e : Effect) : ChapterLeftover :=
+def chapterSpell (e : Effect) : ChapterResolution :=
   .spell {
     targeting := e.targeting
     allowsZeroTargets := e.allowsZeroTargets
@@ -6776,7 +6776,7 @@ def abilityScry (n : Nat) : Effect :=
 def abilityTargetPlayerDraw (n : Nat) : Effect :=
   mkAbility (.of .player) (.targetPlayerDraw n)
 
-instance : Coe ChapterLeftover Effect where
+instance : Coe ChapterResolution Effect where
   coe := ofChapter
 
 instance : Coe SharedTrigger Effect where
@@ -7261,8 +7261,10 @@ def onFinalSagaChapterRevealSaga : TriggeredAbility :=
   .triggered .finalSagaChapterResolves (Effect.ofTrigger .revealSaga) .once
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
-def sagaChapter (n : Nat) (effect : ChapterLeftover) : TriggeredAbility :=
-  .triggered .sagaChapter (Effect.ofTrigger (.chapter n effect))
+def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
+  match e.asChapter? with
+  | some ch => .triggered .sagaChapter (Effect.ofTrigger (.chapter n ch))
+  | none => .triggered .sagaChapter e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork (Effect.ofTrigger .plusOneOnSourceAndDraw)
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
@@ -9094,7 +9096,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.onWatch .hulk == .triggered .fromEffect (Effect.ofTrigger (.watch .hulk))
 #guard TriggeredAbility.onStep .drawToTen ==
   .triggered .fromEffect (Effect.ofTrigger (.step .drawToTen))
-#guard TriggeredAbility.sagaChapter 1 ChapterLeftover.recruit ==
+#guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
   .triggered .sagaChapter (Effect.ofTrigger (.chapter 1 .recruit))
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
