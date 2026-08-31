@@ -156,6 +156,17 @@ def englishNumber (n : Nat) : String :=
 #guard englishNumber 2 == "two"
 #guard englishNumber 5 == "five"
 #guard englishNumber 12 == "12"
+
+/-- Oracle-style alternatives joined with `or`: `a`, `a or b`, `a, b, or c`. -/
+def orJoin (xs : List String) : String :=
+  match xs with
+  | [a, b] => s!"{a} or {b}"
+  | [] | [_] => String.intercalate "" xs
+  | xs => s!"{String.intercalate ", " xs.dropLast}, or {xs.getLast!}"
+
+#guard orJoin ["Elf"] == "Elf"
+#guard orJoin ["Goblin", "Orc"] == "Goblin or Orc"
+#guard orJoin ["Bear", "Spider", "Wolf"] == "Bear, Spider, or Wolf"
 #guard Keywords.joinedAnd Keyword.trample == "trample"
 #guard Keywords.joinedAnd (Keyword.trample.merge Keyword.haste) == "haste and trample"
 #guard Keywords.joinedAnd
@@ -505,14 +516,8 @@ def spec : EffectTargetKind → Spec
     { noun := s!"target creature with power {n} or less", prefer := .own }
   | .creatureYouControlAnySubtype subtypes =>
     { noun :=
-        match subtypes.toList with
-        | [] => "target creature you control"
-        | [a] => s!"target {a} you control"
-        | [a, b] => s!"target {a} or {b} you control"
-        | xs =>
-          let last := xs.getLast!
-          let init := String.intercalate ", " xs.dropLast
-          s!"target {init}, or {last} you control"
+        if subtypes.isEmpty then "target creature you control"
+        else s!"target {orJoin subtypes.toList} you control"
       prefer := .own }
   | .permanent =>
     { noun := "target permanent", prefer := .ownThenOpponent }

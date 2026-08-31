@@ -312,10 +312,15 @@ def wellWornSpatula : CardDef :=
 
 /-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
 for two +1/+1 counters on a typed creature you control. One type or several
-types both use `plusOneOnTarget`. -/
-def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String)
-    (oracleText : String) : CardDef :=
-  land name oracleText
+types both use `plusOneOnTarget`. The Oracle text is reconstructed from the
+colors and creature types. -/
+def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) :
+    CardDef :=
+  land name
+    (s!"This land enters tapped.\n{dualAddClause a b}\n" ++
+      s!"\{2}{manaSymbolsText #[.colored a, .colored b]}, \{T}, Sacrifice this land: " ++
+      s!"Put two +1/+1 counters on target {orJoin creatureTypes.toList} you control. " ++
+      "Activate only as a sorcery.")
     (entersTapped := true)
     (tapAddOneOf := #[.colored a, .colored b])
     (activatedAbilities := #[
@@ -326,23 +331,18 @@ def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String)
 
 def elvenkingsHalls : CardDef :=
   hobbitDualLand "Elvenking's Halls" .green .blue #["Elf"]
-    "This land enters tapped.\n{T}: Add {G} or {U}.\n{2}{G}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Elf you control. Activate only as a sorcery."
 
 def ironHills : CardDef :=
   hobbitDualLand "Iron Hills" .red .white #["Dwarf"]
-    "This land enters tapped.\n{T}: Add {R} or {W}.\n{2}{R}{W}, {T}, Sacrifice this land: Put two +1/+1 counters on target Dwarf you control. Activate only as a sorcery."
 
 def lakeTown : CardDef :=
   hobbitDualLand "Lake-town" .white .blue #["Human"]
-    "This land enters tapped.\n{T}: Add {W} or {U}.\n{2}{W}{U}, {T}, Sacrifice this land: Put two +1/+1 counters on target Human you control. Activate only as a sorcery."
 
 def goblinTown : CardDef :=
   hobbitDualLand "Goblin-town" .black .red #["Goblin", "Orc"]
-    "This land enters tapped.\n{T}: Add {B} or {R}.\n{2}{B}{R}, {T}, Sacrifice this land: Put two +1/+1 counters on target Goblin or Orc you control. Activate only as a sorcery."
 
 def mirkwood : CardDef :=
   hobbitDualLand "Mirkwood" .black .green #["Bear", "Spider", "Wolf"]
-    "This land enters tapped.\n{T}: Add {B} or {G}.\n{2}{B}{G}, {T}, Sacrifice this land: Put two +1/+1 counters on target Bear, Spider, or Wolf you control. Activate only as a sorcery."
 
 def hobbitHole : CardDef :=
   land "Hobbit Hole"

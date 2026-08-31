@@ -1629,19 +1629,13 @@ def vivVisionTeenSynthezoid : CardDef :=
     (legendary := true)
 
 def aIMLabs : CardDef :=
-  gainLifeDualLand "A.I.M. Labs"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
-    #[.colored .blue, .colored .black]
+  gainLifeDualLand "A.I.M. Labs" .blue .black
 
 def asgardianCitadel : CardDef :=
-  gainLifeDualLand "Asgardian Citadel"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}."
-    #[.colored .red, .colored .white]
+  gainLifeDualLand "Asgardian Citadel" .red .white
 
 def avengersHangar : CardDef :=
-  gainLifeDualLand "Avengers Hangar"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}."
-    #[.colored .white, .colored .blue]
+  gainLifeDualLand "Avengers Hangar" .white .blue
 
 def avengersTower : CardDef :=
   land "Avengers Tower"
@@ -1659,9 +1653,7 @@ def baxterBuilding : CardDef :=
         (onlyIfYouControlCreatureToughnessAtLeast := 4)])
 
 def birninZanaPlaza : CardDef :=
-  gainLifeDualLand "Birnin Zana Plaza"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}."
-    #[.colored .green, .colored .white]
+  gainLifeDualLand "Birnin Zana Plaza" .green .white
 
 def castleDoom : CardDef :=
   land "Castle Doom"
@@ -1672,54 +1664,34 @@ def castleDoom : CardDef :=
         (sacrificeArtifact := true) (onlyAsSorcery := true)])
 
 def darkFortress : CardDef :=
-  conditionalDualLand "Dark Fortress"
-    "{T}: Add {C}.\n{T}: Add {B} or {R}. Activate only if this land entered this turn or if you control a basic land."
-    #[.colored .black, .colored .red]
+  conditionalDualLand "Dark Fortress" .black .red
 
 def fiskTower : CardDef :=
-  gainLifeDualLand "Fisk Tower"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}."
-    #[.colored .white, .colored .black]
+  gainLifeDualLand "Fisk Tower" .white .black
 
 def gatheringPlace : CardDef :=
-  conditionalDualLand "Gathering Place"
-    "{T}: Add {C}.\n{T}: Add {G} or {W}. Activate only if this land entered this turn or if you control a basic land."
-    #[.colored .green, .colored .white]
+  conditionalDualLand "Gathering Place" .green .white
 
 def gleamingBastion : CardDef :=
-  conditionalDualLand "Gleaming Bastion"
-    "{T}: Add {C}.\n{T}: Add {W} or {U}. Activate only if this land entered this turn or if you control a basic land."
-    #[.colored .white, .colored .blue]
+  conditionalDualLand "Gleaming Bastion" .white .blue
 
 def hellSKitchen : CardDef :=
-  gainLifeDualLand "Hell's Kitchen"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}."
-    #[.colored .black, .colored .red]
+  gainLifeDualLand "Hell's Kitchen" .black .red
 
 def hiddenLair : CardDef :=
-  conditionalDualLand "Hidden Lair"
-    "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land."
-    #[.colored .blue, .colored .black]
+  conditionalDualLand "Hidden Lair" .blue .black
 
 def losDiablosMissileBase : CardDef :=
-  gainLifeDualLand "Los Diablos Missile Base"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}."
-    #[.colored .red, .colored .green]
+  gainLifeDualLand "Los Diablos Missile Base" .red .green
 
 def pymTechnologies : CardDef :=
-  gainLifeDualLand "Pym Technologies"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}."
-    #[.colored .green, .colored .blue]
+  gainLifeDualLand "Pym Technologies" .green .blue
 
 def starkIndustries : CardDef :=
-  gainLifeDualLand "Stark Industries"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}."
-    #[.colored .blue, .colored .red]
+  gainLifeDualLand "Stark Industries" .blue .red
 
 def subterraneanCavern : CardDef :=
-  gainLifeDualLand "Subterranean Cavern"
-    "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}."
-    #[.colored .black, .colored .green]
+  gainLifeDualLand "Subterranean Cavern" .black .green
 
 def surveillanceRoom : CardDef :=
   land "Surveillance Room"
@@ -1729,9 +1701,7 @@ def surveillanceRoom : CardDef :=
     (activatedAbilities := #[activated (Effect.addAnyColor) (ManaCost.ofGeneric 1) (tap := true)])
 
 def trainingCompound : CardDef :=
-  conditionalDualLand "Training Compound"
-    "{T}: Add {C}.\n{T}: Add {R} or {G}. Activate only if this land entered this turn or if you control a basic land."
-    #[.colored .red, .colored .green]
+  conditionalDualLand "Training Compound" .red .green
 
 def villainousHideout : CardDef :=
   land "Villainous Hideout"
