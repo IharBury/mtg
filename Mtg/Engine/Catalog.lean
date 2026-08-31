@@ -9,7 +9,7 @@ card-agnostic; these definitions just exercise the rules we model.
 Cards from Magic: The Gathering | The Hobbit (HOB) live in
 `Mtg.Engine.Catalog.Hobbit`. Cards from The Hobbit Eternal (HOC) live in
 `Mtg.Engine.Catalog.HobbitEternal`. Cards from Marvel Super Heroes (MSH) live
-in `Mtg.Engine.Catalog.Marvel`. Decklists that use them live in `Mtg.Demo`.
+in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Decklists that use them live in `Mtg.Demo`.
 -/
 
 namespace Mtg.Engine.Catalog
