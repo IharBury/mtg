@@ -38,8 +38,20 @@ def applyPalantir (g : Game) (sourceId : ObjectId) (target : Option PlayerId) : 
           let g := g.logMsg s!"{src.name} gets an influence counter"
           g.beginScry src.you 2
 
+/-- After putting a resolving-cast spell on the stack, announce the Aura's
+enchant target (CR 601.2c / 303.4). The mana cost may have been skipped. -/
+def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Game :=
+  let face := prop.original.printed
+  if face.isAura &&
+      (face.allowsZeroTargets || !(g.legalCastTargets p face).isEmpty) then
+    { g with pending := .chooseTargets p, proposedSpell := some prop }
+      |>.logMsg s!"{(g.player p).name} must choose a target to enchant (CR 601.2c)"
+  else g
+
 /-- Put a card onto the stack as an ability is resolving. Timing may be
-ignored. The permission does not last after this ability finishes. -/
+ignored. The permission does not last after this ability finishes.
+An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
 def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
     (ignoreTiming := true) (withoutManaCost := true) : Game :=
   match g.findObject? id with
@@ -52,9 +64,25 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       g.logMsg s!"{o.name} cannot be cast (costs)"
     else
       let name := o.name
+      let original := o
+      let pl := g.player p
+      let handBefore := pl.hand
+      let stackBefore := g.stack
+      let manaBefore := pl.manaPool
       let (g, newId) := g.move id .stack (some p)
       let g := g.putStackEntry p newId
-      g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+      let g := g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+      let cost :=
+        if withoutManaCost then ManaCost.empty else g.playManaCost original original.printed
+      g.beginResolutionCastTargets p {
+        caster := p
+        cost
+        spellId := newId
+        original
+        handBefore
+        stackBefore
+        manaBefore
+      }
 
 /-- Cast the first instant or sorcery card with mana value at most `maxMv`
 from `p`'s hand as part of a resolution, without paying its mana cost. -/
@@ -83,6 +111,9 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
         some "A land cannot be cast"
       else if (o.printed.manaValue : Int) > maxMv then
         some s!"{o.name}'s mana value is greater than the greatest power among attacking creatures you control"
+      else if o.printed.isAura && !o.printed.allowsZeroTargets &&
+          (g.legalCastTargets p o.printed).isEmpty then
+        some s!"{o.name} requires a target to enchant"
       else none
 
 /-- Look at the top `n` cards and wait for the controller to choose whether
@@ -99,7 +130,8 @@ def beginMayCastFromLooked (g : Game) (p : PlayerId) (n : Nat) (maxMv : Int) :
       s!"{(g.player p).name} looks at the top {ids.size} cards. You may cast a spell from among them with mana value {maxMv} or less as this ability resolves"
 
 /-- After the Cosmic Cube choice, put unchosen looked-at cards on the bottom
-in a random order, then grant priority unless another choice is pending. -/
+in a random order, then grant priority unless another choice is pending
+(for example choosing a target for an Aura just cast). -/
 def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
     Game :=
   let rest :=
@@ -107,11 +139,20 @@ def finishMayCastFromLooked (g : Game) (p : PlayerId) (rest : Array ObjectId) :
       match g.findObject? id with
       | some o => o.zone == .library p
       | none => false)
+  let msg :=
+    s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
   let g :=
     if rest.isEmpty then g
+    else if g.pending != .none then
+      -- Keep a pending target choice (CR 601.2c). `requestOrderInto` would
+      -- overwrite it when `--norandom` asks for an order.
+      if rest.size ≤ 1 || g.norandom then
+        g.moveIdsInOrder rest (.library p) |>.logMsg msg
+      else
+        let (rng, ordered) := g.rng.shuffle rest
+        { g with rng }.moveIdsInOrder ordered (.library p) |>.logMsg msg
     else
-      g.requestOrderInto rest (.library p)
-        s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+      g.requestOrderInto rest (.library p) msg
   if g.pending != .none then g
   else g.receivePriority g.activePlayer
 

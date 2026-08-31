@@ -11466,6 +11466,63 @@ def castAsResolvesOk : Bool :=
 
 #guard castAsResolvesOk
 
+/-- Cosmic Cube: Super Speed (Aura) on top, attacking Bears as the host. -/
+def cosmicCubeAuraSetup : Game :=
+  let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := addToLibraryTop g mountain ⟨0⟩
+  addToLibraryTop g superSpeed ⟨0⟩
+
+def cosmicCubeAuraPending : Game :=
+  let cube := namedPermanent cosmicCubeAuraSetup "Cosmic Cube"
+  cosmicCubeAuraSetup.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
+    (some cube.id)
+
+/-- Casting an Aura as Cosmic Cube resolves still asks for a target to
+enchant (CR 601.2c / 303.4). -/
+def cosmicCubeCastAuraChoosesEnchantTargetOk : Bool :=
+  let g := cosmicCubeAuraPending
+  let speed := cosmicCubeLookedNamed g "Super Speed"
+  superSpeed.isAura && superSpeed.requiresTarget &&
+    (let gCast := mustApply g ⟨0⟩ (.cast speed)
+     gCast.pending == .chooseTargets ⟨0⟩ &&
+       gCast.actor == some ⟨0⟩ &&
+       gCast.objects.any (fun o => o.name == "Super Speed" && o.zone == .stack) &&
+       gCast.log.any (fun s => mentions s "must choose a target to enchant") &&
+       gCast.log.any (fun s => mentions s "on the bottom") &&
+       (let bears := namedPermanent gCast "Grizzly Bears"
+        let gTgt := mustApply gCast ⟨0⟩ (.target (Target.permanent bears.id))
+        (gTgt.stack.find? (fun e =>
+          (gTgt.object! e.objectId).name == "Super Speed")).any (fun e =>
+            e.targets == #[Target.permanent bears.id]) &&
+          (let gRes := passBoth gTgt
+           let aura := namedPermanent gRes "Super Speed"
+           aura.attachedTo == some bears.id &&
+             gRes.power (namedPermanent gRes "Grizzly Bears") == 3)))
+
+#guard cosmicCubeCastAuraChoosesEnchantTargetOk
+
+/-- A non-Aura enchantment cast this way does not ask for an enchant target. -/
+def cosmicCubeCastNonAuraEnchantmentOk : Bool :=
+  let g := addPermanent afterDraw cosmicCube ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.setObject { bears with status := { bears.status with attacking := true } }
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let g := addToLibraryTop g doomReignsSupreme ⟨0⟩
+  let cube := namedPermanent g "Cosmic Cube"
+  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast)
+    (some cube.id)
+  let plan := cosmicCubeLookedNamed g "Doom Reigns Supreme"
+  !doomReignsSupreme.isAura &&
+    (let gCast := mustApply g ⟨0⟩ (.cast plan)
+     gCast.objects.any (fun o => o.name == "Doom Reigns Supreme" && o.zone == .stack) &&
+       gCast.pending != .chooseTargets ⟨0⟩)
+
+#guard cosmicCubeCastNonAuraEnchantmentOk
+
 -- Remaining unique comments are restatements of CR the engine already
 -- implements (copy, X, illegal targets, timing, reflexive triggers,
 -- controlling another player, and card-specific wording). Cite each id
