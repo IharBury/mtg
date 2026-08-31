@@ -971,7 +971,7 @@ def afterExceptionCleanup : Game := passBoth cleanupWithSBA
 
 /-- Lightning Bolt to a player (CR 120.3a) changes that player's life total. -/
 def afterBolt : Game :=
-  started.applyEffect ⟨0⟩ (.dealDamage 3) #[Target.player ⟨1⟩]
+  started.applyEffect ⟨0⟩ (Effect.ofSpell (.dealDamage 3)) #[Target.player ⟨1⟩]
 
 #guard (started.player ⟨1⟩).life == 20
 #guard (afterBolt.player ⟨1⟩).life == 17
@@ -2167,7 +2167,7 @@ def siegeVsWurmResolved : Game :=
 def siegePumpedGiantResolved : Game :=
   let g := addPermanent started orcishSiegemaster ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
-  let g := g.applyEffect ⟨0⟩ (.pump 2 0)
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell (.pump 2 0))
     #[Target.permanent (namedPermanent g "Hill Giant").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Orcish Siegemaster").id])
@@ -3979,7 +3979,7 @@ def resolvedWargPump : Game := passBoth paidWargPump
 def zeroWithCounter : Game :=
   let g := addPermanent started zeroZero ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Zero/Zero").id
-  g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof #[Target.permanent id]
+  g.applyEffect ⟨0⟩ (Effect.ofSpell .plusOnePlusOneTrampleHexproof) #[Target.permanent id]
 
 #guard zeroWithCounter.power (namedPermanent zeroWithCounter "Zero/Zero") == 1
 #guard zeroWithCounter.toughness (namedPermanent zeroWithCounter "Zero/Zero") == 1
@@ -3998,7 +3998,7 @@ def afterWargPumpCleanup : Game := passBoth (skipTo resolvedWargPump .end 80)
 def afterWargTrampleCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .plusOnePlusOneTrampleHexproof
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .plusOnePlusOneTrampleHexproof)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
@@ -4045,7 +4045,7 @@ def resolvedNissaBoltPlayer : Game := passBoth paidNissaBoltPlayer
 
 -- After hexproof wears off, the same creature is a legal Lightning Bolt target.
 #guard
-  (afterWargPumpCleanup.legalTargets ⟨1⟩ (.dealDamage 3)).contains
+  (afterWargPumpCleanup.legalTargets ⟨1⟩ (Effect.ofSpell (.dealDamage 3))).contains
     (Target.permanent (namedPermanent afterWargPumpCleanup "Grizzly Bears").id)
 
 /-- The agent casts Warg Tactics to destroy a flyer when that is the playable spell. -/
@@ -4634,7 +4634,7 @@ def bladeEquipped : Game := passBoth paidBladeEquip
 def vowMayAttach : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.ofSpell (.untapPumpMaybeAttach 2 2))
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
 #guard
@@ -4688,7 +4688,7 @@ def vowDeclined : Game := mustApply vowMayAttach ⟨0⟩ .decline
 def vowOnBears : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.ofSpell (.untapPumpMaybeAttach 2 2))
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
 
 #guard vowOnBears.pending == .none
@@ -4698,7 +4698,7 @@ def vowOnBears : Game :=
 /-- No Equipment: the player is still asked, and the heuristic declines. -/
 def vowMayAttachNoGear : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
-  g.applyEffect ⟨0⟩ (.untapPumpMaybeAttach 2 2)
+  g.applyEffect ⟨0⟩ (Effect.ofSpell (.untapPumpMaybeAttach 2 2))
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
 #guard
@@ -5776,7 +5776,7 @@ def galionOnCounteredElves : Game :=
 /-- Uses Galion's actual P/T at resolution, including pumps (CR 613.3b ruling). -/
 def galionPumpedResolved : Game :=
   let g := galionAndElves
-  let g := g.applyEffect ⟨0⟩ (.pump 2 2)
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell (.pump 2 2))
     #[Target.permanent (namedPermanent g "Galion, Elvenking's Butler").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩
@@ -5793,7 +5793,7 @@ def galionPumpedResolved : Game :=
 
 /-- Later changes to Galion do not update the other creature. -/
 def galionPumpedAfterResolve : Game :=
-  galionResolved.applyEffect ⟨0⟩ (.pump 3 0)
+  galionResolved.applyEffect ⟨0⟩ (Effect.ofSpell (.pump 3 0))
     #[Target.permanent (namedPermanent galionResolved "Galion, Elvenking's Butler").id]
 
 #guard galionPumpedAfterResolve.power
@@ -6403,8 +6403,8 @@ def beornSetup : Game :=
 
 -- Extra land grants stack (CR 305.2b).
 #guard
-  let g := afterDraw.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
-  let g := g.applyEffect ⟨0⟩ .playAdditionalLandThisTurn #[]
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.ofSpell .playAdditionalLandThisTurn) #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .playAdditionalLandThisTurn) #[]
   (g.player ⟨0⟩).additionalLandsThisTurn == 2 && g.landPlaysAllowed ⟨0⟩ == 3
 
 def proposedTillAndTend : Game :=
@@ -8716,7 +8716,7 @@ def pathmakerGrowsWithLand : Game :=
 
 /-- Pumps, counters, lords, and Auras apply on top of the land-count base. -/
 def pathmakerPumped : Game :=
-  pathmakerWithLands.applyEffect ⟨0⟩ (.pump 2 2)
+  pathmakerWithLands.applyEffect ⟨0⟩ (Effect.ofSpell (.pump 2 2))
     #[Target.permanent (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").id]
 
 #guard pathmakerPumped.power (namedPermanent pathmakerPumped "Mirkwood Pathmaker") == 4
@@ -8809,7 +8809,7 @@ def fireOfOrthancSetup : Game :=
 #guard fireOfOrthancSetup.canCast ⟨0⟩ (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc")
 #guard fireOfOrthancSetup.asSorcery? ⟨0⟩
 #guard
-  (fireOfOrthancSetup.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+  (fireOfOrthancSetup.legalTargets ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)).contains
     (Target.permanent (namedPermanent fireOfOrthancSetup "Forest").id)
 
 -- Cannot cast with no artifact or land.
@@ -8831,9 +8831,9 @@ def fireOfOrthancSetup : Game :=
   let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
-  (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+  (g.legalTargets ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)).contains
     (Target.permanent (namedPermanent g "Wayfarer's Bauble").id) &&
-    !(g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    !(g.legalTargets ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 
 -- Own lands are legal; hexproof on an opponent's land is not (CR 702.11b).
@@ -8841,7 +8841,7 @@ def fireOfOrthancSetup : Game :=
   let g := addPermanent afterDraw mountain ⟨0⟩ ⟨0⟩
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc") &&
-    (g.legalTargets ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock).contains
+    (g.legalTargets ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)).contains
       (Target.permanent (namedPermanent g "Mountain").id)
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
@@ -8910,7 +8910,7 @@ def resolvedFireOfOrthanc : Game := passBoth paidFireOfOrthanc
 -- Destroying an artifact also sets the can't-block effect.
 #guard
   let g := addPermanent afterDraw wayfarersBauble ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Wayfarer's Bauble").id]
   !(g.battlefield.any (fun o => o.name == "Wayfarer's Bauble")) &&
     g.creaturesWithoutFlyingCantBlock &&
@@ -8931,7 +8931,7 @@ def fireOfOrthancReadyToBlock : Game :=
   let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Forest").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
@@ -8954,7 +8954,7 @@ def fireOfOrthancFlyerReadyToBlock : Game :=
   let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
   let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyArtifactOrLandNonflyersCantBlock
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Forest").id]
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Gray Ogre").id])
@@ -9010,7 +9010,7 @@ def quarrelSetup : Game :=
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
 #guard quarrelSetup.asSorcery? ⟨0⟩
-#guard (quarrelSetup.legalTargets ⟨0⟩ .creatureYouControlDealsPowerToOppCreature).size == 2
+#guard (quarrelSetup.legalTargets ⟨0⟩ (Effect.ofSpell .creatureYouControlDealsPowerToOppCreature)).size == 2
 
 -- Cannot cast with no creature you control.
 #guard
@@ -9715,7 +9715,7 @@ def smiteSetup : Game := smiteOn grizzlyBears
 #guard smiteTheDeathless.spellEffect == some (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))
 #guard smiteSetup.canCast ⟨0⟩ (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless")
 #guard smiteSetup.asSorcery? ⟨0⟩
-#guard (smiteSetup.legalTargets ⟨0⟩ (.dealDamageLoseIndestructibleExile 3)).size == 1
+#guard (smiteSetup.legalTargets ⟨0⟩ (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))).size == 1
 
 -- Cannot cast with no creature on the battlefield.
 #guard
@@ -9812,7 +9812,7 @@ def afterSmiteWurmCleanup : Game :=
 /-- Printed indestructible ignores lethal damage (CR 702.12b / 704.5g). -/
 def indestructibleSurvivesDamage : Game :=
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ (.dealDamage 3)
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell (.dealDamage 3))
     #[Target.permanent (namedPermanent g "Indestructible Beast").id]
   g.receivePriority ⟨0⟩
 
@@ -9837,7 +9837,7 @@ def indestructibleZeroDies : Game :=
 /-- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b). -/
 def destroyIndestructibleFlyer : Game :=
   let g := addPermanent afterDraw indestructibleFlyer ⟨1⟩ ⟨1⟩
-  g.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+  g.applyEffect ⟨0⟩ (Effect.ofSpell .destroyCreatureWithFlying)
     #[Target.permanent (namedPermanent g "Indestructible Flyer").id]
 
 #guard destroyIndestructibleFlyer.battlefield.any (fun o =>
@@ -9882,7 +9882,7 @@ def resolvedSmiteOnIndestructibleFlyer : Game :=
   (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).indestructible
 
 def smiteFlyerThenDestroy : Game :=
-  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ .destroyCreatureWithFlying
+  resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ (Effect.ofSpell .destroyCreatureWithFlying)
     #[Target.permanent
       (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").id]
 
@@ -10285,7 +10285,7 @@ def resolvedQuarrelWarg : Game :=
 #guard
   let g := addToLibraryTop (addToLibraryTop afterDraw forest ⟨0⟩) swamp ⟨0⟩
   let beforeHand := (g.player ⟨0⟩).hand.size
-  let g := g.applyEffect ⟨0⟩ (.drawAndLoseLife 2 2) #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell (.drawAndLoseLife 2 2)) #[]
   (g.player ⟨0⟩).hand.size == beforeHand + 2 &&
     (g.player ⟨0⟩).life == 18 &&
     (g.handObjects ⟨0⟩).any (fun o => o.name == "Swamp") &&
@@ -10297,7 +10297,7 @@ def resolvedQuarrelWarg : Game :=
 
 -- Losing 0 life does nothing (CR 118.9). Drawing 0 cards is a no-op.
 #guard
-  let g := afterDraw.applyEffect ⟨0⟩ (.drawAndLoseLife 0 0) #[]
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.ofSpell (.drawAndLoseLife 0 0)) #[]
   (g.player ⟨0⟩).life == 20 &&
     (g.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     !g.log.any (fun s => mentions s "loses 0 life")
@@ -11666,7 +11666,7 @@ def bilbosDeadlySliceSetup : Game :=
 #guard bilbosDeadlySliceSetup.canCast ⟨0⟩
   (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
-  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ .destroyCreature).contains
+  (bilbosDeadlySliceSetup.legalTargets ⟨0⟩ (Effect.ofSpell .destroyCreature)).contains
     (Target.permanent (namedPermanent bilbosDeadlySliceSetup "Grizzly Bears").id)
 
 -- Cannot cast with no creature.
@@ -11689,12 +11689,12 @@ def bilbosDeadlySliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
-    (g.legalTargets ⟨0⟩ .destroyCreature).contains
+    (g.legalTargets ⟨0⟩ (Effect.ofSpell .destroyCreature)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 #guard
   let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
   let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
-  (g.legalTargets ⟨0⟩ .destroyCreature).contains
+  (g.legalTargets ⟨0⟩ (Effect.ofSpell .destroyCreature)).contains
     (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
 #guard
   let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
@@ -11778,7 +11778,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 -- Destroy does nothing to an indestructible creature (CR 701.7b / 702.12b).
 #guard
   let g := addPermanent afterDraw indestructibleBeast ⟨1⟩ ⟨1⟩
-  let g := g.applyEffect ⟨0⟩ .destroyCreature
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .destroyCreature)
     #[Target.permanent (namedPermanent g "Indestructible Beast").id]
   g.battlefield.any (fun o => o.name == "Indestructible Beast") &&
     g.log.any (fun s => mentions s "is indestructible and isn't destroyed")
@@ -12565,7 +12565,7 @@ def giganticBigBearUncounterable : Game :=
 
 /-- Rage into the Valley draws, loses life, and amasses Goblins. -/
 def rageAmass : Game :=
-  started.applyEffect ⟨0⟩ (.drawLoseLifeThenAmass 2) #[]
+  started.applyEffect ⟨0⟩ (Effect.ofSpell (.drawLoseLifeThenAmass 2)) #[]
 
 #guard
   (rageAmass.player ⟨0⟩).life == 19 &&
@@ -12598,12 +12598,12 @@ def banquetFoods : Game :=
 
 /-- Tidings of War from hand amasses 1; from the graveyard it would amass 3. -/
 def tidingsFromHandAmass1 : Bool :=
-  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+  (started.applyEffect ⟨0⟩ (Effect.ofSpell (.amassGoblinsOrFromGy 1 3)) #[]
     (castFromGraveyard := false)).battlefield.any (fun o =>
       o.name == "Goblin Army" && o.status.plusOnePlusOne == 1)
 
 def tidingsFromGraveyardAmass3 : Bool :=
-  (started.applyEffect ⟨0⟩ (.amassGoblinsOrFromGy 1 3) #[]
+  (started.applyEffect ⟨0⟩ (Effect.ofSpell (.amassGoblinsOrFromGy 1 3)) #[]
     (castFromGraveyard := true)).battlefield.any (fun o =>
       o.name == "Goblin Army" && o.status.plusOnePlusOne == 3)
 

@@ -265,7 +265,7 @@ def mdfcFacesOk : Bool :=
     (let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
      let banner := namedPermanent g "Bruce Banner"
      g.objectManaValue banner == 1 &&
-       (let g := g.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+       (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some banner.id)
         g.objectManaValue (namedPermanent g "The Incredible Hulk") == 6)) &&
     (mshRuling 15).comment.contains "on the stack or battlefield" &&
     (mshRuling 20).comment.contains "mana value of a modal double-faced card" &&
@@ -279,7 +279,7 @@ leaving play restores the front face. -/
 def mdfcTransformLeave : Game :=
   let g := addPermanent afterDraw bruceBanner ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "Bruce Banner"
-  let g := g.applyAbilityEffect ⟨0⟩ .transform #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some o.id)
   match g.battlefield.find? (fun x => x.name == "The Incredible Hulk") with
   | none => g
   | some hulk =>
@@ -356,7 +356,7 @@ def planTypeOk : Bool :=
 def mindStoneHarness : Game :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
-  g.applyAbilityEffect ⟨0⟩ .harnessInfinityStone #[] (some o.id)
+  g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .harnessInfinityStone) #[] (some o.id)
 
 def harnessOk : Bool :=
   (namedPermanent mindStoneHarness "The Mind Stone").status.harnessed &&
@@ -372,7 +372,7 @@ def infinityInactiveUntilHarnessedOk : Bool :=
   let g := addPermanent afterDraw theMindStone ⟨0⟩ ⟨0⟩
   let o := namedPermanent g "The Mind Stone"
   let before := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
-  let g := g.applyAbilityEffect ⟨0⟩ .harnessInfinityStone #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .harnessInfinityStone) #[] (some o.id)
   let o := namedPermanent g "The Mind Stone"
   let after := g.putMatchingSourceTriggers ⟨0⟩ o .yourEndStep
   before.waitingTriggers.isEmpty && after.waitingTriggers.size > 0
@@ -492,7 +492,7 @@ def thirstDiscardUnlessArtifactOk : Bool :=
   let g0 := addToHand afterDraw theMindStone ⟨0⟩
   let g0 := addToHand g0 lightningBolt ⟨0⟩
   let g0 := addToHand g0 mountain ⟨0⟩
-  let gArt := g0.applyEffect ⟨0⟩ .drawThreeDiscardUnlessArtifact #[]
+  let gArt := g0.applyEffect ⟨0⟩ (Effect.ofSpell .drawThreeDiscardUnlessArtifact) #[]
   gArt.thirstDiscardsLeft == 2 &&
     (match gArt.pending with
      | .chooseDiscardCard ⟨0⟩ _ => true
@@ -503,7 +503,7 @@ def thirstDiscardUnlessArtifactOk : Bool :=
        gArt.pending == .none &&
        (gArt.player ⟨0⟩).graveyard.any (fun id =>
          (gArt.object! id).name == "The Mind Stone")) &&
-    (let gTwo := g0.applyEffect ⟨0⟩ .drawThreeDiscardUnlessArtifact #[]
+    (let gTwo := g0.applyEffect ⟨0⟩ (Effect.ofSpell .drawThreeDiscardUnlessArtifact) #[]
      let gTwo := mustApply gTwo ⟨0⟩
        (.discard (handCardNamed gTwo ⟨0⟩ "Lightning Bolt").id)
      gTwo.thirstDiscardsLeft == 1 &&
@@ -549,7 +549,7 @@ def heroSourceOk : Bool :=
   let tower := namedPermanent g "Avengers Tower"
   let cap := namedPermanent g "Captain America, Super-Soldier"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyHero) #[] (some tower.id)
   let pool := (g.player ⟨0⟩).manaPool
   let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
   let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
@@ -557,18 +557,18 @@ def heroSourceOk : Bool :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
+    gCh.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyHero) #[] (some tower.id)
   let gGy := addToGraveyard g braveBrawler ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Brave Brawler"
   let gGy :=
-    gGy.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
+    gGy.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyHero) #[] (some tower.id)
   let gHand := addToHand g braveBrawler ⟨0⟩
   let hand := handCardNamed gHand ⟨0⟩ "Brave Brawler"
   let gHand :=
-    gHand.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
+    gHand.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyHero) #[] (some tower.id)
   let (gSp, spell) := g.allocObject captainAmericaSuperSoldier ⟨0⟩ .stack (some ⟨0⟩)
   let gSp :=
-    gSp.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
+    gSp.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyHero) #[] (some tower.id)
   pool.heroWhite == 1 &&
     !pool.canPay (ManaCost.ofColor .white) &&
     pool.canPay (ManaCost.ofColor .white) false false true &&
@@ -592,17 +592,17 @@ def villainSourceOk : Bool :=
   let hideout := namedPermanent g "Villainous Hideout"
   let elektra := namedPermanent g "Elektra, Daughter of the Hand"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
   let gCh :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
+    gCh.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   let gGy := addToGraveyard g elektraDaughterOfTheHand ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Elektra, Daughter of the Hand"
   let gGy :=
-    gGy.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
+    gGy.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   pool.villainBlack == 1 &&
     !pool.canPay (ManaCost.ofColor .black) &&
     pool.canPay (ManaCost.ofColor .black) false false false true &&
@@ -654,7 +654,7 @@ def winterSoldierFinalityOk : Bool :=
       x.name == "Winter Soldier, Icy Assassin" && x.zone == .graveyard ⟨0⟩) with
     | some x => x
     | none => namedPermanent afterDraw "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ .returnFromGyFinalityAttach #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .returnFromGyFinalityAttach) #[] (some o.id)
   (namedPermanent g "Winter Soldier, Icy Assassin").status.finality ≥ 1
 
 #guard winterSoldierFinalityOk
@@ -933,7 +933,7 @@ def boldBiochemistDrawsAfterLeaveOk : Bool :=
   let o := namedPermanent g "Bold Biochemist"
   let hand0 := (g.player ⟨0⟩).hand.size
   let (g, _) := g.move o.id (.graveyard ⟨0⟩) none
-  let g := g.applyAbilityEffect ⟨0⟩ (.plusOneAndDraw 1 2) #[] (some o.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.plusOneAndDraw 1 2)) #[] (some o.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 &&
     !g.battlefield.any (fun x => x.name == "Bold Biochemist") &&
     (mshRuling 103).comment.contains "you'll still draw two cards"
@@ -1071,7 +1071,7 @@ def creatureAndArtifactSourceOk : Bool :=
   let artifactLegal :=
     g.legalTargetsForKind ⟨0⟩ .stackAbilityFromArtifactSource
   let gMana :=
-    g.applyAbilityEffect ⟨0⟩ .addTwoAnyColorCreatureSources #[] (some shang.id)
+    g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addTwoAnyColorCreatureSources) #[] (some shang.id)
   let pool := (gMana.player ⟨0⟩).manaPool
   creatureLegal.contains (Target.card bearAb.id) &&
     !creatureLegal.contains (Target.card stoneAb.id) &&
@@ -1331,17 +1331,17 @@ def illegalTargetDoesNothingOk : Bool :=
   let plan0 :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     (namedPermanent g "Claim the Kingdom").status.plan
-  let gDepower := gGone.applyEffect ⟨0⟩ (.pumpThenDraw (-4) 0) gone
-  let gHour := gGone.applyEffect ⟨0⟩ .destroyCreatureSurveil gone
-  let gPym := gGone.applyEffect ⟨0⟩ .grantVigilanceUnblockable gone
+  let gDepower := gGone.applyEffect ⟨0⟩ (Effect.ofSpell (.pumpThenDraw (-4) 0)) gone
+  let gHour := gGone.applyEffect ⟨0⟩ (Effect.ofSpell .destroyCreatureSurveil) gone
+  let gPym := gGone.applyEffect ⟨0⟩ (Effect.ofSpell .grantVigilanceUnblockable) gone
   let gCrescendo :=
-    gGone.applyEffect ⟨0⟩ (.pumpThenExileTopPlay 3 1) gone
+    gGone.applyEffect ⟨0⟩ (Effect.ofSpell (.pumpThenExileTopPlay 3 1)) gone
   let gRepulsor :=
-    gGone.applyEffect ⟨0⟩ (.dealDamageThenControllerIfTeamwork 5 2) gone
+    gGone.applyEffect ⟨0⟩ (Effect.ofSpell (.dealDamageThenControllerIfTeamwork 5 2)) gone
   let gCruel :=
-    gGone.applyEffect ⟨0⟩ (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3) gone
+    gGone.applyEffect ⟨0⟩ (Effect.ofSpell (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)) gone
   let gCrowd :=
-    gGone.applyAbilityEffect ⟨0⟩ .pumpAttackingAloneGainLife gone
+    gGone.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .pumpAttackingAloneGainLife) gone
   let gLandfall :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     let plan := namedPermanent g "Claim the Kingdom"
@@ -1385,7 +1385,7 @@ def fizzleWhenTargetLeftOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let host := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move host.id (.graveyard ⟨1⟩) none
-  g.legalTargets ⟨0⟩ (.pump 3 3) |>.isEmpty &&
+  g.legalTargets ⟨0⟩ (Effect.ofSpell (.pump 3 3)) |>.isEmpty &&
     (mshRuling 180).comment.contains "illegal target"
 
 #guard fizzleWhenTargetLeftOk
@@ -1529,7 +1529,7 @@ def superAdaptoidPowerAllZonesOk : Bool :=
 def iAmIronManSetsPTOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.applyEffect ⟨0⟩ .becomeArtifactCreature44Flying
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .becomeArtifactCreature44Flying)
     #[Target.permanent host.id]
   let o := namedPermanent g "Grizzly Bears"
   g.power o == 4 && g.toughness o == 4 &&
@@ -1646,7 +1646,7 @@ def powerUpStillHappensIfSourceLeftOk : Bool :=
   let o := namedPermanent g "White Tiger, Ava Ayala"
   let (g, _) := g.move o.id (.graveyard ⟨0⟩) none
   let g := g.applyAbilityEffect ⟨0⟩
-    .plusOneAndCreateTigerGod #[] (some o.id)
+    (Effect.ofAbility .plusOneAndCreateTigerGod) #[] (some o.id)
   g.battlefield.any (fun x => x.name == "The Tiger God") &&
     (mshRuling 338).comment.contains "you'll still create The Tiger God" &&
     (mshRuling 301).comment.contains "you'll still create" &&
@@ -1660,7 +1660,7 @@ def doublePowerAndToughnessOk : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   let p0 := g.power host
   let t0 := g.toughness host
-  let g := g.applyEffect ⟨0⟩ .doublePowerAndToughness
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .doublePowerAndToughness)
     #[Target.permanent host.id]
   let o := namedPermanent g "Grizzly Bears"
   g.power o == p0 + p0 && g.toughness o == t0 + t0 &&
@@ -1672,7 +1672,7 @@ def doublePowerAndToughnessOk : Bool :=
 def hydraulicHelperRestrictedBlueOk : Bool :=
   let g := addPermanent afterDraw hydraulicHelper ⟨0⟩ ⟨0⟩
   let helper := namedPermanent g "Hydraulic Helper"
-  let g := g.applyAbilityEffect ⟨0⟩ .addBlueCantNonartifact #[] (some helper.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .addBlueCantNonartifact) #[] (some helper.id)
   let p := (g.player ⟨0⟩).manaPool
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
@@ -1877,7 +1877,7 @@ def shuriCopyUntilEotOk : Bool :=
   let g := addPermanent g sHIELDDeploymentDrone ⟨0⟩ ⟨0⟩
   let destId := (namedPermanent g "Aerial Doombot").id
   let src := namedPermanent g "S.H.I.E.L.D. Deployment Drone"
-  let g := g.applyAbilityEffect ⟨0⟩ .copyArtifactYouControlNotLegendary
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .copyArtifactYouControlNotLegendary)
     #[Target.permanent destId, Target.permanent src.id]
   let dest := g.object! destId
   dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
@@ -1891,7 +1891,7 @@ def shuriCopyUntilEotOk : Bool :=
      let g2 := addPermanent g2 aerialDoombot ⟨0⟩ ⟨0⟩
      let dest := namedPermanent g2 "Aerial Doombot"
      let destName := dest.printed.name
-     let g2 := g2.applyAbilityEffect ⟨0⟩ .copyArtifactYouControlNotLegendary
+     let g2 := g2.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .copyArtifactYouControlNotLegendary)
        #[Target.permanent dest.id]
      (g2.object! dest.id).printed.name == destName) &&
     (mshRuling 120).comment.contains "exactly what was printed" &&
@@ -2175,7 +2175,7 @@ def jessicaJonesLastKnownXOk : Bool :=
   let pw := g.power jj
   let lib0 := (g.player ⟨0⟩).library.size
   let (g, _) := g.move jj.id (.graveyard ⟨0⟩) none
-  let g := g.applyAbilityEffect ⟨0⟩ .exileTopXPlayThisTurn #[]
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .exileTopXPlayThisTurn) #[]
     (some jj.id) (some pw)
   (g.player ⟨0⟩).library.size == lib0 - pw.toNat &&
     (g.objects.filter (fun o =>
@@ -2526,7 +2526,7 @@ def mistyKnightDiscardCountOk : Bool :=
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDiscardedThisTurn := 2 })
   let misty := namedPermanent g "Misty Knight, Hero for Hire"
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyAbilityEffect ⟨0⟩ .drawPerDiscardedThisTurn #[] (some misty.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .drawPerDiscardedThisTurn) #[] (some misty.id)
   (g.player ⟨0⟩).hand.size == hand0 + 2 &&
     !(g.objects.any (fun o =>
       o.zone == .graveyard ⟨0⟩ &&
@@ -2703,7 +2703,7 @@ creature types and keeps Equipment. -/
 def ironManArmorTypesOk : Bool :=
   let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
   let armor := namedPermanent g "Iron Man Armor"
-  let g := g.applyAbilityEffect ⟨0⟩ .equipmentBecomesConstructHero #[]
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .equipmentBecomesConstructHero) #[]
     (some armor.id)
   let armor := namedPermanent g "Iron Man Armor"
   armor.isCreature &&
@@ -2953,10 +2953,10 @@ def squirrelGirlXOnceOk : Bool :=
   let squirrels (g : Game) : Nat :=
     (g.battlefield.filter (fun o => o.hasSubtype "Squirrel")).size
   let n0 := squirrels g
-  let g := g.applyAbilityEffect ⟨0⟩ (.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.createTokensEqualSubtype .squirrel11green "Squirrel")) #[] none
   let n1 := squirrels g
   n0 == 1 && n1 == 2 &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (.createTokensEqualSubtype .squirrel11green "Squirrel") #[] none
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.createTokensEqualSubtype .squirrel11green "Squirrel")) #[] none
      squirrels g == 4) &&
     (mshRuling 307).comment.contains "calculated only once"
 
@@ -3044,14 +3044,14 @@ def nickFuryNightEnter : Game :=
 #guard !(namedPermanent nickFuryDayEnter "Bruce Banner").status.cantTransform
 #guard
   let banner := namedPermanent nickFuryDayEnter "Bruce Banner"
-  let g := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+  let g := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some banner.id)
   (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk"
 #guard nickFuryNightEnter.isNight && nickFuryDayDfc.daybound &&
   nickFuryDayDfc.otherFace.isSome
 #guard (namedPermanent nickFuryNightEnter "The Incredible Hulk").status.cantTransform
 #guard
   let hulk := namedPermanent nickFuryNightEnter "The Incredible Hulk"
-  let g := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
+  let g := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some hulk.id)
   (namedPermanent g "The Incredible Hulk").name == "The Incredible Hulk" &&
     logContains g "can't transform"
 #guard (mshRuling 191).comment.contains "daybound"
@@ -3059,9 +3059,9 @@ def nickFuryNightEnter : Game :=
 
 def nickFuryDayboundOk : Bool :=
   let banner := namedPermanent nickFuryDayEnter "Bruce Banner"
-  let gFlip := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some banner.id)
+  let gFlip := nickFuryDayEnter.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some banner.id)
   let hulk := namedPermanent nickFuryNightEnter "The Incredible Hulk"
-  let gBlocked := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ .transform #[] (some hulk.id)
+  let gBlocked := nickFuryNightEnter.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .transform) #[] (some hulk.id)
   banner.name == "Bruce Banner" &&
     !banner.status.cantTransform &&
     (namedPermanent gFlip "The Incredible Hulk").name == "The Incredible Hulk" &&
@@ -3447,7 +3447,7 @@ def scarletWitchXManaValueOk : Bool :=
 def lokiLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw lokiLaufeyson ⟨0⟩ ⟨0⟩
   let loki := namedPermanent g "Loki Laufeyson"
-  let g := g.applyAbilityEffect ⟨0⟩ .nextInstantSorceryCopyIfMvAtMostSourcePower #[]
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .nextInstantSorceryCopyIfMvAtMostSourcePower) #[]
     (some loki.id)
   let (g, _) := g.move loki.id (.graveyard ⟨0⟩) none
   let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
@@ -3843,7 +3843,7 @@ def hulkSmashIllegalFizzleOk : Bool :=
   let ogre := namedPermanent g "Gray Ogre"
   let bears := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move bears.id (.graveyard ⟨1⟩) none
-  let g := g.applyEffect ⟨0⟩ .creatureYouControlDealsPowerToOppCreature
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .creatureYouControlDealsPowerToOppCreature)
     #[Target.permanent ogre.id, Target.permanent bears.id]
   (namedPermanent g "Gray Ogre").status.damage == 0 &&
     (mshRuling 206).comment.contains "no damage will be dealt"
@@ -4035,11 +4035,11 @@ def humanTorchInterveningOk : Bool :=
 def reptilLastResolvesOk : Bool :=
   let g := addPermanent afterDraw reptilDinomorpher ⟨0⟩ ⟨0⟩
   let r := namedPermanent g "Reptil, Dinomorpher"
-  let g := g.applyAbilityEffect ⟨0⟩ (.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) #[] (some r.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance))) #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
     r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (.becomeDinosaurHero 6 6 Keyword.trample) #[] (some r.id)
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.becomeDinosaurHero 6 6 Keyword.trample)) #[] (some r.id)
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
        r.hasSubtype "Dinosaur" && !r.hasSubtype "Human") &&
@@ -4057,7 +4057,7 @@ def ironManArmorUnattachOk : Bool :=
   let g := g.attachSourceTo armor ogre
   let armor := namedPermanent g "Iron Man Armor"
   armor.attachedTo == some ogre.id &&
-    (let g := g.applyAbilityEffect ⟨0⟩ .equipmentBecomesConstructHero #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility .equipmentBecomesConstructHero) #[]
        (some armor.id)
      let armor := namedPermanent g "Iron Man Armor"
      armor.attachedTo.isNone &&
@@ -4149,7 +4149,7 @@ def baxterActivationLockOk : Bool :=
     (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
      let bax := namedPermanent g "Baxter Building"
      !g.canActivate ⟨0⟩ bax ab) &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (.draw 1) #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.draw 1)) #[]
        (some bax.id)
      (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 265).comment.contains "no player may take actions" &&
@@ -4165,7 +4165,7 @@ def arnimActivationLockOk : Bool :=
   let arnim := namedPermanent g "Arnim Zola, Bio-Fanatic"
   let ab := arnim.printed.activatedAbilities[0]!
   g.canActivate ⟨0⟩ arnim ab &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (.createTappedTokens .villain21menace 1) #[]
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.ofAbility (.createTappedTokens .villain21menace 1)) #[]
        (some arnim.id)
      g.battlefield.any (fun o =>
        o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
@@ -4210,7 +4210,7 @@ def tricksterOwnerChoosesOk : Bool :=
 def worldWarHulkNextOnlyOk : Bool :=
   let g := addToHand afterDraw grayOgre ⟨0⟩
   let g := addToHand g grizzlyBears ⟨0⟩
-  let g := g.applyEffect ⟨0⟩ .nextFreeRGCreature #[]
+  let g := g.applyEffect ⟨0⟩ (Effect.ofSpell .nextFreeRGCreature) #[]
   g.pendingFreeRGCreature == some ⟨0⟩ &&
     (let ogre := handCardNamed g ⟨0⟩ "Gray Ogre"
      !(g.playManaCost ogre ogre.printed).includesManaPayment &&

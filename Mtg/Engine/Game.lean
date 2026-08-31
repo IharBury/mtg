@@ -5208,7 +5208,7 @@ power mana is counted as green Elf-restricted mana for the heuristic. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   g.availableManaExcept p none
 
-def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
+def legalTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target :=
   g.legalTargetsForKind caster effect.targetKind
 
 /-- Legal targets for a unified `Effect` (stored spell modes and faces). -/
@@ -10550,10 +10550,10 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g
 
 /-- Resolve a printed spell effect (CR 608). -/
-def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
+def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
-  g.applyUnified controller (Effect.ofSpell effect) targets
+  g.applyUnified controller effect targets
     (castFromGraveyard := castFromGraveyard) (kicked := kicked)
     (giftPromised := giftPromised) (chosenX := chosenX)
 
@@ -10732,7 +10732,7 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
   | .discardLegendarySameNameDraw =>
     g.draw controller 2
   | .dealDamageToAny n =>
-    g.applyEffect controller (.dealDamage n) targets
+    g.applyEffect controller (Effect.ofSpell (.dealDamage n)) targets
   | .drawEqualSacrificedPowerThenDiscard =>
     let n :=
       match sourceId.bind g.findObject? with
@@ -11018,10 +11018,10 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.applyConnive controller none
 
 /-- Resolve a printed activated ability (CR 608). -/
-def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
+def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
-  g.applyUnifiedAbility controller (Effect.ofAbility effect) targets
+  g.applyUnifiedAbility controller effect targets
     sourceId lastKnownPower chosenX
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
@@ -11608,7 +11608,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
       (fun g pid => g.dealDamageToPlayer pid x)
       sourceId (some "The target is no longer legal")
   | .spell e =>
-    g.applyEffect controller e targets
+    g.applyEffect controller (Effect.ofSpell e) targets
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/
@@ -11680,7 +11680,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         let t := targets[i]!
         let n := dividedDamage[i]?.getD 0
         if n > 0 then
-          g := g.applyEffect controller (.dealDamage n) #[t]
+          g := g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[t]
       return g
   | .damageFromLastKnownPower =>
     let n := (lastKnownPower.getD 0).toNat
@@ -11857,19 +11857,19 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       return g
   | .damageEqualTreasures =>
     let n := g.countSubtype controller "Treasure"
-    g.applyEffect controller (.dealDamage n) targets
+    g.applyEffect controller (Effect.ofSpell (.dealDamage n)) targets
   | .loseLifeCreateTreasure =>
     let g := g.loseLife controller 1
     g.createTreasureTokens controller 1
   | .dealDamageDestroyIfSubtype n subtype =>
     g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
       match tgt with
-      | Target.player _pid => g.applyEffect controller (.dealDamage n) #[tgt]
+      | Target.player _pid => g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[tgt]
       | Target.permanent oid =>
         match g.findObject? oid with
         | none => g.logMsg "The target is no longer legal"
         | some o =>
-          let g := g.applyEffect controller (.dealDamage n) #[tgt]
+          let g := g.applyEffect controller (Effect.ofSpell (.dealDamage n)) #[tgt]
           if g.hasSubtype o subtype then
             match g.findObject? oid with
             | some o =>
@@ -12032,7 +12032,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.createTreasureTokens controller n |>.logMsg
       s!"{(g.player controller).name} creates {n} Treasure token(s) (artifacts that player controls)"
   | .deal1ThenAmassOrcs =>
-    let g := g.applyEffect controller (.dealDamage 1) targets
+    let g := g.applyEffect controller (Effect.ofSpell (.dealDamage 1)) targets
     g.amassOrcs controller 1
   | .untapAttackersExtraCombat =>
     Id.run do
