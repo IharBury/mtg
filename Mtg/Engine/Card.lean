@@ -8983,9 +8983,13 @@ def chapterNumbers (ch : SagaChapter) : Array Nat :=
   if ch.numbers.isEmpty then parseChapterNumbers ch.roman else ch.numbers
 
 /-- A catalog chapter with parsed numerals and a real effect. -/
-def of (roman effect : String) (ce : ChapterLeftover) : SagaChapter :=
+def of (roman effect : String) (e : Effect) : SagaChapter :=
+  let e :=
+    match e.asChapter? with
+    | some _ => e
+    | none => Effect.ofChapter (Effect.chapterSpell e)
   { roman, effect, numbers := parseChapterNumbers roman,
-    chapterEffect := some (Effect.ofChapter ce) }
+    chapterEffect := some e }
 
 end SagaChapter
 
@@ -10530,7 +10534,7 @@ def isBasicLandCard (c : CardDef) : Bool :=
 #guard parseChapterNumbers "I" == #[1]
 #guard parseChapterNumbers "III, IV" == #[3, 4]
 #guard parseChapterNumbers "I, II, III, IV" == #[1, 2, 3, 4]
-#guard (SagaChapter.of "III, IV" "Add {R}." (.addMana (.colored .red))).chapterNumbers ==
+#guard (SagaChapter.of "III, IV" "Add {R}." (Effect.ofChapter (.addMana (.colored .red)))).chapterNumbers ==
   #[3, 4]
 
 /-- A land card with the given land type (CR 205.3i / 305.7). -/
