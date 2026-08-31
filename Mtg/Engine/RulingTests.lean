@@ -3781,7 +3781,7 @@ def arwenLegalTargetSharesOk : Bool :=
 -/
 
 def testWGCharm : CardDef :=
-  instant "WG Charm" (ManaCost.ofColors [.white, .green]) "Draw a card." (some (.draw 1))
+  instant "WG Charm" (ManaCost.ofColors [.white, .green]) "Draw a card." (some (Effect.ofSpell (.draw 1)))
 
 def aragornMulticolorWaiting : Game :=
   let g := addPermanent afterDraw aragornTheUniter ⟨0⟩ ⟨0⟩

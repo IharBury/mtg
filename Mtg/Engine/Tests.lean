@@ -613,7 +613,7 @@ def uncontrolledPermanent : Game :=
   let c := enchantment "Silent Hospitality" ManaCost.empty ""
     (triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne])
     (activatedAbilities := #[
-      activated .becomeBearCreatureWithLandsPT
+      activated (Effect.ofAbility .becomeBearCreatureWithLandsPT)
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "land you control enters" &&
     mentions c.abilitiesText "Bear creature" &&
@@ -652,7 +652,7 @@ def uncontrolledPermanent : Game :=
 #guard
   let c := card "Silent Fireleaper" #[.creature]
     (activatedAbilities := #[
-      activated (.sourceGets 1 0) (ManaCost.ofGenericAndColor 1 .red)])
+      activated (Effect.ofAbility (.sourceGets 1 0)) (ManaCost.ofGenericAndColor 1 .red)])
     (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "dies" &&
@@ -662,7 +662,7 @@ def uncontrolledPermanent : Game :=
   let c := land "Silent Passage" ""
     (tapAddMana := #[.colorless])
     (activatedAbilities := #[
-      activated .targetCantBeBlockedThisTurn (ManaCost.ofGeneric 4) (tap := true)])
+      activated (Effect.ofAbility .targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 4) (tap := true)])
   mentions c.abilitiesText "{T}: Add {C}" &&
     mentions c.abilitiesText "can't be blocked this turn" &&
     mentions c.abilitiesText "{4}" &&
@@ -670,7 +670,7 @@ def uncontrolledPermanent : Game :=
 
 #guard
   let c := card "Silent Titan" #[.creature]
-    (activatedAbilities := #[activated (.sourceGets 1 0) (ManaCost.ofColor .red)])
+    (activatedAbilities := #[activated (Effect.ofAbility (.sourceGets 1 0)) (ManaCost.ofColor .red)])
     (triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3])
   mentions c.abilitiesText "+1/+0" &&
     mentions c.abilitiesText "enters or attacks" &&
@@ -703,7 +703,7 @@ def uncontrolledPermanent : Game :=
   let c := creature "Silent Guardian" ManaCost.empty #[] 2 2
     (keywords := Keyword.trample)
     (activatedAbilities := #[
-      activated (.putPlusOnePlusOneOnSource 3)
+      activated (Effect.ofAbility (.putPlusOnePlusOneOnSource 3))
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
   mentions c.abilitiesText "Put 3 +1/+1 counters" &&
     mentions c.abilitiesText "{5}{G}{G}" &&
