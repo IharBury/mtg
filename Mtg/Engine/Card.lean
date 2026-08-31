@@ -698,6 +698,29 @@ def manaSymbolsText (types : Array ManaType) (sep : String := "") : String :=
 #guard manaSymbolsText #[.colored .green, .colored .blue] == "{G}{U}"
 #guard manaSymbolsText #[.colored .green, .colored .blue] " or " == "{G} or {U}"
 
+/-- Oracle “search your library for `what`, reveal it, put it into your hand,
+then shuffle” clause shared by spell, ability, chapter, and trigger wordings. -/
+def searchLibraryToHandPhrase (what : String) : String :=
+  s!"search your library for {what}, reveal it, put it into your hand, then shuffle"
+
+/-- Oracle “search `whose` library for a basic land card, put it onto the
+battlefield tapped, then shuffle” clause. -/
+def searchBasicLandTappedPhrase (whose : String) : String :=
+  s!"search {whose} library for a basic land card, put it onto the battlefield tapped, then shuffle"
+
+/-- Oracle sentence for leaving the unpicked cards after a library dig. -/
+def restOnBottomRandomPhrase : String :=
+  "Put the rest on the bottom of your library in a random order"
+
+/-- Oracle sentence granting play of a card exiled by the current effect. -/
+def playThatCardUntilNextTurnPhrase : String :=
+  "Until the end of your next turn, you may play that card"
+
+#guard searchLibraryToHandPhrase "a basic land card" ==
+  "search your library for a basic land card, reveal it, put it into your hand, then shuffle"
+#guard searchBasicLandTappedPhrase "their" ==
+  "search their library for a basic land card, put it onto the battlefield tapped, then shuffle"
+
 /-- How the demonstration agent classifies a spell when choosing what to cast.
 Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
@@ -1094,7 +1117,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .amassGoblinsOrFromGy n fromGy =>
     s!"amass Goblins {n}. If this spell was cast from a graveyard, amass Goblins {fromGy} instead"
   | .searchLegendaryCreatureToHand =>
-    "search your library for a legendary creature card, reveal it, put it into your hand, then shuffle"
+    searchLibraryToHandPhrase "a legendary creature card"
   | .dealDamageToEachOppCreature n =>
     s!"deals {n} damage to each creature your opponents control"
   | .targetPlayerDraw n =>
@@ -1174,7 +1197,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .dealDamageToEachCreature n =>
     s!"deals {n} damage to each creature"
   | .destroyLandSearchBasic =>
-    s!"destroy {noun}. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle"
+    s!"destroy {noun}. Its controller may {searchBasicLandTappedPhrase "their"}"
   | .doublePowerAndToughness =>
     s!"double {noun}'s power and toughness until end of turn"
   | .returnGySubtypeToHand subtype =>
@@ -1197,7 +1220,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
   | .pumpThenExileTopPlay p t =>
-    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
+    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
   | .creatureYouControlDealsTwicePower =>
     "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
   | .createTokensThenTeamPump kind n p t =>
@@ -1452,9 +1475,9 @@ uses the creature as the subject rather than the generic `PermanentAction` wordi
 def toPhrase (r : AbilityResolution) (noun : String) : String :=
   match r with
   | .searchBasicLand =>
-    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+    capitalizeAscii (searchBasicLandTappedPhrase "your")
   | .searchLandTypeToHand t =>
-    s!"Search your library for a {t} card, reveal it, put it into your hand, then shuffle"
+    capitalizeAscii (searchLibraryToHandPhrase s!"a {t} card")
   | .exileTop =>
     "Exile the top card of your library. You may play it until the end of your next turn"
   | .attach =>
@@ -1494,7 +1517,7 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .addMana types =>
     s!"Add {manaSymbolsText types}"
   | .searchBasicLandToHand =>
-    "Search your library for a basic land card, reveal it, put it into your hand, then shuffle"
+    capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
   | .createTokensX kind =>
     s!"Create X {kind.pluralNoun}"
   | .draw n =>
@@ -1508,7 +1531,7 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .exileThenReturnNextEnd =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
   | .searchBasicBeholdElfUntap =>
-    "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land"
+    s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold an Elf. If you do, untap that land"
   | .twoPlayersDraw =>
     "Two target players each draw a card"
   | .discardLegendarySameNameDraw =>
@@ -1548,13 +1571,13 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .eachOppDiscardThenPlusOne =>
     "Each opponent discards a card. Put a +1/+1 counter on this"
   | .lookAtTopPutHeroEquipVehicle n =>
-    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put a Hero, Equipment, or Vehicle card from among them onto the battlefield. If it's a double-faced card, you may transform it. Put the rest on the bottom of your library in a random order"
+    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put a Hero, Equipment, or Vehicle card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
   | .transform =>
     "Transform this"
   | .drawX =>
     "Draw X cards"
   | .lookAtTopRevealArtifact n =>
-    s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
+    s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
   | .connive =>
     "This creature connives"
   | .addAnyColorSpendOnlyHero =>
@@ -5537,8 +5560,7 @@ def ofChapter : ChapterResolution → Effect
   | e@(.addMana mana) =>
     mkChapter e (phrase := s!"add {mana}")
   | e@(.searchBasicLandToHand) =>
-    mkChapter e
-      (phrase := "search your library for a basic land card, reveal it, put it into your hand, then shuffle")
+    mkChapter e (phrase := searchLibraryToHandPhrase "a basic land card")
   | e@(.gainLandfallCreateElf) =>
     mkChapter e
       (phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"")
@@ -7440,7 +7462,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .youRecruit =>
     "you recruit"
   | .exileTop =>
-    "exile the top card of your library. Until the end of your next turn, you may play that card"
+    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
   | .sourceGetsAndTeamTrample p =>
     s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
   | .untapPlusOneIfSubtype subtype =>
@@ -7460,7 +7482,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .attachSourceToTarget =>
     s!"attach it to {noun}"
   | .searchBasicToHand =>
-    "search your library for a basic land card, reveal it, put it into your hand, then shuffle"
+    searchLibraryToHandPhrase "a basic land card"
   | .gainLifeSearchBasicOnTop n =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .plusOneEachOtherGainLife =>
@@ -7494,7 +7516,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       match types.toList with
       | [a, b] => s!"a {a} or {b} card"
       | xs => s!"a {String.intercalate " or " xs} card"
-    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
+    s!"look at the top {n} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
   | .pumpAndDamageOpponents n =>
     s!"this gets +1/+1 until end of turn and deals {n} damage to each opponent"
   | .createTappedTreasuresEqualOppArtifacts =>
@@ -7559,7 +7581,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .tapEnchantedRemoveCounters =>
     "tap enchanted creature and remove all counters from it"
   | .revealTopPutRandomCreature n =>
-    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order"
+    s!"reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
   | .beginCombatIfDrawnTwoPump =>
     s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains first strike until end of turn"
   | .mountainQuestDragon =>
@@ -7569,7 +7591,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .treasuresPerChosenType =>
     "choose a creature type. Create a Treasure token for each creature you control of that type"
   | .revealUntilCreature =>
-    "reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. Put the rest on the bottom of your library in a random order"
+    s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
   | .attackSacPlusOneEqualPower =>
     "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
   | .amassGoblinsEqualPower =>
@@ -7720,7 +7742,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .createSturdyShieldAttach =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .exileGyPlayUntilNextTurn =>
-    s!"exile {noun}. Until the end of your next turn, you may play that card"
+    s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .returnGyPermanentThisTurn =>
     s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
   | .tapCantUntapWhileControl =>
@@ -7840,7 +7862,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .youAttacking .exileTopHeroPump =>
     "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
   | .youAttacking .lookSixCast =>
-    "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."
+    s!"Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. {restOnBottomRandomPhrase}."
   | .casting .villainToken =>
     "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
   | .casting .merfolkFromBlue =>
