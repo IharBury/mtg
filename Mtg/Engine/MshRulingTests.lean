@@ -404,12 +404,12 @@ def landfallPlayOk : Bool :=
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
   let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
-    (mshRuling 378).comment.contains "doesn't trigger if a permanent already" &&
-    (mshRuling 379).comment.contains "triggers whenever a land you control enters"
+    (mshRuling 19).comment.contains "doesn't trigger if a permanent already" &&
+    (mshRuling 20).comment.contains "triggers whenever a land you control enters"
 
 #guard landfallPlayOk
 
-/-- Ruling 378: a nonland entering does not trigger landfall. -/
+/-- Ruling 19: a nonland entering does not trigger landfall. -/
 def landfallNonlandOk : Bool :=
   let g := mshEnter afterDraw claimTheKingdom
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -921,7 +921,7 @@ def tokenExileCeasesToExistOk : Bool :=
   !g.objects.any (fun o => o.name == "Treasure") &&
     g.log.any (fun s => mentions s "ceases to exist") &&
     (mshRuling 159).comment.contains "cease to exist" &&
-    (mshRuling 502).comment.contains "ceases to exist"
+    (mshRuling 149).comment.contains "ceases to exist"
 
 #guard tokenExileCeasesToExistOk
 
@@ -1252,7 +1252,7 @@ def landfallEachAbilityOk : Bool :=
   let g := addPermanent g forest ⟨0⟩ ⟨0⟩
   let g := settle ((g.afterLandEnters (namedPermanent g "Forest")).receivePriority ⟨0⟩) 24
   (namedPermanent g "Claim the Kingdom").status.plan == 1 &&
-    (mshRuling 380).comment.contains "each landfall ability"
+    (mshRuling 21).comment.contains "each landfall ability"
 
 #guard landfallEachAbilityOk
 
