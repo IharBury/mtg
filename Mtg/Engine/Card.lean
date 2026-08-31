@@ -234,13 +234,19 @@ def oracleNoun : TokenKind → String
 def pluralNoun (k : TokenKind) : String :=
   k.oracleNoun.replace "token" "tokens"
 
-/-- Oracle “create …” clause for `n` tokens of this kind. -/
-def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
+/-- Noun phrase for `n` created tokens (`a Treasure token`, `two 2/2 green
+Wolf creature tokens`). `createPhrase` and “that player creates …” wordings
+share it. -/
+def createdTokensPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
   let tappedS := if tapped then "tapped " else ""
   if n == 1 then
-    s!"create a {tappedS}{k.oracleNoun}"
+    s!"a {tappedS}{k.oracleNoun}"
   else
-    s!"create {englishNumber n} {tappedS}{k.pluralNoun}"
+    s!"{englishNumber n} {tappedS}{k.pluralNoun}"
+
+/-- Oracle “create …” clause for `n` tokens of this kind. -/
+def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
+  s!"create {k.createdTokensPhrase n tapped}"
 
 #guard TokenKind.pluralNoun .treasure == "Treasure tokens"
 #guard TokenKind.pluralNoun .spirit == "1/1 white Spirit creature tokens with flying"
@@ -1158,10 +1164,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .returnOneOrTwoNonlands =>
     "return one or two target nonland permanents to their owners' hands"
   | .targetPlayerCreatesTokens kind n =>
-    let phrase := TokenKind.createPhrase kind n
-    let rest :=
-      if phrase.startsWith "create " then phrase.drop "create ".length else phrase
-    s!"{noun} creates {rest}"
+    s!"{noun} creates {TokenKind.createdTokensPhrase kind n}"
   | .destroyCreatureSurveil =>
     s!"destroy {noun}. Surveil 1"
   | .investigatePumpFlyingUntap =>
