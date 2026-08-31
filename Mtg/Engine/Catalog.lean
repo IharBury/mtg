@@ -770,32 +770,39 @@ def powerUpAbility (effect : Effect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
   activated effect mana (tap := tap) (powerUp := true)
 
-/-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of these colors. -/
-def gainLifeDualLand (name : String) (oracleText : String)
-    (colors : Array ManaType) : CardDef :=
-  land name oracleText
+/-- `{T}: Add {A} or {B}.` for a dual land's two colors. -/
+def dualAddClause (a b : Color) : String :=
+  s!"\{T}: Add {manaSymbolsText #[.colored a, .colored b] " or "}."
+
+/-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of two colors.
+The Oracle text is reconstructed from the colors. -/
+def gainLifeDualLand (name : String) (a b : Color) : CardDef :=
+  land name
+    s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}"
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (tapAddOneOf := colors)
+    (tapAddOneOf := #[.colored a, .colored b])
 
 /-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
-entered this turn or a basic land you control. -/
-def conditionalDualLand (name : String) (oracleText : String)
-    (colors : Array ManaType) : CardDef :=
-  land name oracleText
+entered this turn or a basic land you control. The Oracle text is
+reconstructed from the colors. -/
+def conditionalDualLand (name : String) (a b : Color) : CardDef :=
+  land name
+    s!"\{T}: Add \{C}.\n{dualAddClause a b} Activate only if this land entered this turn or if you control a basic land."
     (tapAddMana := #[.colorless])
-    (tapAddOneOfIfEnteredOrBasic := colors)
+    (tapAddOneOfIfEnteredOrBasic := #[.colored a, .colored b])
 
-#guard (gainLifeDualLand "Silent Plaza" ""
-  #[.colored .blue, .colored .black]).tapAddOneOf ==
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).tapAddOneOf ==
   #[.colored .blue, .colored .black]
-#guard (gainLifeDualLand "Silent Plaza" ""
-  #[.colored .blue, .colored .black]).triggeredAbilities == #[.onEnterGainLife 1]
-#guard (conditionalDualLand "Silent Lair" ""
-  #[.colored .blue, .colored .black]).tapAddOneOfIfEnteredOrBasic ==
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).triggeredAbilities ==
+  #[.onEnterGainLife 1]
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).oracleText ==
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
+#guard (conditionalDualLand "Silent Lair" .blue .black).tapAddOneOfIfEnteredOrBasic ==
   #[.colored .blue, .colored .black]
-#guard (conditionalDualLand "Silent Lair" ""
-  #[.colored .blue, .colored .black]).requiresEnteredOrBasicAdd
+#guard (conditionalDualLand "Silent Lair" .blue .black).requiresEnteredOrBasicAdd
+#guard (conditionalDualLand "Silent Lair" .blue .black).oracleText ==
+  "{T}: Add {C}.\n{T}: Add {U} or {B}. Activate only if this land entered this turn or if you control a basic land."
 #guard (legendaryCreature "Silent Legend" ManaCost.empty #[] 1 1).hasSupertype .legendary
 #guard (creature "Silent Legend" ManaCost.empty #[] 1 1 (legendary := true)).hasSupertype .legendary
 #guard (legendaryLand "Silent Keep" "").hasSupertype .legendary
@@ -852,10 +859,8 @@ def conditionalDualLand (name : String) (oracleText : String)
   (legendary := true)).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (legendary := true)).hasType .creature
-#guard (gainLifeDualLand "Silent Plaza" ""
-  #[.colored .blue, .colored .black]).entersTapped
-#guard (conditionalDualLand "Silent Keep" ""
-  #[.colored .blue, .colored .black]).tapAddMana == #[.colorless]
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTapped
+#guard (conditionalDualLand "Silent Keep" .blue .black).tapAddMana == #[.colorless]
 #guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
   (Keyword.flying.merge Keyword.trample |>.merge Keyword.haste)
