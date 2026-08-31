@@ -534,7 +534,7 @@ def futuristForge : CardDef :=
   card "Futurist Forge" #[.artifact] ({ symbols := #[.generic 1, .colored .blue] })
     (oracleText := "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards.")
     (triggeredAbilities := #[.onEnterDraw 1])
-    (activatedAbilities := #[activated (Effect.ofAbility (.draw 2)) ({ symbols := #[.generic 3, .colored .blue] }) (sacrificeSource := true)])
+    (activatedAbilities := #[activated (Effect.abilityDraw 2) ({ symbols := #[.generic 3, .colored .blue] }) (sacrificeSource := true)])
 
 def giantSizedFlyingAnt : CardDef :=
   card "Giant-Sized Flying Ant" #[.creature] ({ symbols := #[.generic 3, .colored .blue] })
@@ -925,7 +925,7 @@ def kingpinSEnforcers : CardDef :=
     (power := some 2)
     (toughness := some 3)
     (keywords := Keyword.lifelink)
-    (activatedAbilities := #[activated (Effect.ofAbility (.draw 1)) ({ symbols := #[.generic 2, .colored .black] })
+    (activatedAbilities := #[activated (Effect.abilityDraw 1) ({ symbols := #[.generic 2, .colored .black] })
       (sacrificeArtifactOrCreature := true)])
 
 def klawSonicSubjugator : CardDef :=
@@ -1047,7 +1047,7 @@ def superSkrull : CardDef :=
     (power := some 4)
     (toughness := some 5)
     (keywords := Keyword.flying)
-    (activatedAbilities := #[activated (Effect.ofAbility (.createTokens .wall04defender 1)) ({ symbols := #[.generic 2, .colored .white] }), activated (Effect.sourceGets 4 4) ({ symbols := #[.generic 3, .colored .green] }), activated (Effect.dealDamageToTargetCreature 4) ({ symbols := #[.generic 4, .colored .red] }), activated (Effect.ofAbility (.targetPlayerDraw 4)) ({ symbols := #[.generic 5, .colored .blue] })])
+    (activatedAbilities := #[activated (Effect.abilityCreateTokens .wall04defender 1) ({ symbols := #[.generic 2, .colored .white] }), activated (Effect.sourceGets 4 4) ({ symbols := #[.generic 3, .colored .green] }), activated (Effect.dealDamageToTargetCreature 4) ({ symbols := #[.generic 4, .colored .red] }), activated (Effect.abilityTargetPlayerDraw 4) ({ symbols := #[.generic 5, .colored .blue] })])
 
 def swordsmanSharpScoundrel : CardDef :=
   card "Swordsman, Sharp Scoundrel" #[.creature] ({ symbols := #[.generic 1, .colored .black] })
@@ -1294,7 +1294,7 @@ def mjLnirHammerOfThor : CardDef :=
     (triggeredAbilities := #[.onEnter (.dealDamageUpToOne 4)])
     (staticAbilities := #[StaticAbility.equippedDealsDoubleDamage])
     (activatedAbilities := #[equipWorthyAbility (ManaCost.ofGeneric 1),
-      activated (Effect.ofAbility (.dealDamageToEachCreature 2)) ({ symbols := #[.generic 2, .colored .red] })
+      activated (Effect.abilityDealDamageToEachCreature 2) ({ symbols := #[.generic 2, .colored .red] })
         (discardSource := true) (activateFromHand := true)])
 
 def photonBlastBarrage : CardDef :=
@@ -1354,7 +1354,7 @@ def starkIndustriesExecutive : CardDef :=
     (oracleText := "{2}, {T}: Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
     (power := some 1)
     (toughness := some 2)
-    (activatedAbilities := #[activated (Effect.ofAbility (.createTokens .treasure 1)) ({ symbols := #[.generic 2] }) (tap := true)])
+    (activatedAbilities := #[activated (Effect.abilityCreateTokens .treasure 1) ({ symbols := #[.generic 2] }) (tap := true)])
 
 def superSpeed : CardDef :=
   card "Super Speed" #[.enchantment] ({ symbols := #[.colored .red] })
@@ -2273,7 +2273,7 @@ def baxterBuilding : CardDef :=
     (oracleText := "{T}: Add {C}.\n{4}, {T}: Add four mana in any combination of colors.\n{4}, {T}: Draw a card. Activate only if you control a creature with toughness 4 or greater.")
     (tapAddMana := #[.colorless])
     (activatedAbilities := #[activated (Effect.addFourAnyCombination) ({ symbols := #[.generic 4] }) (tap := true),
-      activated (Effect.ofAbility (.draw 1)) ({ symbols := #[.generic 4] }) (tap := true)
+      activated (Effect.abilityDraw 1) ({ symbols := #[.generic 4] }) (tap := true)
         (onlyIfYouControlCreatureToughnessAtLeast := 4)])
 
 def birninZanaPlaza : CardDef :=
@@ -2286,7 +2286,7 @@ def castleDoom : CardDef :=
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery.")
     (tapAddMana := #[.colorless])
     (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlyArtifactSpell) (ManaCost.empty) (tap := true),
-      activated (Effect.ofAbility (.createTokens .doombot 1)) ({ symbols := #[.generic 3] }) (tap := true)
+      activated (Effect.abilityCreateTokens .doombot 1) ({ symbols := #[.generic 3] }) (tap := true)
         (sacrificeArtifact := true) (onlyAsSorcery := true)])
 
 def darkFortress : CardDef :=

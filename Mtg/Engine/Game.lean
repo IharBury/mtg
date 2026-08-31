@@ -1945,7 +1945,7 @@ def clueToken : CardDef := {
   oracleText := "{2}, Sacrifice this token: Draw a card."
   activatedAbilities := #[{
     cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
-    effect := Effect.ofAbility (.draw 1)
+    effect := Effect.abilityDraw 1
   }]
   isToken := true
 }

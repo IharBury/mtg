@@ -665,294 +665,8 @@ def cardPhrase (n : Nat) : String :=
 def plusOnePlusOneCountersPhrase (n : Nat) : String :=
   if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
-/-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
-inductive SpellLeftover where
-  /-- Deal `amount` damage to the chosen target (player or creature). -/
-  | dealDamage (amount : Nat)
-  /-- Target creature gets +P/+T until end of turn. -/
-  | pump (power toughness : Int)
-  /-- Destroy target creature with flying (CR 701.8). -/
-  | destroyCreatureWithFlying
-  /-- Destroy target creature (CR 701.8). -/
-  | destroyCreature
-  /-- Put a +1/+1 counter on target creature you control. It gains trample and
-  hexproof until end of turn. -/
-  | plusOnePlusOneTrampleHexproof
-  /-- Deal `amount` damage to target creature (e.g. Spew Flame). -/
-  | dealDamageToCreature (amount : Nat)
-  /-- Deal `amount` damage to target creature. That creature loses
-  indestructible until end of turn. If it would die this turn, exile it instead
-  (e.g. Smite the Deathless). -/
-  | dealDamageLoseIndestructibleExile (amount : Nat)
-  /-- Target creature you control deals damage equal to its power to target
-  creature an opponent controls (e.g. Quarrel). -/
-  | creatureYouControlDealsPowerToOppCreature
-  /-- You may play an additional land this turn (e.g. Till and Tend). -/
-  | playAdditionalLandThisTurn
-  /-- Destroy target artifact or land. Creatures without flying can't block
-  this turn (e.g. Fire of Orthanc). -/
-  | destroyArtifactOrLandNonflyersCantBlock
-  /-- Destroy target creature. Its controller loses `life` life
-  (e.g. Bitter Downfall). -/
-  | destroyTargetCreatureControllerLosesLife (life : Nat)
-  /-- All creatures get +P/+T until end of turn (e.g. Languish). -/
-  | allCreaturesGet (power toughness : Int)
-  /-- You draw `cards` cards and lose `life` life (e.g. Night's Whisper).
-  Loss of life is not damage (CR 118.3a / 120.3). -/
-  | drawAndLoseLife (cards life : Nat)
-  /-- Target player draws `cards` cards and loses `life` life
-  (e.g. Reverent Howl). -/
-  | targetPlayerDrawLoseLife (cards life : Nat)
-  /-- Creatures target player controls get +P/+T until end of turn
-  (e.g. Gnashing of Teeth). -/
-  | creaturesTargetPlayerGet (power toughness : Int)
-  /-- Target creature gets +P/+T and gains lifelink until end of turn. -/
-  | pumpAndLifelink (power toughness : Int)
-  /-- Target creature gets +P/+T until end of turn. If it would die this turn,
-  exile it instead (e.g. Gnashing of Teeth). -/
-  | pumpAndExileIfDies (power toughness : Int)
-  /-- Exile all creature cards from target player's graveyard. You may cast
-  those cards for as long as they remain exiled, and mana of any type can be
-  spent to cast them (e.g. Shadow of the Enemy). -/
-  | exileGraveyardCreaturesGrantCast
-  /-- Draw `n` cards (e.g. Lórien Revealed). -/
-  | draw (n : Nat)
-  /-- Draw `n` cards, then discard a card (e.g. Confusticate and Bebother). -/
-  | drawThenDiscard (n : Nat)
-  /-- Scry `n` (e.g. Take a Glance). -/
-  | scry (n : Nat)
-  /-- Tap target creature. Scry `scryN`, then draw `drawN` (e.g. Hithlain Knots). -/
-  | tapScryDraw (scryN drawN : Nat)
-  /-- Tap one or two target creatures (e.g. Gaze in Wonder). -/
-  | tapOneOrTwoCreatures
-  /-- Target artifact or creature you control gains hexproof and indestructible
-  until end of turn (e.g. Concerted Care). -/
-  | grantHexproofIndestructible
-  /-- Put a +1/+1 counter on up to one target creature. Target player gains
-  `life` life (e.g. Meager Meal). -/
-  | plusOneUpToOneAndPlayerGainsLife (life : Nat)
-  /-- Counter target spell. -/
-  | counterSpell
-  /-- Counter target spell unless its controller pays `{n}`. -/
-  | counterUnlessPays (n : Nat)
-  /-- Counter target creature spell with power or toughness `n` or less. -/
-  | counterCreatureSpellPTAtMost (n : Nat)
-  /-- Counter target spell. If a permanent spell is countered this way, exile
-  it instead. You may cast that card without paying its mana cost for as long
-  as it remains exiled (e.g. Thranduil's Decree). -/
-  | counterExilePermanentMayCast
-  /-- Target creature's owner puts it on the top or bottom of their library. -/
-  | putOnTopOrBottom
-  /-- Untap target creature you control. It gets +P/+T. If it's a Dwarf, you
-  may attach an Equipment you control to it (e.g. Vow to Erebor). -/
-  | untapPumpMaybeAttach (power toughness : Int)
-  /-- Exchange control of two target nonland permanents that share a card type. -/
-  | exchangeControlSharingType
-  /-- Return target spell to its owner's hand, then draw a card (e.g. Reprieve). -/
-  | returnSpellDraw
-  /-- Creatures you control get +P/+T until end of turn. -/
-  | creaturesYouControlGet (power toughness : Int)
-  /-- Destroy target artifact or enchantment. You gain `life` life. -/
-  | destroyArtifactOrEnchantmentGainLife (life : Nat)
-  /-- Destroy target creature with power `n` or greater. -/
-  | destroyCreaturePowerAtLeast (n : Int)
-  /-- Until end of turn, target creature becomes an artifact in addition to
-  its other types and gains indestructible. -/
-  | becomeArtifactGainIndestructible
-  /-- Target creature gets +P/+T and gains these keywords until end of turn. -/
-  | pumpAndGrantKeywords (power toughness : Int) (k : Keywords)
-  /-- Amass Goblins `n` (CR 701.43). -/
-  | amassGoblins (n : Nat)
-  /-- You draw a card and lose 1 life, then amass Goblins `n`. -/
-  | drawLoseLifeThenAmass (n : Nat)
-  /-- Return up to one target creature card from your graveyard to your hand,
-  then amass Goblins `n`. -/
-  | returnCreatureFromGyThenAmass (n : Nat)
-  /-- Counter target spell. If its mana value was `n` or less, recruit. -/
-  | counterThenRecruitIfMvAtMost (n : Nat)
-  /-- Put `n` +1/+1 counters on target creature you control, then it fights. -/
-  | plusOneThenFight (n : Nat)
-  /-- Put a +1/+1 counter on target creature you control; if cast from a
-  graveyard, also each other creature you control. -/
-  | plusOneThenEachOtherIfFromGy
-  /-- Draw `n` cards, or `fromGy` if this spell was cast from a graveyard. -/
-  | drawIfFromGy (n fromGy : Nat)
-  /-- Amass Goblins `n`, or `fromGy` if cast from a graveyard. -/
-  | amassGoblinsOrFromGy (n fromGy : Nat)
-  /-- Search your library for a legendary creature card, reveal it, put it
-  into your hand, then shuffle. -/
-  | searchLegendaryCreatureToHand
-  /-- Deal `n` damage to each creature opponents control. -/
-  | dealDamageToEachOppCreature (n : Nat)
-  /-- Destroy target artifact. -/
-  | destroyTargetArtifact
-  /-- Target player draws `n` cards. -/
-  | targetPlayerDraw (n : Nat)
-  /-- Deal `n` damage to target creature. If it would die this turn, exile it. -/
-  | dealDamageToCreatureExileIfDies (n : Nat)
-  /-- Destroy target artifact token. -/
-  | destroyArtifactToken
-  /-- Add {R} for each artifact opponents control. -/
-  | addRedPerOppArtifacts
-  /-- Deal `n` damage to each non-Dragon creature. -/
-  | dealDamageToEachNonDragon (n : Nat)
-  /-- Choose a creature type. Return all creatures that aren't of that type. -/
-  | chooseTypeReturnOthers
-  /-- Draw cards equal to the greatest toughness among creatures you control,
-  then put any number of creature cards from your hand onto the battlefield. -/
-  | drawEqualToughnessThenPutCreatures
-  /-- Mill `n`, then put an instant or sorcery from among them into your hand. -/
-  | millThenPutInstantOrSorcery (n : Nat)
-  /-- Mill `n`, then put up to `max` land cards from among them into your hand. -/
-  | millThenPutLands (n max : Nat)
-  /-- Exile the targeted permanents you control, then return them. -/
-  | exileThenReturnYouControl
-  /-- Deal `n` damage to each non-Dragon, then add four mana that can be
-  spent only on Dragon spells. -/
-  | dealDamageToEachNonDragonThenAddDragonMana (n : Nat)
-  /-- Mill `n`, then put all instant and sorcery cards from among them
-  into your hand. -/
-  | millThenPutAllInstantsOrSorceries (n : Nat)
-  /-- Exile all attacking creatures target player controls. That player
-  may search for that many basic lands. -/
-  | exileAttackersSearchBasics
-  /-- Create X tokens of this kind. -/
-  | createTokensX (kind : TokenKind)
-  /-- Exile the top `n` cards face down; play them if you control this subtype. -/
-  | exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String)
-  /-- Return target spell to its owner's hand. If a gift was promised,
-  players can't cast spells this turn. -/
-  | returnSpellCantCastIfGift
-  /-- Exile the top X of target opponent's library; play them this turn,
-  paying life equal to mana value. -/
-  | exileTopXOppPlayForLife
-  /-- Look at the top four; an opponent chooses a pile. -/
-  | riddlesInTheDark
-  /-- Return this-turn dies-from-battlefield creature cards as Food artifacts. -/
-  | supperForSpiders
-  /-- Return owned creatures to hand; delayed Bird Soldiers next upkeep. -/
-  | eaglesAreComing
-  /-- Look at the top `n` cards, put any number of lands onto the battlefield
-  tapped, then gain `life` life. -/
-  | lookAtTopLandsGainLife (n life : Nat)
-  /-- For each opponent, gain control of up to one target artifact they control. -/
-  | gainControlOppArtifacts
-  /-- Deal damage to each opposing creature equal to other spells' mana value. -/
-  | damageOppCreaturesEqualOtherSpellsMv
-  /-- Phase out the target, or each of a player's creatures if kicked. -/
-  | phaseOutKicker
-  /-- Deal `n` to an attacking or blocking creature; `teamworkN` if teamwork. -/
-  | dealDamageToAttackerOrBlocker (n teamworkN : Nat)
-  /-- Deal `n` to a creature; if teamwork, also `extra` to its controller. -/
-  | dealDamageThenControllerIfTeamwork (n extra : Nat)
-  /-- Target creature gains double strike; also trample if teamwork. -/
-  | grantDoubleStrikeTeamworkTrample
-  /-- Counter unless pays `n`; `teamworkN` instead if teamwork. -/
-  | counterUnlessPaysTeamwork (n teamworkN : Nat)
-  /-- Exile a creature with MV ≤ `n`; if teamwork, any creature and gain life. -/
-  | exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat)
-  /-- Return a gy creature with MV ≤ `n`; if teamwork, any gy creature. -/
-  | returnGyCreatureMvAtMostOrAny (n : Nat)
-  /-- Reveal the top `n`; put one creature onto the battlefield, or any if teamwork. -/
-  | revealTopPutCreatures (n : Nat)
-  /-- Create `n` tokens of this kind. -/
-  | createTokens (kind : TokenKind) (n : Nat)
-  /-- Exile target creature with toughness `n` or greater. -/
-  | exileCreatureToughnessAtLeast (n : Int)
-  /-- Exile target enchantment with mana value `n` or greater. -/
-  | exileEnchantmentMvAtLeast (n : Nat)
-  /-- Return one or two target nonland permanents to their owners' hands. -/
-  | returnOneOrTwoNonlands
-  /-- Target creature gains deathtouch until end of turn. -/
-  | grantDeathtouch
-  /-- Destroy target noncreature artifact. -/
-  | destroyNoncreatureArtifact
-  /-- Put a +1/+1 counter on target creature. -/
-  | plusOneOnCreature
-  /-- Target player creates a token of this kind. -/
-  | targetPlayerCreatesTokens (kind : TokenKind) (n : Nat)
-  /-- Destroy target creature. Surveil 1. -/
-  | destroyCreatureSurveil
-  /-- Target player investigates. Target creature gets +1/+0 and flying; untap it. -/
-  | investigatePumpFlyingUntap
-  /-- Put a +1/+1 counter on target creature; it gains lifelink and indestructible. -/
-  | plusOneLifelinkIndestructible
-  /-- Deal `n` damage to each creature. -/
-  | dealDamageToEachCreature (n : Nat)
-  /-- Destroy target land; its controller may search a basic land tapped. -/
-  | destroyLandSearchBasic
-  /-- Double target creature's power and toughness until end of turn. -/
-  | doublePowerAndToughness
-  /-- Return target card of this subtype from your graveyard to your hand. -/
-  | returnGySubtypeToHand (subtype : String)
-  /-- Target creature gains vigilance and can't be blocked this turn. -/
-  | grantVigilanceUnblockable
-  /-- Until end of turn, target artifact or creature becomes a 4/4 artifact creature with flying. -/
-  | becomeArtifactCreature44Flying
-  /-- Draw three cards, then discard two unless you discard an artifact. -/
-  | drawThreeDiscardUnlessArtifact
-  /-- Each opponent loses `n` life. -/
-  | eachOpponentLosesLife (n : Nat)
-  /-- Target creature you control fights target creature an opponent controls. -/
-  | fight
-  /-- Target creature you control fights up to one other target creature. -/
-  | fightUpToOne
-  /-- Put a +1/+1 counter on each creature you control. -/
-  | plusOneOnEachYouControl
-  /-- Put `n` +1/+1 counters on target creature you control. -/
-  | plusOneOnCreatureN (n : Nat)
-  /-- Target creature gets +P/+T, then draw a card. -/
-  | pumpThenDraw (power toughness : Int)
-  /-- Target creature gets +P/+T, then exile the top card and play it. -/
-  | pumpThenExileTopPlay (power toughness : Int)
-  /-- Target creature you control deals damage equal to twice its power. -/
-  | creatureYouControlDealsTwicePower
-  /-- Create `n` tokens of `kind`, then creatures you control get +P/+T. -/
-  | createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int)
-  /-- Create a token of `kind` for each permanent you control of `subtype`. -/
-  | createTokensPerSubtype (kind : TokenKind) (subtype : String)
-  /-- Creatures you control get +P/+T and gain these keywords. -/
-  | creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords)
-  /-- Destroy up to one target nonland permanent. -/
-  | destroyUpToOneNonland
-  /-- Create Galactus, a legendary 16/16 black Elder Alien token. -/
-  | createGalactus
-  /-- Exile all creatures, then each player may put creatures from hand. -/
-  | worldsWithinWorlds
-  /-- Exile your hand, draw that many, and play the exiled cards. -/
-  | exileHandDrawPlayUntilNext
-  /-- Copy each nontoken creature you control, except the copies aren't legendary. -/
-  | copyNontokenCreaturesYouControl
-  /-- Gain control until EOT, or until your next turn if you control a bigger Villain. -/
-  | gainControlUntilEotOrNextIfVillain
-  /-- Mill `n`, you may put a milled permanent into your hand, gain `life`. -/
-  | millThenPutPermanentGainLife (n life : Nat)
-  /-- Search library and/or graveyard for an artifact creature with MV ≤ X. -/
-  | searchLibraryOrGyArtifactCreatureX
-  /-- Target player gains `life`, searches a basic, and +1/+1 on up to one. -/
-  | gainLifeSearchBasicPlusOne (life : Nat)
-  /-- The next red or green creature spell this turn is free. -/
-  | nextFreeRGCreature
-  /-- Owner puts the creature second from top or on the bottom; you may connive. -/
-  | ownerPutsLibraryThenConnive
-  /-- When you cast this, copy it X times; it deals `n` damage to a creature. -/
-  | copyThisSpellXTimesThenDamage (n : Nat)
-  /-- You may draw a card for each artifact you control; if you do, opponents draw. -/
-  | mayDrawPerArtifactOppsDraw
-  /-- You may put a Hero creature with MV `n` or less from hand; otherwise draw. -/
-  | mayPutHeroMvOrDraw (n : Nat)
-  /-- You may sacrifice an artifact or discard; if you do, draw `cards`. -/
-  | maySacArtifactOrDiscardDraw (cards : Nat)
-  /-- Choose a creature you control; double its P/T and it gains trample. -/
-  | chooseTargetDoubleAndTrample
-  /-- Choose up to two graveyard cards among artifact/creature/enchantment/land. -/
-  | returnUpToTwoGyModal
-  /-- Artifact spells you cast this turn cost `{n}` less. -/
-  | artifactSpellsCostLessThisTurn (n : Nat)
-deriving Repr, Inhabited, BEq
-
 /-- How the demonstration agent classifies a spell when choosing what to cast.
-Adding a constructor is a compile error in `SpellLeftover.spec` rather than
+Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
   /-- Damage to any target (player or creature). -/
@@ -1069,7 +783,7 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
 end PermanentAction
 
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
-handful of shapes instead of every `SpellLeftover` constructor. Burn and
+handful of shapes instead of every printed spell factory. Burn and
 creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
 that action to a player or a creature when the targeting shape allows it. -/
 inductive SpellResolution where
@@ -1290,424 +1004,13 @@ inductive SpellResolution where
   | artifactSpellsCostLessThisTurn (n : Nat)
 deriving Repr, Inhabited, BEq
 
-/-- Targeting, demonstration-agent classification, and resolution of a spell
-effect. Exhaustive so a new constructor is a compile error in `SpellLeftover.spec`
-rather than silently skipped in `Game` or the agent. -/
-structure SpellMeta where
-  targeting : EffectTargeting := .of .none
-  castKind : SpellCastKind := .extraLand
-  preferAsDefaultMode : Bool := false
-  resolution : SpellResolution := .extraLand
-  /-- Upper bound on announced targets. `0` means `targeting`’s `targetCount`
-  (required count equals the maximum). Gaze in Wonder uses `2` with a
-  required count of `1` (“one or two”). -/
-  maxTargets : Nat := 0
-  /-- Zero targets is a legal announcement (CR 115.1c), e.g. “up to one”. -/
-  allowsZeroTargets : Bool := false
-deriving Repr, Inhabited, BEq
 
-namespace SpellLeftover
+namespace SpellResolution
 
-def signedStat := Mtg.Engine.signedStat
-
-/-- Classification of this spell. Exhaustive so a new constructor is a compile
-error here rather than silently matching no targets, skipping the agent, or
-doing nothing on resolution. -/
-def spec : SpellLeftover → SpellMeta
-  | .dealDamage n =>
-    { targeting := .of .playerOrCreature, castKind := .burn,
-      resolution := .onPermanent (.dealDamage n) }
-  | .pump p t =>
-    { targeting := .of .creature .own, castKind := .pump,
-      resolution := .onPermanent (.pump p t) }
-  | .destroyCreatureWithFlying =>
-    { targeting := .of .creatureWithFlying, castKind := .destroyFlying,
-      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
-  | .destroyCreature =>
-    { targeting := .of .creature, castKind := .destroyCreature,
-      resolution := .onPermanent .destroy }
-  | .plusOnePlusOneTrampleHexproof =>
-    { targeting := .of .creatureYouControl, castKind := .pump,
-      resolution := .onPermanent .plusOnePlusOneTrampleHexproof }
-  | .dealDamageToCreature n =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .onPermanent (.dealDamage n) }
-  | .dealDamageLoseIndestructibleExile n =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .onPermanent (.dealDamageLoseIndestructibleExile n) }
-  | .creatureYouControlDealsPowerToOppCreature =>
-    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
-      resolution := .fight }
-  | .playAdditionalLandThisTurn =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .extraLand }
-  | .destroyArtifactOrLandNonflyersCantBlock =>
-    { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
-      resolution := .onPermanent .destroyThenNonflyersCantBlock }
-  | .destroyTargetCreatureControllerLosesLife n =>
-    { targeting := .of .creature, castKind := .destroyCreature,
-      preferAsDefaultMode := true, resolution := .destroyAndControllerLosesLife n }
-  | .allCreaturesGet p t =>
-    { targeting := .of .none, castKind := .massPump,
-      resolution := .allCreaturesPump p t }
-  | .drawAndLoseLife cards life =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .drawAndLoseLife cards life }
-  | .targetPlayerDrawLoseLife cards life =>
-    { targeting := .of .player .selfPlayer, castKind := .draw,
-      resolution := .playerDrawLoseLife cards life }
-  | .creaturesTargetPlayerGet p t =>
-    { targeting := .of .player, castKind := .massPump,
-      resolution := .creaturesOfPlayerPump p t }
-  | .pumpAndLifelink p t =>
-    { targeting := .of .creature .own, castKind := .pump,
-      resolution := .onPermanent (.pumpAndLifelink p t) }
-  | .pumpAndExileIfDies p t =>
-    { targeting := .of .creature, castKind := .pump,
-      preferAsDefaultMode := true, resolution := .onPermanent (.pumpAndExileIfDies p t) }
-  | .exileGraveyardCreaturesGrantCast =>
-    { targeting := .of .player, castKind := .draw,
-      resolution := .exileGraveyardCreaturesGrantCast }
-  | .draw n =>
-    { targeting := .of .none, castKind := .draw, resolution := .draw n }
-  | .drawThenDiscard n =>
-    { targeting := .of .none, castKind := .draw, resolution := .drawThenDiscard n }
-  | .scry n =>
-    { targeting := .of .none, castKind := .draw, resolution := .scry n }
-  | .tapScryDraw scryN drawN =>
-    { targeting := .of .creature, castKind := .draw,
-      resolution := .tapScryDraw scryN drawN }
-  | .tapOneOrTwoCreatures =>
-    { targeting := .of .creature, castKind := .pump, resolution := .tapTargets,
-      maxTargets := 2 }
-  | .grantHexproofIndestructible =>
-    { targeting := .of .artifactOrCreatureYouControl, castKind := .pump,
-      resolution := .onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)) }
-  | .plusOneUpToOneAndPlayerGainsLife n =>
-    { targeting := .of .upToOneCreatureThenPlayer, castKind := .pump,
-      resolution := .plusOneAndPlayerGainsLife n }
-  | .counterSpell =>
-    { targeting := .of .spell, castKind := .counter, resolution := .counter }
-  | .counterUnlessPays n =>
-    { targeting := .of .spell, castKind := .counter, resolution := .counterUnlessPays n }
-  | .counterCreatureSpellPTAtMost n =>
-    { targeting := .of (.creatureSpellPTAtMost n), castKind := .counter,
-      resolution := .counter }
-  | .counterExilePermanentMayCast =>
-    { targeting := .of .spell, castKind := .counter,
-      resolution := .counterExilePermanentMayCast }
-  | .putOnTopOrBottom =>
-    { targeting := .of .creature, castKind := .counter,
-      resolution := .putOnTopOrBottom }
-  | .untapPumpMaybeAttach p t =>
-    { targeting := .of .creatureYouControl, castKind := .pump,
-      resolution := .untapPumpMaybeAttach p t }
-  | .exchangeControlSharingType =>
-    { targeting := .of .twoNonlandsSharingType, castKind := .counter,
-      resolution := .exchangeControl }
-  | .returnSpellDraw =>
-    { targeting := .of .spell, castKind := .counter, resolution := .returnSpellDraw }
-  | .creaturesYouControlGet p t =>
-    { targeting := .of .none, castKind := .massPump,
-      resolution := .creaturesYouControlPump p t }
-  | .destroyArtifactOrEnchantmentGainLife n =>
-    { targeting := .of .artifactOrEnchantment, castKind := .destroyArtifactOrLand,
-      resolution := .destroyArtifactOrEnchantmentGainLife n }
-  | .destroyCreaturePowerAtLeast n =>
-    { targeting := .of (.creaturePowerAtLeast n), castKind := .destroyCreature,
-      preferAsDefaultMode := true, resolution := .onPermanent .destroy }
-  | .becomeArtifactGainIndestructible =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .onPermanent .becomeArtifactIndestructible }
-  | .pumpAndGrantKeywords p t k =>
-    { targeting := .of .creature .own, castKind := .pump,
-      resolution := .onPermanent (.pumpAndGrant p t k) }
-  | .amassGoblins n =>
-    { targeting := .of .none, castKind := .pump, resolution := .amassGoblins n }
-  | .drawLoseLifeThenAmass n =>
-    { targeting := .of .none, castKind := .draw, resolution := .drawLoseLifeThenAmass n }
-  | .returnCreatureFromGyThenAmass n =>
-    { targeting := .of .creatureCardInYourGraveyard, castKind := .draw,
-      allowsZeroTargets := true, resolution := .returnCreatureFromGyThenAmass n }
-  | .counterThenRecruitIfMvAtMost n =>
-    { targeting := .of .spell, castKind := .counter,
-      resolution := .counterThenRecruitIfMvAtMost n }
-  | .plusOneThenFight n =>
-    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
-      resolution := .plusOneThenFight n }
-  | .plusOneThenEachOtherIfFromGy =>
-    { targeting := .of .creatureYouControl, castKind := .pump,
-      resolution := .plusOneThenEachOtherIfFromGy }
-  | .drawIfFromGy n fromGy =>
-    { targeting := .of .none, castKind := .draw, resolution := .drawIfFromGy n fromGy }
-  | .amassGoblinsOrFromGy n fromGy =>
-    { targeting := .of .none, castKind := .pump, resolution := .amassGoblinsOrFromGy n fromGy }
-  | .searchLegendaryCreatureToHand =>
-    { targeting := .of .none, castKind := .draw, resolution := .searchLegendaryCreatureToHand }
-  | .dealDamageToEachOppCreature n =>
-    { targeting := .of .none, castKind := .creatureDamage,
-      resolution := .dealDamageToEachOppCreature n }
-  | .destroyTargetArtifact =>
-    { targeting := .of .artifact, castKind := .destroyArtifactOrLand,
-      resolution := .onPermanent .destroy }
-  | .targetPlayerDraw n =>
-    { targeting := .of .player .selfPlayer, castKind := .draw,
-      resolution := .targetPlayerDraw n }
-  | .dealDamageToCreatureExileIfDies n =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .dealDamageToCreatureExileIfDies n }
-  | .destroyArtifactToken =>
-    { targeting := .of .artifactToken, castKind := .destroyArtifactOrLand,
-      resolution := .onPermanent .destroy }
-  | .addRedPerOppArtifacts =>
-    { targeting := .of .none, castKind := .draw, resolution := .addRedPerOppArtifacts }
-  | .dealDamageToEachNonDragon n =>
-    { targeting := .of .none, castKind := .creatureDamage,
-      resolution := .dealDamageToEachNonDragon n }
-  | .chooseTypeReturnOthers =>
-    { targeting := .of .none, castKind := .counter, resolution := .chooseTypeReturnOthers }
-  | .drawEqualToughnessThenPutCreatures =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .drawEqualToughnessThenPutCreatures }
-  | .millThenPutInstantOrSorcery n =>
-    { targeting := .of .none, castKind := .draw, resolution := .millThenPutInstantOrSorcery n }
-  | .millThenPutLands n max =>
-    { targeting := .of .none, castKind := .draw, resolution := .millThenPutLands n max }
-  | .exileThenReturnYouControl =>
-    { targeting := .of .twoCreaturesOrLandsYouControl, castKind := .counter,
-      resolution := .exileThenReturnYouControl }
-  | .dealDamageToEachNonDragonThenAddDragonMana n =>
-    { targeting := .of .none, castKind := .creatureDamage,
-      resolution := .dealDamageToEachNonDragonThenAddDragonMana n }
-  | .millThenPutAllInstantsOrSorceries n =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .millThenPutAllInstantsOrSorceries n }
-  | .exileAttackersSearchBasics =>
-    { targeting := .of .player, castKind := .destroyCreature,
-      resolution := .exileAttackersSearchBasics }
-  | .createTokensX kind =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .createTokensX kind }
-  | .exileTopPlayIfYouControlSubtype n subtype =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .exileTopPlayIfYouControlSubtype n subtype }
-  | .returnSpellCantCastIfGift =>
-    { targeting := .of .spell, castKind := .counter,
-      resolution := .returnSpellCantCastIfGift }
-  | .exileTopXOppPlayForLife =>
-    { targeting := .of .opponent, castKind := .draw,
-      resolution := .exileTopXOppPlayForLife }
-  | .riddlesInTheDark =>
-    { targeting := .of .none, castKind := .draw, resolution := .riddlesInTheDark }
-  | .supperForSpiders =>
-    { targeting := .of .none, castKind := .draw, resolution := .supperForSpiders }
-  | .eaglesAreComing =>
-    { targeting := .of .creatureYouControl, castKind := .draw,
-      resolution := .eaglesAreComing }
-  | .lookAtTopLandsGainLife n life =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .lookAtTopLandsGainLife n life }
-  | .gainControlOppArtifacts =>
-    { targeting := .of .artifact, castKind := .counter,
-      allowsZeroTargets := true, resolution := .gainControlOppArtifacts }
-  | .damageOppCreaturesEqualOtherSpellsMv =>
-    { targeting := .of .none, castKind := .creatureDamage,
-      resolution := .damageOppCreaturesEqualOtherSpellsMv }
-  | .phaseOutKicker =>
-    { targeting := .of .creature, castKind := .counter, resolution := .phaseOutKicker }
-  | .dealDamageToAttackerOrBlocker n teamworkN =>
-    { targeting := .of .attackingOrBlockingCreature, castKind := .creatureDamage,
-      resolution := .dealDamageTeamwork n teamworkN }
-  | .dealDamageThenControllerIfTeamwork n extra =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .dealDamageThenControllerIfTeamwork n extra }
-  | .grantDoubleStrikeTeamworkTrample =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .grantDoubleStrikeTeamworkTrample }
-  | .counterUnlessPaysTeamwork n teamworkN =>
-    { targeting := .of .spell, castKind := .counter,
-      resolution := .counterUnlessPaysTeamwork n teamworkN }
-  | .exileCreatureMvAtMostOrAnyIfTeamwork n life =>
-    { targeting := .of (.creatureMvAtMost n), castKind := .destroyCreature,
-      resolution := .exileCreatureMvAtMostOrAnyIfTeamwork n life }
-  | .returnGyCreatureMvAtMostOrAny n =>
-    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n), castKind := .draw,
-      resolution := .returnGyCreatureMvAtMostOrAny n }
-  | .revealTopPutCreatures n =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .revealTopPutCreatures n }
-  | .createTokens kind n =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .createTokens kind n }
-  | .exileCreatureToughnessAtLeast _n =>
-    { targeting := .of (.creatureToughnessAtLeast _n), castKind := .destroyCreature,
-      resolution := .exileTarget }
-  | .exileEnchantmentMvAtLeast _n =>
-    { targeting := .of (.enchantmentMvAtLeast _n), castKind := .destroyArtifactOrLand,
-      resolution := .exileTarget }
-  | .returnOneOrTwoNonlands =>
-    { targeting := .of .nonland, castKind := .counter, resolution := .returnOneOrTwoNonlands,
-      maxTargets := 2 }
-  | .grantDeathtouch =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .onPermanent (.grantKeywords Keyword.deathtouch) }
-  | .destroyNoncreatureArtifact =>
-    { targeting := .of .noncreatureArtifact, castKind := .destroyArtifactOrLand,
-      resolution := .onPermanent .destroy }
-  | .plusOneOnCreature =>
-    { targeting := .of .creature, castKind := .pump, resolution := .onPermanent (.plusOne 1) }
-  | .targetPlayerCreatesTokens kind n =>
-    { targeting := .of .player, castKind := .extraLand,
-      resolution := .targetPlayerCreatesTokens kind n }
-  | .destroyCreatureSurveil =>
-    { targeting := .of .creature, castKind := .destroyCreature,
-      resolution := .destroyCreatureSurveil }
-  | .investigatePumpFlyingUntap =>
-    { targeting := .of .playerOrCreature, castKind := .pump,
-      resolution := .investigatePumpFlyingUntap }
-  | .plusOneLifelinkIndestructible =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .plusOneLifelinkIndestructible }
-  | .dealDamageToEachCreature n =>
-    { targeting := .of .none, castKind := .creatureDamage,
-      resolution := .dealDamageToEachCreature n }
-  | .destroyLandSearchBasic =>
-    { targeting := .of .artifactOrLand, castKind := .destroyArtifactOrLand,
-      resolution := .destroyLandSearchBasic }
-  | .doublePowerAndToughness =>
-    { targeting := .of .creature, castKind := .pump, resolution := .doublePowerAndToughness }
-  | .returnGySubtypeToHand _subtype =>
-    { targeting := .of .creatureCardInYourGraveyard, castKind := .draw,
-      resolution := .returnGySubtypeToHand _subtype }
-  | .grantVigilanceUnblockable =>
-    { targeting := .of .creature, castKind := .pump, resolution := .grantVigilanceUnblockable }
-  | .becomeArtifactCreature44Flying =>
-    { targeting := .of .artifactOrCreatureYouControl, castKind := .pump,
-      resolution := .becomeArtifactCreature44Flying }
-  | .drawThreeDiscardUnlessArtifact =>
-    { targeting := .of .none, castKind := .draw, resolution := .drawThreeDiscardUnlessArtifact }
-  | .eachOpponentLosesLife n =>
-    { targeting := .of .none, castKind := .burn, resolution := .eachOpponentLosesLife n }
-  | .fight =>
-    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
-      resolution := .fight }
-  | .fightUpToOne =>
-    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
-      allowsZeroTargets := true, resolution := .fightUpToOne }
-  | .plusOneOnEachYouControl =>
-    { targeting := .of .none, castKind := .pump, resolution := .plusOneOnEachYouControl }
-  | .plusOneOnCreatureN n =>
-    { targeting := .of .creatureYouControl, castKind := .pump,
-      resolution := .plusOneOnCreatureN n }
-  | .pumpThenDraw p t =>
-    { targeting := .of .creature, castKind := .pump, resolution := .pumpThenDraw p t }
-  | .pumpThenExileTopPlay p t =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .pumpThenExileTopPlay p t }
-  | .creatureYouControlDealsTwicePower =>
-    { targeting := .of .creatureYouControlThenOppCreature, castKind := .fight,
-      resolution := .creatureYouControlDealsTwicePower }
-  | .createTokensThenTeamPump kind n p t =>
-    { targeting := .of .none, castKind := .pump,
-      resolution := .createTokensThenTeamPump kind n p t }
-  | .createTokensPerSubtype kind subtype =>
-    { targeting := .of .none, castKind := .extraLand,
-      resolution := .createTokensPerSubtype kind subtype }
-  | .creaturesYouControlGetAndGrant p t k =>
-    { targeting := .of .none, castKind := .massPump,
-      resolution := .creaturesYouControlGetAndGrant p t k }
-  | .destroyUpToOneNonland =>
-    { targeting := .of .nonland, castKind := .destroyArtifactOrLand,
-      allowsZeroTargets := true, resolution := .destroyUpToOneNonland }
-  | .createGalactus =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .createGalactus }
-  | .worldsWithinWorlds =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .worldsWithinWorlds }
-  | .exileHandDrawPlayUntilNext =>
-    { targeting := .of .none, castKind := .draw, resolution := .exileHandDrawPlayUntilNext }
-  | .copyNontokenCreaturesYouControl =>
-    { targeting := .of .none, castKind := .extraLand,
-      resolution := .copyNontokenCreaturesYouControl }
-  | .gainControlUntilEotOrNextIfVillain =>
-    { targeting := .of .creature, castKind := .pump,
-      resolution := .gainControlUntilEotOrNextIfVillain }
-  | .millThenPutPermanentGainLife n life =>
-    { targeting := .of .none, castKind := .draw,
-      resolution := .millThenPutPermanentGainLife n life }
-  | .searchLibraryOrGyArtifactCreatureX =>
-    { targeting := .of .none, castKind := .extraLand,
-      resolution := .searchLibraryOrGyArtifactCreatureX }
-  | .gainLifeSearchBasicPlusOne life =>
-    { targeting := .of .upToOneCreatureThenPlayer, castKind := .draw,
-      resolution := .gainLifeSearchBasicPlusOne life }
-  | .nextFreeRGCreature =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .nextFreeRGCreature }
-  | .ownerPutsLibraryThenConnive =>
-    { targeting := .of .oppCreature, castKind := .counter,
-      resolution := .ownerPutsLibraryThenConnive }
-  | .copyThisSpellXTimesThenDamage n =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .copyThisSpellXTimesThenDamage n }
-  | .mayDrawPerArtifactOppsDraw =>
-    { targeting := .of .none, castKind := .draw, resolution := .mayDrawPerArtifactOppsDraw }
-  | .mayPutHeroMvOrDraw n =>
-    { targeting := .of .none, castKind := .draw, resolution := .mayPutHeroMvOrDraw n }
-  | .maySacArtifactOrDiscardDraw n =>
-    { targeting := .of .none, castKind := .draw, resolution := .maySacArtifactOrDiscardDraw n }
-  | .chooseTargetDoubleAndTrample =>
-    { targeting := .of .creatureYouControl, castKind := .pump,
-      resolution := .chooseTargetDoubleAndTrample }
-  | .returnUpToTwoGyModal =>
-    { targeting := .of .none, castKind := .draw, resolution := .returnUpToTwoGyModal }
-  | .artifactSpellsCostLessThisTurn n =>
-    { targeting := .of .none, castKind := .extraLand,
-      resolution := .artifactSpellsCostLessThisTurn n }
-
-instance : HasTargeting SpellLeftover where
-  targeting e := e.spec.targeting
-
-/-- Classification of this spell effect's targeting (CR 115.1 / 601.2c). -/
-def targeting (e : SpellLeftover) : EffectTargeting :=
-  HasTargeting.targeting e
-
-/-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
-def targetKind (e : SpellLeftover) : EffectTargetKind :=
-  HasTargeting.targetKind e
-
-/-- How many targets must be announced for this effect (CR 601.2c). -/
-def targetCount (e : SpellLeftover) : Nat :=
-  HasTargeting.targetCount e
-
-/-- Maximum targets that may be announced (CR 601.2c). Equals `targetCount`
-unless `spec.maxTargets` is set (e.g. “one or two”). -/
-def maxTargetCount (e : SpellLeftover) : Nat :=
-  if e.spec.maxTargets == 0 then e.targetCount else e.spec.maxTargets
-
-/-- True when zero targets is a legal announcement (CR 115.1c). -/
-def allowsZeroTargets (e : SpellLeftover) : Bool :=
-  e.spec.allowsZeroTargets
-
-/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget (e : SpellLeftover) : Bool :=
-  HasTargeting.requiresTarget e
-
-/-- Demonstration-agent category for this effect. -/
-def castKind (e : SpellLeftover) : SpellCastKind :=
-  e.spec.castKind
-
-/-- True when the demonstration agent prefers this mode of a modal spell. -/
-def preferAsDefaultMode (e : SpellLeftover) : Bool :=
-  e.spec.preferAsDefaultMode
-
-/-- How this effect resolves (CR 608). -/
-def resolution (e : SpellLeftover) : SpellResolution :=
-  e.spec.resolution
-
-/-- Oracle-style reminder from targeting and resolution, so a new constructor
-only updates `spec`. -/
-def toNotation (e : SpellLeftover) : String :=
-  let noun := e.targetKind.noun
-  match e with
-  | .fight =>
-    "target creature you control fights target creature an opponent controls"
-  | _ =>
-  match e.resolution with
+/-- Oracle-style reminder from targeting and resolution. `fight` here is the
+Quarrel wording; `Effect.fight` overrides the phrase for the actual fight spell. -/
+def toPhrase (r : SpellResolution) (noun : String) : String :=
+  match r with
   | .fight =>
     "target creature you control deals damage equal to its power to target creature an opponent controls"
   | .extraLand => "you may play an additional land this turn"
@@ -1931,225 +1234,11 @@ def toNotation (e : SpellLeftover) : String :=
   | .artifactSpellsCostLessThisTurn n =>
     s!"Artifact spells you cast this turn cost \{{n}} less to cast"
 
-end SpellLeftover
+end SpellResolution
 
-/-- One-shot effect of an activated ability on resolution (CR 602, 608). -/
-inductive AbilityLeftover where
-  /-- Search your library for a basic land card, put it onto the battlefield
-  tapped, then shuffle (e.g. Wayfarer's Bauble). -/
-  | searchBasicLandTapped
-  /-- Search your library for a card with the given land type, reveal it, put
-  it into your hand, then shuffle (e.g. Mountaincycling, Swampcycling). -/
-  | searchLandTypeToHand (landType : String)
-  /-- Exile the top card of your library. You may play it until the end of
-  your next turn (e.g. Snowslope Hunter). -/
-  | exileTopPlayUntilEndOfNextTurn
-  /-- This creature deals `amount` damage to target creature
-  (e.g. Goblin Cratermaker). -/
-  | dealDamageToTargetCreature (amount : Nat)
-  /-- Destroy target colorless nonland permanent (e.g. Goblin Cratermaker). -/
-  | destroyTargetColorlessNonland
-  /-- Attach this Equipment to target creature you control (CR 702.6a). -/
-  | attachToTargetCreatureYouControl
-  /-- This enchantment becomes a Bear creature in addition to its other types
-  and gains “This creature's power and toughness are each equal to the number
-  of lands you control.” The effect does not end (e.g. Beorn's Hospitality). -/
-  | becomeBearCreatureWithLandsPT
-  /-- This creature gets +P/+T until end of turn (e.g. Goblin Fireleaper). -/
-  | sourceGets (power toughness : Int)
-  /-- Put `n` +1/+1 counters on this creature (e.g. Guardian of the Halls). -/
-  | putPlusOnePlusOneOnSource (n : Nat)
-  /-- Target creature can't be blocked this turn (e.g. Rogue's Passage). -/
-  | targetCantBeBlockedThisTurn
-  /-- Return this card from your graveyard to the battlefield tapped
-  (e.g. Haunt of the Dead Marshes). -/
-  | returnFromGraveyardTapped
-  /-- Return this card from your graveyard to your hand
-  (e.g. Gollum the Abandoned). -/
-  | returnFromGraveyardToHand
-  /-- Creatures you control get +P/+T until end of turn. -/
-  | creaturesYouControlGet (power toughness : Int)
-  /-- Destroy target artifact or enchantment. -/
-  | destroyTargetArtifactOrEnchantment
-  /-- Target player mills `n` cards. -/
-  | millPlayer (n : Nat)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
-  /-- Add one mana of any color (e.g. Treasure). -/
-  | addAnyColor
-  /-- Destroy target permanent. -/
-  | destroyTargetPermanent
-  /-- Put `n` +1/+1 counters on target creature you control. An empty
-  `subtypes` list means any creature you control; otherwise the target must
-  have one of the listed subtypes. -/
-  | plusOneOnTarget (n : Nat) (subtypes : Array String := #[])
-  /-- Target creature with power `n` or less can't be blocked this turn. -/
-  | targetCantBeBlockedPowerAtMost (n : Int)
-  /-- Recruit (draw, discard; if nonland, create a Human Soldier). -/
-  | recruit
-  /-- Scry `n`. -/
-  | scry (n : Nat)
-  /-- You gain `n` life. -/
-  | gainLife (n : Nat)
-  /-- Create `n` tokens of this kind. -/
-  | createTokens (kind : TokenKind) (n : Nat)
-  /-- The source's owner shuffles it into their library and draws `n` cards. -/
-  | ownerShuffleSourceDraw (n : Nat)
-  /-- Return this from the graveyard attached to a creature you control with
-  power `n` or less. -/
-  | returnFromGyAttachPowerAtMost (n : Int)
-  /-- Add these mana types (e.g. `{B}{R}`). -/
-  | addMana (types : Array ManaType)
-  /-- Search your library for a basic land card, reveal it, put it into your
-  hand, then shuffle. -/
-  | searchBasicLandToHand
-  /-- Create `n` tokens of this kind. `none` means X (as much as was paid). -/
-  | createTokensX (kind : TokenKind)
-  /-- Draw `n` cards. -/
-  | draw (n : Nat)
-  /-- Search for up to two basic lands; one enters tapped, one to hand. -/
-  | searchTwoBasicsSplit
-  /-- Creatures you control get +P/+T. Each opponent loses `life` life. -/
-  | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
-  /-- Goblins and Orcs you control gain menace until end of turn. -/
-  | goblinsAndOrcsGainMenace
-  /-- Exile up to two other nonlands you control; return them next end step. -/
-  | exileThenReturnNextEnd
-  /-- Search a basic land onto the battlefield tapped, then maybe behold an Elf. -/
-  | searchBasicBeholdElfUntap
-  /-- Two target players each draw a card. -/
-  | twoPlayersDraw
-  /-- Discard a legendary card with the same name as a legendary you control;
-  draw two cards. -/
-  | discardLegendarySameNameDraw
-  /-- This deals `n` damage to any target. -/
-  | dealDamageToAny (n : Nat)
-  /-- Draw cards equal to a sacrificed creature's power, then discard a card. -/
-  | drawEqualSacrificedPowerThenDiscard
-  /-- Arwen: another creature gains indestructible; share +1/+1 and lifelink. -/
-  | arwenShare
-  /-- Target creature gains a combat-damage-creates-Treasure trigger. -/
-  | grantCombatDamageCreateTreasure
-  /-- Put a shadow counter on target creature. -/
-  | putShadowCounter
-  /-- Deal `n` damage to each opponent. -/
-  | damageEachOpponent (n : Nat)
-  /-- Choose up to two creatures, then destroy the rest. -/
-  | chooseTwoDestroyRest
-  /-- Target creature can't be blocked by the most-life player's creatures. -/
-  | blackGateUnblockable
-  /-- Put a burden counter on the source, then draw that many. -/
-  | burdenThenDraw
-  /-- Creatures you control gain double strike until end of turn. -/
-  | teamGainDoubleStrike
-  /-- The source gains indestructible until end of turn and becomes tapped. -/
-  | sourceGainsIndestructibleTap
-  /-- Put `n` +1/+1 counters on each other permanent you control of this subtype. -/
-  | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
-  /-- Put a +1/+1 counter and an indestructible counter on the source. -/
-  | plusOneAndIndestructibleCounter
-  /-- Put `plus` +1/+1 counters on the source and draw `cards`. -/
-  | plusOneAndDraw (plus cards : Nat)
-  /-- Put a +1/+1 counter on the source and take an extra turn. -/
-  | plusOneAndExtraTurn
-  /-- Put X +1/+1 counters on the source. -/
-  | plusOneX
-  /-- Each opponent discards a card. Put a +1/+1 counter on the source. -/
-  | eachOppDiscardThenPlusOne
-  /-- Look at the top `n`; you may put a Hero, Equipment, or Vehicle onto the battlefield. -/
-  | lookAtTopPutHeroEquipVehicle (n : Nat)
-  /-- Transform this permanent. -/
-  | transform
-  /-- Draw X cards. -/
-  | drawX
-  /-- Look at the top `n`; you may reveal an artifact and put it into your hand. -/
-  | lookAtTopRevealArtifact (n : Nat)
-  /-- The source connives. -/
-  | connive
-  /-- Add one mana of any color, spendable only on Hero spells or Hero sources. -/
-  | addAnyColorSpendOnlyHero
-  /-- Add one mana of any color, spendable only on Villain spells or Villain sources. -/
-  | addAnyColorSpendOnlyVillain
-  /-- Add one mana of any color, spendable only to cast an artifact spell. -/
-  | addAnyColorSpendOnlyArtifactSpell
-  /-- Add two mana of any one color, spendable only on creature-source abilities. -/
-  | addTwoAnyColorCreatureSources
-  /-- Add {U} that can't be spent to cast a nonartifact spell. -/
-  | addBlueCantNonartifact
-  /-- Add X mana of any one color, where X is this creature's power. -/
-  | addAnyColorEqualToSourcePower
-  /-- Add four mana in any combination of colors. -/
-  | addFourAnyCombination
-  /-- Add two mana of any one color, spendable only on Equipment spells or equip. -/
-  | addTwoAnyColorEquipment
-  /-- Draw a card for each card you've discarded this turn. -/
-  | drawPerDiscardedThisTurn
-  /-- This deals `n` damage to each creature. -/
-  | dealDamageToEachCreature (n : Nat)
-  /-- Create that many tokens of this kind (X = removed +1/+1 counters). -/
-  | createTokensEqualRemovedPlusOnes (kind : TokenKind)
-  /-- Exile the top X cards; you may play them this turn. -/
-  | exileTopXPlayThisTurn
-  /-- Target player draws `n` cards. -/
-  | targetPlayerDraw (n : Nat)
-  /-- Copy target activated or triggered ability you control from this source type. -/
-  | copyControlledAbility (fromCreature : Bool)
-  /-- Create tokens equal to the number of permanents you control of this subtype. -/
-  | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
-  /-- Create `n` tapped tokens of this kind. -/
-  | createTappedTokens (kind : TokenKind) (n : Nat)
-  /-- Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this. -/
-  | destroyUpToOneThenPlusOne
-  /-- For each kind of counter on target permanent or player, give another of that kind. -/
-  | proliferateEachKind
-  /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
-  | equipmentBecomesConstructHero
-  /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
-  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
-  /-- Mill `n`. You may put a Hero or enchantment card from among them into your hand. -/
-  | millThenPutHeroOrEnchantment (n : Nat)
-  /-- Put a +1/+1 counter and a double strike counter on this. -/
-  | plusOneAndDoubleStrikeCounter
-  /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
-  | plusOneThenFightUpToOne
-  /-- Put a +1/+1 counter on this. It gains these keywords until end of turn. -/
-  | plusOneAndGrant (k : Keywords)
-  /-- Put a +1/+1 counter on this and create The Tiger God. -/
-  | plusOneAndCreateTigerGod
-  /-- Put `n` +1/+1 counters on this and create a token of this kind. -/
-  | plusOneAndCreateTokens (n : Nat) (kind : TokenKind)
-  /-- Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with that MV. -/
-  | plusTwoThenOddEvenDestroy
-  /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
-  | returnFromGyFinalityAttach
-  /-- Return up to one target creature card from your graveyard to your hand. Put `n` +1/+1 counters on this. -/
-  | returnGyCreatureThenPlusOne (n : Nat)
-  /-- Reveal the top card. If it's an artifact, draw a card. -/
-  | revealTopDrawIfArtifact
-  /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
-  | copyArtifactYouControlNotLegendary
-  /-- Target creature you control that's attacking alone gets +1/+0. You gain 1 life. -/
-  | pumpAttackingAloneGainLife
-  /-- Until end of turn, this becomes a Dinosaur Hero with base P/T and these keywords. -/
-  | becomeDinosaurHero (power toughness : Int) (k : Keywords)
-  /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
-  | nextInstantSorceryCopyIfMvAtMostSourcePower
-  /-- Harness this Infinity Stone. -/
-  | harnessInfinityStone
-  /-- Destroy target noncreature artifact or noncreature enchantment. -/
-  | destroyTargetNoncreatureArtOrEnch
-  /-- Target permanent you control of this subtype connives. -/
-  | targetSubtypeConnives (subtype : String)
-  /-- Another target creature you control gets +P/+T and gains these keywords. -/
-  | anotherYouControlGetsAndGrant (p t : Int) (k : Keywords)
-  /-- Tap target creature. -/
-  | tapTargetCreature
-  /-- Target creature gets +P/+T until end of turn. -/
-  | targetGets (p t : Int)
-deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
-Adding a constructor is a compile error in `AbilityLeftover.spec` rather than
+Adding a constructor is a compile error in `AbilityResolution.toPhrase` rather than
 silently skipping the new effect in `Game.defaultAbilityMode`. -/
 inductive AbilityCastKind where
   /-- Damage to a creature. -/
@@ -2345,282 +1434,13 @@ inductive AbilityResolution where
   | targetSubtypeConnives (subtype : String)
 deriving Repr, Inhabited, BEq
 
-/-- Targeting, demonstration-agent classification, and resolution of an
-activated ability. Exhaustive so a new constructor is a compile error in
-`AbilityLeftover.spec`. -/
-structure AbilityMeta where
-  targeting : EffectTargeting := .of .none
-  castKind : AbilityCastKind := .other
-  resolution : AbilityResolution := .searchBasicLand
-  /-- True when zero targets is a legal announcement (CR 115.1c). -/
-  allowsZeroTargets : Bool := false
-deriving Repr, Inhabited, BEq
 
-namespace AbilityLeftover
+namespace AbilityResolution
 
-/-- Classification of this ability. Exhaustive so a new constructor is a
-compile error here rather than silently matching no targets or doing nothing
-on resolution. -/
-def spec : AbilityLeftover → AbilityMeta
-  | .dealDamageToTargetCreature n =>
-    { targeting := .of .creature, castKind := .creatureDamage,
-      resolution := .onPermanent (.dealDamage n) }
-  | .destroyTargetColorlessNonland =>
-    { targeting := .of .colorlessNonland, castKind := .destroyColorless,
-      resolution := .onPermanent .destroy }
-  | .attachToTargetCreatureYouControl =>
-    { targeting := .of .creatureYouControl, resolution := .attach }
-  | .targetCantBeBlockedThisTurn =>
-    { targeting := .of .creature .own, resolution := .onPermanent .cantBeBlocked }
-  | .searchBasicLandTapped =>
-    { resolution := .searchBasicLand }
-  | .searchLandTypeToHand t =>
-    { resolution := .searchLandTypeToHand t }
-  | .exileTopPlayUntilEndOfNextTurn =>
-    { resolution := .exileTop }
-  | .becomeBearCreatureWithLandsPT =>
-    { resolution := .becomeBear }
-  | .sourceGets p t =>
-    { resolution := .onSource (.pump p t) }
-  | .putPlusOnePlusOneOnSource n =>
-    { resolution := .onSource (.plusOne n) }
-  | .returnFromGraveyardTapped =>
-    { resolution := .returnFromGraveyardTapped }
-  | .returnFromGraveyardToHand =>
-    { resolution := .returnFromGraveyardToHand }
-  | .creaturesYouControlGet p t =>
-    { resolution := .creaturesYouControlPump p t }
-  | .destroyTargetArtifactOrEnchantment =>
-    { targeting := .of .artifactOrEnchantment, castKind := .destroyColorless,
-      resolution := .onPermanent .destroy }
-  | .millPlayer n =>
-    { targeting := .of .player, resolution := .mill n }
-  | .drawThenDiscard n =>
-    { resolution := .drawThenDiscard n }
-  | .addAnyColor =>
-    { resolution := .addAnyColor }
-  | .destroyTargetPermanent =>
-    { targeting := .of .permanent, castKind := .destroyColorless,
-      resolution := .onPermanent .destroy }
-  | .plusOneOnTarget n subtypes =>
-    { targeting :=
-        .of (if subtypes.isEmpty then .creatureYouControl
-             else .creatureYouControlAnySubtype subtypes),
-      resolution := .onPermanent (.plusOne n) }
-  | .targetCantBeBlockedPowerAtMost n =>
-    { targeting := .of (.creaturePowerAtMost n),
-      resolution := .onPermanent .cantBeBlocked }
-  | .recruit =>
-    { resolution := .recruit }
-  | .scry n =>
-    { resolution := .scry n }
-  | .gainLife n =>
-    { resolution := .gainLife n }
-  | .createTokens kind n =>
-    { resolution := .createTokens kind n }
-  | .ownerShuffleSourceDraw n =>
-    { resolution := .ownerShuffleSourceDraw n }
-  | .returnFromGyAttachPowerAtMost n =>
-    { targeting := .of (.creatureYouControlPowerAtMost n),
-      resolution := .returnFromGyAttach }
-  | .addMana types =>
-    { resolution := .addMana types }
-  | .searchBasicLandToHand =>
-    { resolution := .searchBasicLandToHand }
-  | .createTokensX kind =>
-    { resolution := .createTokensX kind }
-  | .draw n =>
-    { resolution := .draw n }
-  | .searchTwoBasicsSplit =>
-    { resolution := .searchTwoBasicsSplit }
-  | .creaturesYouControlGetOppsLoseLife p t life =>
-    { resolution := .creaturesYouControlGetOppsLoseLife p t life }
-  | .goblinsAndOrcsGainMenace =>
-    { resolution := .goblinsAndOrcsGainMenace }
-  | .exileThenReturnNextEnd =>
-    { targeting := .of .twoCreaturesOrLandsYouControl,
-      resolution := .exileThenReturnNextEnd }
-  | .searchBasicBeholdElfUntap =>
-    { resolution := .searchBasicBeholdElfUntap }
-  | .twoPlayersDraw =>
-    { targeting := .of .twoPlayers, resolution := .twoPlayersDraw }
-  | .discardLegendarySameNameDraw =>
-    { resolution := .discardLegendarySameNameDraw }
-  | .dealDamageToAny n =>
-    { targeting := .of .playerOrCreature, castKind := .creatureDamage,
-      resolution := .dealDamageToAny n }
-  | .drawEqualSacrificedPowerThenDiscard =>
-    { resolution := .drawEqualSacrificedPowerThenDiscard }
-  | .arwenShare =>
-    { targeting := .of .anotherCreature, resolution := .arwenShare }
-  | .grantCombatDamageCreateTreasure =>
-    { targeting := .of .creature, resolution := .grantCombatDamageCreateTreasure }
-  | .putShadowCounter =>
-    { targeting := .of .creature, resolution := .putShadowCounter }
-  | .damageEachOpponent n =>
-    { resolution := .damageEachOpponent n }
-  | .chooseTwoDestroyRest =>
-    { targeting := .of .creature, resolution := .chooseTwoDestroyRest }
-  | .blackGateUnblockable =>
-    { targeting := .of .creature, resolution := .blackGateUnblockable }
-  | .burdenThenDraw =>
-    { resolution := .burdenThenDraw }
-  | .teamGainDoubleStrike =>
-    { resolution := .teamGainDoubleStrike }
-  | .sourceGainsIndestructibleTap =>
-    { resolution := .sourceGainsIndestructibleTap }
-  | .plusOneOnEachOtherSubtype subtype n =>
-    { resolution := .plusOneOnEachOtherSubtype subtype n }
-  | .plusOneAndIndestructibleCounter =>
-    { resolution := .plusOneAndIndestructibleCounter }
-  | .plusOneAndDraw plus cards =>
-    { resolution := .plusOneAndDraw plus cards }
-  | .plusOneAndExtraTurn =>
-    { resolution := .plusOneAndExtraTurn }
-  | .plusOneX =>
-    { resolution := .plusOneX }
-  | .eachOppDiscardThenPlusOne =>
-    { resolution := .eachOppDiscardThenPlusOne }
-  | .lookAtTopPutHeroEquipVehicle n =>
-    { resolution := .lookAtTopPutHeroEquipVehicle n }
-  | .transform =>
-    { resolution := .transform }
-  | .drawX =>
-    { resolution := .drawX }
-  | .lookAtTopRevealArtifact n =>
-    { resolution := .lookAtTopRevealArtifact n }
-  | .connive =>
-    { resolution := .connive }
-  | .addAnyColorSpendOnlyHero =>
-    { resolution := .addAnyColorSpendOnlyHero }
-  | .addAnyColorSpendOnlyVillain =>
-    { resolution := .addAnyColorSpendOnlyVillain }
-  | .addAnyColorSpendOnlyArtifactSpell =>
-    { resolution := .addAnyColorSpendOnlyArtifactSpell }
-  | .addTwoAnyColorCreatureSources =>
-    { resolution := .addTwoAnyColorCreatureSources }
-  | .addBlueCantNonartifact =>
-    { resolution := .addBlueCantNonartifact }
-  | .addAnyColorEqualToSourcePower =>
-    { resolution := .addAnyColorEqualToSourcePower }
-  | .addFourAnyCombination =>
-    { resolution := .addFourAnyCombination }
-  | .addTwoAnyColorEquipment =>
-    { resolution := .addTwoAnyColorEquipment }
-  | .drawPerDiscardedThisTurn =>
-    { resolution := .drawPerDiscardedThisTurn }
-  | .dealDamageToEachCreature n =>
-    { castKind := .creatureDamage, resolution := .dealDamageToEachCreature n }
-  | .createTokensEqualRemovedPlusOnes kind =>
-    { resolution := .createTokensEqualRemovedPlusOnes kind }
-  | .exileTopXPlayThisTurn =>
-    { resolution := .exileTopXPlayThisTurn }
-  | .targetPlayerDraw n =>
-    { targeting := .of .player, resolution := .targetPlayerDraw n }
-  | .copyControlledAbility fromCreature =>
-    { targeting :=
-        .of (if fromCreature then .stackAbilityFromCreatureSource
-             else .stackAbilityFromArtifactSource),
-      resolution := .copyControlledAbility fromCreature }
-  | .createTokensEqualSubtype kind subtype =>
-    { resolution := .createTokensEqualSubtype kind subtype }
-  | .createTappedTokens kind n =>
-    { resolution := .createTappedTokens kind n }
-  | .destroyUpToOneThenPlusOne =>
-    { targeting := .of .artifactOrEnchantment, castKind := .destroyColorless,
-      allowsZeroTargets := true, resolution := .destroyUpToOneThenPlusOne }
-  | .proliferateEachKind =>
-    { targeting := .of .permanentOrPlayer, resolution := .proliferateEachKind }
-  | .equipmentBecomesConstructHero =>
-    { resolution := .equipmentBecomesConstructHero }
-  | .lookAtTopRevealSubtype n subtype =>
-    { resolution := .lookAtTopRevealSubtype n subtype }
-  | .millThenPutHeroOrEnchantment n =>
-    { resolution := .millThenPutHeroOrEnchantment n }
-  | .plusOneAndDoubleStrikeCounter =>
-    { resolution := .plusOneAndDoubleStrikeCounter }
-  | .plusOneThenFightUpToOne =>
-    { targeting := .of .oppCreature, allowsZeroTargets := true,
-      resolution := .plusOneThenFightUpToOne }
-  | .plusOneAndGrant k =>
-    { resolution := .plusOneAndGrant k }
-  | .plusOneAndCreateTigerGod =>
-    { resolution := .plusOneAndCreateTigerGod }
-  | .plusOneAndCreateTokens n kind =>
-    { resolution := .plusOneAndCreateTokens n kind }
-  | .plusTwoThenOddEvenDestroy =>
-    { resolution := .plusTwoThenOddEvenDestroy }
-  | .returnFromGyFinalityAttach =>
-    { resolution := .returnFromGyFinalityAttach }
-  | .returnGyCreatureThenPlusOne n =>
-    { targeting := .of .creatureCardInYourGraveyard, allowsZeroTargets := true,
-      resolution := .returnGyCreatureThenPlusOne n }
-  | .revealTopDrawIfArtifact =>
-    { resolution := .revealTopDrawIfArtifact }
-  | .copyArtifactYouControlNotLegendary =>
-    { targeting := .of .twoArtifactsYouControl,
-      resolution := .copyArtifactYouControlNotLegendary }
-  | .pumpAttackingAloneGainLife =>
-    { targeting := .of .attackingAloneCreatureYouControl,
-      resolution := .pumpAttackingAloneGainLife }
-  | .becomeDinosaurHero p t k =>
-    { resolution := .becomeDinosaurHero p t k }
-  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
-    { resolution := .nextInstantSorceryCopyIfMvAtMostSourcePower }
-  | .harnessInfinityStone =>
-    { resolution := .harnessInfinityStone }
-  | .destroyTargetNoncreatureArtOrEnch =>
-    { targeting := .of .noncreatureArtifactOrEnchantment,
-      castKind := .destroyColorless,
-      resolution := .destroyTargetNoncreatureArtOrEnch }
-  | .targetSubtypeConnives subtype =>
-    { targeting := .of (.creatureYouControlSubtype subtype),
-      resolution := .targetSubtypeConnives subtype }
-  | .anotherYouControlGetsAndGrant p t k =>
-    { targeting := .of .anotherCreatureYouControl,
-      resolution := .onPermanent (.pumpAndGrant p t k) }
-  | .tapTargetCreature =>
-    { targeting := .of .creature, resolution := .onPermanent .tap }
-  | .targetGets p t =>
-    { targeting := .of .creature, resolution := .onPermanent (.pump p t) }
-
-instance : HasTargeting AbilityLeftover where
-  targeting e := e.spec.targeting
-
-/-- Classification of this ability effect's targeting (CR 115.1 / 601.2c). -/
-def targeting (e : AbilityLeftover) : EffectTargeting :=
-  HasTargeting.targeting e
-
-/-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
-def targetKind (e : AbilityLeftover) : EffectTargetKind :=
-  HasTargeting.targetKind e
-
-/-- How many targets must be announced for this effect (CR 601.2c). -/
-def targetCount (e : AbilityLeftover) : Nat :=
-  HasTargeting.targetCount e
-
-/-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget (e : AbilityLeftover) : Bool :=
-  HasTargeting.requiresTarget e
-
-/-- Demonstration-agent category for this ability mode. -/
-def castKind (e : AbilityLeftover) : AbilityCastKind :=
-  e.spec.castKind
-
-/-- How this effect resolves (CR 608). -/
-def resolution (e : AbilityLeftover) : AbilityResolution :=
-  e.spec.resolution
-
-/-- True when zero targets is a legal announcement (CR 115.1c). -/
-def allowsZeroTargets (e : AbilityLeftover) : Bool :=
-  e.spec.allowsZeroTargets
-
-/-- Oracle-style reminder from targeting and resolution, so a new constructor
-only updates `spec`. Source-deals-damage uses the creature as the subject
-(`This creature deals N…`) rather than the generic `PermanentAction` wording. -/
-def toNotation (e : AbilityLeftover) : String :=
-  let noun := e.targetKind.noun
-  match e.resolution with
+/-- Oracle-style reminder from targeting and resolution. Source-deals-damage
+uses the creature as the subject rather than the generic `PermanentAction` wording. -/
+def toPhrase (r : AbilityResolution) (noun : String) : String :=
+  match r with
   | .searchBasicLand =>
     "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
   | .searchLandTypeToHand t =>
@@ -2827,10 +1647,8 @@ def toNotation (e : AbilityLeftover) : String :=
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
 
-instance : ToString AbilityLeftover where
-  toString := toNotation
+end AbilityResolution
 
-end AbilityLeftover
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
@@ -6971,26 +5789,6 @@ end Resolution
 
 namespace Effect
 
-/-- Convert a printed spell effect to the unified `Effect`. -/
-def ofSpell (e : SpellLeftover) : Effect :=
-  let s := e.spec
-  { targeting := s.targeting
-    allowsZeroTargets := s.allowsZeroTargets
-    maxTargets := s.maxTargets
-    spellCastKind := s.castKind
-    preferAsDefaultMode := s.preferAsDefaultMode
-    resolution := Resolution.ofSpell s.resolution
-    phrase := e.toNotation }
-
-/-- Convert a printed activated ability to the unified `Effect`. -/
-def ofAbility (e : AbilityLeftover) : Effect :=
-  let s := e.spec
-  { targeting := s.targeting
-    allowsZeroTargets := s.allowsZeroTargets
-    abilityCastKind := s.castKind
-    resolution := Resolution.ofAbility s.resolution
-    phrase := e.toNotation }
-
 /-- Convert a printed Saga chapter to the unified `Effect`.
 Always wraps the original `ChapterLeftover` so `asChapter?` can recover it. -/
 def ofChapter (e : ChapterLeftover) : Effect :=
@@ -7044,668 +5842,867 @@ def ofCasting (e : CastLeftover) : Effect := ofTrigger (.casting e)
 /-- Convert a leftover draw / discard / life / +1/+1-counter effect. -/
 def ofResource (e : ResourceLeftover) : Effect := ofTrigger (.resource e)
 
+/-- Build a spell-shaped `Effect` from targeting and resolution.
+Phrase comes from `SpellResolution.toPhrase` unless overridden. -/
+def mkSpell (targeting : EffectTargeting) (resolution : SpellResolution)
+    (castKind : SpellCastKind := .extraLand)
+    (preferAsDefaultMode := false)
+    (maxTargets := 0)
+    (allowsZeroTargets := false)
+    (phraseOverride : Option String := none) : Effect :=
+  { targeting
+    allowsZeroTargets
+    maxTargets
+    spellCastKind := castKind
+    preferAsDefaultMode
+    resolution := Resolution.ofSpell resolution
+    phrase := phraseOverride.getD (SpellResolution.toPhrase resolution targeting.kind.noun) }
+
+/-- Build an activated-ability `Effect` from targeting and resolution.
+Phrase comes from `AbilityResolution.toPhrase` unless overridden. -/
+def mkAbility (targeting : EffectTargeting) (resolution : AbilityResolution)
+    (castKind : AbilityCastKind := .other)
+    (allowsZeroTargets := false)
+    (phraseOverride : Option String := none) : Effect :=
+  { targeting
+    allowsZeroTargets
+    abilityCastKind := castKind
+    resolution := Resolution.ofAbility resolution
+    phrase := phraseOverride.getD (AbilityResolution.toPhrase resolution targeting.kind.noun) }
+
 /-- Printed leftover constructors as unified `Effect` values.
 Call sites should use these instead of leftover inductives. -/
 
 def dealDamage (amount : Nat) : Effect :=
-  ofSpell (.dealDamage amount)
+  mkSpell (.of .playerOrCreature) (.onPermanent (.dealDamage amount))
+    (castKind := .burn)
 
 def pump (power toughness : Int) : Effect :=
-  ofSpell (.pump power toughness)
+  mkSpell (.of .creature .own) (.onPermanent (.pump power toughness))
+    (castKind := .pump)
 
 def destroyCreatureWithFlying : Effect :=
-  ofSpell .destroyCreatureWithFlying
+  mkSpell (.of .creatureWithFlying) (.onPermanent .destroy)
+    (castKind := .destroyFlying)
+    (preferAsDefaultMode := true)
 
 def destroyCreature : Effect :=
-  ofSpell .destroyCreature
+  mkSpell (.of .creature) (.onPermanent .destroy)
+    (castKind := .destroyCreature)
 
 def plusOnePlusOneTrampleHexproof : Effect :=
-  ofSpell .plusOnePlusOneTrampleHexproof
+  mkSpell (.of .creatureYouControl) (.onPermanent .plusOnePlusOneTrampleHexproof)
+    (castKind := .pump)
 
 def dealDamageToCreature (amount : Nat) : Effect :=
-  ofSpell (.dealDamageToCreature amount)
+  mkSpell (.of .creature) (.onPermanent (.dealDamage amount))
+    (castKind := .creatureDamage)
 
 def dealDamageLoseIndestructibleExile (amount : Nat) : Effect :=
-  ofSpell (.dealDamageLoseIndestructibleExile amount)
+  mkSpell (.of .creature) (.onPermanent (.dealDamageLoseIndestructibleExile amount))
+    (castKind := .creatureDamage)
 
 def creatureYouControlDealsPowerToOppCreature : Effect :=
-  ofSpell .creatureYouControlDealsPowerToOppCreature
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight)
+    (castKind := .fight)
 
 def playAdditionalLandThisTurn : Effect :=
-  ofSpell .playAdditionalLandThisTurn
+  mkSpell (.of .none) (.extraLand)
+    (castKind := .extraLand)
 
 def destroyArtifactOrLandNonflyersCantBlock : Effect :=
-  ofSpell .destroyArtifactOrLandNonflyersCantBlock
+  mkSpell (.of .artifactOrLand) (.onPermanent .destroyThenNonflyersCantBlock)
+    (castKind := .destroyArtifactOrLand)
 
 def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
-  ofSpell (.destroyTargetCreatureControllerLosesLife life)
+  mkSpell (.of .creature) (.destroyAndControllerLosesLife life)
+    (castKind := .destroyCreature)
+    (preferAsDefaultMode := true)
 
 def allCreaturesGet (power toughness : Int) : Effect :=
-  ofSpell (.allCreaturesGet power toughness)
+  mkSpell (.of .none) (.allCreaturesPump power toughness)
+    (castKind := .massPump)
 
 def drawAndLoseLife (cards life : Nat) : Effect :=
-  ofSpell (.drawAndLoseLife cards life)
+  mkSpell (.of .none) (.drawAndLoseLife cards life)
+    (castKind := .draw)
 
 def targetPlayerDrawLoseLife (cards life : Nat) : Effect :=
-  ofSpell (.targetPlayerDrawLoseLife cards life)
+  mkSpell (.of .player .selfPlayer) (.playerDrawLoseLife cards life)
+    (castKind := .draw)
 
 def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
-  ofSpell (.creaturesTargetPlayerGet power toughness)
+  mkSpell (.of .player) (.creaturesOfPlayerPump power toughness)
+    (castKind := .massPump)
 
 def pumpAndLifelink (power toughness : Int) : Effect :=
-  ofSpell (.pumpAndLifelink power toughness)
+  mkSpell (.of .creature .own) (.onPermanent (.pumpAndLifelink power toughness))
+    (castKind := .pump)
 
 def pumpAndExileIfDies (power toughness : Int) : Effect :=
-  ofSpell (.pumpAndExileIfDies power toughness)
+  mkSpell (.of .creature) (.onPermanent (.pumpAndExileIfDies power toughness))
+    (castKind := .pump)
+    (preferAsDefaultMode := true)
 
 def exileGraveyardCreaturesGrantCast : Effect :=
-  ofSpell .exileGraveyardCreaturesGrantCast
+  mkSpell (.of .player) (.exileGraveyardCreaturesGrantCast)
+    (castKind := .draw)
 
 def draw (n : Nat) : Effect :=
-  ofSpell (.draw n)
+  mkSpell (.of .none) (.draw n)
+    (castKind := .draw)
 
 def drawThenDiscard (n : Nat) : Effect :=
-  ofSpell (.drawThenDiscard n)
+  mkSpell (.of .none) (.drawThenDiscard n)
+    (castKind := .draw)
 
 def scry (n : Nat) : Effect :=
-  ofSpell (.scry n)
+  mkSpell (.of .none) (.scry n)
+    (castKind := .draw)
 
 def tapScryDraw (scryN drawN : Nat) : Effect :=
-  ofSpell (.tapScryDraw scryN drawN)
+  mkSpell (.of .creature) (.tapScryDraw scryN drawN)
+    (castKind := .draw)
 
 def tapOneOrTwoCreatures : Effect :=
-  ofSpell .tapOneOrTwoCreatures
+  mkSpell (.of .creature) (.tapTargets)
+    (castKind := .pump)
+    (maxTargets := 2)
 
 def grantHexproofIndestructible : Effect :=
-  ofSpell .grantHexproofIndestructible
+  mkSpell (.of .artifactOrCreatureYouControl) (.onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)))
+    (castKind := .pump)
 
 def plusOneUpToOneAndPlayerGainsLife (life : Nat) : Effect :=
-  ofSpell (.plusOneUpToOneAndPlayerGainsLife life)
+  mkSpell (.of .upToOneCreatureThenPlayer) (.plusOneAndPlayerGainsLife life)
+    (castKind := .pump)
 
 def counterSpell : Effect :=
-  ofSpell .counterSpell
+  mkSpell (.of .spell) (.counter)
+    (castKind := .counter)
 
 def counterUnlessPays (n : Nat) : Effect :=
-  ofSpell (.counterUnlessPays n)
+  mkSpell (.of .spell) (.counterUnlessPays n)
+    (castKind := .counter)
 
 def counterCreatureSpellPTAtMost (n : Nat) : Effect :=
-  ofSpell (.counterCreatureSpellPTAtMost n)
+  mkSpell (.of (.creatureSpellPTAtMost n)) (.counter)
+    (castKind := .counter)
 
 def counterExilePermanentMayCast : Effect :=
-  ofSpell .counterExilePermanentMayCast
+  mkSpell (.of .spell) (.counterExilePermanentMayCast)
+    (castKind := .counter)
 
 def putOnTopOrBottom : Effect :=
-  ofSpell .putOnTopOrBottom
+  mkSpell (.of .creature) (.putOnTopOrBottom)
+    (castKind := .counter)
 
 def untapPumpMaybeAttach (power toughness : Int) : Effect :=
-  ofSpell (.untapPumpMaybeAttach power toughness)
+  mkSpell (.of .creatureYouControl) (.untapPumpMaybeAttach power toughness)
+    (castKind := .pump)
 
 def exchangeControlSharingType : Effect :=
-  ofSpell .exchangeControlSharingType
+  mkSpell (.of .twoNonlandsSharingType) (.exchangeControl)
+    (castKind := .counter)
 
 def returnSpellDraw : Effect :=
-  ofSpell .returnSpellDraw
+  mkSpell (.of .spell) (.returnSpellDraw)
+    (castKind := .counter)
 
 def creaturesYouControlGet (power toughness : Int) : Effect :=
-  ofSpell (.creaturesYouControlGet power toughness)
+  mkSpell (.of .none) (.creaturesYouControlPump power toughness)
+    (castKind := .massPump)
 
 def destroyArtifactOrEnchantmentGainLife (life : Nat) : Effect :=
-  ofSpell (.destroyArtifactOrEnchantmentGainLife life)
+  mkSpell (.of .artifactOrEnchantment) (.destroyArtifactOrEnchantmentGainLife life)
+    (castKind := .destroyArtifactOrLand)
 
 def destroyCreaturePowerAtLeast (n : Int) : Effect :=
-  ofSpell (.destroyCreaturePowerAtLeast n)
+  mkSpell (.of (.creaturePowerAtLeast n)) (.onPermanent .destroy)
+    (castKind := .destroyCreature)
+    (preferAsDefaultMode := true)
 
 def becomeArtifactGainIndestructible : Effect :=
-  ofSpell .becomeArtifactGainIndestructible
+  mkSpell (.of .creature) (.onPermanent .becomeArtifactIndestructible)
+    (castKind := .pump)
 
 def pumpAndGrantKeywords (power toughness : Int) (k : Keywords) : Effect :=
-  ofSpell (.pumpAndGrantKeywords power toughness k)
+  mkSpell (.of .creature .own) (.onPermanent (.pumpAndGrant power toughness k))
+    (castKind := .pump)
 
 def amassGoblins (n : Nat) : Effect :=
-  ofSpell (.amassGoblins n)
+  mkSpell (.of .none) (.amassGoblins n)
+    (castKind := .pump)
 
 def drawLoseLifeThenAmass (n : Nat) : Effect :=
-  ofSpell (.drawLoseLifeThenAmass n)
+  mkSpell (.of .none) (.drawLoseLifeThenAmass n)
+    (castKind := .draw)
 
 def returnCreatureFromGyThenAmass (n : Nat) : Effect :=
-  ofSpell (.returnCreatureFromGyThenAmass n)
+  mkSpell (.of .creatureCardInYourGraveyard) (.returnCreatureFromGyThenAmass n)
+    (castKind := .draw)
+    (allowsZeroTargets := true)
 
 def counterThenRecruitIfMvAtMost (n : Nat) : Effect :=
-  ofSpell (.counterThenRecruitIfMvAtMost n)
+  mkSpell (.of .spell) (.counterThenRecruitIfMvAtMost n)
+    (castKind := .counter)
 
 def plusOneThenFight (n : Nat) : Effect :=
-  ofSpell (.plusOneThenFight n)
+  mkSpell (.of .creatureYouControlThenOppCreature) (.plusOneThenFight n)
+    (castKind := .fight)
 
 def plusOneThenEachOtherIfFromGy : Effect :=
-  ofSpell .plusOneThenEachOtherIfFromGy
+  mkSpell (.of .creatureYouControl) (.plusOneThenEachOtherIfFromGy)
+    (castKind := .pump)
 
 def drawIfFromGy (n fromGy : Nat) : Effect :=
-  ofSpell (.drawIfFromGy n fromGy)
+  mkSpell (.of .none) (.drawIfFromGy n fromGy)
+    (castKind := .draw)
 
 def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
-  ofSpell (.amassGoblinsOrFromGy n fromGy)
+  mkSpell (.of .none) (.amassGoblinsOrFromGy n fromGy)
+    (castKind := .pump)
 
 def searchLegendaryCreatureToHand : Effect :=
-  ofSpell .searchLegendaryCreatureToHand
+  mkSpell (.of .none) (.searchLegendaryCreatureToHand)
+    (castKind := .draw)
 
 def dealDamageToEachOppCreature (n : Nat) : Effect :=
-  ofSpell (.dealDamageToEachOppCreature n)
+  mkSpell (.of .none) (.dealDamageToEachOppCreature n)
+    (castKind := .creatureDamage)
 
 def destroyTargetArtifact : Effect :=
-  ofSpell .destroyTargetArtifact
+  mkSpell (.of .artifact) (.onPermanent .destroy)
+    (castKind := .destroyArtifactOrLand)
 
 def targetPlayerDraw (n : Nat) : Effect :=
-  ofSpell (.targetPlayerDraw n)
+  mkSpell (.of .player .selfPlayer) (.targetPlayerDraw n)
+    (castKind := .draw)
 
 def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
-  ofSpell (.dealDamageToCreatureExileIfDies n)
+  mkSpell (.of .creature) (.dealDamageToCreatureExileIfDies n)
+    (castKind := .creatureDamage)
 
 def destroyArtifactToken : Effect :=
-  ofSpell .destroyArtifactToken
+  mkSpell (.of .artifactToken) (.onPermanent .destroy)
+    (castKind := .destroyArtifactOrLand)
 
 def addRedPerOppArtifacts : Effect :=
-  ofSpell .addRedPerOppArtifacts
+  mkSpell (.of .none) (.addRedPerOppArtifacts)
+    (castKind := .draw)
 
 def dealDamageToEachNonDragon (n : Nat) : Effect :=
-  ofSpell (.dealDamageToEachNonDragon n)
+  mkSpell (.of .none) (.dealDamageToEachNonDragon n)
+    (castKind := .creatureDamage)
 
 def chooseTypeReturnOthers : Effect :=
-  ofSpell .chooseTypeReturnOthers
+  mkSpell (.of .none) (.chooseTypeReturnOthers)
+    (castKind := .counter)
 
 def drawEqualToughnessThenPutCreatures : Effect :=
-  ofSpell .drawEqualToughnessThenPutCreatures
+  mkSpell (.of .none) (.drawEqualToughnessThenPutCreatures)
+    (castKind := .draw)
 
 def millThenPutInstantOrSorcery (n : Nat) : Effect :=
-  ofSpell (.millThenPutInstantOrSorcery n)
+  mkSpell (.of .none) (.millThenPutInstantOrSorcery n)
+    (castKind := .draw)
 
 def millThenPutLands (n max : Nat) : Effect :=
-  ofSpell (.millThenPutLands n max)
+  mkSpell (.of .none) (.millThenPutLands n max)
+    (castKind := .draw)
 
 def exileThenReturnYouControl : Effect :=
-  ofSpell .exileThenReturnYouControl
+  mkSpell (.of .twoCreaturesOrLandsYouControl) (.exileThenReturnYouControl)
+    (castKind := .counter)
 
 def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
-  ofSpell (.dealDamageToEachNonDragonThenAddDragonMana n)
+  mkSpell (.of .none) (.dealDamageToEachNonDragonThenAddDragonMana n)
+    (castKind := .creatureDamage)
 
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
-  ofSpell (.millThenPutAllInstantsOrSorceries n)
+  mkSpell (.of .none) (.millThenPutAllInstantsOrSorceries n)
+    (castKind := .draw)
 
 def exileAttackersSearchBasics : Effect :=
-  ofSpell .exileAttackersSearchBasics
+  mkSpell (.of .player) (.exileAttackersSearchBasics)
+    (castKind := .destroyCreature)
 
 def createTokensX (kind : TokenKind) : Effect :=
-  ofSpell (.createTokensX kind)
+  mkSpell (.of .none) (.createTokensX kind)
+    (castKind := .extraLand)
 
 def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
-  ofSpell (.exileTopPlayIfYouControlSubtype n subtype)
+  mkSpell (.of .none) (.exileTopPlayIfYouControlSubtype n subtype)
+    (castKind := .draw)
 
 def returnSpellCantCastIfGift : Effect :=
-  ofSpell .returnSpellCantCastIfGift
+  mkSpell (.of .spell) (.returnSpellCantCastIfGift)
+    (castKind := .counter)
 
 def exileTopXOppPlayForLife : Effect :=
-  ofSpell .exileTopXOppPlayForLife
+  mkSpell (.of .opponent) (.exileTopXOppPlayForLife)
+    (castKind := .draw)
 
 def riddlesInTheDark : Effect :=
-  ofSpell .riddlesInTheDark
+  mkSpell (.of .none) (.riddlesInTheDark)
+    (castKind := .draw)
 
 def supperForSpiders : Effect :=
-  ofSpell .supperForSpiders
+  mkSpell (.of .none) (.supperForSpiders)
+    (castKind := .draw)
 
 def eaglesAreComing : Effect :=
-  ofSpell .eaglesAreComing
+  mkSpell (.of .creatureYouControl) (.eaglesAreComing)
+    (castKind := .draw)
 
 def lookAtTopLandsGainLife (n life : Nat) : Effect :=
-  ofSpell (.lookAtTopLandsGainLife n life)
+  mkSpell (.of .none) (.lookAtTopLandsGainLife n life)
+    (castKind := .draw)
 
 def gainControlOppArtifacts : Effect :=
-  ofSpell .gainControlOppArtifacts
+  mkSpell (.of .artifact) (.gainControlOppArtifacts)
+    (castKind := .counter)
+    (allowsZeroTargets := true)
 
 def damageOppCreaturesEqualOtherSpellsMv : Effect :=
-  ofSpell .damageOppCreaturesEqualOtherSpellsMv
+  mkSpell (.of .none) (.damageOppCreaturesEqualOtherSpellsMv)
+    (castKind := .creatureDamage)
 
 def phaseOutKicker : Effect :=
-  ofSpell .phaseOutKicker
+  mkSpell (.of .creature) (.phaseOutKicker)
+    (castKind := .counter)
 
 def dealDamageToAttackerOrBlocker (n teamworkN : Nat) : Effect :=
-  ofSpell (.dealDamageToAttackerOrBlocker n teamworkN)
+  mkSpell (.of .attackingOrBlockingCreature) (.dealDamageTeamwork n teamworkN)
+    (castKind := .creatureDamage)
 
 def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
-  ofSpell (.dealDamageThenControllerIfTeamwork n extra)
+  mkSpell (.of .creature) (.dealDamageThenControllerIfTeamwork n extra)
+    (castKind := .creatureDamage)
 
 def grantDoubleStrikeTeamworkTrample : Effect :=
-  ofSpell .grantDoubleStrikeTeamworkTrample
+  mkSpell (.of .creature) (.grantDoubleStrikeTeamworkTrample)
+    (castKind := .pump)
 
 def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
-  ofSpell (.counterUnlessPaysTeamwork n teamworkN)
+  mkSpell (.of .spell) (.counterUnlessPaysTeamwork n teamworkN)
+    (castKind := .counter)
 
 def exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat) : Effect :=
-  ofSpell (.exileCreatureMvAtMostOrAnyIfTeamwork n life)
+  mkSpell (.of (.creatureMvAtMost n)) (.exileCreatureMvAtMostOrAnyIfTeamwork n life)
+    (castKind := .destroyCreature)
 
 def returnGyCreatureMvAtMostOrAny (n : Nat) : Effect :=
-  ofSpell (.returnGyCreatureMvAtMostOrAny n)
+  mkSpell (.of (.creatureCardInYourGraveyardMvAtMost n)) (.returnGyCreatureMvAtMostOrAny n)
+    (castKind := .draw)
 
 def revealTopPutCreatures (n : Nat) : Effect :=
-  ofSpell (.revealTopPutCreatures n)
+  mkSpell (.of .none) (.revealTopPutCreatures n)
+    (castKind := .extraLand)
 
 def createTokens (kind : TokenKind) (n : Nat) : Effect :=
-  ofSpell (.createTokens kind n)
+  mkSpell (.of .none) (.createTokens kind n)
+    (castKind := .extraLand)
 
 def exileCreatureToughnessAtLeast (n : Int) : Effect :=
-  ofSpell (.exileCreatureToughnessAtLeast n)
+  mkSpell (.of (.creatureToughnessAtLeast n)) (.exileTarget)
+    (castKind := .destroyCreature)
 
 def exileEnchantmentMvAtLeast (n : Nat) : Effect :=
-  ofSpell (.exileEnchantmentMvAtLeast n)
+  mkSpell (.of (.enchantmentMvAtLeast n)) (.exileTarget)
+    (castKind := .destroyArtifactOrLand)
 
 def returnOneOrTwoNonlands : Effect :=
-  ofSpell .returnOneOrTwoNonlands
+  mkSpell (.of .nonland) (.returnOneOrTwoNonlands)
+    (castKind := .counter)
+    (maxTargets := 2)
 
 def grantDeathtouch : Effect :=
-  ofSpell .grantDeathtouch
+  mkSpell (.of .creature) (.onPermanent (.grantKeywords Keyword.deathtouch))
+    (castKind := .pump)
 
 def destroyNoncreatureArtifact : Effect :=
-  ofSpell .destroyNoncreatureArtifact
+  mkSpell (.of .noncreatureArtifact) (.onPermanent .destroy)
+    (castKind := .destroyArtifactOrLand)
 
 def plusOneOnCreature : Effect :=
-  ofSpell .plusOneOnCreature
+  mkSpell (.of .creature) (.onPermanent (.plusOne 1))
+    (castKind := .pump)
 
 def targetPlayerCreatesTokens (kind : TokenKind) (n : Nat) : Effect :=
-  ofSpell (.targetPlayerCreatesTokens kind n)
+  mkSpell (.of .player) (.targetPlayerCreatesTokens kind n)
+    (castKind := .extraLand)
 
 def destroyCreatureSurveil : Effect :=
-  ofSpell .destroyCreatureSurveil
+  mkSpell (.of .creature) (.destroyCreatureSurveil)
+    (castKind := .destroyCreature)
 
 def investigatePumpFlyingUntap : Effect :=
-  ofSpell .investigatePumpFlyingUntap
+  mkSpell (.of .playerOrCreature) (.investigatePumpFlyingUntap)
+    (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
-  ofSpell .plusOneLifelinkIndestructible
+  mkSpell (.of .creature) (.plusOneLifelinkIndestructible)
+    (castKind := .pump)
 
 def dealDamageToEachCreature (n : Nat) : Effect :=
-  ofSpell (.dealDamageToEachCreature n)
+  mkSpell (.of .none) (.dealDamageToEachCreature n)
+    (castKind := .creatureDamage)
 
 def destroyLandSearchBasic : Effect :=
-  ofSpell .destroyLandSearchBasic
+  mkSpell (.of .artifactOrLand) (.destroyLandSearchBasic)
+    (castKind := .destroyArtifactOrLand)
 
 def doublePowerAndToughness : Effect :=
-  ofSpell .doublePowerAndToughness
+  mkSpell (.of .creature) (.doublePowerAndToughness)
+    (castKind := .pump)
 
 def returnGySubtypeToHand (subtype : String) : Effect :=
-  ofSpell (.returnGySubtypeToHand subtype)
+  mkSpell (.of .creatureCardInYourGraveyard) (.returnGySubtypeToHand subtype)
+    (castKind := .draw)
 
 def grantVigilanceUnblockable : Effect :=
-  ofSpell .grantVigilanceUnblockable
+  mkSpell (.of .creature) (.grantVigilanceUnblockable)
+    (castKind := .pump)
 
 def becomeArtifactCreature44Flying : Effect :=
-  ofSpell .becomeArtifactCreature44Flying
+  mkSpell (.of .artifactOrCreatureYouControl) (.becomeArtifactCreature44Flying)
+    (castKind := .pump)
 
 def drawThreeDiscardUnlessArtifact : Effect :=
-  ofSpell .drawThreeDiscardUnlessArtifact
+  mkSpell (.of .none) (.drawThreeDiscardUnlessArtifact)
+    (castKind := .draw)
 
 def eachOpponentLosesLife (n : Nat) : Effect :=
-  ofSpell (.eachOpponentLosesLife n)
+  mkSpell (.of .none) (.eachOpponentLosesLife n)
+    (castKind := .burn)
 
 def fight : Effect :=
-  ofSpell .fight
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fight)
+    (castKind := .fight)
+    (phraseOverride := some "target creature you control fights target creature an opponent controls")
 
 def fightUpToOne : Effect :=
-  ofSpell .fightUpToOne
+  mkSpell (.of .creatureYouControlThenOppCreature) (.fightUpToOne)
+    (castKind := .fight)
+    (allowsZeroTargets := true)
 
 def plusOneOnEachYouControl : Effect :=
-  ofSpell .plusOneOnEachYouControl
+  mkSpell (.of .none) (.plusOneOnEachYouControl)
+    (castKind := .pump)
 
 def plusOneOnCreatureN (n : Nat) : Effect :=
-  ofSpell (.plusOneOnCreatureN n)
+  mkSpell (.of .creatureYouControl) (.plusOneOnCreatureN n)
+    (castKind := .pump)
 
 def pumpThenDraw (power toughness : Int) : Effect :=
-  ofSpell (.pumpThenDraw power toughness)
+  mkSpell (.of .creature) (.pumpThenDraw power toughness)
+    (castKind := .pump)
 
 def pumpThenExileTopPlay (power toughness : Int) : Effect :=
-  ofSpell (.pumpThenExileTopPlay power toughness)
+  mkSpell (.of .creature) (.pumpThenExileTopPlay power toughness)
+    (castKind := .pump)
 
 def creatureYouControlDealsTwicePower : Effect :=
-  ofSpell .creatureYouControlDealsTwicePower
+  mkSpell (.of .creatureYouControlThenOppCreature) (.creatureYouControlDealsTwicePower)
+    (castKind := .fight)
 
 def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int) : Effect :=
-  ofSpell (.createTokensThenTeamPump kind n power toughness)
+  mkSpell (.of .none) (.createTokensThenTeamPump kind n power toughness)
+    (castKind := .pump)
 
 def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  ofSpell (.createTokensPerSubtype kind subtype)
+  mkSpell (.of .none) (.createTokensPerSubtype kind subtype)
+    (castKind := .extraLand)
 
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
-  ofSpell (.creaturesYouControlGetAndGrant power toughness k)
+  mkSpell (.of .none) (.creaturesYouControlGetAndGrant power toughness k)
+    (castKind := .massPump)
 
 def destroyUpToOneNonland : Effect :=
-  ofSpell .destroyUpToOneNonland
+  mkSpell (.of .nonland) (.destroyUpToOneNonland)
+    (castKind := .destroyArtifactOrLand)
+    (allowsZeroTargets := true)
 
 def createGalactus : Effect :=
-  ofSpell .createGalactus
+  mkSpell (.of .none) (.createGalactus)
+    (castKind := .extraLand)
 
 def worldsWithinWorlds : Effect :=
-  ofSpell .worldsWithinWorlds
+  mkSpell (.of .none) (.worldsWithinWorlds)
+    (castKind := .extraLand)
 
 def exileHandDrawPlayUntilNext : Effect :=
-  ofSpell .exileHandDrawPlayUntilNext
+  mkSpell (.of .none) (.exileHandDrawPlayUntilNext)
+    (castKind := .draw)
 
 def copyNontokenCreaturesYouControl : Effect :=
-  ofSpell .copyNontokenCreaturesYouControl
+  mkSpell (.of .none) (.copyNontokenCreaturesYouControl)
+    (castKind := .extraLand)
 
 def gainControlUntilEotOrNextIfVillain : Effect :=
-  ofSpell .gainControlUntilEotOrNextIfVillain
+  mkSpell (.of .creature) (.gainControlUntilEotOrNextIfVillain)
+    (castKind := .pump)
 
 def millThenPutPermanentGainLife (n life : Nat) : Effect :=
-  ofSpell (.millThenPutPermanentGainLife n life)
+  mkSpell (.of .none) (.millThenPutPermanentGainLife n life)
+    (castKind := .draw)
 
 def searchLibraryOrGyArtifactCreatureX : Effect :=
-  ofSpell .searchLibraryOrGyArtifactCreatureX
+  mkSpell (.of .none) (.searchLibraryOrGyArtifactCreatureX)
+    (castKind := .extraLand)
 
 def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
-  ofSpell (.gainLifeSearchBasicPlusOne life)
+  mkSpell (.of .upToOneCreatureThenPlayer) (.gainLifeSearchBasicPlusOne life)
+    (castKind := .draw)
 
 def nextFreeRGCreature : Effect :=
-  ofSpell .nextFreeRGCreature
+  mkSpell (.of .none) (.nextFreeRGCreature)
+    (castKind := .extraLand)
 
 def ownerPutsLibraryThenConnive : Effect :=
-  ofSpell .ownerPutsLibraryThenConnive
+  mkSpell (.of .oppCreature) (.ownerPutsLibraryThenConnive)
+    (castKind := .counter)
 
 def copyThisSpellXTimesThenDamage (n : Nat) : Effect :=
-  ofSpell (.copyThisSpellXTimesThenDamage n)
+  mkSpell (.of .creature) (.copyThisSpellXTimesThenDamage n)
+    (castKind := .creatureDamage)
 
 def mayDrawPerArtifactOppsDraw : Effect :=
-  ofSpell .mayDrawPerArtifactOppsDraw
+  mkSpell (.of .none) (.mayDrawPerArtifactOppsDraw)
+    (castKind := .draw)
 
 def mayPutHeroMvOrDraw (n : Nat) : Effect :=
-  ofSpell (.mayPutHeroMvOrDraw n)
+  mkSpell (.of .none) (.mayPutHeroMvOrDraw n)
+    (castKind := .draw)
 
 def maySacArtifactOrDiscardDraw (cards : Nat) : Effect :=
-  ofSpell (.maySacArtifactOrDiscardDraw cards)
+  mkSpell (.of .none) (.maySacArtifactOrDiscardDraw cards)
+    (castKind := .draw)
 
 def chooseTargetDoubleAndTrample : Effect :=
-  ofSpell .chooseTargetDoubleAndTrample
+  mkSpell (.of .creatureYouControl) (.chooseTargetDoubleAndTrample)
+    (castKind := .pump)
 
 def returnUpToTwoGyModal : Effect :=
-  ofSpell .returnUpToTwoGyModal
+  mkSpell (.of .none) (.returnUpToTwoGyModal)
+    (castKind := .draw)
 
 def artifactSpellsCostLessThisTurn (n : Nat) : Effect :=
-  ofSpell (.artifactSpellsCostLessThisTurn n)
+  mkSpell (.of .none) (.artifactSpellsCostLessThisTurn n)
+    (castKind := .extraLand)
 
 def searchBasicLandTapped : Effect :=
-  ofAbility .searchBasicLandTapped
+  mkAbility ({}) (.searchBasicLand)
 
 def searchLandTypeToHand (landType : String) : Effect :=
-  ofAbility (.searchLandTypeToHand landType)
+  mkAbility ({}) (.searchLandTypeToHand landType)
 
 def exileTopPlayUntilEndOfNextTurn : Effect :=
-  ofAbility .exileTopPlayUntilEndOfNextTurn
+  mkAbility ({}) (.exileTop)
 
 def dealDamageToTargetCreature (amount : Nat) : Effect :=
-  ofAbility (.dealDamageToTargetCreature amount)
+  mkAbility (.of .creature) (.onPermanent (.dealDamage amount))
+    (castKind := .creatureDamage)
 
 def destroyTargetColorlessNonland : Effect :=
-  ofAbility .destroyTargetColorlessNonland
+  mkAbility (.of .colorlessNonland) (.onPermanent .destroy)
+    (castKind := .destroyColorless)
 
 def attachToTargetCreatureYouControl : Effect :=
-  ofAbility .attachToTargetCreatureYouControl
+  mkAbility (.of .creatureYouControl) (.attach)
 
 def becomeBearCreatureWithLandsPT : Effect :=
-  ofAbility .becomeBearCreatureWithLandsPT
+  mkAbility ({}) (.becomeBear)
 
 def sourceGets (power toughness : Int) : Effect :=
-  ofAbility (.sourceGets power toughness)
+  mkAbility ({}) (.onSource (.pump power toughness))
 
 def putPlusOnePlusOneOnSource (n : Nat) : Effect :=
-  ofAbility (.putPlusOnePlusOneOnSource n)
+  mkAbility ({}) (.onSource (.plusOne n))
 
 def targetCantBeBlockedThisTurn : Effect :=
-  ofAbility .targetCantBeBlockedThisTurn
+  mkAbility (.of .creature .own) (.onPermanent .cantBeBlocked)
 
 def returnFromGraveyardTapped : Effect :=
-  ofAbility .returnFromGraveyardTapped
+  mkAbility ({}) (.returnFromGraveyardTapped)
 
 def returnFromGraveyardToHand : Effect :=
-  ofAbility .returnFromGraveyardToHand
+  mkAbility ({}) (.returnFromGraveyardToHand)
 
 def destroyTargetArtifactOrEnchantment : Effect :=
-  ofAbility .destroyTargetArtifactOrEnchantment
+  mkAbility (.of .artifactOrEnchantment) (.onPermanent .destroy)
+    (castKind := .destroyColorless)
 
 def millPlayer (n : Nat) : Effect :=
-  ofAbility (.millPlayer n)
+  mkAbility (.of .player) (.mill n)
 
 def addAnyColor : Effect :=
-  ofAbility .addAnyColor
+  mkAbility ({}) (.addAnyColor)
 
 def destroyTargetPermanent : Effect :=
-  ofAbility .destroyTargetPermanent
+  mkAbility (.of .permanent) (.onPermanent .destroy)
+    (castKind := .destroyColorless)
 
 def plusOneOnTarget (n : Nat) (subtypes : Array String := #[]) : Effect :=
-  ofAbility (.plusOneOnTarget n subtypes)
+  mkAbility (.of (if subtypes.isEmpty then .creatureYouControl
+             else .creatureYouControlAnySubtype subtypes)) (.onPermanent (.plusOne n))
 
 def targetCantBeBlockedPowerAtMost (n : Int) : Effect :=
-  ofAbility (.targetCantBeBlockedPowerAtMost n)
+  mkAbility (.of (.creaturePowerAtMost n)) (.onPermanent .cantBeBlocked)
 
 def recruit : Effect :=
-  ofAbility .recruit
+  mkAbility ({}) (.recruit)
 
 def gainLife (n : Nat) : Effect :=
-  ofAbility (.gainLife n)
+  mkAbility ({}) (.gainLife n)
 
 def ownerShuffleSourceDraw (n : Nat) : Effect :=
-  ofAbility (.ownerShuffleSourceDraw n)
+  mkAbility ({}) (.ownerShuffleSourceDraw n)
 
 def returnFromGyAttachPowerAtMost (n : Int) : Effect :=
-  ofAbility (.returnFromGyAttachPowerAtMost n)
+  mkAbility (.of (.creatureYouControlPowerAtMost n)) (.returnFromGyAttach)
 
 def addMana (types : Array ManaType) : Effect :=
-  ofAbility (.addMana types)
+  mkAbility ({}) (.addMana types)
 
 def searchBasicLandToHand : Effect :=
-  ofAbility .searchBasicLandToHand
+  mkAbility ({}) (.searchBasicLandToHand)
 
 def searchTwoBasicsSplit : Effect :=
-  ofAbility .searchTwoBasicsSplit
+  mkAbility ({}) (.searchTwoBasicsSplit)
 
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
-  ofAbility (.creaturesYouControlGetOppsLoseLife power toughness life)
+  mkAbility ({}) (.creaturesYouControlGetOppsLoseLife power toughness life)
 
 def goblinsAndOrcsGainMenace : Effect :=
-  ofAbility .goblinsAndOrcsGainMenace
+  mkAbility ({}) (.goblinsAndOrcsGainMenace)
 
 def exileThenReturnNextEnd : Effect :=
-  ofAbility .exileThenReturnNextEnd
+  mkAbility (.of .twoCreaturesOrLandsYouControl) (.exileThenReturnNextEnd)
 
 def searchBasicBeholdElfUntap : Effect :=
-  ofAbility .searchBasicBeholdElfUntap
+  mkAbility ({}) (.searchBasicBeholdElfUntap)
 
 def twoPlayersDraw : Effect :=
-  ofAbility .twoPlayersDraw
+  mkAbility (.of .twoPlayers) (.twoPlayersDraw)
 
 def discardLegendarySameNameDraw : Effect :=
-  ofAbility .discardLegendarySameNameDraw
+  mkAbility ({}) (.discardLegendarySameNameDraw)
 
 def dealDamageToAny (n : Nat) : Effect :=
-  ofAbility (.dealDamageToAny n)
+  mkAbility (.of .playerOrCreature) (.dealDamageToAny n)
+    (castKind := .creatureDamage)
 
 def drawEqualSacrificedPowerThenDiscard : Effect :=
-  ofAbility .drawEqualSacrificedPowerThenDiscard
+  mkAbility ({}) (.drawEqualSacrificedPowerThenDiscard)
 
 def arwenShare : Effect :=
-  ofAbility .arwenShare
+  mkAbility (.of .anotherCreature) (.arwenShare)
 
 def grantCombatDamageCreateTreasure : Effect :=
-  ofAbility .grantCombatDamageCreateTreasure
+  mkAbility (.of .creature) (.grantCombatDamageCreateTreasure)
 
 def putShadowCounter : Effect :=
-  ofAbility .putShadowCounter
+  mkAbility (.of .creature) (.putShadowCounter)
 
 def damageEachOpponent (n : Nat) : Effect :=
-  ofAbility (.damageEachOpponent n)
+  mkAbility ({}) (.damageEachOpponent n)
 
 def chooseTwoDestroyRest : Effect :=
-  ofAbility .chooseTwoDestroyRest
+  mkAbility (.of .creature) (.chooseTwoDestroyRest)
 
 def blackGateUnblockable : Effect :=
-  ofAbility .blackGateUnblockable
+  mkAbility (.of .creature) (.blackGateUnblockable)
 
 def burdenThenDraw : Effect :=
-  ofAbility .burdenThenDraw
+  mkAbility ({}) (.burdenThenDraw)
 
 def teamGainDoubleStrike : Effect :=
-  ofAbility .teamGainDoubleStrike
+  mkAbility ({}) (.teamGainDoubleStrike)
 
 def sourceGainsIndestructibleTap : Effect :=
-  ofAbility .sourceGainsIndestructibleTap
+  mkAbility ({}) (.sourceGainsIndestructibleTap)
 
 def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
-  ofAbility (.plusOneOnEachOtherSubtype subtype n)
+  mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)
 
 def plusOneAndIndestructibleCounter : Effect :=
-  ofAbility .plusOneAndIndestructibleCounter
+  mkAbility ({}) (.plusOneAndIndestructibleCounter)
 
 def plusOneAndDraw (plus cards : Nat) : Effect :=
-  ofAbility (.plusOneAndDraw plus cards)
+  mkAbility ({}) (.plusOneAndDraw plus cards)
 
 def plusOneAndExtraTurn : Effect :=
-  ofAbility .plusOneAndExtraTurn
+  mkAbility ({}) (.plusOneAndExtraTurn)
 
 def plusOneX : Effect :=
-  ofAbility .plusOneX
+  mkAbility ({}) (.plusOneX)
 
 def eachOppDiscardThenPlusOne : Effect :=
-  ofAbility .eachOppDiscardThenPlusOne
+  mkAbility ({}) (.eachOppDiscardThenPlusOne)
 
 def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
-  ofAbility (.lookAtTopPutHeroEquipVehicle n)
+  mkAbility ({}) (.lookAtTopPutHeroEquipVehicle n)
 
 def transform : Effect :=
-  ofAbility .transform
+  mkAbility ({}) (.transform)
 
 def drawX : Effect :=
-  ofAbility .drawX
+  mkAbility ({}) (.drawX)
 
 def lookAtTopRevealArtifact (n : Nat) : Effect :=
-  ofAbility (.lookAtTopRevealArtifact n)
+  mkAbility ({}) (.lookAtTopRevealArtifact n)
 
 def connive : Effect :=
-  ofAbility .connive
+  mkAbility ({}) (.connive)
 
 def addAnyColorSpendOnlyHero : Effect :=
-  ofAbility .addAnyColorSpendOnlyHero
+  mkAbility ({}) (.addAnyColorSpendOnlyHero)
 
 def addAnyColorSpendOnlyVillain : Effect :=
-  ofAbility .addAnyColorSpendOnlyVillain
+  mkAbility ({}) (.addAnyColorSpendOnlyVillain)
 
 def addAnyColorSpendOnlyArtifactSpell : Effect :=
-  ofAbility .addAnyColorSpendOnlyArtifactSpell
+  mkAbility ({}) (.addAnyColorSpendOnlyArtifactSpell)
 
 def addTwoAnyColorCreatureSources : Effect :=
-  ofAbility .addTwoAnyColorCreatureSources
+  mkAbility ({}) (.addTwoAnyColorCreatureSources)
 
 def addBlueCantNonartifact : Effect :=
-  ofAbility .addBlueCantNonartifact
+  mkAbility ({}) (.addBlueCantNonartifact)
 
 def addAnyColorEqualToSourcePower : Effect :=
-  ofAbility .addAnyColorEqualToSourcePower
+  mkAbility ({}) (.addAnyColorEqualToSourcePower)
 
 def addFourAnyCombination : Effect :=
-  ofAbility .addFourAnyCombination
+  mkAbility ({}) (.addFourAnyCombination)
 
 def addTwoAnyColorEquipment : Effect :=
-  ofAbility .addTwoAnyColorEquipment
+  mkAbility ({}) (.addTwoAnyColorEquipment)
 
 def drawPerDiscardedThisTurn : Effect :=
-  ofAbility .drawPerDiscardedThisTurn
+  mkAbility ({}) (.drawPerDiscardedThisTurn)
 
 def createTokensEqualRemovedPlusOnes (kind : TokenKind) : Effect :=
-  ofAbility (.createTokensEqualRemovedPlusOnes kind)
+  mkAbility ({}) (.createTokensEqualRemovedPlusOnes kind)
 
 def exileTopXPlayThisTurn : Effect :=
-  ofAbility .exileTopXPlayThisTurn
+  mkAbility ({}) (.exileTopXPlayThisTurn)
 
 def copyControlledAbility (fromCreature : Bool) : Effect :=
-  ofAbility (.copyControlledAbility fromCreature)
+  mkAbility (.of (if fromCreature then .stackAbilityFromCreatureSource
+             else .stackAbilityFromArtifactSource)) (.copyControlledAbility fromCreature)
 
 def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
-  ofAbility (.createTokensEqualSubtype kind subtype)
+  mkAbility ({}) (.createTokensEqualSubtype kind subtype)
 
 def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
-  ofAbility (.createTappedTokens kind n)
+  mkAbility ({}) (.createTappedTokens kind n)
 
 def destroyUpToOneThenPlusOne : Effect :=
-  ofAbility .destroyUpToOneThenPlusOne
+  mkAbility (.of .artifactOrEnchantment) (.destroyUpToOneThenPlusOne)
+    (castKind := .destroyColorless)
+    (allowsZeroTargets := true)
 
 def proliferateEachKind : Effect :=
-  ofAbility .proliferateEachKind
+  mkAbility (.of .permanentOrPlayer) (.proliferateEachKind)
 
 def equipmentBecomesConstructHero : Effect :=
-  ofAbility .equipmentBecomesConstructHero
+  mkAbility ({}) (.equipmentBecomesConstructHero)
 
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
-  ofAbility (.lookAtTopRevealSubtype n subtype)
+  mkAbility ({}) (.lookAtTopRevealSubtype n subtype)
 
 def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
-  ofAbility (.millThenPutHeroOrEnchantment n)
+  mkAbility ({}) (.millThenPutHeroOrEnchantment n)
 
 def plusOneAndDoubleStrikeCounter : Effect :=
-  ofAbility .plusOneAndDoubleStrikeCounter
+  mkAbility ({}) (.plusOneAndDoubleStrikeCounter)
 
 def plusOneThenFightUpToOne : Effect :=
-  ofAbility .plusOneThenFightUpToOne
+  mkAbility (.of .oppCreature) (.plusOneThenFightUpToOne)
+    (allowsZeroTargets := true)
 
 def plusOneAndGrant (k : Keywords) : Effect :=
-  ofAbility (.plusOneAndGrant k)
+  mkAbility ({}) (.plusOneAndGrant k)
 
 def plusOneAndCreateTigerGod : Effect :=
-  ofAbility .plusOneAndCreateTigerGod
+  mkAbility ({}) (.plusOneAndCreateTigerGod)
 
 def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
-  ofAbility (.plusOneAndCreateTokens n kind)
+  mkAbility ({}) (.plusOneAndCreateTokens n kind)
 
 def plusTwoThenOddEvenDestroy : Effect :=
-  ofAbility .plusTwoThenOddEvenDestroy
+  mkAbility ({}) (.plusTwoThenOddEvenDestroy)
 
 def returnFromGyFinalityAttach : Effect :=
-  ofAbility .returnFromGyFinalityAttach
+  mkAbility ({}) (.returnFromGyFinalityAttach)
 
 def returnGyCreatureThenPlusOne (n : Nat) : Effect :=
-  ofAbility (.returnGyCreatureThenPlusOne n)
+  mkAbility (.of .creatureCardInYourGraveyard) (.returnGyCreatureThenPlusOne n)
+    (allowsZeroTargets := true)
 
 def revealTopDrawIfArtifact : Effect :=
-  ofAbility .revealTopDrawIfArtifact
+  mkAbility ({}) (.revealTopDrawIfArtifact)
 
 def copyArtifactYouControlNotLegendary : Effect :=
-  ofAbility .copyArtifactYouControlNotLegendary
+  mkAbility (.of .twoArtifactsYouControl) (.copyArtifactYouControlNotLegendary)
 
 def pumpAttackingAloneGainLife : Effect :=
-  ofAbility .pumpAttackingAloneGainLife
+  mkAbility (.of .attackingAloneCreatureYouControl) (.pumpAttackingAloneGainLife)
 
 def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
-  ofAbility (.becomeDinosaurHero power toughness k)
+  mkAbility ({}) (.becomeDinosaurHero power toughness k)
 
 def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
-  ofAbility .nextInstantSorceryCopyIfMvAtMostSourcePower
+  mkAbility ({}) (.nextInstantSorceryCopyIfMvAtMostSourcePower)
 
 def harnessInfinityStone : Effect :=
-  ofAbility .harnessInfinityStone
+  mkAbility ({}) (.harnessInfinityStone)
 
 def destroyTargetNoncreatureArtOrEnch : Effect :=
-  ofAbility .destroyTargetNoncreatureArtOrEnch
+  mkAbility (.of .noncreatureArtifactOrEnchantment) (.destroyTargetNoncreatureArtOrEnch)
+    (castKind := .destroyColorless)
 
 def targetSubtypeConnives (subtype : String) : Effect :=
-  ofAbility (.targetSubtypeConnives subtype)
+  mkAbility (.of (.creatureYouControlSubtype subtype)) (.targetSubtypeConnives subtype)
 
 def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
-  ofAbility (.anotherYouControlGetsAndGrant p t k)
+  mkAbility (.of .anotherCreatureYouControl) (.onPermanent (.pumpAndGrant p t k))
 
 def tapTargetCreature : Effect :=
-  ofAbility .tapTargetCreature
+  mkAbility (.of .creature) (.onPermanent .tap)
 
 def targetGets (p t : Int) : Effect :=
-  ofAbility (.targetGets p t)
+  mkAbility (.of .creature) (.onPermanent (.pump p t))
 
-instance : Coe SpellLeftover Effect where
-  coe := ofSpell
+/-- Ability-phrased factories for leftover names that overlap spells. -/
 
-instance : Coe AbilityLeftover Effect where
-  coe := ofAbility
+def abilityCreateTokens (kind : TokenKind) (n : Nat) : Effect :=
+  mkAbility ({}) (.createTokens kind n)
+
+def abilityCreateTokensX (kind : TokenKind) : Effect :=
+  mkAbility ({}) (.createTokensX kind)
+
+def abilityCreaturesYouControlGet (power toughness : Int) : Effect :=
+  mkAbility ({}) (.creaturesYouControlPump power toughness)
+
+def abilityDealDamageToEachCreature (n : Nat) : Effect :=
+  mkAbility ({}) (.dealDamageToEachCreature n)
+    (castKind := .creatureDamage)
+
+def abilityDraw (n : Nat) : Effect :=
+  mkAbility ({}) (.draw n)
+
+def abilityDrawThenDiscard (n : Nat) : Effect :=
+  mkAbility ({}) (.drawThenDiscard n)
+
+def abilityScry (n : Nat) : Effect :=
+  mkAbility ({}) (.scry n)
+
+def abilityTargetPlayerDraw (n : Nat) : Effect :=
+  mkAbility (.of .player) (.targetPlayerDraw n)
 
 instance : Coe ChapterLeftover Effect where
   coe := ofChapter
@@ -9821,11 +8818,11 @@ instance : ToString CardDef where
 #guard Effect.searchBasicLandTapped.abilityResolution == .searchBasicLand
 #guard !Effect.searchBasicLandTapped.requiresTarget
 #guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget
-#guard (Effect.ofAbility (.drawThenDiscard 1)).phrase ==
+#guard (Effect.abilityDrawThenDiscard 1).phrase ==
   "Draw a card, then discard a card"
-#guard (Effect.ofAbility (.drawThenDiscard 2)).phrase ==
+#guard (Effect.abilityDrawThenDiscard 2).phrase ==
   "Draw 2 cards, then discard a card"
-#guard (Effect.ofAbility (.createTokens .treasure 1)).phrase ==
+#guard (Effect.abilityCreateTokens .treasure 1).phrase ==
   "Create a Treasure token"
 #guard (Effect.plusOneOnTarget 2).phrase ==
   "Put 2 +1/+1 counters on target creature you control"
