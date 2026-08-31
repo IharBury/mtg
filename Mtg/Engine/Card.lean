@@ -6884,8 +6884,6 @@ def onGainLifePlusOne : TriggeredAbility :=
   .triggered .youGainLife (Effect.ofTrigger .plusOneOnSource)
 def onAnotherArtifactEntersPlusOne : TriggeredAbility :=
   .triggered .anotherArtifactEnters (Effect.ofTrigger .plusOneOnSource)
-def onDealtDamagePlusOne : TriggeredAbility :=
-  .triggered .sourceDealtDamage (Effect.ofTrigger .plusOneOnSource)
 def onYourBeginCombatFerociousPlusOne : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger .plusOneOnSource) .ferocious
 def onEquippedAttacksAloneDrawLoseLife : TriggeredAbility :=
@@ -7168,8 +7166,6 @@ def onEnterOrOpponentDrawsDeal1AmassOrcs : TriggeredAbility :=
   .triggered (.or .enter .opponentDrawsExceptFirst) (Effect.ofTrigger .deal1ThenAmassOrcs)
 def onAttackWithTotalPowerUntapExtraCombat (n : Int) : TriggeredAbility :=
   .triggered .youAttackWithTotalPower (Effect.ofTrigger (.untapAttackersExtraCombat n)) .once
-def onDelayedEaglesCreateBirds : TriggeredAbility :=
-  .triggered .eaglesCreateBirds (Effect.ofTrigger .eaglesCreateBirds)
 def onAnotherCreatureYouControlEntersAlliance : TriggeredAbility :=
   .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger .allianceMode)
 def onEnterDestroyOtherAmassControllerPower : TriggeredAbility :=
