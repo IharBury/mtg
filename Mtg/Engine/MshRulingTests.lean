@@ -421,9 +421,7 @@ def landfallNonlandOk : Bool :=
 
 def attacksAloneOk : Bool :=
   agent13SharonCarter.triggeredAbilities.any (fun ab =>
-    match ab with
-    | .onCreatureYouControlAttacksAloneInvestigate => true
-    | _ => false) &&
+    ab == .onCreatureYouControlAttacksAloneInvestigate) &&
     ((mshRuling 77).comment.contains "attacks alone" ||
       (mshRuling 80).comment.contains "declared as an attacker")
 

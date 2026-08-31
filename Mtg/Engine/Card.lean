@@ -4692,6 +4692,18 @@ inductive SharedTriggerWhen where
   | combatDamageToPlayerOrBattle
   /-- Whenever you cast a green spell and whenever a Forest you control enters. -/
   | castGreenOrForestEnters
+  /-- Whenever you cast an instant or sorcery spell. -/
+  | youCastInstantOrSorcery
+  /-- Whenever an Equipment you control enters. -/
+  | equipmentYouControlEnters
+  /-- Whenever another creature you control enters. -/
+  | anotherCreatureYouControlEnters
+  /-- Whenever another Goblin, Orc, or Army you control dies. -/
+  | anotherGoblinOrcArmyDies
+  /-- Whenever a creature you control attacks alone. -/
+  | creatureYouControlAttacksAlone
+  /-- Whenever an opponent casts a spell. -/
+  | opponentCastsSpell
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -4735,6 +4747,26 @@ inductive SharedTriggerEffect where
   | attachTo (kind : EffectTargetKind)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
+  /-- Affect a still-legal permanent target. -/
+  | onPermanent (kind : EffectTargetKind) (action : PermanentAction)
+  /-- Affect the trigger's source if it is still on the battlefield. -/
+  | onSource (action : PermanentAction)
+  /-- Exile the top card; you may play it until the end of your next turn. -/
+  | exileTop
+  /-- You may discard a card. If you do, draw `n`. -/
+  | mayDiscardDraw (n : Nat)
+  /-- Each opponent discards a card. -/
+  | eachOpponentDiscards
+  /-- Target opponent discards `n` cards. -/
+  | targetOpponentDiscards (n : Nat)
+  /-- Target player mills `n` cards. -/
+  | millPlayer (n : Nat)
+  /-- Amass Orcs `n`. -/
+  | amassOrcs (n : Nat)
+  /-- Investigate (create a Clue). -/
+  | investigate
+  /-- The attacking creature that caused this trigger gets +P/+T. -/
+  | pumpCause (power toughness : Int)
 deriving Repr, Inhabited, BEq
 
 /-- Optional intervening conditions and wording filters for `onShared`. -/
@@ -4748,6 +4780,8 @@ structure SharedTriggerOpts where
   allowsZeroTargets : Bool := false
   /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
   watchedSubtype : Option String := none
+  /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
+  untargeted : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- Ferocious intervening condition (power 4 or greater). -/
@@ -4758,6 +4792,10 @@ def SharedTriggerOpts.ferocious : SharedTriggerOpts :=
 def SharedTriggerOpts.once : SharedTriggerOpts :=
   { onceEachTurn := true }
 
+/-- Shared effect has targeting; this printed ability does not. -/
+def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
+  { untargeted := true }
+
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
   /-- Whenever this creature attacks, it gets +X/+0 until end of turn, where X
@@ -4767,18 +4805,12 @@ inductive TriggeredAbility where
   control. Its base power and toughness become equal to this creature's power
   and toughness until end of turn (e.g. Galion, Elvenking's Butler). -/
   | onAttackSetOtherBasePT
-  /-- Whenever this creature attacks, another target creature you control gets
-  +2/+0 and gains trample until end of turn (e.g. Oliphaunt). -/
-  | onAttackOtherGets2AndTrample
   /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
   blocking it (e.g. Battle-Scarred Goblin). -/
   | onBecomesBlockedDeal1ToBlockers
   /-- When this permanent enters, search your library for a Forest card, put
   that card onto the battlefield, then shuffle (e.g. Wood Elves). -/
   | onEnterSearchForest
-  /-- When this permanent enters, you may discard a card. If you do, draw `n`
-  cards (e.g. Ragged Short Spear). -/
-  | onEnterMayDiscardDraw (n : Nat)
   /-- Whenever this creature enters or attacks, return target Elf card from
   your graveyard to your hand. You gain life equal to that card's power
   (e.g. Mirkwood Elk). -/
@@ -4786,18 +4818,12 @@ inductive TriggeredAbility where
   /-- When this creature dies, it deals damage equal to its power to target
   creature an opponent controls (e.g. Goblin Fireleaper). -/
   | onDiesDealDamageEqualToPowerToOppCreature
-  /-- Whenever you cast an instant or sorcery spell, this creature deals
-  `amount` damage to each opponent (e.g. Guttersnipe). -/
-  | onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat)
   /-- Whenever you scry, this creature gets +1/+1 until end of turn for each card
   looked at while scrying this way (e.g. Celeborn the Wise). -/
   | onScryPumpSelfForEachLookedAt
   /-- When this permanent enters, each player sacrifices a creature of their
   choice (e.g. Merciless Executioner). -/
   | onEnterEachPlayerSacrificesCreature
-  /-- When this permanent enters, each opponent discards a card
-  (e.g. Stony-Voiced Goblins). -/
-  | onEnterEachOpponentDiscards
   /-- When this permanent enters, exile up to one target card from an
   opponent's graveyard. Each opponent loses `life` life
   (e.g. Gollum the Abandoned). -/
@@ -4833,8 +4859,6 @@ inductive TriggeredAbility where
   /-- When this permanent enters, untap another target creature you control.
   If it has this subtype, put a +1/+1 counter on it. -/
   | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
-  /-- When this permanent enters, exile the top card; you may play it. -/
-  | onEnterExileTop
   /-- Ferocious — Whenever this creature attacks, put a +1/+1 counter on each
   creature you control. -/
   | onAttackFerociousPlusOneEach
@@ -4845,8 +4869,6 @@ inductive TriggeredAbility where
   | onEnterCreateThenAttach (kind : TokenKind)
   /-- When this Equipment enters, amass Goblins `n` then attach to the Army. -/
   | onEnterAmassThenAttach (n : Nat)
-  /-- Whenever this attacks, target attacking creature gains these keywords. -/
-  | onAttackTargetGainsKeywords (k : Keywords)
   /-- When this enters, search for a basic land and put it into your hand. -/
   | onEnterSearchBasicToHand
   /-- When this enters, you gain `n` life. You may search for a basic land,
@@ -4979,8 +5001,6 @@ inductive TriggeredAbility where
   | onYourBeginCombatIfDrawnTwoPumpFirstStrike
   /-- Whenever a Mountain you control enters, quest then maybe find a Dragon. -/
   | onMountainEntersQuestThenDragon
-  /-- Whenever you draw your second card, target player mills `n`. -/
-  | onDrawSecondMillPlayer (n : Nat)
   /-- Equipped combat damage: Treasures per chosen creature type. -/
   | onEquippedCombatDamageTreasuresPerChosenType
   /-- Whenever a nontoken you control dies, reveal until a creature. -/
@@ -4997,8 +5017,6 @@ inductive TriggeredAbility where
   | onEnterHonePerOppCreaturesAttach
   /-- Whenever you put counters on a Goblin, Orc, or Army, damage an opponent. -/
   | onPutCountersOnGoblinOrcArmyDamageOpp
-  /-- Whenever another Goblin, Orc, or Army you control dies, exile the top. -/
-  | onAnotherGoblinOrcArmyDiesExileTop
   /-- Whenever a player loses life, that player mills that many. -/
   | onPlayerLosesLifeMillThatMany
   /-- When this dies, draw per fat graveyard. -/
@@ -5021,8 +5039,6 @@ inductive TriggeredAbility where
   | onCastNoncreatureMayDrawXDiscard2
   /-- Equipped attacks: +1/+1 each, or two with the city's blessing. -/
   | onEquippedAttacksPlusOneEachIfCityBlessing
-  /-- Whenever another of this subtype enters, +n/+n counters on the source. -/
-  | onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat)
   /-- Begin combat: you may cast an instant or sorcery from hand. -/
   | onYourBeginCombatCastInstantSorceryFromHand
   /-- Landfall: draw and +1/+1 on the source. -/
@@ -5037,8 +5053,6 @@ inductive TriggeredAbility where
   | onYourEndStepPalantir
   /-- Whenever you cast your second spell, mill then maybe copy. -/
   | onCastSecondSpellMillThenCopy
-  /-- Whenever an opponent casts a spell, amass Orcs `n`. -/
-  | onOpponentCastsAmassOrcs (n : Nat)
   /-- Whenever an Army you control deals combat damage, the Ring tempts you. -/
   | onArmyCombatDamageRingTempts
   /-- Whenever the Ring tempts you, you may discard and draw `n`. -/
@@ -5057,10 +5071,6 @@ inductive TriggeredAbility where
   | sagaChapter (n : Nat) (effect : ChapterEffect)
   /-- Whenever you attack this turn, pump a target per Plains (Roads Go Ever). -/
   | onYouAttackPumpTargetPerPlains
-  /-- Whenever a creature you control attacks alone, investigate. -/
-  | onCreatureYouControlAttacksAloneInvestigate
-  /-- Whenever a creature you control attacks alone, it gets +P/+T. -/
-  | onCreatureYouControlAttacksAlonePump (power toughness : Int)
   /-- Whenever this becomes tapped to pay a teamwork cost, +1/+1 and draw. -/
   | onTappedForTeamworkPlusOneAndDraw
   /-- At each end step, draw if you attacked with or a subtype entered. -/
@@ -5126,14 +5136,10 @@ inductive TriggeredAbility where
   /-- When this creature enters, you may sac an artifact or discard; if you
   do, draw. -/
   | onEnterMaySacArtifactOrDiscardDraw
-  /-- When this enchantment enters, target opponent discards `n` cards. -/
-  | onEnterTargetOpponentDiscards (n : Nat)
   /-- When this permanent enters, resolve `e`. Shared shape for leftover
   “When ⟨this⟩ enters” abilities that do not already match a more specific
   constructor. -/
   | onEnter (e : EnterEffect)
-  /-- Whenever an Equipment you control enters, draw a card. -/
-  | onEquipmentYouControlEntersDraw
   /-- At the beginning of combat on your turn, another target creature you
   control gets +X/+0 until end of turn, where X is this creature's power. -/
   | onCombatAnotherGetsSourcePower
@@ -6200,6 +6206,12 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .anotherSubtypeOrEquipmentEnters => #[.anotherSubtypeOrEquipmentYouControlEnters]
   | .combatDamageToPlayerOrBattle => #[.dealsCombatDamageToPlayerOrBattle]
   | .castGreenOrForestEnters => #[.youCastGreen, .forestYouControlEnters]
+  | .youCastInstantOrSorcery => #[.youCastInstantOrSorcery]
+  | .equipmentYouControlEnters => #[.equipmentYouControlEnters]
+  | .anotherCreatureYouControlEnters => #[.anotherCreatureYouControlEnters]
+  | .anotherGoblinOrcArmyDies => #[.anotherGoblinOrcArmyDies]
+  | .creatureYouControlAttacksAlone => #[.creatureYouControlAttacksAlone]
+  | .opponentCastsSpell => #[.opponentCastsSpell]
 
 end SharedTriggerWhen
 
@@ -6235,6 +6247,20 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
     { targeting := .of kind, resolution := .attachSourceToTarget }
   | .opponentSacrificesCreature =>
     { targeting := .of .opponent, resolution := .opponentSacrificesCreature }
+  | .onPermanent kind action =>
+    { targeting := .of kind, resolution := .onPermanent action }
+  | .onSource action =>
+    { resolution := .onSource action }
+  | .exileTop => { resolution := .exileTop }
+  | .mayDiscardDraw n => { resolution := .mayDiscardDraw n }
+  | .eachOpponentDiscards => { resolution := .eachOpponentDiscards }
+  | .targetOpponentDiscards n =>
+    { targeting := .of .opponent, resolution := .targetOpponentDiscards n }
+  | .millPlayer n =>
+    { targeting := .of .player, resolution := .millPlayer n }
+  | .amassOrcs n => { resolution := .amassOrcs n }
+  | .investigate => { resolution := .investigate }
+  | .pumpCause p t => { resolution := .pumpCause p t }
 
 end SharedTriggerEffect
 
@@ -6481,34 +6507,26 @@ def timing : TriggeredAbility → TriggerTiming
       thisOrAnotherSubtype := opts.thisOrAnotherSubtype
       anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
       gainedLifeAtLeast := opts.gainedLifeAtLeast
+      targeting := if opts.untargeted then {} else t.targeting
       allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
   | .onAttackPumpByGreatestPower =>
     { events := #[.attacking], resolution := .pumpGreatestPower }
   | .onAttackSetOtherBasePT =>
     { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
       allowsZeroTargets := true, resolution := .setOtherBasePT }
-  | .onAttackOtherGets2AndTrample =>
-    { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
-      resolution := .onPermanent (.pumpAndTrample 2 0) }
   | .onBecomesBlockedDeal1ToBlockers =>
     { events := #[.becomesBlocked], resolution := .damageBlockers 1 }
   | .onEnterSearchForest => { events := #[.entering], resolution := .searchForest }
-  | .onEnterMayDiscardDraw n =>
-    { events := #[.entering], resolution := .mayDiscardDraw n }
   | .onEnterOrAttackReturnElfGainLife =>
     { events := #[.entering, .attacking], targeting := .of .elfInYourGraveyard,
       resolution := .returnElfGainLife }
   | .onDiesDealDamageEqualToPowerToOppCreature =>
     { events := #[.dying], targeting := .of .oppCreature,
       resolution := .damageFromLastKnownPower }
-  | .onCastInstantOrSorceryDealDamageToEachOpponent n =>
-    { events := #[.youCastInstantOrSorcery], resolution := .damageEachOpponent n }
   | .onScryPumpSelfForEachLookedAt =>
     { events := #[.youScry], resolution := .pumpByLookedAt }
   | .onEnterEachPlayerSacrificesCreature =>
     { events := #[.entering], resolution := .eachPlayerSacrificesCreature }
-  | .onEnterEachOpponentDiscards =>
-    { events := #[.entering], resolution := .eachOpponentDiscards }
   | .onEnterExileOppGyCardOppsLoseLife n =>
     { events := #[.entering], targeting := .of .oppGraveyardCard,
       allowsZeroTargets := true, resolution := .exileOppGyCardOppsLoseLife n }
@@ -6541,8 +6559,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterUntapOtherPlusOneIfSubtype subtype =>
     { events := #[.entering], targeting := .of .anotherCreatureYouControl,
       resolution := .untapPlusOneIfSubtype subtype }
-  | .onEnterExileTop =>
-    { events := #[.entering], resolution := .exileTop }
   | .onAttackFerociousPlusOneEach =>
     { events := #[.attacking], resolution := .plusOneEachYouControl,
       youControlCreatureWithPower := some 4 }
@@ -6553,9 +6569,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.entering], resolution := .createThenAttach kind }
   | .onEnterAmassThenAttach n =>
     { events := #[.entering], resolution := .amassThenAttach n }
-  | .onAttackTargetGainsKeywords k =>
-    { events := #[.attacking], targeting := .of .attackingCreature,
-      resolution := .onPermanent (.grantKeywords k) }
   | .onEnterSearchBasicToHand =>
     { events := #[.entering], resolution := .searchBasicToHand }
   | .onEnterGainLifeSearchBasicOnTop n =>
@@ -6676,9 +6689,6 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .beginCombatIfDrawnTwoPump }
   | .onMountainEntersQuestThenDragon =>
     { events := #[.mountainYouControlEnters], resolution := .mountainQuestDragon }
-  | .onDrawSecondMillPlayer n =>
-    { events := #[.youDrawSecondCard], targeting := .of .player,
-      resolution := .millPlayer n }
   | .onEquippedCombatDamageTreasuresPerChosenType =>
     { events := #[.equippedDealsCombatDamageToPlayer],
       resolution := .treasuresPerChosenType }
@@ -6699,8 +6709,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onPutCountersOnGoblinOrcArmyDamageOpp =>
     { events := #[.youPutCountersOnGoblinOrcArmy], targeting := .of .opponent,
       resolution := .damageTargetOpponent 2 }
-  | .onAnotherGoblinOrcArmyDiesExileTop =>
-    { events := #[.anotherGoblinOrcArmyDies], resolution := .exileTop }
   | .onPlayerLosesLifeMillThatMany =>
     { events := #[.playerLosesLife], resolution := .millThatManyLost }
   | .onDiesDrawPerFatGraveyard =>
@@ -6727,9 +6735,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.youCastNoncreature], resolution := .mayDrawXDiscard2 }
   | .onEquippedAttacksPlusOneEachIfCityBlessing =>
     { events := #[.equippedAttacks], resolution := .plusOneEachIfCityBlessing }
-  | .onAnotherSubtypeEntersPlusOneOnSource subtype n =>
-    { events := #[.anotherCreatureYouControlEnters],
-      resolution := .onSource (.plusOne n), thisOrAnotherSubtype := some subtype }
   | .onYourBeginCombatCastInstantSorceryFromHand =>
     { events := #[.yourBeginCombat], resolution := .castInstantSorceryFromHand }
   | .onLandYouControlEntersDrawPlusOneSource =>
@@ -6746,8 +6751,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.yourEndStep], targeting := .of .opponent, resolution := .palantir }
   | .onCastSecondSpellMillThenCopy =>
     { events := #[.youCastSecondSpell], resolution := .millThenCopy }
-  | .onOpponentCastsAmassOrcs n =>
-    { events := #[.opponentCastsSpell], resolution := .amassOrcs n }
   | .onArmyCombatDamageRingTempts =>
     { events := #[.armyYouControlCombatDamage], resolution := .ringTempts }
   | .onRingTemptsMayDiscardDraw n =>
@@ -6769,10 +6772,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYouAttackPumpTargetPerPlains =>
     { events := #[.youAttack], targeting := .of .creatureYouControl,
       resolution := .pumpTargetPerPlains }
-  | .onCreatureYouControlAttacksAloneInvestigate =>
-    { events := #[.creatureYouControlAttacksAlone], resolution := .investigate }
-  | .onCreatureYouControlAttacksAlonePump p t =>
-    { events := #[.creatureYouControlAttacksAlone], resolution := .pumpCause p t }
   | .onTappedForTeamworkPlusOneAndDraw =>
     { events := #[.tappedForTeamwork], resolution := .plusOneOnSourceAndDraw }
   | .onEachEndStepDrawIfAttackedOrEnteredSubtype subtype =>
@@ -6842,9 +6841,6 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .plusOneOrTwoIfAnotherHero }
   | .onEnterMaySacArtifactOrDiscardDraw =>
     { events := #[.entering], resolution := .maySacArtifactOrDiscardDraw }
-  | .onEnterTargetOpponentDiscards n =>
-    { events := #[.entering], targeting := .of .opponent,
-      resolution := .targetOpponentDiscards n }
   | .onEnter e => e.timing
   | .onStep e => e.timing
   | .onDeath e => e.timing
@@ -6854,8 +6850,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYouAttacking e => e.timing
   | .onCasting e => e.timing
   | .onResource e => e.timing
-  | .onEquipmentYouControlEntersDraw =>
-    { events := #[.equipmentYouControlEnters], resolution := .draw 1 }
   | .onCombatAnotherGetsSourcePower =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .pumpTargetBySourcePower }
@@ -7023,6 +7017,36 @@ def onCastColorDamageOpponent (color : Color) (n : Nat) : TriggeredAbility :=
   .onShared (.youCastColor color) (.damageEachOpponent n)
 def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
   .onShared .castGreenOrForestEnters (.plusOneOn .creatureYouControl)
+def onAttackOtherGets2AndTrample : TriggeredAbility :=
+  .onShared .attack (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
+def onEnterMayDiscardDraw (n : Nat) : TriggeredAbility :=
+  .onShared .enter (.mayDiscardDraw n)
+def onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat) : TriggeredAbility :=
+  .onShared .youCastInstantOrSorcery (.damageEachOpponent amount) .noTarget
+def onEnterEachOpponentDiscards : TriggeredAbility :=
+  .onShared .enter .eachOpponentDiscards
+def onEnterExileTop : TriggeredAbility :=
+  .onShared .enter .exileTop
+def onAttackTargetGainsKeywords (k : Keywords) : TriggeredAbility :=
+  .onShared .attack (.onPermanent .attackingCreature (.grantKeywords k))
+def onDrawSecondMillPlayer (n : Nat) : TriggeredAbility :=
+  .onShared .youDrawSecond (.millPlayer n)
+def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
+  .onShared .anotherGoblinOrcArmyDies .exileTop
+def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
+    TriggeredAbility :=
+  .onShared .anotherCreatureYouControlEnters (.onSource (.plusOne n))
+    { thisOrAnotherSubtype := some subtype }
+def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
+  .onShared .opponentCastsSpell (.amassOrcs n)
+def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
+  .onShared .creatureYouControlAttacksAlone .investigate
+def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
+  .onShared .creatureYouControlAttacksAlone (.pumpCause power toughness)
+def onEnterTargetOpponentDiscards (n : Nat) : TriggeredAbility :=
+  .onShared .enter (.targetOpponentDiscards n)
+def onEquipmentYouControlEntersDraw : TriggeredAbility :=
+  .onShared .equipmentYouControlEnters (.draw 1)
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -7094,10 +7118,11 @@ def eventPrefix (t : TriggerTiming) : String :=
     | some s => s!"Whenever this or another nontoken {s} you control enters"
     | none => "Whenever this or another nontoken creature you control enters"
   else if t.events.contains .anotherCreatureYouControlEnters then
-    match t.anotherCreaturePowerAtMost with
-    | some n =>
+    match t.anotherCreaturePowerAtMost, t.thisOrAnotherSubtype with
+    | some n, _ =>
       s!"Whenever another creature you control with power {n} or less enters"
-    | none => "Whenever another creature you control enters"
+    | none, some s => s!"Whenever another {s} you control enters"
+    | none, none => "Whenever another creature you control enters"
   else
     match t.events[0]? with
     | none => "When this occurs"
@@ -7568,7 +7593,8 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
   | .onDiesReturnAsArtifact =>
     "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
-  | .onAnotherSubtypeEntersPlusOneOnSource "Wolf" 2 =>
+  | .onShared .anotherCreatureYouControlEnters (.onSource (.plusOne 2))
+      { thisOrAnotherSubtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
   | .onLandYouControlEntersDrawPlusOneSource =>
     "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
@@ -7588,9 +7614,9 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
   | .onPutCountersOnGoblinOrcArmyDamageOpp =>
     "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-  | .onCreatureYouControlAttacksAloneInvestigate =>
+  | .onShared .creatureYouControlAttacksAlone .investigate _ =>
     "Whenever a creature you control attacks alone, investigate."
-  | .onCreatureYouControlAttacksAlonePump p t =>
+  | .onShared .creatureYouControlAttacksAlone (.pumpCause p t) _ =>
     s!"Whenever a creature you control attacks alone, that creature gets {signedStat p}/{signedStat t} until end of turn."
   | .onTappedForTeamworkPlusOneAndDraw =>
     "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
@@ -7661,7 +7687,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
   | .onShared .enter (.exileUntilLeaves .oppTappedCreature) _ =>
     "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-  | .onEnterTargetOpponentDiscards n =>
+  | .onShared .enter (.targetOpponentDiscards n) _ =>
     let cards := if n == 2 then "two cards" else cardPhrase n
     s!"When this enchantment enters, target opponent discards {cards}."
   | .onEnter (.dealDamageUpToOne n) =>
@@ -8606,6 +8632,23 @@ instance : ToString CardDef where
   .onShared .enter (.exileUntilLeaves .oppTappedCreature)
 #guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
   .onShared .opponentCastsFirstNoncreature .youRecruit
+#guard TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2 ==
+  .onShared .youCastInstantOrSorcery (.damageEachOpponent 2) .noTarget
+#guard TriggeredAbility.onEnterExileTop == .onShared .enter .exileTop
+#guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
+  .onShared .enter (.mayDiscardDraw 2)
+#guard TriggeredAbility.onEnterEachOpponentDiscards ==
+  .onShared .enter .eachOpponentDiscards
+#guard TriggeredAbility.onAttackOtherGets2AndTrample ==
+  .onShared .attack (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
+#guard TriggeredAbility.onEquipmentYouControlEntersDraw ==
+  .onShared .equipmentYouControlEnters (.draw 1)
+#guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
+  .onShared .creatureYouControlAttacksAlone .investigate
+#guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
+  .onShared .opponentCastsSpell (.amassOrcs 1)
+#guard !TriggeredAbility.requiresTarget
+  (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
