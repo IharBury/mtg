@@ -403,6 +403,18 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
   (if c.costReductionIfTargetAttackingNontoken != 0 then
     [s!"This spell costs \{{c.costReductionIfTargetAttackingNontoken}} less to cast if it targets an attacking nontoken creature."]
    else []) ++
+  (if c.costReductionIfTargetAttacking != 0 then
+    [s!"This spell costs \{{c.costReductionIfTargetAttacking}} less to cast if it targets an attacking creature."]
+   else []) ++
+  (match c.costReductionIfYouControl with
+   | some (n, subtype) =>
+     [s!"This spell costs \{{n}} less to cast if you control a {subtype}."]
+   | none => []) ++
+  (match c.costReductionIfGyCreaturesAtLeast with
+   | some (min, n) =>
+     let cards := if min == 1 then "a creature card" else s!"{min} or more creature cards"
+     [s!"This spell costs \{{n}} less to cast if there are {cards} in your graveyard."]
+   | none => []) ++
   (if c.costReductionEqualFlyingPower then
     ["This spell costs {X} less to cast, where X is the total power of creatures you control with flying."]
    else []) ++
@@ -623,12 +635,11 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
     | some (.becomeArtifactCreature44Flying) =>
       ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
         "Draw a card."]
-    | some (.leftover t) =>
-      t.toNotation.splitOn "\n" |>.filterMap (fun s =>
+    | some e =>
+      e.toNotation.splitOn "\n" |>.filterMap (fun s =>
         let s := s.trimAscii.copy
         if s.isEmpty then none
         else some (if s.startsWith "deals" then s!"{c.name} {s}" else s))
-    | some e => [spellEffectLine c.name e]
     | none => []) ++
   match c.adventure with
   | none => []

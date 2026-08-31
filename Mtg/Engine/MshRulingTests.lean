@@ -1331,11 +1331,11 @@ def illegalTargetDoesNothingOk : Bool :=
   let plan0 :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     (namedPermanent g "Claim the Kingdom").status.plan
-  let gDepower := gGone.applyEffect ⟨0⟩ (.leftover .thisSpellCosts2LessToCastIfItTargets) gone
+  let gDepower := gGone.applyEffect ⟨0⟩ (.pumpThenDraw (-4) 0) gone
   let gHour := gGone.applyEffect ⟨0⟩ .destroyCreatureSurveil gone
   let gPym := gGone.applyEffect ⟨0⟩ .grantVigilanceUnblockable gone
   let gCrescendo :=
-    gGone.applyEffect ⟨0⟩ (.leftover .targetCreatureGets31UntilEndOfTurn) gone
+    gGone.applyEffect ⟨0⟩ (.pumpThenExileTopPlay 3 1) gone
   let gRepulsor :=
     gGone.applyEffect ⟨0⟩ (.dealDamageThenControllerIfTeamwork 5 2) gone
   let gCruel :=
@@ -1987,8 +1987,7 @@ def worldsWithinWorldsOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let g := addToHand g aerialDoombot ⟨0⟩
   let (g, spell) := g.allocObject worldsWithinWorlds ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.applyLeftoverSpell ⟨0⟩ .exileAllCreaturesEachPlayerMayPutAnyNum #[]
-    (some spell.id)
+  let g := g.applyWorldsWithinWorlds ⟨0⟩ (some spell.id)
   g.battlefield.any (fun o => o.name == "Aerial Doombot") &&
     !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     !g.battlefield.any (fun o => o.name == "Hill Giant") &&
@@ -4193,12 +4192,12 @@ def tenRingsReplacementOk : Bool :=
 def tricksterOwnerChoosesOk : Bool :=
   let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
   let ogre := namedPermanent g "Gray Ogre"
-  let gBot := g.applyLeftoverSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
-    #[Target.permanent ogre.id] none (putOnBottom := true)
+  let gBot := g.applyOwnerPutsLibraryThenConnive ⟨0⟩
+    #[Target.permanent ogre.id] (putOnBottom := true)
   (gBot.objects.any (fun o =>
       o.name == "Gray Ogre" && o.zone == .library ⟨1⟩)) &&
-    (let gTop := g.applyLeftoverSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
-       #[Target.permanent ogre.id] none (putOnBottom := false)
+    (let gTop := g.applyOwnerPutsLibraryThenConnive ⟨0⟩
+       #[Target.permanent ogre.id] (putOnBottom := false)
      let lib := (gTop.player ⟨1⟩).library
      lib.size ≥ 2 &&
        (gTop.object! lib[lib.size - 2]!).name == "Gray Ogre") &&
@@ -4210,7 +4209,7 @@ def tricksterOwnerChoosesOk : Bool :=
 def worldWarHulkNextOnlyOk : Bool :=
   let g := addToHand afterDraw grayOgre ⟨0⟩
   let g := addToHand g grizzlyBears ⟨0⟩
-  let g := g.applyLeftoverSpell ⟨0⟩ .theNextRedOrGreenCreatureSpellYouCastTh #[]
+  let g := g.applyEffect ⟨0⟩ .nextFreeRGCreature #[]
   g.pendingFreeRGCreature == some ⟨0⟩ &&
     (let ogre := handCardNamed g ⟨0⟩ "Gray Ogre"
      !(g.playManaCost ogre ogre.printed).includesManaPayment &&

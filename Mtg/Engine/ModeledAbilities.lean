@@ -16,104 +16,12 @@ Reusable leftover *trigger* wordings now live on event-family effect
 inductives (`StepEffect`, `DeathEffect`, `ThisAttackEffect`,
 `EnterOrAttackEffect`, `WatchEffect`, `YouAttackEffect`, `CastEffect`,
 `ResourceEffect`) with one `TriggeredAbility` constructor each.
-Reusable leftover *statics* now live on `StaticAbility`. Leftover spells
-live on `LeftoverSpell` with one `SpellEffect.leftover` constructor.
-Leftover activations remain here on `ModeledAbility`.
+Reusable leftover *statics* now live on `StaticAbility`. Reusable leftover
+*spells* now live on `SpellEffect`. Leftover activations remain here on
+`ModeledAbility`.
 -/
 
 namespace Mtg.Engine
-
-/-- A leftover modeled spell effect that is not yet a shared shape. -/
-inductive LeftoverSpell where
-  /-- Modeled MSH spell. -/
-  | artifactSpellsYouCastThisTurnCost1Less
-  /-- Modeled MSH spell. -/
-  | chooseTargetCreatureYouControlUntilEndOf
-  /-- Modeled MSH spell. -/
-  | chooseUpToTwoReturnThoseCardsFromYourG
-  /-- Modeled MSH spell. -/
-  | createGalactusALegendary1616BlackElderA
-  /-- Modeled MSH spell. -/
-  | createA21BlackVillainCreatureTokenWithM
-  /-- Modeled MSH spell. -/
-  | createATreasureTokenForEachVillainYouCon
-  /-- Modeled MSH spell. -/
-  | creaturesYouControlGet11AndGainVigilan
-  /-- Modeled MSH spell. -/
-  | destroyUpToOneTargetNonlandPermanent
-  /-- Modeled MSH spell. -/
-  | exileAllCreaturesEachPlayerMayPutAnyNum
-  /-- Modeled MSH spell. -/
-  | exileAllTheCardsFromYourHandThenDrawTh
-  /-- Modeled MSH spell. -/
-  | forEachNontokenCreatureYouControlCreateA
-  /-- Modeled MSH spell. -/
-  | gainControlOfTargetCreatureUntilEndOfTur
-  /-- Modeled MSH spell. -/
-  | millTwoCardsYouMayPutAPermanentCardFro
-  /-- Modeled MSH spell. -/
-  | searchYourLibraryAndOrGraveyardForAnArti
-  /-- Modeled MSH spell. -/
-  | targetCreatureGets31UntilEndOfTurn
-  /-- Modeled MSH spell. -/
-  | targetPlayerGains2LifeThenSearchesTheir
-  /-- Modeled MSH spell. -/
-  | theNextRedOrGreenCreatureSpellYouCastTh
-  /-- Modeled MSH spell. -/
-  | theOwnerOfTargetCreatureAnOpponentControl
-  /-- Modeled MSH spell. -/
-  | thisSpellCosts1LessToCastIfYouControl
-  /-- Modeled MSH spell. -/
-  | thisSpellCosts2LessToCastIfItTargets
-  /-- Modeled MSH spell. -/
-  | thisSpellCosts2LessToCastIfThereAreT
-  /-- Modeled MSH spell. -/
-  | thisSpellCosts2LessToCastIfYouControl
-  /-- Modeled MSH spell. -/
-  | whenYouCastThisSpellCopyItXTimesYouM
-  /-- Modeled MSH spell. -/
-  | youMayDrawACardForEachArtifactYouContro
-  /-- Modeled MSH spell. -/
-  | youMayPutAHeroCreatureCardWithManaValue
-  /-- Modeled MSH spell. -/
-  | youMaySacrificeAnArtifactOrDiscardACard
-deriving Repr, Inhabited, BEq
-
-namespace LeftoverSpell
-
-/-- Official Oracle wording for this leftover spell. -/
-def toNotation : LeftoverSpell → String
-  | .artifactSpellsYouCastThisTurnCost1Less => "Artifact spells you cast this turn cost {1} less to cast"
-  | .chooseTargetCreatureYouControlUntilEndOf => "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
-  | .chooseUpToTwoReturnThoseCardsFromYourG => "Choose up to two. Return those cards from your graveyard to your hand. • Target artifact card. • Target creature card. • Target enchantment card. • Target land card."
-  | .createGalactusALegendary1616BlackElderA => "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\""
-  | .createA21BlackVillainCreatureTokenWithM => "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn."
-  | .createATreasureTokenForEachVillainYouCon => "Create a Treasure token for each Villain you control"
-  | .creaturesYouControlGet11AndGainVigilan => "Creatures you control get +1/+1 and gain vigilance until end of turn"
-  | .destroyUpToOneTargetNonlandPermanent => "Destroy up to one target nonland permanent"
-  | .exileAllCreaturesEachPlayerMayPutAnyNum => "Exile all creatures. Each player may put any number of creature cards from their hand onto the battlefield. Then put all cards exiled this way into their owners' hands. Exile Worlds Within Worlds."
-  | .exileAllTheCardsFromYourHandThenDrawTh => "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
-  | .forEachNontokenCreatureYouControlCreateA => "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
-  | .gainControlOfTargetCreatureUntilEndOfTur => "Gain control of target creature until end of turn. If you control a Villain with greater mana value than that creature, gain control of that creature until the end of your next turn instead. Untap that creature. It gains haste until end of turn."
-  | .millTwoCardsYouMayPutAPermanentCardFro => "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life."
-  | .searchYourLibraryAndOrGraveyardForAnArti => "Search your library and/or graveyard for an artifact creature card with mana value X or less and put it onto the battlefield with X additional +1/+1 counters on it. If X is 4 or greater, it gains haste until end of turn. If you search your library this way, shuffle."
-  | .targetCreatureGets31UntilEndOfTurn => "Target creature gets +3/+1 until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
-  | .targetPlayerGains2LifeThenSearchesTheir => "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature."
-  | .theNextRedOrGreenCreatureSpellYouCastTh => "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .theOwnerOfTargetCreatureAnOpponentControl => "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives."
-  | .thisSpellCosts1LessToCastIfYouControl => "This spell costs {1} less to cast if you control a Villain.\nYou draw two cards and lose 2 life."
-  | .thisSpellCosts2LessToCastIfItTargets => "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card."
-  | .thisSpellCosts2LessToCastIfThereAreT => "This spell costs {2} less to cast if there are two or more creature cards in your graveyard.\nTarget creature you control deals damage equal to twice its power to target creature an opponent controls."
-  | .thisSpellCosts2LessToCastIfYouControl => "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target."
-  | .whenYouCastThisSpellCopyItXTimesYouM => "When you cast this spell, copy it X times. You may choose new targets for the copies.\nPhoton Blast Barrage deals 1 damage to target creature."
-  | .youMayDrawACardForEachArtifactYouContro => "You may draw a card for each artifact you control. If you do, each opponent draws a card"
-  | .youMayPutAHeroCreatureCardWithManaValue => "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"
-  | .youMaySacrificeAnArtifactOrDiscardACard => "You may sacrifice an artifact or discard a card. If you do, draw two cards."
-
-instance : ToString LeftoverSpell where
-  toString := toNotation
-
-end LeftoverSpell
 /-- How leftover “add one mana of any color; spend only …” restricts the mana. -/
 inductive RestrictedManaSpend where
   /-- Hero spells and Hero sources. -/

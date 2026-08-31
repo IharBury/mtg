@@ -6018,6 +6018,8 @@ def lockInTargetCostReduction (g : Game) : Game :=
           let nAttacking :=
             if face.costReductionIfTargetAttackingNontoken > 0 && o.status.attacking then
               face.costReductionIfTargetAttackingNontoken
+            else if face.costReductionIfTargetAttacking > 0 && o.status.attacking then
+              face.costReductionIfTargetAttacking
             else 0
           let n := nDamaged + nTapped + nAttacking
           if n == 0 then g
@@ -6782,13 +6784,29 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     if face.costReductionIfCreatureDied > 0 && g.creatureDiedThisTurn then
       start.reduceGeneric face.costReductionIfCreatureDied
     else start
+  let afterControl :=
+    match face.costReductionIfYouControl with
+    | some (n, subtype) =>
+      if g.countSubtype caster subtype > 0 then afterDied.reduceGeneric n
+      else afterDied
+    | none => afterDied
+  let afterGy :=
+    match face.costReductionIfGyCreaturesAtLeast with
+    | some (min, n) =>
+      let gy :=
+        (g.player caster).graveyard.filter (fun id =>
+          match g.findObject? id with
+          | some c => c.printed.isCreature
+          | none => false) |>.size
+      if gy >= min then afterControl.reduceGeneric n else afterControl
+    | none => afterControl
   let afterFly :=
     if face.costReductionEqualFlyingPower then
       let n :=
         (g.permanentsOf caster).foldl (fun acc o =>
           if o.isCreature && g.hasFlying o then acc + (g.power o).toNat else acc) 0
-      afterDied.reduceGeneric n
-    else afterDied
+      afterGy.reduceGeneric n
+    else afterGy
   let afterAff :=
     match face.affinityForSubtype with
     | some t =>
@@ -9677,52 +9695,33 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else
     g
 
-/-- Resolve a leftover MSH spell. -/
-def applyLeftoverSpell (g : Game) (controller : PlayerId) (t : LeftoverSpell)
-    (targets : Array Target) (sourceId : Option ObjectId := none)
-    (putOnBottom := false) : Game :=
-  match t with
-  | .thisSpellCosts2LessToCastIfItTargets =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let g := g.pumpPermanent o (-4) 0
-      g.draw controller 1)
-      sourceId (some "The target is no longer legal. You won't draw a card.")
-  | .targetCreatureGets31UntilEndOfTurn =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let g := g.pumpPermanent o 3 1
-      g.exileTopPlayThisTurn controller 1)
-      sourceId (some "The target is no longer legal. No card will be exiled.")
-  | .exileAllCreaturesEachPlayerMayPutAnyNum =>
-    g.applyWorldsWithinWorlds controller sourceId
-  | .theNextRedOrGreenCreatureSpellYouCastTh =>
-    { g with pendingFreeRGCreature := some controller }
-      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .theOwnerOfTargetCreatureAnOpponentControl =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield then
-          let owner := o.owner
-          if putOnBottom then
-            let (g, _) := g.move id (.library owner) none
-            g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
-          else
-            let (g, newId) := g.move id (.library owner) none
-            let pl := g.player owner
-            let lib := pl.library
-            let without := lib.filter (· != newId)
-            let lib :=
-              match without.back? with
-              | none => #[newId]
-              | some top => without.pop.push newId |>.push top
-            g.setPlayer { pl with library := lib }
-              |>.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal"
-  | _ =>
-    g.applyLeftoverTextEffect controller t.toNotation targets sourceId
+/-- Put the targeted creature into its owner's library, second from the top
+or on the bottom (Trickster's Stratagem). -/
+def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
+    (targets : Array Target) (putOnBottom := false) : Game :=
+  match targets[0]? with
+  | some (Target.permanent id) =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let owner := o.owner
+        if putOnBottom then
+          let (g, _) := g.move id (.library owner) none
+          g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+        else
+          let (g, newId) := g.move id (.library owner) none
+          let pl := g.player owner
+          let lib := pl.library
+          let without := lib.filter (· != newId)
+          let lib :=
+            match without.back? with
+            | none => #[newId]
+            | some top => without.pop.push newId |>.push top
+          g.setPlayer { pl with library := lib }
+            |>.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
+      else g.logMsg "The target is no longer legal"
+    | none => g.logMsg "The target is no longer legal"
+  | _ => g.logMsg "The target is no longer legal"
 
 /-- Resolve a modeled MSH activation. -/
 def applyModeledAbility (g : Game) (controller : PlayerId) (t : ModeledAbility)
@@ -10608,8 +10607,97 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .plusOneOnCreatureN n =>
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)
-  | .leftover t =>
-    g.applyLeftoverSpell controller t targets none
+  | .pumpThenDraw p t =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o p t
+      g.draw controller 1)
+      none (some "The target is no longer legal. You won't draw a card.")
+  | .pumpThenExileTopPlay p t =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o p t
+      g.exileTopPlayThisTurn controller 1)
+      none (some "The target is no longer legal. No card will be exiled.")
+  | .creatureYouControlDealsTwicePower =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent a), some (Target.permanent b) =>
+      g.dealFightDamage (g.object! a) (g.object! b)
+    | _, _ => g.logMsg "The target is no longer legal"
+  | .createTokensThenTeamPump kind n p t =>
+    let g := g.createKindTokens controller kind n
+    g.pumpControlledCreatures controller p t
+  | .createTokensPerSubtype kind subtype =>
+    g.createKindTokens controller kind (g.countSubtype controller subtype)
+  | .creaturesYouControlGetAndGrant p t k =>
+    let g := g.pumpControlledCreatures controller p t
+    let label :=
+      match k.toList with
+      | [a] => a
+      | [a, b] => s!"{a} and {b}"
+      | ks => String.intercalate ", " ks
+    g.grantUntilEotToControlledCreatures controller k label
+  | .destroyUpToOneNonland =>
+    g.withLegalKindPermanent controller .nonland targets
+      (fun g o => g.destroyPermanent o) none none
+  | .createGalactus =>
+    g.createNamedToken controller galactusToken
+  | .worldsWithinWorlds =>
+    g.applyWorldsWithinWorlds controller none
+  | .exileHandDrawPlayUntilNext =>
+    g.applyLeftoverTextEffect controller
+      "Exile all the cards from your hand, then draw that many cards. Until the end of your next turn, you may play cards exiled this way."
+      targets none
+  | .copyNontokenCreaturesYouControl =>
+    g.applyLeftoverTextEffect controller
+      "For each nontoken creature you control, create a token that's a copy of that creature, except it isn't legendary."
+      targets none
+  | .gainControlUntilEotOrNextIfVillain =>
+    g.applyLeftoverTextEffect controller
+      "Gain control of target creature until end of turn."
+      targets none
+  | .millThenPutPermanentGainLife n life =>
+    g.applyLeftoverTextEffect controller
+      s!"Mill {n} cards. You may put a permanent card from among the milled cards into your hand. You gain {life} life."
+      targets none
+  | .searchLibraryOrGyArtifactCreatureX =>
+    g.applyLeftoverTextEffect controller
+      "Search your library and/or graveyard for an artifact creature card"
+      targets none
+  | .gainLifeSearchBasicPlusOne life =>
+    g.applyLeftoverTextEffect controller
+      s!"Target player gains {life} life. Put a +1/+1 counter"
+      targets none
+  | .nextFreeRGCreature =>
+    { g with pendingFreeRGCreature := some controller }
+      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .ownerPutsLibraryThenConnive =>
+    g.applyOwnerPutsLibraryThenConnive controller targets
+  | .copyThisSpellXTimesThenDamage n =>
+    g.applyDamageToKindTarget controller .creature targets n
+  | .mayDrawPerArtifactOppsDraw =>
+    g.applyLeftoverTextEffect controller
+      "You may draw a card for each artifact you control. If you do, each opponent draws a card"
+      targets none
+  | .mayPutHeroMvOrDraw _n =>
+    g.applyLeftoverTextEffect controller
+      "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card"
+      targets none
+  | .maySacArtifactOrDiscardDraw cards =>
+    g.applyLeftoverTextEffect controller
+      s!"You may sacrifice an artifact or discard a card. If you do, draw {cards} cards."
+      targets none
+  | .chooseTargetDoubleAndTrample =>
+    g.withLegalKindPermanent controller .creatureYouControl targets
+      (fun g o =>
+        let p := g.power o
+        let t := g.toughness o
+        let g := g.applyPermanentAction o (.pump p t)
+        g.grantUntilEotLogged (g.object! o.id) Keyword.trample) none none
+  | .returnUpToTwoGyModal =>
+    g.applyLeftoverTextEffect controller
+      "Choose up to two. Return those cards from your graveyard to your hand."
+      targets none
+  | .artifactSpellsCostLessThisTurn _n =>
+    g
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
