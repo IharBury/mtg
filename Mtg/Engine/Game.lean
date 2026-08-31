@@ -7367,10 +7367,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   match ab.effect with
-  | .mshSpell .drawACardActivateOnlyIfYouControlACrea =>
+  | .msh .drawACardActivateOnlyIfYouControlACrea =>
     if !(g.permanentsOf p).any (fun x => x.isCreature && g.toughness x >= 4) then
       throw s!"{o.name}'s ability can be activated only if you control a creature with toughness 4 or greater"
-  | .mshSpell .createATapped21BlackVillainCreatureToken =>
+  | .msh .createATapped21BlackVillainCreatureToken =>
     let gy :=
       (g.player p).graveyard.filter (fun id =>
         match g.findObject? id with
@@ -9613,123 +9613,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       g.withSourceOnBattlefield sourceId (fun g _ => g)
         s!"{sourceName} resolves"
 
-/-- Resolve a modeled MSH spell. -/
-def applyModeledSpell (g : Game) (controller : PlayerId) (t : ModeledSpell)
-    (targets : Array Target) (sourceId : Option ObjectId := none)
-    (putOnBottom := false) : Game :=
-  match t with
-  | .thisSpellCosts2LessToCastIfItTargets =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let g := g.pumpPermanent o (-4) 0
-      g.draw controller 1)
-      sourceId (some "The target is no longer legal. You won't draw a card.")
-  | .targetCreatureGets31UntilEndOfTurn =>
-    g.withLegalKindPermanent controller .creature targets (fun g o =>
-      let g := g.pumpPermanent o 3 1
-      g.exileTopPlayThisTurn controller 1)
-      sourceId (some "The target is no longer legal. No card will be exiled.")
-  | .targetCreatureYouControlThatSAttackingAlo =>
-    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
-      let g := g.pumpPermanent o 1 0
-      g.gainLife controller 1)
-      sourceId (some "The target is no longer legal. You won't gain life.")
-  | .targetArtifactYouControlBecomesACopyOfA =>
-    match targets[0]?, targets[1]? with
-    | some (Target.permanent a), some (Target.permanent b) =>
-      match g.findObject? a, g.findObject? b with
-      | some dest, some src =>
-        if dest.isOnBattlefield && src.isOnBattlefield &&
-            dest.controlledBy controller && src.controlledBy controller &&
-            dest.printed.isArtifact && src.printed.isArtifact then
-          g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
-        else
-          g.logMsg "The target is no longer legal. The ability has no effect."
-      | _, _ =>
-        g.logMsg "The target is no longer legal. The ability has no effect."
-    | _, _ =>
-      g.logMsg "The target is no longer legal. The ability has no effect."
-  | .whenYouNextCastAnInstantOrSorcerySpellW =>
-    let pw :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then g.power o else o.power
-      | none => (0 : Int)
-    { g with pendingLokiCopy := some (controller, sourceId, pw) }
-      |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
-  | .copyTargetActivatedOrTriggeredAbilityYouC =>
-    match targets[0]? with
-    | some (Target.card id) | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.zone == .stack then g.copyStackAbility o controller
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g
-  | .exileAllCreaturesEachPlayerMayPutAnyNum =>
-    g.applyWorldsWithinWorlds controller sourceId
-  | .createX11GreenSquirrelCreatureTokensWhe =>
-    let n := g.countSubtype controller "Squirrel"
-    g.createKindTokens controller .squirrel11green n
-  | .ifThisEquipmentIsnTACreatureItBecomesA =>
-    match sourceId.bind g.findObject? with
-    | some o =>
-      if !o.isOnBattlefield then
-        g.logMsg "The Equipment is no longer in play"
-      else if o.isCreature then
-        g.logMsg s!"{o.name} is already a creature"
-      else
-        let wasAttached := o.attachedTo.isSome
-        let g :=
-          if wasAttached then
-            g.setObject { o with attachedTo := none }
-              |>.logMsg s!"{o.name} becomes unattached"
-          else g
-        let o := g.object! o.id
-        g.setUntilEotForm o (0, 0) Keyword.flying
-          s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
-          (types := some #["Construct", "Hero"])
-          (additionalCreature := true) (additionalArtifact := true)
-          (pumpPerArtifact := true)
-    | none => g.logMsg "The Equipment is no longer in play"
-  | .untilEndOfTurnReptilBecomesADinosaurHer =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.setUntilEotForm o (3, 5) (Keyword.reach.merge Keyword.vigilance)
-        s!"{o.name} becomes a 3/5 Dinosaur Hero with reach and vigilance"
-        (types := some #["Dinosaur", "Hero"]))
-      "The source is no longer in play"
-  | .theNextRedOrGreenCreatureSpellYouCastTh =>
-    { g with pendingFreeRGCreature := some controller }
-      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
-  | .drawACardActivateOnlyIfYouControlACrea =>
-    g.draw controller 1
-  | .createATapped21BlackVillainCreatureToken =>
-    g.createKindTokens controller .villain21menace 1 (tapped := true)
-  | .theOwnerOfTargetCreatureAnOpponentControl =>
-    match targets[0]? with
-    | some (Target.permanent id) =>
-      match g.findObject? id with
-      | some o =>
-        if o.isOnBattlefield then
-          let owner := o.owner
-          if putOnBottom then
-            let (g, _) := g.move id (.library owner) none
-            g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
-          else
-            let (g, newId) := g.move id (.library owner) none
-            let pl := g.player owner
-            let lib := pl.library
-            let without := lib.filter (· != newId)
-            let lib :=
-              match without.back? with
-              | none => #[newId]
-              | some top => without.pop.push newId |>.push top
-            g.setPlayer { pl with library := lib }
-              |>.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
-        else g.logMsg "The target is no longer legal"
-      | none => g.logMsg "The target is no longer legal"
-    | _ => g.logMsg "The target is no longer legal"
-  | _ =>
-  let text := t.toNotation
+/-- Resolve leftover MSH wording that is not yet a named constructor arm. -/
+def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
+    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
   if text.contains "finality" then
     match sourceId.bind g.findObject? with
     | some o =>
@@ -9791,10 +9677,148 @@ def applyModeledSpell (g : Game) (controller : PlayerId) (t : ModeledSpell)
   else
     g
 
+/-- Resolve a leftover MSH spell. -/
+def applyLeftoverSpell (g : Game) (controller : PlayerId) (t : LeftoverSpell)
+    (targets : Array Target) (sourceId : Option ObjectId := none)
+    (putOnBottom := false) : Game :=
+  match t with
+  | .thisSpellCosts2LessToCastIfItTargets =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o (-4) 0
+      g.draw controller 1)
+      sourceId (some "The target is no longer legal. You won't draw a card.")
+  | .targetCreatureGets31UntilEndOfTurn =>
+    g.withLegalKindPermanent controller .creature targets (fun g o =>
+      let g := g.pumpPermanent o 3 1
+      g.exileTopPlayThisTurn controller 1)
+      sourceId (some "The target is no longer legal. No card will be exiled.")
+  | .exileAllCreaturesEachPlayerMayPutAnyNum =>
+    g.applyWorldsWithinWorlds controller sourceId
+  | .theNextRedOrGreenCreatureSpellYouCastTh =>
+    { g with pendingFreeRGCreature := some controller }
+      |>.logMsg "The next red or green creature spell you cast this turn can be cast without paying its mana cost"
+  | .theOwnerOfTargetCreatureAnOpponentControl =>
+    match targets[0]? with
+    | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then
+          let owner := o.owner
+          if putOnBottom then
+            let (g, _) := g.move id (.library owner) none
+            g.logMsg s!"{o.name} is put on the bottom of {(g.player owner).name}'s library"
+          else
+            let (g, newId) := g.move id (.library owner) none
+            let pl := g.player owner
+            let lib := pl.library
+            let without := lib.filter (· != newId)
+            let lib :=
+              match without.back? with
+              | none => #[newId]
+              | some top => without.pop.push newId |>.push top
+            g.setPlayer { pl with library := lib }
+              |>.logMsg s!"{o.name} is put second from the top of {(g.player owner).name}'s library"
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g.logMsg "The target is no longer legal"
+  | _ =>
+    g.applyLeftoverTextEffect controller t.toNotation targets sourceId
+
 /-- Resolve a modeled MSH activation. -/
 def applyModeledAbility (g : Game) (controller : PlayerId) (t : ModeledAbility)
-    (targets : Array Target) (sourceId : Option ObjectId)
+    (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) : Game :=
+  match t with
+  | .targetCreatureYouControlThatSAttackingAlo =>
+    g.withLegalKindPermanent controller .creatureYouControl targets (fun g o =>
+      let g := g.pumpPermanent o 1 0
+      g.gainLife controller 1)
+      sourceId (some "The target is no longer legal. You won't gain life.")
+  | .targetArtifactYouControlBecomesACopyOfA =>
+    match targets[0]?, targets[1]? with
+    | some (Target.permanent a), some (Target.permanent b) =>
+      match g.findObject? a, g.findObject? b with
+      | some dest, some src =>
+        if dest.isOnBattlefield && src.isOnBattlefield &&
+            dest.controlledBy controller && src.controlledBy controller &&
+            dest.printed.isArtifact && src.printed.isArtifact then
+          g.becomeCopyOf dest src (untilEot := true) (notLegendary := true)
+        else
+          g.logMsg "The target is no longer legal. The ability has no effect."
+      | _, _ =>
+        g.logMsg "The target is no longer legal. The ability has no effect."
+    | _, _ =>
+      g.logMsg "The target is no longer legal. The ability has no effect."
+  | .whenYouNextCastAnInstantOrSorcerySpellW =>
+    let pw :=
+      match sourceId.bind g.findObject? with
+      | some o =>
+        if o.isOnBattlefield then g.power o else o.power
+      | none => (0 : Int)
+    { g with pendingLokiCopy := some (controller, sourceId, pw) }
+      |>.logMsg s!"The next instant or sorcery with mana value {pw} or less will be copied"
+  | .copyTargetActivatedOrTriggeredAbilityYouC =>
+    match targets[0]? with
+    | some (Target.card id) | some (Target.permanent id) =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .stack then g.copyStackAbility o controller
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+    | _ => g
+  | .createX11GreenSquirrelCreatureTokensWhe =>
+    let n := g.countSubtype controller "Squirrel"
+    g.createKindTokens controller .squirrel11green n
+  | .ifThisEquipmentIsnTACreatureItBecomesA =>
+    match sourceId.bind g.findObject? with
+    | some o =>
+      if !o.isOnBattlefield then
+        g.logMsg "The Equipment is no longer in play"
+      else if o.isCreature then
+        g.logMsg s!"{o.name} is already a creature"
+      else
+        let wasAttached := o.attachedTo.isSome
+        let g :=
+          if wasAttached then
+            g.setObject { o with attachedTo := none }
+              |>.logMsg s!"{o.name} becomes unattached"
+          else g
+        let o := g.object! o.id
+        g.setUntilEotForm o (0, 0) Keyword.flying
+          s!"{o.name} becomes a 0/0 Construct Hero artifact creature"
+          (types := some #["Construct", "Hero"])
+          (additionalCreature := true) (additionalArtifact := true)
+          (pumpPerArtifact := true)
+    | none => g.logMsg "The Equipment is no longer in play"
+  | .untilEndOfTurnReptilBecomesADinosaurHer =>
+    g.withSourceOnBattlefield sourceId (fun g o =>
+      g.setUntilEotForm o (3, 5) (Keyword.reach.merge Keyword.vigilance)
+        s!"{o.name} becomes a 3/5 Dinosaur Hero with reach and vigilance"
+        (types := some #["Dinosaur", "Hero"]))
+      "The source is no longer in play"
+  | .drawACardActivateOnlyIfYouControlACrea =>
+    g.draw controller 1
+  | .createATapped21BlackVillainCreatureToken =>
+    g.createKindTokens controller .villain21menace 1 (tapped := true)
+  | .anotherTargetCreatureYouControlGets20A
+  | .tapTargetCreatureThisAbilityCosts1Less
+  | .revealTheTopCardOfYourLibraryIfItSAn
+  | .returnUpToOneTargetCreatureCardFromYour
+  | .putA11CounterAndADoubleStrikeCounter
+  | .putA11CounterOnHerculesHeGainsVigila
+  | .putA11CounterOnThisCreatureAndCreate
+  | .forEachKindOfCounterOnTargetPermanentOr
+  | .destroyUpToOneTargetArtifactOrEnchantment
+  | .putA11CounterOnWhiteTigerAndCreateTh
+  | .putA11CounterOnAbominationHeFightsUp
+  | .putTwo11CountersOnThanosChooseOddOr
+  | .returnThisCardFromYourGraveyardToTheBatt
+  | .putTwo11CountersOnThisCreatureAndCrea
+  | .lookAtTheTopThreeCardsOfYourLibraryYou
+  | .targetVillainYouControlConnives
+  | .millFourCardsYouMayPutAHeroOrEnchantme =>
+    g.applyLeftoverTextEffect controller t.toNotation targets sourceId
+  | _ =>
   if t == .n2TDiscardACard then
     g.draw controller (g.player controller).cardsDiscardedThisTurn
   else if t == .tyrannosaurusRex6UntilEndOfTu then
@@ -10584,8 +10608,8 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .plusOneOnCreatureN n =>
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o => g.addPlusOnePlusOneTo o n)
-  | .msh t =>
-    g.applyModeledSpell controller t targets none
+  | .leftover t =>
+    g.applyLeftoverSpell controller t targets none
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -10876,8 +10900,6 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.applyConnive controller sourceId
   | .msh t =>
     g.applyModeledAbility controller t targets sourceId lastKnownPower
-  | .mshSpell t =>
-    g.applyModeledSpell controller t targets sourceId
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=

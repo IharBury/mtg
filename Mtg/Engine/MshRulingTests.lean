@@ -656,7 +656,7 @@ def winterSoldierFinalityOk : Bool :=
       x.name == "Winter Soldier, Icy Assassin" && x.zone == .graveyard ⟨0⟩) with
     | some x => x
     | none => namedPermanent afterDraw "Grizzly Bears"
-  let g := g.applyModeledSpell ⟨0⟩ .returnThisCardFromYourGraveyardToTheBatt #[] (some o.id)
+  let g := g.applyModeledAbility ⟨0⟩ .returnThisCardFromYourGraveyardToTheBatt #[] (some o.id)
   (namedPermanent g "Winter Soldier, Icy Assassin").status.finality ≥ 1
 
 #guard winterSoldierFinalityOk
@@ -1331,17 +1331,17 @@ def illegalTargetDoesNothingOk : Bool :=
   let plan0 :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     (namedPermanent g "Claim the Kingdom").status.plan
-  let gDepower := gGone.applyEffect ⟨0⟩ (.msh .thisSpellCosts2LessToCastIfItTargets) gone
+  let gDepower := gGone.applyEffect ⟨0⟩ (.leftover .thisSpellCosts2LessToCastIfItTargets) gone
   let gHour := gGone.applyEffect ⟨0⟩ .destroyCreatureSurveil gone
   let gPym := gGone.applyEffect ⟨0⟩ .grantVigilanceUnblockable gone
   let gCrescendo :=
-    gGone.applyEffect ⟨0⟩ (.msh .targetCreatureGets31UntilEndOfTurn) gone
+    gGone.applyEffect ⟨0⟩ (.leftover .targetCreatureGets31UntilEndOfTurn) gone
   let gRepulsor :=
     gGone.applyEffect ⟨0⟩ (.dealDamageThenControllerIfTeamwork 5 2) gone
   let gCruel :=
     gGone.applyEffect ⟨0⟩ (.exileCreatureMvAtMostOrAnyIfTeamwork 3 3) gone
   let gCrowd :=
-    gGone.applyModeledSpell ⟨0⟩ .targetCreatureYouControlThatSAttackingAlo gone
+    gGone.applyModeledAbility ⟨0⟩ .targetCreatureYouControlThatSAttackingAlo gone
   let gLandfall :=
     let g := addPermanent gGone claimTheKingdom ⟨0⟩ ⟨0⟩
     let plan := namedPermanent g "Claim the Kingdom"
@@ -1646,7 +1646,7 @@ def powerUpStillHappensIfSourceLeftOk : Bool :=
   let o := namedPermanent g "White Tiger, Ava Ayala"
   let (g, _) := g.move o.id (.graveyard ⟨0⟩) none
   let g := g.applyAbilityEffect ⟨0⟩
-    (.mshSpell .putA11CounterOnWhiteTigerAndCreateTh) #[] (some o.id)
+    (.msh .putA11CounterOnWhiteTigerAndCreateTh) #[] (some o.id)
   g.battlefield.any (fun x => x.name == "The Tiger God") &&
     (mshRuling 338).comment.contains "you'll still create The Tiger God" &&
     (mshRuling 301).comment.contains "you'll still create" &&
@@ -1877,7 +1877,7 @@ def shuriCopyUntilEotOk : Bool :=
   let g := addPermanent g sHIELDDeploymentDrone ⟨0⟩ ⟨0⟩
   let destId := (namedPermanent g "Aerial Doombot").id
   let src := namedPermanent g "S.H.I.E.L.D. Deployment Drone"
-  let g := g.applyModeledSpell ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+  let g := g.applyModeledAbility ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
     #[Target.permanent destId, Target.permanent src.id]
   let dest := g.object! destId
   dest.printed.name == "S.H.I.E.L.D. Deployment Drone" &&
@@ -1891,7 +1891,7 @@ def shuriCopyUntilEotOk : Bool :=
      let g2 := addPermanent g2 aerialDoombot ⟨0⟩ ⟨0⟩
      let dest := namedPermanent g2 "Aerial Doombot"
      let destName := dest.printed.name
-     let g2 := g2.applyModeledSpell ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
+     let g2 := g2.applyModeledAbility ⟨0⟩ .targetArtifactYouControlBecomesACopyOfA
        #[Target.permanent dest.id]
      (g2.object! dest.id).printed.name == destName) &&
     (mshRuling 120).comment.contains "exactly what was printed" &&
@@ -1987,7 +1987,7 @@ def worldsWithinWorldsOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let g := addToHand g aerialDoombot ⟨0⟩
   let (g, spell) := g.allocObject worldsWithinWorlds ⟨0⟩ .stack (some ⟨0⟩)
-  let g := g.applyModeledSpell ⟨0⟩ .exileAllCreaturesEachPlayerMayPutAnyNum #[]
+  let g := g.applyLeftoverSpell ⟨0⟩ .exileAllCreaturesEachPlayerMayPutAnyNum #[]
     (some spell.id)
   g.battlefield.any (fun o => o.name == "Aerial Doombot") &&
     !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
@@ -2704,7 +2704,7 @@ creature types and keeps Equipment. -/
 def ironManArmorTypesOk : Bool :=
   let g := addPermanent afterDraw ironManArmor ⟨0⟩ ⟨0⟩
   let armor := namedPermanent g "Iron Man Armor"
-  let g := g.applyModeledSpell ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+  let g := g.applyModeledAbility ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
     (some armor.id)
   let armor := namedPermanent g "Iron Man Armor"
   armor.isCreature &&
@@ -2954,10 +2954,10 @@ def squirrelGirlXOnceOk : Bool :=
   let squirrels (g : Game) : Nat :=
     (g.battlefield.filter (fun o => o.hasSubtype "Squirrel")).size
   let n0 := squirrels g
-  let g := g.applyModeledSpell ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+  let g := g.applyModeledAbility ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
   let n1 := squirrels g
   n0 == 1 && n1 == 2 &&
-    (let g := g.applyModeledSpell ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
+    (let g := g.applyModeledAbility ⟨0⟩ .createX11GreenSquirrelCreatureTokensWhe #[] none
      squirrels g == 4) &&
     (mshRuling 307).comment.contains "calculated only once"
 
@@ -3448,7 +3448,7 @@ def scarletWitchXManaValueOk : Bool :=
 def lokiLastKnownPowerOk : Bool :=
   let g := addPermanent afterDraw lokiLaufeyson ⟨0⟩ ⟨0⟩
   let loki := namedPermanent g "Loki Laufeyson"
-  let g := g.applyModeledSpell ⟨0⟩ .whenYouNextCastAnInstantOrSorcerySpellW #[]
+  let g := g.applyModeledAbility ⟨0⟩ .whenYouNextCastAnInstantOrSorcerySpellW #[]
     (some loki.id)
   let (g, _) := g.move loki.id (.graveyard ⟨0⟩) none
   let (g, spell) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
@@ -4035,7 +4035,7 @@ def humanTorchInterveningOk : Bool :=
 def reptilLastResolvesOk : Bool :=
   let g := addPermanent afterDraw reptilDinomorpher ⟨0⟩ ⟨0⟩
   let r := namedPermanent g "Reptil, Dinomorpher"
-  let g := g.applyModeledSpell ⟨0⟩ .untilEndOfTurnReptilBecomesADinosaurHer #[] (some r.id)
+  let g := g.applyModeledAbility ⟨0⟩ .untilEndOfTurnReptilBecomesADinosaurHer #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
     r.hasSubtype "Dinosaur" && !r.hasSubtype "Human" &&
@@ -4057,7 +4057,7 @@ def ironManArmorUnattachOk : Bool :=
   let g := g.attachSourceTo armor ogre
   let armor := namedPermanent g "Iron Man Armor"
   armor.attachedTo == some ogre.id &&
-    (let g := g.applyModeledSpell ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
+    (let g := g.applyModeledAbility ⟨0⟩ .ifThisEquipmentIsnTACreatureItBecomesA #[]
        (some armor.id)
      let armor := namedPermanent g "Iron Man Armor"
      armor.attachedTo.isNone &&
@@ -4149,7 +4149,7 @@ def baxterActivationLockOk : Bool :=
     (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
      let bax := namedPermanent g "Baxter Building"
      !g.canActivate ⟨0⟩ bax ab) &&
-    (let g := g.applyModeledSpell ⟨0⟩ .drawACardActivateOnlyIfYouControlACrea #[]
+    (let g := g.applyModeledAbility ⟨0⟩ .drawACardActivateOnlyIfYouControlACrea #[]
        (some bax.id)
      (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 265).comment.contains "no player may take actions" &&
@@ -4165,7 +4165,7 @@ def arnimActivationLockOk : Bool :=
   let arnim := namedPermanent g "Arnim Zola, Bio-Fanatic"
   let ab := arnim.printed.activatedAbilities[0]!
   g.canActivate ⟨0⟩ arnim ab &&
-    (let g := g.applyModeledSpell ⟨0⟩ .createATapped21BlackVillainCreatureToken #[]
+    (let g := g.applyModeledAbility ⟨0⟩ .createATapped21BlackVillainCreatureToken #[]
        (some arnim.id)
      g.battlefield.any (fun o =>
        o.printed.isToken && o.hasSubtype "Villain" && o.status.tapped)) &&
@@ -4193,11 +4193,11 @@ def tenRingsReplacementOk : Bool :=
 def tricksterOwnerChoosesOk : Bool :=
   let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
   let ogre := namedPermanent g "Gray Ogre"
-  let gBot := g.applyModeledSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
+  let gBot := g.applyLeftoverSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
     #[Target.permanent ogre.id] none (putOnBottom := true)
   (gBot.objects.any (fun o =>
       o.name == "Gray Ogre" && o.zone == .library ⟨1⟩)) &&
-    (let gTop := g.applyModeledSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
+    (let gTop := g.applyLeftoverSpell ⟨0⟩ .theOwnerOfTargetCreatureAnOpponentControl
        #[Target.permanent ogre.id] none (putOnBottom := false)
      let lib := (gTop.player ⟨1⟩).library
      lib.size ≥ 2 &&
@@ -4210,7 +4210,7 @@ def tricksterOwnerChoosesOk : Bool :=
 def worldWarHulkNextOnlyOk : Bool :=
   let g := addToHand afterDraw grayOgre ⟨0⟩
   let g := addToHand g grizzlyBears ⟨0⟩
-  let g := g.applyModeledSpell ⟨0⟩ .theNextRedOrGreenCreatureSpellYouCastTh #[]
+  let g := g.applyLeftoverSpell ⟨0⟩ .theNextRedOrGreenCreatureSpellYouCastTh #[]
   g.pendingFreeRGCreature == some ⟨0⟩ &&
     (let ogre := handCardNamed g ⟨0⟩ "Gray Ogre"
      !(g.playManaCost ogre ogre.printed).includesManaPayment &&

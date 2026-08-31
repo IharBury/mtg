@@ -874,8 +874,8 @@ inductive SpellEffect where
   | plusOneOnEachYouControl
   /-- Put `n` +1/+1 counters on target creature you control. -/
   | plusOneOnCreatureN (n : Nat)
-  /-- A modeled MSH spell. -/
-  | msh (t : ModeledSpell)
+  /-- A leftover modeled MSH spell. -/
+  | leftover (t : LeftoverSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
@@ -1167,8 +1167,8 @@ inductive SpellResolution where
   | plusOneOnEachYouControl
   /-- `n` +1/+1 counters on a creature you control. -/
   | plusOneOnCreatureN (n : Nat)
-  /-- A modeled MSH spell. -/
-  | msh (t : ModeledSpell)
+  /-- A leftover modeled MSH spell. -/
+  | leftover (t : LeftoverSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
@@ -1476,8 +1476,8 @@ def spec : SpellEffect → SpellMeta
   | .plusOneOnCreatureN n =>
     { targeting := .of .creatureYouControl, castKind := .pump,
       resolution := .plusOneOnCreatureN n }
-  | .msh t =>
-    { targeting := .of .none, castKind := .extraLand, resolution := .msh t }
+  | .leftover t =>
+    { targeting := .of .none, castKind := .extraLand, resolution := .leftover t }
 
 instance : HasTargeting SpellEffect where
   targeting e := e.spec.targeting
@@ -1690,7 +1690,7 @@ def toNotation (e : SpellEffect) : String :=
   | .plusOneOnCreatureN n =>
     let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
     s!"put {counters} on {noun}"
-  | .msh t => t.toNotation
+  | .leftover t => t.toNotation
 
 end SpellEffect
 
@@ -1827,10 +1827,8 @@ inductive AbilityEffect where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- A modeled MSH activation. -/
+  /-- A leftover modeled MSH activation. -/
   | msh (t : ModeledAbility)
-  /-- A spell-shaped MSH activation (reuses `ModeledSpell`). -/
-  | mshSpell (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
@@ -1954,10 +1952,8 @@ inductive AbilityResolution where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- A modeled MSH activation. -/
+  /-- A leftover modeled MSH activation. -/
   | msh (t : ModeledAbility)
-  /-- A spell-shaped MSH activation (reuses `ModeledSpell`). -/
-  | mshSpell (t : ModeledSpell)
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
@@ -2105,14 +2101,12 @@ def spec : AbilityEffect → AbilityMeta
   | .connive =>
     { resolution := .connive }
   | .msh t =>
-    { resolution := .msh t }
-  | .mshSpell t =>
     match t with
     | .copyTargetActivatedOrTriggeredAbilityYouC =>
       { targeting := .of .stackAbilityFromCreatureSource,
-        resolution := .mshSpell t }
+        resolution := .msh t }
     | _ =>
-      { resolution := .mshSpell t }
+      { resolution := .msh t }
 
 instance : HasTargeting AbilityEffect where
   targeting e := e.spec.targeting
@@ -2258,7 +2252,6 @@ def toNotation (e : AbilityEffect) : String :=
   | .connive =>
     "This creature connives"
   | .msh t => t.toNotation
-  | .mshSpell t => t.toNotation
 
 instance : ToString AbilityEffect where
   toString := toNotation
