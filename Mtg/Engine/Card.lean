@@ -102,6 +102,14 @@ def flag (b : Bool) (name : String) : List String :=
 def toList (k : Keywords) : List String :=
   fields.foldl (fun acc f => acc ++ flag (f.get k) f.name) []
 
+/-- Oracle-style keyword list for ability sentences: one keyword prints as
+itself, two join with `and`, more join with commas. Sites whose printed
+wording orders keywords differently special-case before falling back here. -/
+def joinedAnd (k : Keywords) : String :=
+  match k.toList with
+  | [a, b] => s!"{a} and {b}"
+  | ks => String.intercalate ", " ks
+
 instance : ToString Keywords where
   toString k :=
     let ks := k.toList
@@ -134,6 +142,25 @@ def ascend : Keywords := { Keywords.none with ascend := true }
 def shadow : Keywords := { Keywords.none with shadow := true }
 def changeling : Keywords := { Keywords.none with changeling := true }
 end Keyword
+
+/-- English word for a small count in Oracle text (`two`, `three`). Larger
+counts print as digits, matching Oracle wording for the amounts we model. -/
+def englishNumber (n : Nat) : String :=
+  match n with
+  | 2 => "two"
+  | 3 => "three"
+  | 4 => "four"
+  | 5 => "five"
+  | _ => toString n
+
+#guard englishNumber 2 == "two"
+#guard englishNumber 5 == "five"
+#guard englishNumber 12 == "12"
+#guard Keywords.joinedAnd Keyword.trample == "trample"
+#guard Keywords.joinedAnd (Keyword.trample.merge Keyword.haste) == "haste and trample"
+#guard Keywords.joinedAnd
+  ((Keyword.haste.merge Keyword.trample).merge Keyword.flying) ==
+  "haste, flying, trample"
 
 /-- A token the engine can create (CR 111). Oracle nouns are fixed so catalog
 cards reconstruct printed “create a …” lines. -/
@@ -177,13 +204,6 @@ deriving Repr, Inhabited, BEq
 
 namespace TokenKind
 
-/-- English count word used in Oracle token-creation phrases (`two`, `three`). -/
-def englishCount (n : Nat) : String :=
-  match n with
-  | 2 => "two"
-  | 3 => "three"
-  | _ => toString n
-
 def oracleNoun : TokenKind → String
   | .treasure => "Treasure token"
   | .food => "Food token"
@@ -220,7 +240,7 @@ def createPhrase (k : TokenKind) (n : Nat) (tapped := false) : String :=
   if n == 1 then
     s!"create a {tappedS}{k.oracleNoun}"
   else
-    s!"create {englishCount n} {tappedS}{k.pluralNoun}"
+    s!"create {englishNumber n} {tappedS}{k.pluralNoun}"
 
 #guard TokenKind.pluralNoun .treasure == "Treasure tokens"
 #guard TokenKind.pluralNoun .spirit == "1/1 white Spirit creature tokens with flying"
@@ -665,6 +685,13 @@ def cardPhrase (n : Nat) : String :=
 def plusOnePlusOneCountersPhrase (n : Nat) : String :=
   if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
+/-- Oracle mana symbols for these types, e.g. `{G}{U}` or `{G} or {U}`. -/
+def manaSymbolsText (types : Array ManaType) (sep : String := "") : String :=
+  String.intercalate sep (types.toList.map (fun t => s!"\{{t.letter}}"))
+
+#guard manaSymbolsText #[.colored .green, .colored .blue] == "{G}{U}"
+#guard manaSymbolsText #[.colored .green, .colored .blue] " or " == "{G} or {U}"
+
 /-- How the demonstration agent classifies a spell when choosing what to cast.
 Adding a constructor is a compile error in `SpellResolution.toPhrase` rather than
 silently skipping the new effect. -/
@@ -763,21 +790,13 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
     | .pumpAndExileIfDies p t =>
       s!"{noun} gets {signedStat p}/{signedStat t} until end of turn. If that creature would die this turn, exile it instead"
     | .grantKeywords k =>
-      let joined :=
-        match k.toList with
-        | [a, b] => s!"{a} and {b}"
-        | ks => String.intercalate ", " ks
-      s!"{noun} gains {joined} until end of turn"
+      s!"{noun} gains {k.joinedAnd} until end of turn"
     | .tap => s!"tap {noun}"
     | .untap => s!"untap {noun}"
     | .becomeArtifactIndestructible =>
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
     | .pumpAndGrant p t k =>
-      let joined :=
-        match k.toList with
-        | [a, b] => s!"{a} and {b}"
-        | ks => String.intercalate ", " ks
-      s!"{noun} gets {signedStat p}/{signedStat t} and gains {joined} until end of turn"
+      s!"{noun} gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn"
   if sentence then capitalizeAscii raw else raw
 
 end PermanentAction
@@ -1087,8 +1106,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .millThenPutInstantOrSorcery n =>
     s!"mill {n} cards, then put an instant or sorcery card from among them into your hand"
   | .millThenPutLands n max =>
-    let maxWord := if max == 2 then "two" else toString max
-    s!"mill {n} cards, then put up to {maxWord} land cards from among them into your hand"
+    s!"mill {n} cards, then put up to {englishNumber max} land cards from among them into your hand"
   | .exileThenReturnYouControl =>
     "exile two target creatures and/or lands you control, then return them to the battlefield under their owner's control"
   | .dealDamageToEachNonDragonThenAddDragonMana n =>
@@ -1171,8 +1189,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .plusOneOnEachYouControl =>
     "put a +1/+1 counter on each creature you control"
   | .plusOneOnCreatureN n =>
-    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
-    s!"put {counters} on {noun}"
+    s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
   | .pumpThenDraw p t =>
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
@@ -1181,21 +1198,12 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .creatureYouControlDealsTwicePower =>
     "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
   | .createTokensThenTeamPump kind n p t =>
-    let tokens := TokenKind.createPhrase kind n
-    let tokenCap :=
-      match tokens.toList with
-      | c :: rest => String.ofList (c.toUpper :: rest)
-      | [] => tokens
-    s!"{tokenCap}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
+    let tokens := capitalizeAscii (TokenKind.createPhrase kind n)
+    s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | .createTokensPerSubtype kind subtype =>
     s!"Create a {kind.oracleNoun} for each {subtype} you control"
   | .creaturesYouControlGetAndGrant p t k =>
-    let joined :=
-      match k.toList with
-      | [a] => a
-      | [a, b] => s!"{a} and {b}"
-      | ks => String.intercalate ", " ks
-    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {joined} until end of turn"
+    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
   | .destroyUpToOneNonland =>
     "Destroy up to one target nonland permanent"
   | .createGalactus =>
@@ -1225,8 +1233,7 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | .mayPutHeroMvOrDraw n =>
     s!"You may put a Hero creature card with mana value {n} or less from your hand onto the battlefield. If you don't, draw a card"
   | .maySacArtifactOrDiscardDraw cards =>
-    let draw := if cards == 1 then "a card" else s!"{cards} cards"
-    s!"You may sacrifice an artifact or discard a card. If you do, draw {draw}."
+    s!"You may sacrifice an artifact or discard a card. If you do, draw {cardPhrase cards}."
   | .chooseTargetDoubleAndTrample =>
     "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
   | .returnUpToTwoGyModal =>
@@ -1482,8 +1489,7 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .returnFromGyAttach =>
     s!"Return this card from your graveyard to the battlefield attached to {noun}"
   | .addMana types =>
-    let parts := types.toList.map (fun t => s!"\{{t.letter}}")
-    s!"Add {String.intercalate "" parts}"
+    s!"Add {manaSymbolsText types}"
   | .searchBasicLandToHand =>
     "Search your library for a basic land card, reveal it, put it into your hand, then shuffle"
   | .createTokensX kind =>
@@ -1527,14 +1533,11 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .sourceGainsIndestructibleTap =>
     "Witch-king of Angmar gains indestructible until end of turn. Tap him"
   | .plusOneOnEachOtherSubtype subtype n =>
-    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
-    s!"Put {counters} on each other {subtype} you control"
+    s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .plusOneAndIndestructibleCounter =>
     "Put a +1/+1 counter and an indestructible counter on this"
   | .plusOneAndDraw plus cards =>
-    let counters := if plus == 1 then "a +1/+1 counter" else s!"{plus} +1/+1 counters"
-    let draw := if cards == 1 then "draw a card" else s!"draw {cards} cards"
-    s!"Put {counters} on this and {draw}"
+    s!"Put {plusOnePlusOneCountersPhrase plus} on this and draw {cardPhrase cards}"
   | .plusOneAndExtraTurn =>
     "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated"
   | .plusOneX =>
@@ -1602,26 +1605,18 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     let joined :=
       if k.vigilance && k.indestructible && k.haste then
         "vigilance, indestructible, and haste"
-      else
-        match k.toList with
-        | [a] => a
-        | [a, b] => s!"{a} and {b}"
-        | [a, b, c] => s!"{a}, {b}, and {c}"
-        | ks => String.intercalate ", " ks
+      else k.joinedAnd
     s!"Put a +1/+1 counter on this. He gains {joined} until end of turn"
   | .plusOneAndCreateTigerGod =>
     "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
   | .plusOneAndCreateTokens n kind =>
-    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
-    let token := TokenKind.createPhrase kind 1
-    s!"Put {counters} on this creature and {token}"
+    s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenKind.createPhrase kind 1}"
   | .plusTwoThenOddEvenDestroy =>
     "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .returnFromGyFinalityAttach =>
     "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
   | .returnGyCreatureThenPlusOne n =>
-    let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
-    s!"Return up to one target creature card from your graveyard to your hand. Put {counters} on this creature"
+    s!"Return up to one target creature card from your graveyard to your hand. Put {plusOnePlusOneCountersPhrase n} on this creature"
   | .revealTopDrawIfArtifact =>
     "Reveal the top card of your library. If it's an artifact card, draw a card"
   | .copyArtifactYouControlNotLegendary =>
@@ -1631,12 +1626,7 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
   | .becomeDinosaurHero p t k =>
     let joined :=
       if k.reach && k.vigilance then "reach and vigilance"
-      else if k.trample then "trample"
-      else
-        match k.toList with
-        | [a] => a
-        | [a, b] => s!"{a} and {b}"
-        | ks => String.intercalate ", " ks
+      else k.joinedAnd
     s!"Until end of turn, this becomes a Dinosaur Hero with base power and toughness {p}/{t} and gains {joined}"
   | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
@@ -3053,9 +3043,23 @@ deriving Repr, Inhabited, BEq
 
 namespace StaticAbility
 
-/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`). -/
+/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`), including
+the irregular plurals the catalog prints. -/
 def pluralSubtype (s : String) : String :=
-  if s.endsWith "s" then s else s ++ "s"
+  match s with
+  | "Army" => "Armies"
+  | "Elf" => "Elves"
+  | "Wolf" => "Wolves"
+  | "Dwarf" => "Dwarves"
+  | "Hero" => "Heroes"
+  | "Merfolk" => "Merfolk"
+  | s => if s.endsWith "s" then s else s ++ "s"
+
+#guard pluralSubtype "Orc" == "Orcs"
+#guard pluralSubtype "Wolf" == "Wolves"
+#guard pluralSubtype "Army" == "Armies"
+#guard pluralSubtype "Hero" == "Heroes"
+#guard pluralSubtype "Merfolk" == "Merfolk"
 
 /-- Oracle-style “Enchanted/Equipped creature gets +P/+T.” -/
 def hostGetsPhrase (host : String) (p t : Int) : String :=
@@ -3535,17 +3539,13 @@ def toNotation (ab : StaticAbility) : String :=
     | xs =>
       s!"This creature can't block unless you control a {String.intercalate " or " xs}."
   | .cantBeBlockedExcept n =>
-    let nWord := if n == 2 then "two" else if n == 3 then "three" else toString n
-    s!"This creature can't be blocked except by {nWord} or more creatures."
+    s!"This creature can't be blocked except by {englishNumber n} or more creatures."
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
     s!"Enchanted creature is a {subtype} and can't attack or block."
   | .cardsInHandPower =>
     "This power is equal to the number of cards in your hand."
   | .hostKeywords host k p t =>
-    let kw :=
-      match k.toList with
-      | [a, b] => s!"{a} and {b}"
-      | ks => String.intercalate ", " ks
+    let kw := k.joinedAnd
     if p == 0 && t == 0 then
       s!"{host} has {kw}."
     else
@@ -3555,8 +3555,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .creaturesYouControlPower =>
     "This power is equal to the number of creatures you control."
   | .youControlSubtypeTrample subtype =>
-    let plural := if subtype == "Army" then "Armies" else pluralSubtype subtype
-    s!"{plural} you control have trample."
+    s!"{pluralSubtype subtype} you control have trample."
   | .teamPump p t legendaryOnly nonlegendaryOnly =>
     let who :=
       if legendaryOnly then "Legendary creatures you control"
@@ -3566,9 +3565,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .hasteIfOtherSubtype subtype =>
     s!"This creature has haste as long as you control another {subtype}."
   | .cantAttackUnlessNOther n subtype =>
-    let nWord := if n == 2 then "two" else toString n
-    let plural := if subtype == "Wolf" then "Wolves" else pluralSubtype subtype
-    s!"This creature can't attack unless you control {nWord} or more other {plural}."
+    s!"This creature can't attack unless you control {englishNumber n} or more other {pluralSubtype subtype}."
   | .legendaryTeamPumpWard p t w =>
     s!"Legendary creatures you control get {signedStat p}/{signedStat t} and have ward \{{w}}."
   | .hostGetsAndWard host p t w =>
@@ -3584,17 +3581,10 @@ def toNotation (ab : StaticAbility) : String :=
   | .equippedTeamKeywordsDuringYourTurn k =>
     let kw :=
       if k.firstStrike && k.vigilance then "first strike and vigilance"
-      else
-        match k.toList with
-        | [a, b] => s!"{a} and {b}"
-        | ks => String.intercalate ", " ks
+      else k.joinedAnd
     s!"During your turn, creatures you control that are equipped have {kw}."
   | .selfIfEnduringStory p t k =>
-    let kw :=
-      match k.toList with
-      | [a] => a
-      | [a, b] => s!"{a} and {b}"
-      | ks => String.intercalate ", " ks
+    let kw := k.joinedAnd
     if p == 0 && t == 0 then
       s!"As long as you have an enduring story, this has {kw}."
     else if k.toList.isEmpty then
@@ -3610,21 +3600,12 @@ def toNotation (ab : StaticAbility) : String :=
   | .attackTaxIfEnduringStory n =>
     s!"As long as you have an enduring story, creatures can't attack you unless their controller pays \{{n}} for each of those creatures."
   | .otherSubtypeTapAddOneOf subtypes mana =>
-    let who :=
-      if subtypes == #["Elf"] then "Other Elves you control"
-      else s!"Other {joinedSubtypes subtypes} you control"
-    let add :=
-      String.intercalate " or " (mana.toList.map (fun t => s!"\{{t.letter}}"))
-    s!"{who} have \"\{T}: Add {add}.\""
+    let add := manaSymbolsText mana " or "
+    s!"Other {joinedSubtypes subtypes pluralSubtype} you control have \"\{T}: Add {add}.\""
   | .cantBeBlockedByPowerAtLeast n =>
     s!"This creature can't be blocked by creatures with power {n} or greater."
   | .equippedKeywordsAndUnblockable k =>
-    let kw :=
-      match k.toList with
-      | [a] => a
-      | [a, b] => s!"{a} and {b}"
-      | ks => String.intercalate ", " ks
-    s!"Equipped creature has {kw} and can't be blocked."
+    s!"Equipped creature has {k.joinedAnd} and can't be blocked."
   | .equipTargetingThisCostLess n =>
     s!"Equip abilities you activate that target this creature cost \{{n}} less to activate."
   | .firstEquipFreeIfEnduringStory =>
@@ -3634,8 +3615,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .instantSorceryCostReductionEqualEquippedPower =>
     "Instant and sorcery spells you cast cost {X} less to cast, where X is equipped creature's power."
   | .otherSubtypePowerPerArtifactToken subtype =>
-    let plural := if subtype == "Dwarf" then "Dwarves" else pluralSubtype subtype
-    s!"Other {plural} you control get +1/+0 for each artifact token you control."
+    s!"Other {pluralSubtype subtype} you control get +1/+0 for each artifact token you control."
   | .extraTriggerIfEnduringStorySubtype subtype =>
     s!"As long as you have an enduring story, if a triggered ability of a {subtype} you control triggers, that ability triggers an additional time."
   | .extraTriggerAnotherYouControl subtypes includeBattles =>
@@ -3668,11 +3648,9 @@ def toNotation (ab : StaticAbility) : String :=
   | .wardSacrificeLegendary =>
     "Ward—Sacrifice a legendary artifact or legendary creature."
   | .teamPumpSubtype subtype p t =>
-    let plural := if subtype == "Hero" then "Heroes" else pluralSubtype subtype
-    s!"{plural} you control get {signedStat p}/{signedStat t}."
+    s!"{pluralSubtype subtype} you control get {signedStat p}/{signedStat t}."
   | .youAndOtherSubtypeHexproofIfShield subtype =>
-    let plural := if subtype == "Hero" then "Heroes" else pluralSubtype subtype
-    s!"As long as this has a shield counter on it, you and other {plural} you control have hexproof."
+    s!"As long as this has a shield counter on it, you and other {pluralSubtype subtype} you control have hexproof."
   | .opponentsCantCastOnYourTurn =>
     "Your opponents can't cast spells during your turn."
   | .subtypeSpellsCostLess subtype n =>
@@ -3686,8 +3664,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .maximumHandSize n =>
     s!"Your maximum hand size is {n}."
   | .powerEqualSubtype subtype =>
-    let plural := if subtype == "Merfolk" then "Merfolk" else pluralSubtype subtype
-    s!"This creature's power is equal to the number of {plural} you control."
+    s!"This creature's power is equal to the number of {pluralSubtype subtype} you control."
   | .powerEqualLegendaryCreatures =>
     "This creature's power is equal to the number of legendary creatures you control."
   | .typeSpellsCostLess ty n =>
@@ -3709,8 +3686,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .wardDiscardOrPay n =>
     s!"Ward—Discard a card or pay \{{n}}."
   | .wardPoisonCounters n =>
-    let nWord := if n == 5 then "five" else toString n
-    s!"Ward—Get {nWord} poison counters."
+    s!"Ward—Get {englishNumber n} poison counters."
   | .attacksEachCombatIfAble =>
     "This creature attacks each combat if able."
   | .instantSorceryCostLessEqualPower =>
@@ -3757,10 +3733,8 @@ def toNotation (ab : StaticAbility) : String :=
     "This enters with X +1/+1 counters on it."
   | .enchantedGetsHasAndTypes p t k types =>
     let kw :=
-      match k.toList with
-      | ["vigilance", "first strike"] => "first strike and vigilance"
-      | [a, b] => s!"{a} and {b}"
-      | ks => String.intercalate ", " ks
+      if k.firstStrike && k.vigilance then "first strike and vigilance"
+      else k.joinedAnd
     let extra :=
       if types.isEmpty then ""
       else s!", and is a {String.intercalate " " types.toList} in addition to its other types"
@@ -7491,11 +7465,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .destroyOppArtifactsEnchantmentsGainLife =>
     "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
   | .damageEqualSubtypeToEachOpponent subtype =>
-    let plural :=
-      if subtype == "Dwarf" then "Dwarves"
-      else if subtype.endsWith "s" then subtype
-      else subtype ++ "s"
-    s!"it deals damage equal to the number of {plural} you control to each opponent"
+    s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
   | .damageEqualTreasures =>
     s!"it deals damage equal to the number of Treasures you control to {noun}"
   | .loseLifeCreateTreasure =>
@@ -7505,8 +7475,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .attachEquipmentToCreature =>
     "attach target Equipment you control to up to one target creature you control"
   | .addMana types =>
-    let parts := types.toList.map (fun t => s!"\{{t.letter}}")
-    s!"add {String.intercalate "" parts}"
+    s!"add {manaSymbolsText types}"
   | .defenderSacsLeastPower =>
     "defending player sacrifices a creature with the least power among creatures they control"
   | .createAxe =>
@@ -7673,8 +7642,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .pumpCause p t =>
     s!"that creature gets {signedStat p}/{signedStat t} until end of turn"
   | .othersOfSubtypeGetEqualSourceToughness subtype =>
-    let plural := if subtype == "Hero" then "Heroes" else StaticAbility.pluralSubtype subtype
-    s!"each other {plural} you control get +X/+X until end of turn, where X is this toughness"
+    s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
   | .drawIfAttackedOrEnteredSubtype subtype =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card"
@@ -7701,7 +7669,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .planFinishExileTopCast =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
   | .planFinishCreateRobots n =>
-    s!"sacrifice it and create {if n == 3 then "three" else toString n} 2/2 colorless Robot Villain artifact creature tokens"
+    s!"sacrifice it and create {englishNumber n} 2/2 colorless Robot Villain artifact creature tokens"
   | .planFinishDividedDamage n =>
     s!"sacrifice it. When you do, it deals {n} damage divided as you choose among one or two targets"
   | .planFinishIndestructibleOnTarget =>
