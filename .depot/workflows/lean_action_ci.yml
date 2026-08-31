@@ -24,23 +24,10 @@ jobs:
         with:
           path: ~/.elan
           key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
-      - name: Restore Lake build cache
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
         with:
           # Fail if Lean or Lake logs any warning (e.g. deprecations).
           build-args: "--wfail"
-          use-github-cache: false
-      - name: Save Lake build cache
-        if: github.ref == 'refs/heads/main' && success()
-        uses: actions/cache/save@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
       - name: Check example games
         run: |
           set -euo pipefail

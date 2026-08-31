@@ -21,16 +21,7 @@ jobs:
           path: ~/.elan
           key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
 
-      - name: Restore Lake build cache
-        uses: actions/cache/restore@v5
-        with:
-          path: .lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
-
       - uses: leanprover/lean-action@v1
-        with:
-          use-github-cache: false
 
       - name: Run demo
         run: lake exe mtg-demo -- --auto 2>&1 | tee mtg-demo.log
