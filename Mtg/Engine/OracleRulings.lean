@@ -8909,6 +8909,31 @@ def secondCardDrawnAfterEnterOk : Bool :=
 
 #guard secondCardDrawnAfterEnterOk
 
+/-- Ruling 629: Roxxon Brutes's second-card trigger puts a +1/+1 counter
+on the target; resolving it does not draw a card. -/
+def roxxonBrutesSecondCardNoDrawOk : Bool :=
+  let g := afterDraw.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 1 })
+  let g := addPermanent g roxxonBrutes ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let brutes := namedPermanent g "Roxxon Brutes"
+  let bears := namedPermanent g "Grizzly Bears"
+  let handBeforeDraw := (g.player ⟨0⟩).hand.size
+  let g := g.draw ⟨0⟩ 1
+  let triggered :=
+    g.waitingTriggers.any (fun t =>
+      t.source.name == "Roxxon Brutes" &&
+        t.ability == .onResource Effect.resourceSecondDrawPlusOneTarget)
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onResource Effect.resourceSecondDrawPlusOneTarget)
+    (some brutes.id) #[Target.permanent bears.id]
+  triggered &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (g.player ⟨0⟩).hand.size == handBeforeDraw + 1 &&
+    (g.player ⟨0⟩).cardsDrawnThisTurn == 2 &&
+    (mshRuling 629).comment.contains "second card"
+
+#guard roxxonBrutesSecondCardNoDrawOk
+
 /-- Ruling 450: Kid Loki hexproof applies to creatures that got +1/+1 earlier. -/
 def kidLokiHexproofAfterCountersOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩

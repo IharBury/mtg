@@ -242,6 +242,13 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
           untilEotKeywords := Keywords.merge s.untilEotKeywords Keyword.trample })
         |>.logMsg s!"{o.name}'s base power and toughness become 6/6")
       "The source is no longer in play"
+  | (.resource .secondDrawPlusOneTarget) =>
+    g.withLegalKindPermanent controller .creature targets
+      (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
+      (some "The target is no longer legal")
+  | (.resource .secondDrawDrain) =>
+    let g := g.forEachOpponent controller (fun g pid => g.loseLife pid 1)
+    g.gainLife controller 1
   | (.casting .visionModes) =>
     match sourceId.bind g.findObject? with
     | some src =>
@@ -379,8 +386,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       g.createKindTokens controller .doombot 2
     else if text.contains "draw a card" && text.contains "lose 1 life" then
       g.drawThenLoseLife controller 1 1
-    else if text.contains "draw a card" || text.contains "you draw" ||
-        text.contains "draw cards" then
+    else if text.contains "draw a card" || text.contains "draw cards" then
       g.draw controller 1
     else if text.contains "connive" then
       g.applyConnive controller sourceId
