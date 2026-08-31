@@ -1844,7 +1844,8 @@ def toNotation (e : SpellEffect) : String :=
     let counters := if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
     s!"put {counters} on {noun}"
   | .pumpThenDraw p t =>
-    s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nDraw a card."
+    let tStr := if t == 0 && p < 0 then "-0" else signedStat t
+    s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
   | .pumpThenExileTopPlay p t =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. Until the end of your next turn, you may play that card."
   | .creatureYouControlDealsTwicePower =>

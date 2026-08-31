@@ -9697,7 +9697,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
 
 /-- Put the targeted creature into its owner's library, second from the top
 or on the bottom (Trickster's Stratagem). -/
-def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
+def applyOwnerPutsLibraryThenConnive (g : Game) (_controller : PlayerId)
     (targets : Array Target) (putOnBottom := false) : Game :=
   match targets[0]? with
   | some (Target.permanent id) =>
@@ -10688,8 +10688,9 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .chooseTargetDoubleAndTrample =>
     g.withLegalKindPermanent controller .creatureYouControl targets
       (fun g o =>
-        let g := g.applyEffect controller .doublePowerAndToughness
-          #[Target.permanent o.id]
+        let p := g.power o
+        let t := g.toughness o
+        let g := g.applyPermanentAction o (.pump p t)
         g.grantUntilEotLogged (g.object! o.id) Keyword.trample) none none
   | .returnUpToTwoGyModal =>
     g.applyLeftoverTextEffect controller
