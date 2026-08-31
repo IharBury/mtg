@@ -10912,7 +10912,7 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
       "The source is no longer in play"
   | .proliferateEachKind =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .proliferateEachKind) targets sourceId
+      (Effect.proliferateEachKind.phrase) targets sourceId
   | .equipmentBecomesConstructHero =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -10938,13 +10938,13 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     g.logLookAtTop controller n
   | .millThenPutHeroOrEnchantment n =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation (.millThenPutHeroOrEnchantment n)) targets sourceId
+      ((Effect.millThenPutHeroOrEnchantment n).phrase) targets sourceId
   | .plusOneAndDoubleStrikeCounter =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .plusOneAndDoubleStrikeCounter) targets sourceId
+      (Effect.plusOneAndDoubleStrikeCounter.phrase) targets sourceId
   | .plusOneThenFightUpToOne =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .plusOneThenFightUpToOne) targets sourceId
+      (Effect.plusOneThenFightUpToOne.phrase) targets sourceId
   | .plusOneAndGrant k =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.addPlusOnePlusOneTo o 1
@@ -10961,16 +10961,16 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     g.createKindTokens controller kind 1
   | .plusTwoThenOddEvenDestroy =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .plusTwoThenOddEvenDestroy) targets sourceId
+      (Effect.plusTwoThenOddEvenDestroy.phrase) targets sourceId
   | .returnFromGyFinalityAttach =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .returnFromGyFinalityAttach) targets sourceId
+      (Effect.returnFromGyFinalityAttach.phrase) targets sourceId
   | .returnGyCreatureThenPlusOne n =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation (.returnGyCreatureThenPlusOne n)) targets sourceId
+      ((Effect.returnGyCreatureThenPlusOne n).phrase) targets sourceId
   | .revealTopDrawIfArtifact =>
     g.applyLeftoverTextEffect controller
-      (AbilityLeftover.toNotation .revealTopDrawIfArtifact) targets sourceId
+      (Effect.revealTopDrawIfArtifact.phrase) targets sourceId
   | .copyArtifactYouControlNotLegendary =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>

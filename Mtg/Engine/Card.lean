@@ -9536,41 +9536,41 @@ instance : ToString CardDef where
 #guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
   Resolution.trigger (.scry 2)
-#guard SpellLeftover.toNotation (.dealDamage 3) == "deals 3 damage to any target"
-#guard SpellLeftover.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
-#guard SpellLeftover.toNotation .destroyCreatureWithFlying ==
+#guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
+#guard (Effect.pump 3 3).phrase == "target creature gets +3/+3 until end of turn"
+#guard Effect.destroyCreatureWithFlying.phrase ==
   "destroy target creature with flying"
-#guard SpellLeftover.toNotation .destroyCreature ==
+#guard Effect.destroyCreature.phrase ==
   "destroy target creature"
-#guard SpellLeftover.toNotation .plusOnePlusOneTrampleHexproof ==
+#guard Effect.plusOnePlusOneTrampleHexproof.phrase ==
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
-#guard SpellLeftover.toNotation (.dealDamageToCreature 5) ==
+#guard (Effect.dealDamageToCreature 5).phrase ==
   "deals 5 damage to target creature"
-#guard SpellLeftover.toNotation (.dealDamageLoseIndestructibleExile 3) ==
+#guard (Effect.dealDamageLoseIndestructibleExile 3).phrase ==
   "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-#guard SpellLeftover.toNotation .creatureYouControlDealsPowerToOppCreature ==
+#guard Effect.creatureYouControlDealsPowerToOppCreature.phrase ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
-#guard SpellLeftover.toNotation .playAdditionalLandThisTurn ==
+#guard Effect.playAdditionalLandThisTurn.phrase ==
   "you may play an additional land this turn"
-#guard SpellLeftover.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.phrase ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
-#guard SpellLeftover.toNotation (.destroyTargetCreatureControllerLosesLife 2) ==
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).phrase ==
   "destroy target creature. Its controller loses 2 life"
-#guard SpellLeftover.toNotation (.allCreaturesGet (-4) (-4)) ==
+#guard (Effect.allCreaturesGet (-4) (-4)).phrase ==
   "all creatures get -4/-4 until end of turn"
-#guard SpellLeftover.toNotation (.drawAndLoseLife 2 2) ==
+#guard (Effect.drawAndLoseLife 2 2).phrase ==
   "you draw 2 cards and lose 2 life"
-#guard SpellLeftover.toNotation (.drawAndLoseLife 1 0) ==
+#guard (Effect.drawAndLoseLife 1 0).phrase ==
   "you draw a card and lose 0 life"
-#guard SpellLeftover.toNotation (.targetPlayerDrawLoseLife 2 2) ==
+#guard (Effect.targetPlayerDrawLoseLife 2 2).phrase ==
   "target player draws 2 cards and loses 2 life"
-#guard SpellLeftover.toNotation (.creaturesTargetPlayerGet (-1) (-1)) ==
+#guard (Effect.creaturesTargetPlayerGet (-1) (-1)).phrase ==
   "creatures target player controls get -1/-1 until end of turn"
-#guard SpellLeftover.toNotation (.pumpAndLifelink 2 2) ==
+#guard (Effect.pumpAndLifelink 2 2).phrase ==
   "target creature gets +2/+2 and gains lifelink until end of turn"
-#guard SpellLeftover.toNotation (.pumpAndExileIfDies (-5) (-5)) ==
+#guard (Effect.pumpAndExileIfDies (-5) (-5)).phrase ==
   "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
-#guard (SpellLeftover.toNotation .exileGraveyardCreaturesGrantCast).startsWith
+#guard (Effect.exileGraveyardCreaturesGrantCast.phrase).startsWith
   "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
@@ -9641,17 +9641,17 @@ instance : ToString CardDef where
 #guard TriggerEvent.checkTargets .attacking
 #guard !TriggerEvent.isWhenever .dying
 #guard TriggerEvent.isWhenever .youAttackWithElves
-#guard SpellLeftover.targetCount (.dealDamage 3) == 1
-#guard SpellLeftover.targetCount .tapOneOrTwoCreatures == 1
-#guard SpellLeftover.maxTargetCount .tapOneOrTwoCreatures == 2
-#guard SpellLeftover.targetCount .creatureYouControlDealsPowerToOppCreature == 2
-#guard SpellLeftover.targetCount .playAdditionalLandThisTurn == 0
-#guard SpellLeftover.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
-#guard SpellLeftover.targetCount .destroyCreature == 1
-#guard SpellLeftover.targetCount (.drawAndLoseLife 2 2) == 0
-#guard SpellLeftover.targetKind (.dealDamage 3) == .playerOrCreature
-#guard SpellLeftover.targetKind (.pump 3 3) == .creature
-#guard SpellLeftover.targeting (.pump 3 3) == EffectTargeting.of .creature .own
+#guard (Effect.dealDamage 3).targetCount == 1
+#guard Effect.tapOneOrTwoCreatures.targetCount == 1
+#guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
+#guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
+#guard Effect.playAdditionalLandThisTurn.targetCount == 0
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetCount == 1
+#guard Effect.destroyCreature.targetCount == 1
+#guard (Effect.drawAndLoseLife 2 2).targetCount == 0
+#guard (Effect.dealDamage 3).targetKind == .playerOrCreature
+#guard (Effect.pump 3 3).targetKind == .creature
+#guard (Effect.pump 3 3).targeting == EffectTargeting.of .creature .own
 #guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
@@ -9660,68 +9660,68 @@ instance : ToString CardDef where
 #guard EffectTargetKind.targetsStackSpell .creatureSpell
 #guard EffectTargetKind.targetsStackSpell (.creatureSpellPTAtMost 2)
 #guard !EffectTargetKind.targetsStackSpell .creature
-#guard SpellLeftover.targetKind .destroyCreatureWithFlying == .creatureWithFlying
-#guard SpellLeftover.targetKind .destroyCreature == .creature
-#guard SpellLeftover.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
-#guard SpellLeftover.targetKind (.dealDamageToCreature 5) == .creature
-#guard SpellLeftover.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
-#guard SpellLeftover.targetKind .creatureYouControlDealsPowerToOppCreature ==
+#guard Effect.destroyCreatureWithFlying.targetKind == .creatureWithFlying
+#guard Effect.destroyCreature.targetKind == .creature
+#guard Effect.plusOnePlusOneTrampleHexproof.targetKind == .creatureYouControl
+#guard (Effect.dealDamageToCreature 5).targetKind == .creature
+#guard (Effect.dealDamageLoseIndestructibleExile 3).targetKind == .creature
+#guard Effect.creatureYouControlDealsPowerToOppCreature.targetKind ==
   .creatureYouControlThenOppCreature
-#guard SpellLeftover.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetKind ==
   .upToOneCreatureThenPlayer
-#guard SpellLeftover.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
-#guard !SpellLeftover.allowsZeroTargets (.plusOneUpToOneAndPlayerGainsLife 2)
-#guard SpellLeftover.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
-#guard SpellLeftover.targetKind .playAdditionalLandThisTurn == .none
-#guard SpellLeftover.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature
-#guard SpellLeftover.targetKind (.allCreaturesGet (-4) (-4)) == .none
-#guard SpellLeftover.targetKind (.drawAndLoseLife 2 2) == .none
-#guard SpellLeftover.targetKind (.targetPlayerDrawLoseLife 2 2) == .player
-#guard SpellLeftover.targetKind (.creaturesTargetPlayerGet (-1) (-1)) == .player
-#guard SpellLeftover.targetKind .exileGraveyardCreaturesGrantCast == .player
-#guard !SpellLeftover.requiresTarget (.allCreaturesGet (-4) (-4))
-#guard !SpellLeftover.requiresTarget (.drawAndLoseLife 2 2)
-#guard SpellLeftover.requiresTarget (.destroyTargetCreatureControllerLosesLife 2)
-#guard SpellLeftover.requiresTarget (.targetPlayerDrawLoseLife 2 2)
-#guard SpellLeftover.castKind (.allCreaturesGet (-4) (-4)) == .massPump
-#guard SpellLeftover.castKind (.drawAndLoseLife 2 2) == .draw
-#guard SpellLeftover.castKind (.targetPlayerDrawLoseLife 2 2) == .draw
-#guard SpellLeftover.preferAsDefaultMode (.pumpAndExileIfDies (-5) (-5))
-#guard SpellLeftover.requiresTarget (.dealDamage 3)
-#guard SpellLeftover.requiresTarget (.dealDamageToCreature 5)
-#guard SpellLeftover.requiresTarget .destroyCreature
-#guard SpellLeftover.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
-#guard SpellLeftover.requiresTarget (.dealDamageLoseIndestructibleExile 3)
-#guard SpellLeftover.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
-#guard SpellLeftover.requiresTarget .creatureYouControlDealsPowerToOppCreature
-#guard !SpellLeftover.requiresTarget .playAdditionalLandThisTurn
-#guard !SpellLeftover.requiresTarget (.drawAndLoseLife 2 2)
-#guard SpellLeftover.castKind (.dealDamage 3) == .burn
-#guard SpellLeftover.castKind (.dealDamageToCreature 5) == .creatureDamage
-#guard SpellLeftover.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
-#guard SpellLeftover.castKind .creatureYouControlDealsPowerToOppCreature == .fight
-#guard SpellLeftover.castKind .destroyCreatureWithFlying == .destroyFlying
-#guard SpellLeftover.castKind .destroyCreature == .destroyCreature
-#guard SpellLeftover.castKind .destroyArtifactOrLandNonflyersCantBlock ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
+#guard !(Effect.plusOneUpToOneAndPlayerGainsLife 2).allowsZeroTargets
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetKind == .artifactOrLand
+#guard Effect.playAdditionalLandThisTurn.targetKind == .none
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetKind == .creature
+#guard (Effect.allCreaturesGet (-4) (-4)).targetKind == .none
+#guard (Effect.drawAndLoseLife 2 2).targetKind == .none
+#guard (Effect.targetPlayerDrawLoseLife 2 2).targetKind == .player
+#guard (Effect.creaturesTargetPlayerGet (-1) (-1)).targetKind == .player
+#guard Effect.exileGraveyardCreaturesGrantCast.targetKind == .player
+#guard !(Effect.allCreaturesGet (-4) (-4)).requiresTarget
+#guard !(Effect.drawAndLoseLife 2 2).requiresTarget
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).requiresTarget
+#guard (Effect.targetPlayerDrawLoseLife 2 2).requiresTarget
+#guard (Effect.allCreaturesGet (-4) (-4)).castKind == .massPump
+#guard (Effect.drawAndLoseLife 2 2).castKind == .draw
+#guard (Effect.targetPlayerDrawLoseLife 2 2).castKind == .draw
+#guard (Effect.pumpAndExileIfDies (-5) (-5)).preferAsDefaultMode
+#guard (Effect.dealDamage 3).requiresTarget
+#guard (Effect.dealDamageToCreature 5).requiresTarget
+#guard Effect.destroyCreature.requiresTarget
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.requiresTarget
+#guard (Effect.dealDamageLoseIndestructibleExile 3).requiresTarget
+#guard (Effect.dealDamageLoseIndestructibleExile 3).targetCount == 1
+#guard Effect.creatureYouControlDealsPowerToOppCreature.requiresTarget
+#guard !Effect.playAdditionalLandThisTurn.requiresTarget
+#guard !(Effect.drawAndLoseLife 2 2).requiresTarget
+#guard (Effect.dealDamage 3).castKind == .burn
+#guard (Effect.dealDamageToCreature 5).castKind == .creatureDamage
+#guard (Effect.dealDamageLoseIndestructibleExile 3).castKind == .creatureDamage
+#guard Effect.creatureYouControlDealsPowerToOppCreature.castKind == .fight
+#guard Effect.destroyCreatureWithFlying.castKind == .destroyFlying
+#guard Effect.destroyCreature.castKind == .destroyCreature
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.castKind ==
   .destroyArtifactOrLand
-#guard SpellLeftover.castKind (.pump 3 3) == .pump
-#guard SpellLeftover.castKind .plusOnePlusOneTrampleHexproof == .pump
-#guard SpellLeftover.castKind .playAdditionalLandThisTurn == .extraLand
-#guard SpellLeftover.castKind (.drawAndLoseLife 2 2) == .draw
-#guard SpellLeftover.preferAsDefaultMode .destroyCreatureWithFlying
-#guard !SpellLeftover.preferAsDefaultMode .destroyCreature
-#guard !SpellLeftover.preferAsDefaultMode (.pump 3 3)
-#guard !SpellLeftover.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
-#guard SpellLeftover.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
-#guard SpellLeftover.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
-#guard SpellLeftover.resolution .destroyCreatureWithFlying == .onPermanent .destroy
-#guard SpellLeftover.resolution .destroyCreature == .onPermanent .destroy
-#guard SpellLeftover.resolution .playAdditionalLandThisTurn == .extraLand
-#guard SpellLeftover.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
-#guard SpellLeftover.resolution .creatureYouControlDealsPowerToOppCreature == .fight
-#guard SpellLeftover.resolution (.dealDamageToCreature 5) ==
+#guard (Effect.pump 3 3).castKind == .pump
+#guard Effect.plusOnePlusOneTrampleHexproof.castKind == .pump
+#guard Effect.playAdditionalLandThisTurn.castKind == .extraLand
+#guard (Effect.drawAndLoseLife 2 2).castKind == .draw
+#guard Effect.destroyCreatureWithFlying.preferAsDefaultMode
+#guard !Effect.destroyCreature.preferAsDefaultMode
+#guard !(Effect.pump 3 3).preferAsDefaultMode
+#guard !Effect.plusOnePlusOneTrampleHexproof.preferAsDefaultMode
+#guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
+#guard (Effect.pump 3 3).spellResolution == .onPermanent (.pump 3 3)
+#guard Effect.destroyCreatureWithFlying.spellResolution == .onPermanent .destroy
+#guard Effect.destroyCreature.spellResolution == .onPermanent .destroy
+#guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
+#guard (Effect.drawAndLoseLife 2 2).spellResolution == .drawAndLoseLife 2 2
+#guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution == .fight
+#guard (Effect.dealDamageToCreature 5).spellResolution ==
   .onPermanent (.dealDamage 5)
-#guard SpellLeftover.resolution .destroyArtifactOrLandNonflyersCantBlock ==
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.spellResolution ==
   .onPermanent .destroyThenNonflyersCantBlock
 #guard
   let c : CardDef := {
@@ -9732,88 +9732,88 @@ instance : ToString CardDef where
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1
-#guard (AbilityLeftover.toNotation .searchBasicLandTapped).startsWith "Search your library"
-#guard AbilityLeftover.toNotation (.searchLandTypeToHand "Mountain") ==
+#guard (Effect.searchBasicLandTapped.phrase).startsWith "Search your library"
+#guard (Effect.searchLandTypeToHand "Mountain").phrase ==
   "Search your library for a Mountain card, reveal it, put it into your hand, then shuffle"
-#guard AbilityLeftover.toNotation (.searchLandTypeToHand "Swamp") ==
+#guard (Effect.searchLandTypeToHand "Swamp").phrase ==
   "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
-#guard !AbilityLeftover.requiresTarget (.searchLandTypeToHand "Mountain")
-#guard AbilityLeftover.resolution (.searchLandTypeToHand "Swamp") ==
+#guard !(Effect.searchLandTypeToHand "Mountain").requiresTarget
+#guard (Effect.searchLandTypeToHand "Swamp").abilityResolution ==
   .searchLandTypeToHand "Swamp"
-#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyHero ==
+#guard Effect.addAnyColorSpendOnlyHero.phrase ==
   "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
-#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyVillain ==
+#guard Effect.addAnyColorSpendOnlyVillain.phrase ==
   "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
-#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyArtifactSpell ==
+#guard Effect.addAnyColorSpendOnlyArtifactSpell.phrase ==
   "Add one mana of any color. Spend this mana only to cast an artifact spell"
-#guard AbilityLeftover.toNotation (.dealDamageToTargetCreature 2) ==
+#guard (Effect.dealDamageToTargetCreature 2).phrase ==
   "This creature deals 2 damage to target creature"
-#guard AbilityLeftover.toNotation .destroyTargetColorlessNonland ==
+#guard Effect.destroyTargetColorlessNonland.phrase ==
   "Destroy target colorless nonland permanent"
-#guard AbilityLeftover.toNotation .attachToTargetCreatureYouControl ==
+#guard Effect.attachToTargetCreatureYouControl.phrase ==
   "Attach this Equipment to target creature you control"
-#guard (AbilityLeftover.toNotation .becomeBearCreatureWithLandsPT).startsWith
+#guard (Effect.becomeBearCreatureWithLandsPT.phrase).startsWith
   "This enchantment becomes a Bear creature"
-#guard AbilityLeftover.toNotation (.sourceGets 1 0) ==
+#guard (Effect.sourceGets 1 0).phrase ==
   "This creature gets +1/+0 until end of turn"
-#guard AbilityLeftover.toNotation (.putPlusOnePlusOneOnSource 3) ==
+#guard (Effect.putPlusOnePlusOneOnSource 3).phrase ==
   "Put 3 +1/+1 counters on this creature"
-#guard AbilityLeftover.toNotation (.putPlusOnePlusOneOnSource 1) ==
+#guard (Effect.putPlusOnePlusOneOnSource 1).phrase ==
   "Put a +1/+1 counter on this creature"
-#guard AbilityLeftover.toNotation .targetCantBeBlockedThisTurn ==
+#guard Effect.targetCantBeBlockedThisTurn.phrase ==
   "Target creature can't be blocked this turn"
-#guard AbilityLeftover.toNotation .returnFromGraveyardTapped ==
+#guard Effect.returnFromGraveyardTapped.phrase ==
   "Return this card from your graveyard to the battlefield tapped"
-#guard AbilityLeftover.toNotation .returnFromGraveyardToHand ==
+#guard Effect.returnFromGraveyardToHand.phrase ==
   "Return this card from your graveyard to your hand"
-#guard !AbilityLeftover.requiresTarget .returnFromGraveyardTapped
-#guard !AbilityLeftover.requiresTarget .returnFromGraveyardToHand
-#guard AbilityLeftover.resolution .returnFromGraveyardTapped ==
+#guard !Effect.returnFromGraveyardTapped.requiresTarget
+#guard !Effect.returnFromGraveyardToHand.requiresTarget
+#guard Effect.returnFromGraveyardTapped.abilityResolution ==
   .returnFromGraveyardTapped
-#guard AbilityLeftover.resolution .returnFromGraveyardToHand ==
+#guard Effect.returnFromGraveyardToHand.abilityResolution ==
   .returnFromGraveyardToHand
-#guard AbilityLeftover.requiresTarget (.dealDamageToTargetCreature 2)
-#guard AbilityLeftover.requiresTarget .destroyTargetColorlessNonland
-#guard AbilityLeftover.requiresTarget .attachToTargetCreatureYouControl
-#guard AbilityLeftover.requiresTarget .targetCantBeBlockedThisTurn
-#guard AbilityLeftover.targetKind (.dealDamageToTargetCreature 2) == .creature
-#guard AbilityLeftover.targetKind .destroyTargetColorlessNonland == .colorlessNonland
-#guard AbilityLeftover.targetKind .attachToTargetCreatureYouControl == .creatureYouControl
-#guard AbilityLeftover.targeting .targetCantBeBlockedThisTurn ==
+#guard (Effect.dealDamageToTargetCreature 2).requiresTarget
+#guard Effect.destroyTargetColorlessNonland.requiresTarget
+#guard Effect.attachToTargetCreatureYouControl.requiresTarget
+#guard Effect.targetCantBeBlockedThisTurn.requiresTarget
+#guard (Effect.dealDamageToTargetCreature 2).targetKind == .creature
+#guard Effect.destroyTargetColorlessNonland.targetKind == .colorlessNonland
+#guard Effect.attachToTargetCreatureYouControl.targetKind == .creatureYouControl
+#guard Effect.targetCantBeBlockedThisTurn.targeting ==
   EffectTargeting.of .creature .own
-#guard AbilityLeftover.targetKind .searchBasicLandTapped == .none
-#guard AbilityLeftover.targetCount (.dealDamageToTargetCreature 2) == 1
-#guard AbilityLeftover.targetCount .searchBasicLandTapped == 0
-#guard AbilityLeftover.castKind (.dealDamageToTargetCreature 2) == .creatureDamage
-#guard AbilityLeftover.castKind .destroyTargetColorlessNonland == .destroyColorless
-#guard AbilityLeftover.castKind (.sourceGets 1 0) == .other
-#guard AbilityLeftover.resolution (.dealDamageToTargetCreature 2) ==
+#guard Effect.searchBasicLandTapped.targetKind == .none
+#guard (Effect.dealDamageToTargetCreature 2).targetCount == 1
+#guard Effect.searchBasicLandTapped.targetCount == 0
+#guard (Effect.dealDamageToTargetCreature 2).abilityKind == .creatureDamage
+#guard Effect.destroyTargetColorlessNonland.abilityKind == .destroyColorless
+#guard (Effect.sourceGets 1 0).abilityKind == .other
+#guard (Effect.dealDamageToTargetCreature 2).abilityResolution ==
   .onPermanent (.dealDamage 2)
-#guard AbilityLeftover.resolution .destroyTargetColorlessNonland ==
+#guard Effect.destroyTargetColorlessNonland.abilityResolution ==
   .onPermanent .destroy
-#guard AbilityLeftover.resolution .targetCantBeBlockedThisTurn ==
+#guard Effect.targetCantBeBlockedThisTurn.abilityResolution ==
   .onPermanent .cantBeBlocked
-#guard AbilityLeftover.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
-#guard AbilityLeftover.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
-#guard AbilityLeftover.resolution .becomeBearCreatureWithLandsPT ==
+#guard (Effect.sourceGets 1 0).abilityResolution == .onSource (.pump 1 0)
+#guard (Effect.putPlusOnePlusOneOnSource 3).abilityResolution == .onSource (.plusOne 3)
+#guard Effect.becomeBearCreatureWithLandsPT.abilityResolution ==
   .becomeBear
-#guard AbilityLeftover.resolution .searchBasicLandTapped == .searchBasicLand
-#guard !AbilityLeftover.requiresTarget .searchBasicLandTapped
-#guard !AbilityLeftover.requiresTarget .becomeBearCreatureWithLandsPT
-#guard AbilityLeftover.toNotation (.drawThenDiscard 1) ==
+#guard Effect.searchBasicLandTapped.abilityResolution == .searchBasicLand
+#guard !Effect.searchBasicLandTapped.requiresTarget
+#guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget
+#guard (Effect.ofAbility (.drawThenDiscard 1)).phrase ==
   "Draw a card, then discard a card"
-#guard AbilityLeftover.toNotation (.drawThenDiscard 2) ==
+#guard (Effect.ofAbility (.drawThenDiscard 2)).phrase ==
   "Draw 2 cards, then discard a card"
-#guard AbilityLeftover.toNotation (.createTokens .treasure 1) ==
+#guard (Effect.ofAbility (.createTokens .treasure 1)).phrase ==
   "Create a Treasure token"
-#guard AbilityLeftover.toNotation (.plusOneOnTarget 2) ==
+#guard (Effect.plusOneOnTarget 2).phrase ==
   "Put 2 +1/+1 counters on target creature you control"
-#guard AbilityLeftover.toNotation (.plusOneOnTarget 2 #["Elf"]) ==
+#guard (Effect.plusOneOnTarget 2 #["Elf"]).phrase ==
   "Put 2 +1/+1 counters on target Elf you control"
-#guard AbilityLeftover.toNotation (.plusOneOnTarget 2 #["Goblin", "Orc"]) ==
+#guard (Effect.plusOneOnTarget 2 #["Goblin", "Orc"]).phrase ==
   "Put 2 +1/+1 counters on target Goblin or Orc you control"
-#guard AbilityLeftover.targetKind (.plusOneOnTarget 2) == .creatureYouControl
-#guard AbilityLeftover.targetKind (.plusOneOnTarget 2 #["Elf"]) ==
+#guard (Effect.plusOneOnTarget 2).targetKind == .creatureYouControl
+#guard (Effect.plusOneOnTarget 2 #["Elf"]).targetKind ==
   .creatureYouControlAnySubtype #["Elf"]
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
   "When this permanent enters, create a Treasure token."
@@ -10014,8 +10014,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
-#guard !AbilityLeftover.requiresTarget (.sourceGets 1 0)
-#guard !AbilityLeftover.requiresTarget (.putPlusOnePlusOneOnSource 3)
+#guard !(Effect.sourceGets 1 0).requiresTarget
+#guard !(Effect.putPlusOnePlusOneOnSource 3).requiresTarget
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
 #guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.menace "Menace"

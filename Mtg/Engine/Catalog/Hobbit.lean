@@ -1465,7 +1465,7 @@ def hobbitCards : Array CardDef := #[
 #guard quarrel.isInstant
 #guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
 #guard quarrel.requiresTarget
-#guard SpellLeftover.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
 #guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
