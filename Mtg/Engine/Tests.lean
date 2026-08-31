@@ -13882,5 +13882,93 @@ def chorusGrantsAnyColor : Game :=
   (chorusGrantsAnyColor.manaAbilitiesOf
     (namedPermanent chorusGrantsAnyColor "Grizzly Bears")).contains (.colored .red)
 
+/-- `applyModeledTrigger` resolves leftover constructors, not Oracle text.
+A shared `.draw` trigger must not draw via a `toNotation` fallback. -/
+def applyModeledTriggerIgnoresDrawText : Game :=
+  afterDraw.applyModeledTrigger ⟨0⟩ (.onEnterDraw 1) none
+
+#guard (applyModeledTriggerIgnoresDrawText.player ⟨0⟩).hand.size ==
+  (afterDraw.player ⟨0⟩).hand.size
+
+/-- Colleen Wing: +1/+1 and scry from the leftover constructor, not from
+parsing “put a +1/+1 counter” ahead of “Scry”. -/
+def colleenWingPlusOneScry : Game :=
+  let g := addPermanent afterDraw colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Colleen Wing, Street Samurai"
+  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneScry) (some src.id)
+
+#guard (namedPermanent colleenWingPlusOneScry "Colleen Wing, Street Samurai").status.plusOnePlusOne == 1
+#guard
+  match colleenWingPlusOneScry.pending with
+  | .scry p 1 => p == ⟨0⟩
+  | _ => false
+
+/-- Super Intelligence draws for the enchanted creature's controller. -/
+def enchantedControllerDrawsForHost : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addPermanent g superIntelligence ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let aura := namedPermanent g "Super Intelligence"
+  let g := g.attachSourceTo aura host
+  g.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepEnchantedControllerDraws)
+    (some (namedPermanent g "Super Intelligence").id)
+
+#guard (enchantedControllerDrawsForHost.player ⟨1⟩).hand.size ==
+  (afterDraw.player ⟨1⟩).hand.size + 1
+#guard (enchantedControllerDrawsForHost.player ⟨0⟩).hand.size ==
+  (afterDraw.player ⟨0⟩).hand.size
+
+/-- Luke Cage's leftover attack trigger pumps and grants indestructible. -/
+def lukeCageAttacksAlone : Game :=
+  let g := addPermanent afterDraw lukeCagePowerMan ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Luke Cage, Power Man"
+  g.applyModeledTrigger ⟨0⟩ (.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible)
+    (some src.id)
+
+#guard (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man").status.pump == (2, 0)
+#guard (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man").status.untilEotKeywords.indestructible
+
+/-- Mockingbird's leftover constructor puts a +1/+1 on the source. -/
+def mockingbirdPlusOneThis : Game :=
+  let g := addPermanent afterDraw mockingbirdAceAgent ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Mockingbird, Ace Agent"
+  g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingPlusOneThis) (some src.id)
+
+#guard (namedPermanent mockingbirdPlusOneThis "Mockingbird, Ace Agent").status.plusOnePlusOne == 1
+
+/-- Nontoken-Hero modal leftover: soldier mode vs team pump, from the
+constructor rather than matching “create a 1/1 white Soldier”. -/
+def nontokenHeroModalSoldier : Game :=
+  afterDraw.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none
+
+def nontokenHeroModalPump : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  g.applyModeledTrigger ⟨0⟩ (.onWatch Effect.watchNontokenHeroModal) none #[]
+    "This creature" (some 1)
+
+#guard (nontokenHeroModalSoldier.battlefield.filter (fun o =>
+  o.printed.isToken && o.printed.hasSubtype "Soldier")).size == 1
+#guard (namedPermanent nontokenHeroModalPump "Grizzly Bears").status.pump == (1, 1)
+
+/-- Second-draw drain leftover: each opponent loses 1 and you gain 1. -/
+def secondDrawDrain : Game :=
+  afterDraw.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceSecondDrawDrain) none
+
+#guard (secondDrawDrain.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + 1
+#guard (secondDrawDrain.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 1
+
+/-- Hellcat's leftover death trigger returns her with a +1/+1, no printed
+abilities, and haste. -/
+def hellcatReturns : Game :=
+  let g := addPermanent afterDraw hellcatUndyingVigilante ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Hellcat, Undying Vigilante"
+  let (g, gyId) := g.move src.id (.graveyard ⟨0⟩) none
+  g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathHellcatReturn) (some gyId)
+
+#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").isOnBattlefield
+#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1
+#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.triggeredAbilities.isEmpty
+#guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.keywords.haste
+
 end Mtg.Engine.Tests
 
