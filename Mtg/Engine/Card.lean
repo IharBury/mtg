@@ -4718,6 +4718,8 @@ inductive SharedTriggerWhen where
   | armyYouControlCombatDamage
   /-- At the beginning of your first main phase. -/
   | yourFirstMain
+  /-- Whenever a player casts their second spell each turn. -/
+  | anyPlayerCastsSecondSpell
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -4857,6 +4859,48 @@ inductive SharedTriggerEffect where
   | drawPlusOneSource
   /-- The Ring tempts you. -/
   | ringTempts
+  /-- Set another creature's base P/T to this creature's. -/
+  | setOtherBasePT
+  /-- Return a target Elf from the graveyard; gain life equal to its power. -/
+  | returnElfGainLife
+  /-- Deal damage equal to last-known power to a target. -/
+  | damageFromLastKnownPower
+  /-- Exile a card from an opponent's graveyard; each opponent loses `life`. -/
+  | exileOppGyCardOppsLoseLife (life : Nat)
+  /-- Creatures you control get +P/+0 and first strike. -/
+  | creaturesYouControlPumpAndFirstStrike (power : Int)
+  /-- You may pay `{generic}`. If you do, draw a card. -/
+  | mayPayGenericDraw (generic : Nat)
+  /-- Draw, then bottom a card if you don't control a legendary creature. -/
+  | drawThenBottomIfNoLegendary
+  /-- Remove a hope counter to draw; sacrifice if none remain. -/
+  | removeHopeDrawSac
+  /-- Tap any number of Humans; draw that many cards. -/
+  | tapHumansDraw
+  /-- Untap another creature; +1/+1 if it has this subtype. -/
+  | untapPlusOneIfSubtype (subtype : String)
+  /-- Destroy opponents' artifacts and enchantments; gain life for each. -/
+  | destroyOppArtifactsEnchantmentsGainLife
+  /-- Damage each opponent equal to permanents of this subtype you control. -/
+  | damageEqualSubtypeToEachOpponent (subtype : String)
+  /-- Damage any target equal to Treasures you control. -/
+  | damageEqualTreasures
+  /-- Lose 1 life and create a Treasure. -/
+  | loseLifeCreateTreasure
+  /-- Deal `n` to any target; destroy it if it has this subtype. -/
+  | dealDamageDestroyIfSubtype (n : Nat) (subtype : String)
+  /-- Attach target Equipment to up to one target creature you control. -/
+  | attachEquipmentToCreature
+  /-- Defending player sacrifices a least-power creature. -/
+  | defenderSacsLeastPower
+  /-- Return another permanent; put a +1/+1 counter on this. -/
+  | returnOtherPlusOne
+  /-- Look at the top `n` cards; you may reveal one of these types. -/
+  | lookAtTopRevealTypes (n : Nat) (types : Array String)
+  /-- Create tapped Treasures equal to artifacts opponents control. -/
+  | createTappedTreasuresEqualOppArtifacts
+  /-- Put a nonland with mana value `mv` or less from a graveyard onto the battlefield. -/
+  | putNonlandMvAtMostFromGy (mv : Nat)
 deriving Repr, Inhabited, BEq
 
 /-- Optional intervening conditions and wording filters for `onShared`. -/
@@ -4867,6 +4911,8 @@ structure SharedTriggerOpts where
   thisOrAnotherSubtype : Option String := none
   anotherSubtypeOrEquipment : Option String := none
   gainedLifeAtLeast : Option Nat := none
+  /-- Intervening “another creature you control with power ≤ n”. -/
+  anotherCreaturePowerAtMost : Option Int := none
   allowsZeroTargets : Bool := false
   /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
   watchedSubtype : Option String := none
@@ -4888,76 +4934,10 @@ def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
 
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
-  /-- Whenever this creature attacks, choose up to one other target creature you
-  control. Its base power and toughness become equal to this creature's power
-  and toughness until end of turn (e.g. Galion, Elvenking's Butler). -/
-  | onAttackSetOtherBasePT
-  /-- Whenever this creature enters or attacks, return target Elf card from
-  your graveyard to your hand. You gain life equal to that card's power
-  (e.g. Mirkwood Elk). -/
-  | onEnterOrAttackReturnElfGainLife
-  /-- When this creature dies, it deals damage equal to its power to target
-  creature an opponent controls (e.g. Goblin Fireleaper). -/
-  | onDiesDealDamageEqualToPowerToOppCreature
-  /-- When this permanent enters, exile up to one target card from an
-  opponent's graveyard. Each opponent loses `life` life
-  (e.g. Gollum the Abandoned). -/
-  | onEnterExileOppGyCardOppsLoseLife (life : Nat)
-  /-- When this permanent enters, creatures you control get +P/+0 and first strike. -/
-  | onEnterCreaturesYouControlGetAndFirstStrike (power : Int)
-  /-- Whenever another creature you control with power `power` or less enters,
-  you may pay `{generic}`. If you do, draw a card. -/
-  | onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int) (generic : Nat)
-  /-- When this creature enters, draw a card. Then if you don't control a
-  legendary creature, put a card from your hand on the bottom of your library. -/
-  | onEnterDrawThenBottomIfNoLegendary
-  /-- At the beginning of your end step, remove a hope counter. If you do,
-  draw a card. Then if this has no hope counters, sacrifice it and gain 4 life. -/
-  | onYourEndStepRemoveHopeDrawSac
-  /-- Whenever this attacks, you may tap any number of untapped Humans you
-  control. Draw a card for each Human tapped this way. -/
-  | onAttackTapHumansDraw
-  /-- When this permanent enters, untap another target creature you control.
-  If it has this subtype, put a +1/+1 counter on it. -/
-  | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
-  /-- When this enters, destroy all artifacts and enchantments opponents
-  control. You gain 1 life for each permanent destroyed this way. -/
-  | onEnterDestroyOppArtifactsEnchantmentsGainLife
-  /-- Whenever this attacks, it deals damage equal to the number of permanents
-  of this subtype you control to each opponent. -/
-  | onAttackDamageEqualSubtypeToEachOpponent (subtype : String)
-  /-- Whenever this attacks, it deals damage equal to the number of Treasures
-  you control to any target. -/
-  | onAttackDamageEqualTreasures
-  /-- Whenever a player casts their second spell each turn, you lose 1 life
-  and create a Treasure. -/
-  | onPlayerCastsSecondSpellLoseLifeCreateTreasure
-  /-- When this enters, it deals `n` damage to any target. If a permanent of
-  this subtype is dealt damage this way, destroy it. -/
-  | onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String)
-  /-- When this enters, attach target Equipment you control to up to one
-  target creature you control. -/
-  | onEnterAttachTargetEquipment
-  /-- Whenever this attacks, defending player sacrifices a creature with
-  the least power. -/
-  | onAttackDefenderSacsLeastPower
-  /-- When this enters, return up to one other permanent you control.
-  If you do, put a +1/+1 counter on this. -/
-  | onEnterReturnOtherPlusOne
-  /-- When this enters, look at the top `n` cards. You may reveal a card
-  of one of these types and put it into your hand. -/
-  | onEnterLookAtTopRevealTypes (n : Nat) (types : Array String)
-  /-- When this enters, create X tapped Treasures, where X is artifacts
-  opponents control. -/
-  | onEnterCreateTappedTreasuresEqualOppArtifacts
   /-- At the beginning of each combat, other matching creatures get +P/+T
   and opposing creatures get +oppP/+oppT. -/
   | onEachCombatOthersGetAndOppsGet (subtypes : Array String)
       (power toughness oppP oppT : Int)
-  /-- Whenever this deals combat damage to a player or battle, put a nonland
-  permanent card with mana value `mv` or less from a graveyard onto the
-  battlefield. -/
-  | onCombatDamagePutNonlandMvAtMost (mv : Nat)
   /-- Cascade on the spell that is being cast (CR 702.85). -/
   | onCastCascade
   /-- Whenever a token you control enters, reward by how many times this has
@@ -6219,6 +6199,7 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .youSacrificeToken => #[.youSacrificeToken]
   | .armyYouControlCombatDamage => #[.armyYouControlCombatDamage]
   | .yourFirstMain => #[.yourFirstMain]
+  | .anyPlayerCastsSecondSpell => #[.anyPlayerCastsSecondSpell]
 
 end SharedTriggerWhen
 
@@ -6316,6 +6297,51 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
   | .mayDrawXDiscard2 => { resolution := .mayDrawXDiscard2 }
   | .drawPlusOneSource => { resolution := .drawPlusOneSource }
   | .ringTempts => { resolution := .ringTempts }
+  | .setOtherBasePT =>
+    { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
+      resolution := .setOtherBasePT }
+  | .returnElfGainLife =>
+    { targeting := .of .elfInYourGraveyard, resolution := .returnElfGainLife }
+  | .damageFromLastKnownPower =>
+    { targeting := .of .oppCreature, resolution := .damageFromLastKnownPower }
+  | .exileOppGyCardOppsLoseLife n =>
+    { targeting := .of .oppGraveyardCard, allowsZeroTargets := true,
+      resolution := .exileOppGyCardOppsLoseLife n }
+  | .creaturesYouControlPumpAndFirstStrike p =>
+    { resolution := .creaturesYouControlPumpAndFirstStrike p }
+  | .mayPayGenericDraw generic =>
+    { resolution := .mayPayGenericDraw generic }
+  | .drawThenBottomIfNoLegendary =>
+    { resolution := .drawThenBottomIfNoLegendary }
+  | .removeHopeDrawSac => { resolution := .removeHopeDrawSac }
+  | .tapHumansDraw => { resolution := .tapHumansDraw }
+  | .untapPlusOneIfSubtype subtype =>
+    { targeting := .of .anotherCreatureYouControl,
+      resolution := .untapPlusOneIfSubtype subtype }
+  | .destroyOppArtifactsEnchantmentsGainLife =>
+    { resolution := .destroyOppArtifactsEnchantmentsGainLife }
+  | .damageEqualSubtypeToEachOpponent subtype =>
+    { resolution := .damageEqualSubtypeToEachOpponent subtype }
+  | .damageEqualTreasures =>
+    { targeting := .of .playerOrCreature, resolution := .damageEqualTreasures }
+  | .loseLifeCreateTreasure => { resolution := .loseLifeCreateTreasure }
+  | .dealDamageDestroyIfSubtype n subtype =>
+    { targeting := .of .playerOrCreature,
+      resolution := .dealDamageDestroyIfSubtype n subtype }
+  | .attachEquipmentToCreature =>
+    { targeting := .of .equipmentYouControlThenCreatureYouControl,
+      allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
+  | .defenderSacsLeastPower => { resolution := .defenderSacsLeastPower }
+  | .returnOtherPlusOne =>
+    { targeting := .of .anotherCreatureYouControl, allowsZeroTargets := true,
+      resolution := .returnOtherPlusOne }
+  | .lookAtTopRevealTypes n types =>
+    { resolution := .lookAtTopRevealTypes n types }
+  | .createTappedTreasuresEqualOppArtifacts =>
+    { resolution := .createTappedTreasuresEqualOppArtifacts }
+  | .putNonlandMvAtMostFromGy mv =>
+    { targeting := .of .nonland, allowsZeroTargets := true,
+      resolution := .putNonlandMvAtMostFromGy mv }
 
 end SharedTriggerEffect
 
@@ -6562,67 +6588,12 @@ def timing : TriggeredAbility → TriggerTiming
       thisOrAnotherSubtype := opts.thisOrAnotherSubtype
       anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
       gainedLifeAtLeast := opts.gainedLifeAtLeast
+      anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
       targeting := if opts.untargeted then {} else t.targeting
       allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
-  | .onAttackSetOtherBasePT =>
-    { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
-      allowsZeroTargets := true, resolution := .setOtherBasePT }
-  | .onEnterOrAttackReturnElfGainLife =>
-    { events := #[.entering, .attacking], targeting := .of .elfInYourGraveyard,
-      resolution := .returnElfGainLife }
-  | .onDiesDealDamageEqualToPowerToOppCreature =>
-    { events := #[.dying], targeting := .of .oppCreature,
-      resolution := .damageFromLastKnownPower }
-  | .onEnterExileOppGyCardOppsLoseLife n =>
-    { events := #[.entering], targeting := .of .oppGraveyardCard,
-      allowsZeroTargets := true, resolution := .exileOppGyCardOppsLoseLife n }
-  | .onEnterCreaturesYouControlGetAndFirstStrike p =>
-    { events := #[.entering], resolution := .creaturesYouControlPumpAndFirstStrike p }
-  | .onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw p generic =>
-    { events := #[.anotherCreatureYouControlEnters],
-      resolution := .mayPayGenericDraw generic,
-      anotherCreaturePowerAtMost := some p }
-  | .onEnterDrawThenBottomIfNoLegendary =>
-    { events := #[.entering], resolution := .drawThenBottomIfNoLegendary }
-  | .onYourEndStepRemoveHopeDrawSac =>
-    { events := #[.yourEndStep], resolution := .removeHopeDrawSac }
-  | .onAttackTapHumansDraw =>
-    { events := #[.attacking], resolution := .tapHumansDraw }
-  | .onEnterUntapOtherPlusOneIfSubtype subtype =>
-    { events := #[.entering], targeting := .of .anotherCreatureYouControl,
-      resolution := .untapPlusOneIfSubtype subtype }
-  | .onEnterDestroyOppArtifactsEnchantmentsGainLife =>
-    { events := #[.entering], resolution := .destroyOppArtifactsEnchantmentsGainLife }
-  | .onAttackDamageEqualSubtypeToEachOpponent subtype =>
-    { events := #[.attacking], resolution := .damageEqualSubtypeToEachOpponent subtype }
-  | .onAttackDamageEqualTreasures =>
-    { events := #[.attacking], targeting := .of .playerOrCreature,
-      resolution := .damageEqualTreasures }
-  | .onPlayerCastsSecondSpellLoseLifeCreateTreasure =>
-    { events := #[.anyPlayerCastsSecondSpell], resolution := .loseLifeCreateTreasure }
-  | .onEnterDealDamageDestroyIfSubtype n subtype =>
-    { events := #[.entering], targeting := .of .playerOrCreature,
-      resolution := .dealDamageDestroyIfSubtype n subtype }
-  | .onEnterAttachTargetEquipment =>
-    { events := #[.entering],
-      targeting := .of .equipmentYouControlThenCreatureYouControl,
-      allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
-  | .onAttackDefenderSacsLeastPower =>
-    { events := #[.attacking], resolution := .defenderSacsLeastPower }
-  | .onEnterReturnOtherPlusOne =>
-    { events := #[.entering], targeting := .of .anotherCreatureYouControl,
-      allowsZeroTargets := true, resolution := .returnOtherPlusOne }
-  | .onEnterLookAtTopRevealTypes n types =>
-    { events := #[.entering], resolution := .lookAtTopRevealTypes n types }
-  | .onEnterCreateTappedTreasuresEqualOppArtifacts =>
-    { events := #[.entering], resolution := .createTappedTreasuresEqualOppArtifacts }
   | .onEachCombatOthersGetAndOppsGet subtypes p t oppP oppT =>
     { events := #[.eachBeginCombat],
       resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
-  | .onCombatDamagePutNonlandMvAtMost mv =>
-    { events := #[.dealsCombatDamageToPlayerOrBattle],
-      targeting := .of .nonland, allowsZeroTargets := true,
-      resolution := .putNonlandMvAtMostFromGy mv }
   | .onCastCascade =>
     { events := #[], resolution := .cascade }
   | .onTokenYouControlEntersBelladonna =>
@@ -7092,6 +7063,50 @@ def onLandYouControlEntersDrawPlusOneSource : TriggeredAbility :=
   .onShared .landYouControlEnters .drawPlusOneSource
 def onArmyCombatDamageRingTempts : TriggeredAbility :=
   .onShared .armyYouControlCombatDamage .ringTempts
+def onAttackSetOtherBasePT : TriggeredAbility :=
+  .onShared .attack .setOtherBasePT
+def onEnterOrAttackReturnElfGainLife : TriggeredAbility :=
+  .onShared .enterOrAttack .returnElfGainLife
+def onDiesDealDamageEqualToPowerToOppCreature : TriggeredAbility :=
+  .onShared .dies .damageFromLastKnownPower
+def onEnterExileOppGyCardOppsLoseLife (life : Nat) : TriggeredAbility :=
+  .onShared .enter (.exileOppGyCardOppsLoseLife life)
+def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility :=
+  .onShared .enter (.creaturesYouControlPumpAndFirstStrike power)
+def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
+    (generic : Nat) : TriggeredAbility :=
+  .onShared .anotherCreatureYouControlEnters (.mayPayGenericDraw generic)
+    { anotherCreaturePowerAtMost := some power }
+def onEnterDrawThenBottomIfNoLegendary : TriggeredAbility :=
+  .onShared .enter .drawThenBottomIfNoLegendary
+def onYourEndStepRemoveHopeDrawSac : TriggeredAbility :=
+  .onShared .yourEndStep .removeHopeDrawSac
+def onAttackTapHumansDraw : TriggeredAbility :=
+  .onShared .attack .tapHumansDraw
+def onEnterUntapOtherPlusOneIfSubtype (subtype : String) : TriggeredAbility :=
+  .onShared .enter (.untapPlusOneIfSubtype subtype)
+def onEnterDestroyOppArtifactsEnchantmentsGainLife : TriggeredAbility :=
+  .onShared .enter .destroyOppArtifactsEnchantmentsGainLife
+def onAttackDamageEqualSubtypeToEachOpponent (subtype : String) : TriggeredAbility :=
+  .onShared .attack (.damageEqualSubtypeToEachOpponent subtype)
+def onAttackDamageEqualTreasures : TriggeredAbility :=
+  .onShared .attack .damageEqualTreasures
+def onPlayerCastsSecondSpellLoseLifeCreateTreasure : TriggeredAbility :=
+  .onShared .anyPlayerCastsSecondSpell .loseLifeCreateTreasure
+def onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String) : TriggeredAbility :=
+  .onShared .enter (.dealDamageDestroyIfSubtype n subtype)
+def onEnterAttachTargetEquipment : TriggeredAbility :=
+  .onShared .enter .attachEquipmentToCreature
+def onAttackDefenderSacsLeastPower : TriggeredAbility :=
+  .onShared .attack .defenderSacsLeastPower
+def onEnterReturnOtherPlusOne : TriggeredAbility :=
+  .onShared .enter .returnOtherPlusOne
+def onEnterLookAtTopRevealTypes (n : Nat) (types : Array String) : TriggeredAbility :=
+  .onShared .enter (.lookAtTopRevealTypes n types)
+def onEnterCreateTappedTreasuresEqualOppArtifacts : TriggeredAbility :=
+  .onShared .enter .createTappedTreasuresEqualOppArtifacts
+def onCombatDamagePutNonlandMvAtMost (mv : Nat) : TriggeredAbility :=
+  .onShared .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy mv)
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -8724,6 +8739,53 @@ instance : ToString CardDef where
   .onShared .landYouControlEnters .drawPlusOneSource
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==
   .onShared .armyYouControlCombatDamage .ringTempts
+#guard TriggeredAbility.onAttackSetOtherBasePT ==
+  .onShared .attack .setOtherBasePT
+#guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
+  .onShared .enterOrAttack .returnElfGainLife
+#guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
+  .onShared .dies .damageFromLastKnownPower
+#guard TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2 ==
+  .onShared .enter (.exileOppGyCardOppsLoseLife 2)
+#guard TriggeredAbility.onEnterCreaturesYouControlGetAndFirstStrike 1 ==
+  .onShared .enter (.creaturesYouControlPumpAndFirstStrike 1)
+#guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
+  .onShared .anotherCreatureYouControlEnters (.mayPayGenericDraw 1)
+    { anotherCreaturePowerAtMost := some 2 }
+#guard TriggeredAbility.anotherCreaturePowerAtMost?
+  (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == some 2
+#guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
+  .onShared .enter .drawThenBottomIfNoLegendary
+#guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
+  .onShared .yourEndStep .removeHopeDrawSac
+#guard TriggeredAbility.onAttackTapHumansDraw ==
+  .onShared .attack .tapHumansDraw
+#guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
+  .onShared .enter (.untapPlusOneIfSubtype "Bear")
+#guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
+  .onShared .enter .destroyOppArtifactsEnchantmentsGainLife
+#guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
+  .onShared .attack (.damageEqualSubtypeToEachOpponent "Dwarf")
+#guard TriggeredAbility.onAttackDamageEqualTreasures ==
+  .onShared .attack .damageEqualTreasures
+#guard TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
+  .onShared .anyPlayerCastsSecondSpell .loseLifeCreateTreasure
+#guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
+  .onShared .enter (.dealDamageDestroyIfSubtype 1 "Dragon")
+#guard TriggeredAbility.onEnterAttachTargetEquipment ==
+  .onShared .enter .attachEquipmentToCreature
+#guard TriggeredAbility.onAttackDefenderSacsLeastPower ==
+  .onShared .attack .defenderSacsLeastPower
+#guard TriggeredAbility.onEnterReturnOtherPlusOne ==
+  .onShared .enter .returnOtherPlusOne
+#guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
+  .onShared .enter (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])
+#guard TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts ==
+  .onShared .enter .createTappedTreasuresEqualOppArtifacts
+#guard TriggeredAbility.onCombatDamagePutNonlandMvAtMost 3 ==
+  .onShared .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy 3)
+#guard SharedTriggerWhen.anyPlayerCastsSecondSpell.events ==
+  #[.anyPlayerCastsSecondSpell]
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .onShared .youSacrificeToken (.targetOpponentLosesLife 1)
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
