@@ -8973,7 +8973,7 @@ instance : ToString CardDef where
   .or .youCastGreen .forestYouControlEnters
 #guard SharedTriggerWhen.enterOrOpponentDrawsExceptFirst ==
   .or .enter .opponentDrawsExceptFirst
-#guard (.or .enter .attack).events == #[.entering, .attacking]
+#guard (SharedTriggerWhen.or .enter .attack).events == #[.entering, .attacking]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
   .triggered .eachBeginCombat (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1))
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
