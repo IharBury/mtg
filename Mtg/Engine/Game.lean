@@ -9726,7 +9726,7 @@ def applyLeftoverSpell (g : Game) (controller : PlayerId) (t : LeftoverSpell)
 
 /-- Resolve a modeled MSH activation. -/
 def applyModeledAbility (g : Game) (controller : PlayerId) (t : ModeledAbility)
-    (targets : Array Target) (sourceId : Option ObjectId)
+    (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) : Game :=
   match t with
   | .targetCreatureYouControlThatSAttackingAlo =>
