@@ -7918,30 +7918,33 @@ def optionalOnceEachTurn (ab : TriggeredAbility) : Bool :=
 def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
   ab.timing.anotherCreaturePowerAtMost
 
+/-- Sentence whose printed “When/Whenever …” lead-in differs from the generic
+`eventPrefix` (a card name, an ability word, or a more specific subject) but
+whose effect clause is the shared `resolutionPhrase`. -/
+def leadInSentence (ab : TriggeredAbility) (lead : String) : String :=
+  s!"{lead}, {resolutionPhrase ab.timing}."
+
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
   | .triggered w e opts =>
     match w, e.asTrigger?, opts with
     | .enter, some .bolgMaySacrifice, _ =>
-    "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage."
-    | .equippedAttacks, some .createSpiritsForEquipped, _ =>
-    "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."
+      leadInSentence ab "When Bolg enters"
     | .combatDamageToPlayer, some .createTreasuresEqualDamagedPlayerArtifacts, _ =>
-    "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."
+      leadInSentence ab "Whenever this creature deals combat damage to a player"
     | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
     | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
     | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>
-    s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
+      leadInSentence ab
+        s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn"
     | .anotherCreatureYouControlEnters, some .allianceMode, _ =>
-    "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
+      leadInSentence ab "Alliance — Whenever another creature you control enters"
     | .enter, some .destroyOtherAmassControllerPower, _ =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
     | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some "Dwarf", .. } =>
-    "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
-    | .opponentCastsMatchingParity, some .gollumMode, _ =>
-    "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
+      leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
     | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
     | .enter, some .returnCreatureFromGyToHand, _ =>
@@ -7949,83 +7952,49 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some "Dwarf", .. } =>
     "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
     | .attack, some .castFromGyArtifactInstantSorcery, _ =>
-    "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."
+      leadInSentence ab "Whenever Bilbo attacks"
     | .enter, some .createAxeAttach, _ =>
-    "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control."
+      leadInSentence ab "When Dáin enters"
     | .attack, some .equippedAttackersGainDoubleStrike, _ =>
-    "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
+      leadInSentence ab "Whenever Dáin attacks"
     | .enter, some .tapEnchantedRemoveCounters, _ =>
-    "When this Aura enters, tap enchanted creature and remove all counters from it."
-    | .dies, some (.revealTopPutRandomCreature n), _ =>
-    s!"When this artifact is put into a graveyard from the battlefield, reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
+      leadInSentence ab "When this Aura enters"
+    | .dies, some (.revealTopPutRandomCreature _), _ =>
+      leadInSentence ab "When this artifact is put into a graveyard from the battlefield"
     | .yourBeginCombat, some .beginCombatIfDrawnTwoPump, _ =>
     "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
     | .enter, some .honePerOppAttach, _ =>
     "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
     | .enter, some .copySelfNonlegendary, _ =>
-    "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary."
+      leadInSentence ab "When The Notary Hobbits enter"
     | .enter, some .attachEquipmentThenFight, _ =>
-    "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."
+      leadInSentence ab "When Thorin enters"
     | .anotherCreatureYouControlEnters, some (.drawThenDiscard 2), { thisOrAnotherSubtype := some "Elf", .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
     | .dies, some .returnAsArtifact, _ =>
-    "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
+      leadInSentence ab "When Tom, Bert, and William die"
     | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
     | .landYouControlEnters, some .drawPlusOneSource, _ =>
     "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
     | .enter, some .exileLandsThenReturnTapped, _ =>
-    "When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control."
+      leadInSentence ab "When Gandalf enters"
     | .combatDamageToPlayer, some .grimaImpulse, _ =>
-    "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+      leadInSentence ab "Whenever Gríma deals combat damage to a player"
     | .yourEndStep, some .palantir, _ =>
     "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
     | .sourceDealtNoncombatDamage, some .treasuresEqualLastKnown, _ =>
-    "Whenever Smaug is dealt noncombat damage, create that many Treasure tokens."
+      leadInSentence ab "Whenever Smaug is dealt noncombat damage"
     | .enter, some .protectionEverything, _ =>
-    "When The One Ring enters, if you cast it, you gain protection from everything until your next turn."
+      leadInSentence ab "When The One Ring enters"
     | .yourUpkeep, some .loseLifePerBurden, _ =>
     "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
     | .landYouControlEnters, some .payReturnFromGy, _ =>
-    "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
+      leadInSentence ab "Landfall — Whenever a land you control enters"
     | .youPutCountersOnGoblinOrcArmy, some (.damageTargetOpponent 2), _ =>
     "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-    | .creatureYouControlAttacksAlone, some .investigate, _ =>
-    "Whenever a creature you control attacks alone, investigate."
-    | .creatureYouControlAttacksAlone, some (.pumpCause p t), _ =>
-    s!"Whenever a creature you control attacks alone, that creature gets {signedStat p}/{signedStat t} until end of turn."
-    | .tappedForTeamwork, some .plusOneOnSourceAndDraw, _ =>
-    "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
     | .enter, some .connive, _ =>
-    "When this creature enters, it connives."
-    | .creatureYouControlEnters, some (.scryAndPlan n), _ =>
-    s!"Whenever a creature you control enters, scry {n} and put a plan counter on this enchantment."
-    | .creaturesYouControlBecomeTapped, some .lootAndPlan, _ =>
-    "Whenever one or more creatures you control become tapped, draw a card, then discard a card and put a plan counter on this enchantment."
-    | .youDrawSecond, some .createVillainAndPlan, _ =>
-    "Whenever you draw your second card each turn, create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment."
-    | (.subtypeYouControlEnters "Villain"), some (.drainAndPlan n), _ =>
-    s!"Whenever a Villain you control enters, each opponent loses {n} life and you gain {n} life. Put a plan counter on this enchantment."
-    | .creatureCardsPutIntoYourGy, some .drawLoseLifeAndPlan, _ =>
-    "Whenever one or more creature cards are put into your graveyard from anywhere, you draw a card, lose 1 life, and put a plan counter on this enchantment."
-    | .youCastNoncreature, some .treasureTappedAndPlan, _ =>
-    "Whenever you cast a noncreature spell, create a tapped Treasure token and put a plan counter on this enchantment."
-    | .landYouControlEnters, some .plusOneOnTargetAndPlan, _ =>
-    "Whenever a land you control enters, put a +1/+1 counter on target creature you control and a plan counter on this enchantment."
-    | (.nthPlanCounter 4), some .planFinishDrawPlusOneEach, _ =>
-    "When the fourth plan counter is put on this enchantment, sacrifice it, draw a card, and put a +1/+1 counter on each creature you control."
-    | (.nthPlanCounter 4), some .planFinishReturnInstants, _ =>
-    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand."
-    | (.nthPlanCounter 7), some .planFinishControlOpponent, _ =>
-    "When the seventh plan counter is put on this enchantment, sacrifice it. When you do, you control target opponent during their next turn."
-    | (.nthPlanCounter 5), some .planFinishExileTopCast, _ =>
-    "When the fifth plan counter is put on this enchantment, sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs."
-    | (.nthPlanCounter 3), some (.planFinishCreateRobots 3), _ =>
-    "When the third plan counter is put on this enchantment, sacrifice it and create three 2/2 colorless Robot Villain artifact creature tokens."
-    | (.nthPlanCounter 4), some (.planFinishDividedDamage 7), _ =>
-    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, it deals 7 damage divided as you choose among one or two targets."
-    | (.nthPlanCounter 4), some .planFinishIndestructibleOnTarget, _ =>
-    "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, put an indestructible counter on target creature you control."
+      leadInSentence ab "When this creature enters"
     | .eachEndStep, some (.drawIfAttackedOrEnteredSubtype subtype), _ =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
@@ -8036,31 +8005,31 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .sourceDealtDamage, some .plusOneOnSource, _ =>
     "Whenever this is dealt damage, put a +1/+1 counter on it."
     | .enter, some (.attachTo .creatureYouControl), _ =>
-    "When this Equipment enters, attach it to target creature you control."
+      leadInSentence ab "When this Equipment enters"
     | .enter, some (.surveil n), _ =>
     s!"When this permanent enters, surveil {n}."
-    | .enter, some (.onEnchanted action), _ =>
-    s!"When this Aura enters, {PermanentAction.toNotation action "enchanted creature"}."
-    | .enter, some (.attachThen followup), _ =>
-    s!"When this Equipment enters, attach it to target creature you control. {PermanentAction.toNotation followup "that creature" (sentence := true)}."
+    | .enter, some (.onEnchanted _), _ =>
+      leadInSentence ab "When this Aura enters"
+    | .enter, some (.attachThen _), _ =>
+      leadInSentence ab "When this Equipment enters"
     | .enter, some .exileOtherCopyEnchanted, _ =>
-    "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
+      leadInSentence ab "When this Aura enters"
     | .enter, some .exileUntilNextEndStep, _ =>
-    "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+      leadInSentence ab "When this Vehicle enters"
     | .enter, some .tapOrUntapNonland, _ =>
-    "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
+      leadInSentence ab "When this creature enters"
     | .enter, some .createFoodOrTreasure, _ =>
-    "When this creature enters, create a Food token or a Treasure token."
+      leadInSentence ab "When this creature enters"
     | .enter, some .villainIfGyElseMill, _ =>
-    "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
+      leadInSentence ab "When this creature enters"
     | .enter, some .drawMayPutLandTapped, _ =>
-    "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
+      leadInSentence ab "When this creature enters"
     | .enter, some .drawGainLifeIfAnotherHero, _ =>
-    "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
+      leadInSentence ab "When this creature enters"
     | .enter, some .plusOneOrTwoIfAnotherHero, _ =>
-    "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
+      leadInSentence ab "When this creature enters"
     | .enter, some .maySacArtifactOrDiscardDraw, _ =>
-    "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
+      leadInSentence ab "When this creature enters"
     | .enter, some (.exileUntilLeaves .oppTappedCreature), _ =>
     "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
     | .enter, some (.targetOpponentDiscards n), _ =>
