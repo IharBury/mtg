@@ -12571,6 +12571,18 @@ def rageAmass : Game :=
   (rageAmass.player ⟨0⟩).life == 19 &&
     (namedPermanent rageAmass "Goblin Army").status.plusOnePlusOne == 2
 
+/-- `Resolution.sequence` applies each step in order. -/
+def sequenceDrawThenGain : Game :=
+  started.applyEffect ⟨0⟩ {
+    resolution := .sequence [.draw 1, .gainLife 3]
+    phrase := "draw a card. You gain 3 life" } #[]
+
+#guard
+  (sequenceDrawThenGain.player ⟨0⟩).hand.size ==
+      (started.player ⟨0⟩).hand.size + 1 &&
+    (sequenceDrawThenGain.player ⟨0⟩).life ==
+      (started.player ⟨0⟩).life + 3
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩

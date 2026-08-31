@@ -9869,9 +9869,25 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
   | _ => g.logMsg "The target is no longer legal"
 
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
-def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
+partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
+  match effect.resolution with
+  | .sequence rs =>
+    (rs.flatMap Resolution.flatten).foldl (fun g r =>
+      g.applyUnified controller { effect with resolution := r } targets
+        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+        (giftPromised := giftPromised) (chosenX := chosenX)) g
+  | .gainLife n => g.gainLife controller n
+  | .recruit => g.beginRecruit controller
+  | .addMana types =>
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        types.foldl (fun pool t => pool.add t) pl.manaPool })
+    g.logMsg s!"{(g.player controller).name} adds mana"
+  | .onSource a =>
+    g.applyOnPermanent controller effect.targetKind targets a
+  | _ =>
   match effect.spellResolution with
   | .fight =>
     match targets[0]?, targets[1]? with
@@ -10580,9 +10596,19 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
       g.afterPermanentEnters (g.object! newId)
 
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
-def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
+partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+  match effect.resolution with
+  | .sequence rs =>
+    (rs.flatMap Resolution.flatten).foldl (fun g r =>
+      g.applyUnifiedAbility controller { effect with resolution := r } targets
+        sourceId lastKnownPower chosenX) g
+  | .amassGoblins n => g.amassGoblins controller n
+  | .spell r =>
+    g.applyUnified controller { effect with resolution := .spell r } targets
+      (chosenX := chosenX)
+  | _ =>
   match effect.abilityResolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
@@ -11631,7 +11657,7 @@ def interveningStillHolds (g : Game) (controller : PlayerId)
     | _ => true
   lifeOk && beginCombatFerocious
 
-def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (dividedDamage : Array Nat := #[]) (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
@@ -11639,6 +11665,38 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   if !g.interveningStillHolds controller ab then
     g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
   else
+  match ab.effect.resolution with
+  | .sequence rs =>
+    (rs.flatMap Resolution.flatten).foldl (fun g r =>
+      let step : TriggeredAbility :=
+        match ab with
+        | .triggered w _ opts =>
+          .triggered w { ab.effect with resolution := r } opts
+      g.applyTriggeredAbility controller step sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName) g
+  | .draw n => g.draw controller n
+  | .scry n => g.beginScry controller n
+  | .onPermanent a =>
+    g.applyOnPermanent controller ab.targetKind targets a sourceId
+      (some "The target is no longer legal")
+  | .onSource a => g.applyOnTriggerSource sourceId a
+  | .gainLife n => g.gainLife controller n
+  | .recruit => g.beginRecruit controller
+  | .amassGoblins n => g.amassGoblins controller n
+  | .createTokens kind n tapped =>
+    g.createKindTokens controller kind n (tapped := tapped)
+  | .addMana types =>
+    let g := g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        types.foldl (fun pool t => pool.add t) pl.manaPool })
+    g.logMsg s!"{(g.player controller).name} adds mana"
+  | .drawThenDiscard n => g.drawThenBeginDiscard controller n
+  | .spell r =>
+    g.applyUnified controller { ab.effect with resolution := .spell r } targets
+  | .ability r =>
+    g.applyUnifiedAbility controller { ab.effect with resolution := .ability r }
+      targets sourceId lastKnownPower
+  | .trigger _ =>
   match ab.resolution with
   | .pumpGreatestPower =>
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
