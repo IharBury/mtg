@@ -317,7 +317,7 @@ def originOfTheAvengers : CardDef :=
   card "Origin of the Avengers" #[.enchantment] ({ symbols := #[.generic 1, .colored .white] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Scry 2.\nII — You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card.\nIII — Put a +1/+1 counter on each creature you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Scry 2." (.spell (.scry 2)), chapter "II" "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card." (.spell (.mayPutHeroMvOrDraw 3)), chapter "III" "Put a +1/+1 counter on each creature you control." (.spell (.plusOneOnEachYouControl))] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Scry 2." (Effect.chapterSpell (Effect.scry 2)), chapter "II" "You may put a Hero creature card with mana value 3 or less from your hand onto the battlefield. If you don't, draw a card." (Effect.chapterSpell (Effect.mayPutHeroMvOrDraw 3)), chapter "III" "Put a +1/+1 counter on each creature you control." (Effect.chapterSpell Effect.plusOneOnEachYouControl)] })
 
 def pantherPounce : CardDef :=
   card "Panther Pounce" #[.instant] ({ symbols := #[.colored .white] })
@@ -1706,7 +1706,7 @@ def worldWarHulk : CardDef :=
   card "World War Hulk" #[.enchantment] ({ symbols := #[.generic 3, .colored .green, .colored .green] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — The next red or green creature spell you cast this turn can be cast without paying its mana cost.\nII — Put three +1/+1 counters on target creature you control.\nIII — Choose target creature you control. Until end of turn, double its power and toughness and it gains trample.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "The next red or green creature spell you cast this turn can be cast without paying its mana cost." (.spell .nextFreeRGCreature), chapter "II" "Put three +1/+1 counters on target creature you control." (.spell (.plusOneOnCreatureN 3)), chapter "III" "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample." (.spell .chooseTargetDoubleAndTrample)] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "The next red or green creature spell you cast this turn can be cast without paying its mana cost." (Effect.chapterSpell Effect.nextFreeRGCreature), chapter "II" "Put three +1/+1 counters on target creature you control." (Effect.chapterSpell (Effect.plusOneOnCreatureN 3)), chapter "III" "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample." (Effect.chapterSpell Effect.chooseTargetDoubleAndTrample)] })
 
 def abominationTerrifyingTitan : CardDef :=
   card "Abomination, Terrifying Titan" #[.creature] ({ symbols := #[.generic 3, .hybrid .red .green] })
@@ -1756,7 +1756,7 @@ def armorWars : CardDef :=
   card "Armor Wars" #[.enchantment] ({ symbols := #[.generic 2, .colored .blue, .colored .red] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — You may draw a card for each artifact you control. If you do, each opponent draws a card.\nII — Artifact spells you cast this turn cost {1} less to cast.\nIII — This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "You may draw a card for each artifact you control. If you do, each opponent draws a card." (.spell .mayDrawPerArtifactOppsDraw), chapter "II" "Artifact spells you cast this turn cost {1} less to cast." (.spell (.artifactSpellsCostLessThisTurn 1)), chapter "III" "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control." .dealXDamageToTargetOpponentGreatestArtifactMv] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "You may draw a card for each artifact you control. If you do, each opponent draws a card." (Effect.chapterSpell Effect.mayDrawPerArtifactOppsDraw), chapter "II" "Artifact spells you cast this turn cost {1} less to cast." (Effect.chapterSpell (Effect.artifactSpellsCostLessThisTurn 1)), chapter "III" "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control." .dealXDamageToTargetOpponentGreatestArtifactMv] })
 
 def theAstonishingAntMan : CardDef :=
   card "The Astonishing Ant-Man" #[.creature] ({ symbols := #[.colored .green, .colored .blue] })
@@ -1773,7 +1773,7 @@ def avengersUnderSiege : CardDef :=
   card "Avengers: Under Siege" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .red] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Create two 2/1 black Villain creature tokens with menace.\nII — This Saga deals 2 damage to each non-Villain creature and each opponent.\nIII — Create a Treasure token for each Villain you control.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Create two 2/1 black Villain creature tokens with menace." (.spell (.createTokens .villain21menace 2)), chapter "II" "This Saga deals 2 damage to each non-Villain creature and each opponent." (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain"), chapter "III" "Create a Treasure token for each Villain you control." (.spell (.createTokensPerSubtype .treasure "Villain"))] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Create two 2/1 black Villain creature tokens with menace." (Effect.chapterSpell (Effect.createTokens .villain21menace 2)), chapter "II" "This Saga deals 2 damage to each non-Villain creature and each opponent." (.dealDamageToEachNonSubtypeAndOpponents 2 "Villain"), chapter "III" "Create a Treasure token for each Villain you control." (Effect.chapterSpell (Effect.createTokensPerSubtype .treasure "Villain"))] })
 
 def beastEruditeAerialist : CardDef :=
   card "Beast, Erudite Aerialist" #[.creature] ({ symbols := #[.generic 3, .hybrid .green .blue] })
@@ -1839,7 +1839,7 @@ def theComingOfGalactus : CardDef :=
   card "The Coming of Galactus" #[.enchantment] ({ symbols := #[.generic 2, .colored .black, .colored .black, .colored .green] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after IV.)\nI — Destroy up to one target nonland permanent.\nII, III — Each opponent loses 2 life.\nIV — Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"")
-    (saga := some { sacrificeAfter := "IV", chapters := #[chapter "I" "Destroy up to one target nonland permanent." (.spell .destroyUpToOneNonland), chapter "II, III" "Each opponent loses 2 life." (.spell (.eachOpponentLosesLife 2)), chapter "IV" "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"." (.spell .createGalactus)] })
+    (saga := some { sacrificeAfter := "IV", chapters := #[chapter "I" "Destroy up to one target nonland permanent." (Effect.chapterSpell Effect.destroyUpToOneNonland), chapter "II, III" "Each opponent loses 2 life." (Effect.chapterSpell (Effect.eachOpponentLosesLife 2)), chapter "IV" "Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\"." (Effect.chapterSpell Effect.createGalactus)] })
 
 def daredevilManWithoutFear : CardDef :=
   card "Daredevil, Man Without Fear" #[.creature] ({ symbols := #[.generic 2, .colored .red, .colored .white] })
@@ -2027,7 +2027,7 @@ def theSuperHeroCivilWar : CardDef :=
   card "The Super Hero Civil War" #[.enchantment] ({ symbols := #[.generic 3, .colored .red, .colored .white] })
     (subtypes := #["Saga"])
     (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield.\nII — Creatures you control get +1/+1 and gain vigilance until end of turn.\nIII — Target creature you control fights up to one other target creature.")
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield." (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6), chapter "II" "Creatures you control get +1/+1 and gain vigilance until end of turn." (.spell (.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance)), chapter "III" "Target creature you control fights up to one other target creature." (.spell (.fightUpToOne))] })
+    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield." (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6), chapter "II" "Creatures you control get +1/+1 and gain vigilance until end of turn." (Effect.chapterSpell (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance)), chapter "III" "Target creature you control fights up to one other target creature." (Effect.chapterSpell Effect.fightUpToOne)] })
 
 def taskmasterMercenaryMimic : CardDef :=
   card "Taskmaster, Mercenary Mimic" #[.creature] ({ symbols := #[.generic 2, .colored .blue, .colored .black] })

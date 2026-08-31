@@ -2917,6 +2917,15 @@ instance : ToString ActivationCost where
 
 end ActivationCost
 
+/-- Spell-shaped MSH Saga chapter stored as unified Effect fields, so the
+chapter bucket does not mention leftover spell constructors. -/
+structure ChapterSpell where
+  targeting : EffectTargeting := .of .none
+  allowsZeroTargets : Bool := false
+  phrase : String := ""
+  resolution : SpellResolution := .extraLand
+deriving Repr, Inhabited, BEq
+
 /-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
 Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
 wording. -/
@@ -2975,8 +2984,8 @@ inductive ChapterLeftover where
   /-- This Saga deals X damage to target opponent, where X is the greatest
   mana value among artifacts you control. -/
   | dealXDamageToTargetOpponentGreatestArtifactMv
-  /-- A spell-shaped MSH Saga chapter (reuses `SpellLeftover`). -/
-  | spell (e : SpellLeftover)
+  /-- A spell-shaped MSH Saga chapter. -/
+  | spell (s : ChapterSpell)
 deriving Repr, Inhabited, BEq
 
 namespace ChapterLeftover
@@ -3052,10 +3061,10 @@ def spec : ChapterLeftover → Spec
     { targeting := .of .opponent
       phrase :=
         "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control" }
-  | .spell e =>
-    { targeting := e.spec.targeting
-      allowsZeroTargets := e.allowsZeroTargets
-      phrase := e.toNotation }
+  | .spell s =>
+    { targeting := s.targeting
+      allowsZeroTargets := s.allowsZeroTargets
+      phrase := s.phrase }
 
 end ChapterLeftover
 
@@ -6990,6 +6999,14 @@ def ofChapter (e : ChapterLeftover) : Effect :=
     allowsZeroTargets := s.allowsZeroTargets
     resolution := Resolution.trigger (SharedTrigger.chapter 0 e)
     phrase := s.phrase }
+
+/-- Pack a unified spell `Effect` as a leftover Saga chapter. -/
+def chapterSpell (e : Effect) : ChapterLeftover :=
+  .spell {
+    targeting := e.targeting
+    allowsZeroTargets := e.allowsZeroTargets
+    phrase := e.phrase
+    resolution := e.spellResolution }
 
 /-- Convert a shared trigger effect to the unified `Effect`. -/
 def ofTrigger (e : SharedTrigger) : Effect :=

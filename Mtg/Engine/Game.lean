@@ -11607,8 +11607,12 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterLeftover)
     g.withLegalKindPlayer controller .opponent targets
       (fun g pid => g.dealDamageToPlayer pid x)
       sourceId (some "The target is no longer legal")
-  | .spell e =>
-    g.applyEffect controller (Effect.ofSpell e) targets
+  | .spell s =>
+    g.applyEffect controller {
+      targeting := s.targeting
+      allowsZeroTargets := s.allowsZeroTargets
+      phrase := s.phrase
+      resolution := Resolution.ofSpell s.resolution } targets
 
 /-- Intervening “if” conditions rechecked on resolution (CR 608.2a).
 “While you control” attack triggers are not rechecked. -/
