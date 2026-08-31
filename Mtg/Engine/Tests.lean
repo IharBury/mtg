@@ -11263,7 +11263,7 @@ def thorExilePlayOk : Bool :=
   let g := addToGraveyard g lightningBolt ⟨0⟩
   let thor := namedPermanent g "Thor, God of Thunder"
   let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .exileGyPlayUntilNextTurn)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterExileGyPlayUntilNextTurn)
     (some thor.id) #[Target.card bolt.id]
   match g.objects.find? (fun o => o.zone == .exile && o.name == "Lightning Bolt") with
   | some bolt =>
@@ -11281,7 +11281,7 @@ def wolverineFightOk : Bool :=
   let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
   let w := namedPermanent g "Wolverine, Fierce Fighter"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .fightUpToOne)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
     (some w.id) #[Target.permanent baloth.id]
   (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
     (namedPermanent g "Rumbling Baloth").status.damage > 0
@@ -11294,7 +11294,7 @@ def justiceBounceOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let j := namedPermanent g "Justice, Vance Astrovik"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter .returnNonlandNontoken)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterReturnNonlandNontoken)
     (some j.id) #[Target.permanent bears.id]
   !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")

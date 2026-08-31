@@ -5708,32 +5708,191 @@ def ofTrigger (e : SharedTrigger) : Effect :=
     resolution := Resolution.ofSharedTrigger e
     phrase := "" }
 
-/-- Convert a leftover enters effect. -/
-def ofEnter (e : EnterLeftover) : Effect := ofTrigger (.enter e)
+/-- Leftover trigger constructors as unified `Effect` factories. -/
+def enterDestroy (kind : EffectTargetKind) : Effect :=
+  ofTrigger (.enter (.destroy kind))
 
-/-- Convert a leftover step / upkeep / end-step effect. -/
-def ofStep (e : StepLeftover) : Effect := ofTrigger (.step e)
+def enterDealDamageUpToOne (n : Nat) : Effect :=
+  ofTrigger (.enter (.dealDamageUpToOne n))
 
-/-- Convert a leftover dies effect. -/
-def ofDeath (e : DeathLeftover) : Effect := ofTrigger (.death e)
+def enterFightUpToOne : Effect := ofTrigger (.enter .fightUpToOne)
 
-/-- Convert a leftover “whenever this attacks” effect. -/
-def ofThisAttack (e : ThisAttackLeftover) : Effect := ofTrigger (.thisAttack e)
+def enterReturnNonlandNontoken : Effect := ofTrigger (.enter .returnNonlandNontoken)
 
-/-- Convert a leftover “enters or attacks” effect. -/
-def ofEnterOrAttack (e : EnterOrAttackLeftover) : Effect := ofTrigger (.enterOrAttack e)
+def enterCreateZabu : Effect := ofTrigger (.enter .createZabu)
 
-/-- Convert a leftover watch effect. -/
-def ofWatch (e : WatchLeftover) : Effect := ofTrigger (.watch e)
+def enterOppCreatesTheVoid : Effect := ofTrigger (.enter .oppCreatesTheVoid)
 
-/-- Convert a leftover “whenever you attack” effect. -/
-def ofYouAttacking (e : YouAttackLeftover) : Effect := ofTrigger (.youAttacking e)
+def enterCreateSturdyShieldAttach : Effect := ofTrigger (.enter .createSturdyShieldAttach)
 
-/-- Convert a leftover “whenever you cast …” effect. -/
-def ofCasting (e : CastLeftover) : Effect := ofTrigger (.casting e)
+def enterExileGyPlayUntilNextTurn : Effect := ofTrigger (.enter .exileGyPlayUntilNextTurn)
 
-/-- Convert a leftover draw / discard / life / +1/+1-counter effect. -/
-def ofResource (e : ResourceLeftover) : Effect := ofTrigger (.resource e)
+def enterReturnGyPermanentThisTurn : Effect := ofTrigger (.enter .returnGyPermanentThisTurn)
+
+def enterTapOppCantUntapWhileControl : Effect := ofTrigger (.enter .tapOppCantUntapWhileControl)
+
+def enterMaySacAnotherThenDestroyOppNonland : Effect := ofTrigger (.enter .maySacAnotherThenDestroyOppNonland)
+
+def enterMaySacOrDiscardNonlandThenDamage : Effect := ofTrigger (.enter .maySacOrDiscardNonlandThenDamage)
+
+def enterRevealHandExileUntilLeaves : Effect := ofTrigger (.enter .revealHandExileUntilLeaves)
+
+def enterPlusOnesOrReturnArtEnch : Effect := ofTrigger (.enter .plusOnesOrReturnArtEnch)
+
+def enterChooseUpToXModes : Effect := ofTrigger (.enter .chooseUpToXModes)
+
+def enterMayTapThenGrantIndestructible : Effect := ofTrigger (.enter .mayTapThenGrantIndestructible)
+
+def enterTapLoseAbilitiesWhileSource : Effect := ofTrigger (.enter .tapLoseAbilitiesWhileSource)
+
+def enterRevealDiscardFromHand : Effect := ofTrigger (.enter .revealDiscardFromHand)
+
+def enterCreateRedwing : Effect := ofTrigger (.enter .createRedwing)
+
+def stepEnchantedControllerDraws : Effect := ofTrigger (.step .enchantedControllerDraws)
+
+def stepDrawToTen : Effect := ofTrigger (.step .drawToTen)
+
+def stepCopyAbsorbingMan : Effect := ofTrigger (.step .copyAbsorbingMan)
+
+def stepHydeChoose : Effect := ofTrigger (.step .hydeChoose)
+
+def stepCopyTaskmaster : Effect := ofTrigger (.step .copyTaskmaster)
+
+def stepHarnessedFlicker : Effect := ofTrigger (.step .harnessedFlicker)
+
+def deathHellcatReturn : Effect := ofTrigger (.death .hellcatReturn)
+
+def deathVillainReturnAsHero : Effect := ofTrigger (.death .villainReturnAsHero)
+
+def deathAttackingReturnHand : Effect := ofTrigger (.death .attackingReturnHand)
+
+def deathDeathtouchOppSac : Effect := ofTrigger (.death .deathtouchOppSac)
+
+def thisAttackMayPayPlusOne : Effect := ofTrigger (.thisAttack .mayPayPlusOne)
+
+def thisAttackPayReturnAttacking : Effect := ofTrigger (.thisAttack .payReturnAttacking)
+
+def thisAttackIfArtifactEnteredDraw : Effect := ofTrigger (.thisAttack .ifArtifactEnteredDraw)
+
+def thisAttackBlinkNontoken : Effect := ofTrigger (.thisAttack .blinkNontoken)
+
+def thisAttackEquippedDrain : Effect := ofTrigger (.thisAttack .equippedDrain)
+
+def thisAttackDrawIfPower4 : Effect := ofTrigger (.thisAttack .drawIfPower4)
+
+def thisAttackAttacksAlonePlus2Indestructible : Effect := ofTrigger (.thisAttack .attacksAlonePlus2Indestructible)
+
+def enterOrAttackCopyKeywords : Effect := ofTrigger (.enterOrAttack .copyKeywords)
+
+def enterOrAttackCreateSquirrel : Effect := ofTrigger (.enterOrAttack .createSquirrel)
+
+def watchCombatDamageExileUntilNonland : Effect := ofTrigger (.watch .combatDamageExileUntilNonland)
+
+def watchAttacksAloneDrain : Effect := ofTrigger (.watch .attacksAloneDrain)
+
+def watchAttacksAloneFirstStrikeMenace : Effect := ofTrigger (.watch .attacksAloneFirstStrikeMenace)
+
+def watchFirstTapUntap : Effect := ofTrigger (.watch .firstTapUntap)
+
+def watchSheHulkRedirectOnce : Effect := ofTrigger (.watch .sheHulkRedirectOnce)
+
+def watchSpeedballTargeted : Effect := ofTrigger (.watch .speedballTargeted)
+
+def watchAnyPlayerSecondDraw : Effect := ofTrigger (.watch .anyPlayerSecondDraw)
+
+def watchYouTargetDrawOnce : Effect := ofTrigger (.watch .youTargetDrawOnce)
+
+def watchVillainOrArtifactDamage : Effect := ofTrigger (.watch .villainOrArtifactDamage)
+
+def watchVillainConniveOnce : Effect := ofTrigger (.watch .villainConniveOnce)
+
+def watchVillainPlusOneDamageOnce : Effect := ofTrigger (.watch .villainPlusOneDamageOnce)
+
+def watchVillainAttachEquipment : Effect := ofTrigger (.watch .villainAttachEquipment)
+
+def watchVillainPlusOneLifelink : Effect := ofTrigger (.watch .villainPlusOneLifelink)
+
+def watchHulklingCompare : Effect := ofTrigger (.watch .hulklingCompare)
+
+def watchJusticeBounce : Effect := ofTrigger (.watch .justiceBounce)
+
+def watchNontokenHeroModal : Effect := ofTrigger (.watch .nontokenHeroModal)
+
+def watchUltronCopy : Effect := ofTrigger (.watch .ultronCopy)
+
+def watchEnchantedAttachEquipment : Effect := ofTrigger (.watch .enchantedAttachEquipment)
+
+def watchEquippedAttacksAloneUntapScry : Effect := ofTrigger (.watch .equippedAttacksAloneUntapScry)
+
+def watchEquippedAttacksTap : Effect := ofTrigger (.watch .equippedAttacksTap)
+
+def watchEquippedTappedDamage : Effect := ofTrigger (.watch .equippedTappedDamage)
+
+def watchHeroesDamagePlusTwo : Effect := ofTrigger (.watch .heroesDamagePlusTwo)
+
+def watchMerfolkAttackDraw : Effect := ofTrigger (.watch .merfolkAttackDraw)
+
+def watchTokensEnterMayDraw : Effect := ofTrigger (.watch .tokensEnterMayDraw)
+
+def watchHawkeyeModes : Effect := ofTrigger (.watch .hawkeyeModes)
+
+def watchRedHulk : Effect := ofTrigger (.watch .redHulk)
+
+def watchHulk : Effect := ofTrigger (.watch .hulk)
+
+def youAttackingPay2LifeToughness : Effect := ofTrigger (.youAttacking .pay2LifeToughness)
+
+def youAttackingExileTopHeroPump : Effect := ofTrigger (.youAttacking .exileTopHeroPump)
+
+def youAttackingLookSixCast : Effect := ofTrigger (.youAttacking .lookSixCast)
+
+def castingVillainToken : Effect := ofTrigger (.casting .villainToken)
+
+def castingMerfolkFromBlue : Effect := ofTrigger (.casting .merfolkFromBlue)
+
+def castingMayPayHasteUnblockable : Effect := ofTrigger (.casting .mayPayHasteUnblockable)
+
+def castingPlusOneEachOther : Effect := ofTrigger (.casting .plusOneEachOther)
+
+def castingExileFlicker : Effect := ofTrigger (.casting .exileFlicker)
+
+def castingVisionModes : Effect := ofTrigger (.casting .visionModes)
+
+def castingDamageEqualMv : Effect := ofTrigger (.casting .damageEqualMv)
+
+def castingDrawPowerEqualHand : Effect := ofTrigger (.casting .drawPowerEqualHand)
+
+def castingPlusOneThis : Effect := ofTrigger (.casting .plusOneThis)
+
+def castingPlusOneScry : Effect := ofTrigger (.casting .plusOneScry)
+
+def castingIronFistTap : Effect := ofTrigger (.casting .ironFistTap)
+
+def castingTargetsGainFlying : Effect := ofTrigger (.casting .targetsGainFlying)
+
+def castingCopyIfArtifactOrLand : Effect := ofTrigger (.casting .copyIfArtifactOrLand)
+
+def castingTapCreatureOrLand : Effect := ofTrigger (.casting .tapCreatureOrLand)
+
+def resourceDiscardExilePlay : Effect := ofTrigger (.resource .discardExilePlay)
+
+def resourceDrawIfAnotherHeroDamage : Effect := ofTrigger (.resource .drawIfAnotherHeroDamage)
+
+def resourceSecondDrawBecome66 : Effect := ofTrigger (.resource .secondDrawBecome66)
+
+def resourceSecondDrawPlusOneTarget : Effect := ofTrigger (.resource .secondDrawPlusOneTarget)
+
+def resourceSecondDrawDrain : Effect := ofTrigger (.resource .secondDrawDrain)
+
+def resourceGainLifePlusOnes : Effect := ofTrigger (.resource .gainLifePlusOnes)
+
+def resourcePlusOneCreateInsectOnce : Effect := ofTrigger (.resource .plusOneCreateInsectOnce)
+
+def resourcePlusOneOnThisOnce : Effect := ofTrigger (.resource .plusOneOnThisOnce)
+
+def resourcePlusOneOnHeroesCreateWall : Effect := ofTrigger (.resource .plusOneOnHeroesCreateWall)
+
 
 /-- Build a spell-shaped `Effect` from targeting and resolution.
 Phrase comes from `SpellResolution.toPhrase` unless overridden. -/
@@ -6603,33 +6762,6 @@ instance : Coe ChapterResolution Effect where
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger
 
-instance : Coe EnterLeftover Effect where
-  coe := ofEnter
-
-instance : Coe StepLeftover Effect where
-  coe := ofStep
-
-instance : Coe DeathLeftover Effect where
-  coe := ofDeath
-
-instance : Coe ThisAttackLeftover Effect where
-  coe := ofThisAttack
-
-instance : Coe EnterOrAttackLeftover Effect where
-  coe := ofEnterOrAttack
-
-instance : Coe WatchLeftover Effect where
-  coe := ofWatch
-
-instance : Coe YouAttackLeftover Effect where
-  coe := ofYouAttacking
-
-instance : Coe CastLeftover Effect where
-  coe := ofCasting
-
-instance : Coe ResourceLeftover Effect where
-  coe := ofResource
-
 end Effect
 
 namespace TriggeredAbility
@@ -7146,24 +7278,24 @@ def onEnterPlusOneOrTwoIfAnotherHero : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .plusOneOrTwoIfAnotherHero)
 def onEnterMaySacArtifactOrDiscardDraw : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .maySacArtifactOrDiscardDraw)
-def onEnter (e : EnterLeftover) : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.enter e))
-def onStep (e : StepLeftover) : TriggeredAbility :=
-  .triggered .fromEffect (Effect.ofTrigger (.step e))
-def onDeath (e : DeathLeftover) : TriggeredAbility :=
-  .triggered .fromEffect (Effect.ofTrigger (.death e))
-def onThisAttack (e : ThisAttackLeftover) : TriggeredAbility :=
-  .triggered .attack (Effect.ofTrigger (.thisAttack e))
-def onEnterOrAttack (e : EnterOrAttackLeftover) : TriggeredAbility :=
-  .triggered (.or .enter .attack) (Effect.ofTrigger (.enterOrAttack e))
-def onWatch (e : WatchLeftover) : TriggeredAbility :=
-  .triggered .fromEffect (Effect.ofTrigger (.watch e))
-def onYouAttacking (e : YouAttackLeftover) : TriggeredAbility :=
-  .triggered .youAttack (Effect.ofTrigger (.youAttacking e))
-def onCasting (e : CastLeftover) : TriggeredAbility :=
-  .triggered .fromEffect (Effect.ofTrigger (.casting e))
-def onResource (e : ResourceLeftover) : TriggeredAbility :=
-  .triggered .fromEffect (Effect.ofTrigger (.resource e))
+def onEnter (e : Effect) : TriggeredAbility :=
+  .triggered .enter e
+def onStep (e : Effect) : TriggeredAbility :=
+  .triggered .fromEffect e
+def onDeath (e : Effect) : TriggeredAbility :=
+  .triggered .fromEffect e
+def onThisAttack (e : Effect) : TriggeredAbility :=
+  .triggered .attack e
+def onEnterOrAttack (e : Effect) : TriggeredAbility :=
+  .triggered (.or .enter .attack) e
+def onWatch (e : Effect) : TriggeredAbility :=
+  .triggered .fromEffect e
+def onYouAttacking (e : Effect) : TriggeredAbility :=
+  .triggered .youAttack e
+def onCasting (e : Effect) : TriggeredAbility :=
+  .triggered .fromEffect e
+def onResource (e : Effect) : TriggeredAbility :=
+  .triggered .fromEffect e
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -8585,8 +8717,8 @@ instance : ToString CardDef where
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
 #guard (Effect.chapterRecruit).asChapter? == some .recruit
 #guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
-#guard (Effect.ofEnter (.dealDamageUpToOne 4)).allowsZeroTargets
-#guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
+#guard (Effect.enterDealDamageUpToOne 4).allowsZeroTargets
+#guard Effect.watchHulk.resolution == Resolution.trigger (.watch .hulk)
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
   Resolution.trigger (.scry 2)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
@@ -9054,9 +9186,9 @@ instance : ToString CardDef where
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
   .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
 #guard TriggeredAbility.onEnterSurveil 2 == .triggered .enter (Effect.ofTrigger (.surveil 2))
-#guard TriggeredAbility.onWatch .hulk == .triggered .fromEffect (Effect.ofTrigger (.watch .hulk))
-#guard TriggeredAbility.onStep .drawToTen ==
-  .triggered .fromEffect (Effect.ofTrigger (.step .drawToTen))
+#guard TriggeredAbility.onWatch Effect.watchHulk == .triggered .fromEffect Effect.watchHulk
+#guard TriggeredAbility.onStep Effect.stepDrawToTen ==
+  .triggered .fromEffect Effect.stepDrawToTen
 #guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
   .triggered .sagaChapter
     { Effect.chapterRecruit with
@@ -9410,28 +9542,28 @@ instance : ToString CardDef where
 #guard TriggeredAbility.toNotation (.onEnterTargetOpponentDiscards 2) ==
   "When this enchantment enters, target opponent discards two cards."
 #guard TriggeredAbility.targetKind (.onEnterTargetOpponentDiscards 2) == .opponent
-#guard TriggeredAbility.toNotation (.onEnter (.destroy (.oppCreaturePowerAtMost 3))) ==
+#guard TriggeredAbility.toNotation (.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))) ==
   "When this permanent enters, destroy target creature an opponent controls with power 3 or less."
-#guard TriggeredAbility.targetKind (.onEnter (.destroy (.oppCreaturePowerAtMost 3))) ==
+#guard TriggeredAbility.targetKind (.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))) ==
   .oppCreaturePowerAtMost 3
-#guard TriggeredAbility.toNotation (.onEnter (.dealDamageUpToOne 4)) ==
+#guard TriggeredAbility.toNotation (.onEnter (Effect.enterDealDamageUpToOne 4)) ==
   "When this permanent enters, it deals 4 damage to up to one target creature."
-#guard TriggeredAbility.allowsZeroTargets (.onEnter (.dealDamageUpToOne 4))
-#guard TriggeredAbility.toNotation (.onEnter .fightUpToOne) ==
+#guard TriggeredAbility.allowsZeroTargets (.onEnter (Effect.enterDealDamageUpToOne 4))
+#guard TriggeredAbility.toNotation (.onEnter Effect.enterFightUpToOne) ==
   "When this permanent enters, this fights up to one other target creature."
-#guard TriggeredAbility.targetKind (.onEnter .fightUpToOne) == .anotherCreature
-#guard TriggeredAbility.toNotation (.onEnter .createZabu) ==
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterFightUpToOne) == .anotherCreature
+#guard TriggeredAbility.toNotation (.onEnter Effect.enterCreateZabu) ==
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
-#guard TriggeredAbility.targetKind (.onEnter .oppCreatesTheVoid) == .opponent
-#guard TriggeredAbility.resolution (.onEnter .createSturdyShieldAttach) ==
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
+#guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
   .createSturdyShieldAttach
-#guard TriggeredAbility.targetKind (.onEnter .exileGyPlayUntilNextTurn) ==
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
-#guard TriggeredAbility.targetKind (.onEnter .returnGyPermanentThisTurn) ==
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyard
-#guard TriggeredAbility.resolution (.onEnter .tapOppCantUntapWhileControl) ==
+#guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .tapCantUntapWhileControl
-#guard TriggeredAbility.resolution (.onEnter .maySacAnotherThenDestroyOppNonland) ==
+#guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
   .maySacAnotherThenDestroyOppNonland
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exileTop
 #guard StaticAbility.toNotation .noMaximumHandSize ==

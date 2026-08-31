@@ -12965,21 +12965,21 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
   | .createRedwing =>
     g.createNamedToken controller redwingToken
   | .step e =>
-    g.applyModeledTrigger controller (.onStep e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onStep (Effect.ofTrigger (.step e))) sourceId targets sourceName lastKnownPower
   | .death e =>
-    g.applyModeledTrigger controller (.onDeath e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onDeath (Effect.ofTrigger (.death e))) sourceId targets sourceName lastKnownPower
   | .thisAttack e =>
-    g.applyModeledTrigger controller (.onThisAttack e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onThisAttack (Effect.ofTrigger (.thisAttack e))) sourceId targets sourceName lastKnownPower
   | .enterOrAttack e =>
-    g.applyModeledTrigger controller (.onEnterOrAttack e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onEnterOrAttack (Effect.ofTrigger (.enterOrAttack e))) sourceId targets sourceName lastKnownPower
   | .watch e =>
-    g.applyModeledTrigger controller (.onWatch e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onWatch (Effect.ofTrigger (.watch e))) sourceId targets sourceName lastKnownPower
   | .youAttacking e =>
-    g.applyModeledTrigger controller (.onYouAttacking e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onYouAttacking (Effect.ofTrigger (.youAttacking e))) sourceId targets sourceName lastKnownPower
   | .casting e =>
-    g.applyModeledTrigger controller (.onCasting e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
-    g.applyModeledTrigger controller (.onResource e) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
