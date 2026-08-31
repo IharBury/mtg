@@ -1866,22 +1866,6 @@ inductive StepLeftover where
   | harnessedFlicker
 deriving Repr, Inhabited, BEq
 
-namespace StepLeftover
-
-/-- Official Oracle wording for this StepLeftover. -/
-def toNotation : StepLeftover → String
-  | .enchantedControllerDraws => "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
-  | .drawToTen => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
-  | .copyAbsorbingMan => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
-  | .hydeChoose => "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
-  | .copyTaskmaster => "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
-  | .harnessedFlicker => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
-
-instance : ToString StepLeftover where
-  toString := toNotation
-
-end StepLeftover
-
 /-- Leftover dies triggers that do not already match a more specific constructor. -/
 inductive DeathLeftover where
   /-- When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 co… -/
@@ -1893,20 +1877,6 @@ inductive DeathLeftover where
   /-- Whenever another creature you control with deathtouch dies, each opponent sacrifices a non… -/
   | deathtouchOppSac
 deriving Repr, Inhabited, BEq
-
-namespace DeathLeftover
-
-/-- Official Oracle wording for this DeathLeftover. -/
-def toNotation : DeathLeftover → String
-  | .hellcatReturn => "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
-  | .villainReturnAsHero => "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
-  | .attackingReturnHand => "Whenever an attacking creature you control dies, return that card to its owner's hand."
-  | .deathtouchOppSac => "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
-
-instance : ToString DeathLeftover where
-  toString := toNotation
-
-end DeathLeftover
 
 /-- Leftover “whenever this attacks” (or attacks-alone) triggers. -/
 inductive ThisAttackLeftover where
@@ -1926,23 +1896,6 @@ inductive ThisAttackLeftover where
   | attacksAlonePlus2Indestructible
 deriving Repr, Inhabited, BEq
 
-namespace ThisAttackLeftover
-
-/-- Official Oracle wording for this ThisAttackLeftover. -/
-def toNotation : ThisAttackLeftover → String
-  | .mayPayPlusOne => "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
-  | .payReturnAttacking => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
-  | .ifArtifactEnteredDraw => "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
-  | .blinkNontoken => "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
-  | .equippedDrain => "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
-  | .drawIfPower4 => "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
-  | .attacksAlonePlus2Indestructible => "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
-
-instance : ToString ThisAttackLeftover where
-  toString := toNotation
-
-end ThisAttackLeftover
-
 /-- Leftover “enters or attacks” triggers. -/
 inductive EnterOrAttackLeftover where
   /-- Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creatur… -/
@@ -1950,18 +1903,6 @@ inductive EnterOrAttackLeftover where
   /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a… -/
   | createSquirrel
 deriving Repr, Inhabited, BEq
-
-namespace EnterOrAttackLeftover
-
-/-- Official Oracle wording for this EnterOrAttackLeftover. -/
-def toNotation : EnterOrAttackLeftover → String
-  | .copyKeywords => "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
-  | .createSquirrel => "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
-
-instance : ToString EnterOrAttackLeftover where
-  toString := toNotation
-
-end EnterOrAttackLeftover
 
 /-- Leftover triggers that watch another event (another permanent, combat, tap, damage). -/
 inductive WatchLeftover where
@@ -2021,43 +1962,6 @@ inductive WatchLeftover where
   | hulk
 deriving Repr, Inhabited, BEq
 
-namespace WatchLeftover
-
-/-- Official Oracle wording for this WatchLeftover. -/
-def toNotation : WatchLeftover → String
-  | .combatDamageExileUntilNonland => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
-  | .attacksAloneDrain => "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
-  | .attacksAloneFirstStrikeMenace => "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
-  | .firstTapUntap => "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
-  | .sheHulkRedirectOnce => "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
-  | .speedballTargeted => "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
-  | .anyPlayerSecondDraw => "Whenever a player draws their second card each turn, you draw a card."
-  | .youTargetDrawOnce => "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
-  | .villainOrArtifactDamage => "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
-  | .villainConniveOnce => "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
-  | .villainPlusOneDamageOnce => "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
-  | .villainAttachEquipment => "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
-  | .villainPlusOneLifelink => "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
-  | .hulklingCompare => "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
-  | .justiceBounce => "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
-  | .nontokenHeroModal => "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
-  | .ultronCopy => "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
-  | .enchantedAttachEquipment => "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
-  | .equippedAttacksAloneUntapScry => "Whenever equipped creature attacks alone, untap it and scry 1."
-  | .equippedAttacksTap => "Whenever equipped creature attacks, tap target creature defending player controls."
-  | .equippedTappedDamage => "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
-  | .heroesDamagePlusTwo => "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
-  | .merfolkAttackDraw => "Whenever one or more Merfolk you control attack a player, draw a card."
-  | .tokensEnterMayDraw => "Whenever one or more tokens you control enter, you may draw a card."
-  | .hawkeyeModes => "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
-  | .redHulk => "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
-  | .hulk => "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
-
-instance : ToString WatchLeftover where
-  toString := toNotation
-
-end WatchLeftover
-
 /-- Leftover “whenever you attack” triggers. -/
 inductive YouAttackLeftover where
   /-- Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you contr… -/
@@ -2067,19 +1971,6 @@ inductive YouAttackLeftover where
   /-- Whenever you attack, look at the top six cards of your library. You may cast a spell from … -/
   | lookSixCast
 deriving Repr, Inhabited, BEq
-
-namespace YouAttackLeftover
-
-/-- Official Oracle wording for this YouAttackLeftover. -/
-def toNotation : YouAttackLeftover → String
-  | .pay2LifeToughness => "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
-  | .exileTopHeroPump => "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
-  | .lookSixCast => "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."
-
-instance : ToString YouAttackLeftover where
-  toString := toNotation
-
-end YouAttackLeftover
 
 /-- Leftover “whenever you cast …” triggers. -/
 inductive CastLeftover where
@@ -2113,30 +2004,6 @@ inductive CastLeftover where
   | tapCreatureOrLand
 deriving Repr, Inhabited, BEq
 
-namespace CastLeftover
-
-/-- Official Oracle wording for this CastLeftover. -/
-def toNotation : CastLeftover → String
-  | .villainToken => "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
-  | .merfolkFromBlue => "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
-  | .mayPayHasteUnblockable => "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
-  | .plusOneEachOther => "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
-  | .exileFlicker => "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
-  | .visionModes => "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
-  | .damageEqualMv => "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
-  | .drawPowerEqualHand => "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
-  | .plusOneThis => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
-  | .plusOneScry => "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
-  | .ironFistTap => "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
-  | .targetsGainFlying => "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
-  | .copyIfArtifactOrLand => "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
-  | .tapCreatureOrLand => "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
-
-instance : ToString CastLeftover where
-  toString := toNotation
-
-end CastLeftover
-
 /-- Leftover draw, discard, life, and +1/+1-counter triggers. -/
 inductive ResourceLeftover where
   /-- Whenever you discard a card, you may exile that card from your graveyard. If you do, until… -/
@@ -2158,25 +2025,6 @@ inductive ResourceLeftover where
   /-- Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you m… -/
   | plusOneOnHeroesCreateWall
 deriving Repr, Inhabited, BEq
-
-namespace ResourceLeftover
-
-/-- Official Oracle wording for this ResourceLeftover. -/
-def toNotation : ResourceLeftover → String
-  | .discardExilePlay => "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
-  | .drawIfAnotherHeroDamage => "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
-  | .secondDrawBecome66 => "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
-  | .secondDrawPlusOneTarget => "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
-  | .secondDrawDrain => "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
-  | .gainLifePlusOnes => "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
-  | .plusOneCreateInsectOnce => "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
-  | .plusOneOnThisOnce => "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
-  | .plusOneOnHeroesCreateWall => "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
-
-instance : ToString ResourceLeftover where
-  toString := toNotation
-
-end ResourceLeftover
 
 /-- When a reusable triggered ability fires. Constructors that only differ by
 this event (scry on enter vs attack, draw on die vs enter, …) share one
@@ -5140,234 +4988,6 @@ def events : SharedTriggerWhen → Array TriggerEvent
 
 end SharedTriggerWhen
 
-/-- Timing for a leftover StepLeftover. -/
-def StepLeftover.timing : StepLeftover → TriggeredAbility.TriggerTiming
-  | .enchantedControllerDraws =>
-    {  events := #[.enchantedControllerUpkeep], resolution := .step .enchantedControllerDraws }
-  | .drawToTen =>
-    {  events := #[.yourEndStep], resolution := .step .drawToTen }
-  | .copyAbsorbingMan =>
-    {  events := #[.yourFirstMain], resolution := .step .copyAbsorbingMan }
-  | .hydeChoose =>
-    {  events := #[.yourUpkeep], resolution := .step .hydeChoose }
-  | .copyTaskmaster =>
-    {  events := #[.yourFirstMain], targeting := .of .creature, allowsZeroTargets := true, resolution := .step .copyTaskmaster }
-  | .harnessedFlicker =>
-    {  events := #[.yourEndStep], targeting := .of .nonland, allowsZeroTargets := true, resolution := .step .harnessedFlicker }
-
-/-- Timing for a leftover DeathLeftover. -/
-def DeathLeftover.timing : DeathLeftover → TriggeredAbility.TriggerTiming
-  | .hellcatReturn =>
-    {  events := #[.dying], resolution := .death .hellcatReturn }
-  | .villainReturnAsHero =>
-    {  events := #[.villainYouControlDies], resolution := .death .villainReturnAsHero }
-  | .attackingReturnHand =>
-    {  events := #[.attackingCreatureYouControlDies], resolution := .death .attackingReturnHand }
-  | .deathtouchOppSac =>
-    {  events := #[.anotherCreatureYouControlEnters], resolution := .death .deathtouchOppSac }
-
-/-- Timing for a leftover ThisAttackLeftover. -/
-def ThisAttackLeftover.timing : ThisAttackLeftover → TriggeredAbility.TriggerTiming
-  | .mayPayPlusOne =>
-    {  events := #[.attacking], targeting := .of .creature, resolution := .thisAttack .mayPayPlusOne }
-  | .payReturnAttacking =>
-    {  events := #[.attacking], resolution := .thisAttack .payReturnAttacking }
-  | .ifArtifactEnteredDraw =>
-    {  events := #[.attacking], resolution := .thisAttack .ifArtifactEnteredDraw }
-  | .blinkNontoken =>
-    {  events := #[.attacking], resolution := .thisAttack .blinkNontoken }
-  | .equippedDrain =>
-    {  events := #[.attacking], resolution := .thisAttack .equippedDrain }
-  | .drawIfPower4 =>
-    {  events := #[.attacking], resolution := .thisAttack .drawIfPower4 }
-  | .attacksAlonePlus2Indestructible =>
-    {  events := #[.attacking], resolution := .thisAttack .attacksAlonePlus2Indestructible }
-
-/-- Timing for a leftover EnterOrAttackLeftover. -/
-def EnterOrAttackLeftover.timing : EnterOrAttackLeftover → TriggeredAbility.TriggerTiming
-  | .copyKeywords =>
-    {  events := #[.entering, .attacking], targeting := .of .creature, resolution := .enterOrAttack .copyKeywords }
-  | .createSquirrel =>
-    {  events := #[.entering, .attacking], resolution := .enterOrAttack .createSquirrel }
-
-/-- Timing for a leftover WatchLeftover. -/
-def WatchLeftover.timing : WatchLeftover → TriggeredAbility.TriggerTiming
-  | .combatDamageExileUntilNonland =>
-    {  events := #[.dealsCombatDamageToPlayer], resolution := .watch .combatDamageExileUntilNonland }
-  | .attacksAloneDrain =>
-    {  events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent, resolution := .watch .attacksAloneDrain }
-  | .attacksAloneFirstStrikeMenace =>
-    {  events := #[.creatureYouControlAttacksAlone], resolution := .watch .attacksAloneFirstStrikeMenace }
-  | .firstTapUntap =>
-    {  events := #[.creatureYouControlTapped], resolution := .watch .firstTapUntap }
-  | .sheHulkRedirectOnce =>
-    {  events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature, onceEachTurn := true, resolution := .watch .sheHulkRedirectOnce }
-  | .speedballTargeted =>
-    {  events := #[.spellTargetsSource], resolution := .watch .speedballTargeted }
-  | .anyPlayerSecondDraw =>
-    {  events := #[.anyPlayerDrawsSecond], resolution := .watch .anyPlayerSecondDraw }
-  | .youTargetDrawOnce =>
-    {  events := #[.youTargetSomething], onceEachTurn := true, resolution := .watch .youTargetDrawOnce }
-  | .villainOrArtifactDamage =>
-    {  events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent, resolution := .watch .villainOrArtifactDamage }
-  | .villainConniveOnce =>
-    {  events := #[.anotherVillainEnters], optionalOnceEachTurn := true, resolution := .watch .villainConniveOnce }
-  | .villainPlusOneDamageOnce =>
-    {  events := #[.anotherVillainEnters], onceEachTurn := true, resolution := .watch .villainPlusOneDamageOnce }
-  | .villainAttachEquipment =>
-    {  events := #[.anotherVillainEnters], targeting := .of .creatureYouControl, allowsZeroTargets := true, resolution := .watch .villainAttachEquipment }
-  | .villainPlusOneLifelink =>
-    {  events := #[.anotherVillainEnters], resolution := .watch .villainPlusOneLifelink }
-  | .hulklingCompare =>
-    {  events := #[.anotherCreatureYouControlEnters], resolution := .watch .hulklingCompare }
-  | .justiceBounce =>
-    {  events := #[.anotherNonlandReturned], resolution := .watch .justiceBounce }
-  | .nontokenHeroModal =>
-    {  events := #[.anotherNontokenHeroEnters], resolution := .watch .nontokenHeroModal }
-  | .ultronCopy =>
-    {  events := #[.anotherNontokenArtifactEnters], resolution := .watch .ultronCopy }
-  | .enchantedAttachEquipment =>
-    {  events := #[.enchantedAttacksOrBlocks], resolution := .watch .enchantedAttachEquipment }
-  | .equippedAttacksAloneUntapScry =>
-    {  events := #[.equippedAttacksAlone], resolution := .watch .equippedAttacksAloneUntapScry }
-  | .equippedAttacksTap =>
-    {  events := #[.equippedAttacks], targeting := .of .creature, resolution := .watch .equippedAttacksTap }
-  | .equippedTappedDamage =>
-    {  events := #[.equippedBecomesTapped], resolution := .watch .equippedTappedDamage }
-  | .heroesDamagePlusTwo =>
-    {  events := #[.heroesDealDamageToPlayer], resolution := .watch .heroesDamagePlusTwo }
-  | .merfolkAttackDraw =>
-    {  events := #[.merfolkAttackPlayer], resolution := .watch .merfolkAttackDraw }
-  | .tokensEnterMayDraw =>
-    {  events := #[.tokenYouControlEnters], resolution := .watch .tokensEnterMayDraw }
-  | .hawkeyeModes =>
-    {  events := #[.sourceBecomesTapped], allowsZeroTargets := true, resolution := .watch .hawkeyeModes }
-  | .redHulk =>
-    {  events := #[.sourceDealtDamage], resolution := .watch .redHulk }
-  | .hulk =>
-    {  events := #[.sourceDealtDamage], resolution := .watch .hulk }
-
-/-- Timing for a leftover YouAttackLeftover. -/
-def YouAttackLeftover.timing : YouAttackLeftover → TriggeredAbility.TriggerTiming
-  | .pay2LifeToughness =>
-    {  events := #[.youAttack], resolution := .youAttacking .pay2LifeToughness }
-  | .exileTopHeroPump =>
-    {  events := #[.youAttack], resolution := .youAttacking .exileTopHeroPump }
-  | .lookSixCast =>
-    {  events := #[.youAttack], resolution := .youAttacking .lookSixCast }
-
-/-- Timing for a leftover CastLeftover. -/
-def CastLeftover.timing : CastLeftover → TriggeredAbility.TriggerTiming
-  | .villainToken =>
-    {  events := #[.youCastVillain], resolution := .casting .villainToken }
-  | .merfolkFromBlue =>
-    {  events := #[.youCastNoncreature], resolution := .casting .merfolkFromBlue }
-  | .mayPayHasteUnblockable =>
-    {  events := #[.youCastNoncreature], resolution := .casting .mayPayHasteUnblockable }
-  | .plusOneEachOther =>
-    {  events := #[.youCastNoncreature], resolution := .casting .plusOneEachOther }
-  | .exileFlicker =>
-    {  events := #[.youCastNoncreature], targeting := .of .nonland, resolution := .casting .exileFlicker }
-  | .visionModes =>
-    {  events := #[.youCastNoncreature], resolution := .casting .visionModes }
-  | .damageEqualMv =>
-    {  events := #[.youCastNoncreature], targeting := .of .playerOrCreature, resolution := .casting .damageEqualMv }
-  | .drawPowerEqualHand =>
-    {  events := #[.youCastTargetingCreatureYouControl], resolution := .casting .drawPowerEqualHand }
-  | .plusOneThis =>
-    {  events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneThis }
-  | .plusOneScry =>
-    {  events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneScry }
-  | .ironFistTap =>
-    {  events := #[.youCastTargetingCreatureYouControl], resolution := .casting .ironFistTap }
-  | .targetsGainFlying =>
-    {  events := #[.youCastTargetingCreatureYouControl], resolution := .casting .targetsGainFlying }
-  | .copyIfArtifactOrLand =>
-    {  events := #[.youCastInstantOrSorcery], resolution := .casting .copyIfArtifactOrLand }
-  | .tapCreatureOrLand =>
-    {  events := #[.youCastNoncreature], targeting := .of .creature, resolution := .casting .tapCreatureOrLand }
-
-/-- Timing for a leftover ResourceLeftover. -/
-def ResourceLeftover.timing : ResourceLeftover → TriggeredAbility.TriggerTiming
-  | .discardExilePlay =>
-    {  events := #[.youDiscard], resolution := .resource .discardExilePlay }
-  | .drawIfAnotherHeroDamage =>
-    {  events := #[.youDraw], targeting := .of .opponent, resolution := .resource .drawIfAnotherHeroDamage }
-  | .secondDrawBecome66 =>
-    {  events := #[.youDrawSecondCard], resolution := .resource .secondDrawBecome66 }
-  | .secondDrawPlusOneTarget =>
-    {  events := #[.youDrawSecondCard], targeting := .of .creature, resolution := .resource .secondDrawPlusOneTarget }
-  | .secondDrawDrain =>
-    {  events := #[.youDrawSecondCard], resolution := .resource .secondDrawDrain }
-  | .gainLifePlusOnes =>
-    {  events := #[.youGainLife], targeting := .of .playerOrCreature, allowsZeroTargets := true, resolution := .resource .gainLifePlusOnes }
-  | .plusOneCreateInsectOnce =>
-    {  events := #[.youPutPlusOne], onceEachTurn := true, resolution := .resource .plusOneCreateInsectOnce }
-  | .plusOneOnThisOnce =>
-    {  events := #[.youPutPlusOne], onceEachTurn := true, resolution := .resource .plusOneOnThisOnce }
-  | .plusOneOnHeroesCreateWall =>
-    {  events := #[.youPutPlusOne], resolution := .resource .plusOneOnHeroesCreateWall }
-
-#guard (WatchLeftover.timing .sheHulkRedirectOnce).onceEachTurn
-#guard (WatchLeftover.timing .villainConniveOnce).optionalOnceEachTurn
-#guard (EnterOrAttackLeftover.timing .copyKeywords).events ==
-  #[TriggerEvent.entering, TriggerEvent.attacking]
-#guard (DeathLeftover.timing .hellcatReturn).resolution ==
-  TriggeredAbility.TriggerResolution.death .hellcatReturn
-
-
-
-/-- Timing for a leftover “When ⟨this⟩ enters” ability. -/
-def EnterLeftover.timing : EnterLeftover → TriggeredAbility.TriggerTiming
-  | .destroy kind =>
-    { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
-  | .dealDamageUpToOne n =>
-    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .onPermanent (.dealDamage n) }
-  | .fightUpToOne =>
-    { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
-      resolution := .fightUpToOne }
-  | .returnNonlandNontoken =>
-    { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
-      resolution := .returnToOwnerHand }
-  | .createZabu =>
-    { events := #[.entering], resolution := .createZabu }
-  | .oppCreatesTheVoid =>
-    { events := #[.entering], targeting := .of .opponent, resolution := .oppCreatesTheVoid }
-  | .createSturdyShieldAttach =>
-    { events := #[.entering], resolution := .createSturdyShieldAttach }
-  | .exileGyPlayUntilNextTurn =>
-    { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
-      resolution := .exileGyPlayUntilNextTurn }
-  | .returnGyPermanentThisTurn =>
-    { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
-      resolution := .returnGyPermanentThisTurn }
-  | .tapOppCantUntapWhileControl =>
-    { events := #[.entering], targeting := .of .oppCreature,
-      resolution := .tapCantUntapWhileControl }
-  | .maySacAnotherThenDestroyOppNonland =>
-    { events := #[.entering], resolution := .maySacAnotherThenDestroyOppNonland }
-  | .maySacOrDiscardNonlandThenDamage =>
-    { events := #[.entering], resolution := .maySacOrDiscardNonlandThenDamage }
-  | .revealHandExileUntilLeaves =>
-    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
-      resolution := .revealHandExileUntilLeaves }
-  | .plusOnesOrReturnArtEnch =>
-    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .plusOnesOrReturnArtEnch }
-  | .chooseUpToXModes =>
-    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
-      resolution := .chooseUpToXModes }
-  | .mayTapThenGrantIndestructible =>
-    { events := #[.entering], resolution := .mayTapThenGrantIndestructible }
-  | .tapLoseAbilitiesWhileSource =>
-    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
-      resolution := .tapLoseAbilitiesWhileSource }
-  | .revealDiscardFromHand =>
-    { events := #[.entering], targeting := .of .player, resolution := .revealDiscardFromHand }
-  | .createRedwing =>
-    { events := #[.entering], resolution := .createRedwing }
-
 namespace SharedTrigger
 
 /-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
@@ -5627,17 +5247,226 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .plusOneOrTwoIfAnotherHero =>
     { targeting := .of .creature, resolution := .plusOneOrTwoIfAnotherHero }
   | .maySacArtifactOrDiscardDraw => { resolution := .maySacArtifactOrDiscardDraw }
-  | .enter e => e.timing
-  | .step e => e.timing
-  | .death e => e.timing
-  | .thisAttack e => e.timing
-  | .enterOrAttack e => e.timing
-  | .watch e => e.timing
-  | .youAttacking e => e.timing
-  | .casting e => e.timing
-  | .resource e => e.timing
+  | .enter (.destroy kind) =>
+    { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
+  | .enter (.dealDamageUpToOne n) =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .onPermanent (.dealDamage n) }
+  | .enter .fightUpToOne =>
+    { events := #[.entering], targeting := .of .anotherCreature, allowsZeroTargets := true,
+      resolution := .fightUpToOne }
+  | .enter .returnNonlandNontoken =>
+    { events := #[.entering], targeting := .of .nonlandNontoken, allowsZeroTargets := true,
+      resolution := .returnToOwnerHand }
+  | .enter .createZabu =>
+    { events := #[.entering], resolution := .createZabu }
+  | .enter .oppCreatesTheVoid =>
+    { events := #[.entering], targeting := .of .opponent, resolution := .oppCreatesTheVoid }
+  | .enter .createSturdyShieldAttach =>
+    { events := #[.entering], resolution := .createSturdyShieldAttach }
+  | .enter .exileGyPlayUntilNextTurn =>
+    { events := #[.entering], targeting := .of .equipmentInstantOrSorceryInYourGraveyard,
+      resolution := .exileGyPlayUntilNextTurn }
+  | .enter .returnGyPermanentThisTurn =>
+    { events := #[.entering], targeting := .of .permanentCardInYourGraveyard,
+      resolution := .returnGyPermanentThisTurn }
+  | .enter .tapOppCantUntapWhileControl =>
+    { events := #[.entering], targeting := .of .oppCreature,
+      resolution := .tapCantUntapWhileControl }
+  | .enter .maySacAnotherThenDestroyOppNonland =>
+    { events := #[.entering], resolution := .maySacAnotherThenDestroyOppNonland }
+  | .enter .maySacOrDiscardNonlandThenDamage =>
+    { events := #[.entering], resolution := .maySacOrDiscardNonlandThenDamage }
+  | .enter .revealHandExileUntilLeaves =>
+    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
+      resolution := .revealHandExileUntilLeaves }
+  | .enter .plusOnesOrReturnArtEnch =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .plusOnesOrReturnArtEnch }
+  | .enter .chooseUpToXModes =>
+    { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
+      resolution := .chooseUpToXModes }
+  | .enter .mayTapThenGrantIndestructible =>
+    { events := #[.entering], resolution := .mayTapThenGrantIndestructible }
+  | .enter .tapLoseAbilitiesWhileSource =>
+    { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .tapLoseAbilitiesWhileSource }
+  | .enter .revealDiscardFromHand =>
+    { events := #[.entering], targeting := .of .player, resolution := .revealDiscardFromHand }
+  | .enter .createRedwing =>
+    { events := #[.entering], resolution := .createRedwing }
+  | .step .enchantedControllerDraws =>
+    { events := #[.enchantedControllerUpkeep], resolution := .step .enchantedControllerDraws }
+  | .step .drawToTen =>
+    { events := #[.yourEndStep], resolution := .step .drawToTen }
+  | .step .copyAbsorbingMan =>
+    { events := #[.yourFirstMain], resolution := .step .copyAbsorbingMan }
+  | .step .hydeChoose =>
+    { events := #[.yourUpkeep], resolution := .step .hydeChoose }
+  | .step .copyTaskmaster =>
+    { events := #[.yourFirstMain], targeting := .of .creature, allowsZeroTargets := true,
+      resolution := .step .copyTaskmaster }
+  | .step .harnessedFlicker =>
+    { events := #[.yourEndStep], targeting := .of .nonland, allowsZeroTargets := true,
+      resolution := .step .harnessedFlicker }
+  | .death .hellcatReturn =>
+    { events := #[.dying], resolution := .death .hellcatReturn }
+  | .death .villainReturnAsHero =>
+    { events := #[.villainYouControlDies], resolution := .death .villainReturnAsHero }
+  | .death .attackingReturnHand =>
+    { events := #[.attackingCreatureYouControlDies], resolution := .death .attackingReturnHand }
+  | .death .deathtouchOppSac =>
+    { events := #[.anotherCreatureYouControlEnters], resolution := .death .deathtouchOppSac }
+  | .thisAttack .mayPayPlusOne =>
+    { events := #[.attacking], targeting := .of .creature, resolution := .thisAttack .mayPayPlusOne }
+  | .thisAttack .payReturnAttacking =>
+    { events := #[.attacking], resolution := .thisAttack .payReturnAttacking }
+  | .thisAttack .ifArtifactEnteredDraw =>
+    { events := #[.attacking], resolution := .thisAttack .ifArtifactEnteredDraw }
+  | .thisAttack .blinkNontoken =>
+    { events := #[.attacking], resolution := .thisAttack .blinkNontoken }
+  | .thisAttack .equippedDrain =>
+    { events := #[.attacking], resolution := .thisAttack .equippedDrain }
+  | .thisAttack .drawIfPower4 =>
+    { events := #[.attacking], resolution := .thisAttack .drawIfPower4 }
+  | .thisAttack .attacksAlonePlus2Indestructible =>
+    { events := #[.attacking], resolution := .thisAttack .attacksAlonePlus2Indestructible }
+  | .enterOrAttack .copyKeywords =>
+    { events := #[.entering, .attacking], targeting := .of .creature,
+      resolution := .enterOrAttack .copyKeywords }
+  | .enterOrAttack .createSquirrel =>
+    { events := #[.entering, .attacking], resolution := .enterOrAttack .createSquirrel }
+  | .watch .combatDamageExileUntilNonland =>
+    { events := #[.dealsCombatDamageToPlayer], resolution := .watch .combatDamageExileUntilNonland }
+  | .watch .attacksAloneDrain =>
+    { events := #[.creatureYouControlAttacksAlone], targeting := .of .opponent,
+      resolution := .watch .attacksAloneDrain }
+  | .watch .attacksAloneFirstStrikeMenace =>
+    { events := #[.creatureYouControlAttacksAlone], resolution := .watch .attacksAloneFirstStrikeMenace }
+  | .watch .firstTapUntap =>
+    { events := #[.creatureYouControlTapped], resolution := .watch .firstTapUntap }
+  | .watch .sheHulkRedirectOnce =>
+    { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
+      onceEachTurn := true, resolution := .watch .sheHulkRedirectOnce }
+  | .watch .speedballTargeted =>
+    { events := #[.spellTargetsSource], resolution := .watch .speedballTargeted }
+  | .watch .anyPlayerSecondDraw =>
+    { events := #[.anyPlayerDrawsSecond], resolution := .watch .anyPlayerSecondDraw }
+  | .watch .youTargetDrawOnce =>
+    { events := #[.youTargetSomething], onceEachTurn := true, resolution := .watch .youTargetDrawOnce }
+  | .watch .villainOrArtifactDamage =>
+    { events := #[.anotherVillainOrArtifactEnters], targeting := .of .opponent,
+      resolution := .watch .villainOrArtifactDamage }
+  | .watch .villainConniveOnce =>
+    { events := #[.anotherVillainEnters], optionalOnceEachTurn := true,
+      resolution := .watch .villainConniveOnce }
+  | .watch .villainPlusOneDamageOnce =>
+    { events := #[.anotherVillainEnters], onceEachTurn := true,
+      resolution := .watch .villainPlusOneDamageOnce }
+  | .watch .villainAttachEquipment =>
+    { events := #[.anotherVillainEnters], targeting := .of .creatureYouControl,
+      allowsZeroTargets := true, resolution := .watch .villainAttachEquipment }
+  | .watch .villainPlusOneLifelink =>
+    { events := #[.anotherVillainEnters], resolution := .watch .villainPlusOneLifelink }
+  | .watch .hulklingCompare =>
+    { events := #[.anotherCreatureYouControlEnters], resolution := .watch .hulklingCompare }
+  | .watch .justiceBounce =>
+    { events := #[.anotherNonlandReturned], resolution := .watch .justiceBounce }
+  | .watch .nontokenHeroModal =>
+    { events := #[.anotherNontokenHeroEnters], resolution := .watch .nontokenHeroModal }
+  | .watch .ultronCopy =>
+    { events := #[.anotherNontokenArtifactEnters], resolution := .watch .ultronCopy }
+  | .watch .enchantedAttachEquipment =>
+    { events := #[.enchantedAttacksOrBlocks], resolution := .watch .enchantedAttachEquipment }
+  | .watch .equippedAttacksAloneUntapScry =>
+    { events := #[.equippedAttacksAlone], resolution := .watch .equippedAttacksAloneUntapScry }
+  | .watch .equippedAttacksTap =>
+    { events := #[.equippedAttacks], targeting := .of .creature,
+      resolution := .watch .equippedAttacksTap }
+  | .watch .equippedTappedDamage =>
+    { events := #[.equippedBecomesTapped], resolution := .watch .equippedTappedDamage }
+  | .watch .heroesDamagePlusTwo =>
+    { events := #[.heroesDealDamageToPlayer], resolution := .watch .heroesDamagePlusTwo }
+  | .watch .merfolkAttackDraw =>
+    { events := #[.merfolkAttackPlayer], resolution := .watch .merfolkAttackDraw }
+  | .watch .tokensEnterMayDraw =>
+    { events := #[.tokenYouControlEnters], resolution := .watch .tokensEnterMayDraw }
+  | .watch .hawkeyeModes =>
+    { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
+      resolution := .watch .hawkeyeModes }
+  | .watch .redHulk =>
+    { events := #[.sourceDealtDamage], resolution := .watch .redHulk }
+  | .watch .hulk =>
+    { events := #[.sourceDealtDamage], resolution := .watch .hulk }
+  | .youAttacking .pay2LifeToughness =>
+    { events := #[.youAttack], resolution := .youAttacking .pay2LifeToughness }
+  | .youAttacking .exileTopHeroPump =>
+    { events := #[.youAttack], resolution := .youAttacking .exileTopHeroPump }
+  | .youAttacking .lookSixCast =>
+    { events := #[.youAttack], resolution := .youAttacking .lookSixCast }
+  | .casting .villainToken =>
+    { events := #[.youCastVillain], resolution := .casting .villainToken }
+  | .casting .merfolkFromBlue =>
+    { events := #[.youCastNoncreature], resolution := .casting .merfolkFromBlue }
+  | .casting .mayPayHasteUnblockable =>
+    { events := #[.youCastNoncreature], resolution := .casting .mayPayHasteUnblockable }
+  | .casting .plusOneEachOther =>
+    { events := #[.youCastNoncreature], resolution := .casting .plusOneEachOther }
+  | .casting .exileFlicker =>
+    { events := #[.youCastNoncreature], targeting := .of .nonland,
+      resolution := .casting .exileFlicker }
+  | .casting .visionModes =>
+    { events := #[.youCastNoncreature], resolution := .casting .visionModes }
+  | .casting .damageEqualMv =>
+    { events := #[.youCastNoncreature], targeting := .of .playerOrCreature,
+      resolution := .casting .damageEqualMv }
+  | .casting .drawPowerEqualHand =>
+    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .drawPowerEqualHand }
+  | .casting .plusOneThis =>
+    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneThis }
+  | .casting .plusOneScry =>
+    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .plusOneScry }
+  | .casting .ironFistTap =>
+    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .ironFistTap }
+  | .casting .targetsGainFlying =>
+    { events := #[.youCastTargetingCreatureYouControl], resolution := .casting .targetsGainFlying }
+  | .casting .copyIfArtifactOrLand =>
+    { events := #[.youCastInstantOrSorcery], resolution := .casting .copyIfArtifactOrLand }
+  | .casting .tapCreatureOrLand =>
+    { events := #[.youCastNoncreature], targeting := .of .creature,
+      resolution := .casting .tapCreatureOrLand }
+  | .resource .discardExilePlay =>
+    { events := #[.youDiscard], resolution := .resource .discardExilePlay }
+  | .resource .drawIfAnotherHeroDamage =>
+    { events := #[.youDraw], targeting := .of .opponent,
+      resolution := .resource .drawIfAnotherHeroDamage }
+  | .resource .secondDrawBecome66 =>
+    { events := #[.youDrawSecondCard], resolution := .resource .secondDrawBecome66 }
+  | .resource .secondDrawPlusOneTarget =>
+    { events := #[.youDrawSecondCard], targeting := .of .creature,
+      resolution := .resource .secondDrawPlusOneTarget }
+  | .resource .secondDrawDrain =>
+    { events := #[.youDrawSecondCard], resolution := .resource .secondDrawDrain }
+  | .resource .gainLifePlusOnes =>
+    { events := #[.youGainLife], targeting := .of .playerOrCreature, allowsZeroTargets := true,
+      resolution := .resource .gainLifePlusOnes }
+  | .resource .plusOneCreateInsectOnce =>
+    { events := #[.youPutPlusOne], onceEachTurn := true,
+      resolution := .resource .plusOneCreateInsectOnce }
+  | .resource .plusOneOnThisOnce =>
+    { events := #[.youPutPlusOne], onceEachTurn := true,
+      resolution := .resource .plusOneOnThisOnce }
+  | .resource .plusOneOnHeroesCreateWall =>
+    { events := #[.youPutPlusOne], resolution := .resource .plusOneOnHeroesCreateWall }
 
 end SharedTrigger
+
+#guard (SharedTrigger.timing (.watch .sheHulkRedirectOnce)).onceEachTurn
+#guard (SharedTrigger.timing (.watch .villainConniveOnce)).optionalOnceEachTurn
+#guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).events ==
+  #[TriggerEvent.entering, TriggerEvent.attacking]
+#guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==
+  TriggeredAbility.TriggerResolution.death .hellcatReturn
 
 namespace Resolution
 
@@ -7809,14 +7638,150 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"{noun} reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
   | .createRedwing =>
     "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-  | .step e => e.toNotation
-  | .death e => e.toNotation
-  | .thisAttack e => e.toNotation
-  | .enterOrAttack e => e.toNotation
-  | .watch e => e.toNotation
-  | .youAttacking e => e.toNotation
-  | .casting e => e.toNotation
-  | .resource e => e.toNotation
+  | .step .enchantedControllerDraws =>
+    "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
+  | .step .drawToTen =>
+    "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
+  | .step .copyAbsorbingMan =>
+    "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
+  | .step .hydeChoose =>
+    "At the beginning of your upkeep, choose one — • Put a +1/+1 counter on Mister Hyde. • Remove a counter from a creature you control. If you do, draw a card."
+  | .step .copyTaskmaster =>
+    "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
+  | .step .harnessedFlicker =>
+    "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
+  | .death .hellcatReturn =>
+    "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
+  | .death .villainReturnAsHero =>
+    "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
+  | .death .attackingReturnHand =>
+    "Whenever an attacking creature you control dies, return that card to its owner's hand."
+  | .death .deathtouchOppSac =>
+    "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
+  | .thisAttack .mayPayPlusOne =>
+    "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
+  | .thisAttack .payReturnAttacking =>
+    "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
+  | .thisAttack .ifArtifactEnteredDraw =>
+    "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
+  | .thisAttack .blinkNontoken =>
+    "Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield tapped under its owner's control."
+  | .thisAttack .equippedDrain =>
+    "Whenever Whiplash attacks, if he's equipped, each opponent loses X life and you gain X life, where X is the number of Equipment attached to him."
+  | .thisAttack .drawIfPower4 =>
+    "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
+  | .thisAttack .attacksAlonePlus2Indestructible =>
+    "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
+  | .enterOrAttack .copyKeywords =>
+    "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
+  | .enterOrAttack .createSquirrel =>
+    "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
+  | .watch .combatDamageExileUntilNonland =>
+    "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
+  | .watch .attacksAloneDrain =>
+    "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
+  | .watch .attacksAloneFirstStrikeMenace =>
+    "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
+  | .watch .firstTapUntap =>
+    "Whenever a creature you control becomes tapped during your turn, if it's the first time that creature has become tapped this turn, untap it."
+  | .watch .sheHulkRedirectOnce =>
+    "Whenever a creature you control is dealt damage, you may have The Sensational She-Hulk deal that much damage to any target. Do this only once each turn."
+  | .watch .speedballTargeted =>
+    "Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell."
+  | .watch .anyPlayerSecondDraw =>
+    "Whenever a player draws their second card each turn, you draw a card."
+  | .watch .youTargetDrawOnce =>
+    "Whenever a player or permanent becomes the target of an ability you control, draw a card. This ability triggers only once each turn."
+  | .watch .villainOrArtifactDamage =>
+    "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent."
+  | .watch .villainConniveOnce =>
+    "Whenever another Villain you control enters, you may have it connive. Do this only once each turn."
+  | .watch .villainPlusOneDamageOnce =>
+    "Whenever another Villain you control enters, put a +1/+1 counter on Crossbones. He deals 2 damage to each opponent. This ability triggers only once each turn."
+  | .watch .villainAttachEquipment =>
+    "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control."
+  | .watch .villainPlusOneLifelink =>
+    "Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn."
+  | .watch .hulklingCompare =>
+    "Whenever another creature you control enters, if it has greater power or toughness than Hulkling, put a +1/+1 counter on Hulkling."
+  | .watch .justiceBounce =>
+    "Whenever another nonland permanent you control is returned to its owner's hand, put a +1/+1 counter on Justice."
+  | .watch .nontokenHeroModal =>
+    "Whenever another nontoken Hero you control enters, choose one — • Create a 1/1 white Soldier creature token. • Creatures you control get +1/+1 until end of turn."
+  | .watch .ultronCopy =>
+    "Whenever another nontoken artifact you control enters, you may pay {2}. If you do, create a token that's a copy of it. If the token isn't a creature, it becomes a 2/2 Robot Villain creature in addition to its other types."
+  | .watch .enchantedAttachEquipment =>
+    "Whenever enchanted creature attacks or blocks, attach any number of target Equipment you control to it."
+  | .watch .equippedAttacksAloneUntapScry =>
+    "Whenever equipped creature attacks alone, untap it and scry 1."
+  | .watch .equippedAttacksTap =>
+    "Whenever equipped creature attacks, tap target creature defending player controls."
+  | .watch .equippedTappedDamage =>
+    "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent."
+  | .watch .heroesDamagePlusTwo =>
+    "Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing."
+  | .watch .merfolkAttackDraw =>
+    "Whenever one or more Merfolk you control attack a player, draw a card."
+  | .watch .tokensEnterMayDraw =>
+    "Whenever one or more tokens you control enter, you may draw a card."
+  | .watch .hawkeyeModes =>
+    "Trick Arrows — Whenever Hawkeye becomes tapped, you may pay {1} up to three times. When you do, choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card."
+  | .watch .redHulk =>
+    "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
+  | .watch .hulk =>
+    "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
+  | .youAttacking .pay2LifeToughness =>
+    "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
+  | .youAttacking .exileTopHeroPump =>
+    "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
+  | .youAttacking .lookSixCast =>
+    "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."
+  | .casting .villainToken =>
+    "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
+  | .casting .merfolkFromBlue =>
+    "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
+  | .casting .mayPayHasteUnblockable =>
+    "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
+  | .casting .plusOneEachOther =>
+    "Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control."
+  | .casting .exileFlicker =>
+    "Whenever you cast a noncreature spell, exile another target nonland, nontoken permanent. Return that card to the battlefield under its owner's control at the beginning of the next end step."
+  | .casting .visionModes =>
+    "Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn — • Solar Beam — The Vision gains double strike until end of turn. • Density Control — The Vision gains indestructible until end of turn. • Technopathy — Draw a card."
+  | .casting .damageEqualMv =>
+    "Whenever you cast a noncreature spell, Thor deals damage equal to that spell's mana value to any target."
+  | .casting .drawPowerEqualHand =>
+    "Whenever you cast a spell that targets a creature you control, draw a card. Until end of turn, Ms. Marvel gains \"Ms. Marvel's base power is equal to the number of cards in your hand.\""
+  | .casting .plusOneThis =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird."
+  | .casting .plusOneScry =>
+    "Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Colleen Wing. Scry 1."
+  | .casting .ironFistTap =>
+    "Whenever you cast a spell that targets a creature you control, Iron Fist gains \"{T}: Iron Fist deals damage equal to his power to any other target\" until end of turn."
+  | .casting .targetsGainFlying =>
+    "Whenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
+  | .casting .copyIfArtifactOrLand =>
+    "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
+  | .casting .tapCreatureOrLand =>
+    "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
+  | .resource .discardExilePlay =>
+    "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
+  | .resource .drawIfAnotherHeroDamage =>
+    "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
+  | .resource .secondDrawBecome66 =>
+    "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
+  | .resource .secondDrawPlusOneTarget =>
+    "Whenever you draw your second card each turn, put a +1/+1 counter on target creature."
+  | .resource .secondDrawDrain =>
+    "Whenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life."
+  | .resource .gainLifePlusOnes =>
+    "Whenever you gain life, choose up to that many target creatures you control. Put a +1/+1 counter on each of them."
+  | .resource .plusOneCreateInsectOnce =>
+    "Whenever you put a +1/+1 counter on a creature, create a 1/1 green Insect creature token. This ability triggers only once each turn."
+  | .resource .plusOneOnThisOnce =>
+    "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
+  | .resource .plusOneOnHeroesCreateWall =>
+    "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
 
 /-- True when this trigger fires only once each turn. -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=
@@ -7980,14 +7945,16 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"When this enchantment enters, target opponent discards {cards}."
     | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
-    | _, some (.step e), _ => e.toNotation
-    | _, some (.death e), _ => e.toNotation
-    | _, some (.thisAttack e), _ => e.toNotation
-    | _, some (.enterOrAttack e), _ => e.toNotation
-    | _, some (.watch e), _ => e.toNotation
-    | _, some (.youAttacking e), _ => e.toNotation
-    | _, some (.casting e), _ => e.toNotation
-    | _, some (.resource e), _ => e.toNotation
+    | _, some (.step e), _ => resolutionPhrase { resolution := .step e }
+    | _, some (.death e), _ => resolutionPhrase { resolution := .death e }
+    | _, some (.thisAttack e), _ => resolutionPhrase { resolution := .thisAttack e }
+    | _, some (.enterOrAttack e), _ =>
+      resolutionPhrase { resolution := .enterOrAttack e }
+    | _, some (.watch e), _ => resolutionPhrase { resolution := .watch e }
+    | _, some (.youAttacking e), _ =>
+      resolutionPhrase { resolution := .youAttacking e }
+    | _, some (.casting e), _ => resolutionPhrase { resolution := .casting e }
+    | _, some (.resource e), _ => resolutionPhrase { resolution := .resource e }
 
     | _, _, _ =>
     let t := ab.timing
