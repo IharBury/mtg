@@ -4720,6 +4720,22 @@ inductive SharedTriggerWhen where
   | yourFirstMain
   /-- Whenever a player casts their second spell each turn. -/
   | anyPlayerCastsSecondSpell
+  /-- At the beginning of each combat. -/
+  | eachBeginCombat
+  /-- Whenever you cast a creature spell. -/
+  | youCastCreature
+  /-- Whenever a Mountain you control enters. -/
+  | mountainYouControlEnters
+  /-- Whenever equipped creature deals combat damage to a player. -/
+  | equippedDealsCombatDamageToPlayer
+  /-- Whenever a nontoken creature you control dies. -/
+  | nontokenYouControlDies
+  /-- Whenever a player loses life. -/
+  | playerLosesLife
+  /-- Whenever you cast your second spell each turn. -/
+  | youCastSecondSpell
+  /-- Whenever equipped creature attacks. -/
+  | equippedAttacks
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -4901,6 +4917,48 @@ inductive SharedTriggerEffect where
   | createTappedTreasuresEqualOppArtifacts
   /-- Put a nonland with mana value `mv` or less from a graveyard onto the battlefield. -/
   | putNonlandMvAtMostFromGy (mv : Nat)
+  /-- Other matching creatures get +P/+T; opposing creatures get +oppP/+oppT. -/
+  | othersGetAndOppsGet (subtypes : Array String) (power toughness oppP oppT : Int)
+  /-- +1/+1 on a Wolf or create a Treasure. -/
+  | wolfPlusOneOrTreasure
+  /-- Trample counter, become a Bear, maybe draw. -/
+  | trampleCounterBecomeBear
+  /-- Mill `n`, then put matching subtype cards into hand. -/
+  | millThenSubtypeToHand (n : Nat) (subtype : String)
+  /-- Exile up to one opposing nonland per opponent until this leaves. -/
+  | exileOppNonlandEachUntilLeaves
+  /-- +X/+X counters equal to the last-known mana value. -/
+  | plusOneEqualLastKnownMv
+  /-- Quest, then maybe find a Dragon. -/
+  | mountainQuestDragon
+  /-- Treasures per chosen creature type. -/
+  | treasuresPerChosenType
+  /-- Reveal until a creature and put it in if cheap enough. -/
+  | revealUntilCreature
+  /-- You may sacrifice another creature for +1/+1s equal to its power. -/
+  | attackSacPlusOneEqualPower
+  /-- Loot; a discarded land enters tapped. -/
+  | lootLandEntersTapped
+  /-- That player mills that many cards. -/
+  | millThatManyLost
+  /-- Draw a card for each fat graveyard. -/
+  | drawPerFatGraveyard
+  /-- You may sacrifice another for a card and a Treasure. -/
+  | maySacDrawTreasure
+  /-- +1/+1 each, or two with the city's blessing. -/
+  | plusOneEachIfCityBlessing
+  /-- You may cast an instant or sorcery from hand. -/
+  | castInstantSorceryFromHand
+  /-- You may cast an instant or sorcery with mana value at most that damage. -/
+  | castInstantSorceryMvAtMost
+  /-- Mill, then maybe copy a milled spell. -/
+  | millThenCopy
+  /-- Another creature gets +X/+0 equal to this creature's power. -/
+  | pumpTargetBySourcePower
+  /-- Create an Alien and grow it from invasion counters. -/
+  | createAlienPerInvasion
+  /-- You may put an artifact from hand; attach if Equipment. -/
+  | mayPutArtifactAttachEquipment
 deriving Repr, Inhabited, BEq
 
 /-- Optional intervening conditions and wording filters for `onShared`. -/
@@ -4934,10 +4992,6 @@ def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
 
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
-  /-- At the beginning of each combat, other matching creatures get +P/+T
-  and opposing creatures get +oppP/+oppT. -/
-  | onEachCombatOthersGetAndOppsGet (subtypes : Array String)
-      (power toughness oppP oppT : Int)
   /-- Cascade on the spell that is being cast (CR 702.85). -/
   | onCastCascade
   /-- Whenever a token you control enters, reward by how many times this has
@@ -4979,18 +5033,8 @@ inductive TriggeredAbility where
   /-- Whenever this or another of this subtype enters, you may discard your
   hand and draw that many; if enduring story, damage opponents. -/
   | onThisOrAnotherSubtypeEntersDiscardHand (subtype : String)
-  /-- Combat damage: +1/+1 on a Wolf or create a Treasure. -/
-  | onCombatDamageWolfPlusOneOrTreasure
-  /-- Begin combat: trample counter, become a Bear, maybe draw. -/
-  | onYourBeginCombatTrampleCounterBecomeBear
   /-- Whenever this attacks, you may cast from the graveyard. -/
   | onAttackCastFromGyArtifactInstantSorcery
-  /-- When this enters, mill `n` then put matching cards into hand. -/
-  | onEnterMillThenSubtypeToHand (n : Nat) (subtype : String)
-  /-- When this enters, exile up to one opposing nonland per opponent. -/
-  | onEnterExileOppNonlandEachUntilLeaves
-  /-- Whenever you cast a creature, +X/+X counters equal to its mana value. -/
-  | onCastCreaturePlusOneEqualMv
   /-- Whenever this attacks, equipped attackers gain double strike. -/
   | onAttackEquippedGainDoubleStrike
   /-- When this Aura enters, tap the enchanted creature and remove counters. -/
@@ -4999,46 +5043,22 @@ inductive TriggeredAbility where
   | onDiesRevealTopPutRandomCreature (n : Nat)
   /-- Begin combat: if you drew two or more, pump and first strike. -/
   | onYourBeginCombatIfDrawnTwoPumpFirstStrike
-  /-- Whenever a Mountain you control enters, quest then maybe find a Dragon. -/
-  | onMountainEntersQuestThenDragon
-  /-- Equipped combat damage: Treasures per chosen creature type. -/
-  | onEquippedCombatDamageTreasuresPerChosenType
-  /-- Whenever a nontoken you control dies, reveal until a creature. -/
-  | onNontokenYouControlDiesRevealCreature
-  /-- Whenever this attacks, you may sacrifice another for +1/+1s. -/
-  | onAttackMaySacAnotherPlusOneEqualPower
-  /-- When this enters, loot; a discarded land enters tapped. -/
-  | onEnterLootLandEntersTapped
   /-- When this enters, hone per opposing creatures and attach. -/
   | onEnterHonePerOppCreaturesAttach
   /-- Whenever you put counters on a Goblin, Orc, or Army, damage an opponent. -/
   | onPutCountersOnGoblinOrcArmyDamageOpp
-  /-- Whenever a player loses life, that player mills that many. -/
-  | onPlayerLosesLifeMillThatMany
-  /-- When this dies, draw per fat graveyard. -/
-  | onDiesDrawPerFatGraveyard
   /-- When this enters, if not a token, create two nonlegendary copies. -/
   | onEnterIfNotTokenCopySelf
-  /-- When this enters, you may sacrifice another for a card and a Treasure. -/
-  | onEnterMaySacDrawTreasure
   /-- When this enters, attach Equipment then the host fights. -/
   | onEnterAttachEquipmentThenFight
   /-- When this dies as a creature, return it as an artifact. -/
   | onDiesReturnAsArtifact
-  /-- Equipped attacks: +1/+1 each, or two with the city's blessing. -/
-  | onEquippedAttacksPlusOneEachIfCityBlessing
-  /-- Begin combat: you may cast an instant or sorcery from hand. -/
-  | onYourBeginCombatCastInstantSorceryFromHand
   /-- When this enters, exile up to three lands you control, then return tapped. -/
   | onEnterExileLandsThenReturnTapped
-  /-- Equipped combat damage: you may cast an instant or sorcery. -/
-  | onEquippedCombatDamageCastInstantSorcery
   /-- Combat damage: impulse until an instant or sorcery. -/
   | onCombatDamageImpulseInstantSorcery
   /-- End step: Palantír influence, scry, then optional draw or mill. -/
   | onYourEndStepPalantir
-  /-- Whenever you cast your second spell, mill then maybe copy. -/
-  | onCastSecondSpellMillThenCopy
   /-- Whenever this is dealt noncombat damage, create that many Treasures. -/
   | onDealtNoncombatDamageCreateTreasures
   /-- When this enters, if you cast it, protection from everything. -/
@@ -5120,17 +5140,6 @@ inductive TriggeredAbility where
   “When ⟨this⟩ enters” abilities that do not already match a more specific
   constructor. -/
   | onEnter (e : EnterEffect)
-  /-- At the beginning of combat on your turn, another target creature you
-  control gets +X/+0 until end of turn, where X is this creature's power. -/
-  | onCombatAnotherGetsSourcePower
-  /-- At the beginning of combat on your turn, create a 1/1 red Alien creature
-  token with haste and “attacks each combat if able,” then grow it from
-  invasion counters and add an invasion counter. -/
-  | onCombatCreateAlienPerInvasion
-  /-- At the beginning of combat on your turn, you may put an artifact card
-  from your hand onto the battlefield. If it's an Equipment, attach it to
-  this creature. -/
-  | onCombatMayPutArtifactAttachEquipment
   /-- Leftover step, upkeep, end-step, and first-main triggers. -/
   | onStep (e : StepEffect)
   /-- Leftover dies triggers that do not already match a more specific constructor. -/
@@ -6200,6 +6209,14 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .armyYouControlCombatDamage => #[.armyYouControlCombatDamage]
   | .yourFirstMain => #[.yourFirstMain]
   | .anyPlayerCastsSecondSpell => #[.anyPlayerCastsSecondSpell]
+  | .eachBeginCombat => #[.eachBeginCombat]
+  | .youCastCreature => #[.youCastCreature]
+  | .mountainYouControlEnters => #[.mountainYouControlEnters]
+  | .equippedDealsCombatDamageToPlayer => #[.equippedDealsCombatDamageToPlayer]
+  | .nontokenYouControlDies => #[.nontokenYouControlDies]
+  | .playerLosesLife => #[.playerLosesLife]
+  | .youCastSecondSpell => #[.youCastSecondSpell]
+  | .equippedAttacks => #[.equippedAttacks]
 
 end SharedTriggerWhen
 
@@ -6342,6 +6359,36 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
   | .putNonlandMvAtMostFromGy mv =>
     { targeting := .of .nonland, allowsZeroTargets := true,
       resolution := .putNonlandMvAtMostFromGy mv }
+  | .othersGetAndOppsGet subtypes p t oppP oppT =>
+    { resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
+  | .wolfPlusOneOrTreasure => { resolution := .wolfPlusOneOrTreasure }
+  | .trampleCounterBecomeBear =>
+    { targeting := .of .creatureYouControl, allowsZeroTargets := true,
+      resolution := .trampleCounterBecomeBear }
+  | .millThenSubtypeToHand n subtype =>
+    { resolution := .millThenSubtypeToHand n subtype }
+  | .exileOppNonlandEachUntilLeaves =>
+    { targeting := .of .oppNonland, allowsZeroTargets := true,
+      resolution := .exileOppNonlandEachUntilLeaves }
+  | .plusOneEqualLastKnownMv =>
+    { targeting := .of .creatureYouControl, resolution := .plusOneEqualLastKnownMv }
+  | .mountainQuestDragon => { resolution := .mountainQuestDragon }
+  | .treasuresPerChosenType => { resolution := .treasuresPerChosenType }
+  | .revealUntilCreature => { resolution := .revealUntilCreature }
+  | .attackSacPlusOneEqualPower => { resolution := .attackSacPlusOneEqualPower }
+  | .lootLandEntersTapped => { resolution := .lootLandEntersTapped }
+  | .millThatManyLost => { resolution := .millThatManyLost }
+  | .drawPerFatGraveyard => { resolution := .drawPerFatGraveyard }
+  | .maySacDrawTreasure => { resolution := .maySacDrawTreasure }
+  | .plusOneEachIfCityBlessing => { resolution := .plusOneEachIfCityBlessing }
+  | .castInstantSorceryFromHand => { resolution := .castInstantSorceryFromHand }
+  | .castInstantSorceryMvAtMost => { resolution := .castInstantSorceryMvAtMost }
+  | .millThenCopy => { resolution := .millThenCopy }
+  | .pumpTargetBySourcePower =>
+    { targeting := .of .anotherCreatureYouControl,
+      resolution := .pumpTargetBySourcePower }
+  | .createAlienPerInvasion => { resolution := .createAlienPerInvasion }
+  | .mayPutArtifactAttachEquipment => { resolution := .mayPutArtifactAttachEquipment }
 
 end SharedTriggerEffect
 
@@ -6591,9 +6638,6 @@ def timing : TriggeredAbility → TriggerTiming
       anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
       targeting := if opts.untargeted then {} else t.targeting
       allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
-  | .onEachCombatOthersGetAndOppsGet subtypes p t oppP oppT =>
-    { events := #[.eachBeginCombat],
-      resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
   | .onCastCascade =>
     { events := #[], resolution := .cascade }
   | .onTokenYouControlEntersBelladonna =>
@@ -6626,21 +6670,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .onThisOrAnotherSubtypeEntersDiscardHand subtype =>
     { events := #[.thisOrAnotherSubtypeYouControlEnters],
       resolution := .discardHandDrawDamageIfStory, thisOrAnotherSubtype := some subtype }
-  | .onCombatDamageWolfPlusOneOrTreasure =>
-    { events := #[.dealsCombatDamageToPlayer], resolution := .wolfPlusOneOrTreasure }
-  | .onYourBeginCombatTrampleCounterBecomeBear =>
-    { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
-      allowsZeroTargets := true, resolution := .trampleCounterBecomeBear }
   | .onAttackCastFromGyArtifactInstantSorcery =>
     { events := #[.attacking], resolution := .castFromGyArtifactInstantSorcery }
-  | .onEnterMillThenSubtypeToHand n subtype =>
-    { events := #[.entering], resolution := .millThenSubtypeToHand n subtype }
-  | .onEnterExileOppNonlandEachUntilLeaves =>
-    { events := #[.entering], targeting := .of .oppNonland, allowsZeroTargets := true,
-      resolution := .exileOppNonlandEachUntilLeaves }
-  | .onCastCreaturePlusOneEqualMv =>
-    { events := #[.youCastCreature], targeting := .of .creatureYouControl,
-      resolution := .plusOneEqualLastKnownMv }
   | .onAttackEquippedGainDoubleStrike =>
     { events := #[.attacking], resolution := .equippedAttackersGainDoubleStrike }
   | .onEnterTapEnchantedRemoveCounters =>
@@ -6650,53 +6681,26 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYourBeginCombatIfDrawnTwoPumpFirstStrike =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .beginCombatIfDrawnTwoPump }
-  | .onMountainEntersQuestThenDragon =>
-    { events := #[.mountainYouControlEnters], resolution := .mountainQuestDragon }
-  | .onEquippedCombatDamageTreasuresPerChosenType =>
-    { events := #[.equippedDealsCombatDamageToPlayer],
-      resolution := .treasuresPerChosenType }
-  | .onNontokenYouControlDiesRevealCreature =>
-    { events := #[.nontokenYouControlDies], resolution := .revealUntilCreature,
-      onceEachTurn := true }
-  | .onAttackMaySacAnotherPlusOneEqualPower =>
-    { events := #[.attacking], resolution := .attackSacPlusOneEqualPower }
-  | .onEnterLootLandEntersTapped =>
-    { events := #[.entering], resolution := .lootLandEntersTapped }
   | .onEnterHonePerOppCreaturesAttach =>
     { events := #[.entering], targeting := .of .creatureYouControl,
       allowsZeroTargets := true, resolution := .honePerOppAttach }
   | .onPutCountersOnGoblinOrcArmyDamageOpp =>
     { events := #[.youPutCountersOnGoblinOrcArmy], targeting := .of .opponent,
       resolution := .damageTargetOpponent 2 }
-  | .onPlayerLosesLifeMillThatMany =>
-    { events := #[.playerLosesLife], resolution := .millThatManyLost }
-  | .onDiesDrawPerFatGraveyard =>
-    { events := #[.dying], resolution := .drawPerFatGraveyard }
   | .onEnterIfNotTokenCopySelf =>
     { events := #[.entering], resolution := .copySelfNonlegendary }
-  | .onEnterMaySacDrawTreasure =>
-    { events := #[.entering], resolution := .maySacDrawTreasure }
   | .onEnterAttachEquipmentThenFight =>
     { events := #[.entering], targeting := .of .creatureYouControl,
       resolution := .attachEquipmentThenFight }
   | .onDiesReturnAsArtifact =>
     { events := #[.dying], resolution := .returnAsArtifact }
-  | .onEquippedAttacksPlusOneEachIfCityBlessing =>
-    { events := #[.equippedAttacks], resolution := .plusOneEachIfCityBlessing }
-  | .onYourBeginCombatCastInstantSorceryFromHand =>
-    { events := #[.yourBeginCombat], resolution := .castInstantSorceryFromHand }
   | .onEnterExileLandsThenReturnTapped =>
     { events := #[.entering], targeting := .of .creatureOrLandYouControl,
       allowsZeroTargets := true, resolution := .exileLandsThenReturnTapped }
-  | .onEquippedCombatDamageCastInstantSorcery =>
-    { events := #[.equippedDealsCombatDamageToPlayer],
-      resolution := .castInstantSorceryMvAtMost }
   | .onCombatDamageImpulseInstantSorcery =>
     { events := #[.dealsCombatDamageToPlayer], resolution := .grimaImpulse }
   | .onYourEndStepPalantir =>
     { events := #[.yourEndStep], targeting := .of .opponent, resolution := .palantir }
-  | .onCastSecondSpellMillThenCopy =>
-    { events := #[.youCastSecondSpell], resolution := .millThenCopy }
   | .onDealtNoncombatDamageCreateTreasures =>
     { events := #[.sourceDealtNoncombatDamage], resolution := .treasuresEqualLastKnown }
   | .onEnterIfCastProtectionEverything =>
@@ -6789,13 +6793,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYouAttacking e => e.timing
   | .onCasting e => e.timing
   | .onResource e => e.timing
-  | .onCombatAnotherGetsSourcePower =>
-    { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
-      resolution := .pumpTargetBySourcePower }
-  | .onCombatCreateAlienPerInvasion =>
-    { events := #[.yourBeginCombat], resolution := .createAlienPerInvasion }
-  | .onCombatMayPutArtifactAttachEquipment =>
-    { events := #[.yourBeginCombat], resolution := .mayPutArtifactAttachEquipment }
 
 /-- Catalog aliases for reusable triggers that now share `onShared`. -/
 def onEnterScry (n : Nat) : TriggeredAbility := .onShared .enter (.scry n)
@@ -7107,6 +7104,50 @@ def onEnterCreateTappedTreasuresEqualOppArtifacts : TriggeredAbility :=
   .onShared .enter .createTappedTreasuresEqualOppArtifacts
 def onCombatDamagePutNonlandMvAtMost (mv : Nat) : TriggeredAbility :=
   .onShared .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy mv)
+def onEachCombatOthersGetAndOppsGet (subtypes : Array String)
+    (power toughness oppP oppT : Int) : TriggeredAbility :=
+  .onShared .eachBeginCombat
+    (.othersGetAndOppsGet subtypes power toughness oppP oppT)
+def onCombatDamageWolfPlusOneOrTreasure : TriggeredAbility :=
+  .onShared .combatDamageToPlayer .wolfPlusOneOrTreasure
+def onYourBeginCombatTrampleCounterBecomeBear : TriggeredAbility :=
+  .onShared .yourBeginCombat .trampleCounterBecomeBear
+def onEnterMillThenSubtypeToHand (n : Nat) (subtype : String) : TriggeredAbility :=
+  .onShared .enter (.millThenSubtypeToHand n subtype)
+def onEnterExileOppNonlandEachUntilLeaves : TriggeredAbility :=
+  .onShared .enter .exileOppNonlandEachUntilLeaves
+def onCastCreaturePlusOneEqualMv : TriggeredAbility :=
+  .onShared .youCastCreature .plusOneEqualLastKnownMv
+def onMountainEntersQuestThenDragon : TriggeredAbility :=
+  .onShared .mountainYouControlEnters .mountainQuestDragon
+def onEquippedCombatDamageTreasuresPerChosenType : TriggeredAbility :=
+  .onShared .equippedDealsCombatDamageToPlayer .treasuresPerChosenType
+def onNontokenYouControlDiesRevealCreature : TriggeredAbility :=
+  .onShared .nontokenYouControlDies .revealUntilCreature .once
+def onAttackMaySacAnotherPlusOneEqualPower : TriggeredAbility :=
+  .onShared .attack .attackSacPlusOneEqualPower
+def onEnterLootLandEntersTapped : TriggeredAbility :=
+  .onShared .enter .lootLandEntersTapped
+def onPlayerLosesLifeMillThatMany : TriggeredAbility :=
+  .onShared .playerLosesLife .millThatManyLost
+def onDiesDrawPerFatGraveyard : TriggeredAbility :=
+  .onShared .dies .drawPerFatGraveyard
+def onEnterMaySacDrawTreasure : TriggeredAbility :=
+  .onShared .enter .maySacDrawTreasure
+def onEquippedAttacksPlusOneEachIfCityBlessing : TriggeredAbility :=
+  .onShared .equippedAttacks .plusOneEachIfCityBlessing
+def onYourBeginCombatCastInstantSorceryFromHand : TriggeredAbility :=
+  .onShared .yourBeginCombat .castInstantSorceryFromHand
+def onEquippedCombatDamageCastInstantSorcery : TriggeredAbility :=
+  .onShared .equippedDealsCombatDamageToPlayer .castInstantSorceryMvAtMost
+def onCastSecondSpellMillThenCopy : TriggeredAbility :=
+  .onShared .youCastSecondSpell .millThenCopy
+def onCombatAnotherGetsSourcePower : TriggeredAbility :=
+  .onShared .yourBeginCombat .pumpTargetBySourcePower
+def onCombatCreateAlienPerInvasion : TriggeredAbility :=
+  .onShared .yourBeginCombat .createAlienPerInvasion
+def onCombatMayPutArtifactAttachEquipment : TriggeredAbility :=
+  .onShared .yourBeginCombat .mayPutArtifactAttachEquipment
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -8786,6 +8827,49 @@ instance : ToString CardDef where
   .onShared .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy 3)
 #guard SharedTriggerWhen.anyPlayerCastsSecondSpell.events ==
   #[.anyPlayerCastsSecondSpell]
+#guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
+  .onShared .eachBeginCombat (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1))
+#guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
+  .onShared .combatDamageToPlayer .wolfPlusOneOrTreasure
+#guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
+  .onShared .yourBeginCombat .trampleCounterBecomeBear
+#guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
+  .onShared .enter (.millThenSubtypeToHand 4 "Elf")
+#guard TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves ==
+  .onShared .enter .exileOppNonlandEachUntilLeaves
+#guard TriggeredAbility.onCastCreaturePlusOneEqualMv ==
+  .onShared .youCastCreature .plusOneEqualLastKnownMv
+#guard TriggeredAbility.onMountainEntersQuestThenDragon ==
+  .onShared .mountainYouControlEnters .mountainQuestDragon
+#guard TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType ==
+  .onShared .equippedDealsCombatDamageToPlayer .treasuresPerChosenType
+#guard TriggeredAbility.onNontokenYouControlDiesRevealCreature ==
+  .onShared .nontokenYouControlDies .revealUntilCreature .once
+#guard TriggeredAbility.onceEachTurn .onNontokenYouControlDiesRevealCreature
+#guard TriggeredAbility.onAttackMaySacAnotherPlusOneEqualPower ==
+  .onShared .attack .attackSacPlusOneEqualPower
+#guard TriggeredAbility.onEnterLootLandEntersTapped ==
+  .onShared .enter .lootLandEntersTapped
+#guard TriggeredAbility.onPlayerLosesLifeMillThatMany ==
+  .onShared .playerLosesLife .millThatManyLost
+#guard TriggeredAbility.onDiesDrawPerFatGraveyard ==
+  .onShared .dies .drawPerFatGraveyard
+#guard TriggeredAbility.onEnterMaySacDrawTreasure ==
+  .onShared .enter .maySacDrawTreasure
+#guard TriggeredAbility.onEquippedAttacksPlusOneEachIfCityBlessing ==
+  .onShared .equippedAttacks .plusOneEachIfCityBlessing
+#guard TriggeredAbility.onYourBeginCombatCastInstantSorceryFromHand ==
+  .onShared .yourBeginCombat .castInstantSorceryFromHand
+#guard TriggeredAbility.onEquippedCombatDamageCastInstantSorcery ==
+  .onShared .equippedDealsCombatDamageToPlayer .castInstantSorceryMvAtMost
+#guard TriggeredAbility.onCastSecondSpellMillThenCopy ==
+  .onShared .youCastSecondSpell .millThenCopy
+#guard TriggeredAbility.onCombatAnotherGetsSourcePower ==
+  .onShared .yourBeginCombat .pumpTargetBySourcePower
+#guard TriggeredAbility.onCombatCreateAlienPerInvasion ==
+  .onShared .yourBeginCombat .createAlienPerInvasion
+#guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
+  .onShared .yourBeginCombat .mayPutArtifactAttachEquipment
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .onShared .youSacrificeToken (.targetOpponentLosesLife 1)
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
