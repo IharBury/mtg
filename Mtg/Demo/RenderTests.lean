@@ -1,4 +1,4 @@
-import Mtg.Engine.MshRulingTests
+import Mtg.Engine.OracleRulings
 import Mtg.Engine.Tests
 import Mtg.Demo.Render
 
