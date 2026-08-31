@@ -4656,6 +4656,42 @@ inductive SharedTriggerWhen where
   | oneOrMoreOtherCreaturesDie
   /-- Whenever a creature card leaves your graveyard. -/
   | creatureCardLeavesYourGy
+  /-- Whenever you draw a card. -/
+  | youDraw
+  /-- Whenever you gain life. -/
+  | youGainLife
+  /-- Whenever another artifact you control enters. -/
+  | anotherArtifactEnters
+  /-- Whenever this is dealt damage. -/
+  | sourceDealtDamage
+  /-- Whenever equipped creature attacks alone. -/
+  | equippedAttacksAlone
+  /-- Whenever you cast a spell that had Treasure mana spent. -/
+  | youCastWithTreasure
+  /-- Whenever you cast a spell of this color from your hand. -/
+  | youCastColorFromHand (c : Color)
+  /-- Whenever an equipped creature you control attacks. -/
+  | equippedCreatureYouControlAttacks
+  /-- Whenever another Elf you control enters. -/
+  | anotherElfYouControlEnters
+  /-- Whenever you activate an ability of a creature. -/
+  | youActivateCreatureAbility
+  /-- Whenever an opponent draws their second card each turn. -/
+  | opponentDrawsSecond
+  /-- Whenever an opponent casts their first noncreature spell each turn. -/
+  | opponentCastsFirstNoncreature
+  /-- At the beginning of each end step. -/
+  | eachEndStep
+  /-- Whenever this or another nontoken permanent of a listed subtype enters. -/
+  | thisOrNontokenSubtypeEnters
+  /-- Whenever this or another permanent of a listed subtype enters. -/
+  | thisOrAnotherSubtypeEnters
+  /-- Whenever another permanent of a listed subtype or an Equipment enters. -/
+  | anotherSubtypeOrEquipmentEnters
+  /-- Whenever this deals combat damage to a player or battle. -/
+  | combatDamageToPlayerOrBattle
+  /-- Whenever you cast a green spell and whenever a Forest you control enters. -/
+  | castGreenOrForestEnters
 deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
@@ -4671,15 +4707,56 @@ inductive SharedTriggerEffect where
   | amassGoblins (n : Nat)
   /-- Recruit. -/
   | recruit
+  /-- You recruit. -/
+  | youRecruit
   /-- Deal `amount` damage divided as you choose among one to `maxTargets` targets. -/
   | dividedDamage (amount maxTargets : Nat)
   /-- Put a +1/+1 counter on a target of this kind. -/
   | plusOneOn (kind : EffectTargetKind)
+  /-- Put a +1/+1 counter on the source. -/
+  | plusOneOnSource
+  /-- The source gets +P/+T until end of turn. -/
+  | sourceGets (power toughness : Int)
+  /-- Target of this kind gets +P/+T until end of turn. -/
+  | pumpTarget (kind : EffectTargetKind) (power toughness : Int)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Draw a card and lose 1 life. -/
+  | drawAndLoseLife
+  /-- The source connives. -/
+  | connive
+  /-- A target of this kind connives. -/
+  | conniveTarget (kind : EffectTargetKind)
+  /-- Exile a target of this kind until the source leaves. -/
+  | exileUntilLeaves (kind : EffectTargetKind)
+  /-- Deal `n` damage to each opponent (optionally after targeting one). -/
+  | damageEachOpponent (n : Nat)
   /-- Attach this Equipment to a target of this kind. -/
   | attachTo (kind : EffectTargetKind)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
 deriving Repr, Inhabited, BEq
+
+/-- Optional intervening conditions and wording filters for `onShared`. -/
+structure SharedTriggerOpts where
+  onceEachTurn : Bool := false
+  youControlCreatureWithPower : Option Int := none
+  thisOrNontokenSubtype : Option String := none
+  thisOrAnotherSubtype : Option String := none
+  anotherSubtypeOrEquipment : Option String := none
+  gainedLifeAtLeast : Option Nat := none
+  allowsZeroTargets : Bool := false
+  /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
+  watchedSubtype : Option String := none
+deriving Repr, Inhabited, BEq
+
+/-- Ferocious intervening condition (power 4 or greater). -/
+def SharedTriggerOpts.ferocious : SharedTriggerOpts :=
+  { youControlCreatureWithPower := some 4 }
+
+/-- “This ability triggers only once each turn.” -/
+def SharedTriggerOpts.once : SharedTriggerOpts :=
+  { onceEachTurn := true }
 
 /-- A triggered ability the engine currently understands (CR 603). -/
 inductive TriggeredAbility where
@@ -4693,11 +4770,6 @@ inductive TriggeredAbility where
   /-- Whenever this creature attacks, another target creature you control gets
   +2/+0 and gains trample until end of turn (e.g. Oliphaunt). -/
   | onAttackOtherGets2AndTrample
-  /-- Ferocious — Whenever this creature attacks while you control a creature
-  with power 4 or greater, you gain `n` life (e.g. Ravening Warg). The power
-  check is an intervening condition (CR 603.2 / 603.4): it is checked when
-  the creature attacks and not again on resolution. -/
-  | onAttackFerociousGainLife (n : Nat)
   /-- Whenever this creature becomes blocked, it deals 1 damage to each creature
   blocking it (e.g. Battle-Scarred Goblin). -/
   | onBecomesBlockedDeal1ToBlockers
@@ -4720,12 +4792,6 @@ inductive TriggeredAbility where
   /-- Whenever you scry, this creature gets +1/+1 until end of turn for each card
   looked at while scrying this way (e.g. Celeborn the Wise). -/
   | onScryPumpSelfForEachLookedAt
-  /-- Whenever another Elf you control enters, this creature gets +1/+1 until
-  end of turn (e.g. Woodland Weavemaster). -/
-  | onAnotherElfYouControlEntersGets1
-  /-- When this creature dies, target creature an opponent controls gets
-  +P/+T until end of turn (e.g. Front Porch Sentries). -/
-  | onDiesOppCreatureGets (power toughness : Int)
   /-- When this permanent enters, each player sacrifices a creature of their
   choice (e.g. Merciless Executioner). -/
   | onEnterEachPlayerSacrificesCreature
@@ -4736,8 +4802,6 @@ inductive TriggeredAbility where
   opponent's graveyard. Each opponent loses `life` life
   (e.g. Gollum the Abandoned). -/
   | onEnterExileOppGyCardOppsLoseLife (life : Nat)
-  /-- When this permanent enters, target creature gets +P/+T until end of turn. -/
-  | onEnterTargetGets (power toughness : Int)
   /-- When this permanent enters, creatures you control get +P/+0 and first strike. -/
   | onEnterCreaturesYouControlGetAndFirstStrike (power : Int)
   /-- Whenever this creature attacks, it gets +1/+1 for each other creature you control. -/
@@ -4753,62 +4817,36 @@ inductive TriggeredAbility where
   | onEnterDrawThenBottomIfNoLegendary
   /-- When this creature enters, you may exile another target creature. -/
   | onEnterMayExileAnotherCreature
-  /-- Whenever equipped creature attacks alone, you draw a card and lose 1 life. -/
-  | onEquippedAttacksAloneDrawLoseLife
   /-- When this creature leaves the battlefield, return the exiled card. -/
   | onLeaveReturnExiled
-  /-- When this enchantment enters, exile target nonland an opponent controls
-  until this leaves the battlefield. -/
-  | onEnterExileOppNonlandUntilLeaves
   /-- At the beginning of your end step, remove a hope counter. If you do,
   draw a card. Then if this has no hope counters, sacrifice it and gain 4 life. -/
   | onYourEndStepRemoveHopeDrawSac
-  /-- Whenever you draw your second card each turn, put a +1/+1 counter on this. -/
-  | onDrawSecondPlusOne
-  /-- Whenever you draw a card, put a +1/+1 counter on this. -/
-  | onDrawPlusOne
   /-- Whenever you scry, this gets +1/+0 and can't be blocked this turn.
   Triggers only once each turn. -/
   | onScryPumpAndUnblockableOnce
   /-- Whenever this deals combat damage to a player, draw a card, then discard a card. -/
   | onCombatDamageToPlayerLoot
-  /-- Whenever this attacks, you may exile target creature defending player
-  controls until this leaves the battlefield. -/
-  | onAttackMayExileDefenderUntilLeaves
   /-- Whenever this attacks, you may tap any number of untapped Humans you
   control. Draw a card for each Human tapped this way. -/
   | onAttackTapHumansDraw
-  /-- When this permanent enters, you gain `n` life. -/
-  | onEnterGainLife (n : Nat)
   /-- When this permanent enters, untap another target creature you control.
   If it has this subtype, put a +1/+1 counter on it. -/
   | onEnterUntapOtherPlusOneIfSubtype (subtype : String)
   /-- When this permanent enters, exile the top card; you may play it. -/
   | onEnterExileTop
-  /-- Ferocious — Whenever this creature attacks, it gets +P/+T. -/
-  | onAttackFerociousSourceGets (power toughness : Int)
   /-- Ferocious — Whenever this creature attacks, put a +1/+1 counter on each
   creature you control. -/
   | onAttackFerociousPlusOneEach
   /-- Ferocious — Whenever this creature attacks, it gets +P/+0 and creatures
   you control gain trample. -/
   | onAttackFerociousSourceGetsAndTeamTrample (power : Int)
-  /-- Ferocious — Whenever you attack, you draw a card and lose 1 life. -/
-  | onYouAttackFerociousDrawLoseLife
-  /-- Ferocious — At the beginning of combat on your turn, put a +1/+1
-  counter on this creature. -/
-  | onYourBeginCombatFerociousPlusOne
-  /-- Landfall — this creature gets +P/+T until end of turn. -/
-  | onLandYouControlEntersGets (power toughness : Int)
   /-- When this Equipment enters, create a token then attach this to it. -/
   | onEnterCreateThenAttach (kind : TokenKind)
   /-- When this Equipment enters, amass Goblins `n` then attach to the Army. -/
   | onEnterAmassThenAttach (n : Nat)
   /-- Whenever this attacks, target attacking creature gains these keywords. -/
   | onAttackTargetGainsKeywords (k : Keywords)
-  /-- Whenever this or another nontoken permanent of this subtype you control
-  enters, create `n` tokens. -/
-  | onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind) (n : Nat)
   /-- When this enters, search for a basic land and put it into your hand. -/
   | onEnterSearchBasicToHand
   /-- When this enters, you gain `n` life. You may search for a basic land,
@@ -4826,9 +4864,6 @@ inductive TriggeredAbility where
   /-- Whenever this attacks, it deals damage equal to the number of Treasures
   you control to any target. -/
   | onAttackDamageEqualTreasures
-  /-- Whenever an opponent casts their first noncreature spell each turn,
-  recruit. -/
-  | onOpponentCastsFirstNoncreatureRecruit
   /-- Whenever a player casts their second spell each turn, you lose 1 life
   and create a Treasure. -/
   | onPlayerCastsSecondSpellLoseLifeCreateTreasure
@@ -4840,9 +4875,6 @@ inductive TriggeredAbility where
   | onEnterAttachTargetEquipment
   /-- At the beginning of your first main phase, add these mana types. -/
   | onYourFirstMainAddMana (types : Array ManaType)
-  /-- At the beginning of each end step, if you gained `n` or more life
-  this turn, draw a card. -/
-  | onEachEndStepDrawIfGainedLife (n : Nat)
   /-- Whenever this attacks, defending player sacrifices a creature with
   the least power. -/
   | onAttackDefenderSacsLeastPower
@@ -4855,12 +4887,6 @@ inductive TriggeredAbility where
   /-- When this enters, return up to one other permanent you control.
   If you do, put a +1/+1 counter on this. -/
   | onEnterReturnOtherPlusOne
-  /-- Whenever you cast a green spell and whenever a Forest you control enters,
-  +1/+1 on target creature you control. -/
-  | onCastGreenOrForestEntersPlusOne
-  /-- Whenever another permanent of this subtype or an Equipment you control
-  enters, draw a card. Once each turn. -/
-  | onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String)
   /-- When this enters, look at the top `n` cards. You may reveal a card
   of one of these types and put it into your hand. -/
   | onEnterLookAtTopRevealTypes (n : Nat) (types : Array String)
@@ -4870,8 +4896,6 @@ inductive TriggeredAbility where
   /-- When this enters, create X tapped Treasures, where X is artifacts
   opponents control. -/
   | onEnterCreateTappedTreasuresEqualOppArtifacts
-  /-- Whenever you cast a spell, if Treasure mana was spent, draw and lose 1. -/
-  | onCastWithTreasureDrawLoseLife
   /-- When this enters, gain control of target opposing creature until
   end of turn. Untap it. It gains haste. -/
   | onEnterGainControlOppUntilEot
@@ -4879,10 +4903,6 @@ inductive TriggeredAbility where
   and opposing creatures get +oppP/+oppT. -/
   | onEachCombatOthersGetAndOppsGet (subtypes : Array String)
       (power toughness oppP oppT : Int)
-  /-- Whenever this or another permanent of this subtype you control enters,
-  create `n` tokens. -/
-  | onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
-      (n : Nat)
   /-- Whenever this deals combat damage to a player or battle, put a nonland
   permanent card with mana value `mv` or less from a graveyard onto the
   battlefield. -/
@@ -4895,9 +4915,6 @@ inductive TriggeredAbility where
   /-- Whenever a token you control enters, reward by how many times this has
   resolved this turn (e.g. Belladonna Took). -/
   | onTokenYouControlEntersBelladonna
-  /-- Whenever you activate an ability of a creature, draw a card. Triggers
-  only once each turn (e.g. Elrond, Moon-Reader). -/
-  | onActivateCreatureAbilityDrawOnce
   /-- When this enters, you may sacrifice another creature. If you do, a
   reflexive trigger deals that creature's power as damage (e.g. Bolg of the
   North). -/
@@ -4915,9 +4932,6 @@ inductive TriggeredAbility where
   one they draw in each of their draw steps, deal 1 then amass Orcs 1
   (e.g. Orcish Bowmasters). -/
   | onEnterOrOpponentDrawsDeal1AmassOrcs
-  /-- Whenever an opponent draws their second card each turn, create a
-  Treasure (e.g. Gleaming Splendor). -/
-  | onOpponentDrawsSecondCreateTreasure
   /-- Whenever you attack with creatures with total power `n` or greater
   for the first time each turn, untap attackers and take an extra combat
   (e.g. Desert Were-Worm). -/
@@ -4931,17 +4945,9 @@ inductive TriggeredAbility where
   controller amasses Goblins X equal to that creature's last-known power
   (e.g. Azog, Moria's Ruin). -/
   | onEnterDestroyOtherAmassControllerPower
-  /-- Whenever a permanent you control of this subtype deals combat damage
-  to a player or battle, create `n` tokens (e.g. Thorin, Company's Leader). -/
-  | onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
-      (n : Nat)
   /-- Alliance-style modes that last for the object's lifetime
   (e.g. Gollum, Riddle Master). -/
   | onOpponentCastsChosenParityModes
-  /-- Whenever you cast a spell of this color, deal damage to target opponent. -/
-  | onCastColorDamageOpponent (color : Color) (n : Nat)
-  /-- Whenever you cast a spell of this color, target creature gets +P/+T. -/
-  | onCastColorPump (color : Color) (power toughness : Int)
   /-- When this enters, return a creature card from your graveyard to hand. -/
   | onEnterReturnCreatureFromGyToHand
   /-- Whenever this or another of this subtype enters, you may discard your
@@ -5061,8 +5067,6 @@ inductive TriggeredAbility where
   | onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String)
   /-- Whenever this attacks, other permanents of this subtype get +X/+X. -/
   | onAttackOthersOfSubtypeGetEqualToughness (subtype : String)
-  /-- When this enters, it connives. -/
-  | onEnterConnive
   /-- Whenever a creature you control enters, scry and put a plan counter. -/
   | onCreatureYouControlEntersScryAndPlan (n : Nat)
   /-- Whenever creatures you control become tapped, loot and put a plan counter. -/
@@ -5091,14 +5095,6 @@ inductive TriggeredAbility where
   | onFourthPlanDividedDamage
   /-- When the fourth plan counter is put on this, sacrifice and grant indestructible. -/
   | onFourthPlanIndestructible
-  /-- Whenever you cast a color spell from your hand, this connives. -/
-  | onYouCastColorFromHandConnive (color : Color)
-  /-- Whenever this is dealt damage, put a +1/+1 counter on it. -/
-  | onDealtDamagePlusOne
-  /-- Whenever an artifact you control enters, draw a card. Once each turn. -/
-  | onArtifactYouControlEntersDrawOnce
-  /-- At the beginning of your end step, draw a card and lose 1 life. -/
-  | onYourEndStepDrawLoseLife
   /-- When this permanent enters, surveil `n`. Resolves as a scry-shaped
   look (cards may go to the graveyard). -/
   | onEnterSurveil (n : Nat)
@@ -5130,28 +5126,14 @@ inductive TriggeredAbility where
   /-- When this creature enters, you may sac an artifact or discard; if you
   do, draw. -/
   | onEnterMaySacArtifactOrDiscardDraw
-  /-- When this enchantment enters, exile target tapped opposing creature
-  until this leaves. -/
-  | onEnterExileOppTappedUntilLeaves
   /-- When this enchantment enters, target opponent discards `n` cards. -/
   | onEnterTargetOpponentDiscards (n : Nat)
   /-- When this permanent enters, resolve `e`. Shared shape for leftover
   “When ⟨this⟩ enters” abilities that do not already match a more specific
   constructor. -/
   | onEnter (e : EnterEffect)
-  /-- Whenever this creature attacks, it connives. -/
-  | onAttackConnive
-  /-- Whenever you gain life, put a +1/+1 counter on this. -/
-  | onGainLifePlusOne
-  /-- Whenever another artifact you control enters, put a +1/+1 counter on this. -/
-  | onAnotherArtifactEntersPlusOne
   /-- Whenever an Equipment you control enters, draw a card. -/
   | onEquipmentYouControlEntersDraw
-  /-- Whenever an equipped creature you control attacks, it connives. -/
-  | onEquippedCreatureYouControlAttacksConnive
-  /-- At the beginning of combat on your turn, target creature you control
-  connives. -/
-  | onCombatTargetYouControlConnives
   /-- At the beginning of combat on your turn, another target creature you
   control gets +X/+0 until end of turn, where X is this creature's power. -/
   | onCombatAnotherGetsSourcePower
@@ -5180,9 +5162,11 @@ inductive TriggeredAbility where
   /-- Leftover draw, discard, life, and +1/+1-counter triggers. -/
   | onResource (e : ResourceEffect)
   /-- Reusable trigger that only differs by when it fires and a shared effect
-  (scry, draw, tokens, amass, recruit, divided damage, +1/+1, attach). One
-  constructor keeps the C runtime tag under the limit. -/
+  (scry, draw, tokens, amass, recruit, divided damage, +1/+1, attach, …).
+  `opts` holds once-each-turn, ferocious, and subtype filters. One constructor
+  keeps the C runtime tag under the limit. -/
   | onShared (when : SharedTriggerWhen) (effect : SharedTriggerEffect)
+      (opts : SharedTriggerOpts := {})
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires (CR 603). Several printed abilities share
@@ -6198,6 +6182,24 @@ def events : SharedTriggerWhen → Array TriggerEvent
   | .combatDamageToPlayer => #[.dealsCombatDamageToPlayer]
   | .oneOrMoreOtherCreaturesDie => #[.oneOrMoreOtherCreaturesDie]
   | .creatureCardLeavesYourGy => #[.creatureCardLeavesYourGy]
+  | .youDraw => #[.youDraw]
+  | .youGainLife => #[.youGainLife]
+  | .anotherArtifactEnters => #[.anotherArtifactEnters]
+  | .sourceDealtDamage => #[.sourceDealtDamage]
+  | .equippedAttacksAlone => #[.equippedAttacksAlone]
+  | .youCastWithTreasure => #[.youCastWithTreasure]
+  | .youCastColorFromHand c => #[.youCastColorFromHand c]
+  | .equippedCreatureYouControlAttacks => #[.equippedCreatureYouControlAttacks]
+  | .anotherElfYouControlEnters => #[.anotherElfYouControlEnters]
+  | .youActivateCreatureAbility => #[.youActivateCreatureAbility]
+  | .opponentDrawsSecond => #[.opponentDrawsSecondCard]
+  | .opponentCastsFirstNoncreature => #[.opponentCastsFirstNoncreature]
+  | .eachEndStep => #[.eachEndStep]
+  | .thisOrNontokenSubtypeEnters => #[.thisOrNontokenSubtypeYouControlEnters]
+  | .thisOrAnotherSubtypeEnters => #[.thisOrAnotherSubtypeYouControlEnters]
+  | .anotherSubtypeOrEquipmentEnters => #[.anotherSubtypeOrEquipmentYouControlEnters]
+  | .combatDamageToPlayerOrBattle => #[.dealsCombatDamageToPlayerOrBattle]
+  | .castGreenOrForestEnters => #[.youCastGreen, .forestYouControlEnters]
 
 end SharedTriggerWhen
 
@@ -6210,11 +6212,25 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
   | .amassGoblins n => { resolution := .amassGoblins n }
   | .recruit => { resolution := .recruit }
+  | .youRecruit => { resolution := .youRecruit }
   | .dividedDamage amount maxTargets =>
     { targeting := .of .playerOrCreature,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .plusOneOn kind =>
     { targeting := .of kind, resolution := .onPermanent (.plusOne 1) }
+  | .plusOneOnSource => { resolution := .onSource (.plusOne 1) }
+  | .sourceGets p t => { resolution := .onSource (.pump p t) }
+  | .pumpTarget kind p t =>
+    { targeting := .of kind, resolution := .onPermanent (.pump p t) }
+  | .gainLife n => { resolution := .gainLife n }
+  | .drawAndLoseLife => { resolution := .drawAndLoseLife }
+  | .connive => { resolution := .connive }
+  | .conniveTarget kind =>
+    { targeting := .of kind, resolution := .targetConnive }
+  | .exileUntilLeaves kind =>
+    { targeting := .of kind, resolution := .exileUntilLeaves }
+  | .damageEachOpponent n =>
+    { targeting := .of .opponent, resolution := .damageEachOpponent n }
   | .attachTo kind =>
     { targeting := .of kind, resolution := .attachSourceToTarget }
   | .opponentSacrificesCreature =>
@@ -6455,9 +6471,17 @@ namespace TriggeredAbility
 /-- Classification of this triggered ability. Exhaustive so a new constructor
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
-  | .onShared w e =>
+  | .onShared w e opts =>
     let t := e.timing
-    { t with events := w.events }
+    { t with
+      events := w.events
+      onceEachTurn := opts.onceEachTurn
+      youControlCreatureWithPower := opts.youControlCreatureWithPower
+      thisOrNontokenSubtype := opts.thisOrNontokenSubtype
+      thisOrAnotherSubtype := opts.thisOrAnotherSubtype
+      anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
+      gainedLifeAtLeast := opts.gainedLifeAtLeast
+      allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
   | .onAttackPumpByGreatestPower =>
     { events := #[.attacking], resolution := .pumpGreatestPower }
   | .onAttackSetOtherBasePT =>
@@ -6466,9 +6490,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onAttackOtherGets2AndTrample =>
     { events := #[.attacking], targeting := .of .anotherCreatureYouControl,
       resolution := .onPermanent (.pumpAndTrample 2 0) }
-  | .onAttackFerociousGainLife n =>
-    { events := #[.attacking], resolution := .gainLife n,
-      youControlCreatureWithPower := some 4 }
   | .onBecomesBlockedDeal1ToBlockers =>
     { events := #[.becomesBlocked], resolution := .damageBlockers 1 }
   | .onEnterSearchForest => { events := #[.entering], resolution := .searchForest }
@@ -6484,11 +6505,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.youCastInstantOrSorcery], resolution := .damageEachOpponent n }
   | .onScryPumpSelfForEachLookedAt =>
     { events := #[.youScry], resolution := .pumpByLookedAt }
-  | .onAnotherElfYouControlEntersGets1 =>
-    { events := #[.anotherElfYouControlEnters], resolution := .onSource (.pump 1 1) }
-  | .onDiesOppCreatureGets p t =>
-    { events := #[.dying], targeting := .of .oppCreature,
-      resolution := .onPermanent (.pump p t) }
   | .onEnterEachPlayerSacrificesCreature =>
     { events := #[.entering], resolution := .eachPlayerSacrificesCreature }
   | .onEnterEachOpponentDiscards =>
@@ -6496,9 +6512,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterExileOppGyCardOppsLoseLife n =>
     { events := #[.entering], targeting := .of .oppGraveyardCard,
       allowsZeroTargets := true, resolution := .exileOppGyCardOppsLoseLife n }
-  | .onEnterTargetGets p t =>
-    { events := #[.entering], targeting := .of .creature,
-      resolution := .onPermanent (.pump p t) }
   | .onEnterCreaturesYouControlGetAndFirstStrike p =>
     { events := #[.entering], resolution := .creaturesYouControlPumpAndFirstStrike p }
   | .onAttackPumpForEachOtherCreature =>
@@ -6515,51 +6528,27 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterMayExileAnotherCreature =>
     { events := #[.entering], targeting := .of .anotherCreature,
       allowsZeroTargets := true, resolution := .exileTarget }
-  | .onEquippedAttacksAloneDrawLoseLife =>
-    { events := #[.equippedAttacksAlone], resolution := .drawAndLoseLife }
   | .onLeaveReturnExiled =>
     { events := #[.leaving], resolution := .returnLinkedExile }
-  | .onEnterExileOppNonlandUntilLeaves =>
-    { events := #[.entering], targeting := .of .oppNonland, resolution := .exileUntilLeaves }
   | .onYourEndStepRemoveHopeDrawSac =>
     { events := #[.yourEndStep], resolution := .removeHopeDrawSac }
-  | .onDrawSecondPlusOne =>
-    { events := #[.youDrawSecondCard], resolution := .onSource (.plusOne 1) }
-  | .onDrawPlusOne =>
-    { events := #[.youDraw], resolution := .onSource (.plusOne 1) }
   | .onScryPumpAndUnblockableOnce =>
     { events := #[.youScry], resolution := .pumpAndUnblockable, onceEachTurn := true }
   | .onCombatDamageToPlayerLoot =>
     { events := #[.dealsCombatDamageToPlayer], resolution := .loot }
-  | .onAttackMayExileDefenderUntilLeaves =>
-    { events := #[.attacking], targeting := .of .defendingPlayerCreature,
-      allowsZeroTargets := true, resolution := .exileUntilLeaves }
   | .onAttackTapHumansDraw =>
     { events := #[.attacking], resolution := .tapHumansDraw }
-  | .onEnterGainLife n =>
-    { events := #[.entering], resolution := .gainLife n }
   | .onEnterUntapOtherPlusOneIfSubtype subtype =>
     { events := #[.entering], targeting := .of .anotherCreatureYouControl,
       resolution := .untapPlusOneIfSubtype subtype }
   | .onEnterExileTop =>
     { events := #[.entering], resolution := .exileTop }
-  | .onAttackFerociousSourceGets p t =>
-    { events := #[.attacking], resolution := .onSource (.pump p t),
-      youControlCreatureWithPower := some 4 }
   | .onAttackFerociousPlusOneEach =>
     { events := #[.attacking], resolution := .plusOneEachYouControl,
       youControlCreatureWithPower := some 4 }
   | .onAttackFerociousSourceGetsAndTeamTrample p =>
     { events := #[.attacking], resolution := .sourceGetsAndTeamTrample p,
       youControlCreatureWithPower := some 4 }
-  | .onYouAttackFerociousDrawLoseLife =>
-    { events := #[.youAttack], resolution := .drawAndLoseLife,
-      youControlCreatureWithPower := some 4 }
-  | .onYourBeginCombatFerociousPlusOne =>
-    { events := #[.yourBeginCombat], resolution := .onSource (.plusOne 1),
-      youControlCreatureWithPower := some 4 }
-  | .onLandYouControlEntersGets p t =>
-    { events := #[.landYouControlEnters], resolution := .onSource (.pump p t) }
   | .onEnterCreateThenAttach kind =>
     { events := #[.entering], resolution := .createThenAttach kind }
   | .onEnterAmassThenAttach n =>
@@ -6567,9 +6556,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onAttackTargetGainsKeywords k =>
     { events := #[.attacking], targeting := .of .attackingCreature,
       resolution := .onPermanent (.grantKeywords k) }
-  | .onThisOrNontokenSubtypeEntersCreateTokens subtype kind n =>
-    { events := #[.thisOrNontokenSubtypeYouControlEnters],
-      resolution := .createTokens kind n false, thisOrNontokenSubtype := some subtype }
   | .onEnterSearchBasicToHand =>
     { events := #[.entering], resolution := .searchBasicToHand }
   | .onEnterGainLifeSearchBasicOnTop n =>
@@ -6583,8 +6569,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onAttackDamageEqualTreasures =>
     { events := #[.attacking], targeting := .of .playerOrCreature,
       resolution := .damageEqualTreasures }
-  | .onOpponentCastsFirstNoncreatureRecruit =>
-    { events := #[.opponentCastsFirstNoncreature], resolution := .youRecruit }
   | .onPlayerCastsSecondSpellLoseLifeCreateTreasure =>
     { events := #[.anyPlayerCastsSecondSpell], resolution := .loseLifeCreateTreasure }
   | .onEnterDealDamageDestroyIfSubtype n subtype =>
@@ -6596,8 +6580,6 @@ def timing : TriggeredAbility → TriggerTiming
       allowsZeroTargets := true, resolution := .attachEquipmentToCreature }
   | .onYourFirstMainAddMana types =>
     { events := #[.yourFirstMain], resolution := .addMana types }
-  | .onEachEndStepDrawIfGainedLife n =>
-    { events := #[.eachEndStep], resolution := .draw 1, gainedLifeAtLeast := some n }
   | .onAttackDefenderSacsLeastPower =>
     { events := #[.attacking], resolution := .defenderSacsLeastPower }
   | .onEnterCreateAxe =>
@@ -6609,30 +6591,18 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterReturnOtherPlusOne =>
     { events := #[.entering], targeting := .of .anotherCreatureYouControl,
       allowsZeroTargets := true, resolution := .returnOtherPlusOne }
-  | .onCastGreenOrForestEntersPlusOne =>
-    { events := #[.youCastGreen, .forestYouControlEnters],
-      targeting := .of .creatureYouControl, resolution := .onPermanent (.plusOne 1) }
-  | .onAnotherSubtypeOrEquipmentEntersDrawOnce subtype =>
-    { events := #[.anotherSubtypeOrEquipmentYouControlEnters],
-      resolution := .draw 1, onceEachTurn := true,
-      anotherSubtypeOrEquipment := some subtype }
   | .onEnterLookAtTopRevealTypes n types =>
     { events := #[.entering], resolution := .lookAtTopRevealTypes n types }
   | .onCastNoncreaturePumpAndDamageOpponents n =>
     { events := #[.youCastNoncreature], resolution := .pumpAndDamageOpponents n }
   | .onEnterCreateTappedTreasuresEqualOppArtifacts =>
     { events := #[.entering], resolution := .createTappedTreasuresEqualOppArtifacts }
-  | .onCastWithTreasureDrawLoseLife =>
-    { events := #[.youCastWithTreasure], resolution := .drawAndLoseLife }
   | .onEnterGainControlOppUntilEot =>
     { events := #[.entering], targeting := .of .oppCreature,
       resolution := .gainControlOppUntilEot }
   | .onEachCombatOthersGetAndOppsGet subtypes p t oppP oppT =>
     { events := #[.eachBeginCombat],
       resolution := .othersGetAndOppsGet subtypes p t oppP oppT }
-  | .onThisOrAnotherSubtypeEntersCreateTokens subtype kind n =>
-    { events := #[.thisOrAnotherSubtypeYouControlEnters],
-      resolution := .createTokens kind n false, thisOrAnotherSubtype := some subtype }
   | .onCombatDamagePutNonlandMvAtMost mv =>
     { events := #[.dealsCombatDamageToPlayerOrBattle],
       targeting := .of .nonland, allowsZeroTargets := true,
@@ -6643,9 +6613,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[], resolution := .cascade }
   | .onTokenYouControlEntersBelladonna =>
     { events := #[.tokenYouControlEnters], resolution := .belladonnaTokenReward }
-  | .onActivateCreatureAbilityDrawOnce =>
-    { events := #[.youActivateCreatureAbility], resolution := .draw 1,
-      onceEachTurn := true }
   | .onEnterBolgMaySacrifice =>
     { events := #[.entering], resolution := .bolgMaySacrifice }
   | .onBolgDealSacrificedPower =>
@@ -6659,8 +6626,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
     { events := #[.entering, .opponentDrawsExceptFirstDrawStep],
       targeting := .of .playerOrCreature, resolution := .deal1ThenAmassOrcs }
-  | .onOpponentDrawsSecondCreateTreasure =>
-    { events := #[.opponentDrawsSecondCard], resolution := .createTokens .treasure 1 false }
   | .onAttackWithTotalPowerUntapExtraCombat _n =>
     { events := #[.youAttackWithTotalPower],
       resolution := .untapAttackersExtraCombat, onceEachTurn := true }
@@ -6671,17 +6636,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .onEnterDestroyOtherAmassControllerPower =>
     { events := #[.entering], targeting := .of .anotherCreature,
       allowsZeroTargets := true, resolution := .destroyOtherAmassControllerPower }
-  | .onSubtypeYouControlCombatDamageCreateTokens _subtype kind n =>
-    { events := #[.dealsCombatDamageToPlayerOrBattle],
-      resolution := .createTokens kind n false }
   | .onOpponentCastsChosenParityModes =>
     { events := #[.opponentCastsMatchingParity], resolution := .gollumMode }
-  | .onCastColorDamageOpponent c n =>
-    { events := #[.youCastColor c], targeting := .of .opponent,
-      resolution := .damageEachOpponent n }
-  | .onCastColorPump c p t =>
-    { events := #[.youCastColor c], targeting := .of .creature,
-      resolution := .onPermanent (.pump p t) }
   | .onEnterReturnCreatureFromGyToHand =>
     { events := #[.entering], targeting := .of .creatureCardInYourGraveyard,
       resolution := .returnCreatureFromGyToHand }
@@ -6823,8 +6779,6 @@ def timing : TriggeredAbility → TriggerTiming
     { events := #[.eachEndStep], resolution := .drawIfAttackedOrEnteredSubtype subtype }
   | .onAttackOthersOfSubtypeGetEqualToughness subtype =>
     { events := #[.attacking], resolution := .othersOfSubtypeGetEqualSourceToughness subtype }
-  | .onEnterConnive =>
-    { events := #[.entering], resolution := .connive }
   | .onCreatureYouControlEntersScryAndPlan n =>
     { events := #[.creatureYouControlEnters], resolution := .scryAndPlan n }
   | .onCreaturesYouControlBecomeTappedLootAndPlan =>
@@ -6859,15 +6813,6 @@ def timing : TriggeredAbility → TriggerTiming
   | .onFourthPlanIndestructible =>
     { events := #[.nthPlanCounter 4], targeting := .of .none,
       resolution := .planFinishIndestructibleOnTarget }
-  | .onYouCastColorFromHandConnive color =>
-    { events := #[.youCastColorFromHand color], resolution := .connive }
-  | .onDealtDamagePlusOne =>
-    { events := #[.sourceDealtDamage], resolution := .onSource (.plusOne 1) }
-  | .onArtifactYouControlEntersDrawOnce =>
-    { events := #[.artifactYouControlEnters], resolution := .draw 1,
-      onceEachTurn := true }
-  | .onYourEndStepDrawLoseLife =>
-    { events := #[.yourEndStep], resolution := .drawAndLoseLife1 }
   | .onEnterSurveil n =>
     { events := #[.entering], resolution := .scry n }
   | .onEnterEnchanted action =>
@@ -6897,9 +6842,6 @@ def timing : TriggeredAbility → TriggerTiming
       resolution := .plusOneOrTwoIfAnotherHero }
   | .onEnterMaySacArtifactOrDiscardDraw =>
     { events := #[.entering], resolution := .maySacArtifactOrDiscardDraw }
-  | .onEnterExileOppTappedUntilLeaves =>
-    { events := #[.entering], targeting := .of .oppTappedCreature,
-      resolution := .exileUntilLeaves }
   | .onEnterTargetOpponentDiscards n =>
     { events := #[.entering], targeting := .of .opponent,
       resolution := .targetOpponentDiscards n }
@@ -6912,19 +6854,8 @@ def timing : TriggeredAbility → TriggerTiming
   | .onYouAttacking e => e.timing
   | .onCasting e => e.timing
   | .onResource e => e.timing
-  | .onAttackConnive =>
-    { events := #[.attacking], resolution := .connive }
-  | .onGainLifePlusOne =>
-    { events := #[.youGainLife], resolution := .onSource (.plusOne 1) }
-  | .onAnotherArtifactEntersPlusOne =>
-    { events := #[.anotherArtifactEnters], resolution := .onSource (.plusOne 1) }
   | .onEquipmentYouControlEntersDraw =>
     { events := #[.equipmentYouControlEnters], resolution := .draw 1 }
-  | .onEquippedCreatureYouControlAttacksConnive =>
-    { events := #[.equippedCreatureYouControlAttacks], resolution := .connive }
-  | .onCombatTargetYouControlConnives =>
-    { events := #[.yourBeginCombat], targeting := .of .creatureYouControl,
-      resolution := .targetConnive }
   | .onCombatAnotherGetsSourcePower =>
     { events := #[.yourBeginCombat], targeting := .of .anotherCreatureYouControl,
       resolution := .pumpTargetBySourcePower }
@@ -7010,6 +6941,88 @@ def onEnterTargetOpponentSacrificesCreature : TriggeredAbility :=
   .onShared .enter .opponentSacrificesCreature
 def onEnterTargetOpponentSacrifices : TriggeredAbility :=
   onEnterTargetOpponentSacrificesCreature
+def onDrawSecondPlusOne : TriggeredAbility :=
+  .onShared .youDrawSecond .plusOneOnSource
+def onDrawPlusOne : TriggeredAbility :=
+  .onShared .youDraw .plusOneOnSource
+def onGainLifePlusOne : TriggeredAbility :=
+  .onShared .youGainLife .plusOneOnSource
+def onAnotherArtifactEntersPlusOne : TriggeredAbility :=
+  .onShared .anotherArtifactEnters .plusOneOnSource
+def onDealtDamagePlusOne : TriggeredAbility :=
+  .onShared .sourceDealtDamage .plusOneOnSource
+def onYourBeginCombatFerociousPlusOne : TriggeredAbility :=
+  .onShared .yourBeginCombat .plusOneOnSource .ferocious
+def onEquippedAttacksAloneDrawLoseLife : TriggeredAbility :=
+  .onShared .equippedAttacksAlone .drawAndLoseLife
+def onYouAttackFerociousDrawLoseLife : TriggeredAbility :=
+  .onShared .youAttack .drawAndLoseLife .ferocious
+def onCastWithTreasureDrawLoseLife : TriggeredAbility :=
+  .onShared .youCastWithTreasure .drawAndLoseLife
+def onYourEndStepDrawLoseLife : TriggeredAbility :=
+  .onShared .yourEndStep .drawAndLoseLife
+def onEnterConnive : TriggeredAbility :=
+  .onShared .enter .connive
+def onAttackConnive : TriggeredAbility :=
+  .onShared .attack .connive
+def onYouCastColorFromHandConnive (color : Color) : TriggeredAbility :=
+  .onShared (.youCastColorFromHand color) .connive
+def onEquippedCreatureYouControlAttacksConnive : TriggeredAbility :=
+  .onShared .equippedCreatureYouControlAttacks .connive
+def onCombatTargetYouControlConnives : TriggeredAbility :=
+  .onShared .yourBeginCombat (.conniveTarget .creatureYouControl)
+def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
+  .onShared .enter (.exileUntilLeaves .oppNonland)
+def onEnterExileOppTappedUntilLeaves : TriggeredAbility :=
+  .onShared .enter (.exileUntilLeaves .oppTappedCreature)
+def onAttackMayExileDefenderUntilLeaves : TriggeredAbility :=
+  .onShared .attack (.exileUntilLeaves .defendingPlayerCreature)
+    { allowsZeroTargets := true }
+def onEnterGainLife (n : Nat) : TriggeredAbility :=
+  .onShared .enter (.gainLife n)
+def onAttackFerociousGainLife (n : Nat) : TriggeredAbility :=
+  .onShared .attack (.gainLife n) .ferocious
+def onEnterTargetGets (power toughness : Int) : TriggeredAbility :=
+  .onShared .enter (.pumpTarget .creature power toughness)
+def onDiesOppCreatureGets (power toughness : Int) : TriggeredAbility :=
+  .onShared .dies (.pumpTarget .oppCreature power toughness)
+def onCastColorPump (color : Color) (power toughness : Int) : TriggeredAbility :=
+  .onShared (.youCastColor color) (.pumpTarget .creature power toughness)
+def onLandYouControlEntersGets (power toughness : Int) : TriggeredAbility :=
+  .onShared .landYouControlEnters (.sourceGets power toughness)
+def onAttackFerociousSourceGets (power toughness : Int) : TriggeredAbility :=
+  .onShared .attack (.sourceGets power toughness) .ferocious
+def onAnotherElfYouControlEntersGets1 : TriggeredAbility :=
+  .onShared .anotherElfYouControlEnters (.sourceGets 1 1)
+def onArtifactYouControlEntersDrawOnce : TriggeredAbility :=
+  .onShared .artifactYouControlEnters (.draw 1) .once
+def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
+  .onShared .youActivateCreatureAbility (.draw 1) .once
+def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
+  .onShared .anotherSubtypeOrEquipmentEnters (.draw 1)
+    { onceEachTurn := true, anotherSubtypeOrEquipment := some subtype }
+def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
+  .onShared .eachEndStep (.draw 1) { gainedLifeAtLeast := some n }
+def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+    (n : Nat) : TriggeredAbility :=
+  .onShared .thisOrNontokenSubtypeEnters (.createTokens kind n)
+    { thisOrNontokenSubtype := some subtype }
+def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+    (n : Nat) : TriggeredAbility :=
+  .onShared .thisOrAnotherSubtypeEnters (.createTokens kind n)
+    { thisOrAnotherSubtype := some subtype }
+def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
+    (n : Nat) : TriggeredAbility :=
+  .onShared .combatDamageToPlayerOrBattle (.createTokens kind n)
+    { watchedSubtype := some subtype }
+def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
+  .onShared .opponentDrawsSecond (.createTokens .treasure 1)
+def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
+  .onShared .opponentCastsFirstNoncreature .youRecruit
+def onCastColorDamageOpponent (color : Color) (n : Nat) : TriggeredAbility :=
+  .onShared (.youCastColor color) (.damageEachOpponent n)
+def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
+  .onShared .castGreenOrForestEnters (.plusOneOn .creatureYouControl)
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -7514,7 +7527,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."
   | .onEnterOrOpponentDrawsDeal1AmassOrcs =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
-  | .onOpponentDrawsSecondCreateTreasure =>
+  | .onShared .opponentDrawsSecond (.createTokens .treasure 1) _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
   | .onAttackWithTotalPowerUntapExtraCombat n =>
     s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
@@ -7522,14 +7535,13 @@ def toNotation (ab : TriggeredAbility) : String :=
     "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
   | .onEnterDestroyOtherAmassControllerPower =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-  | .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2 =>
+  | .onShared .combatDamageToPlayerOrBattle (.createTokens .treasure 2)
+      { watchedSubtype := some "Dwarf", .. } =>
     "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
   | .onOpponentCastsChosenParityModes =>
     "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
-  | .onCastColorDamageOpponent .red 3 =>
+  | .onShared (.youCastColor .red) (.damageEachOpponent 3) _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
-  | .onCastColorPump .green 4 4 =>
-    "Whenever you cast a green spell, target creature gets +4/+4 until end of turn."
   | .onEnterReturnCreatureFromGyToHand =>
     "When this enchantment enters, return target creature card from your graveyard to your hand."
   | .onThisOrAnotherSubtypeEntersDiscardHand "Dwarf" =>
@@ -7582,7 +7594,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"Whenever a creature you control attacks alone, that creature gets {signedStat p}/{signedStat t} until end of turn."
   | .onTappedForTeamworkPlusOneAndDraw =>
     "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
-  | .onEnterConnive =>
+  | .onShared .enter .connive _ =>
     "When this creature enters, it connives."
   | .onCreatureYouControlEntersScryAndPlan n =>
     s!"Whenever a creature you control enters, scry {n} and put a plan counter on this enchantment."
@@ -7617,16 +7629,12 @@ def toNotation (ab : TriggeredAbility) : String :=
     s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
   | .onAttackOthersOfSubtypeGetEqualToughness subtype =>
     s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
-  | .onYouCastColorFromHandConnive color =>
+  | .onShared (.youCastColorFromHand color) .connive _ =>
     s!"Whenever you cast a {color} spell from your hand, this connives."
-  | .onDealtDamagePlusOne =>
+  | .onShared .sourceDealtDamage .plusOneOnSource _ =>
     "Whenever this is dealt damage, put a +1/+1 counter on it."
-  | .onShared .enter (.attachTo .creatureYouControl) =>
+  | .onShared .enter (.attachTo .creatureYouControl) _ =>
     "When this Equipment enters, attach it to target creature you control."
-  | .onArtifactYouControlEntersDrawOnce =>
-    "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn."
-  | .onYourEndStepDrawLoseLife =>
-    "At the beginning of your end step, you draw a card and lose 1 life."
   | .onEnterSurveil n =>
     s!"When this permanent enters, surveil {n}."
   | .onEnterEnchanted action =>
@@ -7651,7 +7659,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
   | .onEnterMaySacArtifactOrDiscardDraw =>
     "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
-  | .onEnterExileOppTappedUntilLeaves =>
+  | .onShared .enter (.exileUntilLeaves .oppTappedCreature) _ =>
     "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
   | .onEnterTargetOpponentDiscards n =>
     let cards := if n == 2 then "two cards" else cardPhrase n
@@ -8583,6 +8591,24 @@ instance : ToString CardDef where
   .onShared .yourBeginCombat (.plusOneOn .creatureYouControl)
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
   .onShared .enterOrAttack (.createTokens .wall 1)
+#guard TriggeredAbility.onEnterConnive == .onShared .enter .connive
+#guard TriggeredAbility.onDrawSecondPlusOne ==
+  .onShared .youDrawSecond .plusOneOnSource
+#guard TriggeredAbility.onYourEndStepDrawLoseLife ==
+  .onShared .yourEndStep .drawAndLoseLife
+#guard TriggeredAbility.onAttackFerociousGainLife 2 ==
+  .onShared .attack (.gainLife 2) .ferocious
+#guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
+  .onShared .artifactYouControlEnters (.draw 1) .once
+#guard TriggeredAbility.onCastColorPump .green 4 4 ==
+  .onShared (.youCastColor .green) (.pumpTarget .creature 4 4)
+#guard TriggeredAbility.onEnterExileOppTappedUntilLeaves ==
+  .onShared .enter (.exileUntilLeaves .oppTappedCreature)
+#guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
+  .onShared .opponentCastsFirstNoncreature .youRecruit
+#guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
+  == some 4
+#guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
 #guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
 #guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
