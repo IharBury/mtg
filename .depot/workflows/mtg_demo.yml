@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+  actions: write
 jobs:
   demo:
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
