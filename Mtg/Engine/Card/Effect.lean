@@ -33,8 +33,6 @@ inductive Resolution where
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
   /-- Apply each resolution in the given list, in order. -/
@@ -95,12 +93,12 @@ def spellResolution (e : Effect) : SpellResolution :=
   | .draw n => .draw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
-  | .drawThenDiscard n => .drawThenDiscard n
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n _ => .createTokens kind n
   | .onSource a => .onPermanent a
   | .sequence rs =>
     match rs with
+    | [.draw n, .discard 1] => .drawThenDiscard n
     | [.spell (.drawAndLoseLife 1 1), .amassGoblins n] => .drawLoseLifeThenAmass n
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
       .createTokensThenTeamPump kind n p t
@@ -119,7 +117,6 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .onSource a => .onSource a
   | .gainLife n => .gainLife n
   | .recruit => .recruit
-  | .drawThenDiscard n => .drawThenDiscard n
   | .createTokens kind n _ => .createTokens kind n
   | .addMana types => .addMana types
   | .sequence rs =>
@@ -169,7 +166,7 @@ def ofSpell : SpellResolution → Resolution
   | .draw n => .draw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
-  | .drawThenDiscard n => .drawThenDiscard n
+  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
   | .drawLoseLifeThenAmass n =>

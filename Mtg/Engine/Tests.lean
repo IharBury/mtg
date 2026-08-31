@@ -12585,7 +12585,17 @@ def sequenceDrawThenGain : Game :=
     (sequenceDrawThenGain.player ⟨0⟩).life ==
       (started.player ⟨0⟩).life + 3
 
-/-- `AbilityResolution.drawThenDiscard` applies as draw, then a discard choice. -/
+/-- Spell and ability loot both apply as draw, then a discard choice. -/
+def spellDrawThenDiscardPending : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.drawThenDiscard 2) #[]
+
+#guard
+  (spellDrawThenDiscardPending.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 2 &&
+    (match spellDrawThenDiscardPending.pending with
+     | .chooseDiscardCard ⟨0⟩ _ => true
+     | _ => false)
+
 def abilityDrawThenDiscardPending : Game :=
   afterDraw.applyAbilityEffect ⟨0⟩ (Effect.abilityDrawThenDiscard 2) #[]
 
