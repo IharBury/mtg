@@ -1463,7 +1463,7 @@ def hobbitCards : Array CardDef := #[
 #guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
 #guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
 #guard quarrel.isInstant
-#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard quarrel.spellEffect == some (Effect.ofSpell .creatureYouControlDealsPowerToOppCreature)
 #guard quarrel.requiresTarget
 #guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
@@ -1471,8 +1471,8 @@ def hobbitCards : Array CardDef := #[
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget
 #guard wargTactics.spellModes == #[
-  .destroyCreatureWithFlying,
-  .plusOnePlusOneTrampleHexproof]
+  Effect.ofSpell .destroyCreatureWithFlying,
+  Effect.ofSpell .plusOnePlusOneTrampleHexproof]
 #guard (wargTactics.summary.splitOn "Choose one").length > 1
 #guard (wargTactics.summary.splitOn "hexproof").length > 1
 #guard beornsHospitality.isEnchantment
@@ -1522,12 +1522,12 @@ def hobbitCards : Array CardDef := #[
 #guard greatFierceBee.keywords.flying
 #guard greatFierceBee.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
 #guard (greatFierceBee.summary.splitOn "other creatures die").length > 1
-#guard stirUpTrouble.spellEffect == some .destroyCreature
+#guard stirUpTrouble.spellEffect == some (Effect.ofSpell .destroyCreature)
 #guard stirUpTrouble.additionalCostSacrificeArtifactOrCreature
 #guard stirUpTrouble.additionalCostOrPayGeneric == some 4
 #guard gollumSilentSlinker.keywords.menace
 #guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.spellEffect == some (Effect.ofSpell .destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
 #guard dreadedBatCloud.costReductionIfCreatureDied == 3
 #guard dreadedBatCloud.keywords.flying
@@ -1543,10 +1543,12 @@ def hobbitCards : Array CardDef := #[
 #guard gollumTheAbandoned.activatedAbilities[0]!.effect == .returnFromGraveyardToHand
 #guard gnashingOfTeeth.isModal
 #guard gnashingOfTeeth.spellModes ==
-  #[.pumpAndExileIfDies (-5) (-5), .creaturesTargetPlayerGet (-1) (-1)]
+  #[Effect.ofSpell (.pumpAndExileIfDies (-5) (-5)),
+    Effect.ofSpell (.creaturesTargetPlayerGet (-1) (-1))]
 #guard reverentHowl.isModal
 #guard reverentHowl.spellModes ==
-  #[.targetPlayerDrawLoseLife 2 2, .pumpAndLifelink 2 2]
+  #[Effect.ofSpell (.targetPlayerDrawLoseLife 2 2),
+    Effect.ofSpell (.pumpAndLifelink 2 2)]
 #guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
@@ -1567,7 +1569,7 @@ def hobbitCards : Array CardDef := #[
       adv.manaCost == (ManaCost.ofGenericAndColor 4 .red) &&
       adv.types == #[.sorcery] &&
       adv.subtypes.any (· == "Adventure") &&
-      adv.spellEffect == some (.dealDamageToCreature 5)
+      adv.spellEffect == some (Effect.ofSpell (.dealDamageToCreature 5))
   | none => false
 #guard (smaugTheGreatCalamity.oracleText.splitOn "//ADV//").length > 1
 #guard (smaugTheGreatCalamity.oracleText.splitOn "{4}{R}").length > 1
@@ -1587,7 +1589,7 @@ def hobbitCards : Array CardDef := #[
       adv.manaCost == (ManaCost.ofGenericAndColor 1 .green) &&
       adv.types == #[.sorcery] &&
       adv.subtypes.any (· == "Adventure") &&
-      adv.spellEffect == some .playAdditionalLandThisTurn &&
+      adv.spellEffect == some (Effect.ofSpell .playAdditionalLandThisTurn) &&
       !adv.toCardDef.requiresTarget
   | none => false
 #guard (beornReluctantHost.oracleText.splitOn "//ADV//").length > 1

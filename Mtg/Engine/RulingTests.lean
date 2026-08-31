@@ -2121,7 +2121,7 @@ def settleExilesAttackers : Game :=
   g.applyEffect ⟨0⟩ .exileAttackersSearchBasics #[.player ⟨1⟩]
 
 def settleOk : Bool :=
-  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
+  settleTheWreckage.spellEffect == some (Effect.ofSpell .exileAttackersSearchBasics) &&
     settleExilesAttackers.log.any (fun s => mentions s "may search for 2") &&
     !(settleExilesAttackers.battlefield.any (·.status.attacking)) &&
     (ruling 55).comment.contains "find fewer basic land cards" &&
@@ -4056,7 +4056,7 @@ def lastLightDragonOnlyOk : Bool :=
 -/
 
 def settleTargetsPlayerOk : Bool :=
-  settleTheWreckage.spellEffect == some .exileAttackersSearchBasics &&
+  settleTheWreckage.spellEffect == some (Effect.ofSpell .exileAttackersSearchBasics) &&
     SpellEffect.targetKind .exileAttackersSearchBasics == .player &&
     (ruling 263).comment.contains "targets only the player"
 
@@ -4118,7 +4118,7 @@ def typeChangeLastsOk : Bool :=
 -/
 
 def chooseExistingCreatureTypeOk : Bool :=
-  raiseThePalisade.spellEffect == some .chooseTypeReturnOthers &&
+  raiseThePalisade.spellEffect == some (Effect.ofSpell .chooseTypeReturnOthers) &&
     (ruling 307).comment.contains "existing creature type" &&
     (ruling 350).comment.contains "existing creature type"
 

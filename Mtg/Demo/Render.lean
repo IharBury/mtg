@@ -127,7 +127,7 @@ def stackFaceExtras (o : GameObject) : String :=
   let s :=
     match o.triggeredAbility, o.abilityEffect with
     | some t, _ => textForStackedAbility o.printed (TriggeredAbility.toNotation t)
-    | none, some e => textForStackedAbility o.printed (AbilityEffect.toNotation e)
+    | none, some e => textForStackedAbility o.printed (Effect.toNotation e)
     | none, none => o.printed.keywordsAndAbilities
   spacedSuffix s
 

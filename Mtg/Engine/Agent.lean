@@ -329,7 +329,7 @@ where
       (spellKind o .draw || modeKind o .draw) &&
         match o.printed.spellEffect with
         | some e =>
-          match e.resolution with
+          match e.spellResolution with
           | .drawAndLoseLife cards life =>
             (g.player p).life > (life : Int) &&
               (g.player p).library.size >= cards

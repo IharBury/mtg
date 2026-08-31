@@ -943,7 +943,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
-#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteTheDeathless.spellEffect == some (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))
 #guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
 #guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
@@ -986,9 +986,9 @@ def hobbitEternalCards : Array CardDef := #[
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.activateFromGraveyard
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.onlyIfYouControlLegendary
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.effect == .returnFromGraveyardTapped
-#guard languish.spellEffect == some (.allCreaturesGet (-4) (-4))
+#guard languish.spellEffect == some (Effect.ofSpell (.allCreaturesGet (-4) (-4)))
 #guard !languish.requiresTarget
-#guard shadowOfTheEnemy.spellEffect == some .exileGraveyardCreaturesGrantCast
+#guard shadowOfTheEnemy.spellEffect == some (Effect.ofSpell .exileGraveyardCreaturesGrantCast)
 #guard shadowOfTheEnemy.requiresTarget
 #guard trollOfKhazadDum.staticAbilities == #[.cantBeBlockedExceptBy 3]
 #guard (trollOfKhazadDum.summary.splitOn "three or more").length > 1
@@ -998,21 +998,21 @@ def hobbitEternalCards : Array CardDef := #[
 #guard trollOfKhazadDum.activatedAbilities[0]!.effect == .searchLandTypeToHand "Swamp"
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
-#guard bitterDownfall.spellEffect == some (.destroyTargetCreatureControllerLosesLife 2)
+#guard bitterDownfall.spellEffect == some (Effect.ofSpell (.destroyTargetCreatureControllerLosesLife 2))
 #guard bitterDownfall.costReductionIfTargetDamaged == 3
 #guard improvisedClub.isInstant
-#guard improvisedClub.spellEffect == some (.dealDamage 4)
+#guard improvisedClub.spellEffect == some (Effect.ofSpell (.dealDamage 4))
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
 #guard improvisedClub.requiresTarget
 #guard (improvisedClub.summary.splitOn "additional cost").length > 1
 #guard (improvisedClub.summary.splitOn "4 damage").length > 1
 #guard fireOfOrthanc.isSorcery
-#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.spellEffect == some (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthanc.requiresTarget
 #guard (fireOfOrthanc.summary.splitOn "artifact or land").length > 1
 #guard (fireOfOrthanc.summary.splitOn "can't block this turn").length > 1
 #guard nightsWhisper.isSorcery
-#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard nightsWhisper.spellEffect == some (Effect.ofSpell (.drawAndLoseLife 2 2))
 #guard !nightsWhisper.requiresTarget
 #guard nightsWhisper.hasCastKind .draw
 #guard (nightsWhisper.summary.splitOn "draw two cards").length > 1
@@ -1025,8 +1025,8 @@ def hobbitEternalCards : Array CardDef := #[
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
 #guard arwenMortalQueen.entersWithIndestructibleCounter
 #guard arwenMortalQueen.activatedAbilities[0]!.effect == .arwenShare
-#guard callForthTheTempest.spellEffect == some .damageOppCreaturesEqualOtherSpellsMv
-#guard galadrielSDismissal.spellEffect == some .phaseOutKicker
+#guard callForthTheTempest.spellEffect == some (Effect.ofSpell .damageOppCreaturesEqualOtherSpellsMv)
+#guard galadrielSDismissal.spellEffect == some (Effect.ofSpell .phaseOutKicker)
 #guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]
 #guard mountDoom.activatedAbilities.size == 2
 #guard mountDoom.activatedAbilities[1]!.cost.sacrificeLegendaryArtifact

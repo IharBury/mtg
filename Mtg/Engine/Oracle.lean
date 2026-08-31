@@ -392,8 +392,8 @@ def activatedOracleLine (ab : ActivatedAbility) : String :=
     | none => activatedOracleLineFromParts ab
 
 /-- Oracle-style line for a one-shot spell effect. -/
-def spellEffectLine (cardName : String) (e : SpellEffect) : String :=
-  let body := SpellEffect.toNotation e
+def spellEffectLine (cardName : String) (e : Effect) : String :=
+  let body := Effect.toNotation e
   if body.startsWith "deals" then s!"{cardName} {body}" else body
 
 /-- Lines reconstructed from modeled `CardDef` fields (not keywords). -/
@@ -623,30 +623,32 @@ def reconstructedAbilityLines (c : CardDef) : List String :=
        s!"Choose one — {modes}"]
    else
     match c.spellEffect with
-    | some (.tapScryDraw scryN drawN) =>
-      [s!"Tap target creature. Scry {scryN}.",
-        if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
-    | some .returnSpellDraw =>
-      ["Return target spell to its owner's hand.", "Draw a card."]
-    | some (.drawLoseLifeThenAmass n) =>
-      ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
-    | some (.returnCreatureFromGyThenAmass n) =>
-      ["Return up to one target creature card from your graveyard to your hand.",
-        s!"Amass Goblins {n}."]
-    | some (.dealDamageToEachNonDragonThenAddDragonMana n) =>
-      [s!"{c.name} deals {n} damage to each non-Dragon creature.",
-        "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
-    | some (.grantVigilanceUnblockable) =>
-      ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
-        "Draw a card."]
-    | some (.becomeArtifactCreature44Flying) =>
-      ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
-        "Draw a card."]
     | some e =>
-      e.toNotation.splitOn "\n" |>.filterMap (fun s =>
-        let s := s.trimAscii.copy
-        if s.isEmpty then none
-        else some (if s.startsWith "deals" then s!"{c.name} {s}" else s))
+      match e.spellResolution with
+      | .tapScryDraw scryN drawN =>
+        [s!"Tap target creature. Scry {scryN}.",
+          if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
+      | .returnSpellDraw =>
+        ["Return target spell to its owner's hand.", "Draw a card."]
+      | .drawLoseLifeThenAmass n =>
+        ["You draw a card and lose 1 life.", s!"Amass Goblins {n}."]
+      | .returnCreatureFromGyThenAmass n =>
+        ["Return up to one target creature card from your graveyard to your hand.",
+          s!"Amass Goblins {n}."]
+      | .dealDamageToEachNonDragonThenAddDragonMana n =>
+        [s!"{c.name} deals {n} damage to each non-Dragon creature.",
+          "Add four mana in any combination of colors. Spend this mana only to cast Dragon spells."]
+      | .grantVigilanceUnblockable =>
+        ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
+          "Draw a card."]
+      | .becomeArtifactCreature44Flying =>
+        ["Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness 4/4 and gains flying.",
+          "Draw a card."]
+      | _ =>
+        e.toNotation.splitOn "\n" |>.filterMap (fun s =>
+          let s := s.trimAscii.copy
+          if s.isEmpty then none
+          else some (if s.startsWith "deals" then s!"{c.name} {s}" else s))
     | none => []) ++
   match c.adventure with
   | none => []

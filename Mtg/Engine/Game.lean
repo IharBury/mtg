@@ -391,7 +391,7 @@ structure GameObject where
   status : Status := {}
   timestamp : Nat := 0
   /-- Present when this object is an activated ability on the stack (CR 602.2a). -/
-  abilityEffect : Option AbilityEffect := none
+  abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
   triggeredAbility : Option TriggeredAbility := none
   /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
@@ -1693,7 +1693,7 @@ def bumpTime (g : Game) : Game × Nat :=
 /-- Allocate a new object identity and timestamp, then put `obj` into the game. -/
 def allocObject (g : Game) (printed : CardDef) (owner : PlayerId) (zone : Zone)
     (controller : Option PlayerId := none) (status : Status := {})
-    (abilityEffect : Option AbilityEffect := none)
+    (abilityEffect : Option Effect := none)
     (triggeredAbility : Option TriggeredAbility := none)
     (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none)
@@ -1718,7 +1718,7 @@ def putStackEntry (g : Game) (controller : PlayerId) (objectId : ObjectId) : Gam
 /-- Allocate a stack object representing an activated or triggered ability of
 `source` (CR 602.2a / 603.3). -/
 def allocStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
-    (abilityEffect : Option AbilityEffect := none)
+    (abilityEffect : Option Effect := none)
     (triggeredAbility : Option TriggeredAbility := none)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game × GameObject :=
@@ -1732,7 +1732,7 @@ def allocStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
 
 /-- Allocate a stack ability of `source` and push it onto the stack. -/
 def putStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
-    (abilityEffect : Option AbilityEffect := none)
+    (abilityEffect : Option Effect := none)
     (triggeredAbility : Option TriggeredAbility := none)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game × GameObject :=
@@ -4381,7 +4381,11 @@ def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
           match ch.chapterEffect with
           | none => g
           | some ce =>
-            g.queueTrigger p saga (.sagaChapter lore ce) .sagaChapter) g
+            match ce.asChapter? with
+            | some chapter =>
+              g.queueTrigger p saga (TriggeredAbility.sagaChapter lore chapter)
+                .sagaChapter
+            | none => g) g
   | _, _ => g
 
 /-- Add `n` lore counters one at a time (CR 714.3c). -/
@@ -5204,6 +5208,10 @@ def availableMana (g : Game) (p : PlayerId) : ManaPool :=
 def legalTargets (g : Game) (caster : PlayerId) (effect : SpellEffect) : Array Target :=
   g.legalTargetsForKind caster effect.targetKind
 
+/-- Legal targets for a unified `Effect` (stored spell modes and faces). -/
+def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect) : Array Target :=
+  g.legalTargetsForKind caster effect.targetKind
+
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) : Array Target :=
   g.legalTargetsForKind caster .creature
@@ -5215,7 +5223,7 @@ def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
   | none => none
 
 /-- Spell effect after a modal choice, if one has been announced (CR 700.2). -/
-def spellEffectOf (o : GameObject) (chosenMode : Option Nat) : Option SpellEffect :=
+def spellEffectOf (o : GameObject) (chosenMode : Option Nat) : Option Effect :=
   if o.printed.isModal then
     match chosenMode with
     | some i => o.printed.spellModes[i]?
@@ -5224,7 +5232,7 @@ def spellEffectOf (o : GameObject) (chosenMode : Option Nat) : Option SpellEffec
     o.printed.spellEffect
 
 /-- Spell effect of `o` using the mode announced on the stack, if any (CR 700.2). -/
-def currentSpellEffect (g : Game) (o : GameObject) : Option SpellEffect :=
+def currentSpellEffect (g : Game) (o : GameObject) : Option Effect :=
   spellEffectOf o (g.chosenModeOf o)
 
 /-- Legal targets for card face `c`, using `chosenMode` when a modal mode has
@@ -5233,13 +5241,13 @@ mode's targets (used when beginning to cast). -/
 def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
     (chosenMode : Option Nat := none) : Array Target :=
   if c.isModal && chosenMode.isNone then
-    c.spellModes.foldl (fun acc e => acc ++ g.legalTargets p e) #[]
+    c.spellModes.foldl (fun acc e => acc ++ g.legalEffectTargets p e) #[]
   else
     let effect :=
       if c.isModal then chosenMode.bind (fun i => c.spellModes[i]?)
       else c.spellEffect
     match effect with
-    | some e => g.legalTargets p e
+    | some e => g.legalEffectTargets p e
     | none => if c.isAura then g.legalAuraTargets p else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
@@ -5248,8 +5256,8 @@ def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target 
 
 /-- True when this mode can be announced: it needs no target, or a legal one
 exists (CR 700.2d). -/
-def spellModeIsChoosable (g : Game) (p : PlayerId) (e : SpellEffect) : Bool :=
-  !e.requiresTarget || !(g.legalTargets p e).isEmpty
+def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect) : Bool :=
+  !e.requiresTarget || !(g.legalEffectTargets p e).isEmpty
 
 /-- Legal mode indices for a modal spell (CR 700.2d). Untargeted modes stay
 choosable even when another mode has no legal target. -/
@@ -5264,7 +5272,7 @@ def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
       return acc
 
 /-- True when `e` targets a stack spell an opponent of `p` controls. -/
-def effectHasOppSpellTarget (g : Game) (p : PlayerId) (e : SpellEffect) : Bool :=
+def effectHasOppSpellTarget (g : Game) (p : PlayerId) (e : Effect) : Bool :=
   e.targetKind.targetsStackSpell &&
     (g.legalTargetsForKind p e.targetKind).any (g.isOppStackSpellTarget p)
 
@@ -7167,7 +7175,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if !g.modeIsChoosable p chosen then
         throw "That mode requires a target (CR 700.2d)"
       let some obj := g.findObject? prop.spellId | throw "The ability left the stack"
-      let g := g.setObject { obj with abilityEffect := some chosen }
+      let g := g.setObject { obj with abilityEffect := some (Effect.ofAbility chosen) }
       let g := g.logMsg
         s!"{(g.player p).name} chooses a mode: {chosen.toNotation} (CR 601.2b)"
       if chosen.requiresTarget then
@@ -7460,7 +7468,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let stackBefore := g.stack
   let manaBefore := pl.manaPool
   let (g, abilityObj) := g.putStackAbility o p
-    (abilityEffect := if ab.isModal then none else some ab.effect)
+    (abilityEffect := if ab.isModal then none else some (Effect.ofAbility ab.effect))
   let newId := abilityObj.id
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
@@ -9860,10 +9868,11 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
 
-def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
+/-- Resolve a unified `Effect` as a spell (CR 608). -/
+def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
-  match effect.resolution with
+  match effect.spellResolution with
   | .fight =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
@@ -10537,6 +10546,14 @@ def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
   | .artifactSpellsCostLessThisTurn _n =>
     g
 
+/-- Resolve a printed spell effect (CR 608). -/
+def applyEffect (g : Game) (controller : PlayerId) (effect : SpellEffect)
+    (targets : Array Target) (castFromGraveyard := false)
+    (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
+  g.applyUnified controller (Effect.ofSpell effect) targets
+    (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+    (giftPromised := giftPromised) (chosenX := chosenX)
+
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
     (missing := "The ability's source is no longer in play") : Game :=
@@ -10562,10 +10579,11 @@ def returnSourceFromGraveyard (g : Game) (sourceId : Option ObjectId)
          else s!"{name} returns to the battlefield")
       g.afterPermanentEnters (g.object! newId)
 
-def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
+/-- Resolve a unified activated-ability `Effect` (CR 608). -/
+def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
-  match effect.resolution with
+  match effect.abilityResolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
@@ -10995,6 +11013,13 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
+
+/-- Resolve a printed activated ability (CR 608). -/
+def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffect)
+    (targets : Array Target) (sourceId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+  g.applyUnifiedAbility controller (Effect.ofAbility effect) targets
+    sourceId lastKnownPower chosenX
 
 /-- Start an optional “discard a card. If you do, draw `n`” (CR 701.9 / 608.2d). -/
 def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
@@ -13094,7 +13119,7 @@ def resolveTop (g : Game) : Game :=
     | none => g.logMsg "The spell left the stack unexpectedly"
     | some obj =>
       if let some e := obj.abilityEffect then
-        let g := g.applyAbilityEffect entry.controller e entry.targets obj.sourceId
+        let g := g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
           obj.lastKnownPower (obj.chosenX.getD 0)
         -- CR 608.2m: after resolution the ability ceases to exist.
         g.ceaseToExist obj.id
@@ -13120,7 +13145,7 @@ def resolveTop (g : Game) : Game :=
           | _, _ => g
         let g :=
           match spellEffectOf obj entry.chosenMode with
-          | some e => g.applyEffect entry.controller e entry.targets
+          | some e => g.applyUnified entry.controller e entry.targets
             (castFromGraveyard := obj.castFromGraveyard)
             (kicked := obj.kicked)
             (giftPromised := obj.giftPromisedTo.isSome)

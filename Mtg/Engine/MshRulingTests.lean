@@ -520,7 +520,7 @@ def thirstDiscardUnlessArtifactOk : Bool :=
 -/
 
 def fizzleIllegalTargetOk : Bool :=
-  giantGrowth.spellEffect == some (.pump 3 3) &&
+  giantGrowth.spellEffect == some (Effect.ofSpell (.pump 3 3)) &&
     uniqueMshOracleRulings.any (fun r => r.comment.contains "illegal target")
 
 #guard fizzleIllegalTargetOk
@@ -1062,8 +1062,10 @@ def creatureAndArtifactSourceOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let stone := namedPermanent g "The Mind Stone"
   let shang := namedPermanent g "Shang-Chi, Master of Kung Fu"
-  let (g, bearAb) := g.putStackAbility bears ⟨0⟩ (abilityEffect := some (.draw 1))
-  let (g, stoneAb) := g.putStackAbility stone ⟨0⟩ (abilityEffect := some (.draw 1))
+  let (g, bearAb) := g.putStackAbility bears ⟨0⟩
+    (abilityEffect := some (Effect.ofAbility (.draw 1)))
+  let (g, stoneAb) := g.putStackAbility stone ⟨0⟩
+    (abilityEffect := some (Effect.ofAbility (.draw 1)))
   let creatureLegal :=
     g.legalTargetsForKind ⟨0⟩ .stackAbilityFromCreatureSource
   let artifactLegal :=
@@ -3567,7 +3569,8 @@ def castTriggerBeforeSpellOk : Bool :=
        (· == "Madame Hydra") &&
        gV.objects.any (fun o => o.id == villain.id && o.zone == .stack)) &&
     (let (gAb, ab) := g.allocObject helicarrierStrike ⟨0⟩ .stack (some ⟨0⟩)
-     let gAb := gAb.setObject { ab with abilityEffect := some (.dealDamageToTargetCreature 1) }
+     let gAb := gAb.setObject { ab with
+       abilityEffect := some (Effect.ofAbility (.dealDamageToTargetCreature 1)) }
      let gAb := gAb.putStackEntry ⟨0⟩ ab.id
      let gAb := gAb.queueYouTargetTriggers ⟨0⟩ (gAb.object! ab.id)
      gAb.waitingTriggers.any (fun (t : WaitingTrigger) =>

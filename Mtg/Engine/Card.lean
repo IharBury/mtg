@@ -2922,7 +2922,8 @@ are `{T}: Add` are stored separately on `CardDef.tapAddMana` /
 `CardDef.tapAddManaForEach` / basic land types. -/
 structure ActivatedAbility where
   cost : ActivationCost
-  /-- First (or only) mode of this ability. -/
+  /-- First (or only) mode of this ability. Converted to `Effect` when the
+  ability goes on the stack (`Effect.ofAbility`). -/
   effect : AbilityEffect
   /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
   is not modal; the player otherwise chooses one mode at CR 601.2b. -/
@@ -5240,6 +5241,44 @@ def maxTargetCount (e : Effect) : Nat :=
 def castKind (e : Effect) : SpellCastKind :=
   e.spellCastKind
 
+/-- Demonstration-agent category for an activated-ability mode. -/
+def abilityKind (e : Effect) : AbilityCastKind :=
+  e.abilityCastKind
+
+/-- Recover the leftover spell resolution (common shapes lift back). -/
+def spellResolution (e : Effect) : SpellResolution :=
+  match e.resolution with
+  | .spell r => r
+  | .draw n => .draw n
+  | .scry n => .scry n
+  | .onPermanent a => .onPermanent a
+  | .drawThenDiscard n => .drawThenDiscard n
+  | .amassGoblins n => .amassGoblins n
+  | .createTokens kind n _ => .createTokens kind n
+  | .onSource a => .onPermanent a
+  | .gainLife _ | .recruit | .addMana _ | .ability _ | .trigger _ => .extraLand
+
+/-- Recover the leftover activated-ability resolution. -/
+def abilityResolution (e : Effect) : AbilityResolution :=
+  match e.resolution with
+  | .ability r => r
+  | .draw n => .draw n
+  | .scry n => .scry n
+  | .onPermanent a => .onPermanent a
+  | .onSource a => .onSource a
+  | .gainLife n => .gainLife n
+  | .recruit => .recruit
+  | .drawThenDiscard n => .drawThenDiscard n
+  | .createTokens kind n _ => .createTokens kind n
+  | .addMana types => .addMana types
+  | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
+
+/-- Recover a Saga chapter stored on this effect, if any. -/
+def asChapter? (e : Effect) : Option ChapterEffect :=
+  match e.resolution with
+  | .trigger (.chapter _ ce) => some ce
+  | _ => none
+
 /-- Oracle-style reminder text. -/
 def toNotation (e : Effect) : String :=
   e.phrase
@@ -6939,15 +6978,13 @@ def ofAbility (e : AbilityEffect) : Effect :=
     resolution := Resolution.ofAbility s.resolution
     phrase := e.toNotation }
 
-/-- Convert a printed Saga chapter to the unified `Effect`. -/
+/-- Convert a printed Saga chapter to the unified `Effect`.
+Always wraps the original `ChapterEffect` so `asChapter?` can recover it. -/
 def ofChapter (e : ChapterEffect) : Effect :=
   let s := e.spec
   { targeting := s.targeting
     allowsZeroTargets := s.allowsZeroTargets
-    resolution :=
-      match e with
-      | .spell se => Resolution.ofSpell se.spec.resolution
-      | _ => Resolution.trigger (SharedTriggerEffect.chapter 0 e)
+    resolution := Resolution.trigger (SharedTriggerEffect.chapter 0 e)
     phrase := s.phrase }
 
 /-- Convert a shared trigger effect to the unified `Effect`. -/
@@ -8229,7 +8266,7 @@ structure AdventureFace where
   types : Array CardType := #[.sorcery]
   subtypes : Array Subtype := #["Adventure"]
   oracleText : String := ""
-  spellEffect : Option SpellEffect := none
+  spellEffect : Option Effect := none
   /-- Additional cost: sacrifice a creature. -/
   additionalCostSacrificeCreature : Bool := false
 deriving Repr, Inhabited, BEq
@@ -8256,7 +8293,7 @@ structure SagaChapter where
   /-- Chapter numbers this line triggers on. Empty means parse `roman`. -/
   numbers : Array Nat := #[]
   /-- Structured resolution. `none` is reminder-only (tests). -/
-  chapterEffect : Option ChapterEffect := none
+  chapterEffect : Option Effect := none
 deriving Repr, Inhabited, BEq
 
 namespace SagaChapter
@@ -8267,7 +8304,8 @@ def chapterNumbers (ch : SagaChapter) : Array Nat :=
 
 /-- A catalog chapter with parsed numerals and a real effect. -/
 def of (roman effect : String) (ce : ChapterEffect) : SagaChapter :=
-  { roman, effect, numbers := parseChapterNumbers roman, chapterEffect := some ce }
+  { roman, effect, numbers := parseChapterNumbers roman,
+    chapterEffect := some (Effect.ofChapter ce) }
 
 end SagaChapter
 
@@ -8305,7 +8343,7 @@ structure CardDef where
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
   keywords : Keywords := Keywords.none
-  spellEffect : Option SpellEffect := none
+  spellEffect : Option Effect := none
   /-- Additional cost: sacrifice an artifact or creature (CR 601.2b / 601.2h), e.g.
   Improvised Club. When `additionalCostOrPayGeneric` is set, that sacrifice
   may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
@@ -8338,7 +8376,7 @@ structure CardDef where
   least this many creature cards (e.g. Punishing Punch). -/
   costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
-  spellModes : Array SpellEffect := #[]
+  spellModes : Array Effect := #[]
   /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
   tapAddMana : Array ManaType := #[]
   /-- `{T}: Add {M} for each permanent you control with this subtype
@@ -8562,7 +8600,7 @@ def isModal (c : CardDef) : Bool :=
   !c.spellModes.isEmpty
 
 /-- Modes of a modal spell; empty when the card is not modal. -/
-def modes (c : CardDef) : Array SpellEffect :=
+def modes (c : CardDef) : Array Effect :=
   c.spellModes
 
 /-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
@@ -8733,7 +8771,7 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
   match c.spellEffect with
-  | some e => [SpellEffect.toNotation e]
+  | some e => [Effect.toNotation e]
   | none => []
 
 /-- Abilities to print in the demo. Prefer leftover Oracle text so unmodeled
@@ -8824,9 +8862,13 @@ instance : ToString CardDef where
 #guard (Effect.ofSpell (.dealDamage 3)).targetKind == .playerOrCreature
 #guard (Effect.ofSpell (.dealDamage 3)).resolution == Resolution.onPermanent (.dealDamage 3)
 #guard (Effect.ofSpell (.dealDamage 3)).phrase == "deals 3 damage to any target"
+#guard (Effect.ofSpell (.dealDamage 3)).spellResolution == .onPermanent (.dealDamage 3)
 #guard (Effect.ofAbility (.draw 2)).resolution == Resolution.draw 2
 #guard (Effect.ofAbility (.scry 1)).resolution == Resolution.scry 1
+#guard (Effect.ofAbility (.gainLife 3)).abilityResolution == .gainLife 3
 #guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
+#guard (Effect.ofChapter .recruit).asChapter? == some .recruit
+#guard (Effect.ofChapter (.draw 2)).asChapter? == some (.draw 2)
 #guard (Effect.ofEnter (.dealDamageUpToOne 4)).allowsZeroTargets
 #guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
@@ -9022,7 +9064,7 @@ instance : ToString CardDef where
   let c : CardDef := {
     name := "Silent Club"
     types := #[.instant]
-    spellEffect := some (.dealDamage 4)
+    spellEffect := some (Effect.ofSpell (.dealDamage 4))
     additionalCostSacrificeArtifactOrCreature := true
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
@@ -9784,7 +9826,7 @@ end AdventureFace
     name := "Spew Flame"
     manaCost := ManaCost.ofGenericAndColor 4 .red
     oracleText := "Spew Flame deals 5 damage to target creature."
-    spellEffect := some (.dealDamageToCreature 5)
+    spellEffect := some (Effect.ofSpell (.dealDamageToCreature 5))
   }
   let c := adv.toCardDef
   c.name == "Spew Flame" && c.isSorcery && c.requiresTarget &&
@@ -9795,7 +9837,7 @@ end AdventureFace
     name := "Till and Tend"
     manaCost := ManaCost.ofGenericAndColor 1 .green
     oracleText := "You may play an additional land this turn."
-    spellEffect := some .playAdditionalLandThisTurn
+    spellEffect := some (Effect.ofSpell .playAdditionalLandThisTurn)
   }
   let c := adv.toCardDef
   c.name == "Till and Tend" && c.isSorcery && !c.requiresTarget &&
@@ -9834,7 +9876,7 @@ def isForestCard (c : CardDef) : Bool :=
       name := "Spew Flame"
       manaCost := ManaCost.ofGenericAndColor 4 .red
       oracleText := ""
-      spellEffect := some (.dealDamageToCreature 5)
+      spellEffect := some (Effect.ofSpell (.dealDamageToCreature 5))
     }
   }
   c.choosableNames == #["Smaug, the Great Calamity", "Spew Flame"]

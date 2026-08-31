@@ -384,12 +384,12 @@ def uncontrolledPermanent : Game :=
 #guard mentions quarrel.summary "deals damage equal to its power"
 #guard quarrel.isInstant
 #guard quarrel.requiresTarget
-#guard quarrel.spellEffect == some .creatureYouControlDealsPowerToOppCreature
+#guard quarrel.spellEffect == some (Effect.ofSpell .creatureYouControlDealsPowerToOppCreature)
 #guard mentions smiteTheDeathless.summary "loses indestructible"
 #guard mentions smiteTheDeathless.summary "exile it instead"
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
-#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteTheDeathless.spellEffect == some (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))
 #guard mentions woodElves.summary "Forest card"
 #guard woodElves.triggeredAbilities.size == 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -479,7 +479,7 @@ def uncontrolledPermanent : Game :=
 #guard gollumSilentSlinker.toughness == some 3
 #guard mentions bilbosDeadlySlice.summary "Destroy target creature"
 #guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.spellEffect == some (Effect.ofSpell .destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
@@ -501,13 +501,13 @@ def uncontrolledPermanent : Game :=
 #guard mentions improvisedClub.summary "additional cost"
 #guard mentions improvisedClub.summary "4 damage"
 #guard improvisedClub.isInstant
-#guard improvisedClub.spellEffect == some (.dealDamage 4)
+#guard improvisedClub.spellEffect == some (Effect.ofSpell (.dealDamage 4))
 #guard improvisedClub.additionalCostSacrificeArtifactOrCreature
 #guard improvisedClub.requiresTarget
 #guard mentions fireOfOrthanc.summary "artifact or land"
 #guard mentions fireOfOrthanc.summary "can't block this turn"
 #guard fireOfOrthanc.isSorcery
-#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.spellEffect == some (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthanc.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
@@ -3419,7 +3419,7 @@ def cratermakerModeChosen : Game :=
 
 #guard cratermakerModeChosen.pending == .chooseTargets ⟨0⟩
 #guard (cratermakerModeChosen.object! cratermakerModeChosen.stack.back!.objectId).abilityEffect ==
-  some (.dealDamageToTargetCreature 2)
+  some (Effect.ofAbility (.dealDamageToTargetCreature 2))
 #guard cratermakerModeChosen.log.any (fun s =>
   mentions s "chooses a mode: This creature deals 2 damage")
 #guard cratermakerModeChosen.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
@@ -5338,7 +5338,7 @@ def proposedFireleaper : Game :=
 #guard proposedFireleaper.proposedSpell.isSome
 #guard proposedFireleaper.stack.size == 1
 #guard (proposedFireleaper.object! proposedFireleaper.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 1 0)
+  some (Effect.ofAbility (.sourceGets 1 0))
 #guard (namedPermanent proposedFireleaper "Goblin Fireleaper").isOnBattlefield
 #guard proposedFireleaper.log.any (fun s => mentions s "begins activating Goblin Fireleaper")
 
@@ -5440,7 +5440,7 @@ def activatedProwler : Game :=
 #guard activatedProwler.hasPriority ⟨0⟩
 #guard activatedProwler.stack.size == 1
 #guard (activatedProwler.object! activatedProwler.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 2 2)
+  some (Effect.ofAbility (.sourceGets 2 2))
 #guard (activatedProwler.player ⟨0⟩).life == 18
 #guard activatedProwler.log.any (fun s => mentions s "begins activating Desolation Prowler")
 #guard activatedProwler.log.any (fun s => mentions s "pays 2 life (18 life)")
@@ -6910,7 +6910,7 @@ def proposedTitanPump : Game :=
 #guard proposedTitanPump.proposedSpell.isSome
 #guard proposedTitanPump.stack.size == 1
 #guard (proposedTitanPump.object! proposedTitanPump.stack.back!.objectId).abilityEffect ==
-  some (.sourceGets 1 0)
+  some (Effect.ofAbility (.sourceGets 1 0))
 #guard proposedTitanPump.log.any (fun s => mentions s "begins activating Inferno Titan")
 
 def paidTitanPump : Game :=
@@ -7425,7 +7425,7 @@ def proposedGuardian : Game :=
 #guard proposedGuardian.proposedSpell.isSome
 #guard proposedGuardian.stack.size == 1
 #guard (proposedGuardian.object! proposedGuardian.stack.back!.objectId).abilityEffect ==
-  some (.putPlusOnePlusOneOnSource 3)
+  some (Effect.ofAbility (.putPlusOnePlusOneOnSource 3))
 #guard (namedPermanent proposedGuardian "Guardian of the Halls").isOnBattlefield
 #guard proposedGuardian.log.any (fun s => mentions s "begins activating Guardian of the Halls")
 
@@ -8804,7 +8804,7 @@ def fireOfOrthancSetup : Game :=
 
 #guard fireOfOrthanc.isSorcery
 #guard fireOfOrthanc.requiresTarget
-#guard fireOfOrthanc.spellEffect == some .destroyArtifactOrLandNonflyersCantBlock
+#guard fireOfOrthanc.spellEffect == some (Effect.ofSpell .destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthancSetup.canCast ⟨0⟩ (handCardNamed fireOfOrthancSetup ⟨0⟩ "Fire of Orthanc")
 #guard fireOfOrthancSetup.asSorcery? ⟨0⟩
 #guard
@@ -9509,7 +9509,7 @@ def proposedPassage : Game :=
 #guard proposedPassage.proposedSpell.isSome
 #guard proposedPassage.stack.size == 1
 #guard (proposedPassage.object! proposedPassage.stack.back!.objectId).abilityEffect ==
-  some .targetCantBeBlockedThisTurn
+  some (Effect.ofAbility .targetCantBeBlockedThisTurn)
 #guard (namedPermanent proposedPassage "Rogue's Passage").isOnBattlefield
 #guard !(namedPermanent proposedPassage "Rogue's Passage").status.tapped
 #guard proposedPassage.log.any (fun s => mentions s "begins activating Rogue's Passage")
@@ -9711,7 +9711,7 @@ def smiteSetup : Game := smiteOn grizzlyBears
 
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
-#guard smiteTheDeathless.spellEffect == some (.dealDamageLoseIndestructibleExile 3)
+#guard smiteTheDeathless.spellEffect == some (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))
 #guard smiteSetup.canCast ⟨0⟩ (handCardNamed smiteSetup ⟨0⟩ "Smite the Deathless")
 #guard smiteSetup.asSorcery? ⟨0⟩
 #guard (smiteSetup.legalTargets ⟨0⟩ (.dealDamageLoseIndestructibleExile 3)).size == 1
@@ -10274,7 +10274,7 @@ def resolvedQuarrelWarg : Game :=
 #guard nightsWhisper.isSorcery
 #guard nightsWhisper.hasSorcerySpeed
 #guard !nightsWhisper.hasInstantSpeed
-#guard nightsWhisper.spellEffect == some (.drawAndLoseLife 2 2)
+#guard nightsWhisper.spellEffect == some (Effect.ofSpell (.drawAndLoseLife 2 2))
 #guard nightsWhisper.hasCastKind .draw
 #guard !nightsWhisper.requiresTarget
 #guard mentions nightsWhisper.summary "draw two cards"
@@ -11652,7 +11652,7 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 #guard bilbosDeadlySlice.isInstant
 #guard !bilbosDeadlySlice.hasSorcerySpeed
 #guard bilbosDeadlySlice.hasInstantSpeed
-#guard bilbosDeadlySlice.spellEffect == some .destroyCreature
+#guard bilbosDeadlySlice.spellEffect == some (Effect.ofSpell .destroyCreature)
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard bilbosDeadlySlice.requiresTarget
 #guard mentions bilbosDeadlySlice.summary "Destroy target creature"
@@ -11947,7 +11947,7 @@ def gazeSetup : Game :=
 #guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
 #guard
   match velvetwingButterflies.adventure with
-  | some adv => adv.spellEffect == some .tapOneOrTwoCreatures
+  | some adv => adv.spellEffect == some (Effect.ofSpell .tapOneOrTwoCreatures)
   | none => false
 
 def gazeProposed : Game :=
@@ -12033,7 +12033,7 @@ player, in that card-text order (CR 601.2c / 115.1c). -/
 #guard SpellEffect.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
 #guard
   match gollumSilentSlinker.adventure with
-  | some adv => adv.spellEffect == some (.plusOneUpToOneAndPlayerGainsLife 2)
+  | some adv => adv.spellEffect == some (Effect.ofSpell (.plusOneUpToOneAndPlayerGainsLife 2))
   | none => false
 
 /-- Gollum in hand, a creature you control, an opposing creature, and {B}. -/
@@ -13464,7 +13464,7 @@ def proposedStature : Game :=
 #guard proposedStature.pending == .chooseX ⟨0⟩
 #guard proposedStature.proposedSpell.isSome
 #guard (proposedStature.object! proposedStature.stack.back!.objectId).abilityEffect ==
-  some .plusOneX
+  some (Effect.ofAbility .plusOneX)
 #guard proposedStature.log.any (fun s => mentions s "begins activating Stature")
 #guard proposedStature.log.any (fun s => mentions s "must choose a value for X")
 

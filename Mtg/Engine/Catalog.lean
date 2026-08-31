@@ -91,7 +91,10 @@ def card (name : String) (types : Array CardType)
     (mayLookAtTopAnytime : Bool := false)
     (mayPlayLandsFromTop : Bool := false) : CardDef := {
   name, manaCost, types, subtypes, oracleText, power, toughness, keywords,
-  supertypes, spellEffect, spellModes, additionalCostSacrificeArtifactOrCreature,
+  supertypes,
+  spellEffect := spellEffect.map Effect.ofSpell,
+  spellModes := spellModes.map Effect.ofSpell,
+  additionalCostSacrificeArtifactOrCreature,
   additionalCostOrPayGeneric, additionalCostDiscardOrPayGeneric,
   costReductionIfCreatureDied, costReductionIfTargetDamaged,
   costReductionIfTargetTapped, costReductionIfTargetAttackingNontoken,
@@ -700,7 +703,7 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : SpellEffect) (cardType : CardType := .sorcery)
     (additionalCostSacrificeCreature : Bool := false) : AdventureFace := {
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
-  oracleText, spellEffect := some spellEffect,
+  oracleText, spellEffect := some (Effect.ofSpell spellEffect),
   additionalCostSacrificeCreature
 }
 
@@ -817,7 +820,7 @@ def conditionalDualLand (name : String) (oracleText : String)
   "Haste (This creature can attack and {T} as soon as it comes under your control.)"
 #guard giantSpider.oracleText == "Reach (This creature can block creatures with flying.)"
 #guard (giantSpider.summary.splitOn "reach").length > 1
-#guard giantGrowth.spellEffect == some (.pump 3 3)
+#guard giantGrowth.spellEffect == some (Effect.ofSpell (.pump 3 3))
 #guard giantGrowth.isInstant
 #guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect == .attachToTargetCreatureYouControl
@@ -830,8 +833,8 @@ def conditionalDualLand (name : String) (oracleText : String)
 #guard lightningBolt.hasCastKind .burn
 #guard giantGrowth.hasCastKind .pump
 #guard !lightningBolt.hasCastKind .pump
-#guard (lightningBolt.spellEffect.map SpellEffect.castKind) == some .burn
-#guard (giantGrowth.spellEffect.map SpellEffect.castKind) == some .pump
+#guard (lightningBolt.spellEffect.map Effect.castKind) == some .burn
+#guard (giantGrowth.spellEffect.map Effect.castKind) == some .pump
 #guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
 #guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
   (subtypes := #["Equipment"])).isEquipment

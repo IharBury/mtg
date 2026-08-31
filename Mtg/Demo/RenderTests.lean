@@ -562,7 +562,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let c := artifact "Silent Bauble" ManaCost.empty
     "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-  textForStackedAbility c (AbilityEffect.toNotation .searchBasicLandTapped) ==
+  textForStackedAbility c (Effect.toNotation (Effect.ofAbility .searchBasicLandTapped)) ==
     c.oracleText
 
 #guard (changedZones tappedTwiceForBauble paidBauble).contains .battlefield
