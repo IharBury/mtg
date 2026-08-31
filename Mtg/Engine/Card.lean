@@ -1806,87 +1806,6 @@ inductive ChapterResolution where
   | spell (s : ChapterSpell)
 deriving Repr, Inhabited, BEq
 
-namespace ChapterResolution
-
-/-- Targeting and “up to one” for this chapter. Exhaustive so a new
-constructor is a compile error here rather than silently targeting nothing. -/
-structure Spec where
-  targeting : EffectTargeting := .of .none
-  allowsZeroTargets : Bool := false
-  phrase : String := ""
-deriving Repr, Inhabited, BEq
-
-/-- Classification of this chapter effect. SharedTrigger.timing reads this
-before `Effect.ofChapter` exists. -/
-def spec : ChapterResolution → Spec
-  | .dealDamageToOppCreature n =>
-    { targeting := .of .oppCreature
-      phrase := s!"this Saga deals {n} damage to target creature an opponent controls" }
-  | .destroyOppArtifact =>
-    { targeting := .of .oppArtifact
-      phrase := "destroy target artifact an opponent controls" }
-  | .addMana mana =>
-    { phrase := s!"add {mana}" }
-  | .searchBasicLandToHand =>
-    { phrase := "search your library for a basic land card, reveal it, put it into your hand, then shuffle" }
-  | .gainLandfallCreateElf =>
-    { phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"" }
-  | .elvesGetVigilance p =>
-    { phrase := s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn" }
-  | .opponentDiscardsNonland =>
-    { targeting := .of .opponent
-      phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card" }
-  | .amassGoblins n =>
-    { phrase := s!"amass Goblins {n}" }
-  | .opponentLosesYouGain n =>
-    { targeting := .of .opponent
-      phrase := s!"target opponent loses {n} life and you gain {n} life" }
-  | .grantHexproofWhileRemains =>
-    { targeting := .of .creatureYouControl
-      phrase := "target creature you control gains hexproof for as long as this Saga remains on the battlefield" }
-  | .preventDamageWhileRemains =>
-    { targeting := .of .creature, allowsZeroTargets := true
-      phrase := "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield" }
-  | .draw n =>
-    { phrase := s!"draw {cardPhrase n}" }
-  | .searchBasicPlainsExileGainLife max life =>
-    { phrase := s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life" }
-  | .returnLinkedExileToHand =>
-    { phrase := "put a card exiled with this Saga into its owner's hand" }
-  | .grantAttackPumpPerPlainsThisTurn =>
-    { phrase := "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control" }
-  | .blinkUntilEndStep =>
-    { targeting := .of .creatureOrLandYouControl, allowsZeroTargets := true
-      phrase := "exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step" }
-  | .treasureThenDragonIfFour =>
-    { phrase := "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying" }
-  | .recruit =>
-    { phrase := "recruit" }
-  | .returnCreatureFromGyMvAtMost n =>
-    { targeting := .of (.creatureCardInYourGraveyardMvAtMost n)
-      phrase := s!"return target creature card with mana value {n} or less from your graveyard to the battlefield" }
-  | .plusOneUpToOne =>
-    { targeting := .of .creature, allowsZeroTargets := true
-      phrase := "put a +1/+1 counter on up to one target creature" }
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
-    { targeting := .of (.upToTwoCreaturesTotalMvAtMost n)
-      allowsZeroTargets := true
-      phrase :=
-        s!"Gain control of up to two target creatures with total mana value {n} or less for as long as this Saga remains on the battlefield" }
-  | .dealDamageToEachNonSubtypeAndOpponents n subtype =>
-    { phrase :=
-        s!"This Saga deals {n} damage to each non-{subtype} creature and each opponent" }
-  | .dealXDamageToTargetOpponentGreatestArtifactMv =>
-    { targeting := .of .opponent
-      phrase :=
-        "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control" }
-  | .spell s =>
-    { targeting := s.targeting
-      allowsZeroTargets := s.allowsZeroTargets
-      phrase := s.phrase }
-
-end ChapterResolution
-
 /-- Leftover “When ⟨this⟩ enters” wordings that do not already match a more
 specific `TriggeredAbility` constructor. One `onEnter` constructor keeps the
 C runtime tag under the limit. -/
@@ -5667,8 +5586,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .revealSaga => { resolution := .revealSaga }
   | .sacDamagersRingTempts => { resolution := .sacDamagersRingTempts }
   | .chapter _n e =>
-    { targeting := e.spec.targeting, allowsZeroTargets := e.spec.allowsZeroTargets,
-      resolution := .chapter e }
+    { resolution := .chapter e }
   | .plusOneOnSourceAndDraw => { resolution := .plusOneOnSourceAndDraw }
   | .drawIfAttackedOrEnteredSubtype subtype =>
     { resolution := .drawIfAttackedOrEnteredSubtype subtype }
@@ -5790,14 +5708,88 @@ end Resolution
 
 namespace Effect
 
+/-- Build a Saga-chapter `Effect` that still stores the apply payload
+so `asChapter?` and `Game.applyChapterEffect` can recover it. -/
+def mkChapter (payload : ChapterResolution) (targeting : EffectTargeting := {})
+    (allowsZeroTargets := false) (phrase : String) : Effect :=
+  { targeting
+    allowsZeroTargets
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 payload)
+    phrase }
+
 /-- Convert a printed Saga chapter to the unified `Effect`.
 Always wraps the original `ChapterResolution` so `asChapter?` can recover it. -/
-def ofChapter (e : ChapterResolution) : Effect :=
-  let s := e.spec
-  { targeting := s.targeting
-    allowsZeroTargets := s.allowsZeroTargets
-    resolution := Resolution.trigger (SharedTrigger.chapter 0 e)
-    phrase := s.phrase }
+def ofChapter : ChapterResolution → Effect
+  | e@(.dealDamageToOppCreature n) =>
+    mkChapter e (.of .oppCreature)
+      (phrase := s!"this Saga deals {n} damage to target creature an opponent controls")
+  | e@(.destroyOppArtifact) =>
+    mkChapter e (.of .oppArtifact)
+      (phrase := "destroy target artifact an opponent controls")
+  | e@(.addMana mana) =>
+    mkChapter e (phrase := s!"add {mana}")
+  | e@(.searchBasicLandToHand) =>
+    mkChapter e
+      (phrase := "search your library for a basic land card, reveal it, put it into your hand, then shuffle")
+  | e@(.gainLandfallCreateElf) =>
+    mkChapter e
+      (phrase := "this Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"")
+  | e@(.elvesGetVigilance p) =>
+    mkChapter e
+      (phrase := s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn")
+  | e@(.opponentDiscardsNonland) =>
+    mkChapter e (.of .opponent)
+      (phrase := "target opponent reveals their hand. You choose a nonland card from it. That player discards that card")
+  | e@(.amassGoblins n) =>
+    mkChapter e (phrase := s!"amass Goblins {n}")
+  | e@(.opponentLosesYouGain n) =>
+    mkChapter e (.of .opponent)
+      (phrase := s!"target opponent loses {n} life and you gain {n} life")
+  | e@(.grantHexproofWhileRemains) =>
+    mkChapter e (.of .creatureYouControl)
+      (phrase := "target creature you control gains hexproof for as long as this Saga remains on the battlefield")
+  | e@(.preventDamageWhileRemains) =>
+    mkChapter e (.of .creature) (allowsZeroTargets := true)
+      (phrase := "prevent all damage that would be dealt by up to one target creature for as long as this Saga remains on the battlefield")
+  | e@(.draw n) =>
+    mkChapter e (phrase := s!"draw {cardPhrase n}")
+  | e@(.searchBasicPlainsExileGainLife max life) =>
+    mkChapter e
+      (phrase := s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life")
+  | e@(.returnLinkedExileToHand) =>
+    mkChapter e
+      (phrase := "put a card exiled with this Saga into its owner's hand")
+  | e@(.grantAttackPumpPerPlainsThisTurn) =>
+    mkChapter e
+      (phrase := "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control")
+  | e@(.blinkUntilEndStep) =>
+    mkChapter e (.of .creatureOrLandYouControl) (allowsZeroTargets := true)
+      (phrase := "exile up to one target creature or land you control. If you do, return it to the battlefield under its owner's control at the beginning of the next end step")
+  | e@(.treasureThenDragonIfFour) =>
+    mkChapter e
+      (phrase := "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying")
+  | e@(.recruit) =>
+    mkChapter e (phrase := "recruit")
+  | e@(.returnCreatureFromGyMvAtMost n) =>
+    mkChapter e (.of (.creatureCardInYourGraveyardMvAtMost n))
+      (phrase := s!"return target creature card with mana value {n} or less from your graveyard to the battlefield")
+  | e@(.plusOneUpToOne) =>
+    mkChapter e (.of .creature) (allowsZeroTargets := true)
+      (phrase := "put a +1/+1 counter on up to one target creature")
+  | e@(.gainControlOfUpToTwoCreaturesTotalMvAtMost n) =>
+    mkChapter e (.of (.upToTwoCreaturesTotalMvAtMost n)) (allowsZeroTargets := true)
+      (phrase :=
+        s!"Gain control of up to two target creatures with total mana value {n} or less for as long as this Saga remains on the battlefield")
+  | e@(.dealDamageToEachNonSubtypeAndOpponents n subtype) =>
+    mkChapter e
+      (phrase :=
+        s!"This Saga deals {n} damage to each non-{subtype} creature and each opponent")
+  | e@(.dealXDamageToTargetOpponentGreatestArtifactMv) =>
+    mkChapter e (.of .opponent)
+      (phrase :=
+        "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control")
+  | e@(.spell s) =>
+    mkChapter e s.targeting (allowsZeroTargets := s.allowsZeroTargets) (phrase := s.phrase)
 
 /-- Printed leftover chapter constructors as unified `Effect` values. -/
 
@@ -6830,8 +6822,8 @@ def timing : TriggeredAbility → TriggerTiming
       anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment
       gainedLifeAtLeast := opts.gainedLifeAtLeast
       anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
-      targeting := if opts.untargeted then {} else t.targeting
-      allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
+      targeting := if opts.untargeted then {} else e.targeting
+      allowsZeroTargets := e.allowsZeroTargets || opts.allowsZeroTargets }
 
 /-- Unified effect this trigger resolves. -/
 def effect (ab : TriggeredAbility) : Effect :=
@@ -7263,7 +7255,9 @@ def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
 def sagaChapter (n : Nat) (e : Effect) : TriggeredAbility :=
   match e.asChapter? with
-  | some ch => .triggered .sagaChapter (Effect.ofTrigger (.chapter n ch))
+  | some ch =>
+    .triggered .sagaChapter
+      { e with resolution := Resolution.trigger (SharedTrigger.chapter n ch) }
   | none => .triggered .sagaChapter e
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork (Effect.ofTrigger .plusOneOnSourceAndDraw)
@@ -7705,7 +7699,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
   | .sacDamagersRingTempts =>
     "each opponent sacrifices a creature of their choice that dealt combat damage to you this turn. The Ring tempts you"
-  | .chapter e => e.spec.phrase
+  | .chapter e => (Effect.ofChapter e).phrase
   | .pumpTargetPerPlains =>
     "target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .investigate => "investigate"
@@ -9097,7 +9091,9 @@ instance : ToString CardDef where
 #guard TriggeredAbility.onStep .drawToTen ==
   .triggered .fromEffect (Effect.ofTrigger (.step .drawToTen))
 #guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
-  .triggered .sagaChapter (Effect.ofTrigger (.chapter 1 .recruit))
+  .triggered .sagaChapter
+    { Effect.chapterRecruit with
+      resolution := Resolution.trigger (SharedTrigger.chapter 1 .recruit) }
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
   .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
