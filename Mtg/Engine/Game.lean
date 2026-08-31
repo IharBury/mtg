@@ -11592,8 +11592,10 @@ def interveningStillHolds (g : Game) (controller : PlayerId)
     | some n => (g.player controller).lifeGainedThisTurn ≥ n
   let beginCombatFerocious :=
     match ab with
-    | .onYourBeginCombatFerociousPlusOne =>
-      g.greatestPowerAmongCreatures controller ≥ 4
+    | .onShared .yourBeginCombat _ opts =>
+      match opts.youControlCreatureWithPower with
+      | some n => g.greatestPowerAmongCreatures controller ≥ n
+      | none => true
     | _ => true
   lifeOk && beginCombatFerocious
 
