@@ -5170,12 +5170,95 @@ def SharedTriggerOpts.once : SharedTriggerOpts :=
 def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
   { untargeted := true }
 
+/-- How an `Effect` resolves (CR 608). Shared shapes (`draw`, `scry`,
+`onPermanent`, …) are used by spells, activated abilities, chapters, and
+triggers. Family-specific leftovers stay nested so the C runtime tag stays
+under the limit. -/
+inductive Resolution where
+  /-- Draw `n` cards. -/
+  | draw (n : Nat)
+  /-- Scry `n`. -/
+  | scry (n : Nat)
+  /-- Affect a still-legal permanent target. -/
+  | onPermanent (action : PermanentAction)
+  /-- Affect the source if it is still on the battlefield. -/
+  | onSource (action : PermanentAction)
+  /-- You gain `n` life. -/
+  | gainLife (n : Nat)
+  /-- Recruit. -/
+  | recruit
+  /-- Amass Goblins `n`. -/
+  | amassGoblins (n : Nat)
+  /-- Create `n` tokens of this kind. -/
+  | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
+  /-- Add these mana types. -/
+  | addMana (types : Array ManaType)
+  /-- Draw `n` cards, then discard a card. -/
+  | drawThenDiscard (n : Nat)
+  /-- Spell-only resolution leftover. -/
+  | spell (r : SpellResolution)
+  /-- Activated-ability-only resolution leftover. -/
+  | ability (r : AbilityResolution)
+  /-- Trigger leftover (timing stays on the shared trigger effect). -/
+  | trigger (e : SharedTriggerEffect)
+deriving Repr, Inhabited, BEq
+
+/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
+and triggered abilities. Targeting, printed wording, and resolution live
+here so Game has one apply path. -/
+structure Effect where
+  targeting : EffectTargeting := .of .none
+  allowsZeroTargets : Bool := false
+  maxTargets : Nat := 0
+  dividedDamage : Option (Nat × Nat) := none
+  spellCastKind : SpellCastKind := .extraLand
+  abilityCastKind : AbilityCastKind := .other
+  preferAsDefaultMode : Bool := false
+  resolution : Resolution := .draw 0
+  phrase : String := ""
+deriving Repr, Inhabited, BEq
+
+namespace Effect
+
+/-- Whom this effect may target (CR 115.1 / 601.2c). -/
+def targetKind (e : Effect) : EffectTargetKind :=
+  e.targeting.kind
+
+/-- How many targets must be announced (CR 601.2c). -/
+def targetCount (e : Effect) : Nat :=
+  e.targeting.targetCount
+
+/-- True when announcing this effect requires choosing a target. -/
+def requiresTarget (e : Effect) : Bool :=
+  e.targeting.requiresTarget
+
+/-- Upper bound on announced targets. `0` on `maxTargets` means `targetCount`. -/
+def maxTargetCount (e : Effect) : Nat :=
+  if e.maxTargets == 0 then e.targetCount else e.maxTargets
+
+/-- Demonstration-agent category for a spell mode. -/
+def castKind (e : Effect) : SpellCastKind :=
+  e.spellCastKind
+
+/-- Oracle-style reminder text. -/
+def toNotation (e : Effect) : String :=
+  e.phrase
+
+instance : HasTargeting Effect where
+  targeting e := e.targeting
+
+instance : ToString Effect where
+  toString := toNotation
+
+end Effect
+
 /-- A triggered ability the engine currently understands (CR 603).
 One constructor keeps the C runtime tag under the limit; leftover printed
 names are aliases of `triggered`. -/
 inductive TriggeredAbility where
   /-- Reusable trigger: when it fires, a shared effect, and optional
-  intervening conditions / wording filters. -/
+  intervening conditions / wording filters. The shared effect converts to
+  the unified `Effect` via `Effect.ofTrigger`. -/
   | triggered (when : SharedTriggerWhen) (effect : SharedTriggerEffect)
       (opts : SharedTriggerOpts := {})
 deriving Repr, Inhabited, BEq
@@ -6767,6 +6850,182 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
 
 end SharedTriggerEffect
 
+namespace Resolution
+
+/-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
+def ofSpell : SpellResolution → Resolution
+  | .draw n => .draw n
+  | .scry n => .scry n
+  | .onPermanent a => .onPermanent a
+  | .drawThenDiscard n => .drawThenDiscard n
+  | .amassGoblins n => .amassGoblins n
+  | .createTokens kind n => .createTokens kind n
+  | r => .spell r
+
+/-- Lift an activated-ability resolution onto the shared `Resolution` vocabulary. -/
+def ofAbility : AbilityResolution → Resolution
+  | .draw n => .draw n
+  | .scry n => .scry n
+  | .onPermanent a => .onPermanent a
+  | .onSource a => .onSource a
+  | .gainLife n => .gainLife n
+  | .recruit => .recruit
+  | .drawThenDiscard n => .drawThenDiscard n
+  | .createTokens kind n => .createTokens kind n
+  | .addMana types => .addMana types
+  | r => .ability r
+
+/-- Store a shared trigger on `Resolution`. Timing stays on the nested
+effect so leftover family events remain recoverable. -/
+def ofSharedTrigger (e : SharedTriggerEffect) : Resolution :=
+  .trigger e
+
+/-- Project a shared resolution back to `TriggerResolution` for leftover apply. -/
+def toTrigger : Resolution → TriggeredAbility.TriggerResolution
+  | .draw n => .draw n
+  | .scry n => .scry n
+  | .onPermanent a => .onPermanent a
+  | .onSource a => .onSource a
+  | .gainLife n => .gainLife n
+  | .recruit => .recruit
+  | .amassGoblins n => .amassGoblins n
+  | .createTokens kind n tapped => .createTokens kind n tapped
+  | .addMana types => .addMana types
+  | .drawThenDiscard n => .drawThenDiscardN n
+  | .trigger e => e.timing.resolution
+  | .spell r =>
+    match r with
+    | .onPermanent a => .onPermanent a
+    | .draw n => .draw n
+    | .scry n => .scry n
+    | .drawThenDiscard n => .drawThenDiscardN n
+    | .amassGoblins n => .amassGoblins n
+    | .createTokens kind n => .createTokens kind n false
+    | _ => .pumpGreatestPower
+  | .ability r =>
+    match r with
+    | .onPermanent a => .onPermanent a
+    | .onSource a => .onSource a
+    | .draw n => .draw n
+    | .scry n => .scry n
+    | .gainLife n => .gainLife n
+    | .recruit => .recruit
+    | .drawThenDiscard n => .drawThenDiscardN n
+    | .createTokens kind n => .createTokens kind n false
+    | .addMana types => .addMana types
+    | _ => .pumpGreatestPower
+
+end Resolution
+
+namespace Effect
+
+/-- Convert a printed spell effect to the unified `Effect`. -/
+def ofSpell (e : SpellEffect) : Effect :=
+  let s := e.spec
+  { targeting := s.targeting
+    allowsZeroTargets := s.allowsZeroTargets
+    maxTargets := s.maxTargets
+    spellCastKind := s.castKind
+    preferAsDefaultMode := s.preferAsDefaultMode
+    resolution := Resolution.ofSpell s.resolution
+    phrase := e.toNotation }
+
+/-- Convert a printed activated ability to the unified `Effect`. -/
+def ofAbility (e : AbilityEffect) : Effect :=
+  let s := e.spec
+  { targeting := s.targeting
+    allowsZeroTargets := s.allowsZeroTargets
+    abilityCastKind := s.castKind
+    resolution := Resolution.ofAbility s.resolution
+    phrase := e.toNotation }
+
+/-- Convert a printed Saga chapter to the unified `Effect`. -/
+def ofChapter (e : ChapterEffect) : Effect :=
+  let s := e.spec
+  { targeting := s.targeting
+    allowsZeroTargets := s.allowsZeroTargets
+    resolution :=
+      match e with
+      | .spell se => Resolution.ofSpell se.spec.resolution
+      | _ => Resolution.trigger (SharedTriggerEffect.chapter 0 e)
+    phrase := s.phrase }
+
+/-- Convert a shared trigger effect to the unified `Effect`. -/
+def ofTrigger (e : SharedTriggerEffect) : Effect :=
+  let t := e.timing
+  { targeting := t.targeting
+    allowsZeroTargets := t.allowsZeroTargets
+    dividedDamage := t.dividedDamage
+    resolution := Resolution.ofSharedTrigger e
+    phrase := "" }
+
+/-- Convert a leftover enters effect. -/
+def ofEnter (e : EnterEffect) : Effect := ofTrigger (.enter e)
+
+/-- Convert a leftover step / upkeep / end-step effect. -/
+def ofStep (e : StepEffect) : Effect := ofTrigger (.step e)
+
+/-- Convert a leftover dies effect. -/
+def ofDeath (e : DeathEffect) : Effect := ofTrigger (.death e)
+
+/-- Convert a leftover “whenever this attacks” effect. -/
+def ofThisAttack (e : ThisAttackEffect) : Effect := ofTrigger (.thisAttack e)
+
+/-- Convert a leftover “enters or attacks” effect. -/
+def ofEnterOrAttack (e : EnterOrAttackEffect) : Effect := ofTrigger (.enterOrAttack e)
+
+/-- Convert a leftover watch effect. -/
+def ofWatch (e : WatchEffect) : Effect := ofTrigger (.watch e)
+
+/-- Convert a leftover “whenever you attack” effect. -/
+def ofYouAttacking (e : YouAttackEffect) : Effect := ofTrigger (.youAttacking e)
+
+/-- Convert a leftover “whenever you cast …” effect. -/
+def ofCasting (e : CastEffect) : Effect := ofTrigger (.casting e)
+
+/-- Convert a leftover draw / discard / life / +1/+1-counter effect. -/
+def ofResource (e : ResourceEffect) : Effect := ofTrigger (.resource e)
+
+instance : Coe SpellEffect Effect where
+  coe := ofSpell
+
+instance : Coe AbilityEffect Effect where
+  coe := ofAbility
+
+instance : Coe ChapterEffect Effect where
+  coe := ofChapter
+
+instance : Coe SharedTriggerEffect Effect where
+  coe := ofTrigger
+
+instance : Coe EnterEffect Effect where
+  coe := ofEnter
+
+instance : Coe StepEffect Effect where
+  coe := ofStep
+
+instance : Coe DeathEffect Effect where
+  coe := ofDeath
+
+instance : Coe ThisAttackEffect Effect where
+  coe := ofThisAttack
+
+instance : Coe EnterOrAttackEffect Effect where
+  coe := ofEnterOrAttack
+
+instance : Coe WatchEffect Effect where
+  coe := ofWatch
+
+instance : Coe YouAttackEffect Effect where
+  coe := ofYouAttacking
+
+instance : Coe CastEffect Effect where
+  coe := ofCasting
+
+instance : Coe ResourceEffect Effect where
+  coe := ofResource
+
+end Effect
 
 namespace TriggeredAbility
 
@@ -6789,6 +7048,12 @@ def timing : TriggeredAbility → TriggerTiming
       anotherCreaturePowerAtMost := opts.anotherCreaturePowerAtMost
       targeting := if opts.untargeted then {} else t.targeting
       allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
+
+/-- Unified effect this trigger resolves (spells, abilities, and chapters
+use `Effect` directly). -/
+def effect (ab : TriggeredAbility) : Effect :=
+  match ab with
+  | .triggered _ e _ => Effect.ofTrigger e
 
 /-- Catalog aliases for reusable triggers that now share `triggered`. -/
 def onEnterScry (n : Nat) : TriggeredAbility := .triggered .enter (.scry n)
@@ -8556,6 +8821,16 @@ instance : ToString CardDef where
   leftoverOracleLines c ==
     ["Spew Flame {4}{R}", "Sorcery — Adventure",
       "Spew Flame deals 5 damage to target creature."]
+#guard (Effect.ofSpell (.dealDamage 3)).targetKind == .playerOrCreature
+#guard (Effect.ofSpell (.dealDamage 3)).resolution == Resolution.onPermanent (.dealDamage 3)
+#guard (Effect.ofSpell (.dealDamage 3)).phrase == "deals 3 damage to any target"
+#guard (Effect.ofAbility (.draw 2)).resolution == Resolution.draw 2
+#guard (Effect.ofAbility (.scry 1)).resolution == Resolution.scry 1
+#guard (Effect.ofTrigger (.scry 2)).resolution == Resolution.trigger (.scry 2)
+#guard (Effect.ofEnter (.dealDamageUpToOne 4)).allowsZeroTargets
+#guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
+#guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
+  Resolution.trigger (.scry 2)
 #guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
 #guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
 #guard SpellEffect.toNotation .destroyCreatureWithFlying ==
