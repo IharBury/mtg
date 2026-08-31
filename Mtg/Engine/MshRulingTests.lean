@@ -3321,15 +3321,15 @@ def superHeroCivilWarLeaveOk : Bool :=
   let saga := namedPermanent g "The Super Hero Civil War"
   let bears := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledChapter ⟨0⟩ .gainControlOfUpToTwoTargetCreaturesWith
-    #[Target.permanent bears.id] (some saga.id)
+  let g := g.applyChapterEffect ⟨0⟩ (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)
+    (some saga.id) #[Target.permanent bears.id]
   (namedPermanent g "Grizzly Bears").controlledBy ⟨1⟩ &&
     (let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
      let saga := namedPermanent g "The Super Hero Civil War"
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyModeledChapter ⟨0⟩ .gainControlOfUpToTwoTargetCreaturesWith
-       #[Target.permanent bears.id] (some saga.id)
+     let g := g.applyChapterEffect ⟨0⟩ (.gainControlOfUpToTwoCreaturesTotalMvAtMost 6)
+       (some saga.id) #[Target.permanent bears.id]
      (namedPermanent g "Grizzly Bears").controlledBy ⟨0⟩) &&
     (mshRuling 143).comment.contains "won't gain control"
 
