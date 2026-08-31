@@ -5535,76 +5535,6 @@ effect so leftover family events remain recoverable. -/
 def ofSharedTrigger (e : SharedTrigger) : Resolution :=
   .trigger e
 
-/-- Project a shared resolution back to `TriggerResolution` for leftover apply. -/
-def toTrigger : Resolution → TriggeredAbility.TriggerResolution
-  | .draw n => .draw n
-  | .scry n => .scry n
-  | .onPermanent a => .onPermanent a
-  | .onSource a => .onSource a
-  | .gainLife n => .gainLife n
-  | .recruit => .recruit
-  | .amassGoblins n => .amassGoblins n
-  | .createTokens kind n tapped => .createTokens kind n tapped
-  | .addMana types => .addMana types
-  | .drawThenDiscard n => .drawThenDiscardN n
-  | .sequence rs =>
-    match (rs.flatMap flatten).head? with
-    | some (.draw n) => .draw n
-    | some (.scry n) => .scry n
-    | some (.onPermanent a) => .onPermanent a
-    | some (.onSource a) => .onSource a
-    | some (.gainLife n) => .gainLife n
-    | some (.recruit) => .recruit
-    | some (.amassGoblins n) => .amassGoblins n
-    | some (.createTokens kind n tapped) => .createTokens kind n tapped
-    | some (.addMana types) => .addMana types
-    | some (.drawThenDiscard n) => .drawThenDiscardN n
-    | some (.trigger e) => e.timing.resolution
-    | some (.spell r) =>
-      match r with
-      | .onPermanent a => .onPermanent a
-      | .draw n => .draw n
-      | .scry n => .scry n
-      | .drawThenDiscard n => .drawThenDiscardN n
-      | .amassGoblins n => .amassGoblins n
-      | .createTokens kind n => .createTokens kind n false
-      | _ => .pumpGreatestPower
-    | some (.ability r) =>
-      match r with
-      | .onPermanent a => .onPermanent a
-      | .onSource a => .onSource a
-      | .draw n => .draw n
-      | .scry n => .scry n
-      | .gainLife n => .gainLife n
-      | .recruit => .recruit
-      | .drawThenDiscard n => .drawThenDiscardN n
-      | .createTokens kind n => .createTokens kind n false
-      | .addMana types => .addMana types
-      | _ => .pumpGreatestPower
-    | some (.sequence _) | none => .pumpGreatestPower
-  | .trigger e => e.timing.resolution
-  | .spell r =>
-    match r with
-    | .onPermanent a => .onPermanent a
-    | .draw n => .draw n
-    | .scry n => .scry n
-    | .drawThenDiscard n => .drawThenDiscardN n
-    | .amassGoblins n => .amassGoblins n
-    | .createTokens kind n => .createTokens kind n false
-    | _ => .pumpGreatestPower
-  | .ability r =>
-    match r with
-    | .onPermanent a => .onPermanent a
-    | .onSource a => .onSource a
-    | .draw n => .draw n
-    | .scry n => .scry n
-    | .gainLife n => .gainLife n
-    | .recruit => .recruit
-    | .drawThenDiscard n => .drawThenDiscardN n
-    | .createTokens kind n => .createTokens kind n false
-    | .addMana types => .addMana types
-    | _ => .pumpGreatestPower
-
 end Resolution
 
 namespace Effect
@@ -8567,11 +8497,6 @@ def mshTapAddMana (c : CardDef) : Array ManaType :=
     | .addBlueCantNonartifact => acc ++ #[.colored .blue]
     | _ => acc) #[]
 
-/-- True when a modeled `{T}: Add` ability requires this land entered
-this turn or a basic land you control. -/
-def mshTapAddRequiresEnteredOrBasic (_c : CardDef) : Bool :=
-  false
-
 /-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
 def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
   c.tapAddOneOfIfEnteredOrBasic ++ c.mshTapAddMana
@@ -8579,7 +8504,7 @@ def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
 /-- True when a `{T}: Add` ability requires this land entered this turn or
 a basic land you control. -/
 def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
-  !c.tapAddOneOfIfEnteredOrBasic.isEmpty || c.mshTapAddRequiresEnteredOrBasic
+  !c.tapAddOneOfIfEnteredOrBasic.isEmpty
 
 /-- True when an activated ability adds any color of mana. -/
 def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
