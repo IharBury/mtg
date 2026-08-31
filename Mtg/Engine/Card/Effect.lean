@@ -35,6 +35,8 @@ inductive Resolution where
   | addMana (types : Array ManaType)
   /-- Draw `n` cards, then discard a card. -/
   | drawThenDiscard (n : Nat)
+  /-- Discard `n` cards. -/
+  | discard (n : Nat)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -104,7 +106,8 @@ def spellResolution (e : Effect) : SpellResolution :=
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
     | _ => .extraLand
-  | .gainLife _ | .recruit | .addMana _ | .ability _ | .trigger _ => .extraLand
+  | .gainLife _ | .recruit | .addMana _ | .discard _ | .ability _ | .trigger _ =>
+    .extraLand
 
 /-- Recover the leftover activated-ability resolution. -/
 def abilityResolution (e : Effect) : AbilityResolution :=
@@ -121,13 +124,14 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .addMana types => .addMana types
   | .sequence rs =>
     match rs with
+    | [.draw n, .discard 1] => .drawThenDiscard n
     | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
     | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
     | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
     | [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)] =>
       .creaturesYouControlGetOppsLoseLife p t life
     | _ => .draw 0
-  | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
+  | .amassGoblins _ | .discard _ | .spell _ | .trigger _ => .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=
@@ -184,7 +188,7 @@ def ofAbility : AbilityResolution → Resolution
   | .onSource a => .onSource a
   | .gainLife n => .gainLife n
   | .recruit => .recruit
-  | .drawThenDiscard n => .drawThenDiscard n
+  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
   | .createTokens kind n => .createTokens kind n
   | .addMana types => .addMana types
   | .plusOneAndDraw plus cards =>

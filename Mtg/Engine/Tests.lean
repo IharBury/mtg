@@ -12585,6 +12585,28 @@ def sequenceDrawThenGain : Game :=
     (sequenceDrawThenGain.player ⟨0⟩).life ==
       (started.player ⟨0⟩).life + 3
 
+/-- `AbilityResolution.drawThenDiscard` applies as draw, then a discard choice. -/
+def abilityDrawThenDiscardPending : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.abilityDrawThenDiscard 2) #[]
+
+#guard
+  (abilityDrawThenDiscardPending.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 2 &&
+    (match abilityDrawThenDiscardPending.pending with
+     | .chooseDiscardCard ⟨0⟩ _ => true
+     | _ => false)
+
+def abilityDrawThenDiscardDone : Game :=
+  mustApply abilityDrawThenDiscardPending ⟨0⟩
+    (.discard (abilityDrawThenDiscardPending.player ⟨0⟩).hand.back!)
+
+#guard
+  abilityDrawThenDiscardDone.pending == .none &&
+    (abilityDrawThenDiscardDone.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (abilityDrawThenDiscardDone.player ⟨0⟩).graveyard.size ==
+      (afterDraw.player ⟨0⟩).graveyard.size + 1
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩

@@ -25,6 +25,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .recruit => g.beginRecruit controller
   | .addMana types =>
     g.addManaLogged controller types
+  | .discard n =>
+    g.beginDiscardCards #[controller] n
   | .onSource a =>
     g.applyOnPermanent controller effect.targetKind targets a
   | _ =>
@@ -710,6 +712,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       g.applyUnifiedAbility controller { effect with resolution := r } targets
         sourceId lastKnownPower chosenX) g
   | .amassGoblins n => g.amassGoblins controller n
+  | .discard n =>
+    g.beginDiscardCards #[controller] n
   | .spell r =>
     g.applyUnified controller { effect with resolution := .spell r } targets
       (chosenX := chosenX)
