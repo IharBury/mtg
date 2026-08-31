@@ -70,6 +70,12 @@ namespace CardDef
     [.createTokens .villain21menace 1, .spell (.creaturesYouControlPump 1 0)]
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
+#guard (Effect.drawThenDiscard 2).resolution ==
+  Resolution.sequence [.draw 2, .discard 1]
+#guard (Effect.drawThenDiscard 2).spellResolution == .drawThenDiscard 2
+#guard (Effect.abilityDrawThenDiscard 2).resolution ==
+  Resolution.sequence [.draw 2, .discard 1]
+#guard (Effect.abilityDrawThenDiscard 2).abilityResolution == .drawThenDiscard 2
 #guard (Effect.plusOneAndDraw 1 2).resolution ==
   Resolution.sequence [.onSource (.plusOne 1), .draw 2]
 #guard Effect.destroyUpToOneThenPlusOne.resolution ==

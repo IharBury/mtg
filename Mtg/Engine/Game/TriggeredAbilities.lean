@@ -41,7 +41,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.createKindTokens controller kind n (tapped := tapped)
   | .addMana types =>
     g.addManaLogged controller types
-  | .drawThenDiscard n => g.drawThenBeginDiscard controller n
+  | .discard n => g.beginDiscardCards #[controller] n
   | .spell r =>
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
   | .ability r =>

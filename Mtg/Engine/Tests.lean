@@ -12585,6 +12585,38 @@ def sequenceDrawThenGain : Game :=
     (sequenceDrawThenGain.player ⟨0⟩).life ==
       (started.player ⟨0⟩).life + 3
 
+/-- Spell and ability loot both apply as draw, then a discard choice. -/
+def spellDrawThenDiscardPending : Game :=
+  afterDraw.applyEffect ⟨0⟩ (Effect.drawThenDiscard 2) #[]
+
+#guard
+  (spellDrawThenDiscardPending.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 2 &&
+    (match spellDrawThenDiscardPending.pending with
+     | .chooseDiscardCard ⟨0⟩ _ => true
+     | _ => false)
+
+def abilityDrawThenDiscardPending : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.abilityDrawThenDiscard 2) #[]
+
+#guard
+  (abilityDrawThenDiscardPending.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 2 &&
+    (match abilityDrawThenDiscardPending.pending with
+     | .chooseDiscardCard ⟨0⟩ _ => true
+     | _ => false)
+
+def abilityDrawThenDiscardDone : Game :=
+  mustApply abilityDrawThenDiscardPending ⟨0⟩
+    (.discard (abilityDrawThenDiscardPending.player ⟨0⟩).hand.back!)
+
+#guard
+  abilityDrawThenDiscardDone.pending == .none &&
+    (abilityDrawThenDiscardDone.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 1 &&
+    (abilityDrawThenDiscardDone.player ⟨0⟩).graveyard.size ==
+      (afterDraw.player ⟨0⟩).graveyard.size + 1
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩

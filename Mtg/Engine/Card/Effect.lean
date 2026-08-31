@@ -33,8 +33,8 @@ inductive Resolution where
   | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
   /-- Add these mana types. -/
   | addMana (types : Array ManaType)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
+  /-- Discard `n` cards. -/
+  | discard (n : Nat)
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -93,18 +93,19 @@ def spellResolution (e : Effect) : SpellResolution :=
   | .draw n => .draw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
-  | .drawThenDiscard n => .drawThenDiscard n
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n _ => .createTokens kind n
   | .onSource a => .onPermanent a
   | .sequence rs =>
     match rs with
+    | [.draw n, .discard 1] => .drawThenDiscard n
     | [.spell (.drawAndLoseLife 1 1), .amassGoblins n] => .drawLoseLifeThenAmass n
     | [.createTokens kind n _, .spell (.creaturesYouControlPump p t)] =>
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
     | _ => .extraLand
-  | .gainLife _ | .recruit | .addMana _ | .ability _ | .trigger _ => .extraLand
+  | .gainLife _ | .recruit | .addMana _ | .discard _ | .ability _ | .trigger _ =>
+    .extraLand
 
 /-- Recover the leftover activated-ability resolution. -/
 def abilityResolution (e : Effect) : AbilityResolution :=
@@ -116,18 +117,18 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .onSource a => .onSource a
   | .gainLife n => .gainLife n
   | .recruit => .recruit
-  | .drawThenDiscard n => .drawThenDiscard n
   | .createTokens kind n _ => .createTokens kind n
   | .addMana types => .addMana types
   | .sequence rs =>
     match rs with
+    | [.draw n, .discard 1] => .drawThenDiscard n
     | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
     | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
     | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
     | [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)] =>
       .creaturesYouControlGetOppsLoseLife p t life
     | _ => .draw 0
-  | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
+  | .amassGoblins _ | .discard _ | .spell _ | .trigger _ => .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=
@@ -165,7 +166,7 @@ def ofSpell : SpellResolution → Resolution
   | .draw n => .draw n
   | .scry n => .scry n
   | .onPermanent a => .onPermanent a
-  | .drawThenDiscard n => .drawThenDiscard n
+  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
   | .amassGoblins n => .amassGoblins n
   | .createTokens kind n => .createTokens kind n
   | .drawLoseLifeThenAmass n =>
@@ -184,7 +185,7 @@ def ofAbility : AbilityResolution → Resolution
   | .onSource a => .onSource a
   | .gainLife n => .gainLife n
   | .recruit => .recruit
-  | .drawThenDiscard n => .drawThenDiscard n
+  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
   | .createTokens kind n => .createTokens kind n
   | .addMana types => .addMana types
   | .plusOneAndDraw plus cards =>
