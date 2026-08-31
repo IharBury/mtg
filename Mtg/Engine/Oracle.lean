@@ -2,7 +2,7 @@ import Mtg.Engine.Card
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit
 import Mtg.Engine.Catalog.HobbitEternal
-import Mtg.Engine.Catalog.Marvel
+import Mtg.Engine.Catalog.MarvelSuperHeroes
 
 /-!
 # Oracle verification
