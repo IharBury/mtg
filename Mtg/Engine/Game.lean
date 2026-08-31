@@ -5876,29 +5876,34 @@ def reverseProposedSpell (g : Game) : Game :=
       -- The player who had priority retains it (CR 733.2).
       return { g with priority := prop.caster, consecutivePasses := 0 }
 
-/-- Queue “becomes the target” triggers once per unique targeted permanent
-(CR 603.2 / 601.2c). A spell or ability that targets the same permanent
-more than once still triggers only once. -/
-def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
-    (targets : Array Target) : Game :=
+/-- Fold `f` over each targeted permanent that still exists. Non-permanent
+targets are skipped. `unique` visits a permanent only once even when it is
+targeted more than once. -/
+def foldPermanentTargets (g : Game) (targets : Array Target)
+    (f : Game → GameObject → Game) (unique := false) : Game :=
   Id.run do
     let mut g := g
     let mut seen : Array ObjectId := #[]
     for t in targets do
       match t with
       | Target.permanent oid =>
-        if !seen.contains oid then
+        if !(unique && seen.contains oid) then
           seen := seen.push oid
           match g.findObject? oid with
-          | some o =>
-            if o.controller != some caster then
-              match o.controller with
-              | some c =>
-                g := g.putMatchingSourceTriggers c o .becomesTarget
-              | none => pure ()
+          | some o => g := f g o
           | none => pure ()
       | _ => pure ()
     return g
+
+/-- Queue “becomes the target” triggers once per unique targeted permanent
+(CR 603.2 / 601.2c). A spell or ability that targets the same permanent
+more than once still triggers only once. -/
+def queueBecomesTargetTriggers (g : Game) (caster : PlayerId)
+    (targets : Array Target) : Game :=
+  g.foldPermanentTargets targets (unique := true) (f := fun g o =>
+    match o.controller with
+    | some c => if c != caster then g.putMatchingSourceTriggers c o .becomesTarget else g
+    | none => g)
 
 /-- Printed and granted ward costs currently on `o`. -/
 def wardCostsOn (g : Game) (o : GameObject) : Array WardCost :=
@@ -5995,23 +6000,12 @@ def afterWardResolved (g : Game) : Game :=
 or ability (CR 702.21). -/
 def beginWardsForTargets (g : Game) (caster : PlayerId) (spellId : ObjectId)
     (targets : Array Target) : Game :=
-  Id.run do
-    let mut g := g
-    let mut seen : Array ObjectId := #[]
-    for t in targets do
-      match t with
-      | Target.permanent oid =>
-        if !seen.contains oid then
-          seen := seen.push oid
-          match g.findObject? oid with
-          | some o =>
-            if o.controller != some caster && o.isOnBattlefield then
-              for cost in g.wardCostsOn o do
-                g := { g with wardQueue := g.wardQueue.push {
-                  player := caster, spellId, cost } }
-          | none => pure ()
-      | _ => pure ()
-    return g.promptNextWard
+  let g := g.foldPermanentTargets targets (unique := true) (f := fun g o =>
+    if o.controller != some caster && o.isOnBattlefield then
+      (g.wardCostsOn o).foldl (fun g cost =>
+        { g with wardQueue := g.wardQueue.push { player := caster, spellId, cost } }) g
+    else g)
+  g.promptNextWard
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
   let g := { g with castingFromTop := false }
@@ -6020,16 +6014,10 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject) : Game :=
     match g.stackEntry? spell.id with
     | some e =>
       let g := g.queueBecomesTargetTriggers p e.targets
-      e.targets.foldl (fun (g : Game) (t : Target) =>
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | some o =>
-            match o.controller with
-            | some c => g.putMatchingSourceTriggers c o .spellTargetsSource
-            | none => g
-          | none => g
-        | _ => g) g
+      g.foldPermanentTargets e.targets (fun g o =>
+        match o.controller with
+        | some c => g.putMatchingSourceTriggers c o .spellTargetsSource
+        | none => g)
     | none => g
   let g := g.putCastTriggersOnStack p spell
   let g :=
@@ -8328,6 +8316,15 @@ def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : Triggered
     (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
   g.withLegalKindPermanent controller ab.targetKind targets f sourceId (some noneMsg)
 
+/-- Apply `f` to a still-legal player target of a triggered ability. -/
+def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
+    (sourceId : Option ObjectId) (targets : Array Target)
+    (f : Game → PlayerId → Game) : Game :=
+  g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
+    match t with
+    | Target.player pid => f g pid
+    | _ => g.logMsg "The target is no longer legal")
+
 /-- Deal `n` damage to a still-legal target of `kind`. -/
 def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
@@ -8380,17 +8377,14 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
   | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
   | .pumpAndLifelink pw tw =>
     let g := g.pumpPermanent o pw tw
-    let o := g.object! o.id
-    let g := g.mapObjectStatus o (·.grantUntilEot Keyword.lifelink)
-    g.logMsg s!"{o.name} gains lifelink until end of turn"
+    g.grantUntilEotLogged (g.object! o.id) Keyword.lifelink
   | .pumpAndExileIfDies pw tw =>
     let g := g.pumpPermanent o pw tw
     let o := g.object! o.id
     let g := g.mapObjectStatus o (fun s => { s with untilEotExileIfDies := true })
     g.logMsg s!"If {o.name} would die this turn, exile it instead"
   | .grantKeywords k =>
-    let g := g.mapObjectStatus o (·.grantUntilEot k)
-    g.logMsg s!"{o.name} gains {k} until end of turn"
+    g.grantUntilEotLogged o k
   | .tap =>
     if o.status.tapped then
       g.logMsg s!"{o.name} is already tapped"
@@ -8431,9 +8425,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
       s!"{o.name} becomes an artifact and gains indestructible until end of turn"
   | .pumpAndGrant pw tw k =>
     let g := g.pumpPermanent o pw tw
-    let o := g.object! o.id
-    let g := g.mapObjectStatus o (·.grantUntilEot k)
-    g.logMsg s!"{o.name} gains {k} until end of turn"
+    g.grantUntilEotLogged (g.object! o.id) k
 def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
@@ -8548,6 +8540,18 @@ def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       let (g, newId) := g.move id .stack (some p)
       let g := g.putStackEntry p newId
       g.logMsg s!"{(g.player p).name} casts {name} as the ability resolves"
+
+/-- Cast the first instant or sorcery card with mana value at most `maxMv`
+from `p`'s hand as part of a resolution, without paying its mana cost. -/
+def castInstantSorceryFromHandMvAtMost (g : Game) (p : PlayerId) (maxMv : Nat) : Game :=
+  match (g.player p).hand.findSome? (fun id =>
+    match g.findObject? id with
+    | some o =>
+      if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
+      else none
+    | none => none) with
+  | none => g.logMsg "No instant or sorcery to cast"
+  | some id => g.castAsPartOfResolution p id
 
 /-- Why `id` cannot be cast from a pending Cosmic Cube look, if it cannot. -/
 def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
@@ -9856,6 +9860,13 @@ def resolvingTeamworkPaid (g : Game) : Bool :=
 def teamworkAmount (g : Game) (base alt : Nat) : Nat :=
   if g.resolvingTeamworkPaid then alt else base
 
+/-- Add `types` to `p`'s mana pool and log it (shared `.addMana` resolution). -/
+def addManaLogged (g : Game) (p : PlayerId) (types : Array ManaType) : Game :=
+  let g := g.modifyPlayer p (fun pl =>
+    { pl with manaPool :=
+      types.foldl (fun pool t => pool.add t) pl.manaPool })
+  g.logMsg s!"{(g.player p).name} adds mana"
+
 /-- Ask the target spell's controller to pay `{n}` or let it be countered. -/
 def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
   match targets[0]? with
@@ -9867,6 +9878,35 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
         s!"{(g.player ctrl).name} may pay \{{n}} or {o.name} is countered"
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
+
+/-- Exile `o`, then immediately return it to the battlefield under its
+owner's control. `clearExileFields` drops a play permission or linked exile
+carried while exiled. With `land := false` the permanent returns summoning
+sick unless it has haste and `afterPermanentEnters` runs; with `land := true`
+it returns tapped when `tapped` is set and `afterLandEnters` runs. -/
+def exileThenReturn (g : Game) (o : GameObject) (logText : String)
+    (clearExileFields := false) (tapped := false) (land := false) : Game :=
+  let owner := o.owner
+  let name := o.name
+  let (g, newId) := g.move o.id .exile none
+  let g :=
+    if clearExileFields then
+      let ex := g.object! newId
+      g.setObject { ex with playPermission := none, linkedExile := #[] }
+    else g
+  let (g, retId) := g.move newId .battlefield (some owner)
+  let ret := g.object! retId
+  let g :=
+    if land then
+      if tapped then
+        g.setObject { ret with status := { ret.status with tapped := true } }
+      else g
+    else
+      g.setObject { ret with
+        status := { ret.status with summoningSick := !ret.printed.keywords.haste } }
+  let g := g.logMsg s!"{name} {logText}"
+  if land then g.afterLandEnters (g.object! retId)
+  else g.afterPermanentEnters (g.object! retId)
 
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
@@ -9881,10 +9921,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .gainLife n => g.gainLife controller n
   | .recruit => g.beginRecruit controller
   | .addMana types =>
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        types.foldl (fun pool t => pool.add t) pl.manaPool })
-    g.logMsg s!"{(g.player controller).name} adds mana"
+    g.addManaLogged controller types
   | .onSource a =>
     g.applyOnPermanent controller effect.targetKind targets a
   | _ =>
@@ -9952,18 +9989,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         g.logMsg "The spell doesn't resolve"
     | none => g.logMsg "The spell doesn't resolve"
   | .tapTargets =>
-    Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield && o.isCreature then
-              g := g.applyPermanentAction o .tap
-          | none => pure ()
-        | _ => pure ()
-      return g
+    g.foldPermanentTargets targets (fun g o =>
+      if o.isOnBattlefield && o.isCreature then g.applyPermanentAction o .tap else g)
   | .counter =>
     match targets[0]? with
     | some (Target.card id) => g.counterStackSpell id
@@ -10175,27 +10202,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopPlayIfYouControlSubtype n subtype =>
     g.exileTopPlayIfYouControlSubtype controller n subtype
   | .exileThenReturnYouControl =>
-    Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | none => pure ()
-          | some o =>
-            if o.controlledBy controller then
-              let owner := o.owner
-              let name := o.name
-              let (g', newId) := g.move oid .exile none
-              let (g'', retId) := g'.move newId .battlefield (some owner)
-              g := g''
-              let o := g.object! retId
-              let sick := !o.printed.keywords.haste
-              g := g.setObject { o with status := { o.status with summoningSick := sick } }
-              g := g.logMsg s!"{name} is exiled, then returned to the battlefield"
-              g := g.afterPermanentEnters (g.object! retId)
-        | _ => pure ()
-      return g
+    g.foldPermanentTargets targets (fun g o =>
+      if o.controlledBy controller then
+        g.exileThenReturn o "is exiled, then returned to the battlefield"
+      else g)
   | .destroyArtifactOrEnchantmentGainLife n =>
     let g := g.applyOnPermanent controller effect.targetKind targets .destroy
     if n == 0 then g
@@ -10291,18 +10301,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g := g.requestShuffle controller (.gainLife controller life)
       return g.continueIfShuffled
   | .gainControlOppArtifacts =>
-    Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | none => pure ()
-          | some o =>
-            if o.isOnBattlefield && o.printed.isArtifact && !o.controlledBy controller then
-              g := g.changeControl o controller
-        | _ => pure ()
-      return g
+    g.foldPermanentTargets targets (fun g o =>
+      if o.isOnBattlefield && o.printed.isArtifact && !o.controlledBy controller then
+        g.changeControl o controller
+      else g)
   | .damageOppCreaturesEqualOtherSpellsMv =>
     let xs := (g.player controller).castManaValuesThisTurn
     let n : Nat := (xs.extract 0 xs.size.pred).foldl (fun a b => a + b) 0
@@ -10682,10 +10684,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.afterPermanentEnters (g.object! newId))
         sourceId (some "The target is no longer legal. Eagle's Rescue remains in the graveyard.")
   | .addMana types =>
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        types.foldl (fun pool t => pool.add t) pl.manaPool })
-    g.logMsg s!"{(g.player controller).name} adds mana"
+    g.addManaLogged controller types
   | .searchBasicLandToHand =>
     g.resolveSearchBasicLandToHand controller
   | .createTokensX kind =>
@@ -10709,35 +10708,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
       (fun g o => g.hasSubtype o "Goblin" || g.hasSubtype o "Orc")
   | .exileThenReturnNextEnd =>
-    Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | none => pure ()
-          | some o =>
-            if o.controlledBy controller && !o.printed.isLand && some o.id != sourceId then
-              let name := o.name
-              let owner := o.owner
-              let (g', newId) := g.move oid .exile none
-              g := g'
-              let o := g.object! newId
-              g := g.setObject { o with
-                playPermission := none
-                linkedExile := #[] }
-              -- Return immediately for this engine (next end step is modeled
-              -- as a delayed return at the next end step via eagles-style
-              -- bookkeeping: bounce now, then put back tapped next end).
-              let (g'', retId) := g.move newId .battlefield (some owner)
-              g := g''
-              let ret := g.object! retId
-              let sick := !ret.printed.keywords.haste
-              g := g.setObject { ret with status := { ret.status with summoningSick := sick } }
-              g := g.logMsg s!"{name} is exiled, then returned"
-              g := g.afterPermanentEnters (g.object! retId)
-        | _ => pure ()
-      return g
+    -- Return immediately for this engine (next end step is modeled as a
+    -- delayed return at the next end step via eagles-style bookkeeping:
+    -- bounce now, then put back tapped next end).
+    g.foldPermanentTargets targets (fun g o =>
+      if o.controlledBy controller && !o.printed.isLand && some o.id != sourceId then
+        g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
+      else g)
   | .searchBasicBeholdElfUntap =>
     let g := g.resolveSearchBasicLandTapped controller
     let g := g.beholdQuality controller "Elf"
@@ -11686,10 +11663,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind n tapped =>
     g.createKindTokens controller kind n (tapped := tapped)
   | .addMana types =>
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        types.foldl (fun pool t => pool.add t) pl.manaPool })
-    g.logMsg s!"{(g.player controller).name} adds mana"
+    g.addManaLogged controller types
   | .drawThenDiscard n => g.drawThenBeginDiscard controller n
   | .spell r =>
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
@@ -11728,10 +11702,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .mayDiscardDraw n =>
     g.beginMayDiscardDraw controller n
   | .opponentSacrificesCreature =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.player pid => g.beginSacrificeCreature pid
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.beginSacrificeCreature pid)
   | .onPermanent action =>
     g.applyOnPermanent controller ab.targetKind targets action sourceId
       (some "The target is no longer legal")
@@ -11954,10 +11926,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.logMsg "No creature was chosen"
     | _, _ => g.logMsg "The target is no longer legal"
   | .addMana types =>
-    let g := g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        types.foldl (fun pool t => pool.add t) pl.manaPool })
-    g.logMsg s!"{(g.player controller).name} adds mana"
+    g.addManaLogged controller types
   | .defenderSacsLeastPower =>
     let defn := g.opponent controller
     let chosen :=
@@ -12326,10 +12295,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               g.afterPermanentEnters (g.object! cardId)
       else g
   | .millPlayer n =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.player pid => g.mill pid n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid => g.mill pid n)
   | .treasuresPerChosenType =>
     let n := g.countCreaturesControlledBy controller
     g.createTreasureTokens controller n
@@ -12399,10 +12365,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       | _, _ => g
     | _, _ => g
   | .damageTargetOpponent n =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.player pid => g.dealDamageToPlayer pid n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.dealDamageToPlayer pid n)
   | .millThatManyLost =>
     match g.lastLifeLost with
     | some (pid, n) => g.mill pid n
@@ -12431,10 +12395,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.draw controller 1
       g.createTreasureTokens controller 1
   | .targetOpponentLosesLife n =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.player pid => g.loseLife pid n
-      | _ => g.logMsg "The target is no longer legal")
+    g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
+      g.loseLife pid n)
   | .attachEquipmentThenFight =>
     match targets[0]? with
     | some (Target.permanent hid) =>
@@ -12483,49 +12445,18 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     let wizards :=
       (g.permanentsOf controller).filter (fun o =>
         o.isLegendary && g.hasSubtype o "Wizard") |>.size
-    let maxMv := wizards * 2
-    match (g.player controller).hand.findSome? (fun id =>
-      match g.findObject? id with
-      | some o =>
-        if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
-        else none
-      | none => none) with
-    | none => g.logMsg "No instant or sorcery to cast"
-    | some id => g.castAsPartOfResolution controller id
+    g.castInstantSorceryFromHandMvAtMost controller (wizards * 2)
   | .drawPlusOneSource =>
     let g := g.draw controller 1
     g.applyOnTriggerSource sourceId (.plusOne 1)
   | .exileLandsThenReturnTapped =>
-    Id.run do
-      let mut g := g
-      for t in targets do
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | none => pure ()
-          | some o =>
-            if o.controlledBy controller && o.printed.isLand then
-              let owner := o.owner
-              let name := o.name
-              let (g', newId) := g.move oid .exile none
-              let (g'', retId) := g'.move newId .battlefield (some owner)
-              g := g''
-              g := g.setObject { (g.object! retId) with
-                status := { (g.object! retId).status with tapped := true } }
-              g := g.logMsg s!"{name} is exiled, then returned tapped"
-              g := g.afterLandEnters (g.object! retId)
-        | _ => pure ()
-      return g
+    g.foldPermanentTargets targets (fun g o =>
+      if o.controlledBy controller && o.printed.isLand then
+        g.exileThenReturn o "is exiled, then returned tapped"
+          (tapped := true) (land := true)
+      else g)
   | .castInstantSorceryMvAtMost =>
-    let maxMv := (lastKnownPower.getD 0).toNat
-    match (g.player controller).hand.findSome? (fun id =>
-      match g.findObject? id with
-      | some o =>
-        if o.printed.isInstantOrSorcery && o.printed.manaValue <= maxMv then some id
-        else none
-      | none => none) with
-    | none => g.logMsg "No instant or sorcery to cast"
-    | some id => g.castAsPartOfResolution controller id
+    g.castInstantSorceryFromHandMvAtMost controller (lastKnownPower.getD 0).toNat
   | .grimaImpulse =>
     let victim := g.lastCombatDamagePlayer.getD (g.opponent controller)
     g.grimaExileUntilInstantOrSorcery controller victim true
@@ -14247,47 +14178,41 @@ def finishScry (g : Game) (p : PlayerId) (top bottom : Array ObjectId) :
       return g.receivePriority g.activePlayer
   | _ => throw "Not time to scry (CR 701.20)"
 
+/-- Shared pending-discard core (CR 701.9): `p` must be the pending player
+`q` and `id` must be in `p`'s hand; the discard is logged (with `logSuffix`)
+and the card moves to its owner's graveyard. `countDiscard` bumps
+`cardsDiscardedThisTurn`. Returns the discarded card. -/
+def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
+    (logSuffix : String := "") (countDiscard := true) :
+    Except String (Game × GameObject) := do
+  if p != q then
+    throw s!"Only {(g.player q).name} may discard"
+  if !(g.player p).hand.contains id then
+    throw "That card is not in your hand"
+  let some card := g.findObject? id | throw "no such object"
+  let g := g.logMsg s!"{(g.player p).name} discards {card.name}{logSuffix}"
+  let (g, _) := g.move id (.graveyard card.owner) none
+  let g :=
+    if countDiscard then
+      g.modifyPlayer p (fun pl =>
+        { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    else g
+  return (g, card)
+
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
 def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .mayDiscardDraw q n =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may discard"
-    let pl := g.player p
-    if !pl.hand.contains id then
-      throw "That card is not in your hand"
-    let some card := g.findObject? id | throw "no such object"
-    let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-    let (g, _) := g.move id (.graveyard card.owner) none
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    let (g, _) ← g.discardPendingCard p q id
     let g := g.draw p n
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
   | .maySacArtifactOrDiscard q =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may discard"
-    let pl := g.player p
-    if !pl.hand.contains id then
-      throw "That card is not in your hand"
-    let some card := g.findObject? id | throw "no such object"
-    let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-    let (g, _) := g.move id (.graveyard card.owner) none
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    let (g, _) ← g.discardPendingCard p q id
     return g.finishSacArtifactOrDiscardDraw p
   | .chooseDiscardCard q remaining =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may discard"
-    let pl := g.player p
-    if !pl.hand.contains id then
-      throw "That card is not in your hand"
-    let some card := g.findObject? id | throw "no such object"
-    let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-    let (g, _) := g.move id (.graveyard card.owner) none
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
     if g.thirstDiscardsLeft > 0 then
       let left := if card.printed.isArtifact then 0 else g.thirstDiscardsLeft - 1
@@ -14305,18 +14230,10 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
         return g.beginDiscardCards #[p]
     return g.beginDiscardCards remaining
   | .recruitDiscard q =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may discard"
-    let pl := g.player p
-    if !pl.hand.contains id then
-      throw "That card is not in your hand"
-    let some card := g.findObject? id | throw "no such object"
-    let wasLand := card.printed.isLand
-    let g := g.logMsg s!"{(g.player p).name} discards {card.name}"
-    let (g, _) := g.move id (.graveyard card.owner) none
+    let (g, card) ← g.discardPendingCard p q id (countDiscard := false)
     let g := { g with pending := .none }
     let g :=
-      if wasLand then g
+      if card.printed.isLand then g
       else
         let (g, _) := g.createToken p humanSoldierToken
         g
@@ -14335,14 +14252,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       | _ => false
     if !legal then
       throw "That card cannot pay this ward"
-    let pl := g.player p
-    if !pl.hand.contains id then
-      throw "That card is not in your hand"
-    let some card := g.findObject? id | throw "no such object"
-    let g := g.logMsg s!"{(g.player p).name} discards {card.name} (ward)"
-    let (g, _) := g.move id (.graveyard card.owner) none
-    let g := g.modifyPlayer p (fun pl =>
-      { pl with cardsDiscardedThisTurn := pl.cardsDiscardedThisTurn + 1 })
+    let (g, _) ← g.discardPendingCard p q id (logSuffix := " (ward)")
     return g.afterWardResolved
   | _ => throw "Not time to discard a card (CR 701.9)"
 
