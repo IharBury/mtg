@@ -2265,7 +2265,7 @@ def avengersTower : CardDef :=
   card "Avengers Tower" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.addAnyColorSpendOnly .hero) (ManaCost.empty) (tap := true),
+    (activatedAbilities := #[activated .addAnyColorSpendOnlyHero (ManaCost.empty) (tap := true),
       activated (.lookAtTopRevealSubtype 3 "Hero") ({ symbols := #[.generic 4] }) (tap := true)])
 
 def baxterBuilding : CardDef :=
@@ -2285,7 +2285,7 @@ def castleDoom : CardDef :=
   card "Castle Doom" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast an artifact spell.\n{3}, {T}, Sacrifice an artifact: Create a 3/3 colorless Robot Villain artifact creature token named Doombot. Activate only as a sorcery.")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.addAnyColorSpendOnly .artifactSpell) (ManaCost.empty) (tap := true),
+    (activatedAbilities := #[activated .addAnyColorSpendOnlyArtifactSpell (ManaCost.empty) (tap := true),
       activated (.createTokens .doombot 1) ({ symbols := #[.generic 3] }) (tap := true)
         (sacrificeArtifact := true) (onlyAsSorcery := true)])
 
@@ -2355,7 +2355,7 @@ def villainousHideout : CardDef :=
   card "Villainous Hideout" #[.land] (ManaCost.empty)
     (oracleText := "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (.addAnyColorSpendOnly .villain) (ManaCost.empty) (tap := true),
+    (activatedAbilities := #[activated .addAnyColorSpendOnlyVillain (ManaCost.empty) (tap := true),
       activated (.targetSubtypeConnives "Villain") ({ symbols := #[.generic 3] }) (tap := true) (onlyAsSorcery := true)])
 
 /-- All unique MSH card names, including both faces of transforming cards

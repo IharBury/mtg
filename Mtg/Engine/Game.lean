@@ -10824,19 +10824,17 @@ def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : AbilityEffec
     g.logLookAtTop controller n
   | .connive =>
     g.applyConnive controller sourceId
-  | .addAnyColorSpendOnly kind =>
-    match kind with
-    | .hero =>
-      g.modifyPlayer controller (fun pl =>
-        { pl with manaPool :=
-          pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
-    | .villain =>
-      g.modifyPlayer controller (fun pl =>
-        { pl with manaPool :=
-          pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
-    | .artifactSpell =>
-      g.modifyPlayer controller (fun pl =>
-        { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
+  | .addAnyColorSpendOnlyHero =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
+  | .addAnyColorSpendOnlyVillain =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool :=
+        pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
+  | .addAnyColorSpendOnlyArtifactSpell =>
+    g.modifyPlayer controller (fun pl =>
+      { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
   | .addTwoAnyColorCreatureSources =>
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=

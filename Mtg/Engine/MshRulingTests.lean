@@ -551,7 +551,7 @@ def heroSourceOk : Bool :=
   let tower := namedPermanent g "Avengers Tower"
   let cap := namedPermanent g "Captain America, Super-Soldier"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
   let pool := (g.player ⟨0⟩).manaPool
   let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
   let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
@@ -559,18 +559,18 @@ def heroSourceOk : Bool :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
+    gCh.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
   let gGy := addToGraveyard g braveBrawler ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Brave Brawler"
   let gGy :=
-    gGy.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
+    gGy.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
   let gHand := addToHand g braveBrawler ⟨0⟩
   let hand := handCardNamed gHand ⟨0⟩ "Brave Brawler"
   let gHand :=
-    gHand.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
+    gHand.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
   let (gSp, spell) := g.allocObject captainAmericaSuperSoldier ⟨0⟩ .stack (some ⟨0⟩)
   let gSp :=
-    gSp.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .hero) #[] (some tower.id)
+    gSp.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyHero #[] (some tower.id)
   pool.heroWhite == 1 &&
     !pool.canPay (ManaCost.ofColor .white) &&
     pool.canPay (ManaCost.ofColor .white) false false true &&
@@ -594,17 +594,17 @@ def villainSourceOk : Bool :=
   let hideout := namedPermanent g "Villainous Hideout"
   let elektra := namedPermanent g "Elektra, Daughter of the Hand"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
+  let g := g.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
   let gCh :=
     g.setObject { bears with printed := { bears.printed with keywords := Keyword.changeling } }
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
-    gCh.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
+    gCh.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
   let gGy := addToGraveyard g elektraDaughterOfTheHand ⟨0⟩
   let gy := graveyardCardNamed gGy ⟨0⟩ "Elektra, Daughter of the Hand"
   let gGy :=
-    gGy.applyAbilityEffect ⟨0⟩ (.addAnyColorSpendOnly .villain) #[] (some hideout.id)
+    gGy.applyAbilityEffect ⟨0⟩ .addAnyColorSpendOnlyVillain #[] (some hideout.id)
   pool.villainBlack == 1 &&
     !pool.canPay (ManaCost.ofColor .black) &&
     pool.canPay (ManaCost.ofColor .black) false false false true &&
