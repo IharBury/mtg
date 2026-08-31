@@ -1,6 +1,5 @@
 import Mtg.Engine.Color
 import Mtg.Engine.Mana
-import Mtg.Engine.ModeledAbilities
 import Mtg.Engine.TypeLine
 
 /-!
@@ -2067,8 +2066,12 @@ inductive AbilityEffect where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- Add one mana of any color, spendable only as `kind` describes. -/
-  | addAnyColorSpendOnly (kind : RestrictedManaSpend)
+  /-- Add one mana of any color, spendable only on Hero spells or Hero sources. -/
+  | addAnyColorSpendOnlyHero
+  /-- Add one mana of any color, spendable only on Villain spells or Villain sources. -/
+  | addAnyColorSpendOnlyVillain
+  /-- Add one mana of any color, spendable only to cast an artifact spell. -/
+  | addAnyColorSpendOnlyArtifactSpell
   /-- Add two mana of any one color, spendable only on creature-source abilities. -/
   | addTwoAnyColorCreatureSources
   /-- Add {U} that can't be spent to cast a nonartifact spell. -/
@@ -2266,8 +2269,12 @@ inductive AbilityResolution where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- Add one mana of any color, spendable only as `kind` describes. -/
-  | addAnyColorSpendOnly (kind : RestrictedManaSpend)
+  /-- Add one mana of any color, spendable only on Hero spells or Hero sources. -/
+  | addAnyColorSpendOnlyHero
+  /-- Add one mana of any color, spendable only on Villain spells or Villain sources. -/
+  | addAnyColorSpendOnlyVillain
+  /-- Add one mana of any color, spendable only to cast an artifact spell. -/
+  | addAnyColorSpendOnlyArtifactSpell
   /-- Add two mana of any one color, spendable only on creature-source abilities. -/
   | addTwoAnyColorCreatureSources
   /-- Add {U} that can't be spent to cast a nonartifact spell. -/
@@ -2484,8 +2491,12 @@ def spec : AbilityEffect → AbilityMeta
     { resolution := .lookAtTopRevealArtifact n }
   | .connive =>
     { resolution := .connive }
-  | .addAnyColorSpendOnly kind =>
-    { resolution := .addAnyColorSpendOnly kind }
+  | .addAnyColorSpendOnlyHero =>
+    { resolution := .addAnyColorSpendOnlyHero }
+  | .addAnyColorSpendOnlyVillain =>
+    { resolution := .addAnyColorSpendOnlyVillain }
+  | .addAnyColorSpendOnlyArtifactSpell =>
+    { resolution := .addAnyColorSpendOnlyArtifactSpell }
   | .addTwoAnyColorCreatureSources =>
     { resolution := .addTwoAnyColorCreatureSources }
   | .addBlueCantNonartifact =>
@@ -2720,8 +2731,12 @@ def toNotation (e : AbilityEffect) : String :=
     s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. Put the rest on the bottom of your library in a random order"
   | .connive =>
     "This creature connives"
-  | .addAnyColorSpendOnly kind =>
-    s!"Add one mana of any color. Spend this mana only {kind.spendClause}"
+  | .addAnyColorSpendOnlyHero =>
+    "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
+  | .addAnyColorSpendOnlyVillain =>
+    "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
+  | .addAnyColorSpendOnlyArtifactSpell =>
+    "Add one mana of any color. Spend this mana only to cast an artifact spell"
   | .addTwoAnyColorCreatureSources =>
     "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
   | .addBlueCantNonartifact =>
@@ -8069,7 +8084,8 @@ def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
 def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
   c.activatedAbilities.any (fun ab =>
     match ab.effect with
-    | .addAnyColor | .addAnyColorSpendOnly _ | .addAnyColorEqualToSourcePower
+    | .addAnyColor | .addAnyColorSpendOnlyHero | .addAnyColorSpendOnlyVillain
+    | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
     | .addTwoAnyColorCreatureSources | .addFourAnyCombination
     | .addTwoAnyColorEquipment => true
     | _ => false)
@@ -8466,6 +8482,12 @@ instance : ToString CardDef where
 #guard !AbilityEffect.requiresTarget (.searchLandTypeToHand "Mountain")
 #guard AbilityEffect.resolution (.searchLandTypeToHand "Swamp") ==
   .searchLandTypeToHand "Swamp"
+#guard AbilityEffect.toNotation .addAnyColorSpendOnlyHero ==
+  "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
+#guard AbilityEffect.toNotation .addAnyColorSpendOnlyVillain ==
+  "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
+#guard AbilityEffect.toNotation .addAnyColorSpendOnlyArtifactSpell ==
+  "Add one mana of any color. Spend this mana only to cast an artifact spell"
 #guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
 #guard AbilityEffect.toNotation .destroyTargetColorlessNonland ==
