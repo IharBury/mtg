@@ -4097,6 +4097,12 @@ def asChapter? (e : Effect) : Option ChapterEffect :=
   | .trigger (.chapter _ ce) => some ce
   | _ => none
 
+/-- Recover the leftover shared trigger stored on this effect, if any. -/
+def asTrigger? (e : Effect) : Option SharedTriggerEffect :=
+  match e.resolution with
+  | .trigger te => some te
+  | _ => none
+
 /-- Oracle-style reminder text. -/
 def toNotation (e : Effect) : String :=
   e.phrase
@@ -5294,10 +5300,9 @@ end TapAddForEach
 One constructor keeps the C runtime tag under the limit; leftover printed
 names are aliases of `triggered`. -/
 inductive TriggeredAbility where
-  /-- Reusable trigger: when it fires, a shared effect, and optional
-  intervening conditions / wording filters. The shared effect converts to
-  the unified `Effect` via `Effect.ofTrigger`. -/
-  | triggered (when : SharedTriggerWhen) (effect : SharedTriggerEffect)
+  /-- Reusable trigger: when it fires, a unified `Effect`, and optional
+  intervening conditions / wording filters. -/
+  | triggered (when : SharedTriggerWhen) (effect : Effect)
       (opts : SharedTriggerOpts := {})
 deriving Repr, Inhabited, BEq
 
@@ -7069,7 +7074,7 @@ namespace TriggeredAbility
 is a compile error here rather than silently matching `false` elsewhere. -/
 def timing : TriggeredAbility → TriggerTiming
   | .triggered w e opts =>
-    let t := e.timing
+    let t := (e.asTrigger?.getD (.draw 0)).timing
     { t with
       events :=
         match w with
@@ -7085,509 +7090,512 @@ def timing : TriggeredAbility → TriggerTiming
       targeting := if opts.untargeted then {} else t.targeting
       allowsZeroTargets := t.allowsZeroTargets || opts.allowsZeroTargets }
 
-/-- Unified effect this trigger resolves (spells, abilities, and chapters
-use `Effect` directly). -/
+/-- Unified effect this trigger resolves. -/
 def effect (ab : TriggeredAbility) : Effect :=
   match ab with
-  | .triggered _ e _ => Effect.ofTrigger e
+  | .triggered _ e _ => e
+
+/-- Leftover shared trigger this ability resolves. -/
+def shared (ab : TriggeredAbility) : SharedTriggerEffect :=
+  match ab.effect.asTrigger? with
+  | some te => te
+  | none => .draw 0
 
 /-- Catalog aliases for reusable triggers that now share `triggered`. -/
-def onEnterScry (n : Nat) : TriggeredAbility := .triggered .enter (.scry n)
-def onAttackScry (n : Nat) : TriggeredAbility := .triggered .attack (.scry n)
+def onEnterScry (n : Nat) : TriggeredAbility := .triggered .enter (Effect.ofTrigger (.scry n))
+def onAttackScry (n : Nat) : TriggeredAbility := .triggered .attack (Effect.ofTrigger (.scry n))
 def onAttackWithElvesScry (n : Nat) : TriggeredAbility :=
-  .triggered .youAttackWithElves (.scry n)
+  .triggered .youAttackWithElves (Effect.ofTrigger (.scry n))
 def onOneOrMoreOtherCreaturesDieScry (n : Nat) : TriggeredAbility :=
-  .triggered .oneOrMoreOtherCreaturesDie (.scry n)
+  .triggered .oneOrMoreOtherCreaturesDie (Effect.ofTrigger (.scry n))
 def onCastColorScry (c : Color) (n : Nat) : TriggeredAbility :=
-  .triggered (.youCastColor c) (.scry n)
-def onEnterDraw (n : Nat) : TriggeredAbility := .triggered .enter (.draw n)
-def onDiesDraw (n : Nat) : TriggeredAbility := .triggered .dies (.draw n)
-def onYouAttackDraw : TriggeredAbility := .triggered .youAttack (.draw 1)
-def onYourEndStepDraw : TriggeredAbility := .triggered .yourEndStep (.draw 1)
-def onBecomesTargetDraw : TriggeredAbility := .triggered .becomesTarget (.draw 1)
+  .triggered (.youCastColor c) (Effect.ofTrigger (.scry n))
+def onEnterDraw (n : Nat) : TriggeredAbility := .triggered .enter (Effect.ofTrigger (.draw n))
+def onDiesDraw (n : Nat) : TriggeredAbility := .triggered .dies (Effect.ofTrigger (.draw n))
+def onYouAttackDraw : TriggeredAbility := .triggered .youAttack (Effect.ofTrigger (.draw 1))
+def onYourEndStepDraw : TriggeredAbility := .triggered .yourEndStep (Effect.ofTrigger (.draw 1))
+def onBecomesTargetDraw : TriggeredAbility := .triggered .becomesTarget (Effect.ofTrigger (.draw 1))
 def onArtifactYouControlEntersDraw : TriggeredAbility :=
-  .triggered .artifactYouControlEnters (.draw 1)
+  .triggered .artifactYouControlEnters (Effect.ofTrigger (.draw 1))
 def onTheRingTemptsYouDraw (n : Nat) : TriggeredAbility :=
-  .triggered .theRingTemptsYou (.draw n)
+  .triggered .theRingTemptsYou (Effect.ofTrigger (.draw n))
 def onChooseRingBearerDraw : TriggeredAbility :=
-  .triggered .youChooseRingBearer (.draw 1)
+  .triggered .youChooseRingBearer (Effect.ofTrigger (.draw 1))
 def onCombatDamageDraw (n : Nat) : TriggeredAbility :=
-  .triggered .combatDamageToPlayer (.draw n)
+  .triggered .combatDamageToPlayer (Effect.ofTrigger (.draw n))
 def onEnterCreateTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false) :
     TriggeredAbility :=
-  .triggered .enter (.createTokens kind n tapped)
+  .triggered .enter (Effect.ofTrigger (.createTokens kind n tapped))
 def onYourUpkeepCreateTokens (kind : TokenKind) (n : Nat) : TriggeredAbility :=
-  .triggered .yourUpkeep (.createTokens kind n)
+  .triggered .yourUpkeep (Effect.ofTrigger (.createTokens kind n))
 def onLandYouControlEntersCreateTokens (kind : TokenKind) (n : Nat) :
     TriggeredAbility :=
-  .triggered .landYouControlEnters (.createTokens kind n)
+  .triggered .landYouControlEnters (Effect.ofTrigger (.createTokens kind n))
 def onDiesCreateTokens (kind : TokenKind) (n : Nat) : TriggeredAbility :=
-  .triggered .dies (.createTokens kind n)
+  .triggered .dies (Effect.ofTrigger (.createTokens kind n))
 def onYouDrawSecondCreateTokens (kind : TokenKind) : TriggeredAbility :=
-  .triggered .youDrawSecond (.createTokens kind 1)
+  .triggered .youDrawSecond (Effect.ofTrigger (.createTokens kind 1))
 def onCastColorCreateTokens (c : Color) (kind : TokenKind) (n : Nat) :
     TriggeredAbility :=
-  .triggered (.youCastColor c) (.createTokens kind n)
+  .triggered (.youCastColor c) (Effect.ofTrigger (.createTokens kind n))
 def onEnterOrAttackCreateWall : TriggeredAbility :=
-  .triggered (.or .enter .attack) (.createTokens .wall 1)
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.createTokens .wall 1))
 def onEnterAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.amassGoblins n)
+  .triggered .enter (Effect.ofTrigger (.amassGoblins n))
 def onDiesAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .dies (.amassGoblins n)
+  .triggered .dies (Effect.ofTrigger (.amassGoblins n))
 def onYouAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .youAttack (.amassGoblins n)
+  .triggered .youAttack (Effect.ofTrigger (.amassGoblins n))
 def onCastNoncreatureAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .youCastNoncreature (.amassGoblins n)
+  .triggered .youCastNoncreature (Effect.ofTrigger (.amassGoblins n))
 def onEnterOrAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered (.or .enter .attack) (.amassGoblins n)
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.amassGoblins n))
 def onCreatureCardLeavesYourGyAmassGoblins (n : Nat) : TriggeredAbility :=
-  .triggered .creatureCardLeavesYourGy (.amassGoblins n)
-def onEnterRecruit : TriggeredAbility := .triggered .enter .recruit
-def onDiesRecruit : TriggeredAbility := .triggered .dies .recruit
+  .triggered .creatureCardLeavesYourGy (Effect.ofTrigger (.amassGoblins n))
+def onEnterRecruit : TriggeredAbility := .triggered .enter (Effect.ofTrigger .recruit)
+def onDiesRecruit : TriggeredAbility := .triggered .dies (Effect.ofTrigger .recruit)
 def onEnterOrAttackRecruit : TriggeredAbility :=
-  .triggered (.or .enter .attack) .recruit
-def onYouAttackRecruit : TriggeredAbility := .triggered .youAttack .recruit
+  .triggered (.or .enter .attack) (Effect.ofTrigger .recruit)
+def onYouAttackRecruit : TriggeredAbility := .triggered .youAttack (Effect.ofTrigger .recruit)
 def onEnterDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
-  .triggered .enter (.dividedDamage amount maxTargets)
+  .triggered .enter (Effect.ofTrigger (.dividedDamage amount maxTargets))
 def onEnterOrAttackDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
-  .triggered (.or .enter .attack) (.dividedDamage amount maxTargets)
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.dividedDamage amount maxTargets))
 def onEnterPlusOneOnCreature : TriggeredAbility :=
-  .triggered .enter (.plusOneOn .creature)
+  .triggered .enter (Effect.ofTrigger (.plusOneOn .creature))
 def onEnterOrAttackPlusOneOnCreature : TriggeredAbility :=
-  .triggered (.or .enter .attack) (.plusOneOn .creature)
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.plusOneOn .creature))
 def onLandYouControlEntersPlusOnePlusOne : TriggeredAbility :=
-  .triggered .landYouControlEnters (.plusOneOn .creatureYouControl)
+  .triggered .landYouControlEnters (Effect.ofTrigger (.plusOneOn .creatureYouControl))
 def onCombatPlusOneOnCreatureYouControl : TriggeredAbility :=
-  .triggered .yourBeginCombat (.plusOneOn .creatureYouControl)
+  .triggered .yourBeginCombat (Effect.ofTrigger (.plusOneOn .creatureYouControl))
 def onEnterAttachToSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .enter (.attachTo (.creatureYouControlSubtype subtype))
+  .triggered .enter (Effect.ofTrigger (.attachTo (.creatureYouControlSubtype subtype)))
 def onEnterAttachToLegendary : TriggeredAbility :=
-  .triggered .enter (.attachTo .legendaryCreatureYouControl)
+  .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 def onEnterAttachToCreatureYouControl : TriggeredAbility :=
-  .triggered .enter (.attachTo .creatureYouControl)
+  .triggered .enter (Effect.ofTrigger (.attachTo .creatureYouControl))
 def onEnterTargetOpponentSacrificesCreature : TriggeredAbility :=
-  .triggered .enter .opponentSacrificesCreature
+  .triggered .enter (Effect.ofTrigger .opponentSacrificesCreature)
 def onEnterTargetOpponentSacrifices : TriggeredAbility :=
   onEnterTargetOpponentSacrificesCreature
 def onDrawSecondPlusOne : TriggeredAbility :=
-  .triggered .youDrawSecond .plusOneOnSource
+  .triggered .youDrawSecond (Effect.ofTrigger .plusOneOnSource)
 def onDrawPlusOne : TriggeredAbility :=
-  .triggered .youDraw .plusOneOnSource
+  .triggered .youDraw (Effect.ofTrigger .plusOneOnSource)
 def onGainLifePlusOne : TriggeredAbility :=
-  .triggered .youGainLife .plusOneOnSource
+  .triggered .youGainLife (Effect.ofTrigger .plusOneOnSource)
 def onAnotherArtifactEntersPlusOne : TriggeredAbility :=
-  .triggered .anotherArtifactEnters .plusOneOnSource
+  .triggered .anotherArtifactEnters (Effect.ofTrigger .plusOneOnSource)
 def onDealtDamagePlusOne : TriggeredAbility :=
-  .triggered .sourceDealtDamage .plusOneOnSource
+  .triggered .sourceDealtDamage (Effect.ofTrigger .plusOneOnSource)
 def onYourBeginCombatFerociousPlusOne : TriggeredAbility :=
-  .triggered .yourBeginCombat .plusOneOnSource .ferocious
+  .triggered .yourBeginCombat (Effect.ofTrigger .plusOneOnSource) .ferocious
 def onEquippedAttacksAloneDrawLoseLife : TriggeredAbility :=
-  .triggered .equippedAttacksAlone .drawAndLoseLife
+  .triggered .equippedAttacksAlone (Effect.ofTrigger .drawAndLoseLife)
 def onYouAttackFerociousDrawLoseLife : TriggeredAbility :=
-  .triggered .youAttack .drawAndLoseLife .ferocious
+  .triggered .youAttack (Effect.ofTrigger .drawAndLoseLife) .ferocious
 def onCastWithTreasureDrawLoseLife : TriggeredAbility :=
-  .triggered .youCastWithTreasure .drawAndLoseLife
+  .triggered .youCastWithTreasure (Effect.ofTrigger .drawAndLoseLife)
 def onYourEndStepDrawLoseLife : TriggeredAbility :=
-  .triggered .yourEndStep .drawAndLoseLife
+  .triggered .yourEndStep (Effect.ofTrigger .drawAndLoseLife)
 def onEnterConnive : TriggeredAbility :=
-  .triggered .enter .connive
+  .triggered .enter (Effect.ofTrigger .connive)
 def onAttackConnive : TriggeredAbility :=
-  .triggered .attack .connive
+  .triggered .attack (Effect.ofTrigger .connive)
 def onYouCastColorFromHandConnive (color : Color) : TriggeredAbility :=
-  .triggered (.youCastColorFromHand color) .connive
+  .triggered (.youCastColorFromHand color) (Effect.ofTrigger .connive)
 def onEquippedCreatureYouControlAttacksConnive : TriggeredAbility :=
-  .triggered .equippedCreatureYouControlAttacks .connive
+  .triggered .equippedCreatureYouControlAttacks (Effect.ofTrigger .connive)
 def onCombatTargetYouControlConnives : TriggeredAbility :=
-  .triggered .yourBeginCombat (.conniveTarget .creatureYouControl)
+  .triggered .yourBeginCombat (Effect.ofTrigger (.conniveTarget .creatureYouControl))
 def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
-  .triggered .enter (.exileUntilLeaves .oppNonland)
+  .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppNonland))
 def onEnterExileOppTappedUntilLeaves : TriggeredAbility :=
-  .triggered .enter (.exileUntilLeaves .oppTappedCreature)
+  .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppTappedCreature))
 def onAttackMayExileDefenderUntilLeaves : TriggeredAbility :=
-  .triggered .attack (.exileUntilLeaves .defendingPlayerCreature)
+  .triggered .attack (Effect.ofTrigger (.exileUntilLeaves .defendingPlayerCreature))
     { allowsZeroTargets := true }
 def onEnterGainLife (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.gainLife n)
+  .triggered .enter (Effect.ofTrigger (.gainLife n))
 def onAttackFerociousGainLife (n : Nat) : TriggeredAbility :=
-  .triggered .attack (.gainLife n) .ferocious
+  .triggered .attack (Effect.ofTrigger (.gainLife n)) .ferocious
 def onEnterTargetGets (power toughness : Int) : TriggeredAbility :=
-  .triggered .enter (.pumpTarget .creature power toughness)
+  .triggered .enter (Effect.ofTrigger (.pumpTarget .creature power toughness))
 def onDiesOppCreatureGets (power toughness : Int) : TriggeredAbility :=
-  .triggered .dies (.pumpTarget .oppCreature power toughness)
+  .triggered .dies (Effect.ofTrigger (.pumpTarget .oppCreature power toughness))
 def onCastColorPump (color : Color) (power toughness : Int) : TriggeredAbility :=
-  .triggered (.youCastColor color) (.pumpTarget .creature power toughness)
+  .triggered (.youCastColor color) (Effect.ofTrigger (.pumpTarget .creature power toughness))
 def onLandYouControlEntersGets (power toughness : Int) : TriggeredAbility :=
-  .triggered .landYouControlEnters (.sourceGets power toughness)
+  .triggered .landYouControlEnters (Effect.ofTrigger (.sourceGets power toughness))
 def onAttackFerociousSourceGets (power toughness : Int) : TriggeredAbility :=
-  .triggered .attack (.sourceGets power toughness) .ferocious
+  .triggered .attack (Effect.ofTrigger (.sourceGets power toughness)) .ferocious
 def onAnotherElfYouControlEntersGets1 : TriggeredAbility :=
-  .triggered .anotherElfYouControlEnters (.sourceGets 1 1)
+  .triggered .anotherElfYouControlEnters (Effect.ofTrigger (.sourceGets 1 1))
 def onArtifactYouControlEntersDrawOnce : TriggeredAbility :=
-  .triggered .artifactYouControlEnters (.draw 1) .once
+  .triggered .artifactYouControlEnters (Effect.ofTrigger (.draw 1)) .once
 def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
-  .triggered .youActivateCreatureAbility (.draw 1) .once
+  .triggered .youActivateCreatureAbility (Effect.ofTrigger (.draw 1)) .once
 def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
-  .triggered .anotherSubtypeOrEquipmentEnters (.draw 1)
+  .triggered .anotherSubtypeOrEquipmentEnters (Effect.ofTrigger (.draw 1))
     { onceEachTurn := true, anotherSubtypeOrEquipment := some subtype }
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
-  .triggered .eachEndStep (.draw 1) { gainedLifeAtLeast := some n }
+  .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { gainedLifeAtLeast := some n }
 def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
-  .triggered .thisOrNontokenSubtypeEnters (.createTokens kind n)
+  .triggered .thisOrNontokenSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
     { thisOrNontokenSubtype := some subtype }
 def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
-  .triggered .thisOrAnotherSubtypeEnters (.createTokens kind n)
+  .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
     { thisOrAnotherSubtype := some subtype }
 def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
     (n : Nat) : TriggeredAbility :=
-  .triggered .combatDamageToPlayerOrBattle (.createTokens kind n)
+  .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.createTokens kind n))
     { watchedSubtype := some subtype }
 def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
-  .triggered .opponentDrawsSecond (.createTokens .treasure 1)
+  .triggered .opponentDrawsSecond (Effect.ofTrigger (.createTokens .treasure 1))
 def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
-  .triggered .opponentCastsFirstNoncreature .youRecruit
+  .triggered .opponentCastsFirstNoncreature (Effect.ofTrigger .youRecruit)
 def onCastColorDamageOpponent (color : Color) (n : Nat) : TriggeredAbility :=
-  .triggered (.youCastColor color) (.damageEachOpponent n)
+  .triggered (.youCastColor color) (Effect.ofTrigger (.damageEachOpponent n))
 def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
-  .triggered (.or .youCastGreen .forestYouControlEnters)
-    (.plusOneOn .creatureYouControl)
+  .triggered (.or .youCastGreen .forestYouControlEnters) (Effect.ofTrigger (.plusOneOn .creatureYouControl))
 def onAttackOtherGets2AndTrample : TriggeredAbility :=
-  .triggered .attack (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
+  .triggered .attack (Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)))
 def onEnterMayDiscardDraw (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.mayDiscardDraw n)
+  .triggered .enter (Effect.ofTrigger (.mayDiscardDraw n))
 def onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat) : TriggeredAbility :=
-  .triggered .youCastInstantOrSorcery (.damageEachOpponent amount) .noTarget
+  .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent amount)) .noTarget
 def onEnterEachOpponentDiscards : TriggeredAbility :=
-  .triggered .enter .eachOpponentDiscards
+  .triggered .enter (Effect.ofTrigger .eachOpponentDiscards)
 def onEnterExileTop : TriggeredAbility :=
-  .triggered .enter .exileTop
+  .triggered .enter (Effect.ofTrigger .exileTop)
 def onAttackTargetGainsKeywords (k : Keywords) : TriggeredAbility :=
-  .triggered .attack (.onPermanent .attackingCreature (.grantKeywords k))
+  .triggered .attack (Effect.ofTrigger (.onPermanent .attackingCreature (.grantKeywords k)))
 def onDrawSecondMillPlayer (n : Nat) : TriggeredAbility :=
-  .triggered .youDrawSecond (.millPlayer n)
+  .triggered .youDrawSecond (Effect.ofTrigger (.millPlayer n))
 def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
-  .triggered .anotherGoblinOrcArmyDies .exileTop
+  .triggered .anotherGoblinOrcArmyDies (Effect.ofTrigger .exileTop)
 def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
     TriggeredAbility :=
-  .triggered .anotherCreatureYouControlEnters (.onSource (.plusOne n))
+  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.onSource (.plusOne n)))
     { thisOrAnotherSubtype := some subtype }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
-  .triggered .opponentCastsSpell (.amassOrcs n)
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassOrcs n))
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
-  .triggered .creatureYouControlAttacksAlone .investigate
+  .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
-  .triggered .creatureYouControlAttacksAlone (.pumpCause power toughness)
+  .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger (.pumpCause power toughness))
 def onEnterTargetOpponentDiscards (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.targetOpponentDiscards n)
+  .triggered .enter (Effect.ofTrigger (.targetOpponentDiscards n))
 def onEquipmentYouControlEntersDraw : TriggeredAbility :=
-  .triggered .equipmentYouControlEnters (.draw 1)
+  .triggered .equipmentYouControlEnters (Effect.ofTrigger (.draw 1))
 def onEnterSearchForest : TriggeredAbility :=
-  .triggered .enter .searchForest
+  .triggered .enter (Effect.ofTrigger .searchForest)
 def onEnterSearchBasicToHand : TriggeredAbility :=
-  .triggered .enter .searchBasicToHand
+  .triggered .enter (Effect.ofTrigger .searchBasicToHand)
 def onEnterEachPlayerSacrificesCreature : TriggeredAbility :=
-  .triggered .enter .eachPlayerSacrificesCreature
+  .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
 def onEnterMayExileAnotherCreature : TriggeredAbility :=
-  .triggered .enter (.exileTarget .anotherCreature) { allowsZeroTargets := true }
+  .triggered .enter (Effect.ofTrigger (.exileTarget .anotherCreature)) { allowsZeroTargets := true }
 def onEnterReturnCreatureFromGyToHand : TriggeredAbility :=
-  .triggered .enter .returnCreatureFromGyToHand
+  .triggered .enter (Effect.ofTrigger .returnCreatureFromGyToHand)
 def onCombatDamageToPlayerLoot : TriggeredAbility :=
-  .triggered .combatDamageToPlayer .loot
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .loot)
 def onAttackFerociousPlusOneEach : TriggeredAbility :=
-  .triggered .attack .plusOneEachYouControl .ferocious
+  .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
 def onAttackFerociousSourceGetsAndTeamTrample (power : Int) : TriggeredAbility :=
-  .triggered .attack (.sourceGetsAndTeamTrample power) .ferocious
+  .triggered .attack (Effect.ofTrigger (.sourceGetsAndTeamTrample power)) .ferocious
 def onEnterOrAttackHoneEachEquipment : TriggeredAbility :=
-  .triggered (.or .enter .attack) .honeEachEquipment
+  .triggered (.or .enter .attack) (Effect.ofTrigger .honeEachEquipment)
 def onEnterOrAttackPlusOneEachOtherGainLife : TriggeredAbility :=
-  .triggered (.or .enter .attack) .plusOneEachOtherGainLife
+  .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
 def onLandYouControlEntersBecomePT (power toughness : Int) : TriggeredAbility :=
-  .triggered .landYouControlEnters (.becomePT power toughness)
+  .triggered .landYouControlEnters (Effect.ofTrigger (.becomePT power toughness))
 def onCastNoncreaturePumpAndDamageOpponents (n : Nat) : TriggeredAbility :=
-  .triggered .youCastNoncreature (.pumpAndDamageOpponents n)
+  .triggered .youCastNoncreature (Effect.ofTrigger (.pumpAndDamageOpponents n))
 def onDrawSecondPlusOneLifelink : TriggeredAbility :=
-  .triggered .youDrawSecond (.plusOneAndLifelink .creature)
+  .triggered .youDrawSecond (Effect.ofTrigger (.plusOneAndLifelink .creature))
 def onYouAttackPumpTargetPerPlains : TriggeredAbility :=
-  .triggered .youAttack .pumpTargetPerPlains
+  .triggered .youAttack (Effect.ofTrigger .pumpTargetPerPlains)
 def onAnotherLegendarySubtypeEntersLoot (subtype : String) : TriggeredAbility :=
-  .triggered .anotherCreatureYouControlEnters (.drawThenDiscard 2)
+  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.drawThenDiscard 2))
     { thisOrAnotherSubtype := some subtype }
 def onRingTemptsMayDiscardDraw (n : Nat) : TriggeredAbility :=
-  .triggered .theRingTemptsYou (.mayDiscardHandDraw n)
+  .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw n))
 def onScryPumpSelfForEachLookedAt : TriggeredAbility :=
-  .triggered .youScry .pumpByLookedAt
+  .triggered .youScry (Effect.ofTrigger .pumpByLookedAt)
 def onScryPumpAndUnblockableOnce : TriggeredAbility :=
-  .triggered .youScry .pumpAndUnblockable .once
+  .triggered .youScry (Effect.ofTrigger .pumpAndUnblockable) .once
 def onAttackPumpByGreatestPower : TriggeredAbility :=
-  .triggered .attack .pumpGreatestPower
+  .triggered .attack (Effect.ofTrigger .pumpGreatestPower)
 def onBecomesBlockedDeal1ToBlockers : TriggeredAbility :=
-  .triggered .becomesBlocked (.damageBlockers 1)
+  .triggered .becomesBlocked (Effect.ofTrigger (.damageBlockers 1))
 def onAttackPumpForEachOtherCreature : TriggeredAbility :=
-  .triggered .attack .pumpForEachOtherCreature
+  .triggered .attack (Effect.ofTrigger .pumpForEachOtherCreature)
 def onAttackWithTwoOrMoreGrantFlying : TriggeredAbility :=
-  .triggered .youAttackWithTwoOrMore (.grantFlying .attackingCreatureWithoutFlying)
+  .triggered .youAttackWithTwoOrMore (Effect.ofTrigger (.grantFlying .attackingCreatureWithoutFlying))
 def onLeaveReturnExiled : TriggeredAbility :=
-  .triggered .leaving .returnLinkedExile
+  .triggered .leaving (Effect.ofTrigger .returnLinkedExile)
 def onEnterCreateThenAttach (kind : TokenKind) : TriggeredAbility :=
-  .triggered .enter (.createThenAttach kind)
+  .triggered .enter (Effect.ofTrigger (.createThenAttach kind))
 def onEnterAmassThenAttach (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.amassThenAttach n)
+  .triggered .enter (Effect.ofTrigger (.amassThenAttach n))
 def onEnterGainLifeSearchBasicOnTop (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.gainLifeSearchBasicOnTop n)
+  .triggered .enter (Effect.ofTrigger (.gainLifeSearchBasicOnTop n))
 def onYourFirstMainAddMana (types : Array ManaType) : TriggeredAbility :=
-  .triggered .yourFirstMain (.addMana types)
+  .triggered .yourFirstMain (Effect.ofTrigger (.addMana types))
 def onEnterCreateAxe : TriggeredAbility :=
-  .triggered .enter .createAxe
+  .triggered .enter (Effect.ofTrigger .createAxe)
 def onLandYouControlEntersTapOrUntap : TriggeredAbility :=
-  .triggered .landYouControlEnters .tapOppOrUntapYours
+  .triggered .landYouControlEnters (Effect.ofTrigger .tapOppOrUntapYours)
 def onEnterGainControlOppUntilEot : TriggeredAbility :=
-  .triggered .enter .gainControlOppUntilEot
+  .triggered .enter (Effect.ofTrigger .gainControlOppUntilEot)
 def onEnterCreateAxeAttach : TriggeredAbility :=
-  .triggered .enter .createAxeAttach
+  .triggered .enter (Effect.ofTrigger .createAxeAttach)
 def onDiesAmassGoblinsEqualPower : TriggeredAbility :=
-  .triggered .dies .amassGoblinsEqualPower
+  .triggered .dies (Effect.ofTrigger .amassGoblinsEqualPower)
 def onLandYouControlEntersPayReturnFromGy : TriggeredAbility :=
-  .triggered .landYouControlEnters .payReturnFromGy
+  .triggered .landYouControlEnters (Effect.ofTrigger .payReturnFromGy)
 def onYouSacrificeTokenOppLosesLife : TriggeredAbility :=
-  .triggered .youSacrificeToken (.targetOpponentLosesLife 1)
+  .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
 def onLandYouControlEntersPlusOneVigilance : TriggeredAbility :=
-  .triggered .landYouControlEnters (.plusOneVigilance 2)
+  .triggered .landYouControlEnters (Effect.ofTrigger (.plusOneVigilance 2))
 def onCastNoncreatureMayDrawXDiscard2 : TriggeredAbility :=
-  .triggered .youCastNoncreature .mayDrawXDiscard2
+  .triggered .youCastNoncreature (Effect.ofTrigger .mayDrawXDiscard2)
 def onLandYouControlEntersDrawPlusOneSource : TriggeredAbility :=
-  .triggered .landYouControlEnters .drawPlusOneSource
+  .triggered .landYouControlEnters (Effect.ofTrigger .drawPlusOneSource)
 def onArmyCombatDamageRingTempts : TriggeredAbility :=
-  .triggered .armyYouControlCombatDamage .ringTempts
+  .triggered .armyYouControlCombatDamage (Effect.ofTrigger .ringTempts)
 def onAttackSetOtherBasePT : TriggeredAbility :=
-  .triggered .attack .setOtherBasePT
+  .triggered .attack (Effect.ofTrigger .setOtherBasePT)
 def onEnterOrAttackReturnElfGainLife : TriggeredAbility :=
-  .triggered (.or .enter .attack) .returnElfGainLife
+  .triggered (.or .enter .attack) (Effect.ofTrigger .returnElfGainLife)
 def onDiesDealDamageEqualToPowerToOppCreature : TriggeredAbility :=
-  .triggered .dies .damageFromLastKnownPower
+  .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 def onEnterExileOppGyCardOppsLoseLife (life : Nat) : TriggeredAbility :=
-  .triggered .enter (.exileOppGyCardOppsLoseLife life)
+  .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife life))
 def onEnterCreaturesYouControlGetAndFirstStrike (power : Int) : TriggeredAbility :=
-  .triggered .enter (.creaturesYouControlPumpAndFirstStrike power)
+  .triggered .enter (Effect.ofTrigger (.creaturesYouControlPumpAndFirstStrike power))
 def onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw (power : Int)
     (generic : Nat) : TriggeredAbility :=
-  .triggered .anotherCreatureYouControlEnters (.mayPayGenericDraw generic)
+  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw generic))
     { anotherCreaturePowerAtMost := some power }
 def onEnterDrawThenBottomIfNoLegendary : TriggeredAbility :=
-  .triggered .enter .drawThenBottomIfNoLegendary
+  .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 def onYourEndStepRemoveHopeDrawSac : TriggeredAbility :=
-  .triggered .yourEndStep .removeHopeDrawSac
+  .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 def onAttackTapHumansDraw : TriggeredAbility :=
-  .triggered .attack .tapHumansDraw
+  .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 def onEnterUntapOtherPlusOneIfSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .enter (.untapPlusOneIfSubtype subtype)
+  .triggered .enter (Effect.ofTrigger (.untapPlusOneIfSubtype subtype))
 def onEnterDestroyOppArtifactsEnchantmentsGainLife : TriggeredAbility :=
-  .triggered .enter .destroyOppArtifactsEnchantmentsGainLife
+  .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 def onAttackDamageEqualSubtypeToEachOpponent (subtype : String) : TriggeredAbility :=
-  .triggered .attack (.damageEqualSubtypeToEachOpponent subtype)
+  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent subtype))
 def onAttackDamageEqualTreasures : TriggeredAbility :=
-  .triggered .attack .damageEqualTreasures
+  .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 def onPlayerCastsSecondSpellLoseLifeCreateTreasure : TriggeredAbility :=
-  .triggered .anyPlayerCastsSecondSpell .loseLifeCreateTreasure
+  .triggered .anyPlayerCastsSecondSpell (Effect.ofTrigger .loseLifeCreateTreasure)
 def onEnterDealDamageDestroyIfSubtype (n : Nat) (subtype : String) : TriggeredAbility :=
-  .triggered .enter (.dealDamageDestroyIfSubtype n subtype)
+  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype n subtype))
 def onEnterAttachTargetEquipment : TriggeredAbility :=
-  .triggered .enter .attachEquipmentToCreature
+  .triggered .enter (Effect.ofTrigger .attachEquipmentToCreature)
 def onAttackDefenderSacsLeastPower : TriggeredAbility :=
-  .triggered .attack .defenderSacsLeastPower
+  .triggered .attack (Effect.ofTrigger .defenderSacsLeastPower)
 def onEnterReturnOtherPlusOne : TriggeredAbility :=
-  .triggered .enter .returnOtherPlusOne
+  .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 def onEnterLookAtTopRevealTypes (n : Nat) (types : Array String) : TriggeredAbility :=
-  .triggered .enter (.lookAtTopRevealTypes n types)
+  .triggered .enter (Effect.ofTrigger (.lookAtTopRevealTypes n types))
 def onEnterCreateTappedTreasuresEqualOppArtifacts : TriggeredAbility :=
-  .triggered .enter .createTappedTreasuresEqualOppArtifacts
+  .triggered .enter (Effect.ofTrigger .createTappedTreasuresEqualOppArtifacts)
 def onCombatDamagePutNonlandMvAtMost (mv : Nat) : TriggeredAbility :=
-  .triggered .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy mv)
+  .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.putNonlandMvAtMostFromGy mv))
 def onEachCombatOthersGetAndOppsGet (subtypes : Array String)
     (power toughness oppP oppT : Int) : TriggeredAbility :=
-  .triggered .eachBeginCombat
-    (.othersGetAndOppsGet subtypes power toughness oppP oppT)
+  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet subtypes power toughness oppP oppT))
 def onCombatDamageWolfPlusOneOrTreasure : TriggeredAbility :=
-  .triggered .combatDamageToPlayer .wolfPlusOneOrTreasure
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 def onYourBeginCombatTrampleCounterBecomeBear : TriggeredAbility :=
-  .triggered .yourBeginCombat .trampleCounterBecomeBear
+  .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 def onEnterMillThenSubtypeToHand (n : Nat) (subtype : String) : TriggeredAbility :=
-  .triggered .enter (.millThenSubtypeToHand n subtype)
+  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand n subtype))
 def onEnterExileOppNonlandEachUntilLeaves : TriggeredAbility :=
-  .triggered .enter .exileOppNonlandEachUntilLeaves
+  .triggered .enter (Effect.ofTrigger .exileOppNonlandEachUntilLeaves)
 def onCastCreaturePlusOneEqualMv : TriggeredAbility :=
-  .triggered .youCastCreature .plusOneEqualLastKnownMv
+  .triggered .youCastCreature (Effect.ofTrigger .plusOneEqualLastKnownMv)
 def onMountainEntersQuestThenDragon : TriggeredAbility :=
-  .triggered .mountainYouControlEnters .mountainQuestDragon
+  .triggered .mountainYouControlEnters (Effect.ofTrigger .mountainQuestDragon)
 def onEquippedCombatDamageTreasuresPerChosenType : TriggeredAbility :=
-  .triggered .equippedDealsCombatDamageToPlayer .treasuresPerChosenType
+  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .treasuresPerChosenType)
 def onNontokenYouControlDiesRevealCreature : TriggeredAbility :=
-  .triggered .nontokenYouControlDies .revealUntilCreature .once
+  .triggered .nontokenYouControlDies (Effect.ofTrigger .revealUntilCreature) .once
 def onAttackMaySacAnotherPlusOneEqualPower : TriggeredAbility :=
-  .triggered .attack .attackSacPlusOneEqualPower
+  .triggered .attack (Effect.ofTrigger .attackSacPlusOneEqualPower)
 def onEnterLootLandEntersTapped : TriggeredAbility :=
-  .triggered .enter .lootLandEntersTapped
+  .triggered .enter (Effect.ofTrigger .lootLandEntersTapped)
 def onPlayerLosesLifeMillThatMany : TriggeredAbility :=
-  .triggered .playerLosesLife .millThatManyLost
+  .triggered .playerLosesLife (Effect.ofTrigger .millThatManyLost)
 def onDiesDrawPerFatGraveyard : TriggeredAbility :=
-  .triggered .dies .drawPerFatGraveyard
+  .triggered .dies (Effect.ofTrigger .drawPerFatGraveyard)
 def onEnterMaySacDrawTreasure : TriggeredAbility :=
-  .triggered .enter .maySacDrawTreasure
+  .triggered .enter (Effect.ofTrigger .maySacDrawTreasure)
 def onEquippedAttacksPlusOneEachIfCityBlessing : TriggeredAbility :=
-  .triggered .equippedAttacks .plusOneEachIfCityBlessing
+  .triggered .equippedAttacks (Effect.ofTrigger .plusOneEachIfCityBlessing)
 def onYourBeginCombatCastInstantSorceryFromHand : TriggeredAbility :=
-  .triggered .yourBeginCombat .castInstantSorceryFromHand
+  .triggered .yourBeginCombat (Effect.ofTrigger .castInstantSorceryFromHand)
 def onEquippedCombatDamageCastInstantSorcery : TriggeredAbility :=
-  .triggered .equippedDealsCombatDamageToPlayer .castInstantSorceryMvAtMost
+  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .castInstantSorceryMvAtMost)
 def onCastSecondSpellMillThenCopy : TriggeredAbility :=
-  .triggered .youCastSecondSpell .millThenCopy
+  .triggered .youCastSecondSpell (Effect.ofTrigger .millThenCopy)
 def onCombatAnotherGetsSourcePower : TriggeredAbility :=
-  .triggered .yourBeginCombat .pumpTargetBySourcePower
+  .triggered .yourBeginCombat (Effect.ofTrigger .pumpTargetBySourcePower)
 def onCombatCreateAlienPerInvasion : TriggeredAbility :=
-  .triggered .yourBeginCombat .createAlienPerInvasion
+  .triggered .yourBeginCombat (Effect.ofTrigger .createAlienPerInvasion)
 def onCombatMayPutArtifactAttachEquipment : TriggeredAbility :=
-  .triggered .yourBeginCombat .mayPutArtifactAttachEquipment
+  .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 def onCastCascade : TriggeredAbility :=
-  .triggered .cascade .cascade
+  .triggered .cascade (Effect.ofTrigger .cascade)
 def onTokenYouControlEntersBelladonna : TriggeredAbility :=
-  .triggered .tokenYouControlEnters .belladonnaTokenReward
+  .triggered .tokenYouControlEnters (Effect.ofTrigger .belladonnaTokenReward)
 def onEnterBolgMaySacrifice : TriggeredAbility :=
-  .triggered .enter .bolgMaySacrifice
+  .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
 def onBolgDealSacrificedPower : TriggeredAbility :=
-  .triggered .bolgSacrificedForReflexive .bolgDealSacrificedPower
+  .triggered .bolgSacrificedForReflexive (Effect.ofTrigger .bolgDealSacrificedPower)
 def onEquippedAttacksCreateSpirits : TriggeredAbility :=
-  .triggered .equippedAttacks .createSpiritsForEquipped
+  .triggered .equippedAttacks (Effect.ofTrigger .createSpiritsForEquipped)
 def onCombatDamageCreateTreasuresEqualPlayerArtifacts : TriggeredAbility :=
-  .triggered .combatDamageToPlayer .createTreasuresEqualDamagedPlayerArtifacts
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .createTreasuresEqualDamagedPlayerArtifacts)
 def onEnterOrOpponentDrawsDeal1AmassOrcs : TriggeredAbility :=
-  .triggered (.or .enter .opponentDrawsExceptFirst) .deal1ThenAmassOrcs
+  .triggered (.or .enter .opponentDrawsExceptFirst) (Effect.ofTrigger .deal1ThenAmassOrcs)
 def onAttackWithTotalPowerUntapExtraCombat (n : Int) : TriggeredAbility :=
-  .triggered .youAttackWithTotalPower (.untapAttackersExtraCombat n) .once
+  .triggered .youAttackWithTotalPower (Effect.ofTrigger (.untapAttackersExtraCombat n)) .once
 def onDelayedEaglesCreateBirds : TriggeredAbility :=
-  .triggered .eaglesCreateBirds .eaglesCreateBirds
+  .triggered .eaglesCreateBirds (Effect.ofTrigger .eaglesCreateBirds)
 def onAnotherCreatureYouControlEntersAlliance : TriggeredAbility :=
-  .triggered .anotherCreatureYouControlEnters .allianceMode
+  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger .allianceMode)
 def onEnterDestroyOtherAmassControllerPower : TriggeredAbility :=
-  .triggered .enter .destroyOtherAmassControllerPower
+  .triggered .enter (Effect.ofTrigger .destroyOtherAmassControllerPower)
 def onOpponentCastsChosenParityModes : TriggeredAbility :=
-  .triggered .opponentCastsMatchingParity .gollumMode
+  .triggered .opponentCastsMatchingParity (Effect.ofTrigger .gollumMode)
 def onThisOrAnotherSubtypeEntersDiscardHand (subtype : String) : TriggeredAbility :=
-  .triggered .thisOrAnotherSubtypeEnters .discardHandDrawDamageIfStory
+  .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger .discardHandDrawDamageIfStory)
     { thisOrAnotherSubtype := some subtype }
 def onAttackCastFromGyArtifactInstantSorcery : TriggeredAbility :=
-  .triggered .attack .castFromGyArtifactInstantSorcery
+  .triggered .attack (Effect.ofTrigger .castFromGyArtifactInstantSorcery)
 def onAttackEquippedGainDoubleStrike : TriggeredAbility :=
-  .triggered .attack .equippedAttackersGainDoubleStrike
+  .triggered .attack (Effect.ofTrigger .equippedAttackersGainDoubleStrike)
 def onEnterTapEnchantedRemoveCounters : TriggeredAbility :=
-  .triggered .enter .tapEnchantedRemoveCounters
+  .triggered .enter (Effect.ofTrigger .tapEnchantedRemoveCounters)
 def onDiesRevealTopPutRandomCreature (n : Nat) : TriggeredAbility :=
-  .triggered .dies (.revealTopPutRandomCreature n)
+  .triggered .dies (Effect.ofTrigger (.revealTopPutRandomCreature n))
 def onYourBeginCombatIfDrawnTwoPumpFirstStrike : TriggeredAbility :=
-  .triggered .yourBeginCombat .beginCombatIfDrawnTwoPump
+  .triggered .yourBeginCombat (Effect.ofTrigger .beginCombatIfDrawnTwoPump)
 def onEnterHonePerOppCreaturesAttach : TriggeredAbility :=
-  .triggered .enter .honePerOppAttach
+  .triggered .enter (Effect.ofTrigger .honePerOppAttach)
 def onPutCountersOnGoblinOrcArmyDamageOpp : TriggeredAbility :=
-  .triggered .youPutCountersOnGoblinOrcArmy (.damageTargetOpponent 2)
+  .triggered .youPutCountersOnGoblinOrcArmy (Effect.ofTrigger (.damageTargetOpponent 2))
 def onEnterIfNotTokenCopySelf : TriggeredAbility :=
-  .triggered .enter .copySelfNonlegendary
+  .triggered .enter (Effect.ofTrigger .copySelfNonlegendary)
 def onEnterAttachEquipmentThenFight : TriggeredAbility :=
-  .triggered .enter .attachEquipmentThenFight
+  .triggered .enter (Effect.ofTrigger .attachEquipmentThenFight)
 def onDiesReturnAsArtifact : TriggeredAbility :=
-  .triggered .dies .returnAsArtifact
+  .triggered .dies (Effect.ofTrigger .returnAsArtifact)
 def onEnterExileLandsThenReturnTapped : TriggeredAbility :=
-  .triggered .enter .exileLandsThenReturnTapped
+  .triggered .enter (Effect.ofTrigger .exileLandsThenReturnTapped)
 def onCombatDamageImpulseInstantSorcery : TriggeredAbility :=
-  .triggered .combatDamageToPlayer .grimaImpulse
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .grimaImpulse)
 def onYourEndStepPalantir : TriggeredAbility :=
-  .triggered .yourEndStep .palantir
+  .triggered .yourEndStep (Effect.ofTrigger .palantir)
 def onDealtNoncombatDamageCreateTreasures : TriggeredAbility :=
-  .triggered .sourceDealtNoncombatDamage .treasuresEqualLastKnown
+  .triggered .sourceDealtNoncombatDamage (Effect.ofTrigger .treasuresEqualLastKnown)
 def onEnterIfCastProtectionEverything : TriggeredAbility :=
-  .triggered .enter .protectionEverything
+  .triggered .enter (Effect.ofTrigger .protectionEverything)
 def onYourUpkeepLoseLifePerBurden : TriggeredAbility :=
-  .triggered .yourUpkeep .loseLifePerBurden
+  .triggered .yourUpkeep (Effect.ofTrigger .loseLifePerBurden)
 def onFinalSagaChapterRevealSaga : TriggeredAbility :=
-  .triggered .finalSagaChapterResolves .revealSaga .once
+  .triggered .finalSagaChapterResolves (Effect.ofTrigger .revealSaga) .once
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
-  .triggered .combatDamageToYou .sacDamagersRingTempts
+  .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
 def sagaChapter (n : Nat) (effect : ChapterEffect) : TriggeredAbility :=
-  .triggered .sagaChapter (.chapter n effect)
+  .triggered .sagaChapter (Effect.ofTrigger (.chapter n effect))
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
-  .triggered .tappedForTeamwork .plusOneOnSourceAndDraw
+  .triggered .tappedForTeamwork (Effect.ofTrigger .plusOneOnSourceAndDraw)
 def onEachEndStepDrawIfAttackedOrEnteredSubtype (subtype : String) : TriggeredAbility :=
-  .triggered .eachEndStep (.drawIfAttackedOrEnteredSubtype subtype)
+  .triggered .eachEndStep (Effect.ofTrigger (.drawIfAttackedOrEnteredSubtype subtype))
 def onAttackOthersOfSubtypeGetEqualToughness (subtype : String) : TriggeredAbility :=
-  .triggered .attack (.othersOfSubtypeGetEqualSourceToughness subtype)
+  .triggered .attack (Effect.ofTrigger (.othersOfSubtypeGetEqualSourceToughness subtype))
 def onCreatureYouControlEntersScryAndPlan (n : Nat) : TriggeredAbility :=
-  .triggered .creatureYouControlEnters (.scryAndPlan n)
+  .triggered .creatureYouControlEnters (Effect.ofTrigger (.scryAndPlan n))
 def onCreaturesYouControlBecomeTappedLootAndPlan : TriggeredAbility :=
-  .triggered .creaturesYouControlBecomeTapped .lootAndPlan
+  .triggered .creaturesYouControlBecomeTapped (Effect.ofTrigger .lootAndPlan)
 def onYouDrawSecondCreateVillainAndPlan : TriggeredAbility :=
-  .triggered .youDrawSecond .createVillainAndPlan
+  .triggered .youDrawSecond (Effect.ofTrigger .createVillainAndPlan)
 def onVillainYouControlEntersDrainAndPlan (n : Nat) : TriggeredAbility :=
-  .triggered (.subtypeYouControlEnters "Villain") (.drainAndPlan n)
+  .triggered (.subtypeYouControlEnters "Villain") (Effect.ofTrigger (.drainAndPlan n))
 def onCreatureCardsToGyDrawLoseLifeAndPlan : TriggeredAbility :=
-  .triggered .creatureCardsPutIntoYourGy .drawLoseLifeAndPlan
+  .triggered .creatureCardsPutIntoYourGy (Effect.ofTrigger .drawLoseLifeAndPlan)
 def onCastNoncreatureTreasureAndPlan : TriggeredAbility :=
-  .triggered .youCastNoncreature .treasureTappedAndPlan
+  .triggered .youCastNoncreature (Effect.ofTrigger .treasureTappedAndPlan)
 def onLandYouControlEntersPlusOneAndPlan : TriggeredAbility :=
-  .triggered .landYouControlEnters .plusOneOnTargetAndPlan
+  .triggered .landYouControlEnters (Effect.ofTrigger .plusOneOnTargetAndPlan)
 def onFourthPlanDrawPlusOneEach : TriggeredAbility :=
-  .triggered (.nthPlanCounter 4) .planFinishDrawPlusOneEach
+  .triggered (.nthPlanCounter 4) (Effect.ofTrigger .planFinishDrawPlusOneEach)
 def onFourthPlanReturnInstants : TriggeredAbility :=
-  .triggered (.nthPlanCounter 4) .planFinishReturnInstants
+  .triggered (.nthPlanCounter 4) (Effect.ofTrigger .planFinishReturnInstants)
 def onSeventhPlanControlOpponent : TriggeredAbility :=
-  .triggered (.nthPlanCounter 7) .planFinishControlOpponent
+  .triggered (.nthPlanCounter 7) (Effect.ofTrigger .planFinishControlOpponent)
 def onFifthPlanExileTopCast : TriggeredAbility :=
-  .triggered (.nthPlanCounter 5) .planFinishExileTopCast
+  .triggered (.nthPlanCounter 5) (Effect.ofTrigger .planFinishExileTopCast)
 def onThirdPlanCreateRobots : TriggeredAbility :=
-  .triggered (.nthPlanCounter 3) (.planFinishCreateRobots 3)
+  .triggered (.nthPlanCounter 3) (Effect.ofTrigger (.planFinishCreateRobots 3))
 def onFourthPlanDividedDamage : TriggeredAbility :=
-  .triggered (.nthPlanCounter 4) (.planFinishDividedDamage 7)
+  .triggered (.nthPlanCounter 4) (Effect.ofTrigger (.planFinishDividedDamage 7))
 def onFourthPlanIndestructible : TriggeredAbility :=
-  .triggered (.nthPlanCounter 4) .planFinishIndestructibleOnTarget
+  .triggered (.nthPlanCounter 4) (Effect.ofTrigger .planFinishIndestructibleOnTarget)
 def onEnterSurveil (n : Nat) : TriggeredAbility :=
-  .triggered .enter (.surveil n)
+  .triggered .enter (Effect.ofTrigger (.surveil n))
 def onEnterEnchanted (action : PermanentAction) : TriggeredAbility :=
-  .triggered .enter (.onEnchanted action)
+  .triggered .enter (Effect.ofTrigger (.onEnchanted action))
 def onEnterAttachThen (followup : PermanentAction) : TriggeredAbility :=
-  .triggered .enter (.attachThen followup)
+  .triggered .enter (Effect.ofTrigger (.attachThen followup))
 def onEnterExileOtherCopyEnchanted : TriggeredAbility :=
-  .triggered .enter .exileOtherCopyEnchanted
+  .triggered .enter (Effect.ofTrigger .exileOtherCopyEnchanted)
 def onEnterExileCreatureReturnEndStep : TriggeredAbility :=
-  .triggered .enter .exileUntilNextEndStep
+  .triggered .enter (Effect.ofTrigger .exileUntilNextEndStep)
 def onEnterTapOrUntapNonland : TriggeredAbility :=
-  .triggered .enter .tapOrUntapNonland
+  .triggered .enter (Effect.ofTrigger .tapOrUntapNonland)
 def onEnterCreateFoodOrTreasure : TriggeredAbility :=
-  .triggered .enter .createFoodOrTreasure
+  .triggered .enter (Effect.ofTrigger .createFoodOrTreasure)
 def onEnterVillainIfGyElseMill : TriggeredAbility :=
-  .triggered .enter .villainIfGyElseMill
+  .triggered .enter (Effect.ofTrigger .villainIfGyElseMill)
 def onEnterDrawMayPutLandTapped : TriggeredAbility :=
-  .triggered .enter .drawMayPutLandTapped
+  .triggered .enter (Effect.ofTrigger .drawMayPutLandTapped)
 def onEnterDrawGainLifeIfAnotherHero : TriggeredAbility :=
-  .triggered .enter .drawGainLifeIfAnotherHero
+  .triggered .enter (Effect.ofTrigger .drawGainLifeIfAnotherHero)
 def onEnterPlusOneOrTwoIfAnotherHero : TriggeredAbility :=
-  .triggered .enter .plusOneOrTwoIfAnotherHero
+  .triggered .enter (Effect.ofTrigger .plusOneOrTwoIfAnotherHero)
 def onEnterMaySacArtifactOrDiscardDraw : TriggeredAbility :=
-  .triggered .enter .maySacArtifactOrDiscardDraw
+  .triggered .enter (Effect.ofTrigger .maySacArtifactOrDiscardDraw)
 def onEnter (e : EnterEffect) : TriggeredAbility :=
-  .triggered .enter (.enter e)
+  .triggered .enter (Effect.ofTrigger (.enter e))
 def onStep (e : StepEffect) : TriggeredAbility :=
-  .triggered .fromEffect (.step e)
+  .triggered .fromEffect (Effect.ofTrigger (.step e))
 def onDeath (e : DeathEffect) : TriggeredAbility :=
-  .triggered .fromEffect (.death e)
+  .triggered .fromEffect (Effect.ofTrigger (.death e))
 def onThisAttack (e : ThisAttackEffect) : TriggeredAbility :=
-  .triggered .attack (.thisAttack e)
+  .triggered .attack (Effect.ofTrigger (.thisAttack e))
 def onEnterOrAttack (e : EnterOrAttackEffect) : TriggeredAbility :=
-  .triggered (.or .enter .attack) (.enterOrAttack e)
+  .triggered (.or .enter .attack) (Effect.ofTrigger (.enterOrAttack e))
 def onWatch (e : WatchEffect) : TriggeredAbility :=
-  .triggered .fromEffect (.watch e)
+  .triggered .fromEffect (Effect.ofTrigger (.watch e))
 def onYouAttacking (e : YouAttackEffect) : TriggeredAbility :=
-  .triggered .youAttack (.youAttacking e)
+  .triggered .youAttack (Effect.ofTrigger (.youAttacking e))
 def onCasting (e : CastEffect) : TriggeredAbility :=
-  .triggered .fromEffect (.casting e)
+  .triggered .fromEffect (Effect.ofTrigger (.casting e))
 def onResource (e : ResourceEffect) : TriggeredAbility :=
-  .triggered .fromEffect (.resource e)
+  .triggered .fromEffect (Effect.ofTrigger (.resource e))
 
 /-- Damage amount and maximum number of targets when this ability divides
 damage as the controller chooses (CR 601.2d). -/
@@ -8085,165 +8093,164 @@ def anotherCreaturePowerAtMost? (ab : TriggeredAbility) : Option Int :=
 
 def toNotation (ab : TriggeredAbility) : String :=
   match ab with
-  | .triggered .enter .bolgMaySacrifice _ =>
+  | .triggered w e opts =>
+    match w, e.asTrigger?, opts with
+    | .enter, some .bolgMaySacrifice, _ =>
     "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage."
-  | .triggered .equippedAttacks .createSpiritsForEquipped _ =>
+    | .equippedAttacks, some .createSpiritsForEquipped, _ =>
     "Whenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking."
-  | .triggered .combatDamageToPlayer .createTreasuresEqualDamagedPlayerArtifacts _ =>
+    | .combatDamageToPlayer, some .createTreasuresEqualDamagedPlayerArtifacts, _ =>
     "Whenever this creature deals combat damage to a player, you create a Treasure token for each artifact that player controls."
-  | .triggered .enterOrOpponentDrawsExceptFirst .deal1ThenAmassOrcs _ =>
+    | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
-  | .triggered .opponentDrawsSecond (.createTokens .treasure 1) _ =>
+    | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
-  | .triggered .youAttackWithTotalPower (.untapAttackersExtraCombat n) _ =>
+    | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>
     s!"Whenever you attack with creatures with total power {n} or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."
-  | .triggered .anotherCreatureYouControlEnters .allianceMode _ =>
+    | .anotherCreatureYouControlEnters, some .allianceMode, _ =>
     "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
-  | .triggered .enter .destroyOtherAmassControllerPower _ =>
+    | .enter, some .destroyOtherAmassControllerPower, _ =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-  | .triggered .combatDamageToPlayerOrBattle (.createTokens .treasure 2)
-      { watchedSubtype := some "Dwarf", .. } =>
+    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some "Dwarf", .. } =>
     "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens."
-  | .triggered .opponentCastsMatchingParity .gollumMode _ =>
+    | .opponentCastsMatchingParity, some .gollumMode, _ =>
     "Whenever an opponent casts a spell with mana value of the chosen quality, choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
-  | .triggered (.youCastColor .red) (.damageEachOpponent 3) _ =>
+    | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
-  | .triggered .enter .returnCreatureFromGyToHand _ =>
+    | .enter, some .returnCreatureFromGyToHand, _ =>
     "When this enchantment enters, return target creature card from your graveyard to your hand."
-  | .triggered .thisOrAnotherSubtypeEnters .discardHandDrawDamageIfStory
-      { thisOrAnotherSubtype := some "Dwarf", .. } =>
+    | .thisOrAnotherSubtypeEnters, some .discardHandDrawDamageIfStory, { thisOrAnotherSubtype := some "Dwarf", .. } =>
     "Whenever Balin or another Dwarf you control enters, you may discard your hand. Draw X cards, where X is the number of cards discarded this way. If you have an enduring story, Balin deals X damage to each opponent."
-  | .triggered .attack .castFromGyArtifactInstantSorcery _ =>
+    | .attack, some .castFromGyArtifactInstantSorcery, _ =>
     "Whenever Bilbo attacks, you may cast an artifact, instant, or sorcery spell from your graveyard. If an instant or sorcery spell cast this way would be put into your graveyard, exile it instead."
-  | .triggered .enter .createAxeAttach _ =>
+    | .enter, some .createAxeAttach, _ =>
     "When Dáin enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control."
-  | .triggered .attack .equippedAttackersGainDoubleStrike _ =>
+    | .attack, some .equippedAttackersGainDoubleStrike, _ =>
     "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
-  | .triggered .enter .tapEnchantedRemoveCounters _ =>
+    | .enter, some .tapEnchantedRemoveCounters, _ =>
     "When this Aura enters, tap enchanted creature and remove all counters from it."
-  | .triggered .dies (.revealTopPutRandomCreature n) _ =>
+    | .dies, some (.revealTopPutRandomCreature n), _ =>
     s!"When this artifact is put into a graveyard from the battlefield, reveal the top {n} cards of your library. Put a random creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."
-  | .triggered .yourBeginCombat .beginCombatIfDrawnTwoPump _ =>
+    | .yourBeginCombat, some .beginCombatIfDrawnTwoPump, _ =>
     "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
-  | .triggered .enter .honePerOppAttach _ =>
+    | .enter, some .honePerOppAttach, _ =>
     "When Sting enters, put a hone counter on Sting for each creature target opponent controls. Attach Sting to up to one target creature you control."
-  | .triggered .enter .copySelfNonlegendary _ =>
+    | .enter, some .copySelfNonlegendary, _ =>
     "When The Notary Hobbits enter, if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary."
-  | .triggered .enter .attachEquipmentThenFight _ =>
+    | .enter, some .attachEquipmentThenFight, _ =>
     "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."
-  | .triggered .anotherCreatureYouControlEnters (.drawThenDiscard 2)
-      { thisOrAnotherSubtype := some "Elf", .. } =>
+    | .anotherCreatureYouControlEnters, some (.drawThenDiscard 2), { thisOrAnotherSubtype := some "Elf", .. } =>
     "Whenever another legendary Elf you control enters, draw two cards, then discard a card."
-  | .triggered .dies .returnAsArtifact _ =>
+    | .dies, some .returnAsArtifact, _ =>
     "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
-  | .triggered .anotherCreatureYouControlEnters (.onSource (.plusOne 2))
-      { thisOrAnotherSubtype := some "Wolf", .. } =>
+    | .anotherCreatureYouControlEnters, some (.onSource (.plusOne 2)), { thisOrAnotherSubtype := some "Wolf", .. } =>
     "Whenever another Wolf you control enters, put two +1/+1 counters on Chief of the Wilds."
-  | .triggered .landYouControlEnters .drawPlusOneSource _ =>
+    | .landYouControlEnters, some .drawPlusOneSource, _ =>
     "Landfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf."
-  | .triggered .enter .exileLandsThenReturnTapped _ =>
+    | .enter, some .exileLandsThenReturnTapped, _ =>
     "When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control."
-  | .triggered .combatDamageToPlayer .grimaImpulse _ =>
+    | .combatDamageToPlayer, some .grimaImpulse, _ =>
     "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
-  | .triggered .yourEndStep .palantir _ =>
+    | .yourEndStep, some .palantir, _ =>
     "At the beginning of your end step, put an influence counter on Palantír of Orthanc and scry 2. Then target opponent may have you draw a card. If that player doesn't, you mill X cards, where X is the number of influence counters on Palantír of Orthanc, and that player loses life equal to the total mana value of those cards."
-  | .triggered .sourceDealtNoncombatDamage .treasuresEqualLastKnown _ =>
+    | .sourceDealtNoncombatDamage, some .treasuresEqualLastKnown, _ =>
     "Whenever Smaug is dealt noncombat damage, create that many Treasure tokens."
-  | .triggered .enter .protectionEverything _ =>
+    | .enter, some .protectionEverything, _ =>
     "When The One Ring enters, if you cast it, you gain protection from everything until your next turn."
-  | .triggered .yourUpkeep .loseLifePerBurden _ =>
+    | .yourUpkeep, some .loseLifePerBurden, _ =>
     "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
-  | .triggered .landYouControlEnters .payReturnFromGy _ =>
+    | .landYouControlEnters, some .payReturnFromGy, _ =>
     "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
-  | .triggered .youPutCountersOnGoblinOrcArmy (.damageTargetOpponent 2) _ =>
+    | .youPutCountersOnGoblinOrcArmy, some (.damageTargetOpponent 2), _ =>
     "Whenever you put one or more counters on a Goblin, Orc, or Army you control, The Great Goblin deals 2 damage to target opponent."
-  | .triggered .creatureYouControlAttacksAlone .investigate _ =>
+    | .creatureYouControlAttacksAlone, some .investigate, _ =>
     "Whenever a creature you control attacks alone, investigate."
-  | .triggered .creatureYouControlAttacksAlone (.pumpCause p t) _ =>
+    | .creatureYouControlAttacksAlone, some (.pumpCause p t), _ =>
     s!"Whenever a creature you control attacks alone, that creature gets {signedStat p}/{signedStat t} until end of turn."
-  | .triggered .tappedForTeamwork .plusOneOnSourceAndDraw _ =>
+    | .tappedForTeamwork, some .plusOneOnSourceAndDraw, _ =>
     "Whenever this becomes tapped to pay a teamwork cost, put a +1/+1 counter on this and draw a card."
-  | .triggered .enter .connive _ =>
+    | .enter, some .connive, _ =>
     "When this creature enters, it connives."
-  | .triggered .creatureYouControlEnters (.scryAndPlan n) _ =>
+    | .creatureYouControlEnters, some (.scryAndPlan n), _ =>
     s!"Whenever a creature you control enters, scry {n} and put a plan counter on this enchantment."
-  | .triggered .creaturesYouControlBecomeTapped .lootAndPlan _ =>
+    | .creaturesYouControlBecomeTapped, some .lootAndPlan, _ =>
     "Whenever one or more creatures you control become tapped, draw a card, then discard a card and put a plan counter on this enchantment."
-  | .triggered .youDrawSecond .createVillainAndPlan _ =>
+    | .youDrawSecond, some .createVillainAndPlan, _ =>
     "Whenever you draw your second card each turn, create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment."
-  | .triggered (.subtypeYouControlEnters "Villain") (.drainAndPlan n) _ =>
+    | (.subtypeYouControlEnters "Villain"), some (.drainAndPlan n), _ =>
     s!"Whenever a Villain you control enters, each opponent loses {n} life and you gain {n} life. Put a plan counter on this enchantment."
-  | .triggered .creatureCardsPutIntoYourGy .drawLoseLifeAndPlan _ =>
+    | .creatureCardsPutIntoYourGy, some .drawLoseLifeAndPlan, _ =>
     "Whenever one or more creature cards are put into your graveyard from anywhere, you draw a card, lose 1 life, and put a plan counter on this enchantment."
-  | .triggered .youCastNoncreature .treasureTappedAndPlan _ =>
+    | .youCastNoncreature, some .treasureTappedAndPlan, _ =>
     "Whenever you cast a noncreature spell, create a tapped Treasure token and put a plan counter on this enchantment."
-  | .triggered .landYouControlEnters .plusOneOnTargetAndPlan _ =>
+    | .landYouControlEnters, some .plusOneOnTargetAndPlan, _ =>
     "Whenever a land you control enters, put a +1/+1 counter on target creature you control and a plan counter on this enchantment."
-  | .triggered (.nthPlanCounter 4) .planFinishDrawPlusOneEach _ =>
+    | (.nthPlanCounter 4), some .planFinishDrawPlusOneEach, _ =>
     "When the fourth plan counter is put on this enchantment, sacrifice it, draw a card, and put a +1/+1 counter on each creature you control."
-  | .triggered (.nthPlanCounter 4) .planFinishReturnInstants _ =>
+    | (.nthPlanCounter 4), some .planFinishReturnInstants, _ =>
     "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, return up to two target instant and/or sorcery cards from your graveyard to your hand."
-  | .triggered (.nthPlanCounter 7) .planFinishControlOpponent _ =>
+    | (.nthPlanCounter 7), some .planFinishControlOpponent, _ =>
     "When the seventh plan counter is put on this enchantment, sacrifice it. When you do, you control target opponent during their next turn."
-  | .triggered (.nthPlanCounter 5) .planFinishExileTopCast _ =>
+    | (.nthPlanCounter 5), some .planFinishExileTopCast, _ =>
     "When the fifth plan counter is put on this enchantment, sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs."
-  | .triggered (.nthPlanCounter 3) (.planFinishCreateRobots 3) _ =>
+    | (.nthPlanCounter 3), some (.planFinishCreateRobots 3), _ =>
     "When the third plan counter is put on this enchantment, sacrifice it and create three 2/2 colorless Robot Villain artifact creature tokens."
-  | .triggered (.nthPlanCounter 4) (.planFinishDividedDamage 7) _ =>
+    | (.nthPlanCounter 4), some (.planFinishDividedDamage 7), _ =>
     "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, it deals 7 damage divided as you choose among one or two targets."
-  | .triggered (.nthPlanCounter 4) .planFinishIndestructibleOnTarget _ =>
+    | (.nthPlanCounter 4), some .planFinishIndestructibleOnTarget, _ =>
     "When the fourth plan counter is put on this enchantment, sacrifice it. When you do, put an indestructible counter on target creature you control."
-  | .triggered .eachEndStep (.drawIfAttackedOrEnteredSubtype subtype) _ =>
+    | .eachEndStep, some (.drawIfAttackedOrEnteredSubtype subtype), _ =>
     let a := if subtype == "Hero" then "a Hero" else s!"a {subtype}"
     s!"At the beginning of each end step, if you attacked with {a} this turn or {a} entered the battlefield under your control this turn, draw a card."
-  | .triggered .attack (.othersOfSubtypeGetEqualSourceToughness subtype) _ =>
+    | .attack, some (.othersOfSubtypeGetEqualSourceToughness subtype), _ =>
     s!"Whenever this attacks, each other {subtype} you control gets +X/+X until end of turn, where X is this toughness."
-  | .triggered (.youCastColorFromHand color) .connive _ =>
+    | (.youCastColorFromHand color), some .connive, _ =>
     s!"Whenever you cast a {color} spell from your hand, this connives."
-  | .triggered .sourceDealtDamage .plusOneOnSource _ =>
+    | .sourceDealtDamage, some .plusOneOnSource, _ =>
     "Whenever this is dealt damage, put a +1/+1 counter on it."
-  | .triggered .enter (.attachTo .creatureYouControl) _ =>
+    | .enter, some (.attachTo .creatureYouControl), _ =>
     "When this Equipment enters, attach it to target creature you control."
-  | .triggered .enter (.surveil n) _ =>
+    | .enter, some (.surveil n), _ =>
     s!"When this permanent enters, surveil {n}."
-  | .triggered .enter (.onEnchanted action) _ =>
+    | .enter, some (.onEnchanted action), _ =>
     s!"When this Aura enters, {PermanentAction.toNotation action "enchanted creature"}."
-  | .triggered .enter (.attachThen followup) _ =>
+    | .enter, some (.attachThen followup), _ =>
     s!"When this Equipment enters, attach it to target creature you control. {PermanentAction.toNotation followup "that creature" (sentence := true)}."
-  | .triggered .enter .exileOtherCopyEnchanted _ =>
+    | .enter, some .exileOtherCopyEnchanted, _ =>
     "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
-  | .triggered .enter .exileUntilNextEndStep _ =>
+    | .enter, some .exileUntilNextEndStep, _ =>
     "When this Vehicle enters, exile up to one target creature you control. Return that card to the battlefield under its owner's control at the beginning of the next end step."
-  | .triggered .enter .tapOrUntapNonland _ =>
+    | .enter, some .tapOrUntapNonland, _ =>
     "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
-  | .triggered .enter .createFoodOrTreasure _ =>
+    | .enter, some .createFoodOrTreasure, _ =>
     "When this creature enters, create a Food token or a Treasure token."
-  | .triggered .enter .villainIfGyElseMill _ =>
+    | .enter, some .villainIfGyElseMill, _ =>
     "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
-  | .triggered .enter .drawMayPutLandTapped _ =>
+    | .enter, some .drawMayPutLandTapped, _ =>
     "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
-  | .triggered .enter .drawGainLifeIfAnotherHero _ =>
+    | .enter, some .drawGainLifeIfAnotherHero, _ =>
     "When this creature enters, draw a card. If you control another Hero, you gain 2 life."
-  | .triggered .enter .plusOneOrTwoIfAnotherHero _ =>
+    | .enter, some .plusOneOrTwoIfAnotherHero, _ =>
     "When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead."
-  | .triggered .enter .maySacArtifactOrDiscardDraw _ =>
+    | .enter, some .maySacArtifactOrDiscardDraw, _ =>
     "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
-  | .triggered .enter (.exileUntilLeaves .oppTappedCreature) _ =>
+    | .enter, some (.exileUntilLeaves .oppTappedCreature), _ =>
     "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-  | .triggered .enter (.targetOpponentDiscards n) _ =>
+    | .enter, some (.targetOpponentDiscards n), _ =>
     let cards := if n == 2 then "two cards" else cardPhrase n
     s!"When this enchantment enters, target opponent discards {cards}."
-  | .triggered .enter (.enter (.dealDamageUpToOne n)) _ =>
+    | .enter, some (.enter (.dealDamageUpToOne n)), _ =>
     s!"When this permanent enters, it deals {n} damage to up to one target creature."
-  | .triggered _ (.step e) _ => e.toNotation
-  | .triggered _ (.death e) _ => e.toNotation
-  | .triggered _ (.thisAttack e) _ => e.toNotation
-  | .triggered _ (.enterOrAttack e) _ => e.toNotation
-  | .triggered _ (.watch e) _ => e.toNotation
-  | .triggered _ (.youAttacking e) _ => e.toNotation
-  | .triggered _ (.casting e) _ => e.toNotation
-  | .triggered _ (.resource e) _ => e.toNotation
-  | _ =>
+    | _, some (.step e), _ => e.toNotation
+    | _, some (.death e), _ => e.toNotation
+    | _, some (.thisAttack e), _ => e.toNotation
+    | _, some (.enterOrAttack e), _ => e.toNotation
+    | _, some (.watch e), _ => e.toNotation
+    | _, some (.youAttacking e), _ => e.toNotation
+    | _, some (.casting e), _ => e.toNotation
+    | _, some (.resource e), _ => e.toNotation
+
+    | _, _, _ =>
     let t := ab.timing
     if t.events.contains .equippedAttacksAlone then
       "Whenever equipped creature attacks alone, you draw a card and you lose 1 life."
@@ -9159,128 +9166,128 @@ instance : ToString CardDef where
   .createTokens .treasure 1 false
 #guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1 true) ==
   .createTokens .treasure 1 true
-#guard TriggeredAbility.onEnterScry 2 == .triggered .enter (.scry 2)
-#guard TriggeredAbility.onAttackScry 1 == .triggered .attack (.scry 1)
-#guard TriggeredAbility.onEnterDraw 1 == .triggered .enter (.draw 1)
-#guard TriggeredAbility.onDiesDraw 1 == .triggered .dies (.draw 1)
+#guard TriggeredAbility.onEnterScry 2 == .triggered .enter (Effect.ofTrigger (.scry 2))
+#guard TriggeredAbility.onAttackScry 1 == .triggered .attack (Effect.ofTrigger (.scry 1))
+#guard TriggeredAbility.onEnterDraw 1 == .triggered .enter (Effect.ofTrigger (.draw 1))
+#guard TriggeredAbility.onDiesDraw 1 == .triggered .dies (Effect.ofTrigger (.draw 1))
 #guard TriggeredAbility.onEnterCreateTokens .treasure 1 true ==
-  .triggered .enter (.createTokens .treasure 1 true)
+  .triggered .enter (Effect.ofTrigger (.createTokens .treasure 1 true))
 #guard TriggeredAbility.onEnterOrAttackDealDividedDamage 3 3 ==
-  .triggered .enterOrAttack (.dividedDamage 3 3)
+  .triggered .enterOrAttack (Effect.ofTrigger (.dividedDamage 3 3))
 #guard TriggeredAbility.onEnterTargetOpponentSacrifices ==
-  .triggered .enter .opponentSacrificesCreature
+  .triggered .enter (Effect.ofTrigger .opponentSacrificesCreature)
 #guard TriggeredAbility.onEnterAttachToLegendary ==
-  .triggered .enter (.attachTo .legendaryCreatureYouControl)
+  .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 #guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
-  .triggered .yourBeginCombat (.plusOneOn .creatureYouControl)
+  .triggered .yourBeginCombat (Effect.ofTrigger (.plusOneOn .creatureYouControl))
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
-  .triggered .enterOrAttack (.createTokens .wall 1)
-#guard TriggeredAbility.onEnterConnive == .triggered .enter .connive
+  .triggered .enterOrAttack (Effect.ofTrigger (.createTokens .wall 1))
+#guard TriggeredAbility.onEnterConnive == .triggered .enter (Effect.ofTrigger .connive)
 #guard TriggeredAbility.onDrawSecondPlusOne ==
-  .triggered .youDrawSecond .plusOneOnSource
+  .triggered .youDrawSecond (Effect.ofTrigger .plusOneOnSource)
 #guard TriggeredAbility.onYourEndStepDrawLoseLife ==
-  .triggered .yourEndStep .drawAndLoseLife
+  .triggered .yourEndStep (Effect.ofTrigger .drawAndLoseLife)
 #guard TriggeredAbility.onAttackFerociousGainLife 2 ==
-  .triggered .attack (.gainLife 2) .ferocious
+  .triggered .attack (Effect.ofTrigger (.gainLife 2)) .ferocious
 #guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
-  .triggered .artifactYouControlEnters (.draw 1) .once
+  .triggered .artifactYouControlEnters (Effect.ofTrigger (.draw 1)) .once
 #guard TriggeredAbility.onCastColorPump .green 4 4 ==
-  .triggered (.youCastColor .green) (.pumpTarget .creature 4 4)
+  .triggered (.youCastColor .green) (Effect.ofTrigger (.pumpTarget .creature 4 4))
 #guard TriggeredAbility.onEnterExileOppTappedUntilLeaves ==
-  .triggered .enter (.exileUntilLeaves .oppTappedCreature)
+  .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppTappedCreature))
 #guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
-  .triggered .opponentCastsFirstNoncreature .youRecruit
+  .triggered .opponentCastsFirstNoncreature (Effect.ofTrigger .youRecruit)
 #guard TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2 ==
-  .triggered .youCastInstantOrSorcery (.damageEachOpponent 2) .noTarget
-#guard TriggeredAbility.onEnterExileTop == .triggered .enter .exileTop
+  .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent 2)) .noTarget
+#guard TriggeredAbility.onEnterExileTop == .triggered .enter (Effect.ofTrigger .exileTop)
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
-  .triggered .enter (.mayDiscardDraw 2)
+  .triggered .enter (Effect.ofTrigger (.mayDiscardDraw 2))
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
-  .triggered .enter .eachOpponentDiscards
+  .triggered .enter (Effect.ofTrigger .eachOpponentDiscards)
 #guard TriggeredAbility.onAttackOtherGets2AndTrample ==
-  .triggered .attack (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0))
+  .triggered .attack (Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)))
 #guard TriggeredAbility.onEquipmentYouControlEntersDraw ==
-  .triggered .equipmentYouControlEnters (.draw 1)
+  .triggered .equipmentYouControlEnters (Effect.ofTrigger (.draw 1))
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
-  .triggered .creatureYouControlAttacksAlone .investigate
+  .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
 #guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
-  .triggered .opponentCastsSpell (.amassOrcs 1)
+  .triggered .opponentCastsSpell (Effect.ofTrigger (.amassOrcs 1))
 #guard !TriggeredAbility.requiresTarget
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
-#guard TriggeredAbility.onEnterSearchForest == .triggered .enter .searchForest
+#guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchForest)
 #guard TriggeredAbility.onEnterEachPlayerSacrificesCreature ==
-  .triggered .enter .eachPlayerSacrificesCreature
+  .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
 #guard TriggeredAbility.onCombatDamageToPlayerLoot ==
-  .triggered .combatDamageToPlayer .loot
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .loot)
 #guard TriggeredAbility.onAttackFerociousPlusOneEach ==
-  .triggered .attack .plusOneEachYouControl .ferocious
+  .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
 #guard TriggeredAbility.onScryPumpSelfForEachLookedAt ==
-  .triggered .youScry .pumpByLookedAt
+  .triggered .youScry (Effect.ofTrigger .pumpByLookedAt)
 #guard TriggeredAbility.onScryPumpAndUnblockableOnce ==
-  .triggered .youScry .pumpAndUnblockable .once
+  .triggered .youScry (Effect.ofTrigger .pumpAndUnblockable) .once
 #guard TriggeredAbility.onRingTemptsMayDiscardDraw 4 ==
-  .triggered .theRingTemptsYou (.mayDiscardHandDraw 4)
+  .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw 4))
 #guard TriggeredAbility.onDrawSecondPlusOneLifelink ==
-  .triggered .youDrawSecond (.plusOneAndLifelink .creature)
+  .triggered .youDrawSecond (Effect.ofTrigger (.plusOneAndLifelink .creature))
 #guard TriggeredAbility.onceEachTurn .onScryPumpAndUnblockableOnce
 #guard TriggeredAbility.youControlCreatureWithPower? .onAttackFerociousPlusOneEach
   == some 4
 #guard TriggeredAbility.allowsZeroTargets .onEnterMayExileAnotherCreature
 #guard TriggeredAbility.onAttackPumpByGreatestPower ==
-  .triggered .attack .pumpGreatestPower
+  .triggered .attack (Effect.ofTrigger .pumpGreatestPower)
 #guard TriggeredAbility.onBecomesBlockedDeal1ToBlockers ==
-  .triggered .becomesBlocked (.damageBlockers 1)
+  .triggered .becomesBlocked (Effect.ofTrigger (.damageBlockers 1))
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
-  .triggered .enter (.createThenAttach .treasure)
+  .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
-  .triggered .landYouControlEnters .drawPlusOneSource
+  .triggered .landYouControlEnters (Effect.ofTrigger .drawPlusOneSource)
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==
-  .triggered .armyYouControlCombatDamage .ringTempts
+  .triggered .armyYouControlCombatDamage (Effect.ofTrigger .ringTempts)
 #guard TriggeredAbility.onAttackSetOtherBasePT ==
-  .triggered .attack .setOtherBasePT
+  .triggered .attack (Effect.ofTrigger .setOtherBasePT)
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
-  .triggered .enterOrAttack .returnElfGainLife
+  .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
-  .triggered .dies .damageFromLastKnownPower
+  .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
 #guard TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2 ==
-  .triggered .enter (.exileOppGyCardOppsLoseLife 2)
+  .triggered .enter (Effect.ofTrigger (.exileOppGyCardOppsLoseLife 2))
 #guard TriggeredAbility.onEnterCreaturesYouControlGetAndFirstStrike 1 ==
-  .triggered .enter (.creaturesYouControlPumpAndFirstStrike 1)
+  .triggered .enter (Effect.ofTrigger (.creaturesYouControlPumpAndFirstStrike 1))
 #guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
-  .triggered .anotherCreatureYouControlEnters (.mayPayGenericDraw 1)
+  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw 1))
     { anotherCreaturePowerAtMost := some 2 }
 #guard TriggeredAbility.anotherCreaturePowerAtMost?
   (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == some 2
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
-  .triggered .enter .drawThenBottomIfNoLegendary
+  .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
-  .triggered .yourEndStep .removeHopeDrawSac
+  .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
 #guard TriggeredAbility.onAttackTapHumansDraw ==
-  .triggered .attack .tapHumansDraw
+  .triggered .attack (Effect.ofTrigger .tapHumansDraw)
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
-  .triggered .enter (.untapPlusOneIfSubtype "Bear")
+  .triggered .enter (Effect.ofTrigger (.untapPlusOneIfSubtype "Bear"))
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
-  .triggered .enter .destroyOppArtifactsEnchantmentsGainLife
+  .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
-  .triggered .attack (.damageEqualSubtypeToEachOpponent "Dwarf")
+  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent "Dwarf"))
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==
-  .triggered .attack .damageEqualTreasures
+  .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
 #guard TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
-  .triggered .anyPlayerCastsSecondSpell .loseLifeCreateTreasure
+  .triggered .anyPlayerCastsSecondSpell (Effect.ofTrigger .loseLifeCreateTreasure)
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
-  .triggered .enter (.dealDamageDestroyIfSubtype 1 "Dragon")
+  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 "Dragon"))
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
-  .triggered .enter .attachEquipmentToCreature
+  .triggered .enter (Effect.ofTrigger .attachEquipmentToCreature)
 #guard TriggeredAbility.onAttackDefenderSacsLeastPower ==
-  .triggered .attack .defenderSacsLeastPower
+  .triggered .attack (Effect.ofTrigger .defenderSacsLeastPower)
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
-  .triggered .enter .returnOtherPlusOne
+  .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
-  .triggered .enter (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])
+  .triggered .enter (Effect.ofTrigger (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]))
 #guard TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts ==
-  .triggered .enter .createTappedTreasuresEqualOppArtifacts
+  .triggered .enter (Effect.ofTrigger .createTappedTreasuresEqualOppArtifacts)
 #guard TriggeredAbility.onCombatDamagePutNonlandMvAtMost 3 ==
-  .triggered .combatDamageToPlayerOrBattle (.putNonlandMvAtMostFromGy 3)
+  .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.putNonlandMvAtMostFromGy 3))
 #guard SharedTriggerWhen.anyPlayerCastsSecondSpell.events ==
   #[.anyPlayerCastsSecondSpell]
 #guard SharedTriggerWhen.enterOrAttack == .or .enter .attack
@@ -9291,62 +9298,62 @@ instance : ToString CardDef where
   .or .enter .opponentDrawsExceptFirst
 #guard (SharedTriggerWhen.or .enter .attack).events == #[.entering, .attacking]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
-  .triggered .eachBeginCombat (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1))
+  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)))
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
-  .triggered .combatDamageToPlayer .wolfPlusOneOrTreasure
+  .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
-  .triggered .yourBeginCombat .trampleCounterBecomeBear
+  .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
 #guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
-  .triggered .enter (.millThenSubtypeToHand 4 "Elf")
+  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand 4 "Elf"))
 #guard TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves ==
-  .triggered .enter .exileOppNonlandEachUntilLeaves
+  .triggered .enter (Effect.ofTrigger .exileOppNonlandEachUntilLeaves)
 #guard TriggeredAbility.onCastCreaturePlusOneEqualMv ==
-  .triggered .youCastCreature .plusOneEqualLastKnownMv
+  .triggered .youCastCreature (Effect.ofTrigger .plusOneEqualLastKnownMv)
 #guard TriggeredAbility.onMountainEntersQuestThenDragon ==
-  .triggered .mountainYouControlEnters .mountainQuestDragon
+  .triggered .mountainYouControlEnters (Effect.ofTrigger .mountainQuestDragon)
 #guard TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType ==
-  .triggered .equippedDealsCombatDamageToPlayer .treasuresPerChosenType
+  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .treasuresPerChosenType)
 #guard TriggeredAbility.onNontokenYouControlDiesRevealCreature ==
-  .triggered .nontokenYouControlDies .revealUntilCreature .once
+  .triggered .nontokenYouControlDies (Effect.ofTrigger .revealUntilCreature) .once
 #guard TriggeredAbility.onceEachTurn .onNontokenYouControlDiesRevealCreature
 #guard TriggeredAbility.onAttackMaySacAnotherPlusOneEqualPower ==
-  .triggered .attack .attackSacPlusOneEqualPower
+  .triggered .attack (Effect.ofTrigger .attackSacPlusOneEqualPower)
 #guard TriggeredAbility.onEnterLootLandEntersTapped ==
-  .triggered .enter .lootLandEntersTapped
+  .triggered .enter (Effect.ofTrigger .lootLandEntersTapped)
 #guard TriggeredAbility.onPlayerLosesLifeMillThatMany ==
-  .triggered .playerLosesLife .millThatManyLost
+  .triggered .playerLosesLife (Effect.ofTrigger .millThatManyLost)
 #guard TriggeredAbility.onDiesDrawPerFatGraveyard ==
-  .triggered .dies .drawPerFatGraveyard
+  .triggered .dies (Effect.ofTrigger .drawPerFatGraveyard)
 #guard TriggeredAbility.onEnterMaySacDrawTreasure ==
-  .triggered .enter .maySacDrawTreasure
+  .triggered .enter (Effect.ofTrigger .maySacDrawTreasure)
 #guard TriggeredAbility.onEquippedAttacksPlusOneEachIfCityBlessing ==
-  .triggered .equippedAttacks .plusOneEachIfCityBlessing
+  .triggered .equippedAttacks (Effect.ofTrigger .plusOneEachIfCityBlessing)
 #guard TriggeredAbility.onYourBeginCombatCastInstantSorceryFromHand ==
-  .triggered .yourBeginCombat .castInstantSorceryFromHand
+  .triggered .yourBeginCombat (Effect.ofTrigger .castInstantSorceryFromHand)
 #guard TriggeredAbility.onEquippedCombatDamageCastInstantSorcery ==
-  .triggered .equippedDealsCombatDamageToPlayer .castInstantSorceryMvAtMost
+  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .castInstantSorceryMvAtMost)
 #guard TriggeredAbility.onCastSecondSpellMillThenCopy ==
-  .triggered .youCastSecondSpell .millThenCopy
+  .triggered .youCastSecondSpell (Effect.ofTrigger .millThenCopy)
 #guard TriggeredAbility.onCombatAnotherGetsSourcePower ==
-  .triggered .yourBeginCombat .pumpTargetBySourcePower
+  .triggered .yourBeginCombat (Effect.ofTrigger .pumpTargetBySourcePower)
 #guard TriggeredAbility.onCombatCreateAlienPerInvasion ==
-  .triggered .yourBeginCombat .createAlienPerInvasion
+  .triggered .yourBeginCombat (Effect.ofTrigger .createAlienPerInvasion)
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
-  .triggered .yourBeginCombat .mayPutArtifactAttachEquipment
-#guard TriggeredAbility.onCastCascade == .triggered .cascade .cascade
+  .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
+#guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
-  .triggered .enter .bolgMaySacrifice
-#guard TriggeredAbility.onEnterSurveil 2 == .triggered .enter (.surveil 2)
-#guard TriggeredAbility.onWatch .hulk == .triggered .fromEffect (.watch .hulk)
+  .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
+#guard TriggeredAbility.onEnterSurveil 2 == .triggered .enter (Effect.ofTrigger (.surveil 2))
+#guard TriggeredAbility.onWatch .hulk == .triggered .fromEffect (Effect.ofTrigger (.watch .hulk))
 #guard TriggeredAbility.onStep .drawToTen ==
-  .triggered .fromEffect (.step .drawToTen)
+  .triggered .fromEffect (Effect.ofTrigger (.step .drawToTen))
 #guard TriggeredAbility.sagaChapter 1 ChapterEffect.recruit ==
-  .triggered .sagaChapter (.chapter 1 .recruit)
+  .triggered .sagaChapter (Effect.ofTrigger (.chapter 1 .recruit))
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
-  .triggered .youSacrificeToken (.targetOpponentLosesLife 1)
+  .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
-  .triggered .dies .amassGoblinsEqualPower
+  .triggered .dies (Effect.ofTrigger .amassGoblinsEqualPower)
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
