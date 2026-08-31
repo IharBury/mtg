@@ -11676,12 +11676,6 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.applyOnTriggerSource sourceId action
   | .gainLife n =>
     g.gainLife controller n
-  | .targetOpponentSacrifices =>
-    g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-      match t with
-      | Target.player pid => g.beginSacrificeCreatures #[pid]
-      | _ => g.logMsg "The target is no longer legal")
-      "The target is no longer legal"
   | .eachPlayerSacrificesCreature =>
     g.beginSacrificeCreatures (g.apnapOrder)
   | .eachOpponentDiscards =>
