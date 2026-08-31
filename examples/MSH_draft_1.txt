@@ -1,0 +1,532 @@
+--name Adam --deck examples/decks/Alex_Rohan_MSH_Draft.txt --name Eva --deck examples/decks/Bernardo_Tores_MSH_Draft.txt --seed 20260830 --multiplayer
+first Eva
+keep
+keep
+pass
+pass
+play 91
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 80
+cast 84
+tap #96 U
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 90
+cast 93
+tap #94 R
+tap #100 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 82
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 103
+tap 96 U
+tap 104
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 99
+tap #94 R
+tap #100 B
+pay
+pass
+pass
+target opponent
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 81
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 108
+tap 104 114
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+cast 87
+target 116
+tap #94 R
+tap #100 B
+pay
+pass
+pass
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 85
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 86
+tap #96 C
+tap #104 R
+tap #114 U
+tap #122 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 124 102
+cast 89
+target 124
+tap #94 R
+tap #100 B
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 130
+tap 114 122
+pay
+pass
+pass
+pass
+pass
+play 95
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+cast 125
+tap #94 R
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 139
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+noblock
+activate 98
+x 4
+tap #96 U
+tap #104 R
+tap #114 U
+tap #122 B
+tap #135 U
+tap #140 U
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 142
+cast 88
+tap #94 R
+tap #100 B
+tap #143 B
+pay
+pass
+pass
+target opponent
+pass
+pass
+pass
+pass
+pass
+pass
+attack 111
+pass
+pass
+noblock
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 147
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+block 138 98
+pass
+pass
+pass
+pass
+pass
+pass
+cast 113
+tap #96 C
+tap #104 R
+tap #114 U
+tap #122 B
+tap #135 U
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 152
+cast 117
+tap #94 R
+tap #100 B
+tap #143 B
+tap #153 R
+pay
+pass
+pass
+target opponent
+pass
+pass
+discard 83
+discard 134
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 121
+tap 114 122 135 140 148
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+pass
+pass
+cast 8
+pass
+pass
+pass
+pass
+block 111 98
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+play 171
+cast 136
+tap #94 R
+tap #100 B
+tap #143 B
+tap #153 R
+pay
+pass
+pass
+pass
+pass
+connive
+discard 109
+target 174
+pass
+pass
+pass
+pass
+pass
+pass
+noattack
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+cast 159
+tap #96 C
+tap #104 R
+tap #114 U
+tap #122 B
+tap #135 U
+pay
+pass
+pass
+pass
+pass
+pass
+pass
+attack
+stack 169 161
+pass
+pass
+cast 12
+target 174
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+pass
+block 145 98
+pass
+pass
