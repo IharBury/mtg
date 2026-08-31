@@ -4057,7 +4057,7 @@ def lastLightDragonOnlyOk : Bool :=
 
 def settleTargetsPlayerOk : Bool :=
   settleTheWreckage.spellEffect == some (Effect.ofSpell .exileAttackersSearchBasics) &&
-    SpellEffect.targetKind .exileAttackersSearchBasics == .player &&
+    SpellLeftover.targetKind .exileAttackersSearchBasics == .player &&
     (ruling 263).comment.contains "targets only the player"
 
 #guard settleTargetsPlayerOk

@@ -666,7 +666,7 @@ def plusOnePlusOneCountersPhrase (n : Nat) : String :=
   if n == 1 then "a +1/+1 counter" else s!"{n} +1/+1 counters"
 
 /-- One-shot effect of a spell on resolution. Targeting is stored on the stack object. -/
-inductive SpellEffect where
+inductive SpellLeftover where
   /-- Deal `amount` damage to the chosen target (player or creature). -/
   | dealDamage (amount : Nat)
   /-- Target creature gets +P/+T until end of turn. -/
@@ -952,7 +952,7 @@ inductive SpellEffect where
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies a spell when choosing what to cast.
-Adding a constructor is a compile error in `SpellEffect.spec` rather than
+Adding a constructor is a compile error in `SpellLeftover.spec` rather than
 silently skipping the new effect. -/
 inductive SpellCastKind where
   /-- Damage to any target (player or creature). -/
@@ -1069,7 +1069,7 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
 end PermanentAction
 
 /-- How a spell resolves (CR 608). Grouped so `Game.applyEffect` matches a
-handful of shapes instead of every `SpellEffect` constructor. Burn and
+handful of shapes instead of every `SpellLeftover` constructor. Burn and
 creature-only damage both use `onPermanent (.dealDamage n)`; Game applies
 that action to a player or a creature when the targeting shape allows it. -/
 inductive SpellResolution where
@@ -1291,7 +1291,7 @@ inductive SpellResolution where
 deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of a spell
-effect. Exhaustive so a new constructor is a compile error in `SpellEffect.spec`
+effect. Exhaustive so a new constructor is a compile error in `SpellLeftover.spec`
 rather than silently skipped in `Game` or the agent. -/
 structure SpellMeta where
   targeting : EffectTargeting := .of .none
@@ -1306,14 +1306,14 @@ structure SpellMeta where
   allowsZeroTargets : Bool := false
 deriving Repr, Inhabited, BEq
 
-namespace SpellEffect
+namespace SpellLeftover
 
 def signedStat := Mtg.Engine.signedStat
 
 /-- Classification of this spell. Exhaustive so a new constructor is a compile
 error here rather than silently matching no targets, skipping the agent, or
 doing nothing on resolution. -/
-def spec : SpellEffect → SpellMeta
+def spec : SpellLeftover → SpellMeta
   | .dealDamage n =>
     { targeting := .of .playerOrCreature, castKind := .burn,
       resolution := .onPermanent (.dealDamage n) }
@@ -1659,49 +1659,49 @@ def spec : SpellEffect → SpellMeta
     { targeting := .of .none, castKind := .extraLand,
       resolution := .artifactSpellsCostLessThisTurn n }
 
-instance : HasTargeting SpellEffect where
+instance : HasTargeting SpellLeftover where
   targeting e := e.spec.targeting
 
 /-- Classification of this spell effect's targeting (CR 115.1 / 601.2c). -/
-def targeting (e : SpellEffect) : EffectTargeting :=
+def targeting (e : SpellLeftover) : EffectTargeting :=
   HasTargeting.targeting e
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
-def targetKind (e : SpellEffect) : EffectTargetKind :=
+def targetKind (e : SpellLeftover) : EffectTargetKind :=
   HasTargeting.targetKind e
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
-def targetCount (e : SpellEffect) : Nat :=
+def targetCount (e : SpellLeftover) : Nat :=
   HasTargeting.targetCount e
 
 /-- Maximum targets that may be announced (CR 601.2c). Equals `targetCount`
 unless `spec.maxTargets` is set (e.g. “one or two”). -/
-def maxTargetCount (e : SpellEffect) : Nat :=
+def maxTargetCount (e : SpellLeftover) : Nat :=
   if e.spec.maxTargets == 0 then e.targetCount else e.spec.maxTargets
 
 /-- True when zero targets is a legal announcement (CR 115.1c). -/
-def allowsZeroTargets (e : SpellEffect) : Bool :=
+def allowsZeroTargets (e : SpellLeftover) : Bool :=
   e.spec.allowsZeroTargets
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget (e : SpellEffect) : Bool :=
+def requiresTarget (e : SpellLeftover) : Bool :=
   HasTargeting.requiresTarget e
 
 /-- Demonstration-agent category for this effect. -/
-def castKind (e : SpellEffect) : SpellCastKind :=
+def castKind (e : SpellLeftover) : SpellCastKind :=
   e.spec.castKind
 
 /-- True when the demonstration agent prefers this mode of a modal spell. -/
-def preferAsDefaultMode (e : SpellEffect) : Bool :=
+def preferAsDefaultMode (e : SpellLeftover) : Bool :=
   e.spec.preferAsDefaultMode
 
 /-- How this effect resolves (CR 608). -/
-def resolution (e : SpellEffect) : SpellResolution :=
+def resolution (e : SpellLeftover) : SpellResolution :=
   e.spec.resolution
 
 /-- Oracle-style reminder from targeting and resolution, so a new constructor
 only updates `spec`. -/
-def toNotation (e : SpellEffect) : String :=
+def toNotation (e : SpellLeftover) : String :=
   let noun := e.targetKind.noun
   match e with
   | .fight =>
@@ -1931,10 +1931,10 @@ def toNotation (e : SpellEffect) : String :=
   | .artifactSpellsCostLessThisTurn n =>
     s!"Artifact spells you cast this turn cost \{{n}} less to cast"
 
-end SpellEffect
+end SpellLeftover
 
 /-- One-shot effect of an activated ability on resolution (CR 602, 608). -/
-inductive AbilityEffect where
+inductive AbilityLeftover where
   /-- Search your library for a basic land card, put it onto the battlefield
   tapped, then shuffle (e.g. Wayfarer's Bauble). -/
   | searchBasicLandTapped
@@ -2149,7 +2149,7 @@ inductive AbilityEffect where
 deriving Repr, Inhabited, BEq
 
 /-- How the demonstration agent classifies an activated-ability mode.
-Adding a constructor is a compile error in `AbilityEffect.spec` rather than
+Adding a constructor is a compile error in `AbilityLeftover.spec` rather than
 silently skipping the new effect in `Game.defaultAbilityMode`. -/
 inductive AbilityCastKind where
   /-- Damage to a creature. -/
@@ -2347,7 +2347,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Targeting, demonstration-agent classification, and resolution of an
 activated ability. Exhaustive so a new constructor is a compile error in
-`AbilityEffect.spec`. -/
+`AbilityLeftover.spec`. -/
 structure AbilityMeta where
   targeting : EffectTargeting := .of .none
   castKind : AbilityCastKind := .other
@@ -2356,12 +2356,12 @@ structure AbilityMeta where
   allowsZeroTargets : Bool := false
 deriving Repr, Inhabited, BEq
 
-namespace AbilityEffect
+namespace AbilityLeftover
 
 /-- Classification of this ability. Exhaustive so a new constructor is a
 compile error here rather than silently matching no targets or doing nothing
 on resolution. -/
-def spec : AbilityEffect → AbilityMeta
+def spec : AbilityLeftover → AbilityMeta
   | .dealDamageToTargetCreature n =>
     { targeting := .of .creature, castKind := .creatureDamage,
       resolution := .onPermanent (.dealDamage n) }
@@ -2584,41 +2584,41 @@ def spec : AbilityEffect → AbilityMeta
   | .targetGets p t =>
     { targeting := .of .creature, resolution := .onPermanent (.pump p t) }
 
-instance : HasTargeting AbilityEffect where
+instance : HasTargeting AbilityLeftover where
   targeting e := e.spec.targeting
 
 /-- Classification of this ability effect's targeting (CR 115.1 / 601.2c). -/
-def targeting (e : AbilityEffect) : EffectTargeting :=
+def targeting (e : AbilityLeftover) : EffectTargeting :=
   HasTargeting.targeting e
 
 /-- Whom this effect may target when announced (CR 115.1 / 601.2c). -/
-def targetKind (e : AbilityEffect) : EffectTargetKind :=
+def targetKind (e : AbilityLeftover) : EffectTargetKind :=
   HasTargeting.targetKind e
 
 /-- How many targets must be announced for this effect (CR 601.2c). -/
-def targetCount (e : AbilityEffect) : Nat :=
+def targetCount (e : AbilityLeftover) : Nat :=
   HasTargeting.targetCount e
 
 /-- True when announcing this effect requires choosing a target (CR 115.1 / 601.2c). -/
-def requiresTarget (e : AbilityEffect) : Bool :=
+def requiresTarget (e : AbilityLeftover) : Bool :=
   HasTargeting.requiresTarget e
 
 /-- Demonstration-agent category for this ability mode. -/
-def castKind (e : AbilityEffect) : AbilityCastKind :=
+def castKind (e : AbilityLeftover) : AbilityCastKind :=
   e.spec.castKind
 
 /-- How this effect resolves (CR 608). -/
-def resolution (e : AbilityEffect) : AbilityResolution :=
+def resolution (e : AbilityLeftover) : AbilityResolution :=
   e.spec.resolution
 
 /-- True when zero targets is a legal announcement (CR 115.1c). -/
-def allowsZeroTargets (e : AbilityEffect) : Bool :=
+def allowsZeroTargets (e : AbilityLeftover) : Bool :=
   e.spec.allowsZeroTargets
 
 /-- Oracle-style reminder from targeting and resolution, so a new constructor
 only updates `spec`. Source-deals-damage uses the creature as the subject
 (`This creature deals N…`) rather than the generic `PermanentAction` wording. -/
-def toNotation (e : AbilityEffect) : String :=
+def toNotation (e : AbilityLeftover) : String :=
   let noun := e.targetKind.noun
   match e.resolution with
   | .searchBasicLand =>
@@ -2827,10 +2827,10 @@ def toNotation (e : AbilityEffect) : String :=
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
 
-instance : ToString AbilityEffect where
+instance : ToString AbilityLeftover where
   toString := toNotation
 
-end AbilityEffect
+end AbilityLeftover
 
 /-- Costs of an activated ability besides announcements (CR 602.1). -/
 structure ActivationCost where
@@ -2920,7 +2920,7 @@ end ActivationCost
 /-- How a printed Saga chapter resolves (CR 714.3). Each supported catalog
 Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
 wording. -/
-inductive ChapterEffect where
+inductive ChapterLeftover where
   /-- This Saga deals `n` damage to target creature an opponent controls. -/
   | dealDamageToOppCreature (n : Nat)
   /-- Destroy target artifact an opponent controls. -/
@@ -2975,11 +2975,11 @@ inductive ChapterEffect where
   /-- This Saga deals X damage to target opponent, where X is the greatest
   mana value among artifacts you control. -/
   | dealXDamageToTargetOpponentGreatestArtifactMv
-  /-- A spell-shaped MSH Saga chapter (reuses `SpellEffect`). -/
-  | spell (e : SpellEffect)
+  /-- A spell-shaped MSH Saga chapter (reuses `SpellLeftover`). -/
+  | spell (e : SpellLeftover)
 deriving Repr, Inhabited, BEq
 
-namespace ChapterEffect
+namespace ChapterLeftover
 
 /-- Targeting and “up to one” for this chapter. Exhaustive so a new
 constructor is a compile error here rather than silently targeting nothing. -/
@@ -2990,7 +2990,7 @@ structure Spec where
 deriving Repr, Inhabited, BEq
 
 /-- Classification of this chapter effect. -/
-def spec : ChapterEffect → Spec
+def spec : ChapterLeftover → Spec
   | .dealDamageToOppCreature n =>
     { targeting := .of .oppCreature
       phrase := s!"this Saga deals {n} damage to target creature an opponent controls" }
@@ -3057,12 +3057,12 @@ def spec : ChapterEffect → Spec
       allowsZeroTargets := e.allowsZeroTargets
       phrase := e.toNotation }
 
-end ChapterEffect
+end ChapterLeftover
 
 /-- Leftover “When ⟨this⟩ enters” wordings that do not already match a more
 specific `TriggeredAbility` constructor. One `onEnter` constructor keeps the
 C runtime tag under the limit. -/
-inductive EnterEffect where
+inductive EnterLeftover where
   /-- Destroy the targeted permanent. -/
   | destroy (kind : EffectTargetKind)
   /-- Deal `n` damage to up to one target creature. -/
@@ -3104,7 +3104,7 @@ inductive EnterEffect where
 deriving Repr, Inhabited, BEq
 
 /-- Leftover step, upkeep, end-step, and first-main triggers. -/
-inductive StepEffect where
+inductive StepLeftover where
   /-- At the beginning of the upkeep of enchanted creature's controller, that player draws a car… -/
   | enchantedControllerDraws
   /-- At the beginning of your end step, if you have fewer than ten cards in hand, draw cards eq… -/
@@ -3119,10 +3119,10 @@ inductive StepEffect where
   | harnessedFlicker
 deriving Repr, Inhabited, BEq
 
-namespace StepEffect
+namespace StepLeftover
 
-/-- Official Oracle wording for this StepEffect. -/
-def toNotation : StepEffect → String
+/-- Official Oracle wording for this StepLeftover. -/
+def toNotation : StepLeftover → String
   | .enchantedControllerDraws => "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
   | .drawToTen => "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
   | .copyAbsorbingMan => "At the beginning of your first main phase, until your next turn, Absorbing Man becomes a copy of up to one target artifact, non-Aura enchantment, or land, except his name is Absorbing Man, he's a legendary 4/4 Human Villain creature in addition to his other types, and he has vigilance."
@@ -3130,13 +3130,13 @@ def toNotation : StepEffect → String
   | .copyTaskmaster => "Photographic Reflexes — At the beginning of your first main phase, until your next turn, Taskmaster becomes a copy of up to one target creature on the battlefield or creature card in a graveyard, except his name is Taskmaster, Mercenary Mimic and he's a legendary Human Mercenary Villain creature."
   | .harnessedFlicker => "∞ — At the beginning of your end step, exile up to one other target nonland permanent you control, then return that card to the battlefield under its owner's control."
 
-instance : ToString StepEffect where
+instance : ToString StepLeftover where
   toString := toNotation
 
-end StepEffect
+end StepLeftover
 
 /-- Leftover dies triggers that do not already match a more specific constructor. -/
-inductive DeathEffect where
+inductive DeathLeftover where
   /-- When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 co… -/
   | hellcatReturn
   /-- Whenever a Villain you control dies, return it to the battlefield under its owner's contro… -/
@@ -3147,22 +3147,22 @@ inductive DeathEffect where
   | deathtouchOppSac
 deriving Repr, Inhabited, BEq
 
-namespace DeathEffect
+namespace DeathLeftover
 
-/-- Official Oracle wording for this DeathEffect. -/
-def toNotation : DeathEffect → String
+/-- Official Oracle wording for this DeathLeftover. -/
+def toNotation : DeathLeftover → String
   | .hellcatReturn => "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
   | .villainReturnAsHero => "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
   | .attackingReturnHand => "Whenever an attacking creature you control dies, return that card to its owner's hand."
   | .deathtouchOppSac => "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
 
-instance : ToString DeathEffect where
+instance : ToString DeathLeftover where
   toString := toNotation
 
-end DeathEffect
+end DeathLeftover
 
 /-- Leftover “whenever this attacks” (or attacks-alone) triggers. -/
-inductive ThisAttackEffect where
+inductive ThisAttackLeftover where
   /-- Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target crea… -/
   | mayPayPlusOne
   /-- Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card… -/
@@ -3179,10 +3179,10 @@ inductive ThisAttackEffect where
   | attacksAlonePlus2Indestructible
 deriving Repr, Inhabited, BEq
 
-namespace ThisAttackEffect
+namespace ThisAttackLeftover
 
-/-- Official Oracle wording for this ThisAttackEffect. -/
-def toNotation : ThisAttackEffect → String
+/-- Official Oracle wording for this ThisAttackLeftover. -/
+def toNotation : ThisAttackLeftover → String
   | .mayPayPlusOne => "Whenever Ant-Man attacks, you may pay {1}. When you do, put a +1/+1 counter on target creature."
   | .payReturnAttacking => "Whenever Grim Reaper attacks, you may pay {3}{B}. When you do, return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it."
   | .ifArtifactEnteredDraw => "Whenever Iron Man attacks, if an artifact entered the battlefield under your control this turn, draw a card."
@@ -3191,33 +3191,33 @@ def toNotation : ThisAttackEffect → String
   | .drawIfPower4 => "Cybernetic Senses — Whenever Viv Vision attacks, draw a card if her power is 4 or greater."
   | .attacksAlonePlus2Indestructible => "Unbreakable Skin — Whenever Luke Cage attacks alone, he gets +2/+0 and gains indestructible until end of turn."
 
-instance : ToString ThisAttackEffect where
+instance : ToString ThisAttackLeftover where
   toString := toNotation
 
-end ThisAttackEffect
+end ThisAttackLeftover
 
 /-- Leftover “enters or attacks” triggers. -/
-inductive EnterOrAttackEffect where
+inductive EnterOrAttackLeftover where
   /-- Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creatur… -/
   | copyKeywords
   /-- Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a… -/
   | createSquirrel
 deriving Repr, Inhabited, BEq
 
-namespace EnterOrAttackEffect
+namespace EnterOrAttackLeftover
 
-/-- Official Oracle wording for this EnterOrAttackEffect. -/
-def toNotation : EnterOrAttackEffect → String
+/-- Official Oracle wording for this EnterOrAttackLeftover. -/
+def toNotation : EnterOrAttackLeftover → String
   | .copyKeywords => "Whenever Super-Adaptoid enters or attacks, choose another target creature. If that creature has haste and Super-Adaptoid doesn't, put a haste counter on Super-Adaptoid. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance."
   | .createSquirrel => "Do You Like Squirrels? — Whenever The Unbeatable Squirrel Girl enters or attacks, create a 1/1 green Squirrel creature token."
 
-instance : ToString EnterOrAttackEffect where
+instance : ToString EnterOrAttackLeftover where
   toString := toNotation
 
-end EnterOrAttackEffect
+end EnterOrAttackLeftover
 
 /-- Leftover triggers that watch another event (another permanent, combat, tap, damage). -/
-inductive WatchEffect where
+inductive WatchLeftover where
   /-- Whenever Black Widow deals combat damage to a player, that player exiles cards from the to… -/
   | combatDamageExileUntilNonland
   /-- Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1… -/
@@ -3274,10 +3274,10 @@ inductive WatchEffect where
   | hulk
 deriving Repr, Inhabited, BEq
 
-namespace WatchEffect
+namespace WatchLeftover
 
-/-- Official Oracle wording for this WatchEffect. -/
-def toNotation : WatchEffect → String
+/-- Official Oracle wording for this WatchLeftover. -/
+def toNotation : WatchLeftover → String
   | .combatDamageExileUntilNonland => "Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a nonland card. You may put a +1/+1 counter on Black Widow. If you don't, you may cast the exiled nonland card until end of turn and mana of any type can be spent to cast that spell."
   | .attacksAloneDrain => "Whenever a creature you control attacks alone, target opponent loses 1 life and you gain 1 life."
   | .attacksAloneFirstStrikeMenace => "Whenever a creature you control attacks alone, it gains first strike and menace until end of turn."
@@ -3306,13 +3306,13 @@ def toNotation : WatchEffect → String
   | .redHulk => "Enrage — Whenever Red Hulk is dealt damage, put a +1/+1 counter on him. When you do, he deals damage equal to the number of +1/+1 counters on him to any other target."
   | .hulk => "Enrage — Whenever The Incredible Hulk is dealt damage, put a +1/+1 counter on him. If he's attacking, untap him and there is an additional combat phase after this phase."
 
-instance : ToString WatchEffect where
+instance : ToString WatchLeftover where
   toString := toNotation
 
-end WatchEffect
+end WatchLeftover
 
 /-- Leftover “whenever you attack” triggers. -/
-inductive YouAttackEffect where
+inductive YouAttackLeftover where
   /-- Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you contr… -/
   | pay2LifeToughness
   /-- Whenever you attack, you may exile the top card of your library. If that card is a Hero ca… -/
@@ -3321,21 +3321,21 @@ inductive YouAttackEffect where
   | lookSixCast
 deriving Repr, Inhabited, BEq
 
-namespace YouAttackEffect
+namespace YouAttackLeftover
 
-/-- Official Oracle wording for this YouAttackEffect. -/
-def toNotation : YouAttackEffect → String
+/-- Official Oracle wording for this YouAttackLeftover. -/
+def toNotation : YouAttackLeftover → String
   | .pay2LifeToughness => "Whenever you attack, you may pay 2 life. If you do, until end of turn, creatures you control with toughness greater than their power assign combat damage equal to their toughness rather than their power."
   | .exileTopHeroPump => "Whenever you attack, you may exile the top card of your library. If that card is a Hero card, Daredevil gets +2/+1 until end of turn. You may play that card this turn."
   | .lookSixCast => "Whenever you attack, look at the top six cards of your library. You may cast a spell from among them with mana value less than or equal to the greatest power among attacking creatures you control without paying its mana cost. Put the rest on the bottom of your library in a random order."
 
-instance : ToString YouAttackEffect where
+instance : ToString YouAttackLeftover where
   toString := toNotation
 
-end YouAttackEffect
+end YouAttackLeftover
 
 /-- Leftover “whenever you cast …” triggers. -/
-inductive CastEffect where
+inductive CastLeftover where
   /-- Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace. -/
   | villainToken
   /-- Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost,… -/
@@ -3366,10 +3366,10 @@ inductive CastEffect where
   | tapCreatureOrLand
 deriving Repr, Inhabited, BEq
 
-namespace CastEffect
+namespace CastLeftover
 
-/-- Official Oracle wording for this CastEffect. -/
-def toNotation : CastEffect → String
+/-- Official Oracle wording for this CastLeftover. -/
+def toNotation : CastLeftover → String
   | .villainToken => "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace."
   | .merfolkFromBlue => "Whenever you cast a noncreature spell with one or more blue mana symbols in its mana cost, create that many 1/1 blue Merfolk creature tokens."
   | .mayPayHasteUnblockable => "Whenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste."
@@ -3385,13 +3385,13 @@ def toNotation : CastEffect → String
   | .copyIfArtifactOrLand => "Whenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom."
   | .tapCreatureOrLand => "Seismic Takedown — Whenever you cast a noncreature spell, tap target creature or land."
 
-instance : ToString CastEffect where
+instance : ToString CastLeftover where
   toString := toNotation
 
-end CastEffect
+end CastLeftover
 
 /-- Leftover draw, discard, life, and +1/+1-counter triggers. -/
-inductive ResourceEffect where
+inductive ResourceLeftover where
   /-- Whenever you discard a card, you may exile that card from your graveyard. If you do, until… -/
   | discardExilePlay
   /-- Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to targe… -/
@@ -3412,10 +3412,10 @@ inductive ResourceEffect where
   | plusOneOnHeroesCreateWall
 deriving Repr, Inhabited, BEq
 
-namespace ResourceEffect
+namespace ResourceLeftover
 
-/-- Official Oracle wording for this ResourceEffect. -/
-def toNotation : ResourceEffect → String
+/-- Official Oracle wording for this ResourceLeftover. -/
+def toNotation : ResourceLeftover → String
   | .discardExilePlay => "Whenever you discard a card, you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card."
   | .drawIfAnotherHeroDamage => "Whenever you draw a card, if you control another Hero, Human Torch deals 1 damage to target opponent."
   | .secondDrawBecome66 => "Whenever you draw your second card each turn, until end of turn, Moon Girl and Devil Dinosaur's base power and toughness become 6/6 and they gain trample."
@@ -3426,10 +3426,10 @@ def toNotation : ResourceEffect → String
   | .plusOneOnThisOnce => "Whenever you put a +1/+1 counter on another creature, put a +1/+1 counter on this creature. This ability triggers only once each turn."
   | .plusOneOnHeroesCreateWall => "Whenever you put one or more +1/+1 counters on one or more other Heroes you control, you may create a 0/4 colorless Wall creature token with defender."
 
-instance : ToString ResourceEffect where
+instance : ToString ResourceLeftover where
   toString := toNotation
 
-end ResourceEffect
+end ResourceLeftover
 
 /-- When a reusable triggered ability fires. Constructors that only differ by
 this event (scry on enter vs attack, draw on die vs enter, …) share one
@@ -3599,7 +3599,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
 when they fire. `TriggeredAbility.triggered` pairs this with `SharedTriggerWhen`. -/
-inductive SharedTriggerEffect where
+inductive SharedTrigger where
   /-- Scry `n`. -/
   | scry (n : Nat)
   /-- Draw `n` cards. -/
@@ -3881,7 +3881,7 @@ inductive SharedTriggerEffect where
   /-- Opponents sac damagers; the Ring tempts you. -/
   | sacDamagersRingTempts
   /-- A Saga chapter. -/
-  | chapter (n : Nat) (e : ChapterEffect)
+  | chapter (n : Nat) (e : ChapterLeftover)
   /-- +1/+1 on this and draw. -/
   | plusOneOnSourceAndDraw
   /-- Draw if you attacked with or a subtype entered. -/
@@ -3941,23 +3941,23 @@ inductive SharedTriggerEffect where
   /-- You may sac an artifact or discard; if you do, draw. -/
   | maySacArtifactOrDiscardDraw
   /-- Leftover “when this enters” effect. -/
-  | enter (e : EnterEffect)
+  | enter (e : EnterLeftover)
   /-- Leftover step / upkeep / end-step / first-main effect. -/
-  | step (e : StepEffect)
+  | step (e : StepLeftover)
   /-- Leftover dies effect. -/
-  | death (e : DeathEffect)
+  | death (e : DeathLeftover)
   /-- Leftover “whenever this attacks” effect. -/
-  | thisAttack (e : ThisAttackEffect)
+  | thisAttack (e : ThisAttackLeftover)
   /-- Leftover “enters or attacks” effect. -/
-  | enterOrAttack (e : EnterOrAttackEffect)
+  | enterOrAttack (e : EnterOrAttackLeftover)
   /-- Leftover watch effect. -/
-  | watch (e : WatchEffect)
+  | watch (e : WatchLeftover)
   /-- Leftover “whenever you attack” effect. -/
-  | youAttacking (e : YouAttackEffect)
+  | youAttacking (e : YouAttackLeftover)
   /-- Leftover “whenever you cast …” effect. -/
-  | casting (e : CastEffect)
+  | casting (e : CastLeftover)
   /-- Leftover draw / discard / life / +1/+1-counter effect. -/
-  | resource (e : ResourceEffect)
+  | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
 /-- Optional intervening conditions and wording filters for `triggered`. -/
@@ -4019,7 +4019,7 @@ inductive Resolution where
   /-- Activated-ability-only resolution leftover. -/
   | ability (r : AbilityResolution)
   /-- Trigger leftover (timing stays on the shared trigger effect). -/
-  | trigger (e : SharedTriggerEffect)
+  | trigger (e : SharedTrigger)
 deriving Repr, Inhabited, BEq
 
 /-- Unified one-shot effect for spells, activated abilities, Saga chapters,
@@ -4092,13 +4092,13 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .amassGoblins _ | .spell _ | .trigger _ => .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
-def asChapter? (e : Effect) : Option ChapterEffect :=
+def asChapter? (e : Effect) : Option ChapterLeftover :=
   match e.resolution with
   | .trigger (.chapter _ ce) => some ce
   | _ => none
 
 /-- Recover the leftover shared trigger stored on this effect, if any. -/
-def asTrigger? (e : Effect) : Option SharedTriggerEffect :=
+def asTrigger? (e : Effect) : Option SharedTrigger :=
   match e.resolution with
   | .trigger te => some te
   | _ => none
@@ -6128,7 +6128,7 @@ inductive TriggerResolution where
   /-- Each opponent sacrifices a creature that damaged you; the Ring tempts you. -/
   | sacDamagersRingTempts
   /-- Resolve a printed Saga chapter. -/
-  | chapter (effect : ChapterEffect)
+  | chapter (effect : ChapterLeftover)
   /-- Target creature you control gets +1/+1 per Plains you control. -/
   | pumpTargetPerPlains
   /-- Investigate (create a Clue). -/
@@ -6241,22 +6241,22 @@ inductive TriggerResolution where
   | revealDiscardFromHand
   /-- Create Redwing. -/
   | createRedwing
-  /-- Resolve a leftover StepEffect. -/
-  | step (e : StepEffect)
-  /-- Resolve a leftover DeathEffect. -/
-  | death (e : DeathEffect)
-  /-- Resolve a leftover ThisAttackEffect. -/
-  | thisAttack (e : ThisAttackEffect)
-  /-- Resolve a leftover EnterOrAttackEffect. -/
-  | enterOrAttack (e : EnterOrAttackEffect)
-  /-- Resolve a leftover WatchEffect. -/
-  | watch (e : WatchEffect)
-  /-- Resolve a leftover YouAttackEffect. -/
-  | youAttacking (e : YouAttackEffect)
-  /-- Resolve a leftover CastEffect. -/
-  | casting (e : CastEffect)
-  /-- Resolve a leftover ResourceEffect. -/
-  | resource (e : ResourceEffect)
+  /-- Resolve a leftover StepLeftover. -/
+  | step (e : StepLeftover)
+  /-- Resolve a leftover DeathLeftover. -/
+  | death (e : DeathLeftover)
+  /-- Resolve a leftover ThisAttackLeftover. -/
+  | thisAttack (e : ThisAttackLeftover)
+  /-- Resolve a leftover EnterOrAttackLeftover. -/
+  | enterOrAttack (e : EnterOrAttackLeftover)
+  /-- Resolve a leftover WatchLeftover. -/
+  | watch (e : WatchLeftover)
+  /-- Resolve a leftover YouAttackLeftover. -/
+  | youAttacking (e : YouAttackLeftover)
+  /-- Resolve a leftover CastLeftover. -/
+  | casting (e : CastLeftover)
+  /-- Resolve a leftover ResourceLeftover. -/
+  | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
@@ -6393,8 +6393,8 @@ def events : SharedTriggerWhen → Array TriggerEvent
 
 end SharedTriggerWhen
 
-/-- Timing for a leftover StepEffect. -/
-def StepEffect.timing : StepEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover StepLeftover. -/
+def StepLeftover.timing : StepLeftover → TriggeredAbility.TriggerTiming
   | .enchantedControllerDraws =>
     {  events := #[.enchantedControllerUpkeep], resolution := .step .enchantedControllerDraws }
   | .drawToTen =>
@@ -6408,8 +6408,8 @@ def StepEffect.timing : StepEffect → TriggeredAbility.TriggerTiming
   | .harnessedFlicker =>
     {  events := #[.yourEndStep], targeting := .of .nonland, allowsZeroTargets := true, resolution := .step .harnessedFlicker }
 
-/-- Timing for a leftover DeathEffect. -/
-def DeathEffect.timing : DeathEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover DeathLeftover. -/
+def DeathLeftover.timing : DeathLeftover → TriggeredAbility.TriggerTiming
   | .hellcatReturn =>
     {  events := #[.dying], resolution := .death .hellcatReturn }
   | .villainReturnAsHero =>
@@ -6419,8 +6419,8 @@ def DeathEffect.timing : DeathEffect → TriggeredAbility.TriggerTiming
   | .deathtouchOppSac =>
     {  events := #[.anotherCreatureYouControlEnters], resolution := .death .deathtouchOppSac }
 
-/-- Timing for a leftover ThisAttackEffect. -/
-def ThisAttackEffect.timing : ThisAttackEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover ThisAttackLeftover. -/
+def ThisAttackLeftover.timing : ThisAttackLeftover → TriggeredAbility.TriggerTiming
   | .mayPayPlusOne =>
     {  events := #[.attacking], targeting := .of .creature, resolution := .thisAttack .mayPayPlusOne }
   | .payReturnAttacking =>
@@ -6436,15 +6436,15 @@ def ThisAttackEffect.timing : ThisAttackEffect → TriggeredAbility.TriggerTimin
   | .attacksAlonePlus2Indestructible =>
     {  events := #[.attacking], resolution := .thisAttack .attacksAlonePlus2Indestructible }
 
-/-- Timing for a leftover EnterOrAttackEffect. -/
-def EnterOrAttackEffect.timing : EnterOrAttackEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover EnterOrAttackLeftover. -/
+def EnterOrAttackLeftover.timing : EnterOrAttackLeftover → TriggeredAbility.TriggerTiming
   | .copyKeywords =>
     {  events := #[.entering, .attacking], targeting := .of .creature, resolution := .enterOrAttack .copyKeywords }
   | .createSquirrel =>
     {  events := #[.entering, .attacking], resolution := .enterOrAttack .createSquirrel }
 
-/-- Timing for a leftover WatchEffect. -/
-def WatchEffect.timing : WatchEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover WatchLeftover. -/
+def WatchLeftover.timing : WatchLeftover → TriggeredAbility.TriggerTiming
   | .combatDamageExileUntilNonland =>
     {  events := #[.dealsCombatDamageToPlayer], resolution := .watch .combatDamageExileUntilNonland }
   | .attacksAloneDrain =>
@@ -6500,8 +6500,8 @@ def WatchEffect.timing : WatchEffect → TriggeredAbility.TriggerTiming
   | .hulk =>
     {  events := #[.sourceDealtDamage], resolution := .watch .hulk }
 
-/-- Timing for a leftover YouAttackEffect. -/
-def YouAttackEffect.timing : YouAttackEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover YouAttackLeftover. -/
+def YouAttackLeftover.timing : YouAttackLeftover → TriggeredAbility.TriggerTiming
   | .pay2LifeToughness =>
     {  events := #[.youAttack], resolution := .youAttacking .pay2LifeToughness }
   | .exileTopHeroPump =>
@@ -6509,8 +6509,8 @@ def YouAttackEffect.timing : YouAttackEffect → TriggeredAbility.TriggerTiming
   | .lookSixCast =>
     {  events := #[.youAttack], resolution := .youAttacking .lookSixCast }
 
-/-- Timing for a leftover CastEffect. -/
-def CastEffect.timing : CastEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover CastLeftover. -/
+def CastLeftover.timing : CastLeftover → TriggeredAbility.TriggerTiming
   | .villainToken =>
     {  events := #[.youCastVillain], resolution := .casting .villainToken }
   | .merfolkFromBlue =>
@@ -6540,8 +6540,8 @@ def CastEffect.timing : CastEffect → TriggeredAbility.TriggerTiming
   | .tapCreatureOrLand =>
     {  events := #[.youCastNoncreature], targeting := .of .creature, resolution := .casting .tapCreatureOrLand }
 
-/-- Timing for a leftover ResourceEffect. -/
-def ResourceEffect.timing : ResourceEffect → TriggeredAbility.TriggerTiming
+/-- Timing for a leftover ResourceLeftover. -/
+def ResourceLeftover.timing : ResourceLeftover → TriggeredAbility.TriggerTiming
   | .discardExilePlay =>
     {  events := #[.youDiscard], resolution := .resource .discardExilePlay }
   | .drawIfAnotherHeroDamage =>
@@ -6561,17 +6561,17 @@ def ResourceEffect.timing : ResourceEffect → TriggeredAbility.TriggerTiming
   | .plusOneOnHeroesCreateWall =>
     {  events := #[.youPutPlusOne], resolution := .resource .plusOneOnHeroesCreateWall }
 
-#guard (WatchEffect.timing .sheHulkRedirectOnce).onceEachTurn
-#guard (WatchEffect.timing .villainConniveOnce).optionalOnceEachTurn
-#guard (EnterOrAttackEffect.timing .copyKeywords).events ==
+#guard (WatchLeftover.timing .sheHulkRedirectOnce).onceEachTurn
+#guard (WatchLeftover.timing .villainConniveOnce).optionalOnceEachTurn
+#guard (EnterOrAttackLeftover.timing .copyKeywords).events ==
   #[TriggerEvent.entering, TriggerEvent.attacking]
-#guard (DeathEffect.timing .hellcatReturn).resolution ==
+#guard (DeathLeftover.timing .hellcatReturn).resolution ==
   TriggeredAbility.TriggerResolution.death .hellcatReturn
 
 
 
 /-- Timing for a leftover “When ⟨this⟩ enters” ability. -/
-def EnterEffect.timing : EnterEffect → TriggeredAbility.TriggerTiming
+def EnterLeftover.timing : EnterLeftover → TriggeredAbility.TriggerTiming
   | .destroy kind =>
     { events := #[.entering], targeting := .of kind, resolution := .onPermanent .destroy }
   | .dealDamageUpToOne n =>
@@ -6621,10 +6621,10 @@ def EnterEffect.timing : EnterEffect → TriggeredAbility.TriggerTiming
   | .createRedwing =>
     { events := #[.entering], resolution := .createRedwing }
 
-namespace SharedTriggerEffect
+namespace SharedTrigger
 
 /-- Targeting, divided-damage parameters, and resolution for this shared effect. -/
-def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
+def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .scry n => { resolution := .scry n }
   | .draw n => { resolution := .draw n }
   | .createTokens kind n tapped => { resolution := .createTokens kind n tapped }
@@ -6891,7 +6891,7 @@ def timing : SharedTriggerEffect → TriggeredAbility.TriggerTiming
   | .casting e => e.timing
   | .resource e => e.timing
 
-end SharedTriggerEffect
+end SharedTrigger
 
 namespace Resolution
 
@@ -6920,7 +6920,7 @@ def ofAbility : AbilityResolution → Resolution
 
 /-- Store a shared trigger on `Resolution`. Timing stays on the nested
 effect so leftover family events remain recoverable. -/
-def ofSharedTrigger (e : SharedTriggerEffect) : Resolution :=
+def ofSharedTrigger (e : SharedTrigger) : Resolution :=
   .trigger e
 
 /-- Project a shared resolution back to `TriggerResolution` for leftover apply. -/
@@ -6963,7 +6963,7 @@ end Resolution
 namespace Effect
 
 /-- Convert a printed spell effect to the unified `Effect`. -/
-def ofSpell (e : SpellEffect) : Effect :=
+def ofSpell (e : SpellLeftover) : Effect :=
   let s := e.spec
   { targeting := s.targeting
     allowsZeroTargets := s.allowsZeroTargets
@@ -6974,7 +6974,7 @@ def ofSpell (e : SpellEffect) : Effect :=
     phrase := e.toNotation }
 
 /-- Convert a printed activated ability to the unified `Effect`. -/
-def ofAbility (e : AbilityEffect) : Effect :=
+def ofAbility (e : AbilityLeftover) : Effect :=
   let s := e.spec
   { targeting := s.targeting
     allowsZeroTargets := s.allowsZeroTargets
@@ -6983,16 +6983,16 @@ def ofAbility (e : AbilityEffect) : Effect :=
     phrase := e.toNotation }
 
 /-- Convert a printed Saga chapter to the unified `Effect`.
-Always wraps the original `ChapterEffect` so `asChapter?` can recover it. -/
-def ofChapter (e : ChapterEffect) : Effect :=
+Always wraps the original `ChapterLeftover` so `asChapter?` can recover it. -/
+def ofChapter (e : ChapterLeftover) : Effect :=
   let s := e.spec
   { targeting := s.targeting
     allowsZeroTargets := s.allowsZeroTargets
-    resolution := Resolution.trigger (SharedTriggerEffect.chapter 0 e)
+    resolution := Resolution.trigger (SharedTrigger.chapter 0 e)
     phrase := s.phrase }
 
 /-- Convert a shared trigger effect to the unified `Effect`. -/
-def ofTrigger (e : SharedTriggerEffect) : Effect :=
+def ofTrigger (e : SharedTrigger) : Effect :=
   let t := e.timing
   { targeting := t.targeting
     allowsZeroTargets := t.allowsZeroTargets
@@ -7001,69 +7001,69 @@ def ofTrigger (e : SharedTriggerEffect) : Effect :=
     phrase := "" }
 
 /-- Convert a leftover enters effect. -/
-def ofEnter (e : EnterEffect) : Effect := ofTrigger (.enter e)
+def ofEnter (e : EnterLeftover) : Effect := ofTrigger (.enter e)
 
 /-- Convert a leftover step / upkeep / end-step effect. -/
-def ofStep (e : StepEffect) : Effect := ofTrigger (.step e)
+def ofStep (e : StepLeftover) : Effect := ofTrigger (.step e)
 
 /-- Convert a leftover dies effect. -/
-def ofDeath (e : DeathEffect) : Effect := ofTrigger (.death e)
+def ofDeath (e : DeathLeftover) : Effect := ofTrigger (.death e)
 
 /-- Convert a leftover “whenever this attacks” effect. -/
-def ofThisAttack (e : ThisAttackEffect) : Effect := ofTrigger (.thisAttack e)
+def ofThisAttack (e : ThisAttackLeftover) : Effect := ofTrigger (.thisAttack e)
 
 /-- Convert a leftover “enters or attacks” effect. -/
-def ofEnterOrAttack (e : EnterOrAttackEffect) : Effect := ofTrigger (.enterOrAttack e)
+def ofEnterOrAttack (e : EnterOrAttackLeftover) : Effect := ofTrigger (.enterOrAttack e)
 
 /-- Convert a leftover watch effect. -/
-def ofWatch (e : WatchEffect) : Effect := ofTrigger (.watch e)
+def ofWatch (e : WatchLeftover) : Effect := ofTrigger (.watch e)
 
 /-- Convert a leftover “whenever you attack” effect. -/
-def ofYouAttacking (e : YouAttackEffect) : Effect := ofTrigger (.youAttacking e)
+def ofYouAttacking (e : YouAttackLeftover) : Effect := ofTrigger (.youAttacking e)
 
 /-- Convert a leftover “whenever you cast …” effect. -/
-def ofCasting (e : CastEffect) : Effect := ofTrigger (.casting e)
+def ofCasting (e : CastLeftover) : Effect := ofTrigger (.casting e)
 
 /-- Convert a leftover draw / discard / life / +1/+1-counter effect. -/
-def ofResource (e : ResourceEffect) : Effect := ofTrigger (.resource e)
+def ofResource (e : ResourceLeftover) : Effect := ofTrigger (.resource e)
 
-instance : Coe SpellEffect Effect where
+instance : Coe SpellLeftover Effect where
   coe := ofSpell
 
-instance : Coe AbilityEffect Effect where
+instance : Coe AbilityLeftover Effect where
   coe := ofAbility
 
-instance : Coe ChapterEffect Effect where
+instance : Coe ChapterLeftover Effect where
   coe := ofChapter
 
-instance : Coe SharedTriggerEffect Effect where
+instance : Coe SharedTrigger Effect where
   coe := ofTrigger
 
-instance : Coe EnterEffect Effect where
+instance : Coe EnterLeftover Effect where
   coe := ofEnter
 
-instance : Coe StepEffect Effect where
+instance : Coe StepLeftover Effect where
   coe := ofStep
 
-instance : Coe DeathEffect Effect where
+instance : Coe DeathLeftover Effect where
   coe := ofDeath
 
-instance : Coe ThisAttackEffect Effect where
+instance : Coe ThisAttackLeftover Effect where
   coe := ofThisAttack
 
-instance : Coe EnterOrAttackEffect Effect where
+instance : Coe EnterOrAttackLeftover Effect where
   coe := ofEnterOrAttack
 
-instance : Coe WatchEffect Effect where
+instance : Coe WatchLeftover Effect where
   coe := ofWatch
 
-instance : Coe YouAttackEffect Effect where
+instance : Coe YouAttackLeftover Effect where
   coe := ofYouAttacking
 
-instance : Coe CastEffect Effect where
+instance : Coe CastLeftover Effect where
   coe := ofCasting
 
-instance : Coe ResourceEffect Effect where
+instance : Coe ResourceLeftover Effect where
   coe := ofResource
 
 end Effect
@@ -7096,7 +7096,7 @@ def effect (ab : TriggeredAbility) : Effect :=
   | .triggered _ e _ => e
 
 /-- Leftover shared trigger this ability resolves. -/
-def shared (ab : TriggeredAbility) : SharedTriggerEffect :=
+def shared (ab : TriggeredAbility) : SharedTrigger :=
   match ab.effect.asTrigger? with
   | some te => te
   | none => .draw 0
@@ -7518,7 +7518,7 @@ def onFinalSagaChapterRevealSaga : TriggeredAbility :=
   .triggered .finalSagaChapterResolves (Effect.ofTrigger .revealSaga) .once
 def onCombatDamageToYouSacRingTempts : TriggeredAbility :=
   .triggered .combatDamageToYou (Effect.ofTrigger .sacDamagersRingTempts)
-def sagaChapter (n : Nat) (effect : ChapterEffect) : TriggeredAbility :=
+def sagaChapter (n : Nat) (effect : ChapterLeftover) : TriggeredAbility :=
   .triggered .sagaChapter (Effect.ofTrigger (.chapter n effect))
 def onTappedForTeamworkPlusOneAndDraw : TriggeredAbility :=
   .triggered .tappedForTeamwork (Effect.ofTrigger .plusOneOnSourceAndDraw)
@@ -7578,23 +7578,23 @@ def onEnterPlusOneOrTwoIfAnotherHero : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .plusOneOrTwoIfAnotherHero)
 def onEnterMaySacArtifactOrDiscardDraw : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .maySacArtifactOrDiscardDraw)
-def onEnter (e : EnterEffect) : TriggeredAbility :=
+def onEnter (e : EnterLeftover) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.enter e))
-def onStep (e : StepEffect) : TriggeredAbility :=
+def onStep (e : StepLeftover) : TriggeredAbility :=
   .triggered .fromEffect (Effect.ofTrigger (.step e))
-def onDeath (e : DeathEffect) : TriggeredAbility :=
+def onDeath (e : DeathLeftover) : TriggeredAbility :=
   .triggered .fromEffect (Effect.ofTrigger (.death e))
-def onThisAttack (e : ThisAttackEffect) : TriggeredAbility :=
+def onThisAttack (e : ThisAttackLeftover) : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger (.thisAttack e))
-def onEnterOrAttack (e : EnterOrAttackEffect) : TriggeredAbility :=
+def onEnterOrAttack (e : EnterOrAttackLeftover) : TriggeredAbility :=
   .triggered (.or .enter .attack) (Effect.ofTrigger (.enterOrAttack e))
-def onWatch (e : WatchEffect) : TriggeredAbility :=
+def onWatch (e : WatchLeftover) : TriggeredAbility :=
   .triggered .fromEffect (Effect.ofTrigger (.watch e))
-def onYouAttacking (e : YouAttackEffect) : TriggeredAbility :=
+def onYouAttacking (e : YouAttackLeftover) : TriggeredAbility :=
   .triggered .youAttack (Effect.ofTrigger (.youAttacking e))
-def onCasting (e : CastEffect) : TriggeredAbility :=
+def onCasting (e : CastLeftover) : TriggeredAbility :=
   .triggered .fromEffect (Effect.ofTrigger (.casting e))
-def onResource (e : ResourceEffect) : TriggeredAbility :=
+def onResource (e : ResourceLeftover) : TriggeredAbility :=
   .triggered .fromEffect (Effect.ofTrigger (.resource e))
 
 /-- Damage amount and maximum number of targets when this ability divides
@@ -8309,7 +8309,7 @@ def chapterNumbers (ch : SagaChapter) : Array Nat :=
   if ch.numbers.isEmpty then parseChapterNumbers ch.roman else ch.numbers
 
 /-- A catalog chapter with parsed numerals and a real effect. -/
-def of (roman effect : String) (ce : ChapterEffect) : SagaChapter :=
+def of (roman effect : String) (ce : ChapterLeftover) : SagaChapter :=
   { roman, effect, numbers := parseChapterNumbers roman,
     chapterEffect := some (Effect.ofChapter ce) }
 
@@ -8879,41 +8879,41 @@ instance : ToString CardDef where
 #guard (Effect.ofWatch .hulk).resolution == Resolution.trigger (.watch .hulk)
 #guard (TriggeredAbility.onEnterScry 2).effect.resolution ==
   Resolution.trigger (.scry 2)
-#guard SpellEffect.toNotation (.dealDamage 3) == "deals 3 damage to any target"
-#guard SpellEffect.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
-#guard SpellEffect.toNotation .destroyCreatureWithFlying ==
+#guard SpellLeftover.toNotation (.dealDamage 3) == "deals 3 damage to any target"
+#guard SpellLeftover.toNotation (.pump 3 3) == "target creature gets +3/+3 until end of turn"
+#guard SpellLeftover.toNotation .destroyCreatureWithFlying ==
   "destroy target creature with flying"
-#guard SpellEffect.toNotation .destroyCreature ==
+#guard SpellLeftover.toNotation .destroyCreature ==
   "destroy target creature"
-#guard SpellEffect.toNotation .plusOnePlusOneTrampleHexproof ==
+#guard SpellLeftover.toNotation .plusOnePlusOneTrampleHexproof ==
   "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn"
-#guard SpellEffect.toNotation (.dealDamageToCreature 5) ==
+#guard SpellLeftover.toNotation (.dealDamageToCreature 5) ==
   "deals 5 damage to target creature"
-#guard SpellEffect.toNotation (.dealDamageLoseIndestructibleExile 3) ==
+#guard SpellLeftover.toNotation (.dealDamageLoseIndestructibleExile 3) ==
   "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-#guard SpellEffect.toNotation .creatureYouControlDealsPowerToOppCreature ==
+#guard SpellLeftover.toNotation .creatureYouControlDealsPowerToOppCreature ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
-#guard SpellEffect.toNotation .playAdditionalLandThisTurn ==
+#guard SpellLeftover.toNotation .playAdditionalLandThisTurn ==
   "you may play an additional land this turn"
-#guard SpellEffect.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
+#guard SpellLeftover.toNotation .destroyArtifactOrLandNonflyersCantBlock ==
   "destroy target artifact or land. Creatures without flying can't block this turn"
-#guard SpellEffect.toNotation (.destroyTargetCreatureControllerLosesLife 2) ==
+#guard SpellLeftover.toNotation (.destroyTargetCreatureControllerLosesLife 2) ==
   "destroy target creature. Its controller loses 2 life"
-#guard SpellEffect.toNotation (.allCreaturesGet (-4) (-4)) ==
+#guard SpellLeftover.toNotation (.allCreaturesGet (-4) (-4)) ==
   "all creatures get -4/-4 until end of turn"
-#guard SpellEffect.toNotation (.drawAndLoseLife 2 2) ==
+#guard SpellLeftover.toNotation (.drawAndLoseLife 2 2) ==
   "you draw 2 cards and lose 2 life"
-#guard SpellEffect.toNotation (.drawAndLoseLife 1 0) ==
+#guard SpellLeftover.toNotation (.drawAndLoseLife 1 0) ==
   "you draw a card and lose 0 life"
-#guard SpellEffect.toNotation (.targetPlayerDrawLoseLife 2 2) ==
+#guard SpellLeftover.toNotation (.targetPlayerDrawLoseLife 2 2) ==
   "target player draws 2 cards and loses 2 life"
-#guard SpellEffect.toNotation (.creaturesTargetPlayerGet (-1) (-1)) ==
+#guard SpellLeftover.toNotation (.creaturesTargetPlayerGet (-1) (-1)) ==
   "creatures target player controls get -1/-1 until end of turn"
-#guard SpellEffect.toNotation (.pumpAndLifelink 2 2) ==
+#guard SpellLeftover.toNotation (.pumpAndLifelink 2 2) ==
   "target creature gets +2/+2 and gains lifelink until end of turn"
-#guard SpellEffect.toNotation (.pumpAndExileIfDies (-5) (-5)) ==
+#guard SpellLeftover.toNotation (.pumpAndExileIfDies (-5) (-5)) ==
   "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
-#guard (SpellEffect.toNotation .exileGraveyardCreaturesGrantCast).startsWith
+#guard (SpellLeftover.toNotation .exileGraveyardCreaturesGrantCast).startsWith
   "exile all creature cards"
 #guard EffectTargetKind.noun .playerOrCreature == "any target"
 #guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
@@ -8958,10 +8958,10 @@ instance : ToString CardDef where
 #guard EffectTargetKind.spec (.upToTwoCreaturesTotalMvAtMost 6) ==
   { count := 2
     noun := "up to two target creatures with total mana value 6 or less" }
-#guard (ChapterEffect.gainControlOfUpToTwoCreaturesTotalMvAtMost 6).spec.allowsZeroTargets
-#guard (ChapterEffect.dealDamageToEachNonSubtypeAndOpponents 2 "Villain").spec.phrase ==
+#guard (ChapterLeftover.gainControlOfUpToTwoCreaturesTotalMvAtMost 6).spec.allowsZeroTargets
+#guard (ChapterLeftover.dealDamageToEachNonSubtypeAndOpponents 2 "Villain").spec.phrase ==
   "This Saga deals 2 damage to each non-Villain creature and each opponent"
-#guard ChapterEffect.dealXDamageToTargetOpponentGreatestArtifactMv.spec.targeting.kind ==
+#guard ChapterLeftover.dealXDamageToTargetOpponentGreatestArtifactMv.spec.targeting.kind ==
   .opponent
 #guard TriggerEvent.spec .entering ==
   { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
@@ -8984,17 +8984,17 @@ instance : ToString CardDef where
 #guard TriggerEvent.checkTargets .attacking
 #guard !TriggerEvent.isWhenever .dying
 #guard TriggerEvent.isWhenever .youAttackWithElves
-#guard SpellEffect.targetCount (.dealDamage 3) == 1
-#guard SpellEffect.targetCount .tapOneOrTwoCreatures == 1
-#guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
-#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
-#guard SpellEffect.targetCount .playAdditionalLandThisTurn == 0
-#guard SpellEffect.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
-#guard SpellEffect.targetCount .destroyCreature == 1
-#guard SpellEffect.targetCount (.drawAndLoseLife 2 2) == 0
-#guard SpellEffect.targetKind (.dealDamage 3) == .playerOrCreature
-#guard SpellEffect.targetKind (.pump 3 3) == .creature
-#guard SpellEffect.targeting (.pump 3 3) == EffectTargeting.of .creature .own
+#guard SpellLeftover.targetCount (.dealDamage 3) == 1
+#guard SpellLeftover.targetCount .tapOneOrTwoCreatures == 1
+#guard SpellLeftover.maxTargetCount .tapOneOrTwoCreatures == 2
+#guard SpellLeftover.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard SpellLeftover.targetCount .playAdditionalLandThisTurn == 0
+#guard SpellLeftover.targetCount .destroyArtifactOrLandNonflyersCantBlock == 1
+#guard SpellLeftover.targetCount .destroyCreature == 1
+#guard SpellLeftover.targetCount (.drawAndLoseLife 2 2) == 0
+#guard SpellLeftover.targetKind (.dealDamage 3) == .playerOrCreature
+#guard SpellLeftover.targetKind (.pump 3 3) == .creature
+#guard SpellLeftover.targeting (.pump 3 3) == EffectTargeting.of .creature .own
 #guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
 #guard EffectTargetKind.defaultPreference .creatureYouControl == .own
@@ -9003,68 +9003,68 @@ instance : ToString CardDef where
 #guard EffectTargetKind.targetsStackSpell .creatureSpell
 #guard EffectTargetKind.targetsStackSpell (.creatureSpellPTAtMost 2)
 #guard !EffectTargetKind.targetsStackSpell .creature
-#guard SpellEffect.targetKind .destroyCreatureWithFlying == .creatureWithFlying
-#guard SpellEffect.targetKind .destroyCreature == .creature
-#guard SpellEffect.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
-#guard SpellEffect.targetKind (.dealDamageToCreature 5) == .creature
-#guard SpellEffect.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
-#guard SpellEffect.targetKind .creatureYouControlDealsPowerToOppCreature ==
+#guard SpellLeftover.targetKind .destroyCreatureWithFlying == .creatureWithFlying
+#guard SpellLeftover.targetKind .destroyCreature == .creature
+#guard SpellLeftover.targetKind .plusOnePlusOneTrampleHexproof == .creatureYouControl
+#guard SpellLeftover.targetKind (.dealDamageToCreature 5) == .creature
+#guard SpellLeftover.targetKind (.dealDamageLoseIndestructibleExile 3) == .creature
+#guard SpellLeftover.targetKind .creatureYouControlDealsPowerToOppCreature ==
   .creatureYouControlThenOppCreature
-#guard SpellEffect.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
+#guard SpellLeftover.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
   .upToOneCreatureThenPlayer
-#guard SpellEffect.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
-#guard !SpellEffect.allowsZeroTargets (.plusOneUpToOneAndPlayerGainsLife 2)
-#guard SpellEffect.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
-#guard SpellEffect.targetKind .playAdditionalLandThisTurn == .none
-#guard SpellEffect.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature
-#guard SpellEffect.targetKind (.allCreaturesGet (-4) (-4)) == .none
-#guard SpellEffect.targetKind (.drawAndLoseLife 2 2) == .none
-#guard SpellEffect.targetKind (.targetPlayerDrawLoseLife 2 2) == .player
-#guard SpellEffect.targetKind (.creaturesTargetPlayerGet (-1) (-1)) == .player
-#guard SpellEffect.targetKind .exileGraveyardCreaturesGrantCast == .player
-#guard !SpellEffect.requiresTarget (.allCreaturesGet (-4) (-4))
-#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
-#guard SpellEffect.requiresTarget (.destroyTargetCreatureControllerLosesLife 2)
-#guard SpellEffect.requiresTarget (.targetPlayerDrawLoseLife 2 2)
-#guard SpellEffect.castKind (.allCreaturesGet (-4) (-4)) == .massPump
-#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
-#guard SpellEffect.castKind (.targetPlayerDrawLoseLife 2 2) == .draw
-#guard SpellEffect.preferAsDefaultMode (.pumpAndExileIfDies (-5) (-5))
-#guard SpellEffect.requiresTarget (.dealDamage 3)
-#guard SpellEffect.requiresTarget (.dealDamageToCreature 5)
-#guard SpellEffect.requiresTarget .destroyCreature
-#guard SpellEffect.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
-#guard SpellEffect.requiresTarget (.dealDamageLoseIndestructibleExile 3)
-#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
-#guard SpellEffect.requiresTarget .creatureYouControlDealsPowerToOppCreature
-#guard !SpellEffect.requiresTarget .playAdditionalLandThisTurn
-#guard !SpellEffect.requiresTarget (.drawAndLoseLife 2 2)
-#guard SpellEffect.castKind (.dealDamage 3) == .burn
-#guard SpellEffect.castKind (.dealDamageToCreature 5) == .creatureDamage
-#guard SpellEffect.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
-#guard SpellEffect.castKind .creatureYouControlDealsPowerToOppCreature == .fight
-#guard SpellEffect.castKind .destroyCreatureWithFlying == .destroyFlying
-#guard SpellEffect.castKind .destroyCreature == .destroyCreature
-#guard SpellEffect.castKind .destroyArtifactOrLandNonflyersCantBlock ==
+#guard SpellLeftover.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
+#guard !SpellLeftover.allowsZeroTargets (.plusOneUpToOneAndPlayerGainsLife 2)
+#guard SpellLeftover.targetKind .destroyArtifactOrLandNonflyersCantBlock == .artifactOrLand
+#guard SpellLeftover.targetKind .playAdditionalLandThisTurn == .none
+#guard SpellLeftover.targetKind (.destroyTargetCreatureControllerLosesLife 2) == .creature
+#guard SpellLeftover.targetKind (.allCreaturesGet (-4) (-4)) == .none
+#guard SpellLeftover.targetKind (.drawAndLoseLife 2 2) == .none
+#guard SpellLeftover.targetKind (.targetPlayerDrawLoseLife 2 2) == .player
+#guard SpellLeftover.targetKind (.creaturesTargetPlayerGet (-1) (-1)) == .player
+#guard SpellLeftover.targetKind .exileGraveyardCreaturesGrantCast == .player
+#guard !SpellLeftover.requiresTarget (.allCreaturesGet (-4) (-4))
+#guard !SpellLeftover.requiresTarget (.drawAndLoseLife 2 2)
+#guard SpellLeftover.requiresTarget (.destroyTargetCreatureControllerLosesLife 2)
+#guard SpellLeftover.requiresTarget (.targetPlayerDrawLoseLife 2 2)
+#guard SpellLeftover.castKind (.allCreaturesGet (-4) (-4)) == .massPump
+#guard SpellLeftover.castKind (.drawAndLoseLife 2 2) == .draw
+#guard SpellLeftover.castKind (.targetPlayerDrawLoseLife 2 2) == .draw
+#guard SpellLeftover.preferAsDefaultMode (.pumpAndExileIfDies (-5) (-5))
+#guard SpellLeftover.requiresTarget (.dealDamage 3)
+#guard SpellLeftover.requiresTarget (.dealDamageToCreature 5)
+#guard SpellLeftover.requiresTarget .destroyCreature
+#guard SpellLeftover.requiresTarget .destroyArtifactOrLandNonflyersCantBlock
+#guard SpellLeftover.requiresTarget (.dealDamageLoseIndestructibleExile 3)
+#guard SpellLeftover.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
+#guard SpellLeftover.requiresTarget .creatureYouControlDealsPowerToOppCreature
+#guard !SpellLeftover.requiresTarget .playAdditionalLandThisTurn
+#guard !SpellLeftover.requiresTarget (.drawAndLoseLife 2 2)
+#guard SpellLeftover.castKind (.dealDamage 3) == .burn
+#guard SpellLeftover.castKind (.dealDamageToCreature 5) == .creatureDamage
+#guard SpellLeftover.castKind (.dealDamageLoseIndestructibleExile 3) == .creatureDamage
+#guard SpellLeftover.castKind .creatureYouControlDealsPowerToOppCreature == .fight
+#guard SpellLeftover.castKind .destroyCreatureWithFlying == .destroyFlying
+#guard SpellLeftover.castKind .destroyCreature == .destroyCreature
+#guard SpellLeftover.castKind .destroyArtifactOrLandNonflyersCantBlock ==
   .destroyArtifactOrLand
-#guard SpellEffect.castKind (.pump 3 3) == .pump
-#guard SpellEffect.castKind .plusOnePlusOneTrampleHexproof == .pump
-#guard SpellEffect.castKind .playAdditionalLandThisTurn == .extraLand
-#guard SpellEffect.castKind (.drawAndLoseLife 2 2) == .draw
-#guard SpellEffect.preferAsDefaultMode .destroyCreatureWithFlying
-#guard !SpellEffect.preferAsDefaultMode .destroyCreature
-#guard !SpellEffect.preferAsDefaultMode (.pump 3 3)
-#guard !SpellEffect.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
-#guard SpellEffect.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
-#guard SpellEffect.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
-#guard SpellEffect.resolution .destroyCreatureWithFlying == .onPermanent .destroy
-#guard SpellEffect.resolution .destroyCreature == .onPermanent .destroy
-#guard SpellEffect.resolution .playAdditionalLandThisTurn == .extraLand
-#guard SpellEffect.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
-#guard SpellEffect.resolution .creatureYouControlDealsPowerToOppCreature == .fight
-#guard SpellEffect.resolution (.dealDamageToCreature 5) ==
+#guard SpellLeftover.castKind (.pump 3 3) == .pump
+#guard SpellLeftover.castKind .plusOnePlusOneTrampleHexproof == .pump
+#guard SpellLeftover.castKind .playAdditionalLandThisTurn == .extraLand
+#guard SpellLeftover.castKind (.drawAndLoseLife 2 2) == .draw
+#guard SpellLeftover.preferAsDefaultMode .destroyCreatureWithFlying
+#guard !SpellLeftover.preferAsDefaultMode .destroyCreature
+#guard !SpellLeftover.preferAsDefaultMode (.pump 3 3)
+#guard !SpellLeftover.preferAsDefaultMode .plusOnePlusOneTrampleHexproof
+#guard SpellLeftover.resolution (.dealDamage 3) == .onPermanent (.dealDamage 3)
+#guard SpellLeftover.resolution (.pump 3 3) == .onPermanent (.pump 3 3)
+#guard SpellLeftover.resolution .destroyCreatureWithFlying == .onPermanent .destroy
+#guard SpellLeftover.resolution .destroyCreature == .onPermanent .destroy
+#guard SpellLeftover.resolution .playAdditionalLandThisTurn == .extraLand
+#guard SpellLeftover.resolution (.drawAndLoseLife 2 2) == .drawAndLoseLife 2 2
+#guard SpellLeftover.resolution .creatureYouControlDealsPowerToOppCreature == .fight
+#guard SpellLeftover.resolution (.dealDamageToCreature 5) ==
   .onPermanent (.dealDamage 5)
-#guard SpellEffect.resolution .destroyArtifactOrLandNonflyersCantBlock ==
+#guard SpellLeftover.resolution .destroyArtifactOrLandNonflyersCantBlock ==
   .onPermanent .destroyThenNonflyersCantBlock
 #guard
   let c : CardDef := {
@@ -9075,88 +9075,88 @@ instance : ToString CardDef where
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1
-#guard (AbilityEffect.toNotation .searchBasicLandTapped).startsWith "Search your library"
-#guard AbilityEffect.toNotation (.searchLandTypeToHand "Mountain") ==
+#guard (AbilityLeftover.toNotation .searchBasicLandTapped).startsWith "Search your library"
+#guard AbilityLeftover.toNotation (.searchLandTypeToHand "Mountain") ==
   "Search your library for a Mountain card, reveal it, put it into your hand, then shuffle"
-#guard AbilityEffect.toNotation (.searchLandTypeToHand "Swamp") ==
+#guard AbilityLeftover.toNotation (.searchLandTypeToHand "Swamp") ==
   "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
-#guard !AbilityEffect.requiresTarget (.searchLandTypeToHand "Mountain")
-#guard AbilityEffect.resolution (.searchLandTypeToHand "Swamp") ==
+#guard !AbilityLeftover.requiresTarget (.searchLandTypeToHand "Mountain")
+#guard AbilityLeftover.resolution (.searchLandTypeToHand "Swamp") ==
   .searchLandTypeToHand "Swamp"
-#guard AbilityEffect.toNotation .addAnyColorSpendOnlyHero ==
+#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyHero ==
   "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
-#guard AbilityEffect.toNotation .addAnyColorSpendOnlyVillain ==
+#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyVillain ==
   "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
-#guard AbilityEffect.toNotation .addAnyColorSpendOnlyArtifactSpell ==
+#guard AbilityLeftover.toNotation .addAnyColorSpendOnlyArtifactSpell ==
   "Add one mana of any color. Spend this mana only to cast an artifact spell"
-#guard AbilityEffect.toNotation (.dealDamageToTargetCreature 2) ==
+#guard AbilityLeftover.toNotation (.dealDamageToTargetCreature 2) ==
   "This creature deals 2 damage to target creature"
-#guard AbilityEffect.toNotation .destroyTargetColorlessNonland ==
+#guard AbilityLeftover.toNotation .destroyTargetColorlessNonland ==
   "Destroy target colorless nonland permanent"
-#guard AbilityEffect.toNotation .attachToTargetCreatureYouControl ==
+#guard AbilityLeftover.toNotation .attachToTargetCreatureYouControl ==
   "Attach this Equipment to target creature you control"
-#guard (AbilityEffect.toNotation .becomeBearCreatureWithLandsPT).startsWith
+#guard (AbilityLeftover.toNotation .becomeBearCreatureWithLandsPT).startsWith
   "This enchantment becomes a Bear creature"
-#guard AbilityEffect.toNotation (.sourceGets 1 0) ==
+#guard AbilityLeftover.toNotation (.sourceGets 1 0) ==
   "This creature gets +1/+0 until end of turn"
-#guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 3) ==
+#guard AbilityLeftover.toNotation (.putPlusOnePlusOneOnSource 3) ==
   "Put 3 +1/+1 counters on this creature"
-#guard AbilityEffect.toNotation (.putPlusOnePlusOneOnSource 1) ==
+#guard AbilityLeftover.toNotation (.putPlusOnePlusOneOnSource 1) ==
   "Put a +1/+1 counter on this creature"
-#guard AbilityEffect.toNotation .targetCantBeBlockedThisTurn ==
+#guard AbilityLeftover.toNotation .targetCantBeBlockedThisTurn ==
   "Target creature can't be blocked this turn"
-#guard AbilityEffect.toNotation .returnFromGraveyardTapped ==
+#guard AbilityLeftover.toNotation .returnFromGraveyardTapped ==
   "Return this card from your graveyard to the battlefield tapped"
-#guard AbilityEffect.toNotation .returnFromGraveyardToHand ==
+#guard AbilityLeftover.toNotation .returnFromGraveyardToHand ==
   "Return this card from your graveyard to your hand"
-#guard !AbilityEffect.requiresTarget .returnFromGraveyardTapped
-#guard !AbilityEffect.requiresTarget .returnFromGraveyardToHand
-#guard AbilityEffect.resolution .returnFromGraveyardTapped ==
+#guard !AbilityLeftover.requiresTarget .returnFromGraveyardTapped
+#guard !AbilityLeftover.requiresTarget .returnFromGraveyardToHand
+#guard AbilityLeftover.resolution .returnFromGraveyardTapped ==
   .returnFromGraveyardTapped
-#guard AbilityEffect.resolution .returnFromGraveyardToHand ==
+#guard AbilityLeftover.resolution .returnFromGraveyardToHand ==
   .returnFromGraveyardToHand
-#guard AbilityEffect.requiresTarget (.dealDamageToTargetCreature 2)
-#guard AbilityEffect.requiresTarget .destroyTargetColorlessNonland
-#guard AbilityEffect.requiresTarget .attachToTargetCreatureYouControl
-#guard AbilityEffect.requiresTarget .targetCantBeBlockedThisTurn
-#guard AbilityEffect.targetKind (.dealDamageToTargetCreature 2) == .creature
-#guard AbilityEffect.targetKind .destroyTargetColorlessNonland == .colorlessNonland
-#guard AbilityEffect.targetKind .attachToTargetCreatureYouControl == .creatureYouControl
-#guard AbilityEffect.targeting .targetCantBeBlockedThisTurn ==
+#guard AbilityLeftover.requiresTarget (.dealDamageToTargetCreature 2)
+#guard AbilityLeftover.requiresTarget .destroyTargetColorlessNonland
+#guard AbilityLeftover.requiresTarget .attachToTargetCreatureYouControl
+#guard AbilityLeftover.requiresTarget .targetCantBeBlockedThisTurn
+#guard AbilityLeftover.targetKind (.dealDamageToTargetCreature 2) == .creature
+#guard AbilityLeftover.targetKind .destroyTargetColorlessNonland == .colorlessNonland
+#guard AbilityLeftover.targetKind .attachToTargetCreatureYouControl == .creatureYouControl
+#guard AbilityLeftover.targeting .targetCantBeBlockedThisTurn ==
   EffectTargeting.of .creature .own
-#guard AbilityEffect.targetKind .searchBasicLandTapped == .none
-#guard AbilityEffect.targetCount (.dealDamageToTargetCreature 2) == 1
-#guard AbilityEffect.targetCount .searchBasicLandTapped == 0
-#guard AbilityEffect.castKind (.dealDamageToTargetCreature 2) == .creatureDamage
-#guard AbilityEffect.castKind .destroyTargetColorlessNonland == .destroyColorless
-#guard AbilityEffect.castKind (.sourceGets 1 0) == .other
-#guard AbilityEffect.resolution (.dealDamageToTargetCreature 2) ==
+#guard AbilityLeftover.targetKind .searchBasicLandTapped == .none
+#guard AbilityLeftover.targetCount (.dealDamageToTargetCreature 2) == 1
+#guard AbilityLeftover.targetCount .searchBasicLandTapped == 0
+#guard AbilityLeftover.castKind (.dealDamageToTargetCreature 2) == .creatureDamage
+#guard AbilityLeftover.castKind .destroyTargetColorlessNonland == .destroyColorless
+#guard AbilityLeftover.castKind (.sourceGets 1 0) == .other
+#guard AbilityLeftover.resolution (.dealDamageToTargetCreature 2) ==
   .onPermanent (.dealDamage 2)
-#guard AbilityEffect.resolution .destroyTargetColorlessNonland ==
+#guard AbilityLeftover.resolution .destroyTargetColorlessNonland ==
   .onPermanent .destroy
-#guard AbilityEffect.resolution .targetCantBeBlockedThisTurn ==
+#guard AbilityLeftover.resolution .targetCantBeBlockedThisTurn ==
   .onPermanent .cantBeBlocked
-#guard AbilityEffect.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
-#guard AbilityEffect.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
-#guard AbilityEffect.resolution .becomeBearCreatureWithLandsPT ==
+#guard AbilityLeftover.resolution (.sourceGets 1 0) == .onSource (.pump 1 0)
+#guard AbilityLeftover.resolution (.putPlusOnePlusOneOnSource 3) == .onSource (.plusOne 3)
+#guard AbilityLeftover.resolution .becomeBearCreatureWithLandsPT ==
   .becomeBear
-#guard AbilityEffect.resolution .searchBasicLandTapped == .searchBasicLand
-#guard !AbilityEffect.requiresTarget .searchBasicLandTapped
-#guard !AbilityEffect.requiresTarget .becomeBearCreatureWithLandsPT
-#guard AbilityEffect.toNotation (.drawThenDiscard 1) ==
+#guard AbilityLeftover.resolution .searchBasicLandTapped == .searchBasicLand
+#guard !AbilityLeftover.requiresTarget .searchBasicLandTapped
+#guard !AbilityLeftover.requiresTarget .becomeBearCreatureWithLandsPT
+#guard AbilityLeftover.toNotation (.drawThenDiscard 1) ==
   "Draw a card, then discard a card"
-#guard AbilityEffect.toNotation (.drawThenDiscard 2) ==
+#guard AbilityLeftover.toNotation (.drawThenDiscard 2) ==
   "Draw 2 cards, then discard a card"
-#guard AbilityEffect.toNotation (.createTokens .treasure 1) ==
+#guard AbilityLeftover.toNotation (.createTokens .treasure 1) ==
   "Create a Treasure token"
-#guard AbilityEffect.toNotation (.plusOneOnTarget 2) ==
+#guard AbilityLeftover.toNotation (.plusOneOnTarget 2) ==
   "Put 2 +1/+1 counters on target creature you control"
-#guard AbilityEffect.toNotation (.plusOneOnTarget 2 #["Elf"]) ==
+#guard AbilityLeftover.toNotation (.plusOneOnTarget 2 #["Elf"]) ==
   "Put 2 +1/+1 counters on target Elf you control"
-#guard AbilityEffect.toNotation (.plusOneOnTarget 2 #["Goblin", "Orc"]) ==
+#guard AbilityLeftover.toNotation (.plusOneOnTarget 2 #["Goblin", "Orc"]) ==
   "Put 2 +1/+1 counters on target Goblin or Orc you control"
-#guard AbilityEffect.targetKind (.plusOneOnTarget 2) == .creatureYouControl
-#guard AbilityEffect.targetKind (.plusOneOnTarget 2 #["Elf"]) ==
+#guard AbilityLeftover.targetKind (.plusOneOnTarget 2) == .creatureYouControl
+#guard AbilityLeftover.targetKind (.plusOneOnTarget 2 #["Elf"]) ==
   .creatureYouControlAnySubtype #["Elf"]
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
   "When this permanent enters, create a Treasure token."
@@ -9347,7 +9347,7 @@ instance : ToString CardDef where
 #guard TriggeredAbility.onWatch .hulk == .triggered .fromEffect (Effect.ofTrigger (.watch .hulk))
 #guard TriggeredAbility.onStep .drawToTen ==
   .triggered .fromEffect (Effect.ofTrigger (.step .drawToTen))
-#guard TriggeredAbility.sagaChapter 1 ChapterEffect.recruit ==
+#guard TriggeredAbility.sagaChapter 1 ChapterLeftover.recruit ==
   .triggered .sagaChapter (Effect.ofTrigger (.chapter 1 .recruit))
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
@@ -9357,8 +9357,8 @@ instance : ToString CardDef where
 #guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
   == some 4
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
-#guard !AbilityEffect.requiresTarget (.sourceGets 1 0)
-#guard !AbilityEffect.requiresTarget (.putPlusOnePlusOneOnSource 3)
+#guard !AbilityLeftover.requiresTarget (.sourceGets 1 0)
+#guard !AbilityLeftover.requiresTarget (.putPlusOnePlusOneOnSource 3)
 #guard toString Keyword.cantBeBlocked == "can't be blocked"
 #guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.menace "Menace"

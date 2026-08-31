@@ -9007,7 +9007,7 @@ def quarrelSetup : Game :=
 
 #guard quarrel.isInstant
 #guard quarrel.requiresTarget
-#guard SpellEffect.targetCount .creatureYouControlDealsPowerToOppCreature == 2
+#guard SpellLeftover.targetCount .creatureYouControlDealsPowerToOppCreature == 2
 #guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
 #guard quarrelSetup.asSorcery? ⟨0⟩
 #guard (quarrelSetup.legalTargets ⟨0⟩ (Effect.ofSpell .creatureYouControlDealsPowerToOppCreature)).size == 2
@@ -11945,7 +11945,7 @@ def gazeSetup : Game :=
   let g := readyMain (emptyHand g ⟨0⟩)
   withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
 
-#guard SpellEffect.maxTargetCount .tapOneOrTwoCreatures == 2
+#guard SpellLeftover.maxTargetCount .tapOneOrTwoCreatures == 2
 #guard
   match velvetwingButterflies.adventure with
   | some adv => adv.spellEffect == some (Effect.ofSpell .tapOneOrTwoCreatures)
@@ -12029,9 +12029,9 @@ def gazeResolvedOne : Game :=
 /- Meager Meal (Gollum adventure): up to one target creature, then target
 player, in that card-text order (CR 601.2c / 115.1c). -/
 
-#guard SpellEffect.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
+#guard SpellLeftover.targetKind (.plusOneUpToOneAndPlayerGainsLife 2) ==
   .upToOneCreatureThenPlayer
-#guard SpellEffect.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
+#guard SpellLeftover.targetCount (.plusOneUpToOneAndPlayerGainsLife 2) == 2
 #guard
   match gollumSilentSlinker.adventure with
   | some adv => adv.spellEffect == some (Effect.ofSpell (.plusOneUpToOneAndPlayerGainsLife 2))
@@ -12746,7 +12746,7 @@ def thranduilTappedForCopiedGreen : Game :=
 /-!
 # Supported Saga cards (CR 714)
 
-Catalog Sagas store structured `ChapterEffect`s. Entering a Saga puts a lore
+Catalog Sagas store structured `ChapterLeftover`s. Entering a Saga puts a lore
 counter on it and the matching chapter goes on the stack.
 -/
 

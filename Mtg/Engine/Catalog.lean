@@ -426,7 +426,7 @@ def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
     (saga := saga)
 
 /-- A catalog Saga chapter with parsed numerals and a real effect. -/
-def chapter (roman effect : String) (ce : ChapterEffect) : SagaChapter :=
+def chapter (roman effect : String) (ce : ChapterLeftover) : SagaChapter :=
   SagaChapter.of roman effect ce
 
 /-- A Saga enchantment (CR 714). -/

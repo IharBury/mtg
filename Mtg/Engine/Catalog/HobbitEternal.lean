@@ -944,7 +944,7 @@ def hobbitEternalCards : Array CardDef := #[
 #guard smiteTheDeathless.isInstant
 #guard smiteTheDeathless.requiresTarget
 #guard smiteTheDeathless.spellEffect == some (Effect.ofSpell (.dealDamageLoseIndestructibleExile 3))
-#guard SpellEffect.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
+#guard SpellLeftover.targetCount (.dealDamageLoseIndestructibleExile 3) == 1
 #guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
 #guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
 #guard ologHaiCrusher.keywords.trample

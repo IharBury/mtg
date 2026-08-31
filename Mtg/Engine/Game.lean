@@ -10912,7 +10912,7 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
       "The source is no longer in play"
   | .proliferateEachKind =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .proliferateEachKind) targets sourceId
+      (AbilityLeftover.toNotation .proliferateEachKind) targets sourceId
   | .equipmentBecomesConstructHero =>
     match sourceId.bind g.findObject? with
     | some o =>
@@ -10938,13 +10938,13 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     g.logLookAtTop controller n
   | .millThenPutHeroOrEnchantment n =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation (.millThenPutHeroOrEnchantment n)) targets sourceId
+      (AbilityLeftover.toNotation (.millThenPutHeroOrEnchantment n)) targets sourceId
   | .plusOneAndDoubleStrikeCounter =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .plusOneAndDoubleStrikeCounter) targets sourceId
+      (AbilityLeftover.toNotation .plusOneAndDoubleStrikeCounter) targets sourceId
   | .plusOneThenFightUpToOne =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .plusOneThenFightUpToOne) targets sourceId
+      (AbilityLeftover.toNotation .plusOneThenFightUpToOne) targets sourceId
   | .plusOneAndGrant k =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.addPlusOnePlusOneTo o 1
@@ -10961,16 +10961,16 @@ def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     g.createKindTokens controller kind 1
   | .plusTwoThenOddEvenDestroy =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .plusTwoThenOddEvenDestroy) targets sourceId
+      (AbilityLeftover.toNotation .plusTwoThenOddEvenDestroy) targets sourceId
   | .returnFromGyFinalityAttach =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .returnFromGyFinalityAttach) targets sourceId
+      (AbilityLeftover.toNotation .returnFromGyFinalityAttach) targets sourceId
   | .returnGyCreatureThenPlusOne n =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation (.returnGyCreatureThenPlusOne n)) targets sourceId
+      (AbilityLeftover.toNotation (.returnGyCreatureThenPlusOne n)) targets sourceId
   | .revealTopDrawIfArtifact =>
     g.applyLeftoverTextEffect controller
-      (AbilityEffect.toNotation .revealTopDrawIfArtifact) targets sourceId
+      (AbilityLeftover.toNotation .revealTopDrawIfArtifact) targets sourceId
   | .copyArtifactYouControlNotLegendary =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
@@ -11455,7 +11455,7 @@ def chooseTapOrUntap (g : Game) (p : PlayerId) (idx : Nat) (targetId : ObjectId)
   | _ => throw "Not time to choose tap or untap"
 
 /-- Resolve a printed Saga chapter (CR 714.3 / 608). -/
-def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterEffect)
+def applyChapterEffect (g : Game) (controller : PlayerId) (e : ChapterLeftover)
     (sourceId : Option ObjectId) (targets : Array Target) : Game :=
   match e with
   | .dealDamageToOppCreature n =>
