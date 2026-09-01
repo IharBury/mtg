@@ -4857,7 +4857,7 @@ def hospitalityLandfallSetup : Game :=
 
 #guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
 #guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
 
 def hospitalityLandPlayed : Game :=
   mustApply hospitalityLandfallSetup ⟨0⟩
@@ -12797,6 +12797,27 @@ def elvesGainMenaceResolved : Game :=
 #guard
   (namedPermanent elvesGainMenaceResolved "Llanowar Elves").status.untilEotKeywords.menace &&
     !(namedPermanent elvesGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace
+
+/-- `teamGain` grants the given keyword to every creature you control. -/
+def teamGainMenaceResolved : Game :=
+  (addPermanent (addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩)
+    |>.applyAbilityEffect ⟨0⟩ (Effect.teamGain Keyword.menace) #[]
+
+#guard
+  (namedPermanent teamGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace &&
+    (namedPermanent teamGainMenaceResolved "Gray Ogre").status.untilEotKeywords.menace
+
+/-- `becomeSubtypeWithLandsPT` grants the given type, not only Bear. -/
+def becomeWolfWithLandsPT : Game :=
+  let g := addPermanent afterDraw forest ⟨0⟩ ⟨0⟩
+  let g := addPermanent g beornsHospitality ⟨0⟩ ⟨0⟩
+  let src := namedPermanent g "Beorn's Hospitality"
+  g.applyAbilityEffect ⟨0⟩ (Effect.becomeSubtypeWithLandsPT "Wolf") #[] (some src.id)
+
+#guard
+  (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Wolf" &&
+    !(namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").hasSubtype "Bear" &&
+    (namedPermanent becomeWolfWithLandsPT "Beorn's Hospitality").isCreature
 
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=

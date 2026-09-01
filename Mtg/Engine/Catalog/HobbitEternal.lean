@@ -737,7 +737,7 @@ def theReaverCleaver : CardDef :=
 
 def thorinCompanySLeader : CardDef :=
   legendaryCreature "Thorin, Company's Leader" (ManaCost.ofGenericAndColor 4 .red) #["Dwarf", "Warrior"] 4 5 (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
-    (activatedAbilities := #[activated (Effect.teamGainDoubleStrike) (ManaCost.ofGeneric 10)])
+    (activatedAbilities := #[activated (Effect.teamGain Keyword.doubleStrike) (ManaCost.ofGeneric 10)])
     (triggeredAbilities := #[.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2])
 
 def tomBombadil : CardDef :=

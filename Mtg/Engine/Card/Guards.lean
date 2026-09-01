@@ -383,7 +383,26 @@ namespace CardDef
 #guard (Effect.sourceGets 1 0).abilityResolution == .onSource (.pump 1 0)
 #guard (Effect.putPlusOnePlusOneOnSource 3).abilityResolution == .onSource (.plusOne 3)
 #guard Effect.becomeBearCreatureWithLandsPT.abilityResolution ==
-  .becomeBear
+  .becomeSubtypeWithLandsPT "Bear"
+#guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
+  "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
+#guard (Effect.searchBasicBeholdSubtypeUntap "Elf").abilityResolution ==
+  .searchBasicBeholdSubtypeUntap "Elf"
+#guard (Effect.searchBasicBeholdSubtypeUntap "Orc").phrase.endsWith
+  "You may behold an Orc. If you do, untap that land"
+#guard Effect.addAnyColorSpendOnlyHero.abilityResolution ==
+  .addAnyColorSpendOnlySubtype "Hero"
+#guard Effect.addAnyColorSpendOnlyVillain.abilityResolution ==
+  .addAnyColorSpendOnlySubtype "Villain"
+#guard (Effect.teamGain Keyword.doubleStrike).phrase ==
+  "Creatures you control gain double strike until end of turn"
+#guard (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5
+    (Keyword.reach.merge Keyword.vigilance)).phrase ==
+  "Until end of turn, this becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance"
+#guard (Effect.millThenPutSubtypeOrEnchantment 4 "Hero").phrase ==
+  "Mill 4 cards. You may put a Hero or enchantment card from among those cards into your hand"
+#guard (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]).phrase.startsWith
+  "Put two +1/+1 counters on this, then look at the top 7 cards"
 #guard Effect.searchBasicLandTapped.abilityResolution == .searchBasicLand
 #guard !Effect.searchBasicLandTapped.requiresTarget
 #guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget

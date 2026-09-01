@@ -41,8 +41,8 @@ inductive AbilityResolution where
   | onPermanent (action : PermanentAction)
   /-- Affect the ability's source if it is still on the battlefield. -/
   | onSource (action : PermanentAction)
-  /-- Become a Bear creature with lands-you-control P/T. -/
-  | becomeBear
+  /-- Become this subtype with lands-you-control P/T. -/
+  | becomeSubtypeWithLandsPT (subtype : String)
   /-- Return the source from the graveyard to the battlefield tapped. -/
   | returnFromGraveyardTapped
   /-- Return the source from the graveyard to its owner's hand. -/
@@ -77,8 +77,8 @@ inductive AbilityResolution where
   | subtypesGainMenace (subtypes : Array String)
   /-- Exile then return at the next end step. -/
   | exileThenReturnNextEnd
-  /-- Search a basic tapped, then behold an Elf to untap it. -/
-  | searchBasicBeholdElfUntap
+  /-- Search a basic tapped, then behold this subtype to untap it. -/
+  | searchBasicBeholdSubtypeUntap (subtype : String)
   /-- Two players each draw. -/
   | twoPlayersDraw
   /-- Discard a same-name legendary; draw two. -/
@@ -101,8 +101,8 @@ inductive AbilityResolution where
   | blackGateUnblockable
   /-- Burden then draw. -/
   | burdenThenDraw
-  /-- Team double strike. -/
-  | teamGainDoubleStrike
+  /-- Creatures you control gain this keyword. -/
+  | teamGain (k : Keywords)
   /-- Source gains indestructible and taps. -/
   | sourceGainsIndestructibleTap
   /-- +1/+1 on each other permanent of this subtype. -/
@@ -115,8 +115,8 @@ inductive AbilityResolution where
   | plusOneX
   /-- Each opponent discards; +1/+1 on the source. -/
   | eachOppDiscardThenPlusOne
-  /-- Look at the top `n`; put a Hero, Equipment, or Vehicle onto the battlefield. -/
-  | lookAtTopPutHeroEquipVehicle (n : Nat)
+  /-- Look at the top `n`; put a card of one of these types onto the battlefield. -/
+  | lookAtTopPutTypes (n : Nat) (types : Array String)
   /-- Transform the source. -/
   | transform
   /-- Draw X cards. -/
@@ -125,10 +125,8 @@ inductive AbilityResolution where
   | lookAtTopRevealArtifact (n : Nat)
   /-- The source connives. -/
   | connive
-  /-- Add one mana of any color, spendable only on Hero spells or Hero sources. -/
-  | addAnyColorSpendOnlyHero
-  /-- Add one mana of any color, spendable only on Villain spells or Villain sources. -/
-  | addAnyColorSpendOnlyVillain
+  /-- Add one mana of any color, spendable only on this subtype's spells or sources. -/
+  | addAnyColorSpendOnlySubtype (subtype : String)
   /-- Add one mana of any color, spendable only to cast an artifact spell. -/
   | addAnyColorSpendOnlyArtifactSpell
   /-- Add two mana of any one color, spendable only on creature-source abilities. -/
@@ -163,8 +161,8 @@ inductive AbilityResolution where
   | equipmentBecomesConstructHero
   /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
   | lookAtTopRevealSubtype (n : Nat) (subtype : String)
-  /-- Mill `n`. You may put a Hero or enchantment card from among them into your hand. -/
-  | millThenPutHeroOrEnchantment (n : Nat)
+  /-- Mill `n`. You may put a card of this subtype or an enchantment into your hand. -/
+  | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
   /-- Put a +1/+1 counter and a double strike counter on this. -/
   | plusOneAndDoubleStrikeCounter
   /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
@@ -183,8 +181,8 @@ inductive AbilityResolution where
   | copyArtifactYouControlNotLegendary
   /-- Target creature you control that's attacking alone gets +1/+0. You gain 1 life. -/
   | pumpAttackingAloneGainLife
-  /-- Until end of turn, this becomes a Dinosaur Hero with base P/T and these keywords. -/
-  | becomeDinosaurHero (power toughness : Int) (k : Keywords)
+  /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
+  | becomeTypes (types : Array String) (power toughness : Int) (k : Keywords)
   /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
   | nextInstantSorceryCopyIfMvAtMostSourcePower
   /-- Harness this Infinity Stone. -/
@@ -216,8 +214,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     PermanentAction.toNotation action noun (sentence := true)
   | .onSource action =>
     PermanentAction.toNotation action "this creature" (sentence := true)
-  | .becomeBear =>
-    "This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
+  | .becomeSubtypeWithLandsPT subtype =>
+    s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
   | .returnFromGraveyardTapped =>
     "Return this card from your graveyard to the battlefield tapped"
   | .returnFromGraveyardToHand =>
@@ -252,8 +250,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"{StaticAbility.joinedSubtypes subtypes StaticAbility.pluralSubtype} you control gain menace until end of turn"
   | .exileThenReturnNextEnd =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
-  | .searchBasicBeholdElfUntap =>
-    s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold an Elf. If you do, untap that land"
+  | .searchBasicBeholdSubtypeUntap subtype =>
+    s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold {indefinite subtype} {subtype}. If you do, untap that land"
   | .twoPlayersDraw =>
     "Two target players each draw a card"
   | .discardLegendarySameNameDraw =>
@@ -276,8 +274,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
   | .burdenThenDraw =>
     "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring"
-  | .teamGainDoubleStrike =>
-    "Creatures you control gain double strike until end of turn"
+  | .teamGain k =>
+    s!"Creatures you control gain {k.joinedAnd} until end of turn"
   | .sourceGainsIndestructibleTap =>
     "Witch-king of Angmar gains indestructible until end of turn. Tap him"
   | .plusOneOnEachOtherSubtype subtype n =>
@@ -290,8 +288,10 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     "Put X +1/+1 counters on this"
   | .eachOppDiscardThenPlusOne =>
     "Each opponent discards a card. Put a +1/+1 counter on this"
-  | .lookAtTopPutHeroEquipVehicle n =>
-    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put a Hero, Equipment, or Vehicle card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
+  | .lookAtTopPutTypes n types =>
+    let listed := orJoin types.toList
+    let art := indefinite (types[0]?.getD "")
+    s!"Put two +1/+1 counters on this, then look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
   | .transform =>
     "Transform this"
   | .drawX =>
@@ -300,10 +300,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
   | .connive =>
     "This creature connives"
-  | .addAnyColorSpendOnlyHero =>
-    "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
-  | .addAnyColorSpendOnlyVillain =>
-    "Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source"
+  | .addAnyColorSpendOnlySubtype subtype =>
+    s!"Add one mana of any color. Spend this mana only to cast {indefinite subtype} {subtype} spell or to activate an ability of {indefinite subtype} {subtype} source"
   | .addAnyColorSpendOnlyArtifactSpell =>
     "Add one mana of any color. Spend this mana only to cast an artifact spell"
   | .addTwoAnyColorCreatureSources =>
@@ -339,8 +337,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
   | .lookAtTopRevealSubtype n subtype =>
     s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
-  | .millThenPutHeroOrEnchantment n =>
-    s!"Mill {n} cards. You may put a Hero or enchantment card from among those cards into your hand"
+  | .millThenPutSubtypeOrEnchantment n subtype =>
+    s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
   | .plusOneAndDoubleStrikeCounter =>
     "Put a +1/+1 counter and a double strike counter on this"
   | .plusOneThenFightUpToOne =>
@@ -359,11 +357,13 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
   | .pumpAttackingAloneGainLife =>
     "Target creature you control that's attacking alone gets +1/+0 until end of turn. You gain 1 life"
-  | .becomeDinosaurHero p t k =>
+  | .becomeTypes types p t k =>
     let joined :=
       if k.reach && k.vigilance then "reach and vigilance"
       else k.joinedAnd
-    s!"Until end of turn, this becomes a Dinosaur Hero with base power and toughness {p}/{t} and gains {joined}"
+    let typeWords := String.intercalate " " types.toList
+    let art := indefinite (types[0]?.getD "")
+    s!"Until end of turn, this becomes {art} {typeWords} with base power and toughness {p}/{t} and gains {joined}"
   | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
   | .harnessInfinityStone =>

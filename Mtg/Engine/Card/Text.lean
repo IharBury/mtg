@@ -40,6 +40,20 @@ def orJoin (xs : List String) : String :=
   ((Keyword.haste.merge Keyword.trample).merge Keyword.flying) ==
   "haste, flying, trample"
 
+/-- English indefinite article for a noun (`an Elf`, `a Hero`). -/
+def indefinite (noun : String) : String :=
+  match noun.toList with
+  | [] => "a"
+  | c :: _ =>
+    match c.toLower with
+    | 'a' | 'e' | 'i' | 'o' | 'u' => "an"
+    | _ => "a"
+
+#guard indefinite "Elf" == "an"
+#guard indefinite "Hero" == "a"
+#guard indefinite "Orc" == "an"
+#guard indefinite "Bear" == "a"
+
 /-- First character uppercased (ASCII), for ability sentences. -/
 def capitalizeAscii (s : String) : String :=
   match s.toList with

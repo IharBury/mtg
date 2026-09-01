@@ -372,7 +372,7 @@ def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
 def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
   c.activatedAbilities.any (fun ab =>
     match ab.effect.abilityResolution with
-    | .addAnyColor | .addAnyColorSpendOnlyHero | .addAnyColorSpendOnlyVillain
+    | .addAnyColor | .addAnyColorSpendOnlySubtype _
     | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
     | .addTwoAnyColorCreatureSources | .addFourAnyCombination
     | .addTwoAnyColorEquipment => true

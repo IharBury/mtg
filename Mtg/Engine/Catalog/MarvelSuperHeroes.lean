@@ -198,7 +198,7 @@ def murdockSCrusade : CardDef :=
 def nickFuryAgentOfSHIELD : CardDef :=
   legendaryCreature "Nick Fury, Agent of S.H.I.E.L.D." (ManaCost.ofColor .white) #["Human", "Spy", "Hero"] 2 1
     (oracleText := "Power-up — {W}{U}{B}{R}{G}: Put two +1/+1 counters on Nick Fury, then look at the top seven cards of your library. You may put a Hero, Equipment, or Vehicle card from among them onto the battlefield. If it's a double-faced card, you may transform it. Put the rest on the bottom of your library in a random order. (Activate each power-up ability only once. Reduce the cost by his mana cost if he entered this turn.)")
-    (activatedAbilities := #[activated (Effect.lookAtTopPutHeroEquipVehicle 7) (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (powerUp := true)])
+    (activatedAbilities := #[activated (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]) (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (powerUp := true)])
 
 def nightNurseHealerOfHeroes : CardDef :=
   legendaryCreature "Night Nurse, Healer of Heroes" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Doctor", "Hero"] 2 1
@@ -1152,8 +1152,8 @@ def rapidRescue : CardDef :=
 def reptilDinomorpher : CardDef :=
   legendaryCreature "Reptil, Dinomorpher" (ManaCost.ofColor .green) #["Human", "Hero"] 1 2
     (oracleText := "Brontosaurus — {3}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance.\nTyrannosaurus Rex — {6}: Until end of turn, Reptil becomes a Dinosaur Hero with base power and toughness 6/6 and gains trample.")
-    (activatedAbilities := #[activated (Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) (ManaCost.ofGeneric 3),
-      activated (Effect.becomeDinosaurHero 6 6 Keyword.trample) (ManaCost.ofGeneric 6)])
+    (activatedAbilities := #[activated (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5 (Keyword.reach.merge Keyword.vigilance)) (ManaCost.ofGeneric 3),
+      activated (Effect.becomeTypes #["Dinosaur", "Hero"] 6 6 Keyword.trample) (ManaCost.ofGeneric 6)])
 
 def restorativeTechnique : CardDef :=
   sorcery "Restorative Technique" (ManaCost.ofGenericAndColor 2 .green)
@@ -1163,7 +1163,7 @@ def restorativeTechnique : CardDef :=
 def rickJonesDestinedSidekick : CardDef :=
   legendaryCreature "Rick Jones, Destined Sidekick" (ManaCost.ofColor .green) #["Human", "Advisor"] 0 3
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
-    (activatedAbilities := #[activated (Effect.millThenPutHeroOrEnchantment 4) (ManaCost.ofGeneric 3) (tap := true)])
+    (activatedAbilities := #[activated (Effect.millThenPutSubtypeOrEnchantment 4 "Hero") (ManaCost.ofGeneric 3) (tap := true)])
 
 def savageLandDinosaur : CardDef :=
   creature "Savage Land Dinosaur" (ManaCost.ofGenericAndColors 4 [.green, .green]) #["Dinosaur"] 7 6
@@ -1641,7 +1641,7 @@ def avengersTower : CardDef :=
   land "Avengers Tower"
     "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source.\n{4}, {T}: Look at the top three cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order."
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlyHero) (ManaCost.empty) (tap := true),
+    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlySubtype "Hero") (ManaCost.empty) (tap := true),
       activated (Effect.lookAtTopRevealSubtype 3 "Hero") (ManaCost.ofGeneric 4) (tap := true)])
 
 def baxterBuilding : CardDef :=
@@ -1707,7 +1707,7 @@ def villainousHideout : CardDef :=
   land "Villainous Hideout"
     "{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a Villain spell or to activate an ability of a Villain source.\n{3}, {T}: Target Villain you control connives. Activate only as a sorcery. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)"
     (tapAddMana := #[.colorless])
-    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlyVillain) (ManaCost.empty) (tap := true),
+    (activatedAbilities := #[activated (Effect.addAnyColorSpendOnlySubtype "Villain") (ManaCost.empty) (tap := true),
       activated (Effect.targetSubtypeConnives "Villain") (ManaCost.ofGeneric 3) (tap := true) (onlyAsSorcery := true)])
 
 /-- All unique MSH card names, including both faces of transforming cards
