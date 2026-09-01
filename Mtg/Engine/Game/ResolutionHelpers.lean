@@ -156,29 +156,7 @@ def applyPermanentAction (g : Game) (o : GameObject) : PermanentAction → Game
     g.logMsg s!"If {o.name} would die this turn, exile it instead"
   | .grantKeywords k =>
     g.grantUntilEotLogged o k
-  | .tap =>
-    if o.status.tapped then
-      g.logMsg s!"{o.name} is already tapped"
-    else
-      let first := !o.status.becameTappedThisTurn
-      let g := g.mapObjectStatus o (fun s =>
-        { s with tapped := true, becameTappedThisTurn := true })
-      let g := g.logMsg s!"{o.name} becomes tapped"
-      let g := { g with lastBecameTapped := some o.id }
-      match o.controller with
-      | some p =>
-        let g := g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
-        let g :=
-          (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
-            if eq.printed.isEquipment then
-              g.putMatchingSourceTriggers p eq .equippedBecomesTapped
-            else g) g
-        if first && g.activePlayer == p then
-          g.foldControlledPermanents p (excludeId := none) (fun g src =>
-            g.putMatchingSourceTriggers p src .creatureYouControlTapped
-              (cause := some (g.object! o.id)))
-        else g
-      | none => g
+  | .tap => g.becomeTapped o
   | .untap =>
     if g.hostCantBecomeUntapped o then
       g.logMsg s!"{o.name} can't become untapped"

@@ -906,8 +906,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
       let o := g.object! o.id
-      let g := g.setObject { o with status := { o.status with tapped := true } }
-      g.logMsg s!"{o.name} gains indestructible until end of turn and becomes tapped"
+      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
+      g.becomeTapped o
   | .plusOneOnEachOtherSubtype subtype n =>
     g.foldBattlefield (fun o =>
         o.controlledBy controller && o.id != sourceId.getD ⟨0⟩ && g.hasSubtype o subtype)

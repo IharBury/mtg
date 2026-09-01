@@ -52,7 +52,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     let src := g.object! sourceId
     if src.status.tapped then
       throw s!"{src.name} is already tapped"
-    g := g.setObject { src with status := { src.status with tapped := true } }
+    g := g.becomeTapped src
   g := (← g.payLifeCost p payLife)
   match ab with
   | some a =>

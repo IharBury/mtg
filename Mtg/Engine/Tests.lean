@@ -364,6 +364,16 @@ def uncontrolledPermanent : Game :=
 #guard mentions raggedShortSpear.summary "Equipped creature"
 #guard mentions raggedShortSpear.summary "Equip"
 #guard raggedShortSpear.isEquipment
+#guard hawkeyeSBow.isEquipment
+#guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 Keyword.reach]
+#guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
+#guard hawkeyeSBow.activatedAbilities.size == 1
+#guard hawkeyeSBow.activatedAbilities[0]!.onlyAsSorcery
+#guard hawkeyeSBow.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard hawkeyeSBow.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard mentions hawkeyeSBow.summary "Equipped creature"
+#guard mentions hawkeyeSBow.summary "becomes tapped"
+#guard mentions hawkeyeSBow.summary "Equip"
 #guard raggedShortSpear.staticAbilities.size == 1
 #guard raggedShortSpear.triggeredAbilities.size == 1
 #guard raggedShortSpear.activatedAbilities.size == 1
@@ -14303,6 +14313,164 @@ def hellcatReturns : Game :=
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").status.plusOnePlusOne == 1
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.triggeredAbilities.isEmpty
 #guard (namedPermanent hellcatReturns "Hellcat, Undying Vigilante").printed.keywords.haste
+
+/- Hawkeye's Bow: +1/+0 and reach, tap damage, Equip {1}. -/
+
+/-- Attach Hawkeye's Bow to Grizzly Bears. -/
+def hawkeyeBowEquipped : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+
+#guard hawkeyeBowEquipped.power (namedPermanent hawkeyeBowEquipped "Grizzly Bears") == 3
+#guard hawkeyeBowEquipped.toughness (namedPermanent hawkeyeBowEquipped "Grizzly Bears") == 2
+#guard hawkeyeBowEquipped.hasKeyword
+  (namedPermanent hawkeyeBowEquipped "Grizzly Bears") (·.reach)
+#guard (namedPermanent hawkeyeBowEquipped "Hawkeye's Bow").attachedTo ==
+  some (namedPermanent hawkeyeBowEquipped "Grizzly Bears").id
+
+/-- Reach from the Bow lets a ground creature block a flyer. -/
+def flyerVsHawkeyeBow : Game :=
+  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨1⟩ ⟨1⟩
+  let smaug := namedPermanent g "Smaug, the Great Calamity"
+  g.setObject { smaug with status := { smaug.status with attacking := true } }
+
+#guard flyerVsHawkeyeBow.canBlock
+  (namedPermanent flyerVsHawkeyeBow "Grizzly Bears")
+  (namedPermanent flyerVsHawkeyeBow "Smaug, the Great Calamity")
+#guard
+  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let smaug := namedPermanent g "Smaug, the Great Calamity"
+  let g := g.setObject { smaug with status := { smaug.status with attacking := true } }
+  !g.canBlock (namedPermanent g "Grizzly Bears")
+    (namedPermanent g "Smaug, the Great Calamity")
+
+/-- Tapping the equipped creature queues the Bow and deals 1 to each opponent. -/
+def hawkeyeBowTapped : Game :=
+  let host := namedPermanent hawkeyeBowEquipped "Grizzly Bears"
+  hawkeyeBowEquipped.applyPermanentAction host PermanentAction.tap
+
+#guard (namedPermanent hawkeyeBowTapped "Grizzly Bears").status.tapped
+#guard hawkeyeBowTapped.waitingTriggers.any (fun t =>
+  t.source.name == "Hawkeye's Bow")
+#guard hawkeyeBowTapped.log.any (fun s => mentions s "Grizzly Bears becomes tapped")
+
+def hawkeyeBowTapResolved : Game :=
+  let bow := namedPermanent hawkeyeBowTapped "Hawkeye's Bow"
+  let g := hawkeyeBowTapped.applyTriggeredAbility ⟨0⟩
+    (.onWatch Effect.watchEquippedTappedDamage) (some bow.id)
+  g
+
+#guard (hawkeyeBowTapResolved.player ⟨1⟩).life ==
+  (hawkeyeBowEquipped.player ⟨1⟩).life - 1
+#guard hawkeyeBowTapResolved.log.any (fun s => mentions s "is dealt 1 damage")
+
+-- An unattached Bow does not trigger when a creature becomes tapped.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let g := g.applyPermanentAction host PermanentAction.tap
+  !g.waitingTriggers.any (fun t => t.source.name == "Hawkeye's Bow")
+
+-- Tapping an already-tapped equipped creature does not trigger the Bow.
+#guard
+  let host := namedPermanent hawkeyeBowTapped "Grizzly Bears"
+  let g := hawkeyeBowTapped.applyPermanentAction host PermanentAction.tap
+  g.waitingTriggers.size == hawkeyeBowTapped.waitingTriggers.size &&
+    g.log.any (fun s => mentions s "already tapped")
+
+/-- Attacking with the equipped creature taps it and the Bow deals 1. -/
+def hawkeyeBowAttacked : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+
+#guard (namedPermanent hawkeyeBowAttacked "Grizzly Bears").status.tapped
+#guard (namedPermanent hawkeyeBowAttacked "Grizzly Bears").status.attacking
+#guard hawkeyeBowAttacked.log.any (fun s =>
+  mentions s "Hawkeye's Bow's equipped-tapped trigger")
+#guard
+  hawkeyeBowAttacked.stack.any (fun e =>
+    mentions (hawkeyeBowAttacked.object! e.objectId).name "Hawkeye's Bow") ||
+    hawkeyeBowAttacked.waitingTriggers.any (fun t =>
+      t.source.name == "Hawkeye's Bow")
+
+def hawkeyeBowAttackResolved : Game :=
+  let g :=
+    if hawkeyeBowAttacked.waitingTriggers.any (fun t =>
+        t.source.name == "Hawkeye's Bow") then
+      hawkeyeBowAttacked.receivePriority ⟨0⟩
+    else hawkeyeBowAttacked
+  passBoth g
+
+#guard (hawkeyeBowAttackResolved.player ⟨1⟩).life ==
+  (afterDraw.player ⟨1⟩).life - 1
+
+/-- Tapping an equipped mana creature for mana also fires the Bow. -/
+def hawkeyeBowManaTap : Game :=
+  let g := addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Llanowar Elves") ⟨0⟩ ⟨0⟩
+  let elf := namedPermanent g "Llanowar Elves"
+  match g.tapForMana ⟨0⟩ elf.id (.colored .green) with
+  | .ok g => g
+  | .error e => panic! e
+
+#guard (namedPermanent hawkeyeBowManaTap "Llanowar Elves").status.tapped
+#guard (hawkeyeBowManaTap.player ⟨0⟩).manaPool.green == 1
+#guard hawkeyeBowManaTap.waitingTriggers.any (fun t =>
+  t.source.name == "Hawkeye's Bow")
+
+-- Vigilance means attacking does not tap, so the Bow does not trigger.
+#guard
+  let g := addPermanent afterDraw captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g hawkeyeSBow
+    (namedPermanent g "Captain America, Living Legend") ⟨0⟩ ⟨0⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Captain America, Living Legend").id])
+  !(namedPermanent g "Captain America, Living Legend").status.tapped &&
+    !g.waitingTriggers.any (fun t => t.source.name == "Hawkeye's Bow") &&
+    !g.stack.any (fun e => mentions (g.object! e.objectId).name "Hawkeye's Bow") &&
+    !g.log.any (fun s => mentions s "Hawkeye's Bow's equipped-tapped trigger")
+
+/-- Equip {1} attaches the Bow as a sorcery. -/
+def hawkeyeBowReadyToEquip : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
+  let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
+  withRedMana g ⟨0⟩ 1
+
+def hawkeyeBowEquippedViaEquip : Game :=
+  let g := mustApply hawkeyeBowReadyToEquip ⟨0⟩
+    (.activate (namedPermanent hawkeyeBowReadyToEquip "Hawkeye's Bow").id 0)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard (namedPermanent hawkeyeBowEquippedViaEquip "Hawkeye's Bow").attachedTo ==
+  some (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears").id
+#guard hawkeyeBowEquippedViaEquip.power
+  (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears") == 3
+#guard hawkeyeBowEquippedViaEquip.hasKeyword
+  (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears") (·.reach)
+#guard hawkeyeBowReadyToEquip.canActivate ⟨0⟩
+  (namedPermanent hawkeyeBowReadyToEquip "Hawkeye's Bow")
+  hawkeyeSBow.activatedAbilities[0]!
+
+-- Equip is sorcery-speed only (CR 702.6a).
+#guard
+  let g := applyIdle (passBoth (skipTo afterDraw .end 80))
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 1
+  !g.asSorcery? ⟨0⟩ &&
+    !g.canActivate ⟨0⟩ (namedPermanent g "Hawkeye's Bow")
+      hawkeyeSBow.activatedAbilities[0]!
 
 end Mtg.Engine.Tests
 

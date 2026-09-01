@@ -136,7 +136,7 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw s!"{o.name} is not an artifact you control"
     if o.status.tapped then
       throw s!"{o.name} is already tapped"
-    g := g.mapObjectStatus o (fun s => { s with tapped := true })
+    g := g.becomeTapped o
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
 
 /-- True when a boast ability of `o` may be activated (MSH / CR 702.111). -/
