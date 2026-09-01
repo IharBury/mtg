@@ -112,30 +112,68 @@ instance : ToString Keywords where
 
 end Keywords
 
-/- Singleton keyword values. Named separately from `Keywords` so they do not
-clash with the structure fields of the same name. Combine with `Keywords.merge`. -/
+/-- One modeled keyword ability (CR 702). Coerces to a `Keywords` singleton
+so existing `keywords := Keyword.lifelink` call sites keep working. -/
+inductive Keyword where
+  | flash
+  | haste
+  | vigilance
+  | flying
+  | cantBeBlocked
+  | menace
+  | hexproof
+  | indestructible
+  | reach
+  | trample
+  | deathtouch
+  | defender
+  | lifelink
+  | firstStrike
+  | islandwalk
+  | storied
+  | doubleStrike
+  | prowess
+  | ascend
+  | shadow
+  | changeling
+deriving DecidableEq, Repr, Inhabited, BEq
+
 namespace Keyword
-def flash : Keywords := { Keywords.none with flash := true }
-def haste : Keywords := { Keywords.none with haste := true }
-def vigilance : Keywords := { Keywords.none with vigilance := true }
-def flying : Keywords := { Keywords.none with flying := true }
-def cantBeBlocked : Keywords := { Keywords.none with cantBeBlocked := true }
-def menace : Keywords := { Keywords.none with menace := true }
-def hexproof : Keywords := { Keywords.none with hexproof := true }
-def indestructible : Keywords := { Keywords.none with indestructible := true }
-def reach : Keywords := { Keywords.none with reach := true }
-def trample : Keywords := { Keywords.none with trample := true }
-def deathtouch : Keywords := { Keywords.none with deathtouch := true }
-def defender : Keywords := { Keywords.none with defender := true }
-def lifelink : Keywords := { Keywords.none with lifelink := true }
-def firstStrike : Keywords := { Keywords.none with firstStrike := true }
-def islandwalk : Keywords := { Keywords.none with islandwalk := true }
-def storied : Keywords := { Keywords.none with storied := true }
-def doubleStrike : Keywords := { Keywords.none with doubleStrike := true }
-def prowess : Keywords := { Keywords.none with prowess := true }
-def ascend : Keywords := { Keywords.none with ascend := true }
-def shadow : Keywords := { Keywords.none with shadow := true }
-def changeling : Keywords := { Keywords.none with changeling := true }
+
+/-- Singleton `Keywords` value for this keyword. -/
+def toKeywords : Keyword → Keywords
+  | .flash => { Keywords.none with flash := true }
+  | .haste => { Keywords.none with haste := true }
+  | .vigilance => { Keywords.none with vigilance := true }
+  | .flying => { Keywords.none with flying := true }
+  | .cantBeBlocked => { Keywords.none with cantBeBlocked := true }
+  | .menace => { Keywords.none with menace := true }
+  | .hexproof => { Keywords.none with hexproof := true }
+  | .indestructible => { Keywords.none with indestructible := true }
+  | .reach => { Keywords.none with reach := true }
+  | .trample => { Keywords.none with trample := true }
+  | .deathtouch => { Keywords.none with deathtouch := true }
+  | .defender => { Keywords.none with defender := true }
+  | .lifelink => { Keywords.none with lifelink := true }
+  | .firstStrike => { Keywords.none with firstStrike := true }
+  | .islandwalk => { Keywords.none with islandwalk := true }
+  | .storied => { Keywords.none with storied := true }
+  | .doubleStrike => { Keywords.none with doubleStrike := true }
+  | .prowess => { Keywords.none with prowess := true }
+  | .ascend => { Keywords.none with ascend := true }
+  | .shadow => { Keywords.none with shadow := true }
+  | .changeling => { Keywords.none with changeling := true }
+
+/-- Union of two single keywords. -/
+def merge (a b : Keyword) : Keywords :=
+  a.toKeywords.merge b.toKeywords
+
+instance : Coe Keyword Keywords where
+  coe := toKeywords
+
+instance : ToString Keyword where
+  toString k := toString k.toKeywords
+
 end Keyword
 
 end Mtg.Engine

@@ -32,30 +32,53 @@ end ManaType
 inductive ManaSymbol where
   /-- Generic mana in costs, payable with any type (CR 107.4b). -/
   | generic (n : Nat)
-  /-- One mana of a specific color (CR 107.4a). -/
+  /-- One mana of a specific color (CR 107.4a). `mono` is the same constructor. -/
   | colored (color : Color)
   /-- The colorless mana symbol `{C}` (CR 107.4c). -/
   | colorless
   /-- A monocolored hybrid symbol `{A/B}` (CR 107.4e). Payable with either color. -/
   | hybrid (a b : Color)
+  /-- Monocolored hybrid `{2/W}` (CR 107.4e). Payable with the color or two mana. -/
+  | monoOrDouble (color : Color)
+  /-- Hybrid `{C/W}` (CR 107.4e). Payable with the color or `{C}`. -/
+  | monoOrColorless (color : Color)
+  /-- Phyrexian mana `{W/P}` (CR 107.4f). Payable with the color or 2 life. -/
+  | phyrexianMono (color : Color)
+  /-- Phyrexian generic `{P}` (CR 107.4f). Payable with one mana or 2 life. -/
+  | phyrexianGeneric
+  /-- Phyrexian hybrid `{W/U/P}` (CR 107.4f). -/
+  | phyrexianHybrid (a b : Color)
   /-- The variable symbol `{X}` (CR 107.3). Treated as 0 off the stack (CR 107.3g). -/
   | x
+  /-- The snow mana symbol `{S}` (CR 107.4h). -/
+  | snow
 deriving DecidableEq, Repr, Inhabited
 
 namespace ManaSymbol
+
+/-- One mana of a specific color (CR 107.4a). Alias of `colored`. -/
+abbrev mono := colored
 
 def toNotation : ManaSymbol → String
   | .generic n => s!"\{{n}}"
   | .colored c => s!"\{{c.letter}}"
   | .colorless => "{C}"
   | .hybrid a b => s!"\{{a.letter}/{b.letter}}"
+  | .monoOrDouble c => s!"\{2/{c.letter}}"
+  | .monoOrColorless c => s!"\{C/{c.letter}}"
+  | .phyrexianMono c => s!"\{{c.letter}/P}"
+  | .phyrexianGeneric => "{P}"
+  | .phyrexianHybrid a b => s!"\{{a.letter}/{b.letter}/P}"
   | .x => "{X}"
+  | .snow => "{S}"
 
 /-- Color contributed by this symbol to an object’s color (CR 202.2). -/
 def colorContribution : ManaSymbol → ColorSet
-  | .colored c => ColorSet.singleton c
-  | .hybrid a b => ColorSet.singleton a |>.union (ColorSet.singleton b)
-  | .generic _ | .colorless | .x => ColorSet.empty
+  | .colored c | .monoOrDouble c | .monoOrColorless c | .phyrexianMono c =>
+    ColorSet.singleton c
+  | .hybrid a b | .phyrexianHybrid a b =>
+    ColorSet.singleton a |>.union (ColorSet.singleton b)
+  | .generic _ | .colorless | .phyrexianGeneric | .x | .snow => ColorSet.empty
 
 instance : ToString ManaSymbol where
   toString := toNotation
@@ -103,15 +126,20 @@ def ofGenericAndHybrids (n : Nat) (a b : Color) (count : Nat := 1) : ManaCost :=
   if n == 0 then { symbols := hybrids }
   else { symbols := #[.generic n] ++ hybrids }
 
+/-- A list of printed symbols, as in a `TraditionalCardDefinition`. -/
+instance : Coe (List ManaSymbol) ManaCost where
+  coe xs := { symbols := xs.toArray }
+
 /-- Mana value is the total amount of mana in a mana cost (CR 202.3). `{X}` is 0. -/
 def manaValue (cost : ManaCost) : Nat :=
   cost.symbols.foldl
     (fun acc s =>
       match s with
       | .generic n => acc + n
-      | .colored _ => acc + 1
-      | .colorless => acc + 1
-      | .hybrid _ _ => acc + 1
+      | .colored _ | .colorless | .hybrid _ _ | .monoOrColorless _
+      | .phyrexianMono _ | .phyrexianGeneric | .phyrexianHybrid _ _ | .snow =>
+        acc + 1
+      | .monoOrDouble _ => acc + 2
       | .x => acc)
     0
 
@@ -123,7 +151,9 @@ def includesManaPayment (cost : ManaCost) : Bool :=
 def containsX (cost : ManaCost) : Bool :=
   cost.symbols.any (fun
     | .x => true
-    | _ => false)
+    | .generic _ | .colored _ | .colorless | .hybrid _ _ | .monoOrDouble _
+    | .monoOrColorless _ | .phyrexianMono _ | .phyrexianGeneric
+    | .phyrexianHybrid _ _ | .snow => false)
 
 /-- Replace each `{X}` with `{x}` generic mana. `{X}` chosen as 0 is dropped
 (CR 107.3a / 107.3c). -/
@@ -131,7 +161,9 @@ def substituteX (cost : ManaCost) (x : Nat) : ManaCost :=
   { symbols := cost.symbols.foldl (fun acc s =>
       match s with
       | .x => if x == 0 then acc else acc.push (.generic x)
-      | _ => acc.push s) (#[] : Array ManaSymbol) }
+      | .generic _ | .colored _ | .colorless | .hybrid _ _ | .monoOrDouble _
+      | .monoOrColorless _ | .phyrexianMono _ | .phyrexianGeneric
+      | .phyrexianHybrid _ _ | .snow => acc.push s) (#[] : Array ManaSymbol) }
 
 /-- How many dedicated `{C}` mana symbols of color `c` appear in this cost.
 Hybrid symbols are not counted; use `symbolsIncludingColor` for Zemo's
@@ -141,7 +173,9 @@ def coloredCount (cost : ManaCost) (c : Color) : Nat :=
     (fun n s =>
       match s with
       | .colored d => if d == c then n + 1 else n
-      | .generic _ | .colorless | .hybrid _ _ | .x => n)
+      | .generic _ | .colorless | .hybrid _ _ | .monoOrDouble _
+      | .monoOrColorless _ | .phyrexianMono _ | .phyrexianGeneric
+      | .phyrexianHybrid _ _ | .x | .snow => n)
     0
 
 /-- How many mana symbols include color `c`, counting `{c}` and `{c/x}`
@@ -150,9 +184,11 @@ def symbolsIncludingColor (cost : ManaCost) (c : Color) : Nat :=
   cost.symbols.foldl
     (fun n s =>
       match s with
-      | .colored d => if d == c then n + 1 else n
-      | .hybrid a b => if a == c || b == c then n + 1 else n
-      | .generic _ | .colorless | .x => n)
+      | .colored d | .monoOrDouble d | .monoOrColorless d | .phyrexianMono d =>
+        if d == c then n + 1 else n
+      | .hybrid a b | .phyrexianHybrid a b =>
+        if a == c || b == c then n + 1 else n
+      | .generic _ | .colorless | .phyrexianGeneric | .x | .snow => n)
     0
 
 /-- Color of an object from the colored mana symbols in its mana cost (CR 202.2). -/
@@ -298,6 +334,12 @@ instance : BEq ManaCost where
 #guard toString (ofHybrid .black .green) == "{B/G}"
 #guard (ofGenericAndHybrids 3 .black .green 2).manaValue == 5
 #guard (ofGenericAndHybrids 3 .black .green 2).colors.isColorPair
+#guard toString (ManaSymbol.mono .white) == "{W}"
+#guard ({ symbols := #[.mono .white] } : ManaCost) == ofColor .white
+#guard toString ({ symbols := #[.monoOrDouble .white] } : ManaCost) == "{2/W}"
+#guard ({ symbols := #[.monoOrDouble .white] } : ManaCost).manaValue == 2
+#guard toString ({ symbols := #[.phyrexianMono .green] } : ManaCost) == "{G/P}"
+#guard toString ({ symbols := #[.snow] } : ManaCost) == "{S}"
 
 end ManaCost
 
@@ -595,31 +637,52 @@ def pay? (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := false)
     -- Specific symbols first so leftover mana of other types can pay generic
     -- (e.g. `{U}×1 {R}×1` pays `{1}{U}`). Printed order would spend `{U}` on
     -- `{1}` via `spendAny?` and then fail the `{U}`.
+    let spend (p : ManaPool) (t : ManaType) : Option ManaPool :=
+      p.spendOne? t allowElfRestricted allowInstRestricted
+        allowHeroRestricted allowVillainRestricted allowCantNonartifact
+        allowCreatureRestricted
+    let spendAny (p : ManaPool) : Option ManaPool :=
+      p.spendAny? allowElfRestricted allowInstRestricted
+        allowHeroRestricted allowVillainRestricted allowCantNonartifact
+        allowCreatureRestricted
     for s in cost.symbols do
       match s with
-      | .colored c =>
-        match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+      | .colored c | .phyrexianMono c =>
+        match spend pool (.colored c) with
         | some p' => pool := p'
         | none => return none
       | .colorless =>
-        match pool.spendOne? .colorless allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+        match spend pool .colorless with
         | some p' => pool := p'
         | none => return none
-      | .hybrid a b =>
-        match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+      | .hybrid a b | .phyrexianHybrid a b =>
+        match spend pool (.colored a) with
         | some p' => pool := p'
         | none =>
-          match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted
-              allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+          match spend pool (.colored b) with
           | some p' => pool := p'
           | none => return none
+      | .monoOrColorless c =>
+        match spend pool (.colored c) with
+        | some p' => pool := p'
+        | none =>
+          match spend pool .colorless with
+          | some p' => pool := p'
+          | none => return none
+      | .monoOrDouble c =>
+        match spend pool (.colored c) with
+        | some p' => pool := p'
+        | none =>
+          match spendAny pool with
+          | none => return none
+          | some p' =>
+            match spendAny p' with
+            | some p'' => pool := p''
+            | none => return none
+      | .phyrexianGeneric | .snow =>
+        match spendAny pool with
+        | some p' => pool := p'
+        | none => return none
       | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
     for s in cost.symbols do
       match s with
@@ -654,39 +717,72 @@ def coveredMana (p : ManaPool) (cost : ManaCost) (allowElfRestricted : Bool := f
     let mut paid := 0
     -- Match `pay?`: cover colored/colorless/hybrid first so leftover mana
     -- still counts toward generic.
+    let spend (p : ManaPool) (t : ManaType) : Option ManaPool :=
+      p.spendOne? t allowElfRestricted allowInstRestricted
+        allowHeroRestricted allowVillainRestricted allowCantNonartifact
+        allowCreatureRestricted
+    let spendAny (p : ManaPool) : Option ManaPool :=
+      p.spendAny? allowElfRestricted allowInstRestricted
+        allowHeroRestricted allowVillainRestricted allowCantNonartifact
+        allowCreatureRestricted
     for s in cost.symbols do
       match s with
-      | .colored c =>
-        match pool.spendOne? (.colored c) allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+      | .colored c | .phyrexianMono c =>
+        match spend pool (.colored c) with
         | some p' =>
           pool := p'
           paid := paid + 1
         | none => pure ()
       | .colorless =>
-        match pool.spendOne? .colorless allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+        match spend pool .colorless with
         | some p' =>
           pool := p'
           paid := paid + 1
         | none => pure ()
-      | .hybrid a b =>
-        match pool.spendOne? (.colored a) allowElfRestricted allowInstRestricted
-            allowHeroRestricted allowVillainRestricted allowCantNonartifact
-            allowCreatureRestricted with
+      | .hybrid a b | .phyrexianHybrid a b =>
+        match spend pool (.colored a) with
         | some p' =>
           pool := p'
           paid := paid + 1
         | none =>
-          match pool.spendOne? (.colored b) allowElfRestricted allowInstRestricted
-              allowHeroRestricted allowVillainRestricted allowCantNonartifact
-              allowCreatureRestricted with
+          match spend pool (.colored b) with
           | some p' =>
             pool := p'
             paid := paid + 1
           | none => pure ()
+      | .monoOrColorless c =>
+        match spend pool (.colored c) with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none =>
+          match spend pool .colorless with
+          | some p' =>
+            pool := p'
+            paid := paid + 1
+          | none => pure ()
+      | .monoOrDouble c =>
+        match spend pool (.colored c) with
+        | some p' =>
+          pool := p'
+          paid := paid + 2
+        | none =>
+          match spendAny pool with
+          | none => pure ()
+          | some p' =>
+            match spendAny p' with
+            | some p'' =>
+              pool := p''
+              paid := paid + 2
+            | none =>
+              pool := p'
+              paid := paid + 1
+      | .phyrexianGeneric | .snow =>
+        match spendAny pool with
+        | some p' =>
+          pool := p'
+          paid := paid + 1
+        | none => pure ()
       | .generic _ | .x => pure ()
     for s in cost.symbols do
       match s with

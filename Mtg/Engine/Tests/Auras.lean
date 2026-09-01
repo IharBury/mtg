@@ -327,8 +327,8 @@ def afterHostLeaves : Game :=
 /- Legend rule (CR 704.5j). -/
 
 def twoBofurs : Game :=
-  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
-    bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
 
 def twoBofursSBA : Game := twoBofurs.checkSBA
 
@@ -361,8 +361,8 @@ def keptOlderBofur : Game :=
 
 /-- Each player may control a copy of the same legend. -/
 def eachControlsBofur : Game :=
-  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
-    bofurReliableGuardian ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
+    bofurReliableGuardianCard ⟨1⟩ ⟨1⟩
 
 #guard (eachControlsBofur.checkSBA).pending == .none
 #guard (eachControlsBofur.checkSBA.battlefield.filter
@@ -370,7 +370,7 @@ def eachControlsBofur : Game :=
 
 /-- Different legendary names do not conflict. -/
 def twoDifferentLegends : Game :=
-  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨0⟩)
+  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨0⟩)
     landrovalHorizonWitness ⟨0⟩ ⟨0⟩
 
 #guard (twoDifferentLegends.checkSBA).pending == .none
@@ -378,7 +378,7 @@ def twoDifferentLegends : Game :=
 
 /-- Three copies: keep one, two go to the graveyard. -/
 def threeBofursSBA : Game :=
-  (addPermanent twoBofurs bofurReliableGuardian ⟨0⟩ ⟨0⟩).checkSBA
+  (addPermanent twoBofurs bofurReliableGuardianCard ⟨0⟩ ⟨0⟩).checkSBA
 
 def keptOneOfThree : Game :=
   match threeBofursSBA.pending with
@@ -408,8 +408,8 @@ def twoIndestructibleLegends : Game :=
 
 /-- The rest go to their owners' graveyards, not the controller's. -/
 def nissaControlsTwoBofurs : Game :=
-  addPermanent (addPermanent started bofurReliableGuardian ⟨0⟩ ⟨1⟩)
-    bofurReliableGuardian ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started bofurReliableGuardianCard ⟨0⟩ ⟨1⟩)
+    bofurReliableGuardianCard ⟨1⟩ ⟨1⟩
 
 def nissaKeepsOwnBofur : Game :=
   let g := nissaControlsTwoBofurs.checkSBA

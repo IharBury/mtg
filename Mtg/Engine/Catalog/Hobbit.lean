@@ -10,6 +10,10 @@ reconstruct it. `CardDef.matchesOracleText` checks that mechanically.
 `hobbitCards` lists every unique card in the set, including Journey basic
 lands that are also in the core catalog.
 
+New cards may be written as a `TraditionalCardDefinition` (a list of
+`CardPart`s) and compiled with `toCardDef`. Bofur, Reliable Guardian is
+the first card in that style.
+
 Source: https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 -/
 
@@ -17,13 +21,39 @@ namespace Mtg.Engine.Catalog
 
 open Mtg.Engine
 
-def bofurReliableGuardian : CardDef :=
-  legendaryCreature "Bofur, Reliable Guardian" (ManaCost.ofColor .white) #["Dwarf", "Scout"] 1 1
+def bofurReliableGuardian : TraditionalCardDefinition := .card [
+  .name "Bofur, Reliable Guardian",
+  .manaCost [.mono .white],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dwarf,
+  .subtype .scout,
+  .power 1,
+  .toughness 1,
+  .ability (.keyword .lifelink),
+  .alternative [
+    .name "Concerted Care",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .action (
+      .targeted
+        ({filter := .and
+           (.or
+             (.cardType .artifact)
+             (.cardType .creature))
+           .sameController})
+        (.continuous
+          [
+            .gainAbility (.keyword .hexproof),
+            .gainAbility (.keyword .indestructible)]
+          .endOfTurn))
+  ]
+]
+
+def bofurReliableGuardianCard : CardDef :=
+  bofurReliableGuardian.toCardDef
     (oracleText := "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.lifelink)
-    (adventure := some (adventure "Concerted Care" (ManaCost.ofGenericAndColor 1 .white)
-      "Target artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.grantHexproofIndestructible) .instant))
 
 def dwarvenProvisioner : CardDef :=
   creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
@@ -1229,7 +1259,7 @@ def hobbitCards : Array CardDef := #[
   swamp,
   mountain,
   forest,
-  bofurReliableGuardian,
+  bofurReliableGuardianCard,
   dwarvenProvisioner,
   velvetwingButterflies,
   magnificentEnd,
@@ -1419,7 +1449,24 @@ def hobbitCards : Array CardDef := #[
   wizardSStaff
 ]
 
-#guard bofurReliableGuardian.colors.isMonocolored
+#guard bofurReliableGuardianCard.colors.isMonocolored
+#guard bofurReliableGuardianCard.isCreature
+#guard bofurReliableGuardianCard.hasSupertype .legendary
+#guard bofurReliableGuardianCard.hasSubtype "Dwarf"
+#guard bofurReliableGuardianCard.hasSubtype "Scout"
+#guard bofurReliableGuardianCard.power == some 1
+#guard bofurReliableGuardianCard.toughness == some 1
+#guard bofurReliableGuardianCard.keywords.lifelink
+#guard bofurReliableGuardianCard.hasAdventure
+#guard
+  match bofurReliableGuardianCard.adventure with
+  | some adv =>
+    adv.name == "Concerted Care" &&
+      adv.manaCost == (ManaCost.ofGenericAndColor 1 .white) &&
+      adv.types == #[.instant] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some Effect.grantHexproofIndestructible
+  | none => false
 #guard (attercop.summary.splitOn "Landfall").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
 #guard attercop.keywords.reach
@@ -1598,8 +1645,8 @@ def hobbitCards : Array CardDef := #[
 #guard (beornReluctantHost.summary.splitOn "Till and Tend {1}{G}").length > 1
 #guard (beornReluctantHost.summary.splitOn "trample").length > 1
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
-#guard (bofurReliableGuardian.oracleText.splitOn "//ADV//").length > 1
-#guard (bofurReliableGuardian.oracleText.splitOn "Concerted Care {1}{W}").length > 1
+#guard (bofurReliableGuardianCard.oracleText.splitOn "//ADV//").length > 1
+#guard (bofurReliableGuardianCard.oracleText.splitOn "Concerted Care {1}{W}").length > 1
 #guard (velvetwingButterflies.oracleText.splitOn "//ADV//").length > 1
 #guard (velvetwingButterflies.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
 #guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1

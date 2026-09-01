@@ -71,6 +71,9 @@ inductive Supertype where
   | world
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Printed-card alias for `Supertype` (CR 205.4). -/
+abbrev CardSupertype := Supertype
+
 namespace Supertype
 
 def englishName : Supertype → String
@@ -87,6 +90,31 @@ end Supertype
 
 /-- Subtype as printed on the type line. Basic land types are the five listed in CR 305.6. -/
 abbrev Subtype := String
+
+/-- Named subtypes used when composing a `TraditionalCardDefinition`.
+Unknown or catalog-only types use `named`. -/
+inductive CardSubtype where
+  | adventure
+  | dwarf
+  | scout
+  | named (s : String)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace CardSubtype
+
+def toString : CardSubtype → String
+  | .adventure => "Adventure"
+  | .dwarf => "Dwarf"
+  | .scout => "Scout"
+  | .named s => s
+
+instance : ToString CardSubtype where
+  toString := CardSubtype.toString
+
+instance : Coe CardSubtype Subtype where
+  coe := toString
+
+end CardSubtype
 
 /-- The five basic land types (CR 305.6). -/
 def basicLandTypes : List Subtype :=

@@ -214,10 +214,10 @@ def meagerMealNoCreatureAfterSkip : Game :=
     (g.player ⟨0⟩).life == 22 &&
     g.log.any (fun s => mentions s "Chandra gains 2 life")
 
-#guard Keyword.firstStrike.firstStrike
-#guard Keyword.islandwalk.islandwalk
+#guard (Keyword.firstStrike : Keywords).firstStrike
+#guard (Keyword.islandwalk : Keywords).islandwalk
 #guard supportedCardsMatchOracle
-#guard bofurReliableGuardian.matchesOracleText
+#guard bofurReliableGuardianCard.matchesOracleText
 #guard mentorOfTheMeek.matchesOracleText
 #guard fiendHunter.matchesOracleText
 #guard dawnOfANewAge.matchesOracleText
