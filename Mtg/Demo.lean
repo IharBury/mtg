@@ -4185,7 +4185,7 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
     | .ok (g', cmds) =>
       cmds == #["pass"] &&
         !cmds.contains "my turn" &&
-        g'.step == .draw &&
+        g'.step == .precombatMain &&
         g'.turnNumber == 2 &&
         g'.activePlayer == ⟨1⟩ &&
         g'.hasPriority ⟨1⟩ &&
@@ -4201,7 +4201,7 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
     | .ok (g', cmds) =>
       cmds == #["pass"] &&
         !cmds.contains "noattack" &&
-        g'.step == .draw &&
+        g'.step == .precombatMain &&
         g'.turnNumber == 2 &&
         g'.activePlayer == ⟨1⟩ &&
         g'.hasPriority ⟨1⟩
@@ -4578,7 +4578,7 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
     match replayCompleteGame g ["my turn", "concede"] with
     | .ok g' =>
       match g'.result with
-      | some (.won p) => p == ⟨0⟩ && g'.turnNumber == 2 && g'.step == .draw
+      | some (.won p) => p == ⟨0⟩ && g'.turnNumber == 2 && g'.step == .precombatMain
       | _ => false
     | .error _ => false
 
