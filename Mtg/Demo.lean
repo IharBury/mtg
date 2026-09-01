@@ -33,12 +33,14 @@ commands such as `state` and `quit` are omitted. When `--input` and
 accepted console commands are appended. `autopay` is recorded as the individual
 `tap` and `pay` commands it performs. `your turn`, `my turn`, `main phase`,
 and `attack step` keep passing until the named step (or until a player must
-take a non-pass action). Other players' pass-until shortcuts (recorded as
-`pass` sequences) do not interrupt those commands. `ignore` keeps passing
-until your next main phase and is not interrupted at all. Those shortcuts
-are recorded as the individual `pass` commands they perform. `your turn`,
-`my turn`, `main phase`, and `ignore` use `noattack` when declaring
-attackers; `noblock` is used when that is the only legal declaration. `attach <id>` attaches an Equipment
+take a non-pass action). `your turn` only passes for the player who issued
+it; other players may still act. Other players' pass-until shortcuts
+(recorded as `pass` sequences) do not interrupt those commands. `ignore`
+keeps passing until your next main phase and is not interrupted at all.
+Those shortcuts are recorded as the individual `pass` commands they perform.
+`your turn`, `my turn`, `main phase`, and `ignore` use `noattack` when
+declaring attackers; `noblock` is used when that is the only legal
+declaration. `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -88,7 +90,8 @@ Options:
                   (your turn, my turn, main phase, attack step, ignore) are written
                   as the individual pass commands they perform. your turn,
                   my turn, main phase, and ignore use noattack when declaring
-                  attackers. Other players' pass-until shortcuts do not interrupt a pending shortcut;
+                  attackers. your turn only passes for the player who issued it.
+                  Other players' pass-until shortcuts do not interrupt a pending shortcut;
                   ignore is never interrupted
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
@@ -653,7 +656,7 @@ def helpInteractive (controlAll : Bool := false)
   mulligan             Declare a mulligan; taken after all declarations (CR 103.5 / 103.5c)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
-  your turn            Pass until combat of the next turn if that turn is not yours (uses noattack)
+  your turn            Pass until combat of the next turn if that turn is not yours (only you pass; uses noattack)
   my turn              Pass until the main phase of the next turn if that turn is yours (uses noattack)
   main phase           Pass until the next main phase (uses noattack)
   attack step          Pass until the next declare attackers step
@@ -727,6 +730,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
 #guard ((helpInteractive false).splitOn "autopay").length > 1
 #guard ((helpInteractive false).splitOn "your turn").length > 1
+#guard ((helpInteractive false).splitOn "only you pass").length > 1
 #guard ((helpInteractive false).splitOn "my turn").length > 1
 #guard ((helpInteractive false).splitOn "main phase").length > 1
 #guard ((helpInteractive false).splitOn "attack step").length > 1
@@ -750,6 +754,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "Pass-until shortcuts").length > 1
 #guard (usage.splitOn "individual pass commands they perform").length > 1
 #guard (usage.splitOn "do not interrupt a pending shortcut").length > 1
+#guard (usage.splitOn "only passes for the player who issued it").length > 1
 #guard (usage.splitOn "ignore is never interrupted").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
@@ -3038,18 +3043,29 @@ def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
   | .named t => reachedPassUntil g goal.startTurn goal.startStep t
   | .ignore => reachedIgnore g goal
 
-/-- `ignore` only issues commands as the issuer; other players may still act. -/
-def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
+/-- Only issue pass-until commands as `issuer`; other players may still act. -/
+def issuerPassUntilCommand? (g : Game) (issuer : PlayerId)
+    (forceEmptyCombat := false) (alwaysNoAttack := false) : Option String :=
   match g.actor with
   | some p =>
-    if p == issuer then passUntilCommand? g forceEmptyCombat (alwaysNoAttack := true) else none
+    if p == issuer then
+      passUntilCommand? g forceEmptyCombat (alwaysNoAttack := alwaysNoAttack)
+    else none
   | none => none
+
+/-- `ignore` only issues commands as the issuer; other players may still act. -/
+def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
+  issuerPassUntilCommand? g issuer forceEmptyCombat (alwaysNoAttack := true)
 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal)
     (forceEmptyCombat := false) : Option String :=
   match goal.kind with
   | .named t =>
-    passUntilCommand? g forceEmptyCombat (alwaysNoAttack := passUntilSkipsAttackers t)
+    if t == .nextTurnCombat then
+      issuerPassUntilCommand? g goal.issuer forceEmptyCombat
+        (alwaysNoAttack := passUntilSkipsAttackers t)
+    else
+      passUntilCommand? g forceEmptyCombat (alwaysNoAttack := passUntilSkipsAttackers t)
   | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
 
 /-- Error when `passUntilFuel` runs out before this goal is reached. -/
@@ -3059,9 +3075,9 @@ def PassUntilKind.fuelError : PassUntilKind → String
 
 /-- Keep issuing the goal's commands (`pass`, and empty combat declarations
 where the goal allows them) until the goal is reached, the game ends, or no
-command can be issued: a named goal with nothing done yet errors because a
-player must take a non-pass action, while `ignore` stops quietly so another
-player can act. -/
+command can be issued. `your turn` and `ignore` only issue commands as the
+issuer, so another player can act. A named goal with nothing done yet errors
+because a player must take a non-pass action; `ignore` stops quietly. -/
 def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
     (cmds : Array String) (forceEmptyCombat := false) :
     Except String PassUntilResult :=
@@ -3093,7 +3109,7 @@ def applyPassUntil (g : Game) (p : PlayerId) (target : PassUntilTarget)
     forceEmptyCombat
 
 /-- `your turn`: pass until combat of the next turn, when that turn is not
-the issuer's. -/
+the issuer's. Only the issuer passes; other players may still act. -/
 def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String)
     (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
@@ -3287,6 +3303,12 @@ def resumePassUntilGoal (g : Game) (goal : PassUntilGoal) :
 #guard passUntilGoalCommand? Tests.readyToDeclareAttackers
     (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextMain)) ==
   some "noattack"
+#guard passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextTurnCombat)) ==
+  some "noattack"
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩
+      (.named .nextTurnCombat))).isNone
 #guard passUntilGoalCommand? Tests.readyToDeclareAttackers
     (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ .ignore) ==
   some "noattack"
@@ -4054,11 +4076,12 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.readyToDeclareAttackers "your" ["turn"] "your turn" with
   | .ok (g', cmds) =>
-    cmds.contains "noattack" &&
-      g'.step == .beginningOfCombat &&
-      g'.turnNumber == 2 &&
-      g'.activePlayer == ⟨1⟩ &&
-      g'.hasPriority ⟨1⟩
+    cmds == #["noattack", "pass"] &&
+      g'.step == .declareAttackers &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.readyToDeclareAttackers g' ⟨0⟩ "your" ["turn"] #[]).size == 1
   | .error _ => false
 
 #guard
@@ -4130,12 +4153,13 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.afterDraw "your" ["turn"] "your turn" with
   | .ok (g', cmds) =>
-    g'.step == .beginningOfCombat &&
-      g'.turnNumber == 2 &&
-      g'.activePlayer == ⟨1⟩ &&
-      cmds.all (fun c => c == "pass" || c == "noattack") &&
+    cmds == #["pass"] &&
       !cmds.contains "your turn" &&
-      g'.hasPriority ⟨1⟩
+      g'.step == .precombatMain &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "your" ["turn"] #[]).size == 1
   | .error _ => false
 
 #guard
@@ -4487,6 +4511,26 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
   match replayCompleteGame Tests.started ["not-a-command"] with
   | .error msg => msg == "Invalid command `not-a-command`: Unknown command: not-a-command"
   | .ok _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["your turn", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) =>
+      p == ⟨0⟩ && g'.log.any (fun s => Tests.mentions s "Nissa concedes") &&
+        !g'.log.any (fun s => Tests.mentions s "beginning of combat")
+    | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["your turn", "pass", "concede"] with
+  | .ok g' =>
+    g'.over &&
+      g'.log.any (fun s => Tests.mentions s "beginning of combat") &&
+      match g'.result with
+      | some (.won p) => p == ⟨0⟩
+      | _ => false
+  | .error _ => false
 
 #guard
   match replayCompleteGame Tests.afterDraw ["ignore", "concede"] with

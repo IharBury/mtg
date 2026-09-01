@@ -90,12 +90,13 @@ commands and commands that do not change the game (`state`, `quit`, `help`,
 `visible`) are omitted. `autopay` is written as the individual `tap` and `pay`
 commands it performs. `your turn`, `my turn`, `main phase`, and `attack step`
 keep passing until the named step (or until a player must take a non-pass
-action). Other players' pass-until shortcuts (written as `pass` sequences)
-do not interrupt those commands. `ignore` keeps passing until your next main
-phase and is not interrupted at all. Those shortcuts are written as the
-individual `pass` commands they perform. `your turn`, `my turn`, `main phase`,
-and `ignore` use `noattack` when declaring attackers; `noblock` is used when
-that is the only legal declaration. When `--input` and `--output` are the same file, the
+action). `your turn` only passes for the player who issued it; other players
+may still act. Other players' pass-until shortcuts (written as `pass`
+sequences) do not interrupt those commands. `ignore` keeps passing until
+your next main phase and is not interrupted at all. Those shortcuts are
+written as the individual `pass` commands they perform. `your turn`,
+`my turn`, `main phase`, and `ignore` use `noattack` when declaring
+attackers; `noblock` is used when that is the only legal declaration. When `--input` and `--output` are the same file, the
 existing flags and commands are replayed and new accepted console commands
 are appended. After those commands are exhausted (or when no input file is
 given), a cost with only one legal payment is paid automatically; the demo
@@ -214,7 +215,8 @@ The first slice of the engine models the two-player game:
   mana abilities and pay a locked-in cost (recorded as `tap` and `pay`),
   pass-until shortcuts (`your turn`, `my turn`, `main phase`, `attack step`,
   `ignore`) recorded as individual `pass` commands (`your turn`, `my turn`,
-  `main phase`, and `ignore` use `noattack` when declaring attackers) — other
-  players' pass shortcuts do not interrupt a pending shortcut, and `ignore`
-  is never interrupted — and
+  `main phase`, and `ignore` use `noattack` when declaring attackers; `your
+  turn` only passes for the player who issued it) — other players' pass
+  shortcuts do not interrupt a pending shortcut, and `ignore` is never
+  interrupted — and
   `attach` to attach an Equipment when asked (e.g. Vow to Erebor)
