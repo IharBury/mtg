@@ -758,8 +758,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .mill n =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.mill pid n)
-  | .drawThenDiscard n =>
-    g.drawThenBeginDiscard controller n
   | .addAnyColor =>
     let g := g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) })

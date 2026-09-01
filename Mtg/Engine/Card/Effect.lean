@@ -121,7 +121,6 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .addMana types => .addMana types
   | .sequence rs =>
     match rs with
-    | [.draw n, .discard 1] => .drawThenDiscard n
     | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
     | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
     | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
@@ -185,7 +184,6 @@ def ofAbility : AbilityResolution → Resolution
   | .onSource a => .onSource a
   | .gainLife n => .gainLife n
   | .recruit => .recruit
-  | .drawThenDiscard n => .sequence [.draw n, .discard 1]
   | .createTokens kind n => .createTokens kind n
   | .addMana types => .addMana types
   | .plusOneAndDraw plus cards =>
