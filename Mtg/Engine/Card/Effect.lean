@@ -122,13 +122,8 @@ def abilityResolution (e : Effect) : AbilityResolution :=
   | .recruit => .recruit
   | .createTokens kind n _ => .createTokens kind n
   | .addMana types => .addMana types
-  | .sequence rs =>
-    match rs with
-    | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
-    | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
-    | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
-    | _ => .draw 0
-  | .amassGoblins _ | .discard _ | .shuffleSource | .spell _ | .trigger _ =>
+  | .sequence _ | .amassGoblins _ | .discard _ | .shuffleSource | .spell _
+  | .trigger _ =>
     .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
@@ -188,12 +183,6 @@ def ofAbility : AbilityResolution → Resolution
   | .recruit => .recruit
   | .createTokens kind n => .createTokens kind n
   | .addMana types => .addMana types
-  | .plusOneAndDraw plus cards =>
-    .sequence [.onSource (.plusOne plus), .draw cards]
-  | .destroyUpToOneThenPlusOne =>
-    .sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
-  | .plusOneAndCreateTokens n kind =>
-    .sequence [.onSource (.plusOne n), .createTokens kind 1]
   | r => .ability r
 
 /-- Store a shared trigger on `Resolution`. Timing stays on the nested

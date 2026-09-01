@@ -705,7 +705,9 @@ def plusOneAndIndestructibleCounter : Effect :=
   mkAbility ({}) (.plusOneAndIndestructibleCounter)
 
 def plusOneAndDraw (plus cards : Nat) : Effect :=
-  mkAbility ({}) (.plusOneAndDraw plus cards)
+  { resolution := .sequence [.onSource (.plusOne plus), .draw cards]
+    phrase :=
+      s!"Put {plusOnePlusOneCountersPhrase plus} on this and draw {cardPhrase cards}" }
 
 def plusOneAndExtraTurn : Effect :=
   mkAbility ({}) (.plusOneAndExtraTurn)
@@ -775,9 +777,12 @@ def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
   mkAbility ({}) (.createTappedTokens kind n)
 
 def destroyUpToOneThenPlusOne : Effect :=
-  mkAbility (.of .artifactOrEnchantment) (.destroyUpToOneThenPlusOne)
-    (castKind := .destroyColorless)
-    (allowsZeroTargets := true)
+  { targeting := .of .artifactOrEnchantment
+    allowsZeroTargets := true
+    abilityCastKind := .destroyColorless
+    resolution := .sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+    phrase :=
+      "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this" }
 
 def proliferateEachKind : Effect :=
   mkAbility (.of .permanentOrPlayer) (.proliferateEachKind)
@@ -799,13 +804,20 @@ def plusOneThenFightUpToOne : Effect :=
     (allowsZeroTargets := true)
 
 def plusOneAndGrant (k : Keywords) : Effect :=
-  mkAbility ({}) (.plusOneAndGrant k)
+  let joined :=
+    if k.vigilance && k.indestructible && k.haste then
+      "vigilance, indestructible, and haste"
+    else k.joinedAnd
+  { resolution := .sequence [.onSource (.plusOne 1), .onSource (.grantKeywords k)]
+    phrase := s!"Put a +1/+1 counter on this. He gains {joined} until end of turn" }
 
 def plusOneAndCreateTigerGod : Effect :=
   mkAbility ({}) (.plusOneAndCreateTigerGod)
 
 def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
-  mkAbility ({}) (.plusOneAndCreateTokens n kind)
+  { resolution := .sequence [.onSource (.plusOne n), .createTokens kind 1]
+    phrase :=
+      s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenKind.createPhrase kind 1}" }
 
 def plusTwoThenOddEvenDestroy : Effect :=
   mkAbility ({}) (.plusTwoThenOddEvenDestroy)

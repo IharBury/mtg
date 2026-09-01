@@ -81,10 +81,25 @@ namespace CardDef
   "This owner shuffles him into their library and draws 3 cards"
 #guard (Effect.plusOneAndDraw 1 2).resolution ==
   Resolution.sequence [.onSource (.plusOne 1), .draw 2]
+#guard (Effect.plusOneAndDraw 1 2).phrase ==
+  "Put a +1/+1 counter on this and draw 2 cards"
 #guard Effect.destroyUpToOneThenPlusOne.resolution ==
   Resolution.sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+#guard Effect.destroyUpToOneThenPlusOne.phrase ==
+  "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this"
 #guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).resolution ==
   Resolution.sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
+#guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).phrase ==
+  "Put 2 +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
+#guard (Effect.plusOneAndGrant
+    ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)).resolution ==
+  Resolution.sequence
+    [.onSource (.plusOne 1),
+     .onSource (.grantKeywords
+       ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste))]
+#guard (Effect.plusOneAndGrant
+    ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)).phrase ==
+  "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
     [.ability (.creaturesYouControlPump 1 0), .spell (.eachOpponentLosesLife 1)]
@@ -98,7 +113,6 @@ namespace CardDef
   "Elves you control gain menace until end of turn"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .drawLoseLifeThenAmass 2
-#guard (Effect.plusOneAndDraw 1 2).abilityResolution == .plusOneAndDraw 1 2
 #guard Resolution.flatten
     (.sequence [.sequence [.draw 1, .gainLife 1], .amassGoblins 2]) ==
   [.draw 1, .gainLife 1, .amassGoblins 2]

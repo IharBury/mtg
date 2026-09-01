@@ -12709,6 +12709,66 @@ def teamPumpThenOppsLoseNoCreatures : Game :=
       mentions s "until end of turn") &&
     teamPumpThenOppsLoseNoCreatures.log.any (fun s => mentions s "Nissa loses 2 life")
 
+/-- `plusOneAndDraw` applies as +1/+1 on the source, then draw. -/
+def plusOneAndDrawResolved : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ (Effect.plusOneAndDraw 1 2) #[]
+    (some (namedPermanent g "Gray Ogre").id)
+
+#guard
+  (namedPermanent plusOneAndDrawResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
+    (plusOneAndDrawResolved.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 2
+
+/-- `plusOneAndGrant` applies as +1/+1, then grant keywords. -/
+def plusOneAndGrantK : Keywords :=
+  (Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste
+
+def plusOneAndGrantResolved : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ (Effect.plusOneAndGrant plusOneAndGrantK) #[]
+    (some (namedPermanent g "Gray Ogre").id)
+
+#guard
+  (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
+    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.vigilance &&
+    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.indestructible &&
+    (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.untilEotKeywords.haste
+
+/-- `destroyUpToOneThenPlusOne` still plus-ones with no target. -/
+def destroyUpToOneThenPlusOneNoTarget : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ Effect.destroyUpToOneThenPlusOne #[]
+    (some (namedPermanent g "Gray Ogre").id)
+
+#guard
+  (namedPermanent destroyUpToOneThenPlusOneNoTarget "Gray Ogre").status.plusOnePlusOne == 1
+
+/-- `destroyUpToOneThenPlusOne` destroys a legal target, then plus-ones the source. -/
+def destroyUpToOneThenPlusOneSetup : Game :=
+  addPermanent (addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩) foodToken ⟨1⟩ ⟨1⟩
+
+def destroyUpToOneThenPlusOneResolved : Game :=
+  destroyUpToOneThenPlusOneSetup.applyAbilityEffect ⟨0⟩
+    Effect.destroyUpToOneThenPlusOne
+    #[Target.permanent (namedPermanent destroyUpToOneThenPlusOneSetup "Food").id]
+    (some (namedPermanent destroyUpToOneThenPlusOneSetup "Gray Ogre").id)
+
+#guard
+  (namedPermanent destroyUpToOneThenPlusOneResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
+    !destroyUpToOneThenPlusOneResolved.battlefield.any (fun o => o.name == "Food")
+
+/-- `plusOneAndCreateTokens` applies as +1/+1 counters, then create. -/
+def plusOneAndCreateTokensResolved : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ (Effect.plusOneAndCreateTokens 2 .robotVillain22) #[]
+    (some (namedPermanent g "Gray Ogre").id)
+
+#guard
+  (namedPermanent plusOneAndCreateTokensResolved "Gray Ogre").status.plusOnePlusOne == 2 &&
+    plusOneAndCreateTokensResolved.battlefield.any (fun o =>
+      o.name == "Robot Villain" && o.printed.isToken)
+
 /-- `subtypesGainMenace` grants menace only to matching creatures you control. -/
 def subtypesGainMenaceSetup : Game :=
   addPermanent
