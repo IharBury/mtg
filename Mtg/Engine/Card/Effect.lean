@@ -35,6 +35,8 @@ inductive Resolution where
   | addMana (types : Array ManaType)
   /-- Discard `n` cards. -/
   | discard (n : Nat)
+  /-- Owner shuffles the source into their library. -/
+  | shuffleSource
   /-- Apply each resolution in the given list, in order. -/
   | sequence (rs : List Resolution)
   /-- Spell-only resolution leftover. -/
@@ -104,7 +106,8 @@ def spellResolution (e : Effect) : SpellResolution :=
       .createTokensThenTeamPump kind n p t
     | [.onPermanent .destroy, .gainLife n] => .destroyArtifactOrEnchantmentGainLife n
     | _ => .extraLand
-  | .gainLife _ | .recruit | .addMana _ | .discard _ | .ability _ | .trigger _ =>
+  | .gainLife _ | .recruit | .addMana _ | .discard _ | .shuffleSource
+  | .ability _ | .trigger _ =>
     .extraLand
 
 /-- Recover the leftover activated-ability resolution. -/
@@ -127,7 +130,8 @@ def abilityResolution (e : Effect) : AbilityResolution :=
     | [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)] =>
       .creaturesYouControlGetOppsLoseLife p t life
     | _ => .draw 0
-  | .amassGoblins _ | .discard _ | .spell _ | .trigger _ => .draw 0
+  | .amassGoblins _ | .discard _ | .shuffleSource | .spell _ | .trigger _ =>
+    .draw 0
 
 /-- Recover a Saga chapter stored on this effect, if any. -/
 def asChapter? (e : Effect) : Option ChapterResolution :=

@@ -21,13 +21,19 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   else
   match ab.effect.resolution with
   | .sequence rs =>
-    (rs.flatMap Resolution.flatten).foldl (fun g r =>
-      let step : TriggeredAbility :=
-        match ab with
-        | .triggered w _ opts =>
-          .triggered w { ab.effect with resolution := r } opts
-      g.applyTriggeredAbility controller step sourceId targets dividedDamage
-        lastKnownPower lastKnownToughness sourceName) g
+    match rs.flatMap Resolution.flatten with
+    | [.shuffleSource, .draw n] =>
+      g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+    | steps =>
+      steps.foldl (fun g r =>
+        let step : TriggeredAbility :=
+          match ab with
+          | .triggered w _ opts =>
+            .triggered w { ab.effect with resolution := r } opts
+        g.applyTriggeredAbility controller step sourceId targets dividedDamage
+          lastKnownPower lastKnownToughness sourceName) g
+  | .shuffleSource =>
+    g.shuffleSourceIntoLibrary sourceId
   | .draw n => g.draw controller n
   | .scry n => g.beginScry controller n
   | .onPermanent a =>
