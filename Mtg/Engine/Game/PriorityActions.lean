@@ -34,8 +34,21 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     return g.afterWardResolved
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
-/-- Announce whether to pay extra generic mana or sacrifice an artifact or
-creature as an additional cost (CR 601.2b), before targets (CR 601.2c). -/
+/-- Prefer paying extra generic mana when the non-mana additional-cost
+option cannot be paid. -/
+def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Bool :=
+  match g.findObject? prop.spellId with
+  | none => true
+  | some spell =>
+    if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
+      (g.player p).hand.isEmpty
+    else
+      (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+
+/-- Announce whether to pay extra generic mana or the non-mana option
+(sacrifice an artifact or creature, or discard a card) as an additional
+cost (CR 601.2b), before targets (CR 601.2c). -/
 def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
     Except String Game := do
   match g.pending with
@@ -46,13 +59,14 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       | throw "No spell is waiting for an additional cost (CR 601.2b)"
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
-    match spell.printed.additionalCostOrPayGeneric with
-    | none => throw "That spell has no alternative additional cost"
-    | some n =>
+    match spell.printed.additionalCostOrPayGeneric,
+          spell.printed.additionalCostDiscardOrPayGeneric with
+    | some n, _ =>
       if payGeneric then
         let prop := { prop with
           cost := prop.cost.addGeneric n
-          needsSacrificeOther := false }
+          needsSacrificeOther := false
+          needsDiscardCard := false }
         let g := { g with proposedSpell := some prop }
         let g := g.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
@@ -60,11 +74,34 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
       else
         if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
           throw s!"{spell.name} requires sacrificing an artifact or creature"
-        let prop := { prop with needsSacrificeOther := true }
+        let prop := { prop with
+          needsSacrificeOther := true
+          needsDiscardCard := false }
         let g := { g with proposedSpell := some prop }
         let g := g.logMsg
           s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
+    | none, some n =>
+      if payGeneric then
+        let prop := { prop with
+          cost := prop.cost.addGeneric n
+          needsSacrificeOther := false
+          needsDiscardCard := false }
+        let g := { g with proposedSpell := some prop }
+        let g := g.logMsg
+          s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
+        return g.afterAdditionalCostAnnounced
+      else
+        if (g.player p).hand.isEmpty then
+          throw s!"{spell.name} requires discarding a card"
+        let prop := { prop with
+          needsSacrificeOther := false
+          needsDiscardCard := true }
+        let g := { g with proposedSpell := some prop }
+        let g := g.logMsg
+          s!"{(g.player p).name} chooses to discard a card as an additional cost (CR 601.2b)"
+        return g.afterAdditionalCostAnnounced
+    | none, none => throw "That spell has no alternative additional cost"
   | _ => throw "Not time to choose an additional cost (CR 601.2b)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do

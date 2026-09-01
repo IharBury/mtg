@@ -110,7 +110,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g := g.putStackEntry p newId
   let needsMode := face.isModal
   let needsTarget := face.requiresTarget && !needsMode
-  let needsAdditionalCostChoice := face.additionalCostOrPayGeneric.isSome
+  let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker := face.kicker.isSome
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
@@ -173,7 +173,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let g := g.setProposedMode mode
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
-      if spell.printed.additionalCostOrPayGeneric.isSome then
+      if spell.printed.announcesAdditionalCost then
         let g := { g with pending := .chooseAdditionalCost p }
         return g.logMsg s!"{(g.player p).name} must choose an additional cost (CR 601.2b)"
       if effect.requiresTarget then
@@ -224,7 +224,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       let face := spell.printed
       return g.enterProposalWindow p pl prop face.isModal
         (face.requiresTarget && !face.isModal) "CR 601.2b / 700.2"
-        (needsAdditionalCost := face.additionalCostOrPayGeneric.isSome)
+        (needsAdditionalCost := face.announcesAdditionalCost)
         (needsKicker := face.kicker.isSome) (needsGift := face.giftTreasure)
         (needsTeamwork := face.teamwork.isSome)
   | _ => throw "Not time to choose X (CR 601.2b)"

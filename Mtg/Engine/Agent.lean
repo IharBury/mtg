@@ -81,6 +81,10 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.sacrificeCreatureOrArtifactChoices p sourceId)[0]? with
       | some sac => some (.sacrifice sac.id)
       | none => some .pass
+    | .discardForAdditionalCost _ =>
+      match (g.player p).hand.back? with
+      | some id => some (.discard id)
+      | none => some .pass
     | .sacrificeCreature _ =>
       match (g.sacrificeCreatureChoices p)[0]? with
       | some sac => some (.sacrifice sac.id)
@@ -96,10 +100,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
     | .chooseAdditionalCost _ =>
       match g.proposedSpell with
       | some prop =>
-        if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
-          some (.chooseAdditionalCost true)
-        else
-          some (.chooseAdditionalCost false)
+        some (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
       | none => some .pass
     | .chooseSacrificeCreature _ _ _ =>
       match (g.creaturesControlledBy p)[0]? with
@@ -293,7 +294,8 @@ where
         (o.playPermission.any (·.withoutManaCost) ||
           available.canPay o.printed.manaCost
             (allowElfRestricted := o.hasSubtype "Elf")
-            (allowInstRestricted := o.printed.isInstantOrSorcery)))
+            (allowInstRestricted := o.printed.isInstantOrSorcery)) &&
+        g.canPayAnnouncedAdditional p o available)
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
         match o.printed.adventure with

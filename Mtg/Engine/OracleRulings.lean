@@ -7349,6 +7349,16 @@ def teamworkOptionalOnFreeCastOk : Bool :=
 
 #guard teamworkOptionalOnFreeCastOk
 
+/-- Ruling 582: Titania's mandatory additional cost is still paid when the
+spell is cast without paying its mana cost. -/
+def titaniaMandatoryOnFreeCastOk : Bool :=
+  Tests.titaniaFreeCastViaDiscard.log.any (fun s => mentions s "casts Titania") &&
+    Tests.titaniaFreeCastViaDiscard.log.any (fun s =>
+      mentions s "chooses to discard a card as an additional cost") &&
+    (mshRuling 582).comment.contains "Titania, Rugged Rumbler"
+
+#guard titaniaMandatoryOnFreeCastOk
+
 /-!
 ## 370–371, 422 — Connive
 -/

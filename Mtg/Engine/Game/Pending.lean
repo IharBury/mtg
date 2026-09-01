@@ -83,6 +83,9 @@ inductive Pending where
   /-- After `pay`, choose an artifact or creature to sacrifice
   (another, when paying an activated ability). -/
   | sacrificePermanent (player : PlayerId) (sourceId : ObjectId)
+  /-- After `pay`, discard a card to finish paying an additional cost
+  (CR 601.2h / 601.2b), e.g. Titania. -/
+  | discardForAdditionalCost (player : PlayerId)
   /-- A resolved trigger requires this player to sacrifice a creature
   of their choice (e.g. Crude Bent Blade). -/
   | sacrificeCreature (player : PlayerId)

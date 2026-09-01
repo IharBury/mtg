@@ -57,6 +57,27 @@ def canCast (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     o.printed.allowsZeroTargets || !(g.legalSpellTargets p o |>.isEmpty)
   else o.printed.isPermanentCard || o.printed.spellEffect.isSome || o.printed.isModal
 
+/-- Whether `p` can pay a mandatory additional cost of `o` from `available`
+(another card to discard, a permanent to sacrifice, or the generic
+alternative). Mana abilities are not activated here. -/
+def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
+    (available : ManaPool) : Bool :=
+  let allowElf := o.hasSubtype "Elf"
+  let free := o.playPermission.any (·.withoutManaCost)
+  let payExtra (n : Nat) : Bool :=
+    if free then
+      available.canPay (ManaCost.ofGeneric n) (allowElfRestricted := allowElf)
+    else
+      available.canPay (o.printed.manaCost.addGeneric n)
+        (allowElfRestricted := allowElf)
+  match o.printed.additionalCostOrPayGeneric, o.printed.additionalCostDiscardOrPayGeneric with
+  | some n, _ =>
+    (g.permanentsOf p).any (fun perm =>
+      perm.id != o.id && (perm.isCreature || perm.printed.isArtifact)) || payExtra n
+  | none, some n =>
+    (g.player p).hand.any (fun id => id != o.id) || payExtra n
+  | none, none => true
+
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (_g : Game) (o : GameObject) : Bool :=
   match o.playPermission with
@@ -513,7 +534,8 @@ def afterTargetsChosen (g : Game) : Game :=
     match g.proposedSpell with
     | none => g
     | some prop =>
-      if prop.cost.includesManaPayment || prop.needsSacrificeOther then
+      if prop.cost.includesManaPayment || prop.needsSacrificeOther ||
+          prop.needsDiscardCard then
         { g with pending := .activateManaAbilities prop.caster }
           |>.logMsg s!"{(g.player prop.caster).name} may activate mana abilities (CR 601.2g)"
       else

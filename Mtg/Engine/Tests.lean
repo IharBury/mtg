@@ -781,8 +781,11 @@ def applyIdle (g : Game) : Game :=
     match g.proposedSpell with
     | none => panic! "expected a proposed spell while choosing an additional cost"
     | some prop =>
-      let payGeneric := (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
-      mustApply g p (.chooseAdditionalCost payGeneric)
+      mustApply g p (.chooseAdditionalCost (g.additionalCostChoosesGeneric p prop))
+  | .discardForAdditionalCost p, some _ =>
+    match (g.player p).hand.back? with
+    | none => panic! "no card to discard as an additional cost"
+    | some id => mustApply g p (.discard id)
   | .chooseSacrificeCreature p _ _, some _ =>
     match (g.creaturesControlledBy p)[0]? with
     | none => panic! "no creature to sacrifice"
@@ -13977,6 +13980,135 @@ def titaniaWardDiscarded : Game :=
 
 #guard titaniaWardDiscarded.stack.any (fun e =>
   (titaniaWardDiscarded.object! e.objectId).name == "Lightning Bolt")
+
+/-- Titania: additional cost is discard a card or pay {2} (CR 601.2b). -/
+def titaniaReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withBlackMana (addToHand (addToHand g titaniaRuggedRumbler ⟨0⟩) forest ⟨0⟩) ⟨0⟩ 4
+
+#guard titaniaReady.canCast ⟨0⟩ (handCardNamed titaniaReady ⟨0⟩ "Titania, Rugged Rumbler")
+#guard titaniaRuggedRumbler.announcesAdditionalCost
+#guard titaniaRuggedRumbler.additionalCostDiscardOrPayGeneric == some 2
+
+def proposedTitania : Game :=
+  mustApply titaniaReady ⟨0⟩
+    (.cast (handCardNamed titaniaReady ⟨0⟩ "Titania, Rugged Rumbler").id)
+
+#guard
+  match proposedTitania.pending with
+  | .chooseAdditionalCost ⟨0⟩ => true
+  | _ => false
+#guard proposedTitania.log.any (fun s =>
+  mentions s "must choose an additional cost (CR 601.2b)")
+#guard
+  match proposedTitania.apply ⟨0⟩ .pay with
+  | .error msg => mentions msg "Choose an additional cost first (CR 601.2b)"
+  | .ok _ => false
+#guard
+  match Agent.choose proposedTitania ⟨0⟩ with
+  | some (.chooseAdditionalCost false) => true
+  | _ => false
+
+def titaniaDiscardChosen : Game :=
+  mustApply proposedTitania ⟨0⟩ (.chooseAdditionalCost false)
+
+#guard
+  match titaniaDiscardChosen.proposedSpell with
+  | some prop => prop.needsDiscardCard && !prop.needsSacrificeOther &&
+      prop.cost.manaValue == titaniaRuggedRumbler.manaValue
+  | none => false
+#guard titaniaDiscardChosen.pending == .activateManaAbilities ⟨0⟩
+#guard titaniaDiscardChosen.log.any (fun s =>
+  mentions s "chooses to discard a card as an additional cost (CR 601.2b)")
+
+def titaniaPaidDiscard : Game := mustApply titaniaDiscardChosen ⟨0⟩ .pay
+
+#guard
+  match titaniaPaidDiscard.pending with
+  | .discardForAdditionalCost ⟨0⟩ => true
+  | _ => false
+#guard titaniaPaidDiscard.proposedSpell.isSome
+#guard !(titaniaPaidDiscard.log.any (fun s => mentions s "casts Titania"))
+#guard titaniaPaidDiscard.log.any (fun s => mentions s "must discard a card")
+
+def titaniaCastViaDiscard : Game :=
+  mustApply titaniaPaidDiscard ⟨0⟩
+    (.discard (handCardNamed titaniaPaidDiscard ⟨0⟩ "Forest").id)
+
+#guard titaniaCastViaDiscard.log.any (fun s => mentions s "casts Titania")
+#guard (titaniaCastViaDiscard.handObjects ⟨0⟩).isEmpty
+#guard (namedGraveyardCard titaniaCastViaDiscard ⟨0⟩ "Forest").name == "Forest"
+#guard titaniaCastViaDiscard.stack.any (fun e =>
+  (titaniaCastViaDiscard.object! e.objectId).name == "Titania, Rugged Rumbler")
+
+def titaniaResolvedViaDiscard : Game := passBoth titaniaCastViaDiscard
+
+#guard titaniaResolvedViaDiscard.battlefield.any (fun o =>
+  o.name == "Titania, Rugged Rumbler")
+
+def titaniaPayGenericReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  withBlackMana (addToHand g titaniaRuggedRumbler ⟨0⟩) ⟨0⟩ 6
+
+#guard
+  match titaniaPayGenericReady.apply ⟨0⟩
+      (.cast (handCardNamed titaniaPayGenericReady ⟨0⟩ "Titania, Rugged Rumbler").id) with
+  | .ok g =>
+    (match Agent.choose g ⟨0⟩ with
+     | some (.chooseAdditionalCost true) => true
+     | _ => false) &&
+      (match g.apply ⟨0⟩ (.chooseAdditionalCost false) with
+       | .error msg => mentions msg "requires discarding a card"
+       | .ok _ => false)
+  | .error _ => false
+
+def titaniaPayGenericChosen : Game :=
+  let g := mustApply titaniaPayGenericReady ⟨0⟩
+    (.cast (handCardNamed titaniaPayGenericReady ⟨0⟩ "Titania, Rugged Rumbler").id)
+  mustApply g ⟨0⟩ (.chooseAdditionalCost true)
+
+#guard
+  match titaniaPayGenericChosen.proposedSpell with
+  | some prop =>
+    !prop.needsDiscardCard && !prop.needsSacrificeOther &&
+      prop.cost.manaValue == titaniaRuggedRumbler.manaValue + 2
+  | none => false
+#guard titaniaPayGenericChosen.pending == .activateManaAbilities ⟨0⟩
+#guard titaniaPayGenericChosen.log.any (fun s =>
+  mentions s "chooses to pay {2} as an additional cost (CR 601.2b)")
+
+def titaniaCastViaPay : Game := mustApply titaniaPayGenericChosen ⟨0⟩ .pay
+
+#guard titaniaCastViaPay.log.any (fun s => mentions s "casts Titania")
+#guard titaniaCastViaPay.pending == .none
+
+/-- Ruling 582: casting Titania without paying its mana cost still requires
+the mandatory additional cost. -/
+def titaniaFreeCastReady : Game :=
+  let g := readyMain (emptyHand afterDraw ⟨0⟩)
+  let g := addToHand (addToHand g titaniaRuggedRumbler ⟨0⟩) forest ⟨0⟩
+  let card := handCardNamed g ⟨0⟩ "Titania, Rugged Rumbler"
+  g.setObject { card with playPermission := some {
+    player := ⟨0⟩, turnEndsRemaining := 1, withoutManaCost := true } }
+
+def titaniaFreeCastViaDiscard : Game :=
+  let g := mustApply titaniaFreeCastReady ⟨0⟩
+    (.cast (handCardNamed titaniaFreeCastReady ⟨0⟩ "Titania, Rugged Rumbler").id)
+  let g := mustApply g ⟨0⟩ (.chooseAdditionalCost false)
+  let g := mustApply g ⟨0⟩ .pay
+  mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id)
+
+#guard
+  match (mustApply titaniaFreeCastReady ⟨0⟩
+      (.cast (handCardNamed titaniaFreeCastReady ⟨0⟩
+        "Titania, Rugged Rumbler").id)).pending with
+  | .chooseAdditionalCost ⟨0⟩ => true
+  | _ => false
+#guard !(titaniaFreeCastReady.playManaCost
+  (handCardNamed titaniaFreeCastReady ⟨0⟩ "Titania, Rugged Rumbler")
+  titaniaRuggedRumbler).includesManaPayment
+#guard titaniaFreeCastViaDiscard.log.any (fun s => mentions s "casts Titania")
+#guard (namedGraveyardCard titaniaFreeCastViaDiscard ⟨0⟩ "Forest").name == "Forest"
 
 /-- The Serpent Society: ward — get five poison counters. -/
 def serpentWardPending : Game :=

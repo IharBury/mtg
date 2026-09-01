@@ -75,6 +75,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseX p => who p
     | .chooseTargets p => who p
     | .sacrificePermanent p _ => who p
+    | .discardForAdditionalCost p => who p
     | .sacrificeCreature p => who p
     | .declareMulligan p => who p
     | .putOnBottom p _ => who p

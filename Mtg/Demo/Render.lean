@@ -493,11 +493,14 @@ def proposedCostNotation (prop : ProposedSpell) : String :=
       some "Sacrifice an artifact or creature"
     else
       some "Sacrifice another creature or artifact"
+  let discardOther :=
+    if prop.needsDiscardCard then some "Discard a card" else none
   let parts : List String :=
     (if prop.cost.symbols.isEmpty then [] else [toString prop.cost]) ++
     (if prop.tapSource then ["{T}"] else []) ++
     (if prop.sacrificeSource then ["Sacrifice"] else []) ++
-    sacOther.toList
+    sacOther.toList ++
+    discardOther.toList
   String.intercalate ", " parts
 
 /-- Cost notation while the player may still pay (CR 601.2g / 602.2b). -/
@@ -639,6 +642,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       chooseTargetsPending g p
     | .sacrificePermanent p _ =>
       s!" [sacrifice a creature or artifact ({g.player p |>.name})]"
+    | .discardForAdditionalCost p =>
+      s!" [discard a card as an additional cost ({g.player p |>.name})]"
     | .sacrificeCreature p =>
       s!" [sacrifice a creature ({g.player p |>.name})]"
     | .declareMulligan p =>
