@@ -42,9 +42,9 @@ def orJoin (xs : List String) : String :=
 
 /-- English indefinite article for a noun (`an Elf`, `a Hero`). -/
 def indefinite (noun : String) : String :=
-  match noun.get? 0 with
-  | none => "a"
-  | some c =>
+  match noun.toList with
+  | [] => "a"
+  | c :: _ =>
     match c.toLower with
     | 'a' | 'e' | 'i' | 'o' | 'u' => "an"
     | _ => "a"

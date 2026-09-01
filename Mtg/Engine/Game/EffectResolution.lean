@@ -958,12 +958,18 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .connive =>
     g.applyConnive controller sourceId
   | .addAnyColorSpendOnlySubtype subtype =>
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add
-          (if subtype == "Villain" then .colored .black else .colored .white) 1
-          (heroRestricted := subtype == "Hero")
-          (villainRestricted := subtype == "Villain") })
+    match subtype with
+    | "Hero" =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool :=
+          pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
+    | "Villain" =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool :=
+          pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
+    | _ =>
+      g.modifyPlayer controller (fun pl =>
+        { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
   | .addAnyColorSpendOnlyArtifactSpell =>
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
