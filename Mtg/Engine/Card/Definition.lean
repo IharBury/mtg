@@ -21,40 +21,90 @@ deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability may target (CR 115.1). -/
 inductive Filter where
-  | and : Filter → Filter → Filter
+  | and : List Filter → Filter
   | any
   | cardType : CardType → Filter
-  | or : Filter → Filter → Filter
+  | or : List Filter → Filter
+  /-- A permanent (CR 110.1). -/
+  | permanent
   /-- Permanent the spell’s controller controls. -/
   | sameController
 deriving Repr, Inhabited, BEq
 
 namespace Filter
 
-/-- `sameController` last so `and` matches do not restate both orders. -/
-def normalize : Filter → Filter
-  | .and .sameController f => .and (normalize f) .sameController
-  | .and f .sameController => .and (normalize f) .sameController
-  | .and a b => .and (normalize a) (normalize b)
-  | .or a b =>
-    let a := normalize a
-    let b := normalize b
-    match a, b with
-    | .cardType .creature, .cardType .artifact => .or b a
-    | _, _ => .or a b
-  | f => f
+/-- Card types a filter allows. `any` means the filter does not mention type. -/
+inductive TypeSet where
+  | any
+  | oneOf (ts : List CardType)
+deriving Repr, Inhabited, BEq
+
+namespace TypeSet
+
+def intersect : TypeSet → TypeSet → TypeSet
+  | .any, s | s, .any => s
+  | .oneOf a, .oneOf b => .oneOf (a.filter b.contains)
+
+def union : TypeSet → TypeSet → TypeSet
+  | .any, _ | _, .any => .any
+  | .oneOf a, .oneOf b =>
+    .oneOf (a ++ b.filter (fun t => !a.contains t))
+
+def contains (s : TypeSet) (t : CardType) : Bool :=
+  match s with
+  | .any => true
+  | .oneOf ts => ts.contains t
+
+/-- True when `s` is exactly the listed types, ignoring order. -/
+def eqTypes (s : TypeSet) (ts : List CardType) : Bool :=
+  match s with
+  | .any => false
+  | .oneOf us => us.all ts.contains && ts.all us.contains
+
+end TypeSet
+
+/-- Flattened constraints implied by a filter, so `.and` / `.or` lists
+compile without depending on conjunct order. -/
+structure Shape where
+  sameController : Bool := false
+  mustBePermanent : Bool := false
+  types : TypeSet := .any
+deriving Repr, Inhabited, BEq
+
+namespace Shape
+
+def meet (a b : Shape) : Shape :=
+  { sameController := a.sameController || b.sameController
+    mustBePermanent := a.mustBePermanent || b.mustBePermanent
+    types := a.types.intersect b.types }
+
+def join (a b : Shape) : Shape :=
+  { sameController := a.sameController && b.sameController
+    mustBePermanent := a.mustBePermanent && b.mustBePermanent
+    types := a.types.union b.types }
+
+end Shape
+
+def shape : Filter → Shape
+  | .any => {}
+  | .permanent => { mustBePermanent := true }
+  | .sameController => { sameController := true }
+  | .cardType t => { types := .oneOf [t] }
+  | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
+  | .or [] => {}
+  | .or (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
 
 /-- Compile a filter to a targeting shape the engine already understands. -/
 def toTargetKind (f : Filter) : EffectTargetKind :=
-  match normalize f with
-  | .any => .permanent
-  | .cardType .creature => .creature
-  | .cardType .artifact => .artifact
-  | .and (.cardType .creature) .sameController => .creatureYouControl
-  | .and (.cardType .artifact) .sameController => .artifactYouControl
-  | .and (.or (.cardType .artifact) (.cardType .creature)) .sameController =>
-    .artifactOrCreatureYouControl
-  | _ => .permanent
+  let s := f.shape
+  if s.sameController then
+    if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
+    else if s.types.eqTypes [.creature] then .creatureYouControl
+    else if s.types.eqTypes [.artifact] then .artifactYouControl
+    else .permanent
+  else if s.types.eqTypes [.creature] then .creature
+  else if s.types.eqTypes [.artifact] then .artifact
+  else .permanent
 
 end Filter
 
@@ -238,11 +288,11 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .targeted
-      ({filter := .and
-         (.or
-           (.cardType .artifact)
-           (.cardType .creature))
-         .sameController})
+      ({filter := .and [
+          .permanent,
+          .or [.cardType .artifact, .cardType .creature],
+          .sameController
+        ]})
       (.continuous
         [
           .gainAbility (.keyword .hexproof),
@@ -251,11 +301,17 @@ end TraditionalCardDefinition
   action.toEffect == Effect.grantHexproofIndestructible
 
 #guard Filter.toTargetKind
-  (.and (.or (.cardType .artifact) (.cardType .creature)) .sameController)
+  (.and [
+    .permanent,
+    .or [.cardType .artifact, .cardType .creature],
+    .sameController])
   == .artifactOrCreatureYouControl
 
 #guard Filter.toTargetKind
-  (.and .sameController (.or (.cardType .creature) (.cardType .artifact)))
+  (.and [
+    .sameController,
+    .or [.cardType .creature, .cardType .artifact],
+    .permanent])
   == .artifactOrCreatureYouControl
 
 end Mtg.Engine

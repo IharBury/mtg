@@ -38,11 +38,11 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
     .subtype .adventure,
     .action (
       .targeted
-        ({filter := .and
-           (.or
-             (.cardType .artifact)
-             (.cardType .creature))
-           .sameController})
+        ({filter := .and [
+            .permanent,
+            .or [.cardType .artifact, .cardType .creature],
+            .sameController
+          ]})
         (.continuous
           [
             .gainAbility (.keyword .hexproof),
