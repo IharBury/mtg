@@ -14,10 +14,19 @@ abilities, and (for adventurer cards) an `alternative` face. Compiles to
 
 namespace Mtg.Engine
 
-/-- A keyword or other printed ability on a card or granted by an effect. -/
-inductive Ability where
-  | keyword : Keyword → Ability
+/-- A payment in an activated-ability cost (CR 602.1). -/
+inductive Cost where
+  | mana : List ManaSymbol → Cost
 deriving Repr, Inhabited, BEq
+
+namespace Cost
+
+def manaCost : List Cost → ManaCost
+  | [] => ManaCost.empty
+  | .mana syms :: rest =>
+    { symbols := (syms : ManaCost).symbols ++ (manaCost rest).symbols }
+
+end Cost
 
 /-- Whom or what a spell or ability may target (CR 115.1). -/
 inductive Filter where
@@ -128,9 +137,20 @@ inductive Trigger where
   | endOfTurn
 deriving Repr, Inhabited, BEq
 
+-- Printed abilities, continuous effects, and actions are mutually inductive:
+-- an activated ability has an action, and a continuous effect may grant an
+-- ability.
+mutual
+/-- A keyword or other printed ability on a card or granted by an effect. -/
+inductive Ability where
+  | keyword : Keyword → Ability
+  | activated : List Cost → CardAction → Ability
+deriving Repr, Inhabited, BEq
+
 /-- A continuous effect granted by a spell or ability. -/
 inductive ContinuousEffect where
   | gainAbility : Ability → ContinuousEffect
+  | addPowerToughness : Int → Int → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -138,7 +158,22 @@ this tree; player input uses `Action` in `Game`. -/
 inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
   | targeted : TargetSelector → CardAction → CardAction
+  | filtered : Filter → CardAction → CardAction
 deriving Repr, Inhabited, BEq
+end
+
+namespace ContinuousEffect
+
+/-- Combined +P/+T if every effect is `addPowerToughness`. -/
+def addedPT? : List ContinuousEffect → Option (Int × Int)
+  | [] => some (0, 0)
+  | .addPowerToughness p t :: rest =>
+    match addedPT? rest with
+    | some (p', t') => some (p + p', t + t')
+    | none => none
+  | .gainAbility _ :: _ => none
+
+end ContinuousEffect
 
 namespace CardAction
 
@@ -147,19 +182,71 @@ def grantedKeywords : List ContinuousEffect → Keywords
   | [] => Keywords.none
   | .gainAbility (.keyword k) :: rest =>
     k.toKeywords.merge (grantedKeywords rest)
+  | _ :: rest => grantedKeywords rest
 
-/-- Compile to the unified `Effect` the engine resolves. Targeting is applied
-before `mkSpell` so the printed phrase names the same noun as a hand-written
-`Effect`. -/
+/-- Mass +P/+T on creatures you control. -/
+def creaturesYouControlPumpEffect (p t : Int) (asAbility : Bool) : Effect :=
+  if asAbility then Effect.abilityCreaturesYouControlGet p t
+  else Effect.creaturesYouControlGet p t
+
+/-- Keyword grants, optionally targeted. -/
+def grantKeywordsEffect (sel : Option TargetSelector) (effects : List ContinuousEffect)
+    (asAbility : Bool) : Effect :=
+  let kws := grantedKeywords effects
+  let targeting :=
+    match sel with
+    | some s => s.toTargeting
+    | none => .of .none
+  if asAbility then
+    Effect.mkAbility targeting (.onPermanent (.grantKeywords kws))
+  else
+    Effect.mkSpell targeting (.onPermanent (.grantKeywords kws)) (castKind := .pump)
+
+/-- Compile a `continuous` action, optionally wrapped in targeting. -/
+def continuousEffect (sel : Option TargetSelector) (effects : List ContinuousEffect)
+    (asAbility : Bool) : Effect :=
+  match ContinuousEffect.addedPT? effects with
+  | some (p, t) =>
+    match sel with
+    | some s =>
+      let targeting := s.toTargeting
+      if asAbility then
+        Effect.mkAbility targeting (.onPermanent (.pump p t))
+      else
+        Effect.mkSpell targeting (.onPermanent (.pump p t)) (castKind := .pump)
+    | none => creaturesYouControlPumpEffect p t asAbility
+  | none => grantKeywordsEffect sel effects asAbility
+
+/-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
+is the shape Dwarven Provisioner prints. -/
+def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect :=
+  match inner with
+  | .continuous effects _duration =>
+    match ContinuousEffect.addedPT? effects, f.shape with
+    | some (p, t), s =>
+      if s.sameController && s.types.eqTypes [.creature] then
+        creaturesYouControlPumpEffect p t asAbility
+      else
+        continuousEffect none effects asAbility
+    | none, _ =>
+      continuousEffect none effects asAbility
+  | .targeted sel inner =>
+    let e := continuousEffect (some sel) (match inner with
+      | .continuous effects _ => effects
+      | _ => []) asAbility
+    { e with targeting := sel.toTargeting }
+  | .filtered f' inner' => filteredEffect f' inner' asAbility
+
+/-- Compile to a spell-shaped `Effect`. -/
 def toEffect : CardAction → Effect
   | .continuous effects _duration =>
-    Effect.mkSpell (.of .none) (.onPermanent (.grantKeywords (grantedKeywords effects)))
-      (castKind := .pump)
+    continuousEffect none effects false
   | .targeted sel (.continuous effects _duration) =>
-    Effect.mkSpell sel.toTargeting (.onPermanent (.grantKeywords (grantedKeywords effects)))
-      (castKind := .pump)
-      (maxTargets := if sel.maximumTargets ≤ 1 then 0 else sel.maximumTargets)
-      (allowsZeroTargets := sel.minimumTargets == 0)
+    let e := continuousEffect (some sel) effects false
+    { e with
+      maxTargets :=
+        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
+      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
   | .targeted sel inner =>
     let e := inner.toEffect
     { e with
@@ -167,8 +254,35 @@ def toEffect : CardAction → Effect
       maxTargets :=
         if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
       allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+  | .filtered f inner =>
+    filteredEffect f inner false
+
+/-- Compile to an activated-ability `Effect`. -/
+def toAbilityEffect : CardAction → Effect
+  | .continuous effects _duration =>
+    continuousEffect none effects true
+  | .targeted sel (.continuous effects _duration) =>
+    continuousEffect (some sel) effects true
+  | .targeted sel inner =>
+    let e := inner.toAbilityEffect
+    { e with targeting := sel.toTargeting }
+  | .filtered f inner =>
+    filteredEffect f inner true
 
 end CardAction
+
+namespace Ability
+
+/-- Compile an `.activated` ability; `none` for a keyword. -/
+def toActivatedAbility? : Ability → Option ActivatedAbility
+  | .keyword _ => none
+  | .activated costs action =>
+    some {
+      cost := { mana := Cost.manaCost costs }
+      effect := action.toAbilityEffect
+    }
+
+end Ability
 
 /-- One printed characteristic or ability of a card face. -/
 inductive CardPart where
@@ -203,6 +317,7 @@ structure CardFace where
   keywords : Keywords := Keywords.none
   action : Option CardAction := none
   alternatives : Array (List CardPart) := #[]
+  activatedAbilities : Array ActivatedAbility := #[]
 deriving Inhabited
 
 namespace CardFace
@@ -216,6 +331,13 @@ def apply (b : CardFace) : CardPart → CardFace
   | .power n => { b with power := some n }
   | .toughness n => { b with toughness := some n }
   | .ability (.keyword k) => { b with keywords := b.keywords.merge k.toKeywords }
+  | .ability (.activated costs action) =>
+    { b with
+      activatedAbilities :=
+        b.activatedAbilities.push {
+          cost := { mana := Cost.manaCost costs }
+          effect := action.toAbilityEffect
+        } }
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
   | .action a => { b with action := some a }
 
@@ -274,6 +396,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       toughness := b.toughness
       keywords := b.keywords
       spellEffect := b.action.map (·.toEffect)
+      activatedAbilities := b.activatedAbilities
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -313,5 +436,25 @@ end TraditionalCardDefinition
     .or [.cardType .creature, .cardType .artifact],
     .permanent])
   == .artifactOrCreatureYouControl
+
+-- Dwarven Provisioner: {3}{W}: creatures you control get +1/+1 until end of turn.
+#guard
+  let action : CardAction :=
+    .filtered
+      (.and [.permanent, .cardType .creature, .sameController])
+      (.continuous [.addPowerToughness 1 1] .endOfTurn)
+  action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
+
+#guard
+  match
+    (Ability.activated
+      [.mana [.generic 3, .mono .white]]
+      (.filtered
+        (.and [.permanent, .cardType .creature, .sameController])
+        (.continuous [.addPowerToughness 1 1] .endOfTurn))).toActivatedAbility? with
+  | some ab =>
+    ab.cost.mana == ManaCost.ofGenericAndColor 3 .white &&
+      ab.effect == Effect.abilityCreaturesYouControlGet 1 1
+  | none => false
 
 end Mtg.Engine
