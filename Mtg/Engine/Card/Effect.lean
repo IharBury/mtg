@@ -127,8 +127,6 @@ def abilityResolution (e : Effect) : AbilityResolution :=
     | [.onSource (.plusOne plus), .draw cards] => .plusOneAndDraw plus cards
     | [.onPermanent .destroy, .onSource (.plusOne 1)] => .destroyUpToOneThenPlusOne
     | [.onSource (.plusOne n), .createTokens kind 1 _] => .plusOneAndCreateTokens n kind
-    | [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)] =>
-      .creaturesYouControlGetOppsLoseLife p t life
     | _ => .draw 0
   | .amassGoblins _ | .discard _ | .shuffleSource | .spell _ | .trigger _ =>
     .draw 0
@@ -196,9 +194,6 @@ def ofAbility : AbilityResolution → Resolution
     .sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
   | .plusOneAndCreateTokens n kind =>
     .sequence [.onSource (.plusOne n), .createTokens kind 1]
-  | .creaturesYouControlGetOppsLoseLife p t life =>
-    .sequence
-      [.ability (.creaturesYouControlPump p t), .spell (.eachOpponentLosesLife life)]
   | r => .ability r
 
 /-- Store a shared trigger on `Resolution`. Timing stays on the nested

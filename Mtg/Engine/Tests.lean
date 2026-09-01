@@ -12680,6 +12680,35 @@ def ownerShuffleSourceNorandomDone : Game :=
     (ownerShuffleSourceNorandomDone.player ⟨0⟩).hand.size ==
       (afterDraw.player ⟨0⟩).hand.size + 3
 
+/-- `creaturesYouControlGetOppsLoseLife` applies as team pump, then opponents lose life. -/
+def teamPumpThenOppsLoseSetup : Game :=
+  addPermanent (addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+
+def teamPumpThenOppsLoseResolved : Game :=
+  teamPumpThenOppsLoseSetup.applyAbilityEffect ⟨0⟩
+    (Effect.creaturesYouControlGetOppsLoseLife 2 0 2) #[]
+
+#guard
+  (namedPermanent teamPumpThenOppsLoseResolved "Gray Ogre").status.pumpPower == 2 &&
+    (namedPermanent teamPumpThenOppsLoseResolved "Grizzly Bears").status.pumpPower == 0 &&
+    (teamPumpThenOppsLoseResolved.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (teamPumpThenOppsLoseResolved.player ⟨1⟩).life == (afterDraw.player ⟨1⟩).life - 2 &&
+    teamPumpThenOppsLoseResolved.log.any (fun s =>
+      mentions s "Gray Ogre gets +2/+0 until end of turn") &&
+    teamPumpThenOppsLoseResolved.log.any (fun s => mentions s "Nissa loses 2 life")
+
+/-- No creatures: opponents still lose life. -/
+def teamPumpThenOppsLoseNoCreatures : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.creaturesYouControlGetOppsLoseLife 2 0 2) #[]
+
+#guard
+  (teamPumpThenOppsLoseNoCreatures.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
+    (teamPumpThenOppsLoseNoCreatures.player ⟨1⟩).life ==
+      (afterDraw.player ⟨1⟩).life - 2 &&
+    !teamPumpThenOppsLoseNoCreatures.log.any (fun s =>
+      mentions s "until end of turn") &&
+    teamPumpThenOppsLoseNoCreatures.log.any (fun s => mentions s "Nissa loses 2 life")
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩

@@ -72,8 +72,6 @@ inductive AbilityResolution where
   | draw (n : Nat)
   /-- Search two basics; one tapped, one to hand. -/
   | searchTwoBasicsSplit
-  /-- Team pump and opponents lose life. -/
-  | creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat)
   /-- Goblins and Orcs you control gain menace. -/
   | goblinsAndOrcsGainMenace
   /-- Exile then return at the next end step. -/
@@ -257,8 +255,6 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Draw {cardPhrase n}"
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
-  | .creaturesYouControlGetOppsLoseLife p t life =>
-    s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn. Each opponent loses {life} life"
   | .goblinsAndOrcsGainMenace =>
     "Goblins and Orcs you control gain menace until end of turn"
   | .exileThenReturnNextEnd =>
