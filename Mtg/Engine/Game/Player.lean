@@ -146,8 +146,9 @@ inductive Action where
   (CR 601.2h / 602.2b), a creature a resolved trigger requires, or a creature
   as a resolving effect. -/
   | sacrifice (id : ObjectId)
-  /-- Choose to pay extra generic mana rather than sacrifice, as an additional
-  cost (CR 601.2b). `true` pays the generic alternative; `false` sacrifices. -/
+  /-- Choose to pay extra generic mana rather than the non-mana option
+  (sacrifice or discard) as an additional cost (CR 601.2b). `true` pays
+  the generic alternative; `false` sacrifices or discards. -/
   | chooseAdditionalCost (payGeneric : Bool)
   /-- `defender` is the destination when `each` is omitted or an entry is
   `none`. `each[i]` is the player `ids[i]` attacks (CR 508.1). -/

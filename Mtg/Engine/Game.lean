@@ -119,7 +119,7 @@ adventurer cards including casting an Adventure and later the permanent
 (CR 715), playing exiled creature cards with mana of any type
 (CR 118.12 / 400.7), cost reductions if a creature died this turn or if the
 target was dealt damage this turn (CR 118.7 / 601.2f), additional costs that
-sacrifice an artifact or creature or pay extra generic mana (announced at
+sacrifice an artifact or creature, discard a card, or pay extra generic mana (announced at
 CR 601.2b, determined and paid at 601.2f–h),
 typecycling from hand (CR 702.29: discard this card, search for a land type,
 put it into your hand, then shuffle),

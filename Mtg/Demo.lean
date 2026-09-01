@@ -679,7 +679,8 @@ def helpInteractive (controlAll : Bool := false)
   scry top <id>...     Put listed cards on top (last = new top); rest go to the bottom
   scry bottom <id>...  Put listed cards on the bottom (first = new bottom); rest stay on top
   scry top <id>... bottom <id>...  Choose both piles and their orders (CR 701.20)
-  discard <id>         Discard a card; if you do, draw (CR 701.9)
+  discard <id>         Discard a card (CR 701.9), or pay an additional cost
+  discard              Choose to discard as an additional cost (CR 601.2b)
   attach <id>          Attach that Equipment you control
   connive              Have the entering Villain connive (Baron Strucker)
   decline              Decline an optional discard, attach, cast, put, connive, or choose no target
@@ -722,6 +723,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "stack <id>").length > 1
 #guard ((helpInteractive false).splitOn "CR 603.3b").length > 1
 #guard ((helpInteractive false).splitOn "discard <id>").length > 1
+#guard ((helpInteractive false).splitOn "Choose to discard as an additional cost").length > 1
 #guard ((helpInteractive false).splitOn "attach <id>").length > 1
 #guard ((helpInteractive false).splitOn "decline").length > 1
 #guard ((helpInteractive false).splitOn "optional discard, attach").length > 1
@@ -1680,16 +1682,19 @@ or casting. With no id, choose the sacrifice option of an additional cost
 def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] =>
-    match g.pending with
-    | .chooseAdditionalCost _ => g.apply p (.chooseAdditionalCost false)
-    | _ => throw sacrificeUsage
+    match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | .chooseAdditionalCost _, some spell =>
+      if spell.printed.additionalCostOrPayGeneric.isSome then
+        g.apply p (.chooseAdditionalCost false)
+      else throw sacrificeUsage
+    | _, _ => throw sacrificeUsage
   | [_] => applyObjectCommand g p tokens sacrificeUsage .sacrifice
   | _ => throw sacrificeUsage
 
 def payExtraUsage : String := "usage: pay-extra"
 
-/-- Pay extra generic mana rather than sacrifice, as an additional cost
-(CR 601.2b). -/
+/-- Pay extra generic mana rather than sacrifice or discard, as an additional
+cost (CR 601.2b). -/
 def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [] => g.apply p (.chooseAdditionalCost true)
@@ -1712,6 +1717,20 @@ def applyPayExtra (g : Game) (p : PlayerId) (tokens : List String) : Except Stri
   | .ok g' =>
     match g'.proposedSpell with
     | some prop => prop.needsSacrificeOther
+    | none => false
+  | .error _ => false
+
+#guard
+  match applySacrifice Tests.proposedTitania ⟨0⟩ [] with
+  | .error msg => msg == sacrificeUsage
+  | .ok _ => false
+
+#guard
+  match applyPayExtra Tests.proposedTitania ⟨0⟩ [] with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => !prop.needsDiscardCard &&
+        prop.cost.manaValue == Catalog.titaniaRuggedRumbler.manaValue + 2
     | none => false
   | .error _ => false
 
@@ -2467,9 +2486,27 @@ def applyScry (g : Game) (p : PlayerId) (tokens : List String) : Except String G
 
 def discardUsage : String := "usage: discard <id>"
 
-/-- Discard the named card from hand for a pending “may discard, then draw”. -/
+/-- Discard the named card from hand, or with no id choose the discard option
+of an additional cost (CR 601.2b). -/
 def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except String Game :=
-  applyObjectCommand g p tokens discardUsage .discard
+  match commandTokens tokens with
+  | [] =>
+    match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
+    | .chooseAdditionalCost _, some spell =>
+      if spell.printed.additionalCostDiscardOrPayGeneric.isSome then
+        g.apply p (.chooseAdditionalCost false)
+      else throw discardUsage
+    | _, _ => throw discardUsage
+  | [_] => applyObjectCommand g p tokens discardUsage .discard
+  | _ => throw discardUsage
+
+#guard
+  match applyDiscard Tests.proposedTitania ⟨0⟩ [] with
+  | .ok g' =>
+    match g'.proposedSpell with
+    | some prop => prop.needsDiscardCard
+    | none => false
+  | .error _ => false
 
 def declineUsage : String := "usage: decline"
 def conniveUsage : String := "usage: connive"
@@ -4796,12 +4833,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       g.canCast p o &&
         available.canPay o.printed.manaCost
           (allowElfRestricted := o.hasSubtype "Elf") &&
-        match o.printed.additionalCostOrPayGeneric with
-        | none => true
-        | some n =>
-          !(g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty ||
-            available.canPay (o.printed.manaCost.addGeneric n)
-              (allowElfRestricted := o.hasSubtype "Elf"))
+        g.canPayAnnouncedAdditional p o available)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match o.printed.adventure with
@@ -4898,6 +4930,8 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         (g.sacrificeCreatureOrArtifactChoices p
           (prop.sourceId.getD prop.spellId)).isEmpty then
       false
+    else if prop.needsDiscardCard && (g.player p).hand.isEmpty then
+      false
     else
       let pool := (g.player p).manaPool
       let allowElf := g.proposedAllowsElfRestricted prop
@@ -4917,10 +4951,22 @@ def uniqueSacrificeCommand (g : Game) : Option String :=
     | none => none
   | _ => none
 
+/-- `discard <id>` when exactly one card can pay a discard additional cost. -/
+def uniqueDiscardCommand (g : Game) : Option String :=
+  match g.pending with
+  | .discardForAdditionalCost p =>
+    let hand := (g.player p).hand
+    match hand[0]? with
+    | some id => if hand.size == 1 then some s!"discard {id}" else none
+    | none => none
+  | _ => none
+
 /-- Automatically pay a cost only after scripted input is exhausted and
 there is only one legal way to pay it. -/
 def shouldAutoPay (g : Game) (pending : List String) : Bool :=
-  pending.isEmpty && (hasUniqueManaPayment g || (uniqueSacrificeCommand g).isSome)
+  pending.isEmpty &&
+    (hasUniqueManaPayment g || (uniqueSacrificeCommand g).isSome ||
+      (uniqueDiscardCommand g).isSome)
 
 /-- Apply the unique payment via `autopay` or `sacrifice`, and the `--output`
 lines that record it. -/
@@ -4928,7 +4974,7 @@ def autoPayStep? (g : Game) (pending : List String) :
     Option (Except String (Game × Array String)) :=
   if !shouldAutoPay g pending then none
   else
-    match uniqueSacrificeCommand g with
+    match uniqueSacrificeCommand g <|> uniqueDiscardCommand g with
     | some line =>
       let parts := line.splitOn " "
       some (applyInteractiveAsActor g (parts.headD "") (parts.drop 1) |>.map
@@ -4952,6 +4998,7 @@ def autoPayStep? (g : Game) (pending : List String) :
   let g := Tests.addUntappedLand Tests.targetedBolt Catalog.forest
   shouldAutoPay g []
 #guard shouldAutoPay Tests.paidClub []
+#guard shouldAutoPay Tests.titaniaPaidDiscard []
 
 #guard (autoPayStep? Tests.targetedBolt ["pay"]).isNone
 #guard

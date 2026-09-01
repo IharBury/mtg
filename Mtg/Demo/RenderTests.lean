@@ -1526,6 +1526,8 @@ def mountainLine (g : Game) : String :=
 #guard resolvedNightsWhisper.log.any (fun s => mentions s "loses 2 life (18 life)")
 
 #guard mentions (header stirChooseAdditional) "choose an additional cost (CR 601.2b"
+#guard mentions (header proposedTitania) "choose an additional cost (CR 601.2b"
+#guard mentions (header titaniaPaidDiscard) "discard a card as an additional cost"
 #guard mentions (header bladeMustSac) "sacrifice a creature"
 #guard mentions (header stonyDiscarding) "discard a card"
 #guard mentions (header gollumDeclareBlockers) "declare blockers"

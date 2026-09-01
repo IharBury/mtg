@@ -1479,6 +1479,9 @@ def titaniaRuggedRumbler : CardDef :=
     (additionalCostDiscardOrPayGeneric := some 2)
     (staticAbilities := #[StaticAbility.wardDiscardOrPay 2])
 
+#guard titaniaRuggedRumbler.additionalCostDiscardOrPayGeneric == some 2
+#guard titaniaRuggedRumbler.announcesAdditionalCost
+
 def uSAgentJohnWalker : CardDef :=
   legendaryCreature "U.S.Agent, John Walker" (ManaCost.ofGenericAndHybrids 3 .white .black) #["Human", "Soldier", "Hero"] 3 2
     (oracleText := "When U.S.Agent enters, create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to U.S.Agent.")

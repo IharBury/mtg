@@ -453,6 +453,11 @@ def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
     ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
   else []
 
+/-- True when CR 601.2b must announce a sacrifice-or-pay or discard-or-pay
+additional cost. -/
+def announcesAdditionalCost (c : CardDef) : Bool :=
+  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome
+
 /-- Additional cost that sacrifices an artifact or creature (optionally or pay `{n}`). -/
 def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
   if c.additionalCostSacrificeArtifactOrCreature then

@@ -65,6 +65,9 @@ structure ProposedSpell where
   /-- After mana is paid, the player must sacrifice an artifact or creature
   (another, when this is an activated ability). -/
   needsSacrificeOther : Bool := false
+  /-- After mana is paid, the player must discard a card as an additional
+  cost (e.g. Titania). -/
+  needsDiscardCard : Bool := false
   /-- Life paid as part of the activation cost (CR 118.3b / 119.4). -/
   payLife : Nat := 0
   /-- Discard the source from hand as part of the activation cost (CR 702.29). -/

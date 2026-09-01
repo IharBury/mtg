@@ -113,7 +113,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   return g
 
 /-- Pay the locked-in cost (CR 601.2h / 602.2b). Spells and abilities that still
-need an artifact or creature sacrificed wait for the `sacrifice` action. -/
+need an artifact or creature sacrificed, or a card discarded, wait for
+that action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
   let allowElf := g.proposedAllowsElfRestricted prop
@@ -131,6 +132,8 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let excludeId := prop.sourceId.getD prop.spellId
     if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return g.reverseProposedSpell
+  if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
+    return g.reverseProposedSpell
   let g ← g.payCost prop.caster prop.cost allowElf allowInst
     allowHero allowVillain allowCant allowCreature
   let g ←
@@ -139,23 +142,29 @@ def finishProposedSpell (g : Game) : Except String Game := do
       g.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
         prop.payLife prop.discardSource prop.activation
     | _, _ => pure g
-  match prop.kind, prop.needsSacrificeOther, prop.sourceId with
-  | .spell, true, _ =>
+  match prop.kind, prop.needsSacrificeOther, prop.needsDiscardCard, prop.sourceId with
+  | .spell, true, _, _ =>
     let g := { g with
       pending := .sacrificePermanent prop.caster prop.spellId
       consecutivePasses := 0 }
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice an artifact or creature"
-  | .spell, _, _ =>
+  | .spell, _, true, _ =>
+    let g := { g with
+      pending := .discardForAdditionalCost prop.caster
+      consecutivePasses := 0 }
+    return g.logMsg
+      s!"{(g.player prop.caster).name} must discard a card"
+  | .spell, _, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeCast prop.caster (g.object! prop.spellId)
-  | .activatedAbility, true, some sid =>
+  | .activatedAbility, true, _, some sid =>
     let g := { g with
       pending := .sacrificePermanent prop.caster sid
       consecutivePasses := 0 }
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
-  | .activatedAbility, _, _ =>
+  | .activatedAbility, _, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId
 

@@ -118,6 +118,13 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
         let (g, _) := g.createToken p humanSoldierToken
         g
     return g.receivePriority g.activePlayer
+  | .discardForAdditionalCost q =>
+    let (g, _) ← g.discardPendingCard p q id
+    match g.proposedSpell with
+    | some prop =>
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      return g.becomeCast prop.caster (g.object! prop.spellId)
+    | none => throw "No spell is waiting for an additional cost"
   | .payWard q _ cost =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"
