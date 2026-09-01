@@ -1,4 +1,4 @@
-import Mtg.Engine.Card.AbilityResolution
+import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.Chapter
 
 /-!

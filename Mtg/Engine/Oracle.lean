@@ -328,7 +328,7 @@ def isEquipAbility (ab : ActivatedAbility) : Bool :=
 /-- Typecycling land type when this is a cycling activation from hand. -/
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.activateFromHand && ab.cost.discardSource then
-    match ab.effect.abilityResolution with
+    match ab.effect.resolution with
     | .searchLandTypeToHand t =>
       if t == "Plan" then none else some t
     | _ => none

@@ -28,16 +28,16 @@ def mkSpell (targeting : EffectTargeting) (resolution : SpellResolution)
     phrase := phraseOverride.getD (SpellResolution.toPhrase resolution targeting.kind.noun) }
 
 /-- Build an activated-ability `Effect` from targeting and resolution.
-Phrase comes from `AbilityResolution.toPhrase` unless overridden. -/
-def mkAbility (targeting : EffectTargeting) (resolution : AbilityResolution)
+Phrase comes from `Resolution.toPhrase` unless overridden. -/
+def mkAbility (targeting : EffectTargeting) (resolution : Resolution)
     (castKind : AbilityCastKind := .other)
     (allowsZeroTargets := false)
     (phraseOverride : Option String := none) : Effect :=
   { targeting
     allowsZeroTargets
     abilityCastKind := castKind
-    resolution := Resolution.ofAbility resolution
-    phrase := phraseOverride.getD (AbilityResolution.toPhrase resolution targeting.kind.noun) }
+    resolution
+    phrase := phraseOverride.getD (Resolution.toPhrase resolution targeting.kind.noun) }
 
 /-- Printed leftover constructors as unified `Effect` values.
 Call sites should use these instead of leftover inductives. -/
@@ -647,7 +647,7 @@ def searchTwoBasicsSplit : Effect :=
 
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
   { resolution := .sequence
-      [.ability (.creaturesYouControlPump power toughness),
+      [.creaturesYouControlPump power toughness,
        .spell (.eachOpponentLosesLife life)]
     phrase :=
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
@@ -789,7 +789,7 @@ def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
   mkAbility ({}) (.createTokensEqualSubtype kind subtype)
 
 def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
-  mkAbility ({}) (.createTappedTokens kind n)
+  mkAbility ({}) (.createTokens kind n (tapped := true))
 
 def destroyUpToOneThenPlusOne : Effect :=
   { targeting := .of .artifactOrEnchantment

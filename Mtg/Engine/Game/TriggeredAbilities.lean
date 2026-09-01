@@ -50,10 +50,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .discard n => g.beginDiscardCards #[controller] n
   | .spell r =>
     g.applyUnified controller { ab.effect with resolution := .spell r } targets
-  | .ability r =>
-    g.applyUnifiedAbility controller { ab.effect with resolution := .ability r }
-      targets sourceId lastKnownPower
-  | .trigger _ =>
+  | .trigger _ => (
   match ab.resolution with
   | .pumpGreatestPower =>
     g.applyOnTriggerSource sourceId (.pump (g.greatestPowerAmongCreatures controller) 0)
@@ -1351,7 +1348,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .casting e =>
     g.applyModeledTrigger controller (.onCasting (Effect.ofTrigger (.casting e))) sourceId targets sourceName lastKnownPower
   | .resource e =>
-    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower
+    g.applyModeledTrigger controller (.onResource (Effect.ofTrigger (.resource e))) sourceId targets sourceName lastKnownPower)
+  | r =>
+    g.applyUnifiedAbility controller { ab.effect with resolution := r }
+      targets sourceId lastKnownPower
 
 /-- Put attack-triggered abilities of `attackerIds` onto the stack (CR 508.2),
 including “whenever you attack with one or more Elves” (once if any Elf attacks). -/
