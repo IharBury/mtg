@@ -33,12 +33,14 @@ commands such as `state` and `quit` are omitted. When `--input` and
 accepted console commands are appended. `autopay` is recorded as the individual
 `tap` and `pay` commands it performs. `your turn`, `my turn`, `main phase`,
 and `attack step` keep passing until the named step (or until a player must
-take a non-pass action). Other players' pass-until shortcuts (recorded as
-`pass` sequences) do not interrupt those commands. `ignore` keeps passing
-until your next main phase and is not interrupted at all. Those shortcuts
-are recorded as the individual `pass` commands they perform. `your turn`,
-`my turn`, `main phase`, and `ignore` use `noattack` when declaring
-attackers; `noblock` is used when that is the only legal declaration. `attach <id>` attaches an Equipment
+take a non-pass action). Those shortcuts and `ignore` only pass for the
+player who issued them; other players may still act. Other players'
+pass-until shortcuts (recorded as `pass` sequences) do not interrupt those
+commands. `ignore` keeps passing until your next main phase and is not
+interrupted at all. Those shortcuts are recorded as the individual `pass`
+commands they perform. `your turn`, `my turn`, `main phase`, and `ignore`
+use `noattack` when declaring attackers; `noblock` is used when that is the
+only legal declaration. `attach <id>` attaches an Equipment
 you control when a spell asks you to. After scripted input is exhausted, a
 cost with only one legal payment is paid automatically (`tap`, `pay`,
 `sacrifice`) and a unique legal target is announced automatically as a
@@ -88,7 +90,9 @@ Options:
                   (your turn, my turn, main phase, attack step, ignore) are written
                   as the individual pass commands they perform. your turn,
                   my turn, main phase, and ignore use noattack when declaring
-                  attackers. Other players' pass-until shortcuts do not interrupt a pending shortcut;
+                  attackers. your turn, my turn, main phase, attack step, and ignore
+                  only pass for the player who issued them.
+                  Other players' pass-until shortcuts do not interrupt a pending shortcut;
                   ignore is never interrupted
   --check         With --input FILE, replay those commands without reading
                   the console. Exit 0 only if every command is legal and
@@ -653,11 +657,11 @@ def helpInteractive (controlAll : Bool := false)
   mulligan             Declare a mulligan; taken after all declarations (CR 103.5 / 103.5c)
   bottom <id> [id...]  Put cards on the bottom after a mulligan
   pass                 Pass priority
-  your turn            Pass until combat of the next turn if that turn is not yours (uses noattack)
-  my turn              Pass until the main phase of the next turn if that turn is yours (uses noattack)
-  main phase           Pass until the next main phase (uses noattack)
-  attack step          Pass until the next declare attackers step
-  ignore               Pass until your next main phase (never interrupted; uses noattack)
+  your turn            Pass until combat of the next turn if that turn is not yours (only you pass; uses noattack)
+  my turn              Pass until the main phase of the next turn if that turn is yours (only you pass; uses noattack)
+  main phase           Pass until the next main phase (only you pass; uses noattack)
+  attack step          Pass until the next declare attackers step (only you pass)
+  ignore               Pass until your next main phase (never interrupted; only you pass; uses noattack)
   pay                  Pay a proposed spell or ability's cost (CR 601.2h)
   autopay              Tap mana sources and pay the current cost (CR 601.2g–h)
   pay-extra            Pay extra generic mana as an additional cost (CR 601.2b)
@@ -727,6 +731,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard ((helpInteractive false).splitOn "pay-extra").length > 1
 #guard ((helpInteractive false).splitOn "autopay").length > 1
 #guard ((helpInteractive false).splitOn "your turn").length > 1
+#guard ((helpInteractive false).splitOn "only you pass").length > 5
 #guard ((helpInteractive false).splitOn "my turn").length > 1
 #guard ((helpInteractive false).splitOn "main phase").length > 1
 #guard ((helpInteractive false).splitOn "attack step").length > 1
@@ -750,6 +755,7 @@ def helpInteractive (controlAll : Bool := false)
 #guard (usage.splitOn "Pass-until shortcuts").length > 1
 #guard (usage.splitOn "individual pass commands they perform").length > 1
 #guard (usage.splitOn "do not interrupt a pending shortcut").length > 1
+#guard (usage.splitOn "only pass for the player who issued them").length > 1
 #guard (usage.splitOn "ignore is never interrupted").length > 1
 #guard (usage.splitOn "Incorrect commands and session commands").length > 1
 #guard (usage.splitOn "such as state and quit").length > 1
@@ -3038,18 +3044,26 @@ def reachedPassUntilGoal (g : Game) (goal : PassUntilGoal) : Bool :=
   | .named t => reachedPassUntil g goal.startTurn goal.startStep t
   | .ignore => reachedIgnore g goal
 
-/-- `ignore` only issues commands as the issuer; other players may still act. -/
-def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
+/-- Only issue pass-until commands as `issuer`; other players may still act. -/
+def issuerPassUntilCommand? (g : Game) (issuer : PlayerId)
+    (forceEmptyCombat := false) (alwaysNoAttack := false) : Option String :=
   match g.actor with
   | some p =>
-    if p == issuer then passUntilCommand? g forceEmptyCombat (alwaysNoAttack := true) else none
+    if p == issuer then
+      passUntilCommand? g forceEmptyCombat (alwaysNoAttack := alwaysNoAttack)
+    else none
   | none => none
+
+/-- `ignore` only issues commands as the issuer; other players may still act. -/
+def ignoreCommand? (g : Game) (issuer : PlayerId) (forceEmptyCombat := false) : Option String :=
+  issuerPassUntilCommand? g issuer forceEmptyCombat (alwaysNoAttack := true)
 
 def passUntilGoalCommand? (g : Game) (goal : PassUntilGoal)
     (forceEmptyCombat := false) : Option String :=
   match goal.kind with
   | .named t =>
-    passUntilCommand? g forceEmptyCombat (alwaysNoAttack := passUntilSkipsAttackers t)
+    issuerPassUntilCommand? g goal.issuer forceEmptyCombat
+      (alwaysNoAttack := passUntilSkipsAttackers t)
   | .ignore => ignoreCommand? g goal.issuer forceEmptyCombat
 
 /-- Error when `passUntilFuel` runs out before this goal is reached. -/
@@ -3059,9 +3073,9 @@ def PassUntilKind.fuelError : PassUntilKind → String
 
 /-- Keep issuing the goal's commands (`pass`, and empty combat declarations
 where the goal allows them) until the goal is reached, the game ends, or no
-command can be issued: a named goal with nothing done yet errors because a
-player must take a non-pass action, while `ignore` stops quietly so another
-player can act. -/
+command can be issued. Every pass-until shortcut only issues commands as the
+issuer, so another player can act. A named goal with nothing done yet errors
+because a player must take a non-pass action; `ignore` stops quietly. -/
 def applyPassUntilGoalSteps (g : Game) (goal : PassUntilGoal) (fuel : Nat)
     (cmds : Array String) (forceEmptyCombat := false) :
     Except String PassUntilResult :=
@@ -3093,7 +3107,7 @@ def applyPassUntil (g : Game) (p : PlayerId) (target : PassUntilTarget)
     forceEmptyCombat
 
 /-- `your turn`: pass until combat of the next turn, when that turn is not
-the issuer's. -/
+the issuer's. Only the issuer passes; other players may still act. -/
 def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String)
     (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
@@ -3105,7 +3119,7 @@ def applyYourTurn (g : Game) (p : PlayerId) (tokens : List String)
   | _ => throw yourTurnUsage
 
 /-- `my turn`: pass until the main phase of the next turn, when that turn
-is the issuer's. -/
+is the issuer's. Only the issuer passes; other players may still act. -/
 def applyMyTurn (g : Game) (p : PlayerId) (tokens : List String)
     (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
@@ -3116,14 +3130,16 @@ def applyMyTurn (g : Game) (p : PlayerId) (tokens : List String)
       applyPassUntil g p .nextTurnMain forceEmptyCombat
   | _ => throw myTurnUsage
 
-/-- `main phase`: pass until the next main phase. -/
+/-- `main phase`: pass until the next main phase. Only the issuer passes;
+other players may still act. -/
 def applyMainPhase (g : Game) (p : PlayerId) (tokens : List String)
     (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
   | ["phase"] => applyPassUntil g p .nextMain forceEmptyCombat
   | _ => throw mainPhaseUsage
 
-/-- `attack step`: pass until the next declare attackers step. -/
+/-- `attack step`: pass until the next declare attackers step. Only the
+issuer passes; other players may still act. -/
 def applyAttackStep (g : Game) (p : PlayerId) (tokens : List String)
     (forceEmptyCombat := false) : Except String PassUntilResult := do
   match commandTokens tokens with
@@ -3288,10 +3304,29 @@ def resumePassUntilGoal (g : Game) (goal : PassUntilGoal) :
     (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextMain)) ==
   some "noattack"
 #guard passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextTurnCombat)) ==
+  some "noattack"
+#guard passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ (.named .nextTurnMain)) ==
+  some "noattack"
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩
+      (.named .nextTurnCombat))).isNone
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩ (.named .nextMain))).isNone
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩
+      (.named .nextTurnMain))).isNone
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩ .ignore)).isNone
+#guard passUntilGoalCommand? Tests.readyToDeclareAttackers
     (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩ .ignore) ==
   some "noattack"
 #guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
     (passUntilGoalAt Tests.readyToDeclareAttackers ⟨0⟩
+      (.named .nextDeclareAttackers))).isNone
+#guard (passUntilGoalCommand? Tests.readyToDeclareAttackers
+    (passUntilGoalAt Tests.readyToDeclareAttackers ⟨1⟩
       (.named .nextDeclareAttackers))).isNone
 #guard
   let named := passUntilGoalAt Tests.afterDraw ⟨0⟩ (.named .nextMain)
@@ -4054,11 +4089,12 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.readyToDeclareAttackers "your" ["turn"] "your turn" with
   | .ok (g', cmds) =>
-    cmds.contains "noattack" &&
-      g'.step == .beginningOfCombat &&
-      g'.turnNumber == 2 &&
-      g'.activePlayer == ⟨1⟩ &&
-      g'.hasPriority ⟨1⟩
+    cmds == #["noattack", "pass"] &&
+      g'.step == .declareAttackers &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.readyToDeclareAttackers g' ⟨0⟩ "your" ["turn"] #[]).size == 1
   | .error _ => false
 
 #guard
@@ -4076,66 +4112,69 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
 #guard
   match applyLoggedAction Tests.started "main" ["phase"] "main phase" with
   | .ok (g', cmds) =>
-    g'.step == .precombatMain &&
+    cmds == #["pass"] &&
+      g'.step == .upkeep &&
       g'.turnNumber == 1 &&
       g'.activePlayer == ⟨0⟩ &&
-      cmds == #["pass", "pass"] &&
-      g'.hasPriority ⟨0⟩
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.started g' ⟨0⟩ "main" ["phase"] #[]).size == 1
   | .error _ => false
 
 #guard
   match applyLoggedAction Tests.afterDraw "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
-    g'.step == .declareAttackers &&
-      g'.pending == .declareAttackers &&
+    cmds == #["pass"] &&
+      !cmds.contains "attack step" &&
+      g'.step == .precombatMain &&
       g'.turnNumber == 1 &&
       g'.activePlayer == ⟨0⟩ &&
-      cmds == #["pass", "pass", "pass", "pass"] &&
-      g'.actor == some ⟨0⟩
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "attack" ["step"] #[]).size == 1
   | .error _ => false
 
 #guard
   match applyLoggedAction Tests.started "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
-    g'.step == .declareAttackers &&
-      g'.pending == .declareAttackers &&
+    cmds == #["pass"] &&
+      !cmds.contains "attack step" &&
+      g'.step == .upkeep &&
       g'.turnNumber == 1 &&
-      cmds.all (fun c => c == "pass") &&
-      !cmds.contains "attack step"
+      g'.hasPriority ⟨1⟩
   | .error _ => false
 
 #guard
   match applyLoggedAction (Tests.skipTo Tests.afterDraw .beginningOfCombat 80)
       "attack" ["step"] "attack step" with
   | .ok (g', cmds) =>
-    g'.step == .declareAttackers &&
-      g'.pending == .declareAttackers &&
+    cmds == #["pass"] &&
+      g'.step == .beginningOfCombat &&
+      g'.pending != .declareAttackers &&
       g'.turnNumber == 1 &&
-      cmds == #["pass", "pass"]
+      g'.hasPriority ⟨1⟩
   | .error _ => false
 
 #guard
   match applyLoggedAction Tests.afterDraw "main" ["phase"] "main phase" with
   | .ok (g', cmds) =>
-    g'.step == .postcombatMain &&
+    cmds == #["pass"] &&
+      !cmds.contains "main phase" &&
+      g'.step == .precombatMain &&
       g'.turnNumber == 1 &&
       g'.activePlayer == ⟨0⟩ &&
-      cmds.all (fun c => c == "pass" || c == "noattack") &&
-      cmds.contains "noattack" &&
-      !cmds.contains "main phase" &&
-      g'.hasPriority ⟨0⟩ &&
-      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "main" ["phase"] #[]).isEmpty
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "main" ["phase"] #[]).size == 1
   | .error _ => false
 
 #guard
   match applyLoggedAction Tests.afterDraw "your" ["turn"] "your turn" with
   | .ok (g', cmds) =>
-    g'.step == .beginningOfCombat &&
-      g'.turnNumber == 2 &&
-      g'.activePlayer == ⟨1⟩ &&
-      cmds.all (fun c => c == "pass" || c == "noattack") &&
+    cmds == #["pass"] &&
       !cmds.contains "your turn" &&
-      g'.hasPriority ⟨1⟩
+      g'.step == .precombatMain &&
+      g'.turnNumber == 1 &&
+      g'.activePlayer == ⟨0⟩ &&
+      g'.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand Tests.afterDraw g' ⟨0⟩ "your" ["turn"] #[]).size == 1
   | .error _ => false
 
 #guard
@@ -4144,12 +4183,13 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok g =>
     match applyLoggedAction g "my" ["turn"] "my turn" with
     | .ok (g', cmds) =>
-      g'.step == .precombatMain &&
-        g'.turnNumber == 3 &&
-        g'.activePlayer == ⟨0⟩ &&
-        cmds.all (fun c => c == "pass" || c == "noattack") &&
+      cmds == #["pass"] &&
         !cmds.contains "my turn" &&
-        g'.hasPriority ⟨0⟩
+        g'.step == .precombatMain &&
+        g'.turnNumber == 2 &&
+        g'.activePlayer == ⟨1⟩ &&
+        g'.hasPriority ⟨1⟩ &&
+        (goalsAfterCommand g g' ⟨0⟩ "my" ["turn"] #[]).size == 1
     | .error _ => false
 
 #guard
@@ -4159,16 +4199,19 @@ def applyLoggedAction (g : Game) (cmd : String) (args : List String) (line : Str
   | .ok g =>
     match applyLoggedAction g "my" ["turn"] "my turn" with
     | .ok (g', cmds) =>
-      cmds.contains "noattack" &&
+      cmds == #["pass"] &&
+        !cmds.contains "noattack" &&
         g'.step == .precombatMain &&
-        g'.turnNumber == 3 &&
-        g'.activePlayer == ⟨0⟩ &&
-        g'.hasPriority ⟨0⟩
+        g'.turnNumber == 2 &&
+        g'.activePlayer == ⟨1⟩ &&
+        g'.hasPriority ⟨1⟩
     | .error _ => false
 
 #guard
   match applyInteractiveAsActor Tests.afterDraw "attack" ["step"] with
-  | .ok g' => g'.step == .declareAttackers && g'.pending == .declareAttackers
+  | .ok g' =>
+    g'.step == .precombatMain && g'.hasPriority ⟨1⟩ &&
+      g'.pending != .declareAttackers
   | .error _ => false
 
 #guard
@@ -4489,6 +4532,57 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
   | .ok _ => false
 
 #guard
+  match replayCompleteGame Tests.afterDraw ["your turn", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) =>
+      p == ⟨0⟩ && g'.log.any (fun s => Tests.mentions s "Nissa concedes") &&
+        !g'.log.any (fun s => Tests.mentions s "beginning of combat")
+    | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["your turn", "pass", "concede"] with
+  | .ok g' =>
+    g'.over &&
+      g'.log.any (fun s => Tests.mentions s "beginning of combat") &&
+      match g'.result with
+      | some (.won p) => p == ⟨0⟩
+      | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["main phase", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) =>
+      p == ⟨0⟩ && g'.log.any (fun s => Tests.mentions s "Nissa concedes") &&
+        !g'.log.any (fun s => Tests.mentions s "postcombat main")
+    | _ => false
+  | .error _ => false
+
+#guard
+  match replayCompleteGame Tests.afterDraw ["attack step", "concede"] with
+  | .ok g' =>
+    match g'.result with
+    | some (.won p) =>
+      p == ⟨0⟩ && g'.log.any (fun s => Tests.mentions s "Nissa concedes") &&
+        !g'.log.any (fun s => Tests.mentions s "declare attackers")
+    | _ => false
+  | .error _ => false
+
+#guard
+  match Tests.nissaDraw.apply ⟨1⟩ .pass with
+  | .error _ => false
+  | .ok g =>
+    match replayCompleteGame g ["my turn", "concede"] with
+    | .ok g' =>
+      match g'.result with
+      | some (.won p) => p == ⟨0⟩ && g'.turnNumber == 2 && g'.step == .precombatMain
+      | _ => false
+    | .error _ => false
+
+#guard
   match replayCompleteGame Tests.afterDraw ["ignore", "concede"] with
   | .ok g' =>
     match g'.result with
@@ -4521,23 +4615,35 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
     | _ => false
   | .error _ => false
 
--- `main phase` declares no attackers even when a creature can attack.
+-- `main phase` only passes for the issuer; `noattack` waits until that
+-- player is declaring attackers (after the opponent passes).
 #guard
   let g0 := Tests.passBoth (Tests.skipTo Tests.ogreVsBears .precombatMain 80)
   match applyLoggedAction g0 "main" ["phase"] "main phase" with
   | .ok (g1, cmds) =>
-    g1.step == .postcombatMain &&
-      cmds.contains "noattack" &&
-      (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).isEmpty
+    cmds == #["pass"] &&
+      g1.step == .beginningOfCombat &&
+      g1.hasPriority ⟨1⟩ &&
+      (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).size == 1 &&
+      match replayCompleteGame g0 ["main phase", "pass", "concede"] with
+      | .ok g' =>
+        g'.over && g'.log.any (fun s => Tests.mentions s "does not attack") &&
+          match g'.result with
+          | some (.won p) => p == ⟨0⟩
+          | _ => false
+      | .error _ => false
   | .error _ => false
 
--- A pass-until shortcut that stops for a required block stays active so
--- another player's `main phase` (empty combat + passes) can finish it.
+-- Chandra's `main phase` after declaring attackers only passes for her;
+-- Nissa still has priority. Nissa's `main phase` can then accept empty
+-- combat and both shortcuts resume to postcombat.
 #guard
   let g0 := Tests.ogreDeclaredAttacker
   match applyLoggedAction g0 "main" ["phase"] "main phase" with
-  | .ok (g1, _) =>
-    g1.pending == .declareBlockers &&
+  | .ok (g1, cmds) =>
+    cmds == #["pass"] &&
+      g1.step == .declareAttackers &&
+      g1.hasPriority ⟨1⟩ &&
       (goalsAfterCommand g0 g1 ⟨0⟩ "main" ["phase"] #[]).size == 1 &&
       match replayCompleteGame g0 ["main phase", "main phase", "concede"] with
       | .ok g' =>
@@ -4554,7 +4660,7 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
   let ogre := Tests.namedPermanent g0 "Gray Ogre"
   let bears := Tests.namedPermanent g0 "Grizzly Bears"
   match replayCompleteGame g0
-      ["main phase", s!"block {bears.id} {ogre.id}", "concede"] with
+      ["main phase", "pass", s!"block {bears.id} {ogre.id}", "concede"] with
   | .ok g' =>
     g'.over && !g'.log.any (fun s => Tests.mentions s "postcombat main")
   | .error _ => false
@@ -4579,7 +4685,8 @@ def replayCompleteGame (g : Game) (commands : List String) : Except String Game 
       "main phase" true with
   | .ok (g', cmds) =>
     cmds.contains "noblock" &&
-      (g'.step == .postcombatMain || g'.step.isMainPhase)
+      g'.pending != .declareBlockers &&
+      g'.hasPriority ⟨0⟩
   | .error _ => false
 
 /-- One-line result used by `--check`. -/
