@@ -362,9 +362,32 @@ namespace CardDef
 #guard !Effect.returnFromGraveyardTapped.requiresTarget
 #guard !Effect.returnFromGraveyardToHand.requiresTarget
 #guard Effect.returnFromGraveyardTapped.resolution ==
-  .returnFromGraveyardTapped
+  .returnFromGraveyard false
 #guard Effect.returnFromGraveyardToHand.resolution ==
-  .returnFromGraveyardToHand
+  .returnFromGraveyard true
+#guard Effect.returnFromGraveyardTapped == Effect.returnFromGraveyard false
+#guard Effect.returnFromGraveyardToHand == Effect.returnFromGraveyard true
+#guard (Effect.lookAtTopRevealArtifact 4).resolution ==
+  .lookAtTopReveal 4 "artifact"
+#guard (Effect.lookAtTopRevealSubtype 3 "Hero").resolution ==
+  .lookAtTopReveal 3 "Hero"
+#guard (Effect.lookAtTopRevealArtifact 4).phrase ==
+  s!"Look at the top 4 cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
+#guard (Effect.lookAtTopRevealSubtype 3 "Hero").phrase ==
+  "Look at the top 3 cards of your library. You may reveal a Hero card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
+#guard (Effect.dealDamageToAny 2).resolution ==
+  .onPermanent (.dealDamage 2)
+#guard (Effect.dealDamageToAny 2).phrase ==
+  "This creature deals 2 damage to any target"
+#guard Effect.destroyTargetNoncreatureArtOrEnch.resolution ==
+  .onPermanent .destroy
+#guard Effect.destroyTargetNoncreatureArtOrEnch.phrase ==
+  "Destroy target noncreature artifact or noncreature enchantment"
+#guard Effect.sourceGainsIndestructibleTap.resolution ==
+  Resolution.sequence
+    [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+#guard Effect.sourceGainsIndestructibleTap.phrase ==
+  "Witch-king of Angmar gains indestructible until end of turn. Tap him"
 #guard (Effect.dealDamageToTargetCreature 2).requiresTarget
 #guard Effect.destroyTargetColorlessNonland.requiresTarget
 #guard Effect.attachToTargetCreatureYouControl.requiresTarget

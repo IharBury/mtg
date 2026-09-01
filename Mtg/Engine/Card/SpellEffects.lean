@@ -596,11 +596,14 @@ def putPlusOnePlusOneOnSource (n : Nat) : Effect :=
 def targetCantBeBlockedThisTurn : Effect :=
   mkAbility (.of .creature .own) (.onPermanent .cantBeBlocked)
 
+def returnFromGraveyard (toHand : Bool) : Effect :=
+  mkAbility ({}) (.returnFromGraveyard toHand)
+
 def returnFromGraveyardTapped : Effect :=
-  mkAbility ({}) (.returnFromGraveyardTapped)
+  returnFromGraveyard false
 
 def returnFromGraveyardToHand : Effect :=
-  mkAbility ({}) (.returnFromGraveyardToHand)
+  returnFromGraveyard true
 
 def destroyTargetArtifactOrEnchantment : Effect :=
   mkAbility (.of .artifactOrEnchantment) (.onPermanent .destroy)
@@ -671,7 +674,7 @@ def discardLegendarySameNameDraw : Effect :=
   mkAbility ({}) (.discardLegendarySameNameDraw)
 
 def dealDamageToAny (n : Nat) : Effect :=
-  mkAbility (.of .playerOrCreature) (.dealDamageToAny n)
+  mkAbility (.of .playerOrCreature) (.onPermanent (.dealDamage n))
     (castKind := .creatureDamage)
 
 def drawEqualSacrificedPowerThenDiscard : Effect :=
@@ -705,7 +708,10 @@ def teamGainDoubleStrike : Effect :=
   teamGain Keyword.doubleStrike
 
 def sourceGainsIndestructibleTap : Effect :=
-  mkAbility ({}) (.sourceGainsIndestructibleTap)
+  { resolution := .sequence
+      [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+    phrase :=
+      "Witch-king of Angmar gains indestructible until end of turn. Tap him" }
 
 def plusOneOnEachOtherSubtype (subtype : String) (n : Nat) : Effect :=
   mkAbility ({}) (.plusOneOnEachOtherSubtype subtype n)
@@ -739,8 +745,11 @@ def transform : Effect :=
 def drawX : Effect :=
   mkAbility ({}) (.drawX)
 
+def lookAtTopReveal (n : Nat) (quality : String) : Effect :=
+  mkAbility ({}) (.lookAtTopReveal n quality)
+
 def lookAtTopRevealArtifact (n : Nat) : Effect :=
-  mkAbility ({}) (.lookAtTopRevealArtifact n)
+  lookAtTopReveal n "artifact"
 
 def connive : Effect :=
   mkAbility ({}) (.connive)
@@ -806,7 +815,7 @@ def equipmentBecomesConstructHero : Effect :=
   mkAbility ({}) (.equipmentBecomesConstructHero)
 
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
-  mkAbility ({}) (.lookAtTopRevealSubtype n subtype)
+  lookAtTopReveal n subtype
 
 def millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String) : Effect :=
   mkAbility ({}) (.millThenPutSubtypeOrEnchantment n subtype)
@@ -869,7 +878,7 @@ def harnessInfinityStone : Effect :=
   mkAbility ({}) (.harnessInfinityStone)
 
 def destroyTargetNoncreatureArtOrEnch : Effect :=
-  mkAbility (.of .noncreatureArtifactOrEnchantment) (.destroyTargetNoncreatureArtOrEnch)
+  mkAbility (.of .noncreatureArtifactOrEnchantment) (.onPermanent .destroy)
     (castKind := .destroyColorless)
 
 def targetSubtypeConnives (subtype : String) : Effect :=

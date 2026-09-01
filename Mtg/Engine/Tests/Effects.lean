@@ -827,4 +827,66 @@ def loreAfterFirstMain : Game :=
   loreAfterFirstMain.battlefield.any (fun o =>
     o.name == "Burn, Burn, Tree and Fern" && o.status.lore ≥ 2)
 
+/-- `sourceGainsIndestructibleTap` applies as grant indestructible, then tap. -/
+def sourceGainsIndestructibleTapResolved : Game :=
+  let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ Effect.sourceGainsIndestructibleTap #[]
+    (some (namedPermanent g "Gray Ogre").id)
+
+#guard
+  (namedPermanent sourceGainsIndestructibleTapResolved "Gray Ogre").status.untilEotKeywords.indestructible &&
+    (namedPermanent sourceGainsIndestructibleTapResolved "Gray Ogre").status.tapped &&
+    sourceGainsIndestructibleTapResolved.log.any (fun s =>
+      mentions s "Gray Ogre gains indestructible") &&
+    sourceGainsIndestructibleTapResolved.log.any (fun s =>
+      mentions s "Gray Ogre becomes tapped")
+
+/-- `dealDamageToAny` is `onPermanent` damage to any target. -/
+def dealDamageToAnyResolved : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
+  g.applyAbilityEffect ⟨0⟩ (Effect.dealDamageToAny 2)
+    #[Target.permanent (namedPermanent g "Grizzly Bears").id]
+
+#guard (namedPermanent dealDamageToAnyResolved "Grizzly Bears").status.damage == 2
+
+/-- `destroyTargetNoncreatureArtOrEnch` is `onPermanent` destroy. -/
+def destroyNoncreatureResolved : Game :=
+  let g := addPermanent afterDraw foodToken ⟨1⟩ ⟨1⟩
+  g.applyAbilityEffect ⟨0⟩ Effect.destroyTargetNoncreatureArtOrEnch
+    #[Target.permanent (namedPermanent g "Food").id]
+
+#guard !destroyNoncreatureResolved.battlefield.any (fun o => o.name == "Food")
+
+/-- Parameterized graveyard return: battlefield tapped vs owner's hand. -/
+def returnFromGyTappedResolved : Game :=
+  let g := addToGraveyard afterDraw grayOgre ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ Effect.returnFromGraveyardTapped #[]
+    (some (namedGraveyardCard g ⟨0⟩ "Gray Ogre").id)
+
+#guard
+  (namedPermanent returnFromGyTappedResolved "Gray Ogre").status.tapped &&
+    returnFromGyTappedResolved.log.any (fun s =>
+      mentions s "returns to the battlefield tapped")
+
+def returnFromGyToHandResolved : Game :=
+  let g := addToGraveyard afterDraw grayOgre ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ Effect.returnFromGraveyardToHand #[]
+    (some (namedGraveyardCard g ⟨0⟩ "Gray Ogre").id)
+
+#guard
+  !returnFromGyToHandResolved.battlefield.any (fun o => o.name == "Gray Ogre") &&
+    (returnFromGyToHandResolved.player ⟨0⟩).hand.any (fun id =>
+      (returnFromGyToHandResolved.object! id).name == "Gray Ogre")
+
+/-- Parameterized look-at-top reveal logs the same for artifact and subtype. -/
+def lookAtTopRevealArtifactLogged : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopRevealArtifact 4) #[]
+
+#guard lookAtTopRevealArtifactLogged.log.any (fun s => mentions s "looks at the top 4")
+
+def lookAtTopRevealHeroLogged : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopReveal 3 "Hero") #[]
+
+#guard lookAtTopRevealHeroLogged.log.any (fun s => mentions s "looks at the top 3")
+
 end Mtg.Engine.Tests

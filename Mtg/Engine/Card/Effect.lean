@@ -50,10 +50,9 @@ inductive Resolution where
   | attach
   /-- Become this subtype with lands-you-control P/T. -/
   | becomeSubtypeWithLandsPT (subtype : String)
-  /-- Return the source from the graveyard to the battlefield tapped. -/
-  | returnFromGraveyardTapped
-  /-- Return the source from the graveyard to its owner's hand. -/
-  | returnFromGraveyardToHand
+  /-- Return the source from the graveyard to the battlefield tapped, or to
+  its owner's hand. -/
+  | returnFromGraveyard (toHand : Bool)
   /-- Creatures you control get +P/+T until end of turn. -/
   | creaturesYouControlPump (power toughness : Int)
   /-- Target player mills `n` cards. -/
@@ -78,8 +77,6 @@ inductive Resolution where
   | twoPlayersDraw
   /-- Discard a same-name legendary; draw two. -/
   | discardLegendarySameNameDraw
-  /-- Deal `n` to any target. -/
-  | dealDamageToAny (n : Nat)
   /-- Draw equal to sacrificed power, then discard. -/
   | drawEqualSacrificedPowerThenDiscard
   /-- Arwen share. -/
@@ -98,8 +95,6 @@ inductive Resolution where
   | burdenThenDraw
   /-- Creatures you control gain this keyword. -/
   | teamGain (k : Keywords)
-  /-- Source gains indestructible and taps. -/
-  | sourceGainsIndestructibleTap
   /-- +1/+1 on each other permanent of this subtype. -/
   | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
   /-- +1/+1 and an indestructible counter on the source. -/
@@ -116,8 +111,9 @@ inductive Resolution where
   | transform
   /-- Draw X cards. -/
   | drawX
-  /-- Look at the top `n`; reveal an artifact to hand. -/
-  | lookAtTopRevealArtifact (n : Nat)
+  /-- Look at the top `n`; you may reveal a card of this quality and put it
+  into your hand. -/
+  | lookAtTopReveal (n : Nat) (quality : String)
   /-- The source connives. -/
   | connive
   /-- Add one mana of any color, spendable only on this subtype's spells or sources. -/
@@ -152,8 +148,6 @@ inductive Resolution where
   | proliferateEachKind
   /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
   | equipmentBecomesConstructHero
-  /-- Look at the top `n`; you may reveal a card of this subtype and put it into your hand. -/
-  | lookAtTopRevealSubtype (n : Nat) (subtype : String)
   /-- Mill `n`. You may put a card of this subtype or an enchantment into your hand. -/
   | millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String)
   /-- Put a +1/+1 counter and a double strike counter on this. -/
@@ -180,8 +174,6 @@ inductive Resolution where
   | nextInstantSorceryCopyIfMvAtMostSourcePower
   /-- Harness this Infinity Stone. -/
   | harnessInfinityStone
-  /-- Destroy target noncreature artifact or noncreature enchantment. -/
-  | destroyTargetNoncreatureArtOrEnch
   /-- Target permanent you control of this subtype connives. -/
   | targetSubtypeConnives (subtype : String)
   /-- Apply each resolution in the given list, in order. -/
@@ -330,10 +322,11 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     s!"Attach this Equipment to {noun}"
   | .becomeSubtypeWithLandsPT subtype =>
     s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-  | .returnFromGraveyardTapped =>
-    "Return this card from your graveyard to the battlefield tapped"
-  | .returnFromGraveyardToHand =>
-    "Return this card from your graveyard to your hand"
+  | .returnFromGraveyard toHand =>
+    if toHand then
+      "Return this card from your graveyard to your hand"
+    else
+      "Return this card from your graveyard to the battlefield tapped"
   | .creaturesYouControlPump p t =>
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .mill n =>
@@ -358,8 +351,6 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "Two target players each draw a card"
   | .discardLegendarySameNameDraw =>
     "Draw two cards"
-  | .dealDamageToAny n =>
-    s!"This creature deals {n} damage to any target"
   | .drawEqualSacrificedPowerThenDiscard =>
     "Draw cards equal to the sacrificed creature's power, then discard a card"
   | .arwenShare =>
@@ -378,8 +369,6 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring"
   | .teamGain k =>
     s!"Creatures you control gain {k.joinedAnd} until end of turn"
-  | .sourceGainsIndestructibleTap =>
-    "Witch-king of Angmar gains indestructible until end of turn. Tap him"
   | .plusOneOnEachOtherSubtype subtype n =>
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .plusOneAndIndestructibleCounter =>
@@ -398,8 +387,12 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "Transform this"
   | .drawX =>
     "Draw X cards"
-  | .lookAtTopRevealArtifact n =>
-    s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
+  | .lookAtTopReveal n quality =>
+    let art := indefinite quality
+    let rest :=
+      if quality == "artifact" then restOnBottomRandomPhrase
+      else "Put the rest on the bottom of your library in any order"
+    s!"Look at the top {n} cards of your library. You may reveal {art} {quality} card from among them and put it into your hand. {rest}"
   | .connive =>
     "This creature connives"
   | .addAnyColorSpendOnlySubtype subtype =>
@@ -435,8 +428,6 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
   | .equipmentBecomesConstructHero =>
     "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
-  | .lookAtTopRevealSubtype n subtype =>
-    s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
   | .millThenPutSubtypeOrEnchantment n subtype =>
     s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
   | .plusOneAndDoubleStrikeCounter =>
@@ -468,8 +459,6 @@ def toPhrase (r : Resolution) (noun : String) : String :=
     "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
   | .harnessInfinityStone =>
     "Harness this"
-  | .destroyTargetNoncreatureArtOrEnch =>
-    "Destroy target noncreature artifact or noncreature enchantment"
   | .targetSubtypeConnives subtype =>
     s!"Target {subtype} you control connives"
   | .sequence rs =>

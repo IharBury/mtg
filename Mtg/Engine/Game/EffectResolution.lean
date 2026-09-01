@@ -777,10 +777,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           grantedStaticAbilities := granted })
       g.logMsg
         s!"{o.name} becomes {indefinite subtype} {subtype} creature. Its power and toughness are each equal to the number of lands you control"
-  | .returnFromGraveyardTapped =>
-    g.returnSourceFromGraveyard sourceId controller (tapped := true)
-  | .returnFromGraveyardToHand =>
-    g.returnSourceFromGraveyard sourceId controller (toHand := true)
+  | .returnFromGraveyard toHand =>
+    g.returnSourceFromGraveyard sourceId controller (tapped := !toHand) (toHand := toHand)
   | .creaturesYouControlPump pw tw =>
     g.pumpControlledCreatures controller pw tw
   | .mill n =>
@@ -854,8 +852,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | _, _ => g.logMsg "The targets are no longer legal"
   | .discardLegendarySameNameDraw =>
     g.draw controller 2
-  | .dealDamageToAny n =>
-    g.applyEffect controller (Effect.dealDamage n) targets
   | .drawEqualSacrificedPowerThenDiscard =>
     let n :=
       match sourceId.bind g.findObject? with
@@ -902,12 +898,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       g.draw controller n
   | .teamGain k =>
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
-  | .sourceGainsIndestructibleTap =>
-    g.withSourceOnBattlefield sourceId fun g o =>
-      let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
-      let o := g.object! o.id
-      let g := g.logMsg s!"{o.name} gains indestructible until end of turn"
-      g.becomeTapped o
   | .plusOneOnEachOtherSubtype subtype n =>
     g.foldBattlefield (fun o =>
         o.controlledBy controller && o.id != sourceId.getD ⟨0⟩ && g.hasSubtype o subtype)
@@ -953,7 +943,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           g.logMsg s!"{o.name} transforms into {back.name}"
   | .drawX =>
     g.draw controller chosenX
-  | .lookAtTopRevealArtifact n =>
+  | .lookAtTopReveal n _quality =>
     g.logLookAtTop controller n
   | .connive =>
     g.applyConnive controller sourceId
@@ -1043,8 +1033,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           (additionalCreature := true) (additionalArtifact := true)
           (pumpPerArtifact := true)
     | none => g.logMsg "The Equipment is no longer in play"
-  | .lookAtTopRevealSubtype n _subtype =>
-    g.logLookAtTop controller n
   | .millThenPutSubtypeOrEnchantment _ _ =>
     g.applyLeftoverTextEffect controller effect.phrase targets sourceId
   | .plusOneAndDoubleStrikeCounter =>
@@ -1109,9 +1097,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId (fun g o =>
       let g := g.mapObjectStatus o (fun s => { s with harnessed := true })
       g.logMsg s!"{o.name} is harnessed") "The source is no longer in play"
-  | .destroyTargetNoncreatureArtOrEnch =>
-    g.withLegalKindPermanent controller .noncreatureArtifactOrEnchantment targets
-      (fun g o => g.applyPermanentAction o .destroy) sourceId none
   | .targetSubtypeConnives _ =>
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
