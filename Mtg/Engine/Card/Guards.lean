@@ -90,7 +90,7 @@ namespace CardDef
 #guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).resolution ==
   Resolution.sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
 #guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).phrase ==
-  "Put two +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
+  "Put 2 +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
 #guard (Effect.plusOneAndGrant
     ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)).resolution ==
   Resolution.sequence
