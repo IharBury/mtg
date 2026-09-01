@@ -581,8 +581,11 @@ def destroyTargetColorlessNonland : Effect :=
 def attachToTargetCreatureYouControl : Effect :=
   mkAbility (.of .creatureYouControl) (.attach)
 
+def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
+  mkAbility ({}) (.becomeSubtypeWithLandsPT subtype)
+
 def becomeBearCreatureWithLandsPT : Effect :=
-  mkAbility ({}) (.becomeBear)
+  becomeSubtypeWithLandsPT "Bear"
 
 def sourceGets (power toughness : Int) : Effect :=
   mkAbility ({}) (.onSource (.pump power toughness))
@@ -655,8 +658,11 @@ def subtypesGainMenace (subtypes : Array String) : Effect :=
 def exileThenReturnNextEnd : Effect :=
   mkAbility (.of .twoCreaturesOrLandsYouControl) (.exileThenReturnNextEnd)
 
+def searchBasicBeholdSubtypeUntap (subtype : String) : Effect :=
+  mkAbility ({}) (.searchBasicBeholdSubtypeUntap subtype)
+
 def searchBasicBeholdElfUntap : Effect :=
-  mkAbility ({}) (.searchBasicBeholdElfUntap)
+  searchBasicBeholdSubtypeUntap "Elf"
 
 def twoPlayersDraw : Effect :=
   mkAbility (.of .twoPlayers) (.twoPlayersDraw)
@@ -692,8 +698,11 @@ def blackGateUnblockable : Effect :=
 def burdenThenDraw : Effect :=
   mkAbility ({}) (.burdenThenDraw)
 
+def teamGain (k : Keywords) : Effect :=
+  mkAbility ({}) (.teamGain k)
+
 def teamGainDoubleStrike : Effect :=
-  mkAbility ({}) (.teamGainDoubleStrike)
+  teamGain Keyword.doubleStrike
 
 def sourceGainsIndestructibleTap : Effect :=
   mkAbility ({}) (.sourceGainsIndestructibleTap)
@@ -718,8 +727,11 @@ def plusOneX : Effect :=
 def eachOppDiscardThenPlusOne : Effect :=
   mkAbility ({}) (.eachOppDiscardThenPlusOne)
 
+def lookAtTopPutTypes (n : Nat) (types : Array String) : Effect :=
+  mkAbility ({}) (.lookAtTopPutTypes n types)
+
 def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
-  mkAbility ({}) (.lookAtTopPutHeroEquipVehicle n)
+  lookAtTopPutTypes n #["Hero", "Equipment", "Vehicle"]
 
 def transform : Effect :=
   mkAbility ({}) (.transform)
@@ -733,11 +745,14 @@ def lookAtTopRevealArtifact (n : Nat) : Effect :=
 def connive : Effect :=
   mkAbility ({}) (.connive)
 
+def addAnyColorSpendOnlySubtype (subtype : String) : Effect :=
+  mkAbility ({}) (.addAnyColorSpendOnlySubtype subtype)
+
 def addAnyColorSpendOnlyHero : Effect :=
-  mkAbility ({}) (.addAnyColorSpendOnlyHero)
+  addAnyColorSpendOnlySubtype "Hero"
 
 def addAnyColorSpendOnlyVillain : Effect :=
-  mkAbility ({}) (.addAnyColorSpendOnlyVillain)
+  addAnyColorSpendOnlySubtype "Villain"
 
 def addAnyColorSpendOnlyArtifactSpell : Effect :=
   mkAbility ({}) (.addAnyColorSpendOnlyArtifactSpell)
@@ -793,8 +808,11 @@ def equipmentBecomesConstructHero : Effect :=
 def lookAtTopRevealSubtype (n : Nat) (subtype : String) : Effect :=
   mkAbility ({}) (.lookAtTopRevealSubtype n subtype)
 
+def millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String) : Effect :=
+  mkAbility ({}) (.millThenPutSubtypeOrEnchantment n subtype)
+
 def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
-  mkAbility ({}) (.millThenPutHeroOrEnchantment n)
+  millThenPutSubtypeOrEnchantment n "Hero"
 
 def plusOneAndDoubleStrikeCounter : Effect :=
   mkAbility ({}) (.plusOneAndDoubleStrikeCounter)
@@ -838,8 +856,11 @@ def copyArtifactYouControlNotLegendary : Effect :=
 def pumpAttackingAloneGainLife : Effect :=
   mkAbility (.of .attackingAloneCreatureYouControl) (.pumpAttackingAloneGainLife)
 
+def becomeTypes (types : Array String) (power toughness : Int) (k : Keywords) : Effect :=
+  mkAbility ({}) (.becomeTypes types power toughness k)
+
 def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
-  mkAbility ({}) (.becomeDinosaurHero power toughness k)
+  becomeTypes #["Dinosaur", "Hero"] power toughness k
 
 def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
   mkAbility ({}) (.nextInstantSorceryCopyIfMvAtMostSourcePower)

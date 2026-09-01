@@ -242,7 +242,7 @@ def beornsHospitality : CardDef :=
     "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)"
     (triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne])
     (activatedAbilities := #[
-      activated (Effect.becomeBearCreatureWithLandsPT)
+      activated (Effect.becomeSubtypeWithLandsPT "Bear")
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
 
 def woodlandWeavemaster : CardDef :=
@@ -1023,7 +1023,7 @@ def elrondMoonReader : CardDef :=
 def elvenPassage : CardDef :=
   land "Elven Passage" "{T}, Pay 1 life, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. You may behold an Elf. If you do, untap that land. (To behold an Elf, choose an Elf you control or reveal an Elf card from your hand.)"
     (activatedAbilities := #[
-      activated (Effect.searchBasicBeholdElfUntap) (tap := true) (payLife := 1)
+      activated (Effect.searchBasicBeholdSubtypeUntap "Elf") (tap := true) (payLife := 1)
         (sacrificeSource := true)])
 
 def enchantedRiverSGrasp : CardDef :=
@@ -1479,7 +1479,7 @@ def hobbitCards : Array CardDef := #[
 #guard !beornsHospitality.isCreature
 #guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
 #guard beornsHospitality.activatedAbilities.size == 1
-#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeBearCreatureWithLandsPT
+#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
 #guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
 #guard (beornsHospitality.summary.splitOn "Landfall").length > 1

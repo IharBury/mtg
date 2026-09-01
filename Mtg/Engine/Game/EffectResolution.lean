@@ -762,11 +762,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.applyOnPermanent controller effect.targetKind targets action sourceId
   | .onSource action =>
     g.applyOnSource sourceId action
-  | .becomeBear =>
+  | .becomeSubtypeWithLandsPT subtype =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let subtypes :=
-        if g.hasSubtype o "Bear" then o.status.additionalSubtypes
-        else o.status.additionalSubtypes.push "Bear"
+        if g.hasSubtype o subtype then o.status.additionalSubtypes
+        else o.status.additionalSubtypes.push subtype
       let granted :=
         if g.hasLandsYouControlPT o then o.status.grantedStaticAbilities
         else o.status.grantedStaticAbilities.push .powerToughnessEqualLandsYouControl
@@ -776,7 +776,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           additionalSubtypes := subtypes
           grantedStaticAbilities := granted })
       g.logMsg
-        s!"{o.name} becomes a Bear creature. Its power and toughness are each equal to the number of lands you control"
+        s!"{o.name} becomes {indefinite subtype} {subtype} creature. Its power and toughness are each equal to the number of lands you control"
   | .returnFromGraveyardTapped =>
     g.returnSourceFromGraveyard sourceId controller (tapped := true)
   | .returnFromGraveyardToHand =>
@@ -838,10 +838,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       if o.controlledBy controller && !o.printed.isLand && some o.id != sourceId then
         g.exileThenReturn o "is exiled, then returned" (clearExileFields := true)
       else g)
-  | .searchBasicBeholdElfUntap =>
+  | .searchBasicBeholdSubtypeUntap subtype =>
     let g := g.resolveSearchBasicLandTapped controller
-    let g := g.beholdQuality controller "Elf"
-    if g.qualityWasBeheld controller "Elf" then
+    let g := g.beholdQuality controller subtype
+    if g.qualityWasBeheld controller subtype then
       match (g.permanentsOf controller).find? (fun o => o.printed.isLand && o.status.tapped) with
       | none => g
       | some land => g.applyPermanentAction land .untap
@@ -900,9 +900,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       let n := (g.object! o.id).status.burden
       let g := g.logMsg s!"{o.name} gets a burden counter ({n})"
       g.draw controller n
-  | .teamGainDoubleStrike =>
-    g.grantUntilEotToControlledCreatures controller Keyword.doubleStrike
-      "double strike"
+  | .teamGain k =>
+    g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .sourceGainsIndestructibleTap =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.mapObjectStatus o (·.grantUntilEot Keyword.indestructible)
@@ -934,7 +933,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.withSourceOnBattlefield sourceId fun g o =>
       g.setObject { o with status := { o.status with
         plusOnePlusOne := o.status.plusOnePlusOne + 1 } }
-  | .lookAtTopPutHeroEquipVehicle n =>
+  | .lookAtTopPutTypes n _types =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.setObject { o with status := { o.status with
         plusOnePlusOne := o.status.plusOnePlusOne + 2 } }
@@ -958,14 +957,13 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.logLookAtTop controller n
   | .connive =>
     g.applyConnive controller sourceId
-  | .addAnyColorSpendOnlyHero =>
+  | .addAnyColorSpendOnlySubtype subtype =>
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool :=
-        pl.manaPool.add (.colored .white) 1 (heroRestricted := true) })
-  | .addAnyColorSpendOnlyVillain =>
-    g.modifyPlayer controller (fun pl =>
-      { pl with manaPool :=
-        pl.manaPool.add (.colored .black) 1 (villainRestricted := true) })
+        pl.manaPool.add
+          (if subtype == "Villain" then .colored .black else .colored .white) 1
+          (heroRestricted := subtype == "Hero")
+          (villainRestricted := subtype == "Villain") })
   | .addAnyColorSpendOnlyArtifactSpell =>
     g.modifyPlayer controller (fun pl =>
       { pl with manaPool := pl.manaPool.add (.colored .white) 1 })
@@ -1043,9 +1041,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     | none => g.logMsg "The Equipment is no longer in play"
   | .lookAtTopRevealSubtype n _subtype =>
     g.logLookAtTop controller n
-  | .millThenPutHeroOrEnchantment n =>
-    g.applyLeftoverTextEffect controller
-      ((Effect.millThenPutHeroOrEnchantment n).phrase) targets sourceId
+  | .millThenPutSubtypeOrEnchantment _ _ =>
+    g.applyLeftoverTextEffect controller effect.phrase targets sourceId
   | .plusOneAndDoubleStrikeCounter =>
     g.applyLeftoverTextEffect controller
       (Effect.plusOneAndDoubleStrikeCounter.phrase) targets sourceId
@@ -1089,11 +1086,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       let g := g.pumpPermanent o 1 0
       g.gainLife controller 1)
       sourceId (some "The target is no longer legal. You won't gain life.")
-  | .becomeDinosaurHero p t k =>
+  | .becomeTypes types p t k =>
+    let typeWords := String.intercalate " " types.toList
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.setUntilEotForm o (p, t) k
-        s!"{o.name} becomes a {p}/{t} Dinosaur Hero"
-        (types := some #["Dinosaur", "Hero"]))
+        s!"{o.name} becomes a {p}/{t} {typeWords}"
+        (types := some types))
       "The source is no longer in play"
   | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
     let pw :=
