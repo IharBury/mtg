@@ -119,6 +119,7 @@ player view. With `--interactive`, that player is the first named player; with
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
 | `Mtg/Engine/Catalog/` | Oracle cards used by the demo decks (engine remains card-agnostic). |
+| `Mtg/Engine/Tests/` | Compile-time engine smoke tests, one file per topic. |
 | `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
 
 ## Current coverage
