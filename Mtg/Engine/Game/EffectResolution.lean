@@ -746,7 +746,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.applyUnified controller { effect with resolution := .spell r } targets
       (chosenX := chosenX)
   | _ =>
-  match effect.abilityResolution with
+  match effect.resolution with
   | .searchBasicLand => g.resolveSearchBasicLandTapped controller
   | .searchLandTypeToHand t => g.resolveSearchLandTypeToHand controller t
   | .exileTop => g.resolveExileTopPlayUntilEndOfNextTurn controller
@@ -796,8 +796,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.beginScry controller n
   | .gainLife n =>
     g.gainLife controller n
-  | .createTokens kind n =>
-    g.createKindTokens controller kind n
+  | .createTokens kind n tapped =>
+    g.createKindTokens controller kind n (tapped := tapped)
   | .returnFromGyAttach =>
     match sourceId.bind g.findObject? with
     | none => g.logMsg "The source is no longer in the graveyard"
@@ -1019,8 +1019,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .createTokensEqualSubtype kind subtype =>
     let n := g.countSubtype controller subtype
     g.createKindTokens controller kind n
-  | .createTappedTokens kind n =>
-    g.createKindTokens controller kind n (tapped := true)
   | .proliferateEachKind =>
     g.applyLeftoverTextEffect controller
       (Effect.proliferateEachKind.phrase) targets sourceId
@@ -1118,6 +1116,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     match targets[0]? with
     | some (Target.permanent id) => g.applyConnive controller (some id)
     | _ => g.applyConnive controller none
+  | .sequence _ | .shuffleSource | .amassGoblins _ | .discard _ | .spell _ | .trigger _ =>
+    g
 
 /-- Resolve a printed activated ability (CR 608). -/
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : Effect)

@@ -62,12 +62,18 @@ namespace CardDef
 #guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
 #guard (Effect.draw 2).resolution == Resolution.draw 2
 #guard (Effect.scry 1).resolution == Resolution.scry 1
-#guard (Effect.gainLife 3).abilityResolution == .gainLife 3
+#guard (Effect.gainLife 3).resolution == .gainLife 3
+#guard Resolution.toPhrase (.gainLife 3) "target creature" == "You gain 3 life"
+#guard Resolution.toPhrase (.spell (.draw 2)) "target player" == "draw 2 cards"
+#guard Resolution.toPhrase (.sequence [.draw 1, .discard 1]) "target creature" ==
+  "Draw a card. Discard a card"
+#guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
+  "Create a tapped Treasure token"
 #guard (Effect.drawLoseLifeThenAmass 2).resolution ==
   Resolution.sequence [.spell (.drawAndLoseLife 1 1), .amassGoblins 2]
 #guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
   Resolution.sequence
-    [.createTokens .villain21menace 1, .spell (.creaturesYouControlPump 1 0)]
+    [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
 #guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
   Resolution.sequence [.onPermanent .destroy, .gainLife 2]
 #guard (Effect.drawThenDiscard 2).resolution ==
@@ -102,10 +108,10 @@ namespace CardDef
   "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
-    [.ability (.creaturesYouControlPump 1 0), .spell (.eachOpponentLosesLife 1)]
+    [.creaturesYouControlPump 1 0, .spell (.eachOpponentLosesLife 1)]
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
-#guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).abilityResolution ==
+#guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).resolution ==
   .subtypesGainMenace #["Goblin", "Orc"]
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).phrase ==
   "Goblins and Orcs you control gain menace until end of turn"
@@ -325,7 +331,7 @@ namespace CardDef
 #guard (Effect.searchLandTypeToHand "Swamp").phrase ==
   "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
 #guard !(Effect.searchLandTypeToHand "Mountain").requiresTarget
-#guard (Effect.searchLandTypeToHand "Swamp").abilityResolution ==
+#guard (Effect.searchLandTypeToHand "Swamp").resolution ==
   .searchLandTypeToHand "Swamp"
 #guard Effect.addAnyColorSpendOnlyHero.phrase ==
   "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
@@ -355,9 +361,9 @@ namespace CardDef
   "Return this card from your graveyard to your hand"
 #guard !Effect.returnFromGraveyardTapped.requiresTarget
 #guard !Effect.returnFromGraveyardToHand.requiresTarget
-#guard Effect.returnFromGraveyardTapped.abilityResolution ==
+#guard Effect.returnFromGraveyardTapped.resolution ==
   .returnFromGraveyardTapped
-#guard Effect.returnFromGraveyardToHand.abilityResolution ==
+#guard Effect.returnFromGraveyardToHand.resolution ==
   .returnFromGraveyardToHand
 #guard (Effect.dealDamageToTargetCreature 2).requiresTarget
 #guard Effect.destroyTargetColorlessNonland.requiresTarget
@@ -374,25 +380,25 @@ namespace CardDef
 #guard (Effect.dealDamageToTargetCreature 2).abilityKind == .creatureDamage
 #guard Effect.destroyTargetColorlessNonland.abilityKind == .destroyColorless
 #guard (Effect.sourceGets 1 0).abilityKind == .other
-#guard (Effect.dealDamageToTargetCreature 2).abilityResolution ==
+#guard (Effect.dealDamageToTargetCreature 2).resolution ==
   .onPermanent (.dealDamage 2)
-#guard Effect.destroyTargetColorlessNonland.abilityResolution ==
+#guard Effect.destroyTargetColorlessNonland.resolution ==
   .onPermanent .destroy
-#guard Effect.targetCantBeBlockedThisTurn.abilityResolution ==
+#guard Effect.targetCantBeBlockedThisTurn.resolution ==
   .onPermanent .cantBeBlocked
-#guard (Effect.sourceGets 1 0).abilityResolution == .onSource (.pump 1 0)
-#guard (Effect.putPlusOnePlusOneOnSource 3).abilityResolution == .onSource (.plusOne 3)
-#guard Effect.becomeBearCreatureWithLandsPT.abilityResolution ==
+#guard (Effect.sourceGets 1 0).resolution == .onSource (.pump 1 0)
+#guard (Effect.putPlusOnePlusOneOnSource 3).resolution == .onSource (.plusOne 3)
+#guard Effect.becomeBearCreatureWithLandsPT.resolution ==
   .becomeSubtypeWithLandsPT "Bear"
 #guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
   "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-#guard (Effect.searchBasicBeholdSubtypeUntap "Elf").abilityResolution ==
+#guard (Effect.searchBasicBeholdSubtypeUntap "Elf").resolution ==
   .searchBasicBeholdSubtypeUntap "Elf"
 #guard (Effect.searchBasicBeholdSubtypeUntap "Orc").phrase.endsWith
   "You may behold an Orc. If you do, untap that land"
-#guard Effect.addAnyColorSpendOnlyHero.abilityResolution ==
+#guard Effect.addAnyColorSpendOnlyHero.resolution ==
   .addAnyColorSpendOnlySubtype "Hero"
-#guard Effect.addAnyColorSpendOnlyVillain.abilityResolution ==
+#guard Effect.addAnyColorSpendOnlyVillain.resolution ==
   .addAnyColorSpendOnlySubtype "Villain"
 #guard (Effect.teamGain Keyword.doubleStrike).phrase ==
   "Creatures you control gain double strike until end of turn"
@@ -403,7 +409,7 @@ namespace CardDef
   "Mill 4 cards. You may put a Hero or enchantment card from among those cards into your hand"
 #guard (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]).phrase.startsWith
   "Put two +1/+1 counters on this, then look at the top 7 cards"
-#guard Effect.searchBasicLandTapped.abilityResolution == .searchBasicLand
+#guard Effect.searchBasicLandTapped.resolution == .searchBasicLand
 #guard !Effect.searchBasicLandTapped.requiresTarget
 #guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget
 #guard (Effect.abilityDrawThenDiscard 1).phrase ==

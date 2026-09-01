@@ -34,10 +34,12 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Token`: token kinds (CR 111).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
-- `SpellResolution` / `AbilityResolution` / `Chapter`: how spells,
-  activated abilities, and Saga chapters resolve (CR 608 / 714.3).
+- `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
+  how the demo agent classifies activated abilities, and Saga chapters
+  (CR 608 / 714.3).
 - `SharedTrigger`: reusable trigger payloads (CR 603).
-- `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary.
+- `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary
+  (activated-ability leftovers live on `Resolution`).
 - `ActivatedAbility` / `StaticAbility`: printed abilities (CR 602 / 604).
 - `TriggerEvent` / `Trigger`: trigger events, timing, and resolutions.
 - `ChapterEffects` / `TriggerEffects` / `SpellEffects`: named `Effect`

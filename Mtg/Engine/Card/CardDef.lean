@@ -354,7 +354,7 @@ def simpleTapAddMana (c : CardDef) : Array ManaType :=
 /-- `{T}: Add` types from modeled activated mana abilities. -/
 def mshTapAddMana (c : CardDef) : Array ManaType :=
   c.activatedAbilities.foldl (fun acc ab =>
-    match ab.effect.abilityResolution with
+    match ab.effect.resolution with
     | .addMana types => acc ++ types
     | .addBlueCantNonartifact => acc ++ #[.colored .blue]
     | _ => acc) #[]
@@ -371,7 +371,7 @@ def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
 /-- True when an activated ability adds any color of mana. -/
 def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
   c.activatedAbilities.any (fun ab =>
-    match ab.effect.abilityResolution with
+    match ab.effect.resolution with
     | .addAnyColor | .addAnyColorSpendOnlySubtype _
     | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
     | .addTwoAnyColorCreatureSources | .addFourAnyCombination
