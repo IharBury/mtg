@@ -580,7 +580,7 @@ def bladeEquipped : Game := passBoth paidBladeEquip
 
 /-- Bofur (a Dwarf) and unattached Equipment; Vow to Erebor offers the attach. -/
 def vowMayAttach : Game :=
-  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
@@ -645,7 +645,7 @@ def vowOnBears : Game :=
 
 /-- No Equipment: the player is still asked, and the heuristic declines. -/
 def vowMayAttachNoGear : Game :=
-  let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 

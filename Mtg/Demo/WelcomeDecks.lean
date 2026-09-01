@@ -20,7 +20,7 @@ open Mtg.Engine.Catalog
 
 /-- White Welcome Deck (40 cards). -/
 def hobbitWhite : Array CardDef :=
-  #[bofurReliableGuardian] ++
+  #[bofurReliableGuardianCard] ++
   copies 16 plains ++
   copies 2 dwarvenProvisioner ++
   #[velvetwingButterflies] ++
