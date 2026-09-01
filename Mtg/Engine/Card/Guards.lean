@@ -90,6 +90,12 @@ namespace CardDef
     [.ability (.creaturesYouControlPump 1 0), .spell (.eachOpponentLosesLife 1)]
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
+#guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).abilityResolution ==
+  .subtypesGainMenace #["Goblin", "Orc"]
+#guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).phrase ==
+  "Goblins and Orcs you control gain menace until end of turn"
+#guard (Effect.subtypesGainMenace #["Elf"]).phrase ==
+  "Elves you control gain menace until end of turn"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .drawLoseLifeThenAmass 2
 #guard (Effect.plusOneAndDraw 1 2).abilityResolution == .plusOneAndDraw 1 2

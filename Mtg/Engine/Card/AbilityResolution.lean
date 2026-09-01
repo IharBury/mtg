@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.PermanentAction
+import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.Token
 
@@ -72,8 +73,8 @@ inductive AbilityResolution where
   | draw (n : Nat)
   /-- Search two basics; one tapped, one to hand. -/
   | searchTwoBasicsSplit
-  /-- Goblins and Orcs you control gain menace. -/
-  | goblinsAndOrcsGainMenace
+  /-- These subtypes you control gain menace. -/
+  | subtypesGainMenace (subtypes : Array String)
   /-- Exile then return at the next end step. -/
   | exileThenReturnNextEnd
   /-- Search a basic tapped, then behold an Elf to untap it. -/
@@ -255,8 +256,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Draw {cardPhrase n}"
   | .searchTwoBasicsSplit =>
     "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
-  | .goblinsAndOrcsGainMenace =>
-    "Goblins and Orcs you control gain menace until end of turn"
+  | .subtypesGainMenace subtypes =>
+    s!"{StaticAbility.joinedSubtypes subtypes StaticAbility.pluralSubtype} you control gain menace until end of turn"
   | .exileThenReturnNextEnd =>
     "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
   | .searchBasicBeholdElfUntap =>

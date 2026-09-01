@@ -895,7 +895,7 @@ def anUnexpectedParty : CardDef :=
 def alongTheCrookedWay : CardDef :=
   enchantment "Along the Crooked Way" (ManaCost.ofGenericAndColor 2 .black) "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn."
     (activatedAbilities := #[
-      activated (Effect.goblinsAndOrcsGainMenace) (ManaCost.ofGenericAndColor 1 .black)])
+      activated (Effect.subtypesGainMenace #["Goblin", "Orc"]) (ManaCost.ofGenericAndColor 1 .black)])
     (triggeredAbilities := #[.onEnterReturnCreatureFromGyToHand,
       .onCreatureCardLeavesYourGyAmassGoblins 1])
 

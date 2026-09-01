@@ -649,8 +649,8 @@ def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Ef
     phrase :=
       s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
 
-def goblinsAndOrcsGainMenace : Effect :=
-  mkAbility ({}) (.goblinsAndOrcsGainMenace)
+def subtypesGainMenace (subtypes : Array String) : Effect :=
+  mkAbility ({}) (.subtypesGainMenace subtypes)
 
 def exileThenReturnNextEnd : Effect :=
   mkAbility (.of .twoCreaturesOrLandsYouControl) (.exileThenReturnNextEnd)
