@@ -919,16 +919,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       g.setObject { o with status := { o.status with
         plusOnePlusOne := o.status.plusOnePlusOne + 1
         indestructibleCounters := o.status.indestructibleCounters + 1 } }
-  | .plusOneAndDraw plus cards =>
-    let g :=
-      match sourceId.bind g.findObject? with
-      | some o =>
-        if o.isOnBattlefield then
-          g.setObject { o with status := { o.status with
-            plusOnePlusOne := o.status.plusOnePlusOne + plus } }
-        else g
-      | none => g
-    g.draw controller cards
   | .plusOneAndExtraTurn =>
     g.withSourceOnBattlefield sourceId fun g o =>
       let g := g.setObject { o with status := { o.status with
@@ -1027,12 +1017,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.createKindTokens controller kind n
   | .createTappedTokens kind n =>
     g.createKindTokens controller kind n (tapped := true)
-  | .destroyUpToOneThenPlusOne =>
-    let g :=
-      g.withLegalKindPermanent controller .artifactOrEnchantment targets
-        (fun g o => g.applyPermanentAction o .destroy) sourceId none
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
   | .proliferateEachKind =>
     g.applyLeftoverTextEffect controller
       (Effect.proliferateEachKind.phrase) targets sourceId
@@ -1068,20 +1052,11 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   | .plusOneThenFightUpToOne =>
     g.applyLeftoverTextEffect controller
       (Effect.plusOneThenFightUpToOne.phrase) targets sourceId
-  | .plusOneAndGrant k =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      let g := g.addPlusOnePlusOneTo o 1
-      g.grantUntilEotLogged o k) "The source is no longer in play"
   | .plusOneAndCreateTigerGod =>
     let g :=
       g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
         "The source is no longer in play"
     g.createNamedToken controller tigerGodToken
-  | .plusOneAndCreateTokens n kind =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o n)
-        "The source is no longer in play"
-    g.createKindTokens controller kind 1
   | .plusTwoThenOddEvenDestroy =>
     g.applyLeftoverTextEffect controller
       (Effect.plusTwoThenOddEvenDestroy.phrase) targets sourceId

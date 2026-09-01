@@ -109,8 +109,6 @@ inductive AbilityResolution where
   | plusOneOnEachOtherSubtype (subtype : String) (n : Nat)
   /-- +1/+1 and an indestructible counter on the source. -/
   | plusOneAndIndestructibleCounter
-  /-- +1/+1 counters on the source and draw. -/
-  | plusOneAndDraw (plus cards : Nat)
   /-- +1/+1 on the source and an extra turn. -/
   | plusOneAndExtraTurn
   /-- X +1/+1 counters on the source. -/
@@ -159,8 +157,6 @@ inductive AbilityResolution where
   | createTokensEqualSubtype (kind : TokenKind) (subtype : String)
   /-- Create `n` tapped tokens of this kind. -/
   | createTappedTokens (kind : TokenKind) (n : Nat)
-  /-- Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this. -/
-  | destroyUpToOneThenPlusOne
   /-- For each kind of counter on target permanent or player, give another of that kind. -/
   | proliferateEachKind
   /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
@@ -173,12 +169,8 @@ inductive AbilityResolution where
   | plusOneAndDoubleStrikeCounter
   /-- Put a +1/+1 counter on this. It fights up to one target creature an opponent controls. -/
   | plusOneThenFightUpToOne
-  /-- Put a +1/+1 counter on this. It gains these keywords until end of turn. -/
-  | plusOneAndGrant (k : Keywords)
   /-- Put a +1/+1 counter on this and create The Tiger God. -/
   | plusOneAndCreateTigerGod
-  /-- Put `n` +1/+1 counters on this and create a token of this kind. -/
-  | plusOneAndCreateTokens (n : Nat) (kind : TokenKind)
   /-- Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with that MV. -/
   | plusTwoThenOddEvenDestroy
   /-- Return this from your graveyard with a finality counter. Then you may attach an Equipment. -/
@@ -292,8 +284,6 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .plusOneAndIndestructibleCounter =>
     "Put a +1/+1 counter and an indestructible counter on this"
-  | .plusOneAndDraw plus cards =>
-    s!"Put {plusOnePlusOneCountersPhrase plus} on this and draw {cardPhrase cards}"
   | .plusOneAndExtraTurn =>
     "Put a +1/+1 counter on this. Take an extra turn after this one. During that turn, power-up abilities can't be activated"
   | .plusOneX =>
@@ -343,8 +333,6 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
   | .createTappedTokens kind n =>
     capitalizeAscii (TokenKind.createPhrase kind n (tapped := true))
-  | .destroyUpToOneThenPlusOne =>
-    "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this"
   | .proliferateEachKind =>
     "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
   | .equipmentBecomesConstructHero =>
@@ -357,16 +345,8 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     "Put a +1/+1 counter and a double strike counter on this"
   | .plusOneThenFightUpToOne =>
     "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls"
-  | .plusOneAndGrant k =>
-    let joined :=
-      if k.vigilance && k.indestructible && k.haste then
-        "vigilance, indestructible, and haste"
-      else k.joinedAnd
-    s!"Put a +1/+1 counter on this. He gains {joined} until end of turn"
   | .plusOneAndCreateTigerGod =>
     "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .plusOneAndCreateTokens n kind =>
-    s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenKind.createPhrase kind 1}"
   | .plusTwoThenOddEvenDestroy =>
     "Put two +1/+1 counters on this. Choose odd or even. Destroy each other creature with mana value of the chosen quality"
   | .returnFromGyFinalityAttach =>
