@@ -827,9 +827,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | some o => g.setObject { o with status := { o.status with tapped := true } }
           | none => g
         g.logMsg s!"{(g.player controller).name} puts {cardName} onto the battlefield tapped"
-  | .creaturesYouControlGetOppsLoseLife p t life =>
-    let g := g.pumpControlledCreatures controller p t
-    g.forEachOpponent controller (fun g pid => g.loseLife pid life)
   | .goblinsAndOrcsGainMenace =>
     g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
       (fun g o => g.hasSubtype o "Goblin" || g.hasSubtype o "Orc")

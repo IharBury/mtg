@@ -88,6 +88,8 @@ namespace CardDef
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
     [.ability (.creaturesYouControlPump 1 0), .spell (.eachOpponentLosesLife 1)]
+#guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
+  "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
 #guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
   .drawLoseLifeThenAmass 2
 #guard (Effect.plusOneAndDraw 1 2).abilityResolution == .plusOneAndDraw 1 2

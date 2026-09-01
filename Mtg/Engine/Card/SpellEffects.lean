@@ -643,7 +643,11 @@ def searchTwoBasicsSplit : Effect :=
   mkAbility ({}) (.searchTwoBasicsSplit)
 
 def creaturesYouControlGetOppsLoseLife (power toughness : Int) (life : Nat) : Effect :=
-  mkAbility ({}) (.creaturesYouControlGetOppsLoseLife power toughness life)
+  { resolution := .sequence
+      [.ability (.creaturesYouControlPump power toughness),
+       .spell (.eachOpponentLosesLife life)]
+    phrase :=
+      s!"Creatures you control get {signedStat power}/{signedStat toughness} until end of turn. Each opponent loses {life} life" }
 
 def goblinsAndOrcsGainMenace : Effect :=
   mkAbility ({}) (.goblinsAndOrcsGainMenace)
