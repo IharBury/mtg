@@ -12617,6 +12617,69 @@ def abilityDrawThenDiscardDone : Game :=
     (abilityDrawThenDiscardDone.player ⟨0⟩).graveyard.size ==
       (afterDraw.player ⟨0⟩).graveyard.size + 1
 
+/-- `ownerShuffleSourceDraw` applies as shuffle the source, then draw. -/
+def ownerShuffleSourceSetup : Game :=
+  addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+
+def ownerShuffleSourceResolved : Game :=
+  ownerShuffleSourceSetup.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent ownerShuffleSourceSetup "Gandalf, Wandering Wizard").id)
+
+#guard
+  !ownerShuffleSourceResolved.battlefield.any (fun o =>
+      o.name == "Gandalf, Wandering Wizard") &&
+    (ownerShuffleSourceResolved.player ⟨0⟩).hand.size ==
+      (ownerShuffleSourceSetup.player ⟨0⟩).hand.size + 3 &&
+    ownerShuffleSourceResolved.objects.any (fun o =>
+      o.name == "Gandalf, Wandering Wizard" &&
+        (o.zone == .library ⟨0⟩ || o.zone == .hand ⟨0⟩)) &&
+    ownerShuffleSourceResolved.log.any (fun s => mentions s "shuffles their library")
+
+/-- The printed owner draws even when another player controls the source. -/
+def ownerShuffleSourceStolen : Game :=
+  let g := addPermanent afterDraw gandalfWanderingWizard ⟨0⟩ ⟨1⟩
+  g.applyAbilityEffect ⟨1⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent g "Gandalf, Wandering Wizard").id)
+
+#guard
+  (ownerShuffleSourceStolen.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 3 &&
+    (ownerShuffleSourceStolen.player ⟨1⟩).hand.size ==
+      (afterDraw.player ⟨1⟩).hand.size &&
+    ownerShuffleSourceStolen.objects.any (fun o =>
+      o.name == "Gandalf, Wandering Wizard" &&
+        (o.zone == .library ⟨0⟩ || o.zone == .hand ⟨0⟩))
+
+/-- Missing source: no shuffle or draw. -/
+def ownerShuffleSourceGone : Game :=
+  afterDraw.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[] none
+
+#guard
+  ownerShuffleSourceGone.log.any (fun s => mentions s "no longer in play") &&
+    (ownerShuffleSourceGone.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size
+
+/-- `--norandom` shuffles first; the draw waits for the supplied order. -/
+def ownerShuffleSourceNorandomPending : Game :=
+  let g := addPermanent { afterDraw with norandom := true } gandalfWanderingWizard ⟨0⟩ ⟨0⟩
+  g.applyAbilityEffect ⟨0⟩ (Effect.ownerShuffleSourceDraw 3) #[]
+    (some (namedPermanent g "Gandalf, Wandering Wizard").id)
+
+#guard
+  (match ownerShuffleSourceNorandomPending.pendingRandom? with
+     | some (.shuffleLibrary p) => p == ⟨0⟩
+     | _ => false) &&
+    (ownerShuffleSourceNorandomPending.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size
+
+def ownerShuffleSourceNorandomDone : Game :=
+  mustApply ownerShuffleSourceNorandomPending ⟨0⟩ (.supplyOrder #[])
+
+#guard
+  ownerShuffleSourceNorandomDone.pendingRandom?.isNone &&
+    (ownerShuffleSourceNorandomDone.player ⟨0⟩).hand.size ==
+      (afterDraw.player ⟨0⟩).hand.size + 3
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩

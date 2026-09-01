@@ -627,7 +627,8 @@ def gainLife (n : Nat) : Effect :=
   mkAbility ({}) (.gainLife n)
 
 def ownerShuffleSourceDraw (n : Nat) : Effect :=
-  mkAbility ({}) (.ownerShuffleSourceDraw n)
+  { resolution := .sequence [.shuffleSource, .draw n]
+    phrase := s!"This owner shuffles him into their library and draws {cardPhrase n}" }
 
 def returnFromGyAttachPowerAtMost (n : Int) : Effect :=
   mkAbility (.of (.creatureYouControlPowerAtMost n)) (.returnFromGyAttach)

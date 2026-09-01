@@ -11,16 +11,38 @@ triggered abilities.
 namespace Mtg.Engine
 namespace Game
 
+/-- Move the source into its owner's library and shuffle (CR 701.19).
+A following draw is rewritten to that owner so a stolen source still
+draws for the printed owner. -/
+def shuffleSourceIntoLibrary (g : Game) (sourceId : Option ObjectId)
+    (after : AfterRandom := .none) : Game :=
+  match sourceId.bind g.findObject? with
+  | none => g.logMsg "The source is no longer in play"
+  | some src =>
+    let owner := src.owner
+    let after :=
+      match after with
+      | .draw _ n => .draw owner n
+      | other => other
+    let (g, _) := g.move src.id (.library owner) none
+    g.requestShuffle owner after |>.continueIfShuffled
+
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0) : Game :=
   match effect.resolution with
   | .sequence rs =>
-    (rs.flatMap Resolution.flatten).foldl (fun g r =>
-      g.applyUnified controller { effect with resolution := r } targets
-        (castFromGraveyard := castFromGraveyard) (kicked := kicked)
-        (giftPromised := giftPromised) (chosenX := chosenX)) g
+    match rs.flatMap Resolution.flatten with
+    | [.shuffleSource, .draw n] =>
+      g.shuffleSourceIntoLibrary none (.draw controller n)
+    | steps =>
+      steps.foldl (fun g r =>
+        g.applyUnified controller { effect with resolution := r } targets
+          (castFromGraveyard := castFromGraveyard) (kicked := kicked)
+          (giftPromised := giftPromised) (chosenX := chosenX)) g
+  | .shuffleSource =>
+    g.shuffleSourceIntoLibrary none
   | .gainLife n => g.gainLife controller n
   | .recruit => g.beginRecruit controller
   | .addMana types =>
@@ -708,9 +730,15 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
   match effect.resolution with
   | .sequence rs =>
-    (rs.flatMap Resolution.flatten).foldl (fun g r =>
-      g.applyUnifiedAbility controller { effect with resolution := r } targets
-        sourceId lastKnownPower chosenX) g
+    match rs.flatMap Resolution.flatten with
+    | [.shuffleSource, .draw n] =>
+      g.shuffleSourceIntoLibrary sourceId (.draw controller n)
+    | steps =>
+      steps.foldl (fun g r =>
+        g.applyUnifiedAbility controller { effect with resolution := r } targets
+          sourceId lastKnownPower chosenX) g
+  | .shuffleSource =>
+    g.shuffleSourceIntoLibrary sourceId
   | .amassGoblins n => g.amassGoblins controller n
   | .discard n =>
     g.beginDiscardCards #[controller] n
@@ -770,13 +798,6 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
     g.gainLife controller n
   | .createTokens kind n =>
     g.createKindTokens controller kind n
-  | .ownerShuffleSourceDraw n =>
-    match sourceId.bind g.findObject? with
-    | none => g.logMsg "The source is no longer in play"
-    | some src =>
-      let owner := src.owner
-      let (g, _) := g.move src.id (.library owner) none
-      g.requestShuffle owner (.draw owner n) |>.continueIfShuffled
   | .returnFromGyAttach =>
     match sourceId.bind g.findObject? with
     | none => g.logMsg "The source is no longer in the graveyard"

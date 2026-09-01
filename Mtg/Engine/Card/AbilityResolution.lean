@@ -60,8 +60,6 @@ inductive AbilityResolution where
   | gainLife (n : Nat)
   /-- Create `n` tokens of this kind. -/
   | createTokens (kind : TokenKind) (n : Nat)
-  /-- Owner shuffles the source into their library and draws `n`. -/
-  | ownerShuffleSourceDraw (n : Nat)
   /-- Return from the graveyard attached to the targeted creature. -/
   | returnFromGyAttach
   /-- Add these mana types. -/
@@ -247,8 +245,6 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"You gain {n} life"
   | .createTokens kind n =>
     capitalizeAscii (TokenKind.createPhrase kind n)
-  | .ownerShuffleSourceDraw n =>
-    s!"This owner shuffles him into their library and draws {cardPhrase n}"
   | .returnFromGyAttach =>
     s!"Return this card from your graveyard to the battlefield attached to {noun}"
   | .addMana types =>
