@@ -827,9 +827,9 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | some o => g.setObject { o with status := { o.status with tapped := true } }
           | none => g
         g.logMsg s!"{(g.player controller).name} puts {cardName} onto the battlefield tapped"
-  | .goblinsAndOrcsGainMenace =>
+  | .subtypesGainMenace subtypes =>
     g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
-      (fun g o => g.hasSubtype o "Goblin" || g.hasSubtype o "Orc")
+      (fun g o => subtypes.any (g.hasSubtype o))
   | .exileThenReturnNextEnd =>
     -- Return immediately for this engine (next end step is modeled as a
     -- delayed return at the next end step via eagles-style bookkeeping:

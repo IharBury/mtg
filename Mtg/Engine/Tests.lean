@@ -12709,6 +12709,35 @@ def teamPumpThenOppsLoseNoCreatures : Game :=
       mentions s "until end of turn") &&
     teamPumpThenOppsLoseNoCreatures.log.any (fun s => mentions s "Nissa loses 2 life")
 
+/-- `subtypesGainMenace` grants menace only to matching creatures you control. -/
+def subtypesGainMenaceSetup : Game :=
+  addPermanent
+    (addPermanent
+      (addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩)
+      orcishSiegemaster ⟨0⟩ ⟨0⟩)
+    grayOgre ⟨0⟩ ⟨0⟩
+
+def subtypesGainMenaceResolved : Game :=
+  subtypesGainMenaceSetup.applyAbilityEffect ⟨0⟩
+    (Effect.subtypesGainMenace #["Goblin", "Orc"]) #[]
+
+#guard
+  (namedPermanent subtypesGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace &&
+    (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster").status.untilEotKeywords.menace &&
+    !(namedPermanent subtypesGainMenaceResolved "Gray Ogre").status.untilEotKeywords.menace &&
+    subtypesGainMenaceResolved.log.any (fun s => mentions s "Raging Goblin gains menace") &&
+    subtypesGainMenaceResolved.log.any (fun s => mentions s "Orcish Siegemaster gains menace") &&
+    !subtypesGainMenaceResolved.log.any (fun s => mentions s "Gray Ogre gains menace")
+
+/-- The same constructor grants menace to Elves when that subtype is passed. -/
+def elvesGainMenaceResolved : Game :=
+  (addPermanent (addPermanent afterDraw llanowarElves ⟨0⟩ ⟨0⟩) ragingGoblin ⟨0⟩ ⟨0⟩)
+    |>.applyAbilityEffect ⟨0⟩ (Effect.subtypesGainMenace #["Elf"]) #[]
+
+#guard
+  (namedPermanent elvesGainMenaceResolved "Llanowar Elves").status.untilEotKeywords.menace &&
+    !(namedPermanent elvesGainMenaceResolved "Raging Goblin").status.untilEotKeywords.menace
+
 /-- Chief Warg's Company cannot attack without two other Wolves. -/
 def loneWargCompany : Game :=
   addPermanent started chiefWargsCompany ⟨0⟩ ⟨0⟩
