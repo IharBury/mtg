@@ -55,11 +55,25 @@ def bofurReliableGuardianCard : CardDef :=
   bofurReliableGuardian.toCardDef
     (oracleText := "Lifelink\n//ADV//\nConcerted Care {1}{W}\nInstant — Adventure\nTarget artifact or creature you control gains hexproof and indestructible until end of turn. (Then exile this card. You may cast the creature later from exile.)")
 
-def dwarvenProvisioner : CardDef :=
-  creature "Dwarven Provisioner" (ManaCost.ofGenericAndColor 1 .white) #["Dwarf", "Citizen"] 2 2
+def dwarvenProvisioner : TraditionalCardDefinition := .card [
+  .name "Dwarven Provisioner",
+  .manaCost [.generic 1, .mono .white],
+  .type .creature,
+  .subtype .dwarf,
+  .subtype .citizen,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .activated
+      ([.mana [.generic 3, .mono .white]])
+      (.filtered
+        (.and [.permanent, .cardType .creature, .sameController])
+        (.continuous [.addPowerToughness 1 1] .endOfTurn)))
+]
+
+def dwarvenProvisionerCard : CardDef :=
+  dwarvenProvisioner.toCardDef
     (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
-    (activatedAbilities := #[
-      activated (Effect.abilityCreaturesYouControlGet 1 1) (ManaCost.ofGenericAndColor 3 .white)])
 
 def velvetwingButterflies : CardDef :=
   creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
@@ -1260,7 +1274,7 @@ def hobbitCards : Array CardDef := #[
   mountain,
   forest,
   bofurReliableGuardianCard,
-  dwarvenProvisioner,
+  dwarvenProvisionerCard,
   velvetwingButterflies,
   magnificentEnd,
   eagleOfTheGreatShelf,
@@ -1467,6 +1481,17 @@ def hobbitCards : Array CardDef := #[
       adv.subtypes.any (· == "Adventure") &&
       adv.spellEffect == some Effect.grantHexproofIndestructible
   | none => false
+#guard dwarvenProvisionerCard.isCreature
+#guard dwarvenProvisionerCard.hasSubtype "Dwarf"
+#guard dwarvenProvisionerCard.hasSubtype "Citizen"
+#guard dwarvenProvisionerCard.power == some 2
+#guard dwarvenProvisionerCard.toughness == some 2
+#guard dwarvenProvisionerCard.manaCost == ManaCost.ofGenericAndColor 1 .white
+#guard dwarvenProvisionerCard.activatedAbilities.size == 1
+#guard
+  let ab := dwarvenProvisionerCard.activatedAbilities[0]!
+  ab.cost.mana == ManaCost.ofGenericAndColor 3 .white &&
+    ab.effect == Effect.abilityCreaturesYouControlGet 1 1
 #guard (attercop.summary.splitOn "Landfall").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
 #guard attercop.keywords.reach

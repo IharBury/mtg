@@ -22,7 +22,7 @@ open Mtg.Engine.Catalog
 def hobbitWhite : Array CardDef :=
   #[bofurReliableGuardianCard] ++
   copies 16 plains ++
-  copies 2 dwarvenProvisioner ++
+  copies 2 dwarvenProvisionerCard ++
   #[velvetwingButterflies] ++
   copies 2 magnificentEnd ++
   #[mentorOfTheMeek, fiendHunter] ++
