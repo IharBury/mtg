@@ -50,8 +50,6 @@ inductive AbilityResolution where
   | creaturesYouControlPump (power toughness : Int)
   /-- Target player mills `n` cards. -/
   | mill (n : Nat)
-  /-- Draw `n` cards, then discard a card. -/
-  | drawThenDiscard (n : Nat)
   /-- Add one mana of any color. -/
   | addAnyColor
   /-- Recruit. -/
@@ -239,8 +237,6 @@ def toPhrase (r : AbilityResolution) (noun : String) : String :=
     s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
   | .mill n =>
     s!"{noun} mills {n} cards"
-  | .drawThenDiscard n =>
-    s!"Draw {cardPhrase n}, then discard a card"
   | .addAnyColor =>
     "Add one mana of any color"
   | .recruit =>

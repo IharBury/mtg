@@ -865,7 +865,8 @@ def abilityDraw (n : Nat) : Effect :=
   mkAbility ({}) (.draw n)
 
 def abilityDrawThenDiscard (n : Nat) : Effect :=
-  mkAbility ({}) (.drawThenDiscard n)
+  { resolution := .sequence [.draw n, .discard 1]
+    phrase := s!"Draw {cardPhrase n}, then discard a card" }
 
 def abilityScry (n : Nat) : Effect :=
   mkAbility ({}) (.scry n)
