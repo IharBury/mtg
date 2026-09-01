@@ -92,12 +92,51 @@ end Supertype
 abbrev Subtype := String
 
 /-- Named subtypes used when composing a `TraditionalCardDefinition`.
-Unknown or catalog-only types use `named`. -/
+Unknown or catalog-only types use `named` (or a `String` via `Coe`). -/
 inductive CardSubtype where
   | adventure
+  | advisor
+  | archer
+  | artificer
+  | aura
+  | avatar
+  | bard
+  | bat
+  | bear
+  | bird
   | citizen
+  | cleric
+  | dog
+  | dragon
+  | druid
   | dwarf
+  | elf
+  | equipment
+  | giant
+  | goblin
+  | halfling
+  | horror
+  | horse
+  | human
+  | insect
+  | mountain
+  | noble
+  | orc
+  | pilot
+  | rabbit
+  | ranger
+  | rogue
+  | saga
   | scout
+  | shapeshifter
+  | soldier
+  | spider
+  | troll
+  | vehicle
+  | warrior
+  | wizard
+  | wolf
+  | wurm
   | named (s : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -105,9 +144,48 @@ namespace CardSubtype
 
 def toString : CardSubtype → String
   | .adventure => "Adventure"
+  | .advisor => "Advisor"
+  | .archer => "Archer"
+  | .artificer => "Artificer"
+  | .aura => "Aura"
+  | .avatar => "Avatar"
+  | .bard => "Bard"
+  | .bat => "Bat"
+  | .bear => "Bear"
+  | .bird => "Bird"
   | .citizen => "Citizen"
+  | .cleric => "Cleric"
+  | .dog => "Dog"
+  | .dragon => "Dragon"
+  | .druid => "Druid"
   | .dwarf => "Dwarf"
+  | .elf => "Elf"
+  | .equipment => "Equipment"
+  | .giant => "Giant"
+  | .goblin => "Goblin"
+  | .halfling => "Halfling"
+  | .horror => "Horror"
+  | .horse => "Horse"
+  | .human => "Human"
+  | .insect => "Insect"
+  | .mountain => "Mountain"
+  | .noble => "Noble"
+  | .orc => "Orc"
+  | .pilot => "Pilot"
+  | .rabbit => "Rabbit"
+  | .ranger => "Ranger"
+  | .rogue => "Rogue"
+  | .saga => "Saga"
   | .scout => "Scout"
+  | .shapeshifter => "Shapeshifter"
+  | .soldier => "Soldier"
+  | .spider => "Spider"
+  | .troll => "Troll"
+  | .vehicle => "Vehicle"
+  | .warrior => "Warrior"
+  | .wizard => "Wizard"
+  | .wolf => "Wolf"
+  | .wurm => "Wurm"
   | .named s => s
 
 instance : ToString CardSubtype where
@@ -115,6 +193,9 @@ instance : ToString CardSubtype where
 
 instance : Coe CardSubtype Subtype where
   coe := toString
+
+instance : Coe String CardSubtype where
+  coe := named
 
 end CardSubtype
 
