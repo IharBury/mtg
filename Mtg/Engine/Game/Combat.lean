@@ -33,8 +33,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     g := g.setObject { o with status := { o.status with
       attacking := true
       attackingWhom := some dest
-      declaredAsAttackerThisTurn := true
-      tapped := o.status.tapped || !g.hasVigilance o } }
+      declaredAsAttackerThisTurn := true } }
+    if !g.hasVigilance (g.object! id) then
+      g := g.becomeTapped (g.object! id)
     g := g.logMsg
       s!"{g.player p |>.name} attacks {(g.player dest).name} with {o.name}"
   if ids.isEmpty then

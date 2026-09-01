@@ -854,12 +854,11 @@ def hawkeyeYoungAvenger : CardDef :=
     (staticAbilities := #[StaticAbility.noncombatDamagePlusSourcePower])
 
 def hawkeyeSBow : CardDef :=
-  artifact "Hawkeye's Bow" (ManaCost.ofColor .red)
-    "Equipped creature gets +1/+0 and has reach.\nWhenever equipped creature becomes tapped, it deals 1 damage to each opponent.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
+  equipment "Hawkeye's Bow" (ManaCost.ofColor .red)
+    "Equipped creature gets +1/+0 and has reach.\nWhenever equipped creature becomes tapped, it deals 1 damage to each opponent.\nEquip {1}"
+    (ManaCost.ofGeneric 1)
     (triggeredAbilities := #[.onWatch Effect.watchEquippedTappedDamage])
     (staticAbilities := #[StaticAbility.equippedCreatureGetsAndHas 1 0 Keyword.reach])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1)])
 
 def hexMagic : CardDef :=
   card "Hex Magic" #[.sorcery] (ManaCost.ofGenericAndColor 2 .red)

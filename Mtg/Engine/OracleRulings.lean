@@ -8899,6 +8899,30 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
 
 #guard capLivingLegendFirstTapUntapsOk
 
+/-- Ruling 477: Hawkeye's Bow triggers only when the equipped creature
+actually changes from untapped to tapped. -/
+def hawkeyeBowBecomesTappedOk : Bool :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let host := namedPermanent g "Grizzly Bears"
+  let gTap := g.applyPermanentAction host PermanentAction.tap
+  let fired :=
+    gTap.waitingTriggers.any (fun t => t.source.name == "Hawkeye's Bow")
+  let host := namedPermanent gTap "Grizzly Bears"
+  let gAgain := gTap.applyPermanentAction host PermanentAction.tap
+  let life1 := (g.player ⟨1⟩).life
+  let bow := namedPermanent gTap "Hawkeye's Bow"
+  let gDmg :=
+    gTap.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchEquippedTappedDamage)
+      (some bow.id)
+  fired &&
+    gAgain.waitingTriggers.size == gTap.waitingTriggers.size &&
+    gAgain.log.any (fun s => mentions s "already tapped") &&
+    (gDmg.player ⟨1⟩).life + 1 == life1 &&
+    (mshRuling 477).comment.contains "already tapped"
+
+#guard hawkeyeBowBecomesTappedOk
+
 /-- Rulings 98 / 110 / 244–246 / 249 / 255 / 277: second-card triggers fire
 even if the permanent entered after the first draw. -/
 def secondCardDrawnAfterEnterOk : Bool :=

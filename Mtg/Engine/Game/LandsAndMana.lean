@@ -121,7 +121,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let elfRestricted := o.printed.tapAddAnyColorEqualToPower
   let instRestricted := o.printed.tapAddAnyColorForInstantOrSorcery
   let cantNonartifact := o.printed.hasSubtype "Vibranium" && mana == .colorless
-  let g := g.setObject { o with status := { o.status with tapped := true } }
+  let g := g.becomeTapped o
   let g :=
     if o.printed.tapSacrificeAddAnyColor then
       let o := g.object! o.id

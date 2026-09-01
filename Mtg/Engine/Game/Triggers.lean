@@ -5,9 +5,9 @@ import Mtg.Engine.Game.Targeting
 
 Putting triggered abilities on the stack, intervening-if conditions
 (CR 603.4), extra trigger copies, Saga lore counters (CR 714.3),
-battlefield folds and controlled-trigger helpers, activated- and
-mana-ability lookups, waiting-trigger batches stacked in APNAP order
-(CR 603.3b), and `receivePriority`.
+battlefield folds and controlled-trigger helpers, `becomeTapped`
+(CR 603.6d), activated- and mana-ability lookups, waiting-trigger
+batches stacked in APNAP order (CR 603.3b), and `receivePriority`.
 -/
 
 namespace Mtg.Engine
@@ -203,6 +203,34 @@ def foldBattlefield (g : Game) (pred : GameObject → Bool)
 def foldControlledPermanents (g : Game) (p : PlayerId)
     (excludeId : Option ObjectId := none) (f : Game → GameObject → Game) : Game :=
   g.foldBattlefield (fun o => o.controlledBy p && excludeId != some o.id) f
+
+/-- Tap an untapped permanent and queue becomes-tapped triggers (CR 603.6d).
+Entering the battlefield tapped is not becoming tapped; only a change from
+untapped to tapped fires these abilities (Hawkeye's Bow, Trick Arrows,
+Captain America, Living Legend). -/
+def becomeTapped (g : Game) (o : GameObject) : Game :=
+  if o.status.tapped then
+    g.logMsg s!"{o.name} is already tapped"
+  else
+    let first := !o.status.becameTappedThisTurn
+    let g := g.setObject { o with status :=
+      { o.status with tapped := true, becameTappedThisTurn := true } }
+    let g := g.logMsg s!"{o.name} becomes tapped"
+    let g := { g with lastBecameTapped := some o.id }
+    match o.controller with
+    | some p =>
+      let g := g.putMatchingSourceTriggers p (g.object! o.id) .sourceBecomesTapped
+      let g :=
+        (g.attachmentsOf (g.object! o.id)).foldl (fun (g : Game) (eq : GameObject) =>
+          if eq.printed.isEquipment then
+            g.putMatchingSourceTriggers p eq .equippedBecomesTapped
+          else g) g
+      if first && g.activePlayer == p then
+        g.foldControlledPermanents p (excludeId := none) (fun g src =>
+          g.putMatchingSourceTriggers p src .creatureYouControlTapped
+            (cause := some (g.object! o.id)))
+      else g
+    | none => g
 
 /-- Apply `f` to each creature `p` controls, optionally skipping one id. -/
 def forEachControlledCreature (g : Game) (p : PlayerId)
