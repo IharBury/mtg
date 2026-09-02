@@ -889,7 +889,7 @@ export TraditionalCardDefinition (traditional)
           .permanent,
           .cardType .creature
         ]})
-      .dealDamage 5)
+      (.dealDamage 5))
   ]).costReductionIfTargetTapped == 3
 
 end Mtg.Engine

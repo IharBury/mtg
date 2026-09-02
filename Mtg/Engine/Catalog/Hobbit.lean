@@ -113,7 +113,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
         .permanent,
         .cardType .creature
       ]})
-    .dealDamage 5)
+    (.dealDamage 5))
 ]
 
 def magnificentEndCard : CardDef :=
