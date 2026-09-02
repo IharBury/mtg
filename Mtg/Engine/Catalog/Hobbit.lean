@@ -136,14 +136,26 @@ def eagleOfTheGreatShelfCard : CardDef :=
   eagleOfTheGreatShelf.toCardDef
     (oracleText := "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.")
 
-def vowToErebor : CardDef :=
-  traditional [
-    .name "Vow to Erebor",
-    .manaCost [.generic 1, .mono .white],
-    .type .instant,
-    .action (.effect (Effect.untapPumpMaybeAttach 2 2)),
-    .oracleText "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
-  ]
+def vowToErebor : TraditionalCardDefinition := .card [
+  .name "Vow to Erebor",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant,
+  .action (.targeted
+    ({filter := .and [
+        .permanent,
+        .cardType .creature,
+        .sameController
+      ]})
+    (.and [
+      .untap,
+      .self (.continuous [.addPowerToughness 2 2] .endOfTurn),
+      .conditional (.this (.subtype .dwarf)) .mayAttachEquipment
+    ]))
+]
+
+def vowToEreborCard : CardDef :=
+  vowToErebor.toCardDef
+    (oracleText := "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it.")
 
 def bilboBagginsBurglar : CardDef :=
   traditional [
@@ -2572,7 +2584,7 @@ def hobbitCards : Array CardDef := #[
   velvetwingButterfliesCard,
   magnificentEndCard,
   eagleOfTheGreatShelfCard,
-  vowToErebor,
+  vowToEreborCard,
   bilboBagginsBurglar,
   lakeshoreApothecary,
   confusticateAndBebother,
