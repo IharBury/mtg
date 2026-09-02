@@ -177,7 +177,7 @@ def silentCavesReady : Game :=
 /-- Island `{U}` plus Mountain `{R}` pays `{1}{U}` (generic after colored). -/
 def islandMountainApothecary : Game :=
   let g := addUntappedLand afterDraw island
-  let g := addToHand (addUntappedLand g mountain) lakeshoreApothecary ⟨0⟩
+  let g := addToHand (addUntappedLand g mountain) lakeshoreApothecaryCard ⟨0⟩
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lakeshore Apothecary").id)
 
 #guard

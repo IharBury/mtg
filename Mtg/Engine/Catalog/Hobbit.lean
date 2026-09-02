@@ -183,19 +183,21 @@ def bilboBagginsBurglarCard : CardDef :=
   bilboBagginsBurglar.toCardDef
     (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
 
-def lakeshoreApothecary : CardDef :=
-  traditional [
-    .name "Lakeshore Apothecary",
-    .manaCost [.generic 1, .mono .blue],
-    .type .creature,
-    .subtype .human,
-    .subtype .cleric,
-    .power 1,
-    .toughness 2,
-    .oracleText "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.",
-    .ability (.keyword .vigilance),
-    .triggered (.onDrawSecondPlusOne)
-  ]
+def lakeshoreApothecary : TraditionalCardDefinition := .card [
+  .name "Lakeshore Apothecary",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .cleric,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (.triggered (.youDrawSecond) (.self (.plusOne 1)))
+]
+
+def lakeshoreApothecaryCard : CardDef :=
+  lakeshoreApothecary.toCardDef
+    (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
 def confusticateAndBebother : CardDef :=
   traditional [
@@ -2590,7 +2592,7 @@ def hobbitCards : Array CardDef := #[
   eagleOfTheGreatShelfCard,
   vowToEreborCard,
   bilboBagginsBurglarCard,
-  lakeshoreApothecary,
+  lakeshoreApothecaryCard,
   confusticateAndBebother,
   ravenhillFlock,
   thranduilsDecree,

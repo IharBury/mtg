@@ -39,7 +39,7 @@ def hobbitBlue : Array CardDef :=
   copies 2 bilboBagginsBurglarCard ++
   copies 16 island ++
   #[pelargirSurvivor] ++
-  copies 2 lakeshoreApothecary ++
+  copies 2 lakeshoreApothecaryCard ++
   #[confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
     knightsOfDolAmroth, greyHavensNavigator, roguesPassage] ++
   copies 2 ithilienKingfisher ++

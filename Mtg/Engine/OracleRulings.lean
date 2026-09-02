@@ -6179,7 +6179,7 @@ def thranduilCompanyExtraLandOk : Bool :=
 -/
 
 def secondCardOnceEachTurnOk : Bool :=
-  let g := addPermanent afterDraw lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw lakeshoreApothecaryCard ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with cardsDrawnThisTurn := 0 })
   let g := g.draw ⟨0⟩ 1
   let afterFirst :=
@@ -6190,7 +6190,7 @@ def secondCardOnceEachTurnOk : Bool :=
   let g := g.draw ⟨0⟩ 1
   afterFirst && afterSecond &&
     !g.waitingTriggers.any (fun wt => wt.ability == .onDrawSecondPlusOne) &&
-    lakeshoreApothecary.triggeredAbilities == #[.onDrawSecondPlusOne] &&
+    lakeshoreApothecaryCard.triggeredAbilities == #[.onDrawSecondPlusOne] &&
     (ruling 300).comment.contains "can trigger only once each turn" &&
     (ruling 301).comment.contains "can trigger only once each turn" &&
     (ruling 302).comment.contains "can trigger only once each turn"
@@ -6498,7 +6498,7 @@ def bardsCompanyFlashLockOk : Bool :=
   let g := skipTo afterDraw .beginningOfCombat 80
   let g := addToHand g bardsCompany ⟨0⟩
   let without := !(g.timingAllowsCast ⟨0⟩ bardsCompany)
-  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecaryCard ⟨0⟩ ⟨0⟩
   let withHuman := g.timingAllowsCast ⟨0⟩ bardsCompany
   bardsCompany.flashIfYouControlSubtype == some "Human" &&
     without && withHuman &&
@@ -6841,7 +6841,7 @@ def untilLeavesImmediateNoSbaGapOk : Bool :=
 
 def unexpectedPartyTypeImmediateOk : Bool :=
   let g := addPermanent afterDraw anUnexpectedParty ⟨0⟩ ⟨0⟩
-  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecaryCard ⟨0⟩ ⟨0⟩
   let party := namedPermanent g "An Unexpected Party"
   let g := g.chooseCreatureTypeAsEnters party.id "Human"
   let human := namedPermanent g "Lakeshore Apothecary"
@@ -6863,7 +6863,7 @@ def blackGateMostLifeAndLaterCreatureOk : Bool :=
   let g := g.setObject { bear with status := { bear.status with attacking := true } }
   let g := g.setLife ⟨1⟩ 25 "p1 has most life"
   let g := g.applyBlackGateUnblockable (namedPermanent g "Grizzly Bears").id ⟨1⟩
-  let g := addPermanent g lakeshoreApothecary ⟨1⟩ ⟨1⟩
+  let g := addPermanent g lakeshoreApothecaryCard ⟨1⟩ ⟨1⟩
   let attacker := namedPermanent g "Grizzly Bears"
   let later := namedPermanent g "Lakeshore Apothecary"
   !(g.canBlock later attacker) &&
@@ -6998,7 +6998,7 @@ def oneRingBurdenDraw : Game :=
 
 def minasTirithTapDrawAtomicOk : Bool :=
   let g := addPermanent afterDraw minasTirithGarrison ⟨0⟩ ⟨0⟩
-  let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
+  let g := addPermanent g lakeshoreApothecaryCard ⟨0⟩ ⟨0⟩
   let human := namedPermanent g "Lakeshore Apothecary"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyTriggeredAbility ⟨0⟩ .onAttackTapHumansDraw
