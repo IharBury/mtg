@@ -757,6 +757,7 @@ def supportedOracleFailures : List String :=
 #guard magnificentEndCard.matchesOracleText
 #guard confusticateAndBebotherCard.matchesOracleText
 #guard ravenhillFlockCard.matchesOracleText
+#guard thranduilsDecreeCard.matchesOracleText
 #guard gollumSilentSlinker.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
 

@@ -385,6 +385,10 @@ inductive CardAction where
   | select : Nat → CardAction → CardAction
   /-- Attach the selected object to `ref`. -/
   | attachTo : ObjectRef → CardAction
+  /-- Exile the affected object (CR 406). -/
+  | exile
+  /-- Cast the affected card without paying its mana cost. -/
+  | castWithoutPaying
   | effect : Effect → CardAction
 deriving Repr, Inhabited, BEq
 end
@@ -476,14 +480,25 @@ def leftoverCounterUnlessPays : CardAction → Option Nat
     some (Cost.manaCost costs).manaValue
   | _ => none
 
-/-- Sequence leftover: untap-pump-attach, else draw-then-discard. -/
+/-- Counter; if the target is a permanent spell, exile it and you may
+cast it without paying its mana cost. -/
+def leftoverCounterExileMayCast : List CardAction → Bool
+  | [.counter, .conditional (.target f)
+      (.sequence [.exile, .optional .castWithoutPaying])] =>
+    f.shape.mustBePermanent
+  | _ => false
+
+/-- Sequence leftover: untap-pump-attach, draw-then-discard, or
+counter-exile-may-cast. -/
 def leftoverSequence (as : List CardAction) (fallback : Effect) : Effect :=
   match leftoverUntapPumpAttach as with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
   | none =>
     match leftoverDrawThenDiscard as with
     | some n => Effect.drawThenDiscard n
-    | none => fallback
+    | none =>
+      if leftoverCounterExileMayCast as then Effect.counterExilePermanentMayCast
+      else fallback
 
 /-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
 is the shape Dwarven Provisioner prints. -/
@@ -540,6 +555,8 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
     | none => filteredEffect f inner asAbility
   | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
+  | .exile => Effect.counterExilePermanentMayCast
+  | .castWithoutPaying => Effect.counterExilePermanentMayCast
   | .effect e => e
 
 /-- Overlay targeting from a selector onto a compiled effect. -/
@@ -566,10 +583,15 @@ def toEffect : CardAction → Effect
       if sel.toTargeting == e.targeting then e
       else { e with targeting := sel.toTargeting }
     | none =>
-      { Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump) with
-        targeting := sel.toTargeting
-        maxTargets := if sel.maximumTargets ≤ 1 then 0 else sel.maximumTargets
-        allowsZeroTargets := sel.minimumTargets == 0 }
+      if leftoverCounterExileMayCast as then
+        let e := Effect.counterExilePermanentMayCast
+        if sel.toTargeting == e.targeting then e
+        else { e with targeting := sel.toTargeting }
+      else
+        { Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump) with
+          targeting := sel.toTargeting
+          maxTargets := if sel.maximumTargets ≤ 1 then 0 else sel.maximumTargets
+          allowsZeroTargets := sel.minimumTargets == 0 }
   | .targeted sel inner =>
     match leftoverCounterUnlessPays inner with
     | some n =>
@@ -613,6 +635,8 @@ def toEffect : CardAction → Effect
   | .inGame _ inner => inner.toEffect
   | .select _ inner => inner.toEffect
   | .attachTo _ => Effect.untapPumpMaybeAttach 0 0
+  | .exile => Effect.counterExilePermanentMayCast
+  | .castWithoutPaying => Effect.counterExilePermanentMayCast
   | .effect e => e
 
 /-- Compile to an activated-ability `Effect`. -/
@@ -662,6 +686,8 @@ def toAbilityEffect : CardAction → Effect
   | .inGame _ inner => inner.toAbilityEffect
   | .select _ inner => inner.toAbilityEffect
   | .attachTo _ => Effect.untapPumpMaybeAttach 0 0
+  | .exile => Effect.counterExilePermanentMayCast
+  | .castWithoutPaying => Effect.counterExilePermanentMayCast
   | .effect e => e
 
 end CardAction
@@ -1316,5 +1342,29 @@ export TraditionalCardDefinition (traditional)
       (.self (.putCounters .plusOnePlusOne 1)))
   ]
   c.keywords.flying && c.triggeredAbilities == #[.onDrawPlusOne]
+
+-- Thranduil's Decree: counter target spell; exile a permanent spell and you may cast it.
+#guard
+  let action : CardAction :=
+    .targeted ({filter := .spell})
+      (.sequence [
+        .counter,
+        .conditional (.target .permanent)
+          (.sequence [.exile, .optional .castWithoutPaying])
+      ])
+  action.toEffect == Effect.counterExilePermanentMayCast
+
+#guard
+  (traditional [
+    .name "Thranduil's Decree",
+    .manaCost [.generic 4, .mono .blue, .mono .blue],
+    .type .instant,
+    .action (.targeted ({filter := .spell})
+      (.sequence [
+        .counter,
+        .conditional (.target .permanent)
+          (.sequence [.exile, .optional .castWithoutPaying])
+      ]))
+  ]).spellEffect == some Effect.counterExilePermanentMayCast
 
 end Mtg.Engine

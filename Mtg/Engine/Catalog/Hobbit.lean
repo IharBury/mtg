@@ -229,14 +229,21 @@ def ravenhillFlockCard : CardDef :=
   ravenhillFlock.toCardDef
     (oracleText := "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.")
 
-def thranduilsDecree : CardDef :=
-  traditional [
-    .name "Thranduil's Decree",
-    .manaCost [.generic 4, .mono .blue, .mono .blue],
-    .type .instant,
-    .action (.effect (Effect.counterExilePermanentMayCast)),
-    .oracleText "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
-  ]
+def thranduilsDecree : TraditionalCardDefinition := .card [
+  .name "Thranduil's Decree",
+  .manaCost [.generic 4, .mono .blue, .mono .blue],
+  .type .instant,
+  .action (.targeted ({filter := .spell})
+    (.sequence [
+      .counter,
+      .conditional (.target .permanent)
+        (.sequence [.exile, .optional .castWithoutPaying])
+    ]))
+]
+
+def thranduilsDecreeCard : CardDef :=
+  thranduilsDecree.toCardDef
+    (oracleText := "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.")
 
 def bilboLuckwearer : CardDef :=
   traditional [
@@ -2603,7 +2610,7 @@ def hobbitCards : Array CardDef := #[
   lakeshoreApothecaryCard,
   confusticateAndBebotherCard,
   ravenhillFlockCard,
-  thranduilsDecree,
+  thranduilsDecreeCard,
   bilboLuckwearer,
   uneasyPartings,
   frontPorchSentries,
@@ -3016,5 +3023,7 @@ def hobbitCards : Array CardDef := #[
   #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
 #guard ravenhillFlockCard.keywords.flying
 #guard ravenhillFlockCard.triggeredAbilities == #[.onDrawPlusOne]
+#guard thranduilsDecreeCard.isInstant
+#guard thranduilsDecreeCard.spellEffect == some Effect.counterExilePermanentMayCast
 
 end Mtg.Engine.Catalog
