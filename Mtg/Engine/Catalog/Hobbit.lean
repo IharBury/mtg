@@ -120,19 +120,21 @@ def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
     (oracleText := "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature.")
 
-def eagleOfTheGreatShelf : CardDef :=
-  traditional [
-    .name "Eagle of the Great Shelf",
-    .manaCost [.generic 4, .mono .white],
-    .type .creature,
-    .subtype .bird,
-    .subtype .soldier,
-    .power 2,
-    .toughness 5,
-    .oracleText "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.",
-    .ability (.keyword .flying),
-    .triggered (.onAttackPumpForEachOtherCreature)
-  ]
+def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
+  .name "Eagle of the Great Shelf",
+  .manaCost [.generic 4, .mono .white],
+  .type .creature,
+  .subtype .bird,
+  .subtype .soldier,
+  .power 2,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .ability (.triggered (.attack (.hasThis)) (.self (.continuous [.addPowerToughness 1 1] .endOfTurn)))
+]
+
+def eagleOfTheGreatShelfCard : CardDef :=
+  eagleOfTheGreatShelf.toCardDef
+    (oracleText := "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.")
 
 def vowToErebor : CardDef :=
   traditional [
@@ -2569,7 +2571,7 @@ def hobbitCards : Array CardDef := #[
   dwarvenProvisionerCard,
   velvetwingButterfliesCard,
   magnificentEndCard,
-  eagleOfTheGreatShelf,
+  eagleOfTheGreatShelfCard,
   vowToErebor,
   bilboBagginsBurglar,
   lakeshoreApothecary,

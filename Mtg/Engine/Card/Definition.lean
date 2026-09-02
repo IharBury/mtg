@@ -151,6 +151,8 @@ inductive Filter where
   | tapped
   /-- This spell or ability has a target matching the inner filter. -/
   | hasAnyTarget : Filter → Filter
+  /-- The object this ability is on (CR 109.5). -/
+  | hasThis
 deriving Repr, Inhabited, BEq
 
 namespace Filter
@@ -192,6 +194,7 @@ structure Shape where
   mustBePermanent : Bool := false
   tapped : Bool := false
   hasAnyTarget : Bool := false
+  hasThis : Bool := false
   types : TypeSet := .any
 deriving Repr, Inhabited, BEq
 
@@ -202,6 +205,7 @@ def meet (a b : Shape) : Shape :=
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
     hasAnyTarget := a.hasAnyTarget || b.hasAnyTarget
+    hasThis := a.hasThis || b.hasThis
     types := a.types.intersect b.types }
 
 def join (a b : Shape) : Shape :=
@@ -209,6 +213,7 @@ def join (a b : Shape) : Shape :=
     mustBePermanent := a.mustBePermanent && b.mustBePermanent
     tapped := a.tapped && b.tapped
     hasAnyTarget := a.hasAnyTarget && b.hasAnyTarget
+    hasThis := a.hasThis && b.hasThis
     types := a.types.union b.types }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
@@ -227,6 +232,7 @@ def shape : Filter → Shape
   | .sameController => { sameController := true }
   | .tapped => { tapped := true }
   | .hasAnyTarget f => { f.shape with hasAnyTarget := true }
+  | .hasThis => { hasThis := true }
   | .cardType t => { types := .oneOf [t] }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
@@ -271,6 +277,12 @@ inductive Condition where
   | this : Filter → Condition
 deriving Repr, Inhabited, BEq
 
+/-- When a triggered ability fires. -/
+inductive When where
+  /-- Whenever an object matching the filter attacks. -/
+  | attack : Filter → When
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -282,6 +294,7 @@ inductive Ability where
   | conditional : Condition → Ability → Ability
   | self : Ability → Ability
   | static : List ContinuousEffect → Ability
+  | triggered : When → CardAction → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -300,6 +313,7 @@ inductive CardAction where
   | filtered : Filter → CardAction → CardAction
   | tap
   | dealDamage : Nat → CardAction
+  | self : CardAction → CardAction
   | effect : Effect → CardAction
 deriving Repr, Inhabited, BEq
 end
@@ -386,6 +400,7 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
       | _ => []) asAbility
     { e with targeting := sel.toTargeting }
   | .filtered f' inner' => filteredEffect f' inner' asAbility
+  | .self inner => filteredEffect f inner asAbility
   | .tap =>
     if asAbility then
       Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
@@ -427,6 +442,11 @@ def toEffect : CardAction → Effect
   | .dealDamage n =>
     Effect.mkSpell (.of .none) (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
+  | .self (.continuous effects _) =>
+    match ContinuousEffect.addedPT? effects with
+    | some (p, t) => Effect.sourceGets p t
+    | none => continuousEffect none effects false
+  | .self inner => inner.toEffect
   | .effect e => e
 
 /-- Compile to an activated-ability `Effect`. -/
@@ -448,6 +468,11 @@ def toAbilityEffect : CardAction → Effect
   | .dealDamage n =>
     Effect.mkAbility (.of .none) (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
+  | .self (.continuous effects _) =>
+    match ContinuousEffect.addedPT? effects with
+    | some (p, t) => Effect.sourceGets p t
+    | none => continuousEffect none effects true
+  | .self inner => inner.toAbilityEffect
   | .effect e => e
 
 end CardAction
@@ -472,7 +497,21 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
   | .conditional _ _ => none
   | .self _ => none
   | .static _ => none
+  | .triggered _ _ => none
   | .activated costs action => some (ofActivated costs action)
+
+/-- Compile a `.triggered` ability. A +1/+1 self pump when this attacks is
+the leftover that scales with each other creature you control. -/
+def toTriggeredAbility? : Ability → Option TriggeredAbility
+  | .triggered (.attack f) (.self (.continuous effects _duration)) =>
+    if f.shape.hasThis then
+      match ContinuousEffect.addedPT? effects with
+      | some (1, 1) => some .onAttackPumpForEachOtherCreature
+      | some (p, t) =>
+        some (.triggered .attack (Effect.ofTrigger (.sourceGets p t)))
+      | none => none
+    else none
+  | _ => none
 
 end Ability
 
@@ -601,6 +640,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     let n := ContinuousEffect.genericCostReduction effects
     if n == 0 then b
     else { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n }
+  | .triggered w action =>
+    match (Ability.triggered w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -891,5 +934,32 @@ export TraditionalCardDefinition (traditional)
         ]})
       (.dealDamage 5))
   ]).costReductionIfTargetTapped == 3
+
+-- Eagle of the Great Shelf: flying; attacks and gets +1/+1 per other creature.
+#guard Filter.shape .hasThis |>.hasThis
+
+#guard
+  match
+    (Ability.triggered
+      (.attack .hasThis)
+      (.self (.continuous [.addPowerToughness 1 1] .endOfTurn))).toTriggeredAbility? with
+  | some ab => ab == .onAttackPumpForEachOtherCreature
+  | none => false
+
+#guard
+  let c := traditional [
+    .name "Eagle of the Great Shelf",
+    .manaCost [.generic 4, .mono .white],
+    .type .creature,
+    .subtype .bird,
+    .subtype .soldier,
+    .power 2,
+    .toughness 5,
+    .ability (.keyword .flying),
+    .ability (.triggered (.attack (.hasThis))
+      (.self (.continuous [.addPowerToughness 1 1] .endOfTurn)))
+  ]
+  c.keywords.flying && c.power == some 2 && c.toughness == some 5 &&
+    c.triggeredAbilities == #[.onAttackPumpForEachOtherCreature]
 
 end Mtg.Engine
