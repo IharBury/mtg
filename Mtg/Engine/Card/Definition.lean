@@ -288,6 +288,13 @@ deriving Repr, Inhabited, BEq
 /-- A condition that gates a printed ability (e.g. “if this spell …”). -/
 inductive Condition where
   | this : Filter → Condition
+  /-- The announced target matches `filter`. -/
+  | target : Filter → Condition
+deriving Repr, Inhabited, BEq
+
+/-- An object already in the resolution (the announced target, this card, …). -/
+inductive ObjectRef where
+  | target
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires. -/
@@ -328,9 +335,16 @@ inductive CardAction where
   | untap
   | dealDamage : Nat → CardAction
   | self : CardAction → CardAction
-  | and : List CardAction → CardAction
+  | sequence : List CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
-  | mayAttachEquipment
+  /-- The controller may perform the inner action. -/
+  | optional : CardAction → CardAction
+  /-- Choose among objects in the game that match `filter`. -/
+  | inGame : Filter → CardAction → CardAction
+  /-- Select `n` of those objects, then do the inner action. -/
+  | select : Nat → CardAction → CardAction
+  /-- Attach the selected object to `ref`. -/
+  | attachTo : ObjectRef → CardAction
   | effect : Effect → CardAction
 deriving Repr, Inhabited, BEq
 end
@@ -398,10 +412,17 @@ def continuousEffect (sel : Option TargetSelector) (effects : List ContinuousEff
     | none => creaturesYouControlPumpEffect p t asAbility
   | none => grantKeywordsEffect sel effects asAbility
 
-/-- Untap, +P/+T on the target, and maybe attach Equipment if it is a Dwarf. -/
+/-- Optional “attach a matching permanent to the announced target”. -/
+def optionalAttachToTarget : CardAction → Bool
+  | .optional (.inGame _ (.select 1 (.attachTo .target))) => true
+  | _ => false
+
+/-- Untap, +P/+T on the target, and maybe attach if the target is a Dwarf. -/
 def leftoverUntapPumpAttach : List CardAction → Option (Int × Int)
-  | [.untap, .self (.continuous effects _), .conditional (.this f) .mayAttachEquipment] =>
-    if f.shape.dwarf then ContinuousEffect.addedPT? effects else none
+  | [.untap, .continuous effects _, .conditional (.target f) inner] =>
+    if f.shape.dwarf && optionalAttachToTarget inner then
+      ContinuousEffect.addedPT? effects
+    else none
   | _ => none
 
 /-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
@@ -424,18 +445,20 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
     { e with targeting := sel.toTargeting }
   | .filtered f' inner' => filteredEffect f' inner' asAbility
   | .self inner => filteredEffect f inner asAbility
-  | .and as =>
+  | .sequence as =>
     match leftoverUntapPumpAttach as with
     | some (p, t) => Effect.untapPumpMaybeAttach p t
     | none => continuousEffect none [] asAbility
   | .conditional _ inner => filteredEffect f inner asAbility
+  | .optional inner => filteredEffect f inner asAbility
+  | .inGame _ inner => filteredEffect f inner asAbility
+  | .select _ inner => filteredEffect f inner asAbility
+  | .attachTo _ => Effect.untapPumpMaybeAttach 0 0
   | .untap =>
     if asAbility then
       Effect.mkAbility (.of .none) (.onPermanent .untap)
     else
       Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump)
-  | .mayAttachEquipment =>
-    Effect.untapPumpMaybeAttach 0 0
   | .tap =>
     if asAbility then
       Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
@@ -463,7 +486,7 @@ def toEffect : CardAction → Effect
   | .targeted sel (.dealDamage n) =>
     Effect.mkSpell sel.toTargeting (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
-  | .targeted sel (.and as) =>
+  | .targeted sel (.sequence as) =>
     match leftoverUntapPumpAttach as with
     | some (p, t) =>
       let e := Effect.untapPumpMaybeAttach p t
@@ -495,12 +518,15 @@ def toEffect : CardAction → Effect
     | some (p, t) => Effect.sourceGets p t
     | none => continuousEffect none effects false
   | .self inner => inner.toEffect
-  | .and as =>
+  | .sequence as =>
     match leftoverUntapPumpAttach as with
     | some (p, t) => Effect.untapPumpMaybeAttach p t
     | none => Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump)
   | .conditional _ inner => inner.toEffect
-  | .mayAttachEquipment => Effect.untapPumpMaybeAttach 0 0
+  | .optional inner => inner.toEffect
+  | .inGame _ inner => inner.toEffect
+  | .select _ inner => inner.toEffect
+  | .attachTo _ => Effect.untapPumpMaybeAttach 0 0
   | .effect e => e
 
 /-- Compile to an activated-ability `Effect`. -/
@@ -529,12 +555,15 @@ def toAbilityEffect : CardAction → Effect
     | some (p, t) => Effect.sourceGets p t
     | none => continuousEffect none effects true
   | .self inner => inner.toAbilityEffect
-  | .and as =>
+  | .sequence as =>
     match leftoverUntapPumpAttach as with
     | some (p, t) => Effect.untapPumpMaybeAttach p t
     | none => Effect.mkAbility (.of .none) (.onPermanent .untap)
   | .conditional _ inner => inner.toAbilityEffect
-  | .mayAttachEquipment => Effect.untapPumpMaybeAttach 0 0
+  | .optional inner => inner.toAbilityEffect
+  | .inGame _ inner => inner.toAbilityEffect
+  | .select _ inner => inner.toAbilityEffect
+  | .attachTo _ => Effect.untapPumpMaybeAttach 0 0
   | .effect e => e
 
 end CardAction
@@ -697,6 +726,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with activatedAbilities := b.activatedAbilities.push (Ability.ofActivated costs action) }
   | .conditional (.this f) inner =>
     if f.shape.hasAnyTargetTappedCreature then applyAbility b inner else b
+  | .conditional (.target _) _ => b
   | .self inner => applyAbility b inner
   | .static effects =>
     let n := ContinuousEffect.genericCostReduction effects
@@ -1039,10 +1069,13 @@ export TraditionalCardDefinition (traditional)
           .cardType .creature,
           .sameController
         ]})
-      (.and [
+      (.sequence [
         .untap,
-        .self (.continuous [.addPowerToughness 2 2] .endOfTurn),
-        .conditional (.this (.subtype .dwarf)) .mayAttachEquipment
+        .continuous [.addPowerToughness 2 2] .endOfTurn,
+        .conditional (.target (.subtype .dwarf))
+          (.optional (.inGame
+            (.and [.permanent, .cardType .enchantment, .sameController])
+            (.select 1 (.attachTo .target))))
       ])
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
@@ -1057,10 +1090,13 @@ export TraditionalCardDefinition (traditional)
           .cardType .creature,
           .sameController
         ]})
-      (.and [
+      (.sequence [
         .untap,
-        .self (.continuous [.addPowerToughness 2 2] .endOfTurn),
-        .conditional (.this (.subtype .dwarf)) .mayAttachEquipment
+        .continuous [.addPowerToughness 2 2] .endOfTurn,
+        .conditional (.target (.subtype .dwarf))
+          (.optional (.inGame
+            (.and [.permanent, .cardType .enchantment, .sameController])
+            (.select 1 (.attachTo .target))))
       ]))
   ]).spellEffect == some (Effect.untapPumpMaybeAttach 2 2)
 

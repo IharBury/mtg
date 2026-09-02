@@ -146,10 +146,13 @@ def vowToErebor : TraditionalCardDefinition := .card [
         .cardType .creature,
         .sameController
       ]})
-    (.and [
+    (.sequence [
       .untap,
-      .self (.continuous [.addPowerToughness 2 2] .endOfTurn),
-      .conditional (.this (.subtype .dwarf)) .mayAttachEquipment
+      .continuous [.addPowerToughness 2 2] .endOfTurn,
+      .conditional (.target (.subtype .dwarf))
+        (.optional (.inGame
+          (.and [.permanent, .cardType .enchantment, .sameController])
+          (.select 1 (.attachTo .target))))
     ]))
 ]
 
