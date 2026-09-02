@@ -160,27 +160,28 @@ def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef
     (oracleText := "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it.")
 
-def bilboBagginsBurglar : CardDef :=
-  traditional [
-    .name "Bilbo Baggins, Burglar",
-    .manaCost [.generic 2, .mono .blue],
-    .type .creature,
-    .supertype .legendary,
-    .subtype .halfling,
-    .subtype .rogue,
-    .power 2,
-    .toughness 1,
-    .oracleText "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)",
-    .triggered (.onEnterDraw 1),
-    .alternative [
-      .name "Take a Glance",
-      .manaCost [.mono .blue],
-      .type .sorcery,
-      .subtype .adventure,
-      .action (.effect (Effect.scry 2)),
-      .oracleText "Scry 2. (Then exile this card. You may cast the creature later from exile.)"
-    ]
+def bilboBagginsBurglar : TraditionalCardDefinition := .card [
+  .name "Bilbo Baggins, Burglar",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 2,
+  .toughness 1,
+  .ability (.triggered (.enter (.hasThis)) (.draw 1)),
+  .alternative [
+    .name "Take a Glance",
+    .manaCost [.mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .action (.scry 2)
   ]
+]
+
+def bilboBagginsBurglarCard : CardDef :=
+  bilboBagginsBurglar.toCardDef
+    (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
 
 def lakeshoreApothecary : CardDef :=
   traditional [
@@ -2588,7 +2589,7 @@ def hobbitCards : Array CardDef := #[
   magnificentEndCard,
   eagleOfTheGreatShelfCard,
   vowToEreborCard,
-  bilboBagginsBurglar,
+  bilboBagginsBurglarCard,
   lakeshoreApothecary,
   confusticateAndBebother,
   ravenhillFlock,
@@ -2993,8 +2994,8 @@ def hobbitCards : Array CardDef := #[
       adv.subtypes.any (· == "Adventure") &&
       adv.spellEffect == some Effect.tapOneOrTwoCreatures
   | none => false
-#guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1
-#guard (bilboBagginsBurglar.oracleText.splitOn "Take a Glance {U}").length > 1
+#guard (bilboBagginsBurglarCard.oracleText.splitOn "//ADV//").length > 1
+#guard (bilboBagginsBurglarCard.oracleText.splitOn "Take a Glance {U}").length > 1
 #guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1
 #guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1

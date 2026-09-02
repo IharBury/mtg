@@ -36,7 +36,7 @@ def hobbitWhite : Array CardDef :=
 
 /-- Blue Welcome Deck (40 cards). -/
 def hobbitBlue : Array CardDef :=
-  copies 2 bilboBagginsBurglar ++
+  copies 2 bilboBagginsBurglarCard ++
   copies 16 island ++
   #[pelargirSurvivor] ++
   copies 2 lakeshoreApothecary ++

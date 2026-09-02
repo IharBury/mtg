@@ -301,6 +301,8 @@ deriving Repr, Inhabited, BEq
 inductive When where
   /-- Whenever an object matching the filter attacks. -/
   | attack : Filter → When
+  /-- When an object matching the filter enters. -/
+  | enter : Filter → When
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -334,6 +336,8 @@ inductive CardAction where
   | tap
   | untap
   | dealDamage : Nat → CardAction
+  | draw : Nat → CardAction
+  | scry : Nat → CardAction
   | self : CardAction → CardAction
   | sequence : List CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
@@ -471,6 +475,8 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
     else
       Effect.mkSpell (.of .none) (.onPermanent (.dealDamage n))
         (castKind := .creatureDamage)
+  | .draw n => Effect.draw n
+  | .scry n => Effect.scry n
   | .effect e => e
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -513,6 +519,8 @@ def toEffect : CardAction → Effect
   | .dealDamage n =>
     Effect.mkSpell (.of .none) (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
+  | .draw n => Effect.draw n
+  | .scry n => Effect.scry n
   | .self (.continuous effects _) =>
     match ContinuousEffect.addedPT? effects with
     | some (p, t) => Effect.sourceGets p t
@@ -550,6 +558,8 @@ def toAbilityEffect : CardAction → Effect
   | .dealDamage n =>
     Effect.mkAbility (.of .none) (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
+  | .draw n => Effect.draw n
+  | .scry n => Effect.scry n
   | .self (.continuous effects _) =>
     match ContinuousEffect.addedPT? effects with
     | some (p, t) => Effect.sourceGets p t
@@ -602,6 +612,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (.triggered .attack (Effect.ofTrigger (.sourceGets p t)))
       | none => none
     else none
+  | .triggered (.enter f) (.draw n) =>
+    if f.shape.hasThis then some (.onEnterDraw n) else none
   | _ => none
 
 end Ability
@@ -1099,5 +1111,40 @@ export TraditionalCardDefinition (traditional)
             (.select 1 (.attachTo .target))))
       ]))
   ]).spellEffect == some (Effect.untapPumpMaybeAttach 2 2)
+
+-- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
+#guard
+  match
+    (Ability.triggered (.enter .hasThis) (.draw 1)).toTriggeredAbility? with
+  | some ab => ab == .onEnterDraw 1
+  | none => false
+
+#guard
+  let action : CardAction := .scry 2
+  action.toEffect == Effect.scry 2
+
+#guard
+  let c := traditional [
+    .name "Bilbo Baggins, Burglar",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .rogue,
+    .power 2,
+    .toughness 1,
+    .ability (.triggered (.enter (.hasThis)) (.draw 1)),
+    .alternative [
+      .name "Take a Glance",
+      .manaCost [.mono .blue],
+      .type .sorcery,
+      .subtype .adventure,
+      .action (.scry 2)
+    ]
+  ]
+  c.triggeredAbilities == #[.onEnterDraw 1] &&
+    (match c.adventure with
+     | some adv => adv.spellEffect == some (Effect.scry 2)
+     | none => false)
 
 end Mtg.Engine
