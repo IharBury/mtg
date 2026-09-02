@@ -327,6 +327,8 @@ inductive When where
   | enter : Filter → When
   /-- The `n`th draw by a player matching `who` in `window`. -/
   | drawOrdinal : Nat → CountWindow → Filter → When
+  /-- Whenever a player matching `who` draws a card. -/
+  | draw : Filter → When
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -702,6 +704,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if f.shape.hasThis then some (.onEnterDraw n) else none
   | .triggered (.drawOrdinal 2 .turnStart who) (.self (.putCounters .plusOnePlusOne 1)) =>
     if who.shape.sameController then some .onDrawSecondPlusOne else none
+  | .triggered (.draw who) (.self (.putCounters .plusOnePlusOne 1)) =>
+    if who.shape.sameController then some .onDrawPlusOne else none
   | _ => none
 
 end Ability
@@ -1290,5 +1294,27 @@ export TraditionalCardDefinition (traditional)
   ]
   c.isModal && c.spellEffect.isNone &&
     c.spellModes == #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+
+-- Ravenhill Flock: flying; whenever you draw a card, +1/+1 on this.
+#guard
+  match
+    (Ability.triggered (.draw .sameController)
+      (.self (.putCounters .plusOnePlusOne 1))).toTriggeredAbility? with
+  | some ab => ab == .onDrawPlusOne
+  | none => false
+
+#guard
+  let c := traditional [
+    .name "Ravenhill Flock",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .subtype .bird,
+    .power 1,
+    .toughness 2,
+    .ability (.keyword .flying),
+    .ability (.triggered (.draw .sameController)
+      (.self (.putCounters .plusOnePlusOne 1)))
+  ]
+  c.keywords.flying && c.triggeredAbilities == #[.onDrawPlusOne]
 
 end Mtg.Engine

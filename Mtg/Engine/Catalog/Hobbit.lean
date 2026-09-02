@@ -214,18 +214,20 @@ def confusticateAndBebotherCard : CardDef :=
   confusticateAndBebother.toCardDef
     (oracleText := "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card.")
 
-def ravenhillFlock : CardDef :=
-  traditional [
-    .name "Ravenhill Flock",
-    .manaCost [.generic 3, .mono .blue],
-    .type .creature,
-    .subtype .bird,
-    .power 1,
-    .toughness 2,
-    .oracleText "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.",
-    .ability (.keyword .flying),
-    .triggered (.onDrawPlusOne)
-  ]
+def ravenhillFlock : TraditionalCardDefinition := .card [
+  .name "Ravenhill Flock",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .subtype .bird,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability (.triggered (.draw .sameController) (.self (.putCounters .plusOnePlusOne 1)))
+]
+
+def ravenhillFlockCard : CardDef :=
+  ravenhillFlock.toCardDef
+    (oracleText := "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.")
 
 def thranduilsDecree : CardDef :=
   traditional [
@@ -2600,7 +2602,7 @@ def hobbitCards : Array CardDef := #[
   bilboBagginsBurglarCard,
   lakeshoreApothecaryCard,
   confusticateAndBebotherCard,
-  ravenhillFlock,
+  ravenhillFlockCard,
   thranduilsDecree,
   bilboLuckwearer,
   uneasyPartings,
@@ -3012,5 +3014,7 @@ def hobbitCards : Array CardDef := #[
 #guard confusticateAndBebotherCard.isModal
 #guard confusticateAndBebotherCard.spellModes ==
   #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+#guard ravenhillFlockCard.keywords.flying
+#guard ravenhillFlockCard.triggeredAbilities == #[.onDrawPlusOne]
 
 end Mtg.Engine.Catalog
