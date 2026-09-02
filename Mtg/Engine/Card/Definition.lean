@@ -297,14 +297,24 @@ inductive ObjectRef where
   | target
 deriving Repr, Inhabited, BEq
 
+/-- When a counted event resets (e.g. “each turn”). -/
+inductive CountWindow where
+  | turnStart
+deriving Repr, Inhabited, BEq
+
+/-- A kind of counter that can be put on a permanent (CR 122). -/
+inductive CounterKind where
+  | plusOnePlusOne
+deriving Repr, Inhabited, BEq
+
 /-- When a triggered ability fires. -/
 inductive When where
   /-- Whenever an object matching the filter attacks. -/
   | attack : Filter → When
   /-- When an object matching the filter enters. -/
   | enter : Filter → When
-  /-- Whenever you draw your second card each turn. -/
-  | youDrawSecond
+  /-- The `n`th draw by a player matching `who` in `window`. -/
+  | drawOrdinal : Nat → CountWindow → Filter → When
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -340,8 +350,8 @@ inductive CardAction where
   | dealDamage : Nat → CardAction
   | draw : Nat → CardAction
   | scry : Nat → CardAction
-  /-- Put `n` +1/+1 counters on the affected object. -/
-  | plusOne : Nat → CardAction
+  /-- Put `n` counters of this kind on the affected object. -/
+  | putCounters : CounterKind → Nat → CardAction
   | self : CardAction → CardAction
   | sequence : List CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
@@ -481,7 +491,7 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
         (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
-  | .plusOne n =>
+  | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .effect e => e
 
@@ -527,7 +537,7 @@ def toEffect : CardAction → Effect
       (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
-  | .plusOne n =>
+  | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .self (.continuous effects _) =>
     match ContinuousEffect.addedPT? effects with
@@ -568,7 +578,7 @@ def toAbilityEffect : CardAction → Effect
       (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
-  | .plusOne n =>
+  | .putCounters .plusOnePlusOne n =>
     Effect.mkAbility (.of .creature) (.onPermanent (.plusOne n))
   | .self (.continuous effects _) =>
     match ContinuousEffect.addedPT? effects with
@@ -624,8 +634,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.enter f) (.draw n) =>
     if f.shape.hasThis then some (.onEnterDraw n) else none
-  | .triggered .youDrawSecond (.self (.plusOne 1)) =>
-    some .onDrawSecondPlusOne
+  | .triggered (.drawOrdinal 2 .turnStart who) (.self (.putCounters .plusOnePlusOne 1)) =>
+    if who.shape.sameController then some .onDrawSecondPlusOne else none
   | _ => none
 
 end Ability
@@ -1162,7 +1172,9 @@ export TraditionalCardDefinition (traditional)
 -- Lakeshore Apothecary: vigilance; second draw each turn, +1/+1 on this.
 #guard
   match
-    (Ability.triggered .youDrawSecond (.self (.plusOne 1))).toTriggeredAbility? with
+    (Ability.triggered
+      (.drawOrdinal 2 .turnStart .sameController)
+      (.self (.putCounters .plusOnePlusOne 1))).toTriggeredAbility? with
   | some ab => ab == .onDrawSecondPlusOne
   | none => false
 
@@ -1176,7 +1188,8 @@ export TraditionalCardDefinition (traditional)
     .power 1,
     .toughness 2,
     .ability (.keyword .vigilance),
-    .ability (.triggered (.youDrawSecond) (.self (.plusOne 1)))
+    .ability (.triggered (.drawOrdinal 2 .turnStart .sameController)
+      (.self (.putCounters .plusOnePlusOne 1)))
   ]
   c.keywords.vigilance && c.triggeredAbilities == #[.onDrawSecondPlusOne]
 

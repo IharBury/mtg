@@ -192,7 +192,7 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card [
   .power 1,
   .toughness 2,
   .ability (.keyword .vigilance),
-  .ability (.triggered (.youDrawSecond) (.self (.plusOne 1)))
+  .ability (.triggered (.drawOrdinal 2 .turnStart .sameController) (.self (.putCounters .plusOnePlusOne 1)))
 ]
 
 def lakeshoreApothecaryCard : CardDef :=
