@@ -580,11 +580,11 @@ def gazeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
+  withWhiteMana (addToHand g velvetwingButterfliesCard ⟨0⟩) ⟨0⟩ 2
 
 #guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
 #guard
-  match velvetwingButterflies.adventure with
+  match velvetwingButterfliesCard.adventure with
   | some adv => adv.spellEffect == some (Effect.tapOneOrTwoCreatures)
   | none => false
 

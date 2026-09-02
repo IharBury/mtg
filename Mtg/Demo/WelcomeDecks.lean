@@ -23,7 +23,7 @@ def hobbitWhite : Array CardDef :=
   #[bofurReliableGuardianCard] ++
   copies 16 plains ++
   copies 2 dwarvenProvisionerCard ++
-  #[velvetwingButterflies] ++
+  #[velvetwingButterfliesCard] ++
   copies 2 magnificentEnd ++
   #[mentorOfTheMeek, fiendHunter] ++
   copies 2 errandRiderOfGondor ++

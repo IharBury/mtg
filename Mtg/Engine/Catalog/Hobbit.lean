@@ -74,25 +74,32 @@ def dwarvenProvisionerCard : CardDef :=
   dwarvenProvisioner.toCardDef
     (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
 
-def velvetwingButterflies : CardDef :=
-  traditional [
-    .name "Velvetwing Butterflies",
-    .manaCost [.generic 2, .mono .white],
-    .type .creature,
-    .subtype .insect,
-    .power 2,
-    .toughness 2,
-    .oracleText "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)",
-    .ability (.keyword .flying),
-    .alternative [
-      .name "Gaze in Wonder",
-      .manaCost [.generic 1, .mono .white],
-      .type .instant,
-      .subtype .adventure,
-      .action (.effect (Effect.tapOneOrTwoCreatures)),
-      .oracleText "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)"
-    ]
+def velvetwingButterflies : TraditionalCardDefinition := .card [
+  .name "Velvetwing Butterflies",
+  .manaCost [.generic 2, .mono .white],
+  .type .creature,
+  .subtype .insect,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .alternative [
+    .name "Gaze in Wonder",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .action (.targeted
+      ({maximumTargets := 2,
+        filter := .and [
+          .permanent,
+          .cardType .creature
+        ]})
+      .tap)
   ]
+]
+
+def velvetwingButterfliesCard : CardDef :=
+  velvetwingButterflies.toCardDef
+    (oracleText := "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
 
 def magnificentEnd : CardDef :=
   traditional [
@@ -2551,7 +2558,7 @@ def hobbitCards : Array CardDef := #[
   forest,
   bofurReliableGuardianCard,
   dwarvenProvisionerCard,
-  velvetwingButterflies,
+  velvetwingButterfliesCard,
   magnificentEnd,
   eagleOfTheGreatShelf,
   vowToErebor,
@@ -2948,8 +2955,18 @@ def hobbitCards : Array CardDef := #[
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
 #guard (bofurReliableGuardianCard.oracleText.splitOn "//ADV//").length > 1
 #guard (bofurReliableGuardianCard.oracleText.splitOn "Concerted Care {1}{W}").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "//ADV//").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
+#guard (velvetwingButterfliesCard.oracleText.splitOn "//ADV//").length > 1
+#guard (velvetwingButterfliesCard.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
+#guard velvetwingButterfliesCard.hasAdventure
+#guard
+  match velvetwingButterfliesCard.adventure with
+  | some adv =>
+    adv.name == "Gaze in Wonder" &&
+      adv.manaCost == (ManaCost.ofGenericAndColor 1 .white) &&
+      adv.types == #[.instant] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some Effect.tapOneOrTwoCreatures
+  | none => false
 #guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1
 #guard (bilboBagginsBurglar.oracleText.splitOn "Take a Glance {U}").length > 1
 #guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1

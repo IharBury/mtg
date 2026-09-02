@@ -269,6 +269,7 @@ inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
   | targeted : TargetSelector → CardAction → CardAction
   | filtered : Filter → CardAction → CardAction
+  | tap
   | effect : Effect → CardAction
 deriving Repr, Inhabited, BEq
 end
@@ -347,6 +348,11 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
       | _ => []) asAbility
     { e with targeting := sel.toTargeting }
   | .filtered f' inner' => filteredEffect f' inner' asAbility
+  | .tap =>
+    if asAbility then
+      Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
+    else
+      Effect.mkSpell (.of .none) .tapTargets (castKind := .pump)
   | .effect e => e
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -368,6 +374,8 @@ def toEffect : CardAction → Effect
       allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
   | .filtered f inner =>
     filteredEffect f inner false
+  | .tap =>
+    Effect.mkSpell (.of .none) .tapTargets (castKind := .pump)
   | .effect e => e
 
 /-- Compile to an activated-ability `Effect`. -/
@@ -381,6 +389,8 @@ def toAbilityEffect : CardAction → Effect
     { e with targeting := sel.toTargeting }
   | .filtered f inner =>
     filteredEffect f inner true
+  | .tap =>
+    Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
   | .effect e => e
 
 end CardAction
@@ -764,5 +774,17 @@ export TraditionalCardDefinition (traditional)
     .action (.effect (Effect.dealDamageToCreature 5)),
     .oracleText "Silent Bolt deals 5 damage to target creature."
   ]).spellEffect == some (Effect.dealDamageToCreature 5)
+
+-- Gaze in Wonder: tap one or two target creatures.
+#guard
+  let action : CardAction :=
+    .targeted
+      ({maximumTargets := 2,
+        filter := .and [
+          .permanent,
+          .cardType .creature
+        ]})
+      .tap
+  action.toEffect == Effect.tapOneOrTwoCreatures
 
 end Mtg.Engine
