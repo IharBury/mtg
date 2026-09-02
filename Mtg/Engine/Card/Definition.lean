@@ -149,6 +149,8 @@ inductive Filter where
   | sameController
   /-- A tapped permanent (CR 110.5). -/
   | tapped
+  /-- This spell or ability has a target matching the inner filter. -/
+  | hasAnyTarget : Filter → Filter
 deriving Repr, Inhabited, BEq
 
 namespace Filter
@@ -189,6 +191,7 @@ structure Shape where
   sameController : Bool := false
   mustBePermanent : Bool := false
   tapped : Bool := false
+  hasAnyTarget : Bool := false
   types : TypeSet := .any
 deriving Repr, Inhabited, BEq
 
@@ -198,17 +201,23 @@ def meet (a b : Shape) : Shape :=
   { sameController := a.sameController || b.sameController
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
+    hasAnyTarget := a.hasAnyTarget || b.hasAnyTarget
     types := a.types.intersect b.types }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
     mustBePermanent := a.mustBePermanent && b.mustBePermanent
     tapped := a.tapped && b.tapped
+    hasAnyTarget := a.hasAnyTarget && b.hasAnyTarget
     types := a.types.union b.types }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
   s.tapped && s.types.eqTypes [.creature]
+
+/-- “If this spell has a tapped-creature target.” -/
+def hasAnyTargetTappedCreature (s : Shape) : Bool :=
+  s.hasAnyTarget && s.tappedCreature
 
 end Shape
 
@@ -217,6 +226,7 @@ def shape : Filter → Shape
   | .permanent => { mustBePermanent := true }
   | .sameController => { sameController := true }
   | .tapped => { tapped := true }
+  | .hasAnyTarget f => { f.shape with hasAnyTarget := true }
   | .cardType t => { types := .oneOf [t] }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
@@ -256,33 +266,9 @@ inductive Trigger where
   | endOfTurn
 deriving Repr, Inhabited, BEq
 
-/-- A condition that gates a printed ability (e.g. “if it targets …”). -/
+/-- A condition that gates a printed ability (e.g. “if this spell …”). -/
 inductive Condition where
-  | hasAnyTarget : Filter → Condition
-deriving Repr, Inhabited, BEq
-
-/-- A static modification printed on a card or granted while a condition holds. -/
-inductive StaticPart where
-  | costReduction : List ManaSymbol → StaticPart
-deriving Repr, Inhabited, BEq
-
-namespace StaticPart
-
-def genericReduction : List StaticPart → Nat
-  | [] => 0
-  | .costReduction syms :: rest =>
-    (syms : ManaCost).manaValue + genericReduction rest
-
-end StaticPart
-
-/-- What a conditional ability grants while its condition holds. -/
-inductive Granted where
-  | static : List StaticPart → Granted
-deriving Repr, Inhabited, BEq
-
-/-- Whom a granted static applies to. -/
-inductive Recipient where
-  | self : Granted → Recipient
+  | this : Filter → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -293,13 +279,16 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
-  | conditional : Condition → Recipient → Ability
+  | conditional : Condition → Ability → Ability
+  | self : Ability → Ability
+  | static : List ContinuousEffect → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
 inductive ContinuousEffect where
   | gainAbility : Ability → ContinuousEffect
   | addPowerToughness : Int → Int → ContinuousEffect
+  | costReduction : List Cost → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -325,6 +314,14 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | some (p', t') => some (p + p', t + t')
     | none => none
   | .gainAbility _ :: _ => none
+  | .costReduction _ :: _ => none
+
+/-- Generic mana this list reduces a cost by. -/
+def genericCostReduction : List ContinuousEffect → Nat
+  | [] => 0
+  | .costReduction costs :: rest =>
+    (Cost.manaCost costs).manaValue + genericCostReduction rest
+  | _ :: rest => genericCostReduction rest
 
 end ContinuousEffect
 
@@ -473,6 +470,8 @@ def ofActivated (costs : List Cost) (action : CardAction) : ActivatedAbility :=
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keyword _ => none
   | .conditional _ _ => none
+  | .self _ => none
+  | .static _ => none
   | .activated costs action => some (ofActivated costs action)
 
 end Ability
@@ -590,6 +589,19 @@ deriving Inhabited
 
 namespace CardFace
 
+/-- Fold a structured ability onto a compiling face. -/
+def applyAbility (b : CardFace) : Ability → CardFace
+  | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
+  | .activated costs action =>
+    { b with activatedAbilities := b.activatedAbilities.push (Ability.ofActivated costs action) }
+  | .conditional (.this f) inner =>
+    if f.shape.hasAnyTargetTappedCreature then applyAbility b inner else b
+  | .self inner => applyAbility b inner
+  | .static effects =>
+    let n := ContinuousEffect.genericCostReduction effects
+    if n == 0 then b
+    else { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n }
+
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
   | .manaCost c => { b with manaCost := (c : ManaCost) }
@@ -598,13 +610,7 @@ def apply (b : CardFace) : CardPart → CardFace
   | .subtype s => { b with subtypes := b.subtypes.push s.toString }
   | .power n => { b with power := some n }
   | .toughness n => { b with toughness := some n }
-  | .ability (.keyword k) => { b with keywords := b.keywords.merge k.toKeywords }
-  | .ability (.activated costs action) =>
-    { b with activatedAbilities := b.activatedAbilities.push (Ability.ofActivated costs action) }
-  | .ability (.conditional (.hasAnyTarget f) (.self (.static mods))) =>
-    if f.shape.tappedCreature then
-      { b with costReductionIfTargetTapped := StaticPart.genericReduction mods }
-    else b
+  | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
   | .action a => { b with action := some a }
   | .oracleText t => { b with oracleText := t }
@@ -866,20 +872,24 @@ export TraditionalCardDefinition (traditional)
 #guard Filter.shape
   (.and [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
 
+#guard Filter.shape
+  (.hasAnyTarget (.and [.permanent, .cardType .creature, .tapped]))
+  |>.hasAnyTargetTappedCreature
+
 #guard
   (traditional [
     .name "Magnificent End",
     .manaCost [.generic 4, .mono .white],
     .type .instant,
     .ability (.conditional
-      (.hasAnyTarget (.and [.permanent, .cardType .creature, .tapped]))
-      (.self (.static [.costReduction [.generic 3]]))),
+      (.this (.hasAnyTarget (.and [.permanent, .cardType .creature, .tapped])))
+      (.self (.static [.costReduction [.mana [.generic 3]]]))),
     .action (.targeted
       ({filter := .and [
           .permanent,
           .cardType .creature
         ]})
-      (.dealDamage 5))
+      .dealDamage 5)
   ]).costReductionIfTargetTapped == 3
 
 end Mtg.Engine
