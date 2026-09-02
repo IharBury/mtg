@@ -441,12 +441,12 @@ def magnificentEndSetup (tapped : Bool) : Game :=
       g.setObject { o with status := { o.status with tapped := true } }
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
+  withWhiteMana (addToHand g magnificentEndCard ⟨0⟩) ⟨0⟩ 5
 
 def magnificentEndFull : Game := magnificentEndSetup false
 def magnificentEndCheap : Game := magnificentEndSetup true
 
-#guard magnificentEnd.costReductionIfTargetTapped == 3
+#guard magnificentEndCard.costReductionIfTargetTapped == 3
 #guard
   match magnificentEndFull.apply ⟨0⟩
       (.cast (handCardNamed magnificentEndFull ⟨0⟩ "Magnificent End").id) with

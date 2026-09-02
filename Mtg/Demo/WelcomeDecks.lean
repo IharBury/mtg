@@ -24,7 +24,7 @@ def hobbitWhite : Array CardDef :=
   copies 16 plains ++
   copies 2 dwarvenProvisionerCard ++
   #[velvetwingButterfliesCard] ++
-  copies 2 magnificentEnd ++
+  copies 2 magnificentEndCard ++
   #[mentorOfTheMeek, fiendHunter] ++
   copies 2 errandRiderOfGondor ++
   #[landrovalHorizonWitness, roguesPassage] ++

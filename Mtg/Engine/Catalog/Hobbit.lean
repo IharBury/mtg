@@ -101,15 +101,24 @@ def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
     (oracleText := "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
 
-def magnificentEnd : CardDef :=
-  traditional [
-    .name "Magnificent End",
-    .manaCost [.generic 4, .mono .white],
-    .type .instant,
-    .action (.effect (Effect.dealDamageToCreature 5)),
-    .oracleText "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature.",
-    .costReductionIfTargetTapped 3
-  ]
+def magnificentEnd : TraditionalCardDefinition := .card [
+  .name "Magnificent End",
+  .manaCost [.generic 4, .mono .white],
+  .type .instant,
+  .ability (.conditional
+    (.hasAnyTarget (.and [.permanent, .cardType .creature, .tapped]))
+    (.self (.static [.costReduction [.generic 3]]))),
+  .action (.targeted
+    ({filter := .and [
+        .permanent,
+        .cardType .creature
+      ]})
+    (.dealDamage 5))
+]
+
+def magnificentEndCard : CardDef :=
+  magnificentEnd.toCardDef
+    (oracleText := "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature.")
 
 def eagleOfTheGreatShelf : CardDef :=
   traditional [
@@ -2559,7 +2568,7 @@ def hobbitCards : Array CardDef := #[
   bofurReliableGuardianCard,
   dwarvenProvisionerCard,
   velvetwingButterfliesCard,
-  magnificentEnd,
+  magnificentEndCard,
   eagleOfTheGreatShelf,
   vowToErebor,
   bilboBagginsBurglar,
