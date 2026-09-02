@@ -40,7 +40,7 @@ def hobbitBlue : Array CardDef :=
   copies 16 island ++
   #[pelargirSurvivor] ++
   copies 2 lakeshoreApothecaryCard ++
-  #[confusticateAndBebother, ravenhillFlock, lorienRevealed, thranduilsDecree,
+  #[confusticateAndBebotherCard, ravenhillFlock, lorienRevealed, thranduilsDecree,
     knightsOfDolAmroth, greyHavensNavigator, roguesPassage] ++
   copies 2 ithilienKingfisher ++
   #[hithlainKnots, captainOfUmbar, minasTirithGarrison, colossalWhale,

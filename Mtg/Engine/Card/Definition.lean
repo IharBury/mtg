@@ -155,6 +155,8 @@ inductive Filter where
   | hasThis
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Filter
+  /-- A spell on the stack (CR 112.1). -/
+  | spell
 deriving Repr, Inhabited, BEq
 
 namespace Filter
@@ -199,6 +201,7 @@ structure Shape where
   hasThis : Bool := false
   subtype : Option String := none
   types : TypeSet := .any
+  stackSpell : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Shape
@@ -210,7 +213,8 @@ def meet (a b : Shape) : Shape :=
     hasAnyTarget := a.hasAnyTarget || b.hasAnyTarget
     hasThis := a.hasThis || b.hasThis
     subtype := a.subtype.orElse fun _ => b.subtype
-    types := a.types.intersect b.types }
+    types := a.types.intersect b.types
+    stackSpell := a.stackSpell || b.stackSpell }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
@@ -222,7 +226,8 @@ def join (a b : Shape) : Shape :=
       match a.subtype, b.subtype with
       | some x, some y => if x == y then some x else none
       | _, _ => none
-    types := a.types.union b.types }
+    types := a.types.union b.types
+    stackSpell := a.stackSpell && b.stackSpell }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
@@ -247,6 +252,7 @@ def shape : Filter → Shape
   | .hasThis => { hasThis := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
+  | .spell => { stackSpell := true }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
   | .or (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
@@ -254,7 +260,8 @@ def shape : Filter → Shape
 /-- Compile a filter to a targeting shape the engine already understands. -/
 def toTargetKind (f : Filter) : EffectTargetKind :=
   let s := f.shape
-  if s.sameController then
+  if s.stackSpell then .spell
+  else if s.sameController then
     if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
     else if s.types.eqTypes [.creature] then .creatureYouControl
     else if s.types.eqTypes [.artifact] then .artifactYouControl
@@ -350,10 +357,16 @@ inductive CardAction where
   | dealDamage : Nat → CardAction
   | draw : Nat → CardAction
   | scry : Nat → CardAction
+  /-- Discard `n` cards. -/
+  | discard : Nat → CardAction
+  /-- Counter the affected spell unless its controller pays `{n}`. -/
+  | counterUnlessPays : Nat → CardAction
   /-- Put `n` counters of this kind on the affected object. -/
   | putCounters : CounterKind → Nat → CardAction
   | self : CardAction → CardAction
   | sequence : List CardAction → CardAction
+  /-- Choose one of these modes (CR 700.2). -/
+  | chooseOne : List CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
   /-- The controller may perform the inner action. -/
   | optional : CardAction → CardAction
@@ -443,6 +456,20 @@ def leftoverUntapPumpAttach : List CardAction → Option (Int × Int)
     else none
   | _ => none
 
+/-- Draw `n`, then discard a card. -/
+def leftoverDrawThenDiscard : List CardAction → Option Nat
+  | [.draw n, .discard 1] => some n
+  | _ => none
+
+/-- Sequence leftover: untap-pump-attach, else draw-then-discard. -/
+def leftoverSequence (as : List CardAction) (fallback : Effect) : Effect :=
+  match leftoverUntapPumpAttach as with
+  | some (p, t) => Effect.untapPumpMaybeAttach p t
+  | none =>
+    match leftoverDrawThenDiscard as with
+    | some n => Effect.drawThenDiscard n
+    | none => fallback
+
 /-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
 is the shape Dwarven Provisioner prints. -/
 def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect :=
@@ -464,9 +491,8 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
   | .filtered f' inner' => filteredEffect f' inner' asAbility
   | .self inner => filteredEffect f inner asAbility
   | .sequence as =>
-    match leftoverUntapPumpAttach as with
-    | some (p, t) => Effect.untapPumpMaybeAttach p t
-    | none => continuousEffect none [] asAbility
+    leftoverSequence as (continuousEffect none [] asAbility)
+  | .chooseOne _ => continuousEffect none [] asAbility
   | .conditional _ inner => filteredEffect f inner asAbility
   | .optional inner => filteredEffect f inner asAbility
   | .inGame _ inner => filteredEffect f inner asAbility
@@ -491,6 +517,8 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
         (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
+  | .discard _ => Effect.draw 0
+  | .counterUnlessPays n => Effect.counterUnlessPays n
   | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .effect e => e
@@ -508,6 +536,10 @@ def toEffect : CardAction → Effect
   | .targeted sel (.dealDamage n) =>
     Effect.mkSpell sel.toTargeting (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
+  | .targeted sel (.counterUnlessPays n) =>
+    let e := Effect.counterUnlessPays n
+    if sel.toTargeting == e.targeting then e
+    else { e with targeting := sel.toTargeting }
   | .targeted sel (.sequence as) =>
     match leftoverUntapPumpAttach as with
     | some (p, t) =>
@@ -537,6 +569,8 @@ def toEffect : CardAction → Effect
       (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
+  | .discard _ => Effect.draw 0
+  | .counterUnlessPays n => Effect.counterUnlessPays n
   | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .self (.continuous effects _) =>
@@ -545,9 +579,12 @@ def toEffect : CardAction → Effect
     | none => continuousEffect none effects false
   | .self inner => inner.toEffect
   | .sequence as =>
-    match leftoverUntapPumpAttach as with
-    | some (p, t) => Effect.untapPumpMaybeAttach p t
-    | none => Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump)
+    leftoverSequence as
+      (Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump))
+  | .chooseOne as =>
+    match as with
+    | a :: _ => a.toEffect
+    | [] => Effect.draw 0
   | .conditional _ inner => inner.toEffect
   | .optional inner => inner.toEffect
   | .inGame _ inner => inner.toEffect
@@ -578,6 +615,8 @@ def toAbilityEffect : CardAction → Effect
       (castKind := .creatureDamage)
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
+  | .discard _ => Effect.draw 0
+  | .counterUnlessPays n => Effect.counterUnlessPays n
   | .putCounters .plusOnePlusOne n =>
     Effect.mkAbility (.of .creature) (.onPermanent (.plusOne n))
   | .self (.continuous effects _) =>
@@ -586,9 +625,11 @@ def toAbilityEffect : CardAction → Effect
     | none => continuousEffect none effects true
   | .self inner => inner.toAbilityEffect
   | .sequence as =>
-    match leftoverUntapPumpAttach as with
-    | some (p, t) => Effect.untapPumpMaybeAttach p t
-    | none => Effect.mkAbility (.of .none) (.onPermanent .untap)
+    leftoverSequence as (Effect.mkAbility (.of .none) (.onPermanent .untap))
+  | .chooseOne as =>
+    match as with
+    | a :: _ => a.toAbilityEffect
+    | [] => Effect.draw 0
   | .conditional _ inner => inner.toAbilityEffect
   | .optional inner => inner.toAbilityEffect
   | .inGame _ inner => inner.toAbilityEffect
@@ -866,6 +907,11 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       | some alt => some (CardFace.ofParts alt).toAdventure
       | none => none
     let official := if oracleText.isEmpty then b.oracleText else oracleText
+    let modes :=
+      match b.action with
+      | some (.chooseOne as) =>
+        b.spellModes ++ (as.map CardAction.toEffect).toArray
+      | _ => b.spellModes
     let generated :=
       let kw :=
         let s := toString b.keywords
@@ -891,13 +937,13 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       toughness := b.toughness
       keywords := b.keywords
       spellEffect :=
-        if b.spellModes.isEmpty then b.action.map (·.toEffect) else none
+        if modes.isEmpty then b.action.map (·.toEffect) else none
       activatedAbilities := b.activatedAbilities
       adventure := adventure
       oracleText := if official.isEmpty then generated else official
       triggeredAbilities := b.triggeredAbilities
       staticAbilities := b.staticAbilities
-      spellModes := b.spellModes
+      spellModes := modes
       chooseOneOrBoth := b.chooseOneOrBoth
       flashback := b.flashback
       ward := b.ward
@@ -1192,5 +1238,30 @@ export TraditionalCardDefinition (traditional)
       (.self (.putCounters .plusOnePlusOne 1)))
   ]
   c.keywords.vigilance && c.triggeredAbilities == #[.onDrawSecondPlusOne]
+
+-- Confusticate and Bebother: counter unless {4}, or draw two then discard.
+#guard Filter.toTargetKind .spell == .spell
+
+#guard
+  let action : CardAction :=
+    .targeted ({filter := .spell}) (.counterUnlessPays 4)
+  action.toEffect == Effect.counterUnlessPays 4
+
+#guard
+  let action : CardAction := .sequence [.draw 2, .discard 1]
+  action.toEffect == Effect.drawThenDiscard 2
+
+#guard
+  let c := traditional [
+    .name "Confusticate and Bebother",
+    .manaCost [.generic 2, .mono .blue],
+    .type .instant,
+    .action (.chooseOne [
+      .targeted ({filter := .spell}) (.counterUnlessPays 4),
+      .sequence [.draw 2, .discard 1]
+    ])
+  ]
+  c.isModal && c.spellEffect.isNone &&
+    c.spellModes == #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
 
 end Mtg.Engine

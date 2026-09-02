@@ -199,14 +199,19 @@ def lakeshoreApothecaryCard : CardDef :=
   lakeshoreApothecary.toCardDef
     (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
-def confusticateAndBebother : CardDef :=
-  traditional [
-    .name "Confusticate and Bebother",
-    .manaCost [.generic 2, .mono .blue],
-    .type .instant,
-    .oracleText "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card.",
-    .chooseOne [Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
-  ]
+def confusticateAndBebother : TraditionalCardDefinition := .card [
+  .name "Confusticate and Bebother",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant,
+  .action (.chooseOne [
+    .targeted ({filter := .spell}) (.counterUnlessPays 4),
+    .sequence [.draw 2, .discard 1]
+  ])
+]
+
+def confusticateAndBebotherCard : CardDef :=
+  confusticateAndBebother.toCardDef
+    (oracleText := "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card.")
 
 def ravenhillFlock : CardDef :=
   traditional [
@@ -2593,7 +2598,7 @@ def hobbitCards : Array CardDef := #[
   vowToEreborCard,
   bilboBagginsBurglarCard,
   lakeshoreApothecaryCard,
-  confusticateAndBebother,
+  confusticateAndBebotherCard,
   ravenhillFlock,
   thranduilsDecree,
   bilboLuckwearer,
@@ -3002,5 +3007,9 @@ def hobbitCards : Array CardDef := #[
 #guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal {B}").length > 1
+#guard confusticateAndBebotherCard.isInstant
+#guard confusticateAndBebotherCard.isModal
+#guard confusticateAndBebotherCard.spellModes ==
+  #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
 
 end Mtg.Engine.Catalog

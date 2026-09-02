@@ -109,7 +109,7 @@ def agentOppBoltWithDecree : Game :=
 /-- Nissa's instant is under Chandra's Bolt, then Nissa proposes a counter. -/
 def proposedDecreeOverOwnSpell : Game :=
   let g := mustApply afterDraw ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
   let g := mustApply g ⟨1⟩
     (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
   let g := mustApply g ⟨1⟩ (.chooseMode 1)
@@ -135,7 +135,7 @@ def proposedDecreeOverOwnSpell : Game :=
 
 /-- Chandra proposes Confusticate with her own Bolt on the stack. -/
 def proposedConfusticateOwnBolt : Game :=
-  let g := withBlueMana (addToHand paidBolt confusticateAndBebother ⟨0⟩) ⟨0⟩ 3
+  let g := withBlueMana (addToHand paidBolt confusticateAndBebotherCard ⟨0⟩) ⟨0⟩ 3
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Confusticate and Bebother").id)
 
 -- Draw rather than counter your own spell.
@@ -151,7 +151,7 @@ def proposedConfusticateOwnBolt : Game :=
 /-- Nissa proposes Confusticate with Chandra's Bolt on the stack. -/
 def proposedConfusticateOppBolt : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
 
 -- Counter an opposing spell when that mode is available.
