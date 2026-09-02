@@ -304,6 +304,11 @@ inductive ObjectRef where
   | target
 deriving Repr, Inhabited, BEq
 
+/-- A player relative to the affected object (CR 109.5). -/
+inductive PlayerRef where
+  | controller
+deriving Repr, Inhabited, BEq
+
 /-- When a counted event resets (e.g. “each turn”). -/
 inductive CountWindow where
   | turnStart
@@ -359,14 +364,16 @@ inductive CardAction where
   | scry : Nat → CardAction
   /-- Discard `n` cards. -/
   | discard : Nat → CardAction
-  /-- Counter the affected spell unless its controller pays `{n}`. -/
-  | counterUnlessPays : Nat → CardAction
+  /-- Counter the affected spell (CR 701.5). -/
+  | counter
+  /-- The given player may pay `costs` to prevent the inner action. -/
+  | preventable : PlayerRef → List Cost → CardAction → CardAction
   /-- Put `n` counters of this kind on the affected object. -/
   | putCounters : CounterKind → Nat → CardAction
   | self : CardAction → CardAction
   | sequence : List CardAction → CardAction
-  /-- Choose one of these modes (CR 700.2). -/
-  | chooseOne : List CardAction → CardAction
+  /-- Choose `n` of these modes (CR 700.2). -/
+  | modeChoice : Nat → List CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
   /-- The controller may perform the inner action. -/
   | optional : CardAction → CardAction
@@ -461,6 +468,12 @@ def leftoverDrawThenDiscard : List CardAction → Option Nat
   | [.draw n, .discard 1] => some n
   | _ => none
 
+/-- Counter unless the object's controller pays this generic amount. -/
+def leftoverCounterUnlessPays : CardAction → Option Nat
+  | .preventable .controller costs .counter =>
+    some (Cost.manaCost costs).manaValue
+  | _ => none
+
 /-- Sequence leftover: untap-pump-attach, else draw-then-discard. -/
 def leftoverSequence (as : List CardAction) (fallback : Effect) : Effect :=
   match leftoverUntapPumpAttach as with
@@ -492,7 +505,7 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
   | .self inner => filteredEffect f inner asAbility
   | .sequence as =>
     leftoverSequence as (continuousEffect none [] asAbility)
-  | .chooseOne _ => continuousEffect none [] asAbility
+  | .modeChoice _ _ => continuousEffect none [] asAbility
   | .conditional _ inner => filteredEffect f inner asAbility
   | .optional inner => filteredEffect f inner asAbility
   | .inGame _ inner => filteredEffect f inner asAbility
@@ -518,28 +531,32 @@ def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
   | .discard _ => Effect.draw 0
-  | .counterUnlessPays n => Effect.counterUnlessPays n
+  | .counter => Effect.counterSpell
+  | .preventable who costs inner =>
+    match leftoverCounterUnlessPays (.preventable who costs inner) with
+    | some n => Effect.counterUnlessPays n
+    | none => filteredEffect f inner asAbility
   | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .effect e => e
+
+/-- Overlay targeting from a selector onto a compiled effect. -/
+def withSelector (sel : TargetSelector) (e : Effect) : Effect :=
+  { e with
+    targeting := sel.toTargeting
+    maxTargets :=
+      if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
+    allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
 
 /-- Compile to a spell-shaped `Effect`. -/
 def toEffect : CardAction → Effect
   | .continuous effects _duration =>
     continuousEffect none effects false
   | .targeted sel (.continuous effects _duration) =>
-    let e := continuousEffect (some sel) effects false
-    { e with
-      maxTargets :=
-        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+    withSelector sel (continuousEffect (some sel) effects false)
   | .targeted sel (.dealDamage n) =>
     Effect.mkSpell sel.toTargeting (.onPermanent (.dealDamage n))
       (castKind := .creatureDamage)
-  | .targeted sel (.counterUnlessPays n) =>
-    let e := Effect.counterUnlessPays n
-    if sel.toTargeting == e.targeting then e
-    else { e with targeting := sel.toTargeting }
   | .targeted sel (.sequence as) =>
     match leftoverUntapPumpAttach as with
     | some (p, t) =>
@@ -552,12 +569,12 @@ def toEffect : CardAction → Effect
         maxTargets := if sel.maximumTargets ≤ 1 then 0 else sel.maximumTargets
         allowsZeroTargets := sel.minimumTargets == 0 }
   | .targeted sel inner =>
-    let e := inner.toEffect
-    { e with
-      targeting := sel.toTargeting
-      maxTargets :=
-        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+    match leftoverCounterUnlessPays inner with
+    | some n =>
+      let e := Effect.counterUnlessPays n
+      if sel.toTargeting == e.targeting then e
+      else { e with targeting := sel.toTargeting }
+    | none => withSelector sel inner.toEffect
   | .filtered f inner =>
     filteredEffect f inner false
   | .tap =>
@@ -570,7 +587,11 @@ def toEffect : CardAction → Effect
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
   | .discard _ => Effect.draw 0
-  | .counterUnlessPays n => Effect.counterUnlessPays n
+  | .counter => Effect.counterSpell
+  | .preventable who costs inner =>
+    match leftoverCounterUnlessPays (.preventable who costs inner) with
+    | some n => Effect.counterUnlessPays n
+    | none => inner.toEffect
   | .putCounters .plusOnePlusOne n =>
     Effect.mkSpell (.of .creature) (.onPermanent (.plusOne n)) (castKind := .pump)
   | .self (.continuous effects _) =>
@@ -581,7 +602,7 @@ def toEffect : CardAction → Effect
   | .sequence as =>
     leftoverSequence as
       (Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump))
-  | .chooseOne as =>
+  | .modeChoice _ as =>
     match as with
     | a :: _ => a.toEffect
     | [] => Effect.draw 0
@@ -616,7 +637,11 @@ def toAbilityEffect : CardAction → Effect
   | .draw n => Effect.draw n
   | .scry n => Effect.scry n
   | .discard _ => Effect.draw 0
-  | .counterUnlessPays n => Effect.counterUnlessPays n
+  | .counter => Effect.counterSpell
+  | .preventable who costs inner =>
+    match leftoverCounterUnlessPays (.preventable who costs inner) with
+    | some n => Effect.counterUnlessPays n
+    | none => inner.toAbilityEffect
   | .putCounters .plusOnePlusOne n =>
     Effect.mkAbility (.of .creature) (.onPermanent (.plusOne n))
   | .self (.continuous effects _) =>
@@ -626,7 +651,7 @@ def toAbilityEffect : CardAction → Effect
   | .self inner => inner.toAbilityEffect
   | .sequence as =>
     leftoverSequence as (Effect.mkAbility (.of .none) (.onPermanent .untap))
-  | .chooseOne as =>
+  | .modeChoice _ as =>
     match as with
     | a :: _ => a.toAbilityEffect
     | [] => Effect.draw 0
@@ -909,7 +934,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
     let official := if oracleText.isEmpty then b.oracleText else oracleText
     let modes :=
       match b.action with
-      | some (.chooseOne as) =>
+      | some (.modeChoice 1 as) =>
         b.spellModes ++ (as.map CardAction.toEffect).toArray
       | _ => b.spellModes
     let generated :=
@@ -1244,7 +1269,8 @@ export TraditionalCardDefinition (traditional)
 
 #guard
   let action : CardAction :=
-    .targeted ({filter := .spell}) (.counterUnlessPays 4)
+    .targeted ({filter := .spell})
+      (.preventable .controller [.mana [.generic 4]] .counter)
   action.toEffect == Effect.counterUnlessPays 4
 
 #guard
@@ -1256,8 +1282,9 @@ export TraditionalCardDefinition (traditional)
     .name "Confusticate and Bebother",
     .manaCost [.generic 2, .mono .blue],
     .type .instant,
-    .action (.chooseOne [
-      .targeted ({filter := .spell}) (.counterUnlessPays 4),
+    .action (.modeChoice 1 [
+      .targeted ({filter := .spell})
+        (.preventable .controller [.mana [.generic 4]] .counter),
       .sequence [.draw 2, .discard 1]
     ])
   ]

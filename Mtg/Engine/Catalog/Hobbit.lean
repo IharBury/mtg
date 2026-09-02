@@ -203,8 +203,9 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .name "Confusticate and Bebother",
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
-  .action (.chooseOne [
-    .targeted ({filter := .spell}) (.counterUnlessPays 4),
+  .action (.modeChoice 1 [
+    .targeted ({filter := .spell})
+      (.preventable .controller [.mana [.generic 4]] .counter),
     .sequence [.draw 2, .discard 1]
   ])
 ]
