@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.SpellEffects
+import Mtg.Engine.Card.TriggeredAbility
 import Mtg.Engine.Mana
 import Mtg.Engine.TypeLine
 
@@ -44,6 +45,8 @@ inductive Selector where
   | targetReference : Nat → Selector
   /-- Every object matching `filter` (not targeted). -/
   | filtered : Filter → Selector
+  /-- Up to `n` objects chosen the same way as the inner selector. -/
+  | upTo : Nat → Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability may target or affect (CR 115.1). -/
@@ -56,6 +59,10 @@ inductive Filter where
   | permanent
   /-- Objects whose controller is the given player. -/
   | controller : Selector → Filter
+  /-- A tapped permanent (CR 110.5). -/
+  | tapped
+  /-- Printed subtype (CR 205.3). -/
+  | subtype : CardSubtype → Filter
 deriving Repr, Inhabited, BEq
 end
 
@@ -96,6 +103,8 @@ compile without depending on conjunct order. -/
 structure Shape where
   sameController : Bool := false
   mustBePermanent : Bool := false
+  tapped : Bool := false
+  subtype : Option String := none
   types : TypeSet := .any
 deriving Repr, Inhabited, BEq
 
@@ -104,12 +113,27 @@ namespace Shape
 def meet (a b : Shape) : Shape :=
   { sameController := a.sameController || b.sameController
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
+    tapped := a.tapped || b.tapped
+    subtype := a.subtype.orElse fun _ => b.subtype
     types := a.types.intersect b.types }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
     mustBePermanent := a.mustBePermanent && b.mustBePermanent
+    tapped := a.tapped && b.tapped
+    subtype :=
+      match a.subtype, b.subtype with
+      | some x, some y => if x == y then some x else none
+      | _, _ => none
     types := a.types.union b.types }
+
+/-- True when this shape is a tapped creature (optional permanent conjunct). -/
+def tappedCreature (s : Shape) : Bool :=
+  s.tapped && s.types.eqTypes [.creature]
+
+/-- True when this shape is a Dwarf. -/
+def dwarf (s : Shape) : Bool :=
+  s.subtype == some "Dwarf"
 
 end Shape
 
@@ -118,6 +142,8 @@ def shape : Filter → Shape
   | .permanent => { mustBePermanent := true }
   | .controller (.controllerOf .this) => { sameController := true }
   | .controller _ => {}
+  | .tapped => { tapped := true }
+  | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
@@ -157,6 +183,35 @@ inductive Trigger where
   | endOfTurn
 deriving Repr, Inhabited, BEq
 
+/-- A condition that gates a printed ability or clause. -/
+inductive Condition where
+  /-- This spell or ability has a target matching `filter`. -/
+  | hasTarget : Filter → Condition
+  /-- The given object matches `filter`. -/
+  | matches : Selector → Filter → Condition
+deriving Repr, Inhabited, BEq
+
+/-- When a triggered ability fires. -/
+inductive When where
+  /-- Whenever the selected object attacks. -/
+  | attack : Selector → When
+  /-- When the selected object enters. -/
+  | enter : Selector → When
+deriving Repr, Inhabited, BEq
+
+namespace Selector
+
+/-- Targeting implied by a selector, if it announces targets. -/
+def asTargetSelector? : Selector → Option TargetSelector
+  | .singleTarget _n f => some { filter := f }
+  | .upTo n inner =>
+    match asTargetSelector? inner with
+    | some t => some { t with maximumTargets := n }
+    | none => none
+  | _ => none
+
+end Selector
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -165,6 +220,9 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
+  | triggered : When → CardAction → Ability
+  | conditional : Condition → Ability → Ability
+  | reduceCost : List ManaSymbol → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -177,6 +235,15 @@ deriving Repr, Inhabited, BEq
 this tree; player input uses `Action` in `Game`. -/
 inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
+  | tap : Selector → CardAction
+  | untap : Selector → CardAction
+  | dealDamage : Selector → Nat → CardAction
+  | draw : Nat → CardAction
+  | scry : Nat → CardAction
+  | sequence : List CardAction → CardAction
+  | conditional : Condition → CardAction → CardAction
+  | optional : CardAction → CardAction
+  | attach : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -197,10 +264,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
 
 /-- First declared `singleTarget`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
-  effects.findSome? fun e =>
-    match e.selector with
-    | .singleTarget _n f => some { filter := f }
-    | _ => none
+  effects.findSome? fun e => e.selector.asTargetSelector?
 
 /-- First `filtered` set, if any. -/
 def massFilter? (effects : List ContinuousEffect) : Option Filter :=
@@ -265,24 +329,106 @@ def filteredEffect (f : Filter) (effects : List ContinuousEffect) (asAbility : B
   | none, _ =>
     continuousEffect none effects asAbility
 
+/-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
+def withTargetCounts (e : Effect) (sel : TargetSelector) (asAbility : Bool) : Effect :=
+  if asAbility then e
+  else
+    { e with
+      maxTargets :=
+        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
+      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+
+def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+  match ContinuousEffect.targetingSelector? effects with
+  | some sel =>
+    withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
+  | none =>
+    match ContinuousEffect.massFilter? effects with
+    | some f => filteredEffect f effects asAbility
+    | none => continuousEffect none effects asAbility
+
+def compileTap (s : Selector) (asAbility : Bool) : Effect :=
+  match s.asTargetSelector? with
+  | some sel =>
+    let e :=
+      if asAbility then
+        Effect.mkAbility sel.toTargeting (Resolution.ofSpell .tapTargets)
+      else
+        Effect.mkSpell sel.toTargeting .tapTargets (castKind := .pump)
+    withTargetCounts e sel asAbility
+  | none =>
+    if asAbility then
+      Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
+    else
+      Effect.mkSpell (.of .none) .tapTargets (castKind := .pump)
+
+def compileUntap (s : Selector) (asAbility : Bool) : Effect :=
+  match s.asTargetSelector? with
+  | some sel =>
+    if asAbility then
+      Effect.mkAbility sel.toTargeting (.onPermanent .untap)
+    else
+      Effect.mkSpell sel.toTargeting (.onPermanent .untap) (castKind := .pump)
+  | none =>
+    if asAbility then
+      Effect.mkAbility (.of .none) (.onPermanent .untap)
+    else
+      Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump)
+
+def compileDamage (s : Selector) (n : Nat) (asAbility : Bool) : Effect :=
+  match s.asTargetSelector? with
+  | some sel =>
+    if asAbility then
+      Effect.mkAbility sel.toTargeting (.onPermanent (.dealDamage n))
+        (castKind := .creatureDamage)
+    else
+      Effect.mkSpell sel.toTargeting (.onPermanent (.dealDamage n))
+        (castKind := .creatureDamage)
+  | none =>
+    if asAbility then
+      Effect.mkAbility (.of .none) (.onPermanent (.dealDamage n))
+        (castKind := .creatureDamage)
+    else
+      Effect.mkSpell (.of .none) (.onPermanent (.dealDamage n))
+        (castKind := .creatureDamage)
+
+/-- Untap a creature you control, +P/+T on that target, and maybe attach
+if the target is a Dwarf. -/
+def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
+  | .sequence [
+      .untap ut,
+      .continuous effects _,
+      .conditional (.matches _ df) (.optional (.attach _ _))
+    ] =>
+    let youControlCreature :=
+      match ut.asTargetSelector? with
+      | some t =>
+        let s := t.filter.shape
+        s.sameController && s.types.eqTypes [.creature]
+      | none => false
+    if youControlCreature && df.shape.dwarf then
+      ContinuousEffect.addedPT? effects
+    else none
+  | _ => none
+
 /-- Compile `continuous` effects, reading targeting from `singleTarget`
 and mass application from `filtered`. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
-  match action with
-  | .continuous effects _duration =>
-    match ContinuousEffect.targetingSelector? effects with
-    | some sel =>
-      let e := continuousEffect (some sel) effects asAbility
-      if asAbility then e
-      else
-        { e with
-          maxTargets :=
-            if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-          allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
-    | none =>
-      match ContinuousEffect.massFilter? effects with
-      | some f => filteredEffect f effects asAbility
-      | none => continuousEffect none effects asAbility
+  match leftoverUntapPumpAttach? action with
+  | some (p, t) => Effect.untapPumpMaybeAttach p t
+  | none =>
+    match action with
+    | .continuous effects _duration => compileContinuous effects asAbility
+    | .tap s => compileTap s asAbility
+    | .untap s => compileUntap s asAbility
+    | .dealDamage s n => compileDamage s n asAbility
+    | .draw n => Effect.draw n
+    | .scry n => Effect.scry n
+    | .sequence (a :: _) => compile a asAbility
+    | .sequence [] => continuousEffect none [] asAbility
+    | .conditional _ inner => compile inner asAbility
+    | .optional inner => compile inner asAbility
+    | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
 
 /-- Compile to a spell-shaped `Effect`. -/
 def toEffect (action : CardAction) : Effect :=
@@ -298,12 +444,22 @@ namespace Ability
 
 /-- Compile an `.activated` ability; `none` for a keyword. -/
 def toActivatedAbility? : Ability → Option ActivatedAbility
-  | .keyword _ => none
   | .activated costs action =>
     some {
       cost := { mana := Cost.manaCost costs }
       effect := action.toAbilityEffect
     }
+  | _ => none
+
+/-- Compile a `.triggered` ability. -/
+def toTriggeredAbility? : Ability → Option TriggeredAbility
+  | .triggered (.attack .this) (.continuous effects _duration) =>
+    match ContinuousEffect.addedPT? effects with
+    | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
+    | _ => none
+  | .triggered (.enter .this) (.draw n) =>
+    some (TriggeredAbility.onEnterDraw n)
+  | _ => none
 
 end Ability
 
@@ -341,9 +497,32 @@ structure CardFace where
   action : Option CardAction := none
   alternatives : Array (List CardPart) := #[]
   activatedAbilities : Array ActivatedAbility := #[]
+  triggeredAbilities : Array TriggeredAbility := #[]
+  costReductionIfTargetTapped : Nat := 0
 deriving Inhabited
 
 namespace CardFace
+
+def applyAbility (b : CardFace) : Ability → CardFace
+  | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
+  | .activated costs action =>
+    { b with
+      activatedAbilities :=
+        b.activatedAbilities.push {
+          cost := { mana := Cost.manaCost costs }
+          effect := action.toAbilityEffect
+        } }
+  | .triggered w action =>
+    match (Ability.triggered w action).toTriggeredAbility? with
+    | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
+    | none => b
+  | .conditional (.hasTarget f) inner =>
+    if f.shape.tappedCreature then applyAbility b inner else b
+  | .conditional _ inner => applyAbility b inner
+  | .reduceCost syms =>
+    { b with
+      costReductionIfTargetTapped :=
+        b.costReductionIfTargetTapped + ManaCost.manaValue (syms : ManaCost) }
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -353,14 +532,7 @@ def apply (b : CardFace) : CardPart → CardFace
   | .subtype s => { b with subtypes := b.subtypes.push s.toString }
   | .power n => { b with power := some n }
   | .toughness n => { b with toughness := some n }
-  | .ability (.keyword k) => { b with keywords := b.keywords.merge k.toKeywords }
-  | .ability (.activated costs action) =>
-    { b with
-      activatedAbilities :=
-        b.activatedAbilities.push {
-          cost := { mana := Cost.manaCost costs }
-          effect := action.toAbilityEffect
-        } }
+  | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
   | .action a => { b with action := some a }
 
@@ -420,6 +592,8 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       keywords := b.keywords
       spellEffect := b.action.map (·.toEffect)
       activatedAbilities := b.activatedAbilities
+      triggeredAbilities := b.triggeredAbilities
+      costReductionIfTargetTapped := b.costReductionIfTargetTapped
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -492,5 +666,76 @@ end TraditionalCardDefinition
     ab.cost.mana == ManaCost.ofGenericAndColor 3 .white &&
       ab.effect == Effect.abilityCreaturesYouControlGet 1 1
   | none => false
+
+-- Gaze in Wonder: tap one or two target creatures.
+#guard
+  let action : CardAction :=
+    .tap
+      (.upTo 2
+        (.singleTarget 1 (.and [.permanent, .cardType .creature])))
+  action.toEffect == Effect.tapOneOrTwoCreatures
+
+-- Magnificent End: 5 damage to target creature; {3} less if that target is tapped.
+#guard
+  let action : CardAction :=
+    .dealDamage
+      (.singleTarget 1 (.and [.permanent, .cardType .creature]))
+      5
+  action.toEffect == Effect.dealDamageToCreature 5
+
+#guard Filter.shape
+  (.and [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
+
+-- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
+#guard
+  match
+    (Ability.triggered
+      (.attack .this)
+      (.continuous [.addPowerToughness .this 1 1] .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
+  | none => false
+
+-- Vow to Erebor: untap target creature you control, +2/+2, maybe attach if Dwarf.
+#guard Filter.toTargetKind
+  (.and [
+    .permanent,
+    .cardType .creature,
+    .controller (.controllerOf .this)])
+  == .creatureYouControl
+
+#guard Filter.shape (.subtype .dwarf) |>.dwarf
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .untap
+        (.singleTarget
+          1
+          (.and [
+            .permanent,
+            .cardType .creature,
+            .controller (.controllerOf .this)])),
+      .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
+      .conditional
+        (.matches (.targetReference 1) (.subtype .dwarf))
+        (.optional
+          (.attach
+            (.filtered
+              (.and [
+                .permanent,
+                .subtype .equipment,
+                .controller (.controllerOf .this)]))
+            (.targetReference 1)))]
+  action.toEffect == Effect.untapPumpMaybeAttach 2 2
+
+-- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
+#guard
+  match (Ability.triggered (.enter .this) (.draw 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterDraw 1
+  | none => false
+
+#guard
+  let action : CardAction := .scry 2
+  action.toEffect == Effect.scry 2
 
 end Mtg.Engine

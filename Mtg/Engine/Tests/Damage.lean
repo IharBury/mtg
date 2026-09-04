@@ -241,7 +241,7 @@ def gandalfLeftBeforeTrigger : Game :=
 
 -- Hexproof makes an opposing creature an illegal target (CR 702.11b).
 #guard
-  let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent gandalfEntered velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Velvetwing Butterflies"
   let g := g.setObject { o with
     status := { o.status with untilEotKeywords := Keyword.hexproof } }

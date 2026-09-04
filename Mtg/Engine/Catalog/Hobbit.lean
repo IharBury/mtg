@@ -81,38 +81,117 @@ def dwarvenProvisionerCard : CardDef :=
   dwarvenProvisioner.toCardDef
     (oracleText := "{3}{W}: Creatures you control get +1/+1 until end of turn.")
 
-def velvetwingButterflies : CardDef :=
-  creature "Velvetwing Butterflies" (ManaCost.ofGenericAndColor 2 .white) #["Insect"] 2 2
+def velvetwingButterflies : TraditionalCardDefinition := .card [
+  .name "Velvetwing Butterflies",
+  .manaCost [.generic 2, .mono .white],
+  .type .creature,
+  .subtype .insect,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .alternative [
+    .name "Gaze in Wonder",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .subtype .adventure,
+    .action (
+      .tap
+        (.upTo 2
+          (.singleTarget 1 (.and [.permanent, .cardType .creature]))))]
+]
+
+def velvetwingButterfliesCard : CardDef :=
+  velvetwingButterflies.toCardDef
     (oracleText := "Flying\n//ADV//\nGaze in Wonder {1}{W}\nInstant — Adventure\nTap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.flying)
-    (adventure := some (adventure "Gaze in Wonder" (ManaCost.ofGenericAndColor 1 .white)
-      "Tap one or two target creatures. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.tapOneOrTwoCreatures) .instant))
 
-def magnificentEnd : CardDef :=
-  instant "Magnificent End" (ManaCost.ofGenericAndColor 4 .white)
-    "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature."
-    (some (Effect.dealDamageToCreature 5))
-    (costReductionIfTargetTapped := 3)
+def magnificentEnd : TraditionalCardDefinition := .card [
+  .name "Magnificent End",
+  .manaCost [.generic 4, .mono .white],
+  .type .instant,
+  .ability (
+    .conditional
+      (.hasTarget (.and [.permanent, .cardType .creature, .tapped]))
+      (.reduceCost [.generic 3])),
+  .action (
+    .dealDamage
+      (.singleTarget 1 (.and [.permanent, .cardType .creature]))
+      5)
+]
 
-def eagleOfTheGreatShelf : CardDef :=
-  creature "Eagle of the Great Shelf" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Soldier"] 2 5
+def magnificentEndCard : CardDef :=
+  magnificentEnd.toCardDef
+    (oracleText := "This spell costs {3} less to cast if it targets a tapped creature.\nMagnificent End deals 5 damage to target creature.")
+
+def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
+  .name "Eagle of the Great Shelf",
+  .manaCost [.generic 4, .mono .white],
+  .type .creature,
+  .subtype .bird,
+  .subtype .soldier,
+  .power 2,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .ability (
+    .triggered
+      (.attack .this)
+      (.continuous [.addPowerToughness .this 1 1] .endOfTurn))
+]
+
+def eagleOfTheGreatShelfCard : CardDef :=
+  eagleOfTheGreatShelf.toCardDef
     (oracleText := "Flying\nWhenever this creature attacks, it gets +1/+1 until end of turn for each other creature you control.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onAttackPumpForEachOtherCreature])
 
-def vowToErebor : CardDef :=
-  instant "Vow to Erebor" (ManaCost.ofGenericAndColor 1 .white)
-    "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it."
-    (some (Effect.untapPumpMaybeAttach 2 2))
+def vowToErebor : TraditionalCardDefinition := .card [
+  .name "Vow to Erebor",
+  .manaCost [.generic 1, .mono .white],
+  .type .instant,
+  .action (
+    .sequence [
+      .untap
+        (.singleTarget
+          1
+          (.and [
+            .permanent,
+            .cardType .creature,
+            .controller (.controllerOf .this)])),
+      .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
+      .conditional
+        (.matches (.targetReference 1) (.subtype .dwarf))
+        (.optional
+          (.attach
+            (.filtered
+              (.and [
+                .permanent,
+                .subtype .equipment,
+                .controller (.controllerOf .this)]))
+            (.targetReference 1)))])
+]
 
-def bilboBagginsBurglar : CardDef :=
-  legendaryCreature "Bilbo Baggins, Burglar" (ManaCost.ofGenericAndColor 2 .blue) #["Halfling", "Rogue"] 2 1
+def vowToEreborCard : CardDef :=
+  vowToErebor.toCardDef
+    (oracleText := "Untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it.")
+
+def bilboBagginsBurglar : TraditionalCardDefinition := .card [
+  .name "Bilbo Baggins, Burglar",
+  .manaCost [.generic 2, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 2,
+  .toughness 1,
+  .ability (.triggered (.enter .this) (.draw 1)),
+  .alternative [
+    .name "Take a Glance",
+    .manaCost [.mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .action (.scry 2)]
+]
+
+def bilboBagginsBurglarCard : CardDef :=
+  bilboBagginsBurglar.toCardDef
     (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
-    (triggeredAbilities := #[.onEnterDraw 1])
-    (adventure := some (adventure "Take a Glance" (ManaCost.ofColor .blue)
-      "Scry 2. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.scry 2)))
 
 def lakeshoreApothecary : CardDef :=
   creature "Lakeshore Apothecary" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Cleric"] 1 2
@@ -1281,11 +1360,11 @@ def hobbitCards : Array CardDef := #[
   forest,
   bofurReliableGuardianCard,
   dwarvenProvisionerCard,
-  velvetwingButterflies,
-  magnificentEnd,
-  eagleOfTheGreatShelf,
-  vowToErebor,
-  bilboBagginsBurglar,
+  velvetwingButterfliesCard,
+  magnificentEndCard,
+  eagleOfTheGreatShelfCard,
+  vowToEreborCard,
+  bilboBagginsBurglarCard,
   lakeshoreApothecary,
   confusticateAndBebother,
   ravenhillFlock,
@@ -1678,10 +1757,31 @@ def hobbitCards : Array CardDef := #[
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
 #guard (bofurReliableGuardianCard.oracleText.splitOn "//ADV//").length > 1
 #guard (bofurReliableGuardianCard.oracleText.splitOn "Concerted Care {1}{W}").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "//ADV//").length > 1
-#guard (velvetwingButterflies.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
-#guard (bilboBagginsBurglar.oracleText.splitOn "//ADV//").length > 1
-#guard (bilboBagginsBurglar.oracleText.splitOn "Take a Glance {U}").length > 1
+#guard (velvetwingButterfliesCard.oracleText.splitOn "//ADV//").length > 1
+#guard (velvetwingButterfliesCard.oracleText.splitOn "Gaze in Wonder {1}{W}").length > 1
+#guard velvetwingButterfliesCard.hasAdventure
+#guard
+  match velvetwingButterfliesCard.adventure with
+  | some adv =>
+    adv.name == "Gaze in Wonder" &&
+      adv.manaCost == (ManaCost.ofGenericAndColor 1 .white) &&
+      adv.types == #[.instant] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some Effect.tapOneOrTwoCreatures
+  | none => false
+#guard magnificentEndCard.costReductionIfTargetTapped == 3
+#guard magnificentEndCard.spellEffect == some (Effect.dealDamageToCreature 5)
+#guard eagleOfTheGreatShelfCard.keywords.flying
+#guard eagleOfTheGreatShelfCard.triggeredAbilities ==
+  #[TriggeredAbility.onAttackPumpForEachOtherCreature]
+#guard vowToEreborCard.spellEffect == some (Effect.untapPumpMaybeAttach 2 2)
+#guard (bilboBagginsBurglarCard.oracleText.splitOn "//ADV//").length > 1
+#guard (bilboBagginsBurglarCard.oracleText.splitOn "Take a Glance {U}").length > 1
+#guard bilboBagginsBurglarCard.triggeredAbilities == #[TriggeredAbility.onEnterDraw 1]
+#guard
+  match bilboBagginsBurglarCard.adventure with
+  | some adv => adv.spellEffect == some (Effect.scry 2)
+  | none => false
 #guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1
 #guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1

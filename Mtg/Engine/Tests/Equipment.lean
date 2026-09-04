@@ -821,7 +821,7 @@ def hospitalityLandPlayed : Game :=
 
 -- The landfall trigger cannot target an opponent's creature or a player.
 #guard
-  let g := addPermanent hospitalityLandPlayed velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent hospitalityLandPlayed velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
   match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
@@ -859,7 +859,7 @@ def hospitalityLandfallResolved : Game := passBoth hospitalityLandfallTargeted
 /-- No creature you control: the landfall trigger is removed (CR 603.3d). -/
 def hospitalityNoTarget : Game :=
   let g := addPermanent afterDraw beornsHospitality ⟨0⟩ ⟨0⟩
-  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent g velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
   let g := addToHand g forest ⟨0⟩
   mustApply g ⟨0⟩ (.playLand (handCardNamed g ⟨0⟩ "Forest").id)
 
