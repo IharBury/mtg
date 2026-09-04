@@ -117,7 +117,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
-      5)]
+      5]]
 
 def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
