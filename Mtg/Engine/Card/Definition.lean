@@ -47,6 +47,11 @@ inductive Selector where
   | target : Nat → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range. -/
   | targets : Nat → Range → Selector → Selector
+  /-- Numbered targets matching the given selector, with a count range
+  and extra constraints that apply to the set as a whole. -/
+  | targetSet : Nat → Range → Selector → List Selector → Selector
+  /-- Objects that do not match the given selector. -/
+  | not : Selector → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- The object bound by `forEach` of this number. -/
@@ -163,6 +168,10 @@ def tappedCreature (s : Shape) : Bool :=
 def dwarf (s : Shape) : Bool :=
   s.subtype == some "Dwarf"
 
+/-- Negate a constraint-shaped selector. `.not` of a land type is nonland. -/
+def negate (s : Shape) : Shape :=
+  if s.types.eqTypes [.land] then { nonland := true } else {}
+
 end Shape
 
 def shape : Selector → Shape
@@ -175,12 +184,14 @@ def shape : Selector → Shape
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
   | .nonland => { nonland := true }
+  | .not s => s.shape.negate
   | .shareCardType => { shareCardType := true }
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ | .player
+  | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
+  | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
@@ -202,7 +213,14 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
 def among? : Selector → Option Selector
   | .target _ among => some among
   | .targets _ _ among => some among
+  | .targetSet _ _ among extras => some (.intersection (among :: extras))
   | _ => none
+
+/-- Any object. -/
+def any : Selector := .all
+
+/-- A land (CR 305). -/
+def land : Selector := .cardType .land
 
 def toTargeting (s : Selector) : EffectTargeting :=
   match s.among? with
@@ -238,6 +256,8 @@ inductive Trigger where
   | combatDamage : Selector → Selector → Trigger
   /-- The selected object would be put into a graveyard (CR 614). -/
   | putToGraveyard : Selector → Trigger
+  /-- The first selector blocks the second (CR 509). -/
+  | block : Selector → Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -269,6 +289,8 @@ inductive ContinuousEffect where
   | reduceCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect
+  /-- The selected trigger is forbidden (CR 509 / 614). -/
+  | forbid : Trigger → ContinuousEffect
   /-- The selected player may cast the selected card without paying its
   mana cost. -/
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
@@ -319,6 +341,7 @@ def selector : ContinuousEffect → Selector
   | .ifAny _ [] => .this
   | .reduceCost who _ => who
   | .replace _ _ => .this
+  | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -332,6 +355,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
   | .replace _ _ :: _ => none
+  | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
@@ -346,8 +370,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-    | .targetReference _ | .var _ | .selected _ _ | .allTargets _
-    | .spell | .player | .shareCardType
+    | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
+    | .allTargets _ | .spell | .player | .shareCardType
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
     | s => some s
 
@@ -410,7 +434,8 @@ def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility :
 /-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
 def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :=
   match sel with
-  | .targets _ (.range lo hi) _ =>
+  | .targets _ (.range lo hi) _
+  | .targetSet _ (.range lo hi) _ _ =>
     if asAbility then e
     else
       { e with
@@ -637,6 +662,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .ifAny among inners =>
     if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
   | .replace _ _ => b
+  | .forbid (.block who .this) =>
+    if who == .any then
+      { b with keywords := b.keywords.merge Keyword.cantBeBlocked.toKeywords }
+    else b
+  | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .reduceCost _ costs =>
     { b with
@@ -974,16 +1004,22 @@ end TraditionalCardDefinition
   | none => false
 
 #guard
+  (TraditionalCardDefinition.card [
+    .ability (.static [.forbid (.block .any .this)])
+  ]).toCardDef.keywords.cantBeBlocked
+
+#guard
   let action : CardAction :=
     .exchangeControl
-      (.targets
+      (.targetSet
         1
         (.range 2 2)
-        (.intersection [.permanent, .nonland, .shareCardType]))
+        (.intersection [.permanent, .not .land])
+        [.shareCardType])
   action.toEffect == Effect.exchangeControlSharingType
 
 #guard Selector.toTargetKind
-  (.intersection [.permanent, .nonland, .shareCardType])
+  (.intersection [.permanent, .not .land, .shareCardType])
   == .twoNonlandsSharingType
 
 end Mtg.Engine

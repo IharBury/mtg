@@ -275,7 +275,7 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
   .subtype .rogue,
   .power 1,
   .toughness 1,
-  .ability (.keyword .cantBeBlocked),
+  .ability (.static [.forbid (.block .any .this)]),
   .ability (
     .triggered
       (.combatDamage .this .player)
@@ -289,11 +289,11 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
     .subtype .adventure,
     .actions [
       .exchangeControl
-        (.targets
+        (.targetSet
           1
           (.range 2 2)
-          (.intersection [.permanent, .nonland, .shareCardType]))]]
-]
+          (.intersection [.permanent, .not .land])
+          [.shareCardType])]]]
 
 def bilboLuckwearerCard : CardDef :=
   bilboLuckwearer.toCardDef
