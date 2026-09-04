@@ -209,7 +209,6 @@ inductive Ability where
   | activated : List Cost → CardAction → Ability
   | triggered : Trigger → CardAction → Ability
   | static : List ContinuousEffect → Ability
-  | conditional : Condition → Ability → Ability
   | reduceCost : Selector → List Cost → Ability
 deriving Repr, Inhabited, BEq
 
@@ -531,9 +530,6 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
   | .static effects => effects.foldl applyContinuousEffect b
-  | .conditional (.hasTargetIn .this among) inner =>
-    if among.shape.tappedCreature then applyAbility b inner else b
-  | .conditional _ inner => applyAbility b inner
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
