@@ -505,18 +505,7 @@ def crudeBentBlade : TraditionalCardDefinition := .card [
             .cardType .creature,
             .controlled (.target 1 (.opponent (.controller .this)))])))),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
-  .ability (
-    .restrict .onlyAsSorcery
-      (.activated
-        [.mana [.generic 2]]
-        (.attach
-          .this
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)])))))
+  .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
 
 def crudeBentBladeCard : CardDef :=

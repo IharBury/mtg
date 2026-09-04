@@ -404,6 +404,12 @@ inductive CounterKind where
   | plusOnePlusOne
 deriving Repr, Inhabited, BEq
 
+/-- A keyword ability printed with a cost (CR 702.6). -/
+inductive CostedKeyword where
+  /-- Equip (CR 702.6): attach to target creature you control, only as a sorcery. -/
+  | equip
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -411,6 +417,8 @@ mutual
 /-- A keyword or other printed ability on a card or granted by an effect. -/
 inductive Ability where
   | keyword : Keyword → Ability
+  /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
+  | keywordWithCost : CostedKeyword → List Cost → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used that many times, counted from
   the given window. -/
@@ -881,6 +889,11 @@ def applyRestriction (r : ActivationRestriction) (ab : ActivatedAbility) :
   | .fromGraveyard => { ab with activateFromGraveyard := true }
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
+  | .keywordWithCost .equip costs =>
+    some {
+      cost := { mana := Cost.manaCost costs }
+      effect := Effect.attachToTargetCreatureYouControl
+      onlyAsSorcery := true }
   | .activated costs action => some (activatedAbility costs action)
   | .activatedTimes 1 .turnStart costs action =>
     some (activatedAbility costs action true)
@@ -1041,6 +1054,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
 
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
+  | .keywordWithCost k costs =>
+    match (Ability.keywordWithCost k costs).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
   | .activated costs action =>
     { b with
       activatedAbilities :=
@@ -1598,17 +1615,7 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.restrict .onlyAsSorcery
-      (.activated
-        [.mana [.generic 2]]
-        (.attach
-          .this
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)]))))).toActivatedAbility? with
+    (Ability.keywordWithCost .equip [.mana [.generic 2]]).toActivatedAbility? with
   | some ab =>
     ab.onlyAsSorcery &&
       ab.effect == Effect.attachToTargetCreatureYouControl &&
