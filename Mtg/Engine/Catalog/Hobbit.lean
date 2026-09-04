@@ -360,7 +360,7 @@ def greatFierceBee : TraditionalCardDefinition := .card [
   .ability (.keyword .flying),
   .ability (
     .triggered
-      (.die (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
       (.scry (.controller .this) 1))
 ]
 

@@ -355,6 +355,9 @@ inductive Trigger where
   | block : Selector → Selector → Trigger
   /-- When the selected object or objects die (CR 700.4). -/
   | die : Selector → Trigger
+  /-- When objects matching the first selector die at the same time as
+  objects matching the others (CR 700.4 / 603.2d). -/
+  | dieSimultaneously : Selector → List Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -745,7 +748,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onDiesOppCreatureGets p t)
       else none
     | _, _ => none
-  | .triggered (.die among) (.scry _ n) =>
+  | .triggered (.dieSimultaneously among _) (.scry _ n) =>
     if among.shape.otherCreatures then
       some (TriggeredAbility.onOneOrMoreOtherCreaturesDieScry n)
     else none
@@ -1268,7 +1271,7 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.die (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.dieSimultaneously (.intersection [.not .this, .permanent, .cardType .creature]) [])
       (.scry (.controller .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onOneOrMoreOtherCreaturesDieScry 1
   | none => false
