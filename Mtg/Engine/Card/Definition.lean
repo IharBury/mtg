@@ -28,16 +28,22 @@ def manaCost : List Cost → ManaCost
 
 end Cost
 
-/-- An object mentioned relative to the spell or ability being defined. -/
-inductive ObjectRef where
+-- A selector may mention a filter (`.singleTarget`, `.filtered`), and a
+-- filter may mention a selector (`.controller`).
+mutual
+/-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
+inductive Selector where
   /-- This spell or ability (CR 113.7). -/
   | this
-deriving Repr, Inhabited, BEq
-
-/-- A player identified relative to the spell or ability (CR 109.5). -/
-inductive PlayerRef where
-  /-- The controller of the given object. -/
-  | controllerOf : ObjectRef → PlayerRef
+  /-- The controller of the given object (CR 109.5). -/
+  | controllerOf : Selector → Selector
+  /-- A numbered target matching `filter` (CR 115.1). Later effects may
+  refer to it with `targetReference`. -/
+  | singleTarget : Nat → Filter → Selector
+  /-- The target previously declared with `singleTarget` of this number. -/
+  | targetReference : Nat → Selector
+  /-- Every object matching `filter` (not targeted). -/
+  | filtered : Filter → Selector
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability may target or affect (CR 115.1). -/
@@ -49,8 +55,9 @@ inductive Filter where
   /-- A permanent (CR 110.1). -/
   | permanent
   /-- Objects whose controller is the given player. -/
-  | controller : PlayerRef → Filter
+  | controller : Selector → Filter
 deriving Repr, Inhabited, BEq
+end
 
 namespace Filter
 
@@ -110,6 +117,7 @@ def shape : Filter → Shape
   | .any => {}
   | .permanent => { mustBePermanent := true }
   | .controller (.controllerOf .this) => { sameController := true }
+  | .controller _ => {}
   | .cardType t => { types := .oneOf [t] }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
@@ -149,17 +157,6 @@ inductive Trigger where
   | endOfTurn
 deriving Repr, Inhabited, BEq
 
-/-- Whom a continuous effect applies to. -/
-inductive Affected where
-  /-- A numbered target matching `filter` (CR 115.1). Later effects may
-  refer to it with `targetReference`. -/
-  | singleTarget : Nat → Filter → Affected
-  /-- The target previously declared with `singleTarget` of this number. -/
-  | targetReference : Nat → Affected
-  /-- Every object matching `filter` (not targeted). -/
-  | filtered : Filter → Affected
-deriving Repr, Inhabited, BEq
-
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -172,8 +169,8 @@ deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
 inductive ContinuousEffect where
-  | gainAbility : Affected → Ability → ContinuousEffect
-  | addPowerToughness : Affected → Int → Int → ContinuousEffect
+  | gainAbility : Selector → Ability → ContinuousEffect
+  | addPowerToughness : Selector → Int → Int → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -185,7 +182,7 @@ end
 
 namespace ContinuousEffect
 
-def affected : ContinuousEffect → Affected
+def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .addPowerToughness who _ _ => who
 
@@ -201,14 +198,14 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
 /-- First declared `singleTarget`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
   effects.findSome? fun e =>
-    match e.affected with
+    match e.selector with
     | .singleTarget _n f => some { filter := f }
     | _ => none
 
 /-- First `filtered` set, if any. -/
 def massFilter? (effects : List ContinuousEffect) : Option Filter :=
   effects.findSome? fun e =>
-    match e.affected with
+    match e.selector with
     | .filtered f => some f
     | _ => none
 
