@@ -238,6 +238,8 @@ deriving Repr, Inhabited, BEq
 inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
   | addPowerToughness : Selector → Int → Int → ContinuousEffect
+  | conditional : Condition → ContinuousEffect → ContinuousEffect
+  | reduceCost : Selector → List Cost → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -262,6 +264,8 @@ namespace ContinuousEffect
 def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .addPowerToughness who _ _ => who
+  | .conditional _ inner => selector inner
+  | .reduceCost who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -271,6 +275,8 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | some (p', t') => some (p + p', t + t')
     | none => none
   | .gainAbility _ _ :: _ => none
+  | .conditional _ _ :: _ => none
+  | .reduceCost _ _ :: _ => none
 
 /-- First declared `target`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
@@ -514,6 +520,17 @@ deriving Inhabited
 
 namespace CardFace
 
+def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
+  | .gainAbility _ _ => b
+  | .addPowerToughness _ _ _ => b
+  | .conditional (.hasTargetIn .this (.filtered f)) inner =>
+    if f.shape.tappedCreature then applyContinuousEffect b inner else b
+  | .conditional _ inner => applyContinuousEffect b inner
+  | .reduceCost _ costs =>
+    { b with
+      costReductionIfTargetTapped :=
+        b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
+
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .activated costs action =>
@@ -527,7 +544,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
-  | .static _effects => b
+  | .static effects => effects.foldl applyContinuousEffect b
   | .conditional (.hasTargetIn .this (.filtered f)) inner =>
     if f.shape.tappedCreature then applyAbility b inner else b
   | .conditional _ inner => applyAbility b inner
@@ -703,10 +720,11 @@ end TraditionalCardDefinition
     .manaCost [.generic 4, .mono .white],
     .type .instant,
     .ability (
-      .conditional
-        (.hasTargetIn .this
-          (.filtered (.and [.permanent, .cardType .creature, .tapped])))
-        (.reduceCost .this [.mana [.generic 3]])),
+      .static
+        [.conditional
+          (.hasTargetIn .this
+            (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+          (.reduceCost .this [.mana [.generic 3]])]),
     .action (
       .dealDamage
         .this
