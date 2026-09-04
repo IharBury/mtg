@@ -45,7 +45,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
               (.intersection [
                 .permanent,
                 .union [.cardType .artifact, .cardType .creature],
-                .controlledBy (.controller .this)]))
+                .controlled (.controller .this)]))
             (.keyword .hexproof),
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
         .endOfTurn)]
@@ -71,7 +71,7 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlledBy (.controller .this)])
+            .controlled (.controller .this)])
           1 1]
         .endOfTurn))
 ]
@@ -154,7 +154,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlledBy (.controller .this)])),
+            .controlled (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
       .forEach 1
         (.ifAny
@@ -167,7 +167,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
                   (.intersection [
                     .permanent,
                     .subtype .equipment,
-                    .controlledBy (.controller .this)]))
+                    .controlled (.controller .this)]))
                 (.var 1))
           ])])]
 

@@ -64,7 +64,7 @@ inductive Selector where
   /-- A permanent (CR 110.1). -/
   | permanent
   /-- Objects whose controller is the given player. -/
-  | controlledBy : Selector → Selector
+  | controlled : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
   | tapped
   /-- Printed subtype (CR 205.3). -/
@@ -145,8 +145,8 @@ end Shape
 def shape : Selector → Shape
   | .all => {}
   | .permanent => { mustBePermanent := true }
-  | .controlledBy (.controller .this) => { sameController := true }
-  | .controlledBy _ => {}
+  | .controlled (.controller .this) => { sameController := true }
+  | .controlled _ => {}
   | .tapped => { tapped := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
@@ -623,7 +623,7 @@ end TraditionalCardDefinition
             (.intersection [
               .permanent,
               .union [.cardType .artifact, .cardType .creature],
-              .controlledBy (.controller .this)]))
+              .controlled (.controller .this)]))
           (.keyword .hexproof),
         .gainAbility (.targetReference 1) (.keyword .indestructible)]
       .endOfTurn
@@ -633,12 +633,12 @@ end TraditionalCardDefinition
   (.intersection [
     .permanent,
     .union [.cardType .artifact, .cardType .creature],
-    .controlledBy (.controller .this)])
+    .controlled (.controller .this)])
   == .artifactOrCreatureYouControl
 
 #guard Selector.toTargetKind
   (.intersection [
-    .controlledBy (.controller .this),
+    .controlled (.controller .this),
     .union [.cardType .creature, .cardType .artifact],
     .permanent])
   == .artifactOrCreatureYouControl
@@ -651,7 +651,7 @@ end TraditionalCardDefinition
         (.intersection [
           .permanent,
           .cardType .creature,
-          .controlledBy (.controller .this)])
+          .controlled (.controller .this)])
         1 1]
       .endOfTurn
   action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
@@ -665,7 +665,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlledBy (.controller .this)])
+            .controlled (.controller .this)])
           1 1]
         .endOfTurn)).toActivatedAbility? with
   | some ab =>
@@ -726,7 +726,7 @@ end TraditionalCardDefinition
   (.intersection [
     .permanent,
     .cardType .creature,
-    .controlledBy (.controller .this)])
+    .controlled (.controller .this)])
   == .creatureYouControl
 
 #guard Selector.shape (.subtype .dwarf) |>.dwarf
@@ -740,7 +740,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlledBy (.controller .this)])),
+            .controlled (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
       .forEach 1
         (.ifAny
@@ -753,7 +753,7 @@ end TraditionalCardDefinition
                   (.intersection [
                     .permanent,
                     .subtype .equipment,
-                    .controlledBy (.controller .this)]))
+                    .controlled (.controller .this)]))
                 (.var 1))
           ])]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
