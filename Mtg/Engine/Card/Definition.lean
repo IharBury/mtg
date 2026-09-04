@@ -26,7 +26,7 @@ inductive SetPredicate where
   | shareCardType
 deriving Repr, Inhabited, BEq
 
-/-- Where an `ordinal` count starts, or how far back `wasSubject` looks. -/
+/-- Where an `ordinal` count starts. -/
 inductive CountFrom where
   /-- From the start of the turn. -/
   | turnStart
@@ -75,9 +75,9 @@ inductive Selector where
   | tapped
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Int → Selector
-  /-- Objects that were the subject of the given event, counted from the
-  given point (e.g. a creature that died this turn). -/
-  | wasSubject : Trigger → CountFrom → Selector
+  /-- Objects that were the subject of the first event, bounded by the
+  second (e.g. a creature that died this turn). -/
+  | wasSubject : Trigger → Trigger → Selector
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
@@ -272,7 +272,7 @@ def shape : Selector → Shape
   | .controlled _ => {}
   | .tapped => { tapped := true }
   | .powerAtLeast n => { powerAtLeast := some n }
-  | .wasSubject (.die who) .turnStart => { who.shape with diedThisTurn := true }
+  | .wasSubject (.die who) .endOfTurn => { who.shape with diedThisTurn := true }
   | .wasSubject _ _ => {}
   | .attacking _ => { attacking := true }
   | .token => { token := true }
@@ -1434,14 +1434,14 @@ end TraditionalCardDefinition
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
 #guard Selector.shape
-  (.wasSubject (.die (.cardType .creature)) .turnStart) |>.diedThisTurnCreature
+  (.wasSubject (.die (.cardType .creature)) .endOfTurn) |>.diedThisTurnCreature
 
 #guard
   (TraditionalCardDefinition.card [
     .ability (
       .static
         (.ifAny
-          (.wasSubject (.die (.cardType .creature)) .turnStart)
+          (.wasSubject (.die (.cardType .creature)) .endOfTurn)
           [.reduceCost .this [.mana [.generic 3]]]))
   ]).toCardDef.costReductionIfCreatureDied == 3
 
