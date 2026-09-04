@@ -26,6 +26,15 @@ inductive SetPredicate where
   | shareCardType
 deriving Repr, Inhabited, BEq
 
+/-- Where an `ordinal` count starts, or how far back `wasSubject` looks. -/
+inductive CountFrom where
+  /-- From the start of the turn. -/
+  | turnStart
+deriving Repr, Inhabited, BEq
+
+-- Selectors may ask who was the subject of a trigger, and triggers name
+-- selectors, so the two inductives are mutual.
+mutual
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -66,8 +75,9 @@ inductive Selector where
   | tapped
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Int → Selector
-  /-- Objects that died this turn (CR 700.4). -/
-  | diedThisTurn
+  /-- Objects that were the subject of the given event, counted from the
+  given point (e.g. a creature that died this turn). -/
+  | wasSubject : Trigger → CountFrom → Selector
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
@@ -91,6 +101,37 @@ inductive Selector where
   /-- An object created by the numbered action. -/
   | wasCreatedByAction : Nat → Selector
 deriving Repr, Inhabited, BEq
+
+/-- When a continuous effect ends, when a triggered ability fires, or
+what a replacement effect intercepts. -/
+inductive Trigger where
+  | endOfGame
+  | endOfTurn
+  /-- Whenever the selected object attacks, restricted by the given
+  selector. -/
+  | attack : Selector → Selector → Trigger
+  /-- When the selected object enters. -/
+  | enter : Selector → Trigger
+  /-- Whenever the selected player draws a card matching the given
+  selector. -/
+  | draw : Selector → Selector → Trigger
+  /-- The nth occurrence of the inner trigger, counted from the given
+  point. -/
+  | ordinal : Nat → CountFrom → Trigger → Trigger
+  /-- Whenever the selected object deals combat damage to objects matching
+  the given selector. -/
+  | combatDamage : Selector → Selector → Trigger
+  /-- The selected object would be put into a graveyard (CR 614). -/
+  | putToGraveyard : Selector → Trigger
+  /-- The first selector blocks the second (CR 509). -/
+  | block : Selector → Selector → Trigger
+  /-- When the selected object or objects die (CR 700.4). -/
+  | die : Selector → Trigger
+  /-- When objects matching the selector die at the same time, with
+  set-wide predicates (CR 700.4 / 603.2d). -/
+  | dieSimultaneously : Selector → List SetPredicate → Trigger
+deriving Repr, Inhabited, BEq
+end
 
 namespace Selector
 
@@ -231,7 +272,8 @@ def shape : Selector → Shape
   | .controlled _ => {}
   | .tapped => { tapped := true }
   | .powerAtLeast n => { powerAtLeast := some n }
-  | .diedThisTurn => { diedThisTurn := true }
+  | .wasSubject (.die who) .turnStart => { who.shape with diedThisTurn := true }
+  | .wasSubject _ _ => {}
   | .attacking _ => { attacking := true }
   | .token => { token := true }
   | .subtype st => { subtype := some st.toString }
@@ -349,42 +391,6 @@ end Cost
 /-- A limit on how often an activated ability may be activated. -/
 inductive ActivationRestriction where
   | onceEachTurn
-deriving Repr, Inhabited, BEq
-
-/-- Where an `ordinal` count starts. -/
-inductive CountFrom where
-  /-- From the start of the turn. -/
-  | turnStart
-deriving Repr, Inhabited, BEq
-
-/-- When a continuous effect ends, when a triggered ability fires, or
-what a replacement effect intercepts. -/
-inductive Trigger where
-  | endOfGame
-  | endOfTurn
-  /-- Whenever the selected object attacks, restricted by the given
-  selector. -/
-  | attack : Selector → Selector → Trigger
-  /-- When the selected object enters. -/
-  | enter : Selector → Trigger
-  /-- Whenever the selected player draws a card matching the given
-  selector. -/
-  | draw : Selector → Selector → Trigger
-  /-- The nth occurrence of the inner trigger, counted from the given
-  point. -/
-  | ordinal : Nat → CountFrom → Trigger → Trigger
-  /-- Whenever the selected object deals combat damage to objects matching
-  the given selector. -/
-  | combatDamage : Selector → Selector → Trigger
-  /-- The selected object would be put into a graveyard (CR 614). -/
-  | putToGraveyard : Selector → Trigger
-  /-- The first selector blocks the second (CR 509). -/
-  | block : Selector → Selector → Trigger
-  /-- When the selected object or objects die (CR 700.4). -/
-  | die : Selector → Trigger
-  /-- When objects matching the selector die at the same time, with
-  set-wide predicates (CR 700.4 / 603.2d). -/
-  | dieSimultaneously : Selector → List SetPredicate → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -1428,14 +1434,14 @@ end TraditionalCardDefinition
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
 #guard Selector.shape
-  (.intersection [.cardType .creature, .diedThisTurn]) |>.diedThisTurnCreature
+  (.wasSubject (.die (.cardType .creature)) .turnStart) |>.diedThisTurnCreature
 
 #guard
   (TraditionalCardDefinition.card [
     .ability (
       .static
         (.ifAny
-          (.intersection [.cardType .creature, .diedThisTurn])
+          (.wasSubject (.die (.cardType .creature)) .turnStart)
           [.reduceCost .this [.mana [.generic 3]]]))
   ]).toCardDef.costReductionIfCreatureDied == 3
 
