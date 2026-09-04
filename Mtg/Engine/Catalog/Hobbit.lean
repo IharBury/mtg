@@ -106,10 +106,9 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .manaCost [.generic 4, .mono .white],
   .type .instant,
   .ability (
-    .static
-      (.conditional
-        (.hasTargetIn .this (.filtered (.and [.permanent, .cardType .creature, .tapped])))
-        (.reduceCost .this [.mana [.generic 3]]))),
+    .conditional
+      (.hasTargetIn .this (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+      (.reduceCost .this [.mana [.generic 3]])),
   .action (
     .dealDamage
       .this

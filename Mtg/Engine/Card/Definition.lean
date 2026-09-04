@@ -229,7 +229,7 @@ inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
   | triggered : Trigger → CardAction → Ability
-  | static : Ability → Ability
+  | static : List ContinuousEffect → Ability
   | conditional : Condition → Ability → Ability
   | reduceCost : Selector → List Cost → Ability
 deriving Repr, Inhabited, BEq
@@ -527,7 +527,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
-  | .static inner => applyAbility b inner
+  | .static _effects => b
   | .conditional (.hasTargetIn .this (.filtered f)) inner =>
     if f.shape.tappedCreature then applyAbility b inner else b
   | .conditional _ inner => applyAbility b inner
@@ -703,11 +703,10 @@ end TraditionalCardDefinition
     .manaCost [.generic 4, .mono .white],
     .type .instant,
     .ability (
-      .static
-        (.conditional
-          (.hasTargetIn .this
-            (.filtered (.and [.permanent, .cardType .creature, .tapped])))
-          (.reduceCost .this [.mana [.generic 3]]))),
+      .conditional
+        (.hasTargetIn .this
+          (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+        (.reduceCost .this [.mana [.generic 3]])),
     .action (
       .dealDamage
         .this
