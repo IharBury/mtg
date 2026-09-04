@@ -275,7 +275,7 @@ end Selector
 inductive Cost where
   | mana : List ManaSymbol → Cost
   /-- Pay that much life (CR 118.3). -/
-  | payLife : Nat → Cost
+  | life : Nat → Cost
   /-- Sacrifice a selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
   /-- Pay one of the listed costs. -/
@@ -292,7 +292,7 @@ def manaCost : List Cost → ManaCost
 
 def lifePaid : List Cost → Nat
   | [] => 0
-  | .payLife n :: rest => n + lifePaid rest
+  | .life n :: rest => n + lifePaid rest
   | _ :: rest => lifePaid rest
 
 def isSacArtifactOrCreature : Cost → Bool
@@ -316,6 +316,9 @@ def orPayGeneric? : List Cost → Option Nat
     | some n => some n
     | none => orPayGeneric? rest
   | _ :: rest => orPayGeneric? rest
+
+/-- Pay that much life. -/
+def payLife (n : Nat) : Cost := .life n
 
 end Cost
 
@@ -374,6 +377,9 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
+  /-- An activated ability that may be used that many times, counted from
+  the given point. -/
+  | activatedTimes : Nat → CountFrom → List Cost → CardAction → Ability
   | triggered : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   | reduceCost : Selector → List Cost → Ability
@@ -723,6 +729,9 @@ def activatedAbility (costs : List Cost) (action : CardAction)
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .activated costs action => some (activatedAbility costs action)
+  | .activatedTimes 1 .turnStart costs action =>
+    some (activatedAbility costs action true)
+  | .activatedTimes _ _ costs action => some (activatedAbility costs action)
   | .restrict .onceEachTurn (.activated costs action) =>
     some (activatedAbility costs action true)
   | _ => none
@@ -853,6 +862,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with
       activatedAbilities :=
         b.activatedAbilities.push (Ability.activatedAbility costs action) }
+  | .activatedTimes n from_ costs action =>
+    match (Ability.activatedTimes n from_ costs action).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
   | .restrict r a =>
     match Ability.restrict r a |>.toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -1313,10 +1326,9 @@ end TraditionalCardDefinition
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
 #guard
   match
-    (Ability.restrict .onceEachTurn
-      (.activated
+    (Ability.activatedTimes 1 .turnStart
         [.payLife 2]
-        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn))).toActivatedAbility? with
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)).toActivatedAbility? with
   | some ab =>
     ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
   | none => false
