@@ -26,7 +26,7 @@ player, in that card-text order (CR 601.2c / 115.1c). -/
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard
-  match gollumSilentSlinker.adventure with
+  match gollumSilentSlinkerCard.adventure with
   | some adv => adv.spellEffect == some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
   | none => false
 
@@ -35,7 +35,7 @@ def meagerMealSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gollumSilentSlinker ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g gollumSilentSlinkerCard ⟨0⟩) ⟨0⟩ 1
 
 #guard meagerMealSetup.canCastAdventure ⟨0⟩
   (handCardNamed meagerMealSetup ⟨0⟩ "Gollum, Silent Slinker")
@@ -45,7 +45,7 @@ def meagerMealSetup : Game :=
 legal (the player target remains). -/
 def meagerMealNoCreature : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g gollumSilentSlinker ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g gollumSilentSlinkerCard ⟨0⟩) ⟨0⟩ 1
 
 #guard meagerMealNoCreature.canCastAdventure ⟨0⟩
   (handCardNamed meagerMealNoCreature ⟨0⟩ "Gollum, Silent Slinker")

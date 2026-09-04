@@ -752,7 +752,7 @@ def supportedOracleFailures : List String :=
 #guard smaugTheGreatCalamity.matchesOracleText
 #guard beornReluctantHost.matchesOracleText
 #guard gollumTheAbandoned.matchesOracleText
-#guard gollumSilentSlinker.keywords.menace
+#guard gollumSilentSlinkerCard.keywords.menace
 #guard bofurReliableGuardianCard.matchesOracleText
 #guard magnificentEndCard.matchesOracleText
 #guard lakeshoreApothecaryCard.matchesOracleText
@@ -765,7 +765,10 @@ def supportedOracleFailures : List String :=
 #guard greatFierceBeeCard.matchesOracleText
 #guard stirUpTroubleCard.matchesOracleText
 #guard desolationProwlerCard.matchesOracleText
-#guard gollumSilentSlinker.matchesOracleText
+#guard raveningWargCard.matchesOracleText
+#guard gollumSilentSlinkerCard.matchesOracleText
+#guard bilbosDeadlySliceCard.matchesOracleText
+#guard dreadedBatCloudCard.matchesOracleText
 #guard supportedCardsMatchOracle || panic! (String.intercalate "\n\n" supportedOracleFailures)
 
 end Mtg.Engine

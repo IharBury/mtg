@@ -170,9 +170,9 @@ def trollCycled : Game :=
 
 /- Gollum, Silent Slinker: menace (CR 702.111 / 509.1c). -/
 
-#guard gollumSilentSlinker.keywords.menace
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinkerCard.keywords.menace
+#guard gollumSilentSlinkerCard.power == some 4
+#guard gollumSilentSlinkerCard.toughness == some 3
 #guard withGollum.hasMenace (namedPermanent withGollum "Gollum, Silent Slinker")
 #guard (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker")).menace
 #guard withGollum.legalBlockerCount
@@ -187,7 +187,7 @@ def trollCycled : Game :=
 /-- Chandra's Gollum attacks; Nissa has one Grizzly Bears. Pairwise blocking
 is legal, but a one-blocker declaration is not. -/
 def gollumVsOneBear : Game :=
-  addPermanent (addPermanent started gollumSilentSlinker ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
+  addPermanent (addPermanent started gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
 
 def gollumVsOneBearReadyToBlock : Game :=
   let g := passBoth (skipTo gollumVsOneBear .beginningOfCombat 80)
@@ -287,18 +287,18 @@ def ogreGrantedMenaceReadyToBlock : Game :=
 
 /- Bilbo's Deadly Slice: destroy target creature (CR 701.8 / 701.7b / 608.2b). -/
 
-#guard bilbosDeadlySlice.isInstant
-#guard !bilbosDeadlySlice.hasSorcerySpeed
-#guard bilbosDeadlySlice.hasInstantSpeed
-#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySlice.hasCastKind .destroyCreature
-#guard bilbosDeadlySlice.requiresTarget
-#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
+#guard bilbosDeadlySliceCard.isInstant
+#guard !bilbosDeadlySliceCard.hasSorcerySpeed
+#guard bilbosDeadlySliceCard.hasInstantSpeed
+#guard bilbosDeadlySliceCard.spellEffect == some (Effect.destroyCreature)
+#guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
+#guard bilbosDeadlySliceCard.requiresTarget
+#guard mentions bilbosDeadlySliceCard.summary "Destroy target creature"
 
 /-- Bilbo's Deadly Slice in hand, an opposing Grizzly Bears, enough mana. -/
 def bilbosDeadlySliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
 
 #guard bilbosDeadlySliceSetup.canCast ⟨0⟩
   (handCardNamed bilbosDeadlySliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
@@ -308,14 +308,14 @@ def bilbosDeadlySliceSetup : Game :=
 
 -- Cannot cast with no creature.
 #guard
-  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
-  let g := withBlackMana (addToHand afterDraw bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand afterDraw bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   match g.apply ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice").id) with
   | .error msg => mentions msg "requires a target"
   | .ok _ => false
@@ -324,18 +324,18 @@ def bilbosDeadlySliceSetup : Game :=
 -- creature is not (CR 702.11b).
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice") &&
     (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 #guard
   let g := addPermanent afterDraw velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
     (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
 #guard
   let g := addPermanent afterDraw hexproofFlyer ⟨1⟩ ⟨1⟩
-  let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  let g := withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Bilbo's Deadly Slice")
 
 def proposedBilbosDeadlySlice : Game :=
@@ -424,7 +424,7 @@ def bilbosDeadlySliceTargetGone : Game :=
 def agentBilbosDeadlySliceOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
 
 #guard
   match Agent.choose agentBilbosDeadlySliceOnly ⟨0⟩ with

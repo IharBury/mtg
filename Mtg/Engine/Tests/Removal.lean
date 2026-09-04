@@ -609,10 +609,10 @@ def agentSmite : Game :=
 
 /- Ravening Warg: deathtouch (CR 702.2 / 704.5h) and Ferocious attack-gain-life. -/
 
-#guard raveningWarg.keywords.deathtouch
-#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWarg.power == some 2
-#guard raveningWarg.toughness == some 2
+#guard raveningWargCard.keywords.deathtouch
+#guard raveningWargCard.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard raveningWargCard.power == some 2
+#guard raveningWargCard.toughness == some 2
 #guard withWarg.hasDeathtouch (namedPermanent withWarg "Ravening Warg")
 #guard (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg")).deathtouch
 #guard withWarg.power (namedPermanent withWarg "Ravening Warg") == 2
@@ -825,7 +825,7 @@ def tramplerVsBalothAfterDamage : Game :=
 
 /-- Quarrel from Ravening Warg applies deathtouch to the damage it deals. -/
 def quarrelWargVsGiant : Game :=
-  let g := addPermanent afterDraw raveningWarg ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw raveningWargCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
 

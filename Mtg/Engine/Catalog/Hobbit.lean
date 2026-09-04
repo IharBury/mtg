@@ -406,30 +406,88 @@ def desolationProwlerCard : CardDef :=
   desolationProwler.toCardDef
     (oracleText := "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.")
 
-def raveningWarg : CardDef :=
-  creature "Ravening Warg" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
+def raveningWarg : TraditionalCardDefinition := .card [
+  .name "Ravening Warg",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .subtype .wolf,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .deathtouch),
+  .ability (
+    .triggered
+      (.attack .this .all)
+      (.ifAny
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast 4])
+        [.gainLife (.controller .this) 2]))
+]
+
+def raveningWargCard : CardDef :=
+  raveningWarg.toCardDef
     (oracleText := "Deathtouch\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life.")
-    (keywords := Keyword.deathtouch)
-    (triggeredAbilities := #[.onAttackFerociousGainLife 2])
 
-def gollumSilentSlinker : CardDef :=
-  legendaryCreature "Gollum, Silent Slinker" (ManaCost.ofGenericAndColor 3 .black) #["Halfling", "Horror"] 4 3
+def gollumSilentSlinker : TraditionalCardDefinition := .card [
+  .name "Gollum, Silent Slinker",
+  .manaCost [.generic 3, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .horror,
+  .power 4,
+  .toughness 3,
+  .ability (.keyword .menace),
+  .alternative [
+    .name "Meager Meal",
+    .manaCost [.mono .black],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .putCounter
+        (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .gainLife (.target 2 .player) 2]]
+]
+
+def gollumSilentSlinkerCard : CardDef :=
+  gollumSilentSlinker.toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\n//ADV//\nMeager Meal {B}\nSorcery — Adventure\nPut a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.menace)
-    (adventure := some (adventure "Meager Meal" (ManaCost.ofColor .black)
-      "Put a +1/+1 counter on up to one target creature. Target player gains 2 life. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.plusOneUpToOneAndPlayerGainsLife 2)))
 
-def bilbosDeadlySlice : CardDef :=
-  instant "Bilbo's Deadly Slice" (ManaCost.ofGenericAndColors 1 [.black, .black])
-    "Destroy target creature."
-    (some (Effect.destroyCreature))
+def bilbosDeadlySlice : TraditionalCardDefinition := .card [
+  .name "Bilbo's Deadly Slice",
+  .manaCost [.generic 1, .mono .black, .mono .black],
+  .type .instant,
+  .actions [
+    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
+]
 
-def dreadedBatCloud : CardDef :=
-  creature "Dreaded Bat-Cloud" (ManaCost.ofGenericAndColor 4 .black) #["Bat"] 4 2
+def bilbosDeadlySliceCard : CardDef :=
+  bilbosDeadlySlice.toCardDef
+    (oracleText := "Destroy target creature.")
+
+def dreadedBatCloud : TraditionalCardDefinition := .card [
+  .name "Dreaded Bat-Cloud",
+  .manaCost [.generic 4, .mono .black],
+  .type .creature,
+  .subtype .bat,
+  .power 4,
+  .toughness 2,
+  .ability (
+    .static
+      (.ifAny
+        (.intersection [.cardType .creature, .diedThisTurn])
+        [.reduceCost .this [.mana [.generic 3]]])),
+  .ability (.keyword .flying),
+  .ability (.keyword .deathtouch)
+]
+
+def dreadedBatCloudCard : CardDef :=
+  dreadedBatCloud.toCardDef
     (oracleText := "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch")
-    (keywords := Keyword.deathtouch.merge Keyword.flying)
-    (costReductionIfCreatureDied := 3)
 
 def crudeBentBlade : CardDef :=
   equipment "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
@@ -1527,10 +1585,10 @@ def hobbitCards : Array CardDef := #[
   greatFierceBeeCard,
   stirUpTroubleCard,
   desolationProwlerCard,
-  raveningWarg,
-  gollumSilentSlinker,
-  bilbosDeadlySlice,
-  dreadedBatCloud,
+  raveningWargCard,
+  gollumSilentSlinkerCard,
+  bilbosDeadlySliceCard,
+  dreadedBatCloudCard,
   crudeBentBlade,
   gollumTheAbandoned,
   gnashingOfTeeth,
@@ -1818,14 +1876,14 @@ def hobbitCards : Array CardDef := #[
 #guard desolationProwlerCard.power == some 2
 #guard desolationProwlerCard.toughness == some 2
 #guard (desolationProwlerCard.summary.splitOn "Pay 2 life").length > 1
-#guard raveningWarg.keywords.deathtouch
-#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWarg.power == some 2
-#guard raveningWarg.toughness == some 2
-#guard (raveningWarg.summary.splitOn "deathtouch").length > 1
-#guard (raveningWarg.summary.splitOn "Ferocious").length > 1
-#guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
-#guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
+#guard raveningWargCard.keywords.deathtouch
+#guard raveningWargCard.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard raveningWargCard.power == some 2
+#guard raveningWargCard.toughness == some 2
+#guard (raveningWargCard.summary.splitOn "deathtouch").length > 1
+#guard (raveningWargCard.summary.splitOn "Ferocious").length > 1
+#guard (raveningWargCard.summary.splitOn "power 4 or greater").length > 1
+#guard (raveningWargCard.summary.splitOn "gain 2 life").length > 1
 #guard frontPorchSentriesCard.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
 #guard (frontPorchSentriesCard.summary.splitOn "-1/-1").length > 1
 #guard greatFierceBeeCard.keywords.flying
@@ -1834,13 +1892,13 @@ def hobbitCards : Array CardDef := #[
 #guard stirUpTroubleCard.spellEffect == some (Effect.destroyCreature)
 #guard stirUpTroubleCard.additionalCostSacrificeArtifactOrCreature
 #guard stirUpTroubleCard.additionalCostOrPayGeneric == some 4
-#guard gollumSilentSlinker.keywords.menace
-#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
-#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySlice.requiresTarget
-#guard dreadedBatCloud.costReductionIfCreatureDied == 3
-#guard dreadedBatCloud.keywords.flying
-#guard dreadedBatCloud.keywords.deathtouch
+#guard gollumSilentSlinkerCard.keywords.menace
+#guard (gollumSilentSlinkerCard.summary.splitOn "menace").length > 1
+#guard bilbosDeadlySliceCard.spellEffect == some (Effect.destroyCreature)
+#guard bilbosDeadlySliceCard.requiresTarget
+#guard dreadedBatCloudCard.costReductionIfCreatureDied == 3
+#guard dreadedBatCloudCard.keywords.flying
+#guard dreadedBatCloudCard.keywords.deathtouch
 #guard crudeBentBlade.isEquipment
 #guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
@@ -1859,13 +1917,13 @@ def hobbitCards : Array CardDef := #[
   #[Effect.targetPlayerDrawLoseLife 2 2,
     Effect.pumpAndLifelink 2 2]
 #guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
-#guard gollumSilentSlinker.supertypes.any (· == .legendary)
-#guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
-#guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.hasCastKind .destroyCreature
-#guard (bilbosDeadlySlice.summary.splitOn "Destroy target creature").length > 1
+#guard gollumSilentSlinkerCard.power == some 4
+#guard gollumSilentSlinkerCard.toughness == some 3
+#guard gollumSilentSlinkerCard.supertypes.any (· == .legendary)
+#guard !(gollumSilentSlinkerCard.summary.splitOn "can't be blocked except").length > 1
+#guard bilbosDeadlySliceCard.isInstant
+#guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
+#guard (bilbosDeadlySliceCard.summary.splitOn "Destroy target creature").length > 1
 #guard smaugTheGreatCalamity.keywords.flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
@@ -1966,7 +2024,22 @@ def hobbitCards : Array CardDef := #[
 #guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
-#guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
-#guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal {B}").length > 1
+#guard raveningWargCard.triggeredAbilities ==
+  #[TriggeredAbility.onAttackFerociousGainLife 2]
+#guard (gollumSilentSlinkerCard.oracleText.splitOn "//ADV//").length > 1
+#guard (gollumSilentSlinkerCard.oracleText.splitOn "Meager Meal {B}").length > 1
+#guard
+  match gollumSilentSlinkerCard.adventure with
+  | some adv =>
+    adv.name == "Meager Meal" &&
+      adv.manaCost == (ManaCost.ofColor .black) &&
+      adv.types == #[.sorcery] &&
+      adv.subtypes.any (· == "Adventure") &&
+      adv.spellEffect == some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+  | none => false
+#guard bilbosDeadlySliceCard.spellEffect == some Effect.destroyCreature
+#guard dreadedBatCloudCard.costReductionIfCreatureDied == 3
+#guard dreadedBatCloudCard.keywords.flying
+#guard dreadedBatCloudCard.keywords.deathtouch
 
 end Mtg.Engine.Catalog
