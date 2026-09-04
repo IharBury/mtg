@@ -96,8 +96,8 @@ inductive Selector where
   | wasCreatedByAction : Nat → Selector
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
   | hostOf : Selector → Selector
-  /-- Objects in the given player's graveyard (CR 404). -/
-  | inGraveyardOf : Selector → Selector
+  /-- An object in a graveyard (CR 404). -/
+  | inGraveyard
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -289,7 +289,7 @@ def shape : Selector → Shape
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _ | .var _
   | .selected _ _ | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .hostOf _ | .inGraveyardOf _ => {}
+  | .hostOf _ | .inGraveyard => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -544,7 +544,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
     | .allTargets _ | .spell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyardOf _ => none
+    | .hostOf _ | .inGraveyard => none
     | s => some s
 
 end ContinuousEffect
@@ -944,7 +944,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some TriggeredAbility.onEnterTargetOpponentSacrificesCreature
   | .triggered (.enter .this)
       (.sequence [
-        .exile (.targets _ (.range 0 1) (.inGraveyardOf (.opponent _))),
+        .exile
+          (.targets _
+            (.range 0 1)
+            (.intersection [.inGraveyard, .owner (.opponent _)])),
         .loseLife (.opponent _) n]) =>
     some (TriggeredAbility.onEnterExileOppGyCardOppsLoseLife n)
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
@@ -1622,6 +1625,16 @@ end TraditionalCardDefinition
       ab.cost.mana == ManaCost.ofGeneric 2
   | none => false
 
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability (.keywordWithCost .equip [.mana [.generic 2]])
+    ]).toCardDef
+  c.activatedAbilities.size == 1 &&
+    c.activatedAbilities[0]!.onlyAsSorcery &&
+    c.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl &&
+    c.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
+
 -- Gollum the Abandoned: can't block; ETB exile GY; return from GY.
 #guard
   (TraditionalCardDefinition.card [
@@ -1634,7 +1647,7 @@ end TraditionalCardDefinition
       (.enter .this)
       (.sequence [
         .exile
-          (.targets 1 (.range 0 1) (.inGraveyardOf (.opponent (.controller .this)))),
+          (.targets 1 (.range 0 1) (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2
   | none => false
@@ -1648,9 +1661,8 @@ end TraditionalCardDefinition
             .sacrifice
               (.intersection [
                 .permanent,
-                .union [.cardType .artifact, .cardType .creature],
-                .not .this])]
-          (.returnToHand .this)))).toActivatedAbility? with
+                .union [.cardType .artifact, .cardType .creature]])]
+          (.returnToHand (.source .this))))).toActivatedAbility? with
   | some ab =>
     ab.onlyAsSorcery &&
       ab.activateFromGraveyard &&
