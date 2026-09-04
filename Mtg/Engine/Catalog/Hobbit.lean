@@ -178,13 +178,13 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .subtype .rogue,
   .power 2,
   .toughness 1,
-  .ability (.triggered (.enter .this) (.draw 1)),
+  .ability (.triggered (.enter .this) (.draw (.controllerOf .this) 1)),
   .alternative [
     .name "Take a Glance",
     .manaCost [.mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .action (.scry 2)]
+    .action (.scry (.controllerOf .this) 2)]
 ]
 
 def bilboBagginsBurglarCard : CardDef :=

@@ -251,8 +251,8 @@ inductive CardAction where
   | tap : Selector → CardAction
   | untap : Selector → CardAction
   | dealDamage : Selector → Selector → Nat → CardAction
-  | draw : Nat → CardAction
-  | scry : Nat → CardAction
+  | draw : Selector → Nat → CardAction
+  | scry : Selector → Nat → CardAction
   | sequence : List CardAction → CardAction
   | forEach : Nat → CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
@@ -436,8 +436,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | .tap s => compileTap s asAbility
     | .untap s => compileUntap s asAbility
     | .dealDamage _source victim n => compileDamage victim n asAbility
-    | .draw n => Effect.draw n
-    | .scry n => Effect.scry n
+    | .draw _who n => Effect.draw n
+    | .scry _who n => Effect.scry n
     | .sequence (a :: _) => compile a asAbility
     | .sequence [] => continuousEffect none [] asAbility
     | .forEach _ inner => compile inner asAbility
@@ -472,7 +472,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     match ContinuousEffect.addedPT? effects with
     | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
     | _ => none
-  | .triggered (.enter .this) (.draw n) =>
+  | .triggered (.enter .this) (.draw (.controllerOf .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
   | _ => none
 
@@ -763,12 +763,15 @@ end TraditionalCardDefinition
 
 -- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
 #guard
-  match (Ability.triggered (.enter .this) (.draw 1)).toTriggeredAbility? with
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.draw (.controllerOf .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterDraw 1
   | none => false
 
 #guard
-  let action : CardAction := .scry 2
+  let action : CardAction := .scry (.controllerOf .this) 2
   action.toEffect == Effect.scry 2
 
 end Mtg.Engine
