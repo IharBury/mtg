@@ -309,12 +309,14 @@ def uneasyPartings : TraditionalCardDefinition := .card [
           .allTargets .this,
           .permanent,
           .cardType .creature,
-          .attacking,
+          .attacking .all,
           .not .token])
         [.reduceCost .this [.mana [.generic 1]]]]),
   .actions [
-    .putOnTopOrBottom
-      (.target 1 (.intersection [.permanent, .cardType .creature]))]
+    .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+    [.putOnTopOfLibrary (.target 1 (.intersection [.permanent, .cardType .creature])),
+       .putOnBottomOfLibrary (.targetReference 1)]
+      ]
 ]
 
 def uneasyPartingsCard : CardDef :=

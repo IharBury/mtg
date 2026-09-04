@@ -72,8 +72,10 @@ inductive Selector where
   | player
   /-- Opponents of the given player (CR 102.2). -/
   | opponent : Selector → Selector
-  /-- An attacking permanent (CR 508). -/
-  | attacking
+  /-- The owner of the given object (CR 108.3). -/
+  | owner : Selector → Selector
+  /-- A permanent attacking objects matching the given selector (CR 508). -/
+  | attacking : Selector → Selector
   /-- A token (CR 111.1). -/
   | token
   /-- A nonland permanent (CR 110.4). -/
@@ -203,7 +205,7 @@ def shape : Selector → Shape
   | .controlled (.opponent _) => { opponentControls := true }
   | .controlled _ => {}
   | .tapped => { tapped := true }
-  | .attacking => { attacking := true }
+  | .attacking _ => { attacking := true }
   | .token => { token := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
@@ -214,9 +216,9 @@ def shape : Selector → Shape
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
-  | .this | .source _ | .controller _ | .opponent _ | .target _ _ | .targets _ _ _
-  | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
-  | .allTargets _ | .player
+  | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
+  | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _ | .var _
+  | .selected _ _ | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
@@ -426,8 +428,12 @@ inductive CardAction where
   | exchangeControl : Selector → CardAction
   /-- Destroy the selected permanent (CR 701.7). -/
   | destroy : Selector → CardAction
-  /-- The selected object's owner puts it on the top or bottom of their library. -/
-  | putOnTopOrBottom : Selector → CardAction
+  /-- The selected player chooses one or more of the listed actions. -/
+  | playerSelectAction : Selector → Range → List CardAction → CardAction
+  /-- Put the selected object on top of its owner's library. -/
+  | putOnTopOfLibrary : Selector → CardAction
+  /-- Put the selected object on the bottom of its owner's library. -/
+  | putOnBottomOfLibrary : Selector → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
 deriving Repr, Inhabited, BEq
@@ -470,7 +476,7 @@ def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .this | .source _ | .controller _ | .opponent _ | .target _ _ | .targets _ _ _
+    | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
     | .allTargets _ | .spell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
@@ -675,7 +681,13 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
         | .cast _ => continuousEffect none [] asAbility
         | .exchangeControl _ => Effect.exchangeControlSharingType
         | .destroy _ => Effect.destroyCreature
-        | .putOnTopOrBottom _ => Effect.putOnTopOrBottom
+        | .playerSelectAction _ _
+            [.putOnTopOfLibrary _, .putOnBottomOfLibrary _] =>
+          Effect.putOnTopOrBottom
+        | .playerSelectAction _ _ (a :: _) => compile a asAbility
+        | .playerSelectAction _ _ [] => continuousEffect none [] asAbility
+        | .putOnTopOfLibrary _ => Effect.putOnTopOrBottom
+        | .putOnBottomOfLibrary _ => Effect.putOnTopOrBottom
         | .actionId _ inner => compile inner asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -1194,7 +1206,7 @@ end TraditionalCardDefinition
     .allTargets .this,
     .permanent,
     .cardType .creature,
-    .attacking,
+    .attacking .all,
     .not .token]) |>.attackingNontokenCreature
 
 #guard
@@ -1206,18 +1218,22 @@ end TraditionalCardDefinition
             .allTargets .this,
             .permanent,
             .cardType .creature,
-            .attacking,
+            .attacking .all,
             .not .token])
           [.reduceCost .this [.mana [.generic 1]]]]),
     .actions [
-      .putOnTopOrBottom
-        (.target 1 (.intersection [.permanent, .cardType .creature]))]
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putOnTopOfLibrary
+          (.target 1 (.intersection [.permanent, .cardType .creature])),
+          .putOnBottomOfLibrary (.targetReference 1)]]
   ]).toCardDef.costReductionIfTargetAttackingNontoken == 1
 
 #guard
   let action : CardAction :=
-    .putOnTopOrBottom
-      (.target 1 (.intersection [.permanent, .cardType .creature]))
+    .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+      [.putOnTopOfLibrary
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+        .putOnBottomOfLibrary (.targetReference 1)]
   action.toEffect == Effect.putOnTopOrBottom
 
 -- Front Porch Sentries: dies, -1/-1 to an opponent's creature.
