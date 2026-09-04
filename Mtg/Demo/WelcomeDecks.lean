@@ -55,9 +55,9 @@ def hobbitBlack : Array CardDef :=
     raveningWargCard] ++
   copies 2 gollumSilentSlinkerCard ++
   copies 2 bilbosDeadlySliceCard ++
-  #[dreadedBatCloudCard, roguesPassage, crudeBentBlade, languish, shadowOfTheEnemy,
-    gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
-    bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins] ++
+  #[dreadedBatCloudCard, roguesPassage, crudeBentBladeCard, languish, shadowOfTheEnemy,
+    gollumTheAbandonedCard, gnashingOfTeethCard, trollOfKhazadDum, mercilessExecutioner,
+    bitterDownfall, reverentHowlCard, nightsWhisper, stonyVoicedGoblinsCard] ++
   copies 16 swamp
 
 /-- Red Welcome Deck (40 cards). -/
