@@ -40,7 +40,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
       .continuous
         [
           .gainAbility
-            (.singleTarget
+            (.target
               1
               (.and [
                 .permanent,
@@ -97,7 +97,7 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .action (
       .tap
         (.upTo 2
-          (.singleTarget 1 (.and [.permanent, .cardType .creature]))))]
+          (.target 1 (.and [.permanent, .cardType .creature]))))]
 ]
 
 def velvetwingButterfliesCard : CardDef :=
@@ -114,7 +114,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
       (.reduceCost [.generic 3])),
   .action (
     .dealDamage
-      (.singleTarget 1 (.and [.permanent, .cardType .creature]))
+      (.target 1 (.and [.permanent, .cardType .creature]))
       5)
 ]
 
@@ -148,7 +148,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .action (
     .sequence [
       .untap
-        (.singleTarget
+        (.target
           1
           (.and [
             .permanent,

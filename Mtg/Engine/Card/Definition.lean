@@ -29,7 +29,7 @@ def manaCost : List Cost → ManaCost
 
 end Cost
 
--- A selector may mention a filter (`.singleTarget`, `.filtered`), and a
+-- A selector may mention a filter (`.target`, `.filtered`), and a
 -- filter may mention a selector (`.controller`).
 mutual
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
@@ -40,8 +40,8 @@ inductive Selector where
   | controllerOf : Selector → Selector
   /-- A numbered target matching `filter` (CR 115.1). Later effects may
   refer to it with `targetReference`. -/
-  | singleTarget : Nat → Filter → Selector
-  /-- The target previously declared with `singleTarget` of this number. -/
+  | target : Nat → Filter → Selector
+  /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- Every object matching `filter` (not targeted). -/
   | filtered : Filter → Selector
@@ -203,7 +203,7 @@ namespace Selector
 
 /-- Targeting implied by a selector, if it announces targets. -/
 def asTargetSelector? : Selector → Option TargetSelector
-  | .singleTarget _n f => some { filter := f }
+  | .target _n f => some { filter := f }
   | .upTo n inner =>
     match asTargetSelector? inner with
     | some t => some { t with maximumTargets := n }
@@ -262,7 +262,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | none => none
   | .gainAbility _ _ :: _ => none
 
-/-- First declared `singleTarget`, if any. -/
+/-- First declared `target`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
   effects.findSome? fun e => e.selector.asTargetSelector?
 
@@ -411,7 +411,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
     else none
   | _ => none
 
-/-- Compile `continuous` effects, reading targeting from `singleTarget`
+/-- Compile `continuous` effects, reading targeting from `target`
 and mass application from `filtered`. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverUntapPumpAttach? action with
@@ -610,7 +610,7 @@ end TraditionalCardDefinition
     .continuous
       [
         .gainAbility
-          (.singleTarget
+          (.target
             1
             (.and [
               .permanent,
@@ -672,14 +672,14 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .tap
       (.upTo 2
-        (.singleTarget 1 (.and [.permanent, .cardType .creature])))
+        (.target 1 (.and [.permanent, .cardType .creature])))
   action.toEffect == Effect.tapOneOrTwoCreatures
 
 -- Magnificent End: 5 damage to target creature; {3} less if that target is tapped.
 #guard
   let action : CardAction :=
     .dealDamage
-      (.singleTarget 1 (.and [.permanent, .cardType .creature]))
+      (.target 1 (.and [.permanent, .cardType .creature]))
       5
   action.toEffect == Effect.dealDamageToCreature 5
 
@@ -709,7 +709,7 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .sequence [
       .untap
-        (.singleTarget
+        (.target
           1
           (.and [
             .permanent,
