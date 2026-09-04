@@ -739,10 +739,16 @@ def leftoverEquipAttach? : CardAction → Bool
 
 /-- Target creature gets +P/+T; if it would die this turn, exile it instead. -/
 def leftoverPumpAndExileIfDies? : CardAction → Option (Int × Int)
-  | .sequence [
-      .continuous [.replace (.putToGraveyard _) _] .turnStart,
-      .continuous [.addPowerToughness _ p t] .endOfTurn
-    ] => some (p, t)
+  | .continuous effects _ =>
+    let pt :=
+      effects.findSome? fun
+        | .addPowerToughness _ p t => some (p, t)
+        | _ => none
+    let replacesDie :=
+      effects.any fun
+        | .replace (.putToGraveyard _) _ => true
+        | _ => false
+    if replacesDie then pt else none
   | _ => none
 
 /-- Target creature gets +P/+T and gains lifelink. -/
@@ -1668,17 +1674,14 @@ end TraditionalCardDefinition
 -- Gnashing of Teeth / Reverent Howl modes.
 #guard
   let action : CardAction :=
-    .sequence [
-      .continuous
-        [.replace
+    .continuous
+      [.addPowerToughness
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        (-5) (-5),
+        .replace
           (.putToGraveyard (.targetReference 1))
           [.exile (.replacingObject 1)]]
-        .turnStart,
-      .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
-          (-5) (-5)]
-        .endOfTurn]
+      .endOfTurn
   action.toEffect == Effect.pumpAndExileIfDies (-5) (-5)
 
 #guard
@@ -1696,17 +1699,14 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .chooseMode [
-      .sequence [
-        .continuous
-          [.replace
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (-5) (-5),
+          .replace
             (.putToGraveyard (.targetReference 1))
             [.exile (.replacingObject 1)]]
-          .turnStart,
-        .continuous
-          [.addPowerToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature]))
-            (-5) (-5)]
-          .endOfTurn],
+        .endOfTurn,
       .continuous
         [.addPowerToughness
           (.intersection [
