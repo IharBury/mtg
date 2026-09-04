@@ -362,7 +362,7 @@ def fireleaperAtEndStep : Game := skipTo fireleaperReady .end 80
 /- Desolation Prowler: Pay 2 life for +2/+2, only once each turn. -/
 
 def prowlerAbility : ActivatedAbility :=
-  desolationProwler.activatedAbilities[0]!
+  desolationProwlerCard.activatedAbilities[0]!
 
 #guard prowlerAbility.effect == Effect.sourceGets 2 2
 #guard prowlerAbility.cost.payLife == 2
@@ -373,7 +373,7 @@ def prowlerAbility : ActivatedAbility :=
 
 /-- Prowler in play; a land drop is already used so the heuristic can activate. -/
 def prowlerReady : Game :=
-  let g := addPermanent afterDraw desolationProwler ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw desolationProwlerCard ⟨0⟩ ⟨0⟩
   g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
 
 def prowlerSource (g : Game) : GameObject :=

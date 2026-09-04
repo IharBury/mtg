@@ -298,35 +298,111 @@ def bilboLuckwearerCard : CardDef :=
   bilboLuckwearer.toCardDef
     (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)")
 
-def uneasyPartings : CardDef :=
-  instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
-    "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library."
-    (some (Effect.putOnTopOrBottom))
-    (costReductionIfTargetAttackingNontoken := 1)
+def uneasyPartings : TraditionalCardDefinition := .card [
+  .name "Uneasy Partings",
+  .manaCost [.generic 3, .mono .blue],
+  .type .instant,
+  .ability (
+    .static
+      [.ifAny
+        (.intersection [
+          .allTargets .this,
+          .permanent,
+          .cardType .creature,
+          .attacking,
+          .not .token])
+        [.reduceCost .this [.mana [.generic 1]]]]),
+  .actions [
+    .putOnTopOrBottom
+      (.target 1 (.intersection [.permanent, .cardType .creature]))]
+]
 
-def frontPorchSentries : CardDef :=
-  creature "Front Porch Sentries" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Soldier"] 2 2
+def uneasyPartingsCard : CardDef :=
+  uneasyPartings.toCardDef
+    (oracleText := "This spell costs {1} less to cast if it targets an attacking nontoken creature.\nTarget creature's owner puts it on their choice of the top or bottom of their library.")
+
+def frontPorchSentries : TraditionalCardDefinition := .card [
+  .name "Front Porch Sentries",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .soldier,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .triggered
+      (.die .this)
+      (.continuous
+        [.addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))]))
+          (-1) (-1)]
+        .endOfTurn))
+]
+
+def frontPorchSentriesCard : CardDef :=
+  frontPorchSentries.toCardDef
     (oracleText := "When this creature dies, target creature an opponent controls gets -1/-1 until end of turn.")
-    (triggeredAbilities := #[.onDiesOppCreatureGets (-1) (-1)])
 
-def greatFierceBee : CardDef :=
-  creature "Great Fierce Bee" (ManaCost.ofGenericAndColor 2 .black) #["Insect"] 2 2
+def greatFierceBee : TraditionalCardDefinition := .card [
+  .name "Great Fierce Bee",
+  .manaCost [.generic 2, .mono .black],
+  .type .creature,
+  .subtype .insect,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability (
+    .triggered
+      (.die (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.scry (.controller .this) 1))
+]
+
+def greatFierceBeeCard : CardDef :=
+  greatFierceBee.toCardDef
     (oracleText := "Flying\nWhenever one or more other creatures die, scry 1. (Look at the top card of your library. You may put that card on the bottom.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onOneOrMoreOtherCreaturesDieScry 1])
 
-def stirUpTrouble : CardDef :=
-  sorcery "Stir Up Trouble" (ManaCost.ofColor .black)
-    "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature."
-    (some (Effect.destroyCreature))
-    (additionalCostSacrificeArtifactOrCreature := true)
-    (additionalCostOrPayGeneric := some 4)
+def stirUpTrouble : TraditionalCardDefinition := .card [
+  .name "Stir Up Trouble",
+  .manaCost [.mono .black],
+  .type .sorcery,
+  .additionalCost
+    [.or [
+      .sacrifice
+        (.intersection [
+          .permanent,
+          .union [.cardType .artifact, .cardType .creature]]),
+      .mana [.generic 4]]],
+  .actions [
+    .destroy
+      (.target 1 (.intersection [.permanent, .cardType .creature]))]
+]
 
-def desolationProwler : CardDef :=
-  creature "Desolation Prowler" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
+def stirUpTroubleCard : CardDef :=
+  stirUpTrouble.toCardDef
+    (oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}.\nDestroy target creature.")
+
+def desolationProwler : TraditionalCardDefinition := .card [
+  .name "Desolation Prowler",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .subtype .wolf,
+  .power 2,
+  .toughness 2,
+  .ability (
+    .restrict .onceEachTurn
+      (.activated
+        [.payLife 2]
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)))
+]
+
+def desolationProwlerCard : CardDef :=
+  desolationProwler.toCardDef
     (oracleText := "Pay 2 life: This creature gets +2/+2 until end of turn. Activate only once each turn.")
-    (activatedAbilities := #[
-      activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)])
 
 def raveningWarg : CardDef :=
   creature "Ravening Warg" (ManaCost.ofGenericAndColor 1 .black) #["Wolf"] 2 2
@@ -1444,11 +1520,11 @@ def hobbitCards : Array CardDef := #[
   ravenhillFlockCard,
   thranduilsDecreeCard,
   bilboLuckwearerCard,
-  uneasyPartings,
-  frontPorchSentries,
-  greatFierceBee,
-  stirUpTrouble,
-  desolationProwler,
+  uneasyPartingsCard,
+  frontPorchSentriesCard,
+  greatFierceBeeCard,
+  stirUpTroubleCard,
+  desolationProwlerCard,
   raveningWarg,
   gollumSilentSlinker,
   bilbosDeadlySlice,
@@ -1733,13 +1809,13 @@ def hobbitCards : Array CardDef := #[
 #guard guardianOfTheHalls.toughness == some 2
 #guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
 #guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
-#guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
-#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
-#guard desolationProwler.power == some 2
-#guard desolationProwler.toughness == some 2
-#guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
+#guard desolationProwlerCard.activatedAbilities.size == 1
+#guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
+#guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
+#guard desolationProwlerCard.power == some 2
+#guard desolationProwlerCard.toughness == some 2
+#guard (desolationProwlerCard.summary.splitOn "Pay 2 life").length > 1
 #guard raveningWarg.keywords.deathtouch
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
 #guard raveningWarg.power == some 2
@@ -1748,14 +1824,14 @@ def hobbitCards : Array CardDef := #[
 #guard (raveningWarg.summary.splitOn "Ferocious").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
-#guard frontPorchSentries.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
-#guard (frontPorchSentries.summary.splitOn "-1/-1").length > 1
-#guard greatFierceBee.keywords.flying
-#guard greatFierceBee.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
-#guard (greatFierceBee.summary.splitOn "other creatures die").length > 1
-#guard stirUpTrouble.spellEffect == some (Effect.destroyCreature)
-#guard stirUpTrouble.additionalCostSacrificeArtifactOrCreature
-#guard stirUpTrouble.additionalCostOrPayGeneric == some 4
+#guard frontPorchSentriesCard.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
+#guard (frontPorchSentriesCard.summary.splitOn "-1/-1").length > 1
+#guard greatFierceBeeCard.keywords.flying
+#guard greatFierceBeeCard.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
+#guard (greatFierceBeeCard.summary.splitOn "other creatures die").length > 1
+#guard stirUpTroubleCard.spellEffect == some (Effect.destroyCreature)
+#guard stirUpTroubleCard.additionalCostSacrificeArtifactOrCreature
+#guard stirUpTroubleCard.additionalCostOrPayGeneric == some 4
 #guard gollumSilentSlinker.keywords.menace
 #guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
@@ -1875,6 +1951,19 @@ def hobbitCards : Array CardDef := #[
   match bilboLuckwearerCard.adventure with
   | some adv => adv.spellEffect == some Effect.exchangeControlSharingType
   | none => false
+#guard uneasyPartingsCard.costReductionIfTargetAttackingNontoken == 1
+#guard uneasyPartingsCard.spellEffect == some Effect.putOnTopOrBottom
+#guard frontPorchSentriesCard.triggeredAbilities ==
+  #[TriggeredAbility.onDiesOppCreatureGets (-1) (-1)]
+#guard greatFierceBeeCard.keywords.flying
+#guard greatFierceBeeCard.triggeredAbilities ==
+  #[TriggeredAbility.onOneOrMoreOtherCreaturesDieScry 1]
+#guard stirUpTroubleCard.spellEffect == some Effect.destroyCreature
+#guard stirUpTroubleCard.additionalCostSacrificeArtifactOrCreature
+#guard stirUpTroubleCard.additionalCostOrPayGeneric == some 4
+#guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
+#guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
 #guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal {B}").length > 1
 

@@ -165,12 +165,12 @@ open Mtg.Engine.Catalog
 #guard goblinFireleaper.activatedAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities.size == 1
 #guard goblinFireleaper.triggeredAbilities == #[.onDiesDealDamageEqualToPowerToOppCreature]
-#guard mentions desolationProwler.summary "Pay 2 life"
-#guard mentions desolationProwler.summary "+2/+2"
-#guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
-#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard mentions desolationProwlerCard.summary "Pay 2 life"
+#guard mentions desolationProwlerCard.summary "+2/+2"
+#guard desolationProwlerCard.activatedAbilities.size == 1
+#guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
+#guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
+#guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
 #guard mentions raveningWarg.summary "deathtouch"
 #guard mentions raveningWarg.summary "Ferocious"
 #guard mentions raveningWarg.summary "power 4 or greater"

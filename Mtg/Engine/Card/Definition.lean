@@ -15,20 +15,6 @@ abilities, and (for adventurer cards) an `alternative` face. Compiles to
 
 namespace Mtg.Engine
 
-/-- A payment in an activated-ability cost (CR 602.1). -/
-inductive Cost where
-  | mana : List ManaSymbol → Cost
-deriving Repr, Inhabited, BEq
-
-namespace Cost
-
-def manaCost : List Cost → ManaCost
-  | [] => ManaCost.empty
-  | .mana syms :: rest =>
-    { symbols := (syms : ManaCost).symbols ++ (manaCost rest).symbols }
-
-end Cost
-
 /-- How many objects a `.targets` selector may choose. -/
 inductive Range where
   | range : Nat → Nat → Range
@@ -84,6 +70,12 @@ inductive Selector where
   | spell
   /-- A player (CR 102). -/
   | player
+  /-- Opponents of the given player (CR 102.2). -/
+  | opponent : Selector → Selector
+  /-- An attacking permanent (CR 508). -/
+  | attacking
+  /-- A token (CR 111.1). -/
+  | token
   /-- A nonland permanent (CR 110.4). -/
   | nonland
   /-- The object of the numbered action. -/
@@ -130,8 +122,13 @@ end TypeSet
 lists compile without depending on conjunct order. -/
 structure Shape where
   sameController : Bool := false
+  opponentControls : Bool := false
   mustBePermanent : Bool := false
   tapped : Bool := false
+  attacking : Bool := false
+  token : Bool := false
+  nontoken : Bool := false
+  other : Bool := false
   subtype : Option String := none
   types : TypeSet := .any
   isSpell : Bool := false
@@ -143,8 +140,13 @@ namespace Shape
 
 def meet (a b : Shape) : Shape :=
   { sameController := a.sameController || b.sameController
+    opponentControls := a.opponentControls || b.opponentControls
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
+    attacking := a.attacking || b.attacking
+    token := a.token || b.token
+    nontoken := a.nontoken || b.nontoken
+    other := a.other || b.other
     subtype := a.subtype.orElse fun _ => b.subtype
     types := a.types.intersect b.types
     isSpell := a.isSpell || b.isSpell
@@ -153,8 +155,13 @@ def meet (a b : Shape) : Shape :=
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
+    opponentControls := a.opponentControls && b.opponentControls
     mustBePermanent := a.mustBePermanent && b.mustBePermanent
     tapped := a.tapped && b.tapped
+    attacking := a.attacking && b.attacking
+    token := a.token && b.token
+    nontoken := a.nontoken && b.nontoken
+    other := a.other && b.other
     subtype :=
       match a.subtype, b.subtype with
       | some x, some y => if x == y then some x else none
@@ -172,9 +179,20 @@ def tappedCreature (s : Shape) : Bool :=
 def dwarf (s : Shape) : Bool :=
   s.subtype == some "Dwarf"
 
-/-- Negate a constraint-shaped selector. `.not` of a land type is nonland. -/
+/-- True when this shape is an attacking nontoken creature. -/
+def attackingNontokenCreature (s : Shape) : Bool :=
+  s.attacking && s.nontoken && s.types.eqTypes [.creature]
+
+/-- True when this shape is other creatures. -/
+def otherCreatures (s : Shape) : Bool :=
+  s.other && s.types.eqTypes [.creature]
+
+/-- Negate a constraint-shaped selector. `.not` of a land type is nonland;
+`.not` of a token is nontoken. -/
 def negate (s : Shape) : Shape :=
-  if s.types.eqTypes [.land] then { nonland := true } else {}
+  if s.types.eqTypes [.land] then { nonland := true }
+  else if s.token then { nontoken := true }
+  else {}
 
 end Shape
 
@@ -182,17 +200,21 @@ def shape : Selector → Shape
   | .all => {}
   | .permanent => { mustBePermanent := true }
   | .controlled (.controller .this) => { sameController := true }
+  | .controlled (.opponent _) => { opponentControls := true }
   | .controlled _ => {}
   | .tapped => { tapped := true }
+  | .attacking => { attacking := true }
+  | .token => { token := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
   | .nonland => { nonland := true }
+  | .not .this => { other := true }
   | .not s => s.shape.negate
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
-  | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
+  | .this | .source _ | .controller _ | .opponent _ | .target _ _ | .targets _ _ _
   | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
   | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
@@ -217,6 +239,7 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   if s.isSpell then .spell
   else if s.nonland && s.shareCardType then .twoNonlandsSharingType
   else if s.nonland then .nonland
+  else if s.opponentControls && s.types.eqTypes [.creature] then .oppCreature
   else if s.sameController then
     if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
     else if s.types.eqTypes [.creature] then .creatureYouControl
@@ -245,6 +268,56 @@ def toTargeting (s : Selector) : EffectTargeting :=
   | none => .of .none
 
 end Selector
+
+/-- A payment in an activated-ability or additional cost (CR 601.2b / 602.1). -/
+inductive Cost where
+  | mana : List ManaSymbol → Cost
+  /-- Pay that much life (CR 118.3). -/
+  | payLife : Nat → Cost
+  /-- Sacrifice a selected permanent (CR 701.17). -/
+  | sacrifice : Selector → Cost
+  /-- Pay one of the listed costs. -/
+  | or : List Cost → Cost
+deriving Repr, Inhabited, BEq
+
+namespace Cost
+
+def manaCost : List Cost → ManaCost
+  | [] => ManaCost.empty
+  | .mana syms :: rest =>
+    { symbols := (syms : ManaCost).symbols ++ (manaCost rest).symbols }
+  | _ :: rest => manaCost rest
+
+def lifePaid : List Cost → Nat
+  | [] => 0
+  | .payLife n :: rest => n + lifePaid rest
+  | _ :: rest => lifePaid rest
+
+def isSacArtifactOrCreature : Cost → Bool
+  | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
+  | .or cs => cs.any isSacArtifactOrCreature
+  | _ => false
+
+def sacrificesArtifactOrCreature : List Cost → Bool
+  | [] => false
+  | c :: rest => isSacArtifactOrCreature c || sacrificesArtifactOrCreature rest
+
+def orPayGeneric? : List Cost → Option Nat
+  | [] => none
+  | .or cs :: rest =>
+    match cs.findSome? fun
+      | .mana [.generic n] => some n
+      | _ => none with
+    | some n => some n
+    | none => orPayGeneric? rest
+  | _ :: rest => orPayGeneric? rest
+
+end Cost
+
+/-- A limit on how often an activated ability may be activated. -/
+inductive ActivationRestriction where
+  | onceEachTurn
+deriving Repr, Inhabited, BEq
 
 /-- Where an `ordinal` count starts. -/
 inductive CountFrom where
@@ -275,6 +348,8 @@ inductive Trigger where
   | putToGraveyard : Selector → Trigger
   /-- The first selector blocks the second (CR 509). -/
   | block : Selector → Selector → Trigger
+  /-- When the selected object or objects die (CR 700.4). -/
+  | die : Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -294,6 +369,8 @@ inductive Ability where
   | triggered : Trigger → CardAction → Ability
   | static : List ContinuousEffect → Ability
   | reduceCost : Selector → List Cost → Ability
+  /-- Restrict how often or when the inner ability may be used. -/
+  | restrict : ActivationRestriction → Ability → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -344,6 +421,10 @@ inductive CardAction where
   | cast : Selector → CardAction
   /-- Exchange control of the selected objects. -/
   | exchangeControl : Selector → CardAction
+  /-- Destroy the selected permanent (CR 701.7). -/
+  | destroy : Selector → CardAction
+  /-- The selected object's owner puts it on the top or bottom of their library. -/
+  | putOnTopOrBottom : Selector → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
 deriving Repr, Inhabited, BEq
@@ -386,7 +467,7 @@ def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
+    | .this | .source _ | .controller _ | .opponent _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
     | .allTargets _ | .spell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
@@ -460,14 +541,22 @@ def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :
         allowsZeroTargets := e.allowsZeroTargets || lo == 0 }
   | _ => e
 
+/-- Source of this ability gets +P/+T. -/
+def leftoverSourcePump? : List ContinuousEffect → Option (Int × Int)
+  | [.addPowerToughness (.source .this) p t] => some (p, t)
+  | _ => none
+
 def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
-  match ContinuousEffect.targetingSelector? effects with
-  | some sel =>
-    withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
+  match leftoverSourcePump? effects with
+  | some (p, t) => Effect.sourceGets p t
   | none =>
-    match ContinuousEffect.massSelector? effects with
-    | some among => massEffect among effects asAbility
-    | none => continuousEffect none effects asAbility
+    match ContinuousEffect.targetingSelector? effects with
+    | some sel =>
+      withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
+    | none =>
+      match ContinuousEffect.massSelector? effects with
+      | some among => massEffect among effects asAbility
+      | none => continuousEffect none effects asAbility
 
 def compileTap (s : Selector) (asAbility : Bool) : Effect :=
   match s.among? with
@@ -582,6 +671,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
         | .exile _ => continuousEffect none [] asAbility
         | .cast _ => continuousEffect none [] asAbility
         | .exchangeControl _ => Effect.exchangeControlSharingType
+        | .destroy _ => Effect.destroyCreature
+        | .putOnTopOrBottom _ => Effect.putOnTopOrBottom
         | .actionId _ inner => compile inner asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -602,12 +693,16 @@ end CardAction
 namespace Ability
 
 /-- Compile an `.activated` ability; `none` for a keyword. -/
+def activatedAbility (costs : List Cost) (action : CardAction)
+    (onceEachTurn : Bool := false) : ActivatedAbility :=
+  { cost := { mana := Cost.manaCost costs, payLife := Cost.lifePaid costs }
+    effect := action.toAbilityEffect
+    onceEachTurn }
+
 def toActivatedAbility? : Ability → Option ActivatedAbility
-  | .activated costs action =>
-    some {
-      cost := { mana := Cost.manaCost costs }
-      effect := action.toAbilityEffect
-    }
+  | .activated costs action => some (activatedAbility costs action)
+  | .restrict .onceEachTurn (.activated costs action) =>
+    some (activatedAbility costs action true)
   | _ => none
 
 /-- Compile a `.triggered` ability. -/
@@ -628,6 +723,17 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatDamage .this .player)
       (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
     some TriggeredAbility.onCombatDamageToPlayerLoot
+  | .triggered (.die .this) (.continuous effects _duration) =>
+    match ContinuousEffect.targetingSelector? effects, ContinuousEffect.addedPT? effects with
+    | some sel, some (p, t) =>
+      if sel.toTargetKind == .oppCreature then
+        some (TriggeredAbility.onDiesOppCreatureGets p t)
+      else none
+    | _, _ => none
+  | .triggered (.die among) (.scry _ n) =>
+    if among.shape.otherCreatures then
+      some (TriggeredAbility.onOneOrMoreOtherCreaturesDieScry n)
+    else none
   | _ => none
 
 end Ability
@@ -647,6 +753,8 @@ inductive CardPart where
   | alternative : List CardPart → CardPart
   /-- The spelled-out actions this part performs, in order. -/
   | actions : List CardAction → CardPart
+  /-- An additional cost to cast this spell (CR 601.2b). -/
+  | additionalCost : List Cost → CardPart
 deriving Repr, Inhabited, BEq
 
 /-- A traditional (non-token, non-DFC-only) printed card. -/
@@ -669,15 +777,37 @@ structure CardFace where
   activatedAbilities : Array ActivatedAbility := #[]
   triggeredAbilities : Array TriggeredAbility := #[]
   costReductionIfTargetTapped : Nat := 0
+  costReductionIfTargetAttackingNontoken : Nat := 0
+  additionalCostSacrificeArtifactOrCreature : Bool := false
+  additionalCostOrPayGeneric : Option Nat := none
 deriving Inhabited
 
 namespace CardFace
+
+def applyReduceCost (assign : CardFace → Nat → CardFace) (b : CardFace)
+    (e : ContinuousEffect) : CardFace :=
+  match e with
+  | .reduceCost _ costs =>
+    assign b (ManaCost.manaValue (Cost.manaCost costs))
+  | _ => b
 
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness _ _ _ => b
   | .ifAny among inners =>
-    if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
+    if among.shape.tappedCreature then
+      inners.foldl
+        (applyReduceCost fun b n =>
+          { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n })
+        b
+    else if among.shape.attackingNontokenCreature then
+      inners.foldl
+        (applyReduceCost fun b n =>
+          { b with
+            costReductionIfTargetAttackingNontoken :=
+              b.costReductionIfTargetAttackingNontoken + n })
+        b
+    else b
   | .replace _ _ => b
   | .forbid (.block who .this) =>
     if who == .any then
@@ -695,10 +825,11 @@ def applyAbility (b : CardFace) : Ability → CardFace
   | .activated costs action =>
     { b with
       activatedAbilities :=
-        b.activatedAbilities.push {
-          cost := { mana := Cost.manaCost costs }
-          effect := action.toAbilityEffect
-        } }
+        b.activatedAbilities.push (Ability.activatedAbility costs action) }
+  | .restrict r a =>
+    match Ability.restrict r a |>.toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => applyAbility b a
   | .triggered w action =>
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
@@ -725,6 +856,13 @@ def apply (b : CardFace) : CardPart → CardFace
         match as with
         | [a] => some a
         | as => some (.sequence as) }
+  | .additionalCost cs =>
+    { b with
+      additionalCostSacrificeArtifactOrCreature :=
+        b.additionalCostSacrificeArtifactOrCreature ||
+          Cost.sacrificesArtifactOrCreature cs
+      additionalCostOrPayGeneric :=
+        b.additionalCostOrPayGeneric.orElse (Cost.orPayGeneric? cs) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
@@ -793,6 +931,10 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       activatedAbilities := b.activatedAbilities
       triggeredAbilities := b.triggeredAbilities
       costReductionIfTargetTapped := b.costReductionIfTargetTapped
+      costReductionIfTargetAttackingNontoken := b.costReductionIfTargetAttackingNontoken
+      additionalCostSacrificeArtifactOrCreature :=
+        b.additionalCostSacrificeArtifactOrCreature
+      additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -1041,5 +1183,116 @@ end TraditionalCardDefinition
     (.intersection [.permanent, .not .land])
     [.shareCardType])
   == .twoNonlandsSharingType
+
+-- Uneasy Partings: {1} less if the target is an attacking nontoken creature;
+-- owner puts it on top or bottom.
+#guard Selector.shape
+  (.intersection [
+    .allTargets .this,
+    .permanent,
+    .cardType .creature,
+    .attacking,
+    .not .token]) |>.attackingNontokenCreature
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        [.ifAny
+          (.intersection [
+            .allTargets .this,
+            .permanent,
+            .cardType .creature,
+            .attacking,
+            .not .token])
+          [.reduceCost .this [.mana [.generic 1]]]]),
+    .actions [
+      .putOnTopOrBottom
+        (.target 1 (.intersection [.permanent, .cardType .creature]))]
+  ]).toCardDef.costReductionIfTargetAttackingNontoken == 1
+
+#guard
+  let action : CardAction :=
+    .putOnTopOrBottom
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+  action.toEffect == Effect.putOnTopOrBottom
+
+-- Front Porch Sentries: dies, -1/-1 to an opponent's creature.
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .controlled (.opponent (.controller .this))])
+  == .oppCreature
+
+#guard
+  match
+    (Ability.triggered
+      (.die .this)
+      (.continuous
+        [.addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))]))
+          (-1) (-1)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesOppCreatureGets (-1) (-1)
+  | none => false
+
+-- Great Fierce Bee: one or more other creatures die, scry 1.
+#guard Selector.shape
+  (.intersection [.not .this, .permanent, .cardType .creature]) |>.otherCreatures
+
+#guard
+  match
+    (Ability.triggered
+      (.die (.intersection [.not .this, .permanent, .cardType .creature]))
+      (.scry (.controller .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onOneOrMoreOtherCreaturesDieScry 1
+  | none => false
+
+-- Stir Up Trouble: sacrifice an artifact or creature or pay {4}; destroy.
+#guard
+  let action : CardAction :=
+    .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))
+  action.toEffect == Effect.destroyCreature
+
+#guard
+  (TraditionalCardDefinition.card [
+    .additionalCost
+      [.or [
+        .sacrifice
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]]),
+        .mana [.generic 4]]],
+    .actions [
+      .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
+  ]).toCardDef.additionalCostSacrificeArtifactOrCreature
+
+#guard
+  (TraditionalCardDefinition.card [
+    .additionalCost
+      [.or [
+        .sacrifice
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]]),
+        .mana [.generic 4]]]
+  ]).toCardDef.additionalCostOrPayGeneric == some 4
+
+-- Desolation Prowler: pay 2 life, +2/+2, once each turn.
+#guard
+  match
+    (Ability.restrict .onceEachTurn
+      (.activated
+        [.payLife 2]
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn))).toActivatedAbility? with
+  | some ab =>
+    ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
+  | none => false
 
 end Mtg.Engine

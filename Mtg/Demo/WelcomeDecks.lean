@@ -45,13 +45,13 @@ def hobbitBlue : Array CardDef :=
   copies 2 ithilienKingfisher ++
   #[hithlainKnots, captainOfUmbar, minasTirithGarrison, colossalWhale,
     willowWind, bilboLuckwearerCard] ++
-  copies 2 uneasyPartings ++
+  copies 2 uneasyPartingsCard ++
   #[nimrodelWatcher, sternScolding]
 
 /-- Black Welcome Deck (40 cards). -/
 def hobbitBlack : Array CardDef :=
-  copies 2 frontPorchSentries ++
-  #[greatFierceBee, stirUpTrouble, hauntOfTheDeadMarshes, desolationProwler,
+  copies 2 frontPorchSentriesCard ++
+  #[greatFierceBeeCard, stirUpTroubleCard, hauntOfTheDeadMarshes, desolationProwlerCard,
     raveningWarg] ++
   copies 2 gollumSilentSlinker ++
   copies 2 bilbosDeadlySlice ++
