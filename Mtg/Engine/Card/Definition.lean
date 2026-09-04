@@ -165,21 +165,18 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   else if s.types.eqTypes [.artifact] then .artifact
   else .permanent
 
+/-- The constraint a targeting selector matches, if it announces targets. -/
+def among? : Selector → Option Selector
+  | .target _ among => some among
+  | .targets _ _ among => some among
+  | _ => none
+
+def toTargeting (s : Selector) : EffectTargeting :=
+  match s.among? with
+  | some among => .of among.toTargetKind
+  | none => .of .none
+
 end Selector
-
-/-- How many objects matching `filter` a spell or ability may target. -/
-structure TargetSelector where
-  minimumTargets : Nat := 1
-  maximumTargets : Nat := 1
-  filter : Selector := .all
-deriving Repr, Inhabited, BEq
-
-namespace TargetSelector
-
-def toTargeting (s : TargetSelector) : EffectTargeting :=
-  .of s.filter.toTargetKind
-
-end TargetSelector
 
 /-- When a continuous effect ends, or when a triggered ability fires. -/
 inductive Trigger where
@@ -195,22 +192,9 @@ deriving Repr, Inhabited, BEq
 inductive Condition where
   /-- `who` has a target among the objects described by `among`. -/
   | hasTargetIn : Selector → Selector → Condition
-  /-- The given object matches `among`. -/
-  | matches : Selector → Selector → Condition
   /-- The given object has the given subtype. -/
   | hasSubtype : Selector → CardSubtype → Condition
 deriving Repr, Inhabited, BEq
-
-namespace Selector
-
-/-- Targeting implied by a selector, if it announces targets. -/
-def asTargetSelector? : Selector → Option TargetSelector
-  | .target _n f => some { filter := f }
-  | .targets _n (.range lo hi) f =>
-    some { minimumTargets := lo, maximumTargets := hi, filter := f }
-  | _ => none
-
-end Selector
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
@@ -271,9 +255,12 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .conditional _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
 
-/-- First declared `target`, if any. -/
-def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
-  effects.findSome? fun e => e.selector.asTargetSelector?
+/-- First declared `target` or `targets`, if any. -/
+def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
+  effects.findSome? fun e =>
+    match e.selector.among? with
+    | some _ => some e.selector
+    | none => none
 
 /-- First constraint-shaped selector, if any. -/
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -300,7 +287,7 @@ def creaturesYouControlPumpEffect (p t : Int) (asAbility : Bool) : Effect :=
   else Effect.creaturesYouControlGet p t
 
 /-- Keyword grants, optionally targeted. -/
-def grantKeywordsEffect (sel : Option TargetSelector) (effects : List ContinuousEffect)
+def grantKeywordsEffect (sel : Option Selector) (effects : List ContinuousEffect)
     (asAbility : Bool) : Effect :=
   let kws := grantedKeywords effects
   let targeting :=
@@ -313,7 +300,7 @@ def grantKeywordsEffect (sel : Option TargetSelector) (effects : List Continuous
     Effect.mkSpell targeting (.onPermanent (.grantKeywords kws)) (castKind := .pump)
 
 /-- Compile a `continuous` action, optionally wrapped in targeting. -/
-def continuousEffect (sel : Option TargetSelector) (effects : List ContinuousEffect)
+def continuousEffect (sel : Option Selector) (effects : List ContinuousEffect)
     (asAbility : Bool) : Effect :=
   match ContinuousEffect.addedPT? effects with
   | some (p, t) =>
@@ -340,13 +327,15 @@ def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility :
     continuousEffect none effects asAbility
 
 /-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
-def withTargetCounts (e : Effect) (sel : TargetSelector) (asAbility : Bool) : Effect :=
-  if asAbility then e
-  else
-    { e with
-      maxTargets :=
-        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :=
+  match sel with
+  | .targets _ (.range lo hi) _ =>
+    if asAbility then e
+    else
+      { e with
+        maxTargets := if hi ≤ 1 then e.maxTargets else hi
+        allowsZeroTargets := e.allowsZeroTargets || lo == 0 }
+  | _ => e
 
 def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
   match ContinuousEffect.targetingSelector? effects with
@@ -358,14 +347,14 @@ def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Eff
     | none => continuousEffect none effects asAbility
 
 def compileTap (s : Selector) (asAbility : Bool) : Effect :=
-  match s.asTargetSelector? with
-  | some sel =>
+  match s.among? with
+  | some _ =>
     let e :=
       if asAbility then
-        Effect.mkAbility sel.toTargeting (Resolution.ofSpell .tapTargets)
+        Effect.mkAbility s.toTargeting (Resolution.ofSpell .tapTargets)
       else
-        Effect.mkSpell sel.toTargeting .tapTargets (castKind := .pump)
-    withTargetCounts e sel asAbility
+        Effect.mkSpell s.toTargeting .tapTargets (castKind := .pump)
+    withTargetCounts e s asAbility
   | none =>
     if asAbility then
       Effect.mkAbility (.of .none) (Resolution.ofSpell .tapTargets)
@@ -373,12 +362,12 @@ def compileTap (s : Selector) (asAbility : Bool) : Effect :=
       Effect.mkSpell (.of .none) .tapTargets (castKind := .pump)
 
 def compileUntap (s : Selector) (asAbility : Bool) : Effect :=
-  match s.asTargetSelector? with
-  | some sel =>
+  match s.among? with
+  | some _ =>
     if asAbility then
-      Effect.mkAbility sel.toTargeting (.onPermanent .untap)
+      Effect.mkAbility s.toTargeting (.onPermanent .untap)
     else
-      Effect.mkSpell sel.toTargeting (.onPermanent .untap) (castKind := .pump)
+      Effect.mkSpell s.toTargeting (.onPermanent .untap) (castKind := .pump)
   | none =>
     if asAbility then
       Effect.mkAbility (.of .none) (.onPermanent .untap)
@@ -386,13 +375,13 @@ def compileUntap (s : Selector) (asAbility : Bool) : Effect :=
       Effect.mkSpell (.of .none) (.onPermanent .untap) (castKind := .pump)
 
 def compileDamage (s : Selector) (n : Nat) (asAbility : Bool) : Effect :=
-  match s.asTargetSelector? with
-  | some sel =>
+  match s.among? with
+  | some _ =>
     if asAbility then
-      Effect.mkAbility sel.toTargeting (.onPermanent (.dealDamage n))
+      Effect.mkAbility s.toTargeting (.onPermanent (.dealDamage n))
         (castKind := .creatureDamage)
     else
-      Effect.mkSpell sel.toTargeting (.onPermanent (.dealDamage n))
+      Effect.mkSpell s.toTargeting (.onPermanent (.dealDamage n))
         (castKind := .creatureDamage)
   | none =>
     if asAbility then
@@ -411,9 +400,9 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
       .forEach _n (.conditional (.hasSubtype _who st) (.optional (.attach _eq _to)))
     ] =>
     let youControlCreature :=
-      match ut.asTargetSelector? with
-      | some t =>
-        let s := t.filter.shape
+      match ut.among? with
+      | some among =>
+        let s := among.shape
         s.sameController && s.types.eqTypes [.creature]
       | none => false
     if youControlCreature && st == .dwarf then
