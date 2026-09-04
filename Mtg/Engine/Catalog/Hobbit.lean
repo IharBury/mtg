@@ -36,7 +36,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
     .manaCost [.generic 1, .mono .white],
     .type .instant,
     .subtype .adventure,
-    .action (
+    .actions [
       .continuous
         [
           .gainAbility
@@ -48,7 +48,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
                 .controlled (.controller .this)]))
             (.keyword .hexproof),
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
-        .endOfTurn)]
+        .endOfTurn]]
 ]
 
 def bofurReliableGuardianCard : CardDef :=
@@ -93,8 +93,8 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .manaCost [.generic 1, .mono .white],
     .type .instant,
     .subtype .adventure,
-    .action (
-      .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature])))]]
+    .actions [
+      .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]]
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
@@ -113,7 +113,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
           .cardType .creature,
           .tapped])
         [.reduceCost .this [.mana [.generic 3]]]]),
-  .action (
+  .actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
@@ -146,30 +146,29 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .name "Vow to Erebor",
   .manaCost [.generic 1, .mono .white],
   .type .instant,
-  .action (
-    .sequence [
-      .untap
-        (.target
-          1
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])),
-      .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .forEach 1
-        (.ifAny
-          (.intersection [.var 1, .subtype .dwarf])
-          [
-            .optional
-              (.attach
-                (.selected
-                  (.range 1 1)
-                  (.intersection [
-                    .permanent,
-                    .subtype .equipment,
-                    .controlled (.controller .this)]))
-                (.var 1))
-          ])])]
+  .actions [
+    .untap
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])),
+    .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
+    .forEach 1
+      (.ifAny
+        (.intersection [.var 1, .subtype .dwarf])
+        [
+          .optional
+            (.attach
+              (.selected
+                (.range 1 1)
+                (.intersection [
+                  .permanent,
+                  .subtype .equipment,
+                  .controlled (.controller .this)]))
+              (.var 1))
+        ])]]
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef
@@ -190,7 +189,7 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
     .manaCost [.mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .action (.scry (.controller .this) 2)]
+    .actions [.scry (.controller .this) 2]]
 ]
 
 def bilboBagginsBurglarCard : CardDef :=
@@ -219,12 +218,12 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .name "Confusticate and Bebother",
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
-  .action (
+  .actions [
     .chooseMode [
       .preventable (.controller (.targetReference 1)) [.mana [.generic 4]] (.counter (.target 1 .spell)),
       .sequence [
         .draw (.controller .this) 2,
-        .discard (.controller .this) 1]])]
+        .discard (.controller .this) 1]]]]
 
 def confusticateAndBebotherCard : CardDef :=
   confusticateAndBebother.toCardDef
@@ -288,12 +287,12 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
     .manaCost [.generic 4, .mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .action (
+    .actions [
       .exchangeControl
         (.targets
           1
           (.range 2 2)
-          (.intersection [.permanent, .nonland, .shareCardType])))]
+          (.intersection [.permanent, .nonland, .shareCardType]))]]
 ]
 
 def bilboLuckwearerCard : CardDef :=

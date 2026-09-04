@@ -211,19 +211,14 @@ def toTargeting (s : Selector) : EffectTargeting :=
 
 end Selector
 
-/-- An event a replacement effect can apply to (CR 614). -/
-inductive Event where
-  /-- The selected object would be put into a graveyard. -/
-  | putToGraveyard : Selector → Event
-deriving Repr, Inhabited, BEq
-
 /-- Where an `ordinal` count starts. -/
 inductive CountFrom where
   /-- From the start of the turn. -/
   | turnStart
 deriving Repr, Inhabited, BEq
 
-/-- When a continuous effect ends, or when a triggered ability fires. -/
+/-- When a continuous effect ends, when a triggered ability fires, or
+what a replacement effect intercepts. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
@@ -241,6 +236,8 @@ inductive Trigger where
   /-- Whenever the selected object deals combat damage to objects matching
   the given selector. -/
   | combatDamage : Selector → Selector → Trigger
+  /-- The selected object would be put into a graveyard (CR 614). -/
+  | putToGraveyard : Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -270,8 +267,8 @@ inductive ContinuousEffect where
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
-  /-- Replace the event with the given actions (CR 614). -/
-  | replace : Event → List CardAction → ContinuousEffect
+  /-- Replace the trigger with the given actions (CR 614). -/
+  | replace : Trigger → List CardAction → ContinuousEffect
   /-- The selected player may cast the selected card without paying its
   mana cost. -/
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
@@ -606,8 +603,7 @@ inductive CardPart where
   | toughness : Nat → CardPart
   | ability : Ability → CardPart
   | alternative : List CardPart → CardPart
-  | action : CardAction → CardPart
-  /-- Several actions, in order. -/
+  /-- The spelled-out actions this part performs, in order. -/
   | actions : List CardAction → CardPart
 deriving Repr, Inhabited, BEq
 
@@ -676,8 +672,12 @@ def apply (b : CardFace) : CardPart → CardFace
   | .toughness n => { b with toughness := some n }
   | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
-  | .action a => { b with action := some a }
-  | .actions as => { b with action := some (.sequence as) }
+  | .actions as =>
+    { b with
+      action :=
+        match as with
+        | [a] => some a
+        | as => some (.sequence as) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
@@ -851,11 +851,11 @@ end TraditionalCardDefinition
             .cardType .creature,
             .tapped])
           [.reduceCost .this [.mana [.generic 3]]]]),
-    .action (
+    .actions [
       .dealDamage
         .this
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        5)
+        5]
   ]).toCardDef.costReductionIfTargetTapped == 3
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
