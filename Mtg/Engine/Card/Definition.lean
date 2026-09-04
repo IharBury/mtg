@@ -26,12 +26,6 @@ inductive SetPredicate where
   | shareCardType
 deriving Repr, Inhabited, BEq
 
-/-- Where an `activatedTimes` count starts. -/
-inductive CountFrom where
-  /-- From the start of the turn. -/
-  | turnStart
-deriving Repr, Inhabited, BEq
-
 -- Selectors may ask who was the subject of a trigger, and triggers name
 -- selectors, so the two inductives are mutual.
 mutual
@@ -410,8 +404,8 @@ inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used that many times, counted from
-  the given point. -/
-  | activatedTimes : Nat → CountFrom → List Cost → CardAction → Ability
+  the given window. -/
+  | activatedTimes : Nat → Trigger → List Cost → CardAction → Ability
   | triggered : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   | reduceCost : Selector → List Cost → Ability
