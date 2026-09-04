@@ -4670,7 +4670,7 @@ def oriCountsExiledOk : Bool :=
 
 /-- Ruling 139: Great Fierce Bee still triggers if it dies with other creatures. -/
 def beeDiesWithOthers : Game :=
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bee := namedPermanent g "Great Fierce Bee"
   let bears := namedPermanent g "Grizzly Bears"

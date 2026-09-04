@@ -509,7 +509,7 @@ modified event are ignored.
 /-- Head of the Hunt replaces an opposing death: the die event never happens,
 so Great Fierce Bee does not trigger, and `creatureDiedThisTurn` stays false. -/
 def headExilesPreyBeeSilent : Game :=
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   (withLethal g "Grizzly Bears").checkSBA
@@ -529,7 +529,7 @@ def headExilesPreyBeeSilent : Game :=
 /-- Bee itself dying does not see an opposing creature that was exiled instead
 of dying. The Bee did die, so `creatureDiedThisTurn` is true. -/
 def beeDiesWhileHeadExilesPrey : Game :=
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g headOfTheHunt ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := withLethal g "Great Fierce Bee"

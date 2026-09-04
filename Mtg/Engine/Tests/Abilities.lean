@@ -29,7 +29,7 @@ def readyMain (g : Game) : Game :=
 
 /-- Front Porch Sentries: dies, target opposing creature gets -1 / -1. -/
 def sentriesDied : Game :=
-  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw frontPorchSentriesCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
   g.receivePriority ⟨0⟩
@@ -55,14 +55,14 @@ def sentriesPumpResolved : Game :=
   mentions s "Grizzly Bears gets -1/-1 until end of turn")
 
 #guard
-  let g := addPermanent afterDraw frontPorchSentries ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw frontPorchSentriesCard ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Front Porch Sentries").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
   g.stack.isEmpty && g.log.any (fun s => mentions s "no legal target")
 
 /-- Great Fierce Bee: another creature dying scries 1. -/
 def beeOtherDied : Game :=
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
   g.receivePriority ⟨0⟩
@@ -81,13 +81,13 @@ def beeScrying : Game := passBoth beeOtherDied
 #guard beeScrying.log.any (fun s => mentions s "scries 1")
 
 #guard
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Great Fierce Bee").id (.graveyard ⟨0⟩) none
   let g := g.receivePriority ⟨0⟩
   g.stack.isEmpty && g.creatureDiedThisTurn
 
 #guard
-  let g := addPermanent afterDraw greatFierceBee ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw greatFierceBeeCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Raging Goblin").id (.graveyard ⟨0⟩) none
@@ -101,13 +101,13 @@ def stirReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 1
+  withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 1
 
 #guard stirReady.canCast ⟨0⟩ (handCardNamed stirReady ⟨0⟩ "Stir Up Trouble")
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  let g := withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
+  let g := withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 5
   g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Stir Up Trouble")
 
 def proposedStir : Game :=
@@ -173,7 +173,7 @@ def stirResolvedViaSac : Game := passBoth stirCastViaSac
 def stirPayGenericReady : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g stirUpTrouble ⟨0⟩) ⟨0⟩ 5
+  withBlackMana (addToHand g stirUpTroubleCard ⟨0⟩) ⟨0⟩ 5
 
 def stirPayGenericChosen : Game :=
   let g := mustApply stirPayGenericReady ⟨0⟩

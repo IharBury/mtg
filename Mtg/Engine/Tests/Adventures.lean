@@ -555,7 +555,7 @@ def crusherStillBlockingAfterGoblinLeaves : Game :=
 
 /-- A Goblin still does not let Crusher block a flyer. -/
 def flyerVsCrusherAndGoblinReadyToBlock : Game :=
-  let g := addPermanent (addPermanent (addPermanent started greatFierceBee ⟨0⟩ ⟨0⟩)
+  let g := addPermanent (addPermanent (addPermanent started greatFierceBeeCard ⟨0⟩ ⟨0⟩)
     ologHaiCrusher ⟨1⟩ ⟨1⟩) ragingGoblin ⟨1⟩ ⟨1⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Great Fierce Bee").id])

@@ -100,12 +100,14 @@ inductive CardSubtype where
   | cleric
   | dwarf
   | equipment
+  | goblin
   | halfling
   | human
   | insect
   | rogue
   | scout
   | soldier
+  | wolf
   | named (s : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -118,12 +120,14 @@ def toString : CardSubtype → String
   | .cleric => "Cleric"
   | .dwarf => "Dwarf"
   | .equipment => "Equipment"
+  | .goblin => "Goblin"
   | .halfling => "Halfling"
   | .human => "Human"
   | .insect => "Insect"
   | .rogue => "Rogue"
   | .scout => "Scout"
   | .soldier => "Soldier"
+  | .wolf => "Wolf"
   | .named s => s
 
 instance : ToString CardSubtype where
