@@ -54,6 +54,9 @@ inductive Selector where
   /-- Choose objects from `among` at resolution, with a count range
   (not targeting; CR 608.2d). -/
   | selected : Range → Selector → Selector
+  /-- Every object targeted by anything matching the given selector
+  (CR 115.1 / 608.2b). -/
+  | allTargets : Selector → Selector
   | intersection : List Selector → Selector
   | all
   | cardType : CardType → Selector
@@ -151,7 +154,7 @@ def shape : Selector → Shape
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-  | .targetReference _ | .var _ | .selected _ _ => {}
+  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => {}
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
@@ -267,7 +270,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-    | .targetReference _ | .var _ | .selected _ _ => none
+    | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => none
     | s => some s
 
 end ContinuousEffect
