@@ -41,6 +41,8 @@ mutual
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
   | this
+  /-- The source of this ability (CR 113.7). -/
+  | source
   /-- The controller of the given object (CR 109.5). -/
   | controllerOf : Selector → Selector
   /-- A numbered target matching `filter` (CR 115.1). Later effects may
@@ -198,8 +200,8 @@ deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires. -/
 inductive When where
-  /-- Whenever the selected object attacks. -/
-  | attack : Selector → When
+  /-- Whenever the selected object attacks, restricted by `filter`. -/
+  | attack : Selector → Filter → When
   /-- When the selected object enters. -/
   | enter : Selector → When
 deriving Repr, Inhabited, BEq
@@ -457,7 +459,7 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
-  | .triggered (.attack .this) (.continuous effects _duration) =>
+  | .triggered (.attack .this .any) (.continuous effects _duration) =>
     match ContinuousEffect.addedPT? effects with
     | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
     | _ => none
@@ -712,8 +714,8 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.attack .this)
-      (.continuous [.addPowerToughness .this 1 1] .endOfTurn)).toTriggeredAbility? with
+      (.attack .this .any)
+      (.continuous [.addPowerToughness .source 1 1] .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
   | none => false
 

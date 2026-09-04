@@ -132,8 +132,8 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .ability (.keyword .flying),
   .ability (
     .triggered
-      (.attack .this)
-      (.continuous [.addPowerToughness .this 1 1] .endOfTurn))
+      (.attack .this .any)
+      (.continuous [.addPowerToughness .source 1 1] .endOfTurn))
 ]
 
 def eagleOfTheGreatShelfCard : CardDef :=
