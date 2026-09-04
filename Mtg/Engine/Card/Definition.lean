@@ -295,7 +295,10 @@ def lifePaid : List Cost → Nat
 
 def isSacArtifactOrCreature : Cost → Bool
   | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
-  | .or cs => cs.any isSacArtifactOrCreature
+  | .or cs =>
+    cs.any fun
+      | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
+      | _ => false
   | _ => false
 
 def sacrificesArtifactOrCreature : List Cost → Bool
@@ -862,7 +865,7 @@ def apply (b : CardFace) : CardPart → CardFace
         b.additionalCostSacrificeArtifactOrCreature ||
           Cost.sacrificesArtifactOrCreature cs
       additionalCostOrPayGeneric :=
-        b.additionalCostOrPayGeneric.orElse (Cost.orPayGeneric? cs) }
+        b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
