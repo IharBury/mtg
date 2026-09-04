@@ -252,16 +252,16 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
   .name "Thranduil's Decree",
   .manaCost [.generic 4, .mono .blue, .mono .blue],
   .type .instant,
-  .action (
-    .sequence [
-      .counter (.target 1 .spell),
-      .ifAny
-        (.intersection [.allTargets .this, .permanent])
-        [
-          .exile (.allTargets .this),
-          .optional (.cast (.allTargets .this))
-        ]])
-]
+  .actions [
+    .actionId 1 (.counter (.target 1 .spell)),
+    .continuous
+      [.replace
+        (.putToGraveyard (.wasObjectOfAction 1))
+        [.actionId 2 (.exile (.replacingObject 1)),
+          .continuous
+            [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
+            .endOfGame]]
+      .endOfGame]]
 
 def thranduilsDecreeCard : CardDef :=
   thranduilsDecree.toCardDef

@@ -77,6 +77,12 @@ inductive Selector where
   | nonland
   /-- Objects that share a card type with each other. -/
   | shareCardType
+  /-- The object of the numbered action. -/
+  | wasObjectOfAction : Nat → Selector
+  /-- The object a replacement effect is replacing. -/
+  | replacingObject : Nat → Selector
+  /-- An object created by the numbered action. -/
+  | wasCreatedByAction : Nat → Selector
 deriving Repr, Inhabited, BEq
 
 namespace Selector
@@ -174,7 +180,8 @@ def shape : Selector → Shape
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ | .player => {}
+  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ | .player
+  | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
@@ -203,6 +210,12 @@ def toTargeting (s : Selector) : EffectTargeting :=
   | none => .of .none
 
 end Selector
+
+/-- An event a replacement effect can apply to (CR 614). -/
+inductive Event where
+  /-- The selected object would be put into a graveyard. -/
+  | putToGraveyard : Selector → Event
+deriving Repr, Inhabited, BEq
 
 /-- Where an `ordinal` count starts. -/
 inductive CountFrom where
@@ -257,6 +270,11 @@ inductive ContinuousEffect where
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
+  /-- Replace the event with the given actions (CR 614). -/
+  | replace : Event → List CardAction → ContinuousEffect
+  /-- The selected player may cast the selected card without paying its
+  mana cost. -/
+  | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -290,6 +308,8 @@ inductive CardAction where
   | cast : Selector → CardAction
   /-- Exchange control of the selected objects. -/
   | exchangeControl : Selector → CardAction
+  /-- Number this action so later clauses can refer to it. -/
+  | actionId : Nat → CardAction → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -301,6 +321,8 @@ def selector : ContinuousEffect → Selector
   | .ifAny _ (inner :: _) => selector inner
   | .ifAny _ [] => .this
   | .reduceCost who _ => who
+  | .replace _ _ => .this
+  | .canCastWithoutPayingManaCost _ who => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -312,6 +334,8 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainAbility _ _ :: _ => none
   | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
+  | .replace _ _ :: _ => none
+  | .canCastWithoutPayingManaCost _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -326,7 +350,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
     | .targetReference _ | .var _ | .selected _ _ | .allTargets _
-    | .spell | .player | .shareCardType => none
+    | .spell | .player | .shareCardType
+    | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
     | s => some s
 
 end ContinuousEffect
@@ -477,8 +502,8 @@ def leftoverDrawDiscard? : CardAction → Option Nat
 /-- Counter a spell; exile a permanent spell and allow a free cast. -/
 def leftoverCounterExile? : CardAction → Bool
   | .sequence [
-      .counter _,
-      .ifAny _ [.exile _, .optional (.cast _)]
+      .actionId _ (.counter _),
+      .continuous (.replace (.putToGraveyard _) _ :: _) _
     ] => true
   | _ => false
 
@@ -518,6 +543,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
         | .exile _ => continuousEffect none [] asAbility
         | .cast _ => continuousEffect none [] asAbility
         | .exchangeControl _ => Effect.exchangeControlSharingType
+        | .actionId _ inner => compile inner asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -581,6 +607,8 @@ inductive CardPart where
   | ability : Ability → CardPart
   | alternative : List CardPart → CardPart
   | action : CardAction → CardPart
+  /-- Several actions, in order. -/
+  | actions : List CardAction → CardPart
 deriving Repr, Inhabited, BEq
 
 /-- A traditional (non-token, non-DFC-only) printed card. -/
@@ -612,6 +640,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness _ _ _ => b
   | .ifAny among inners =>
     if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
+  | .replace _ _ => b
+  | .canCastWithoutPayingManaCost _ _ => b
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
@@ -647,6 +677,7 @@ def apply (b : CardFace) : CardPart → CardFace
   | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
   | .action a => { b with action := some a }
+  | .actions as => { b with action := some (.sequence as) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
@@ -918,16 +949,18 @@ end TraditionalCardDefinition
 
 -- Thranduil's Decree: counter; exile a permanent spell and maybe cast it.
 #guard
-  let action : CardAction :=
-    .sequence [
-      .counter (.target 1 .spell),
-      .ifAny
-        (.intersection [.allTargets .this, .permanent])
-        [
-          .exile (.allTargets .this),
-          .optional (.cast (.allTargets .this))
-        ]]
-  action.toEffect == Effect.counterExilePermanentMayCast
+  (TraditionalCardDefinition.card [
+    .actions [
+      .actionId 1 (.counter (.target 1 .spell)),
+      .continuous
+        [.replace
+          (.putToGraveyard (.wasObjectOfAction 1))
+          [.actionId 2 (.exile (.replacingObject 1)),
+            .continuous
+              [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
+              .endOfGame]]
+        .endOfGame]
+  ]).toCardDef.spellEffect == some Effect.counterExilePermanentMayCast
 
 -- Bilbo, Luckwearer: combat damage loot; Adventure exchanges control.
 #guard
