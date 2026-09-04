@@ -107,6 +107,8 @@ what a replacement effect intercepts. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
+  /-- From the start of the turn (a window bound for `wasSubject`). -/
+  | turnStart
   /-- Whenever the selected object attacks, restricted by the given
   selector. -/
   | attack : Selector → Selector → Trigger
@@ -272,7 +274,7 @@ def shape : Selector → Shape
   | .controlled _ => {}
   | .tapped => { tapped := true }
   | .powerAtLeast n => { powerAtLeast := some n }
-  | .wasSubject (.die who) .endOfTurn => { who.shape with diedThisTurn := true }
+  | .wasSubject (.die who) .turnStart => { who.shape with diedThisTurn := true }
   | .wasSubject _ _ => {}
   | .attacking _ => { attacking := true }
   | .token => { token := true }
@@ -1434,14 +1436,14 @@ end TraditionalCardDefinition
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
 #guard Selector.shape
-  (.wasSubject (.die (.cardType .creature)) .endOfTurn) |>.diedThisTurnCreature
+  (.wasSubject (.die (.cardType .creature)) .turnStart) |>.diedThisTurnCreature
 
 #guard
   (TraditionalCardDefinition.card [
     .ability (
       .static
         (.ifAny
-          (.wasSubject (.die (.cardType .creature)) .endOfTurn)
+          (.wasSubject (.die (.cardType .creature)) .turnStart)
           [.reduceCost .this [.mana [.generic 3]]]))
   ]).toCardDef.costReductionIfCreatureDied == 3
 
