@@ -189,10 +189,14 @@ def toTargeting (s : TargetSelector) : EffectTargeting :=
 
 end TargetSelector
 
-/-- When a continuous effect ends. -/
+/-- When a continuous effect ends, or when a triggered ability fires. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
+  /-- Whenever the selected object attacks, restricted by `filter`. -/
+  | attack : Selector → Filter → Trigger
+  /-- When the selected object enters. -/
+  | enter : Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- A condition that gates a printed ability or clause. -/
@@ -203,14 +207,6 @@ inductive Condition where
   | matches : Selector → Filter → Condition
   /-- The given object has the given subtype. -/
   | hasSubtype : Selector → CardSubtype → Condition
-deriving Repr, Inhabited, BEq
-
-/-- When a triggered ability fires. -/
-inductive When where
-  /-- Whenever the selected object attacks, restricted by `filter`. -/
-  | attack : Selector → Filter → When
-  /-- When the selected object enters. -/
-  | enter : Selector → When
 deriving Repr, Inhabited, BEq
 
 namespace Selector
@@ -232,7 +228,7 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
-  | triggered : When → CardAction → Ability
+  | triggered : Trigger → CardAction → Ability
   | static : Ability → Ability
   | conditional : Condition → Ability → Ability
   | reduceCost : Selector → List Cost → Ability
