@@ -42,10 +42,10 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
           .gainAbility
             (.target
               1
-              (.and [
+              (.intersection [
                 .permanent,
-                .or [.cardType .artifact, .cardType .creature],
-                .controller (.controllerOf .this)]))
+                .union [.cardType .artifact, .cardType .creature],
+                .controlledBy (.controller .this)]))
             (.keyword .hexproof),
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
         .endOfTurn)]
@@ -68,10 +68,10 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
       [.mana [.generic 3, .mono .white]]
       (.continuous
         [.addPowerToughness
-          (.and [
+          (.intersection [
             .permanent,
             .cardType .creature,
-            .controller (.controllerOf .this)])
+            .controlledBy (.controller .this)])
           1 1]
         .endOfTurn))
 ]
@@ -94,7 +94,7 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .type .instant,
     .subtype .adventure,
     .action (
-      .tap (.targets 1 (.range 1 2) (.and [.permanent, .cardType .creature])))]]
+      .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature])))]]
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
@@ -107,12 +107,12 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .ability (
     .static
       [.conditional
-        (.hasTargetIn .this (.and [.permanent, .cardType .creature, .tapped]))
+        (.hasTargetIn .this (.intersection [.permanent, .cardType .creature, .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]]),
   .action (
     .dealDamage
       .this
-      (.target 1 (.and [.permanent, .cardType .creature]))
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
       5)]
 
 def magnificentEndCard : CardDef :=
@@ -130,8 +130,8 @@ def eagleOfTheGreatShelf : TraditionalCardDefinition := .card [
   .ability (.keyword .flying),
   .ability (
     .triggered
-      (.attack .this .any)
-      (.continuous [.addPowerToughness .source 1 1] .endOfTurn))
+      (.attack .this .all)
+      (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn))
 ]
 
 def eagleOfTheGreatShelfCard : CardDef :=
@@ -147,19 +147,19 @@ def vowToErebor : TraditionalCardDefinition := .card [
       .untap
         (.target
           1
-          (.and [
+          (.intersection [
             .permanent,
             .cardType .creature,
-            .controller (.controllerOf .this)])),
+            .controlledBy (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
       .forEach 1 (.conditional
         (.hasSubtype (.var 1) .dwarf)
         (.optional
           (.attach (.selected (.range 1 1)
-            (.and [
+            (.intersection [
               .permanent,
               .subtype .equipment,
-              .controller (.controllerOf .this)]))
+              .controlledBy (.controller .this)]))
             (.var 1))))])]
 
 def vowToEreborCard : CardDef :=
@@ -175,13 +175,13 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
   .subtype .rogue,
   .power 2,
   .toughness 1,
-  .ability (.triggered (.enter .this) (.draw (.controllerOf .this) 1)),
+  .ability (.triggered (.enter .this) (.draw (.controller .this) 1)),
   .alternative [
     .name "Take a Glance",
     .manaCost [.mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .action (.scry (.controllerOf .this) 2)]
+    .action (.scry (.controller .this) 2)]
 ]
 
 def bilboBagginsBurglarCard : CardDef :=

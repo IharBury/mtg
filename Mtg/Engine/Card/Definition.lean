@@ -38,10 +38,10 @@ deriving Repr, Inhabited, BEq
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
   | this
-  /-- The source of this ability (CR 113.7). -/
-  | source
+  /-- The source of the given object (CR 113.7). -/
+  | source : Selector → Selector
   /-- The controller of the given object (CR 109.5). -/
-  | controllerOf : Selector → Selector
+  | controller : Selector → Selector
   /-- A numbered target matching `among` (CR 115.1). Later effects may
   refer to it with `targetReference`. -/
   | target : Nat → Selector → Selector
@@ -54,14 +54,14 @@ inductive Selector where
   /-- Choose objects from `among` at resolution, with a count range
   (not targeting; CR 608.2d). -/
   | selected : Range → Selector → Selector
-  | and : List Selector → Selector
-  | any
+  | intersection : List Selector → Selector
+  | all
   | cardType : CardType → Selector
-  | or : List Selector → Selector
+  | union : List Selector → Selector
   /-- A permanent (CR 110.1). -/
   | permanent
   /-- Objects whose controller is the given player. -/
-  | controller : Selector → Selector
+  | controlledBy : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
   | tapped
   /-- Printed subtype (CR 205.3). -/
@@ -100,8 +100,8 @@ def eqTypes (s : TypeSet) (ts : List CardType) : Bool :=
 
 end TypeSet
 
-/-- Flattened constraints implied by a filter, so `.and` / `.or` lists
-compile without depending on conjunct order. -/
+/-- Flattened constraints implied by a selector, so `.intersection` / `.union`
+lists compile without depending on conjunct order. -/
 structure Shape where
   sameController : Bool := false
   mustBePermanent : Bool := false
@@ -140,17 +140,17 @@ def dwarf (s : Shape) : Bool :=
 end Shape
 
 def shape : Selector → Shape
-  | .any => {}
+  | .all => {}
   | .permanent => { mustBePermanent := true }
-  | .controller (.controllerOf .this) => { sameController := true }
-  | .controller _ => {}
+  | .controlledBy (.controller .this) => { sameController := true }
+  | .controlledBy _ => {}
   | .tapped => { tapped := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
-  | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
-  | .or [] => {}
-  | .or (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
-  | .this | .source | .controllerOf _ | .target _ _ | .targets _ _ _
+  | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
+  | .union [] => {}
+  | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
+  | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
   | .targetReference _ | .var _ | .selected _ _ => {}
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
@@ -171,7 +171,7 @@ end Selector
 structure TargetSelector where
   minimumTargets : Nat := 1
   maximumTargets : Nat := 1
-  filter : Selector := .any
+  filter : Selector := .all
 deriving Repr, Inhabited, BEq
 
 namespace TargetSelector
@@ -279,7 +279,7 @@ def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector
 def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .this | .source | .controllerOf _ | .target _ _ | .targets _ _ _
+    | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
     | .targetReference _ | .var _ | .selected _ _ => none
     | s => some s
 
@@ -422,7 +422,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | _ => none
 
 /-- Compile `continuous` effects, reading targeting from `target`
-and mass application from `filtered`. -/
+and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverUntapPumpAttach? action with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
@@ -464,11 +464,11 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
-  | .triggered (.attack .this .any) (.continuous effects _duration) =>
+  | .triggered (.attack .this .all) (.continuous effects _duration) =>
     match ContinuousEffect.addedPT? effects with
     | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
     | _ => none
-  | .triggered (.enter .this) (.draw (.controllerOf .this) n) =>
+  | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
   | _ => none
 
@@ -635,26 +635,26 @@ end TraditionalCardDefinition
         .gainAbility
           (.target
             1
-            (.and [
+            (.intersection [
               .permanent,
-              .or [.cardType .artifact, .cardType .creature],
-              .controller (.controllerOf .this)]))
+              .union [.cardType .artifact, .cardType .creature],
+              .controlledBy (.controller .this)]))
           (.keyword .hexproof),
         .gainAbility (.targetReference 1) (.keyword .indestructible)]
       .endOfTurn
   action.toEffect == Effect.grantHexproofIndestructible
 
 #guard Selector.toTargetKind
-  (.and [
+  (.intersection [
     .permanent,
-    .or [.cardType .artifact, .cardType .creature],
-    .controller (.controllerOf .this)])
+    .union [.cardType .artifact, .cardType .creature],
+    .controlledBy (.controller .this)])
   == .artifactOrCreatureYouControl
 
 #guard Selector.toTargetKind
-  (.and [
-    .controller (.controllerOf .this),
-    .or [.cardType .creature, .cardType .artifact],
+  (.intersection [
+    .controlledBy (.controller .this),
+    .union [.cardType .creature, .cardType .artifact],
     .permanent])
   == .artifactOrCreatureYouControl
 
@@ -663,10 +663,10 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .continuous
       [.addPowerToughness
-        (.and [
+        (.intersection [
           .permanent,
           .cardType .creature,
-          .controller (.controllerOf .this)])
+          .controlledBy (.controller .this)])
         1 1]
       .endOfTurn
   action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
@@ -677,10 +677,10 @@ end TraditionalCardDefinition
       [.mana [.generic 3, .mono .white]]
       (.continuous
         [.addPowerToughness
-          (.and [
+          (.intersection [
             .permanent,
             .cardType .creature,
-            .controller (.controllerOf .this)])
+            .controlledBy (.controller .this)])
           1 1]
         .endOfTurn)).toActivatedAbility? with
   | some ab =>
@@ -691,7 +691,7 @@ end TraditionalCardDefinition
 -- Gaze in Wonder: tap one or two target creatures.
 #guard
   let action : CardAction :=
-    .tap (.targets 1 (.range 1 2) (.and [.permanent, .cardType .creature]))
+    .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))
   action.toEffect == Effect.tapOneOrTwoCreatures
 
 -- Magnificent End: 5 damage to target creature; {3} less if that target is tapped.
@@ -699,12 +699,12 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .dealDamage
       .this
-      (.target 1 (.and [.permanent, .cardType .creature]))
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
       5
   action.toEffect == Effect.dealDamageToCreature 5
 
 #guard Selector.shape
-  (.and [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
+  (.intersection [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
 
 #guard
   (TraditionalCardDefinition.card [
@@ -715,12 +715,12 @@ end TraditionalCardDefinition
       .static
         [.conditional
           (.hasTargetIn .this
-            (.and [.permanent, .cardType .creature, .tapped]))
+            (.intersection [.permanent, .cardType .creature, .tapped]))
           [.reduceCost .this [.mana [.generic 3]]]]),
     .action (
       .dealDamage
         .this
-        (.target 1 (.and [.permanent, .cardType .creature]))
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
         5)
   ]).toCardDef.costReductionIfTargetTapped == 3
 
@@ -728,17 +728,17 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.attack .this .any)
-      (.continuous [.addPowerToughness .source 1 1] .endOfTurn)).toTriggeredAbility? with
+      (.attack .this .all)
+      (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackPumpForEachOtherCreature
   | none => false
 
 -- Vow to Erebor: untap target creature you control, +2/+2, maybe attach if Dwarf.
 #guard Selector.toTargetKind
-  (.and [
+  (.intersection [
     .permanent,
     .cardType .creature,
-    .controller (.controllerOf .this)])
+    .controlledBy (.controller .this)])
   == .creatureYouControl
 
 #guard Selector.shape (.subtype .dwarf) |>.dwarf
@@ -749,19 +749,19 @@ end TraditionalCardDefinition
       .untap
         (.target
           1
-          (.and [
+          (.intersection [
             .permanent,
             .cardType .creature,
-            .controller (.controllerOf .this)])),
+            .controlledBy (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
       .forEach 1 (.conditional
         (.hasSubtype (.var 1) .dwarf)
         (.optional
           (.attach (.selected (.range 1 1)
-            (.and [
+            (.intersection [
               .permanent,
               .subtype .equipment,
-              .controller (.controllerOf .this)]))
+              .controlledBy (.controller .this)]))
             (.var 1))))]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
@@ -770,12 +770,12 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.draw (.controllerOf .this) 1)).toTriggeredAbility? with
+      (.draw (.controller .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterDraw 1
   | none => false
 
 #guard
-  let action : CardAction := .scry (.controllerOf .this) 2
+  let action : CardAction := .scry (.controller .this) 2
   action.toEffect == Effect.scry 2
 
 end Mtg.Engine
