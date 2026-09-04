@@ -37,18 +37,18 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
     .type .instant,
     .subtype .adventure,
     .action (
-      .targeted
-        ({filter := .and [
-            .permanent,
-            .or [.cardType .artifact, .cardType .creature],
-            .sameController
-          ]})
-        (.continuous
-          [
-            .gainAbility (.keyword .hexproof),
-            .gainAbility (.keyword .indestructible)]
-          .endOfTurn))
-  ]
+      .continuous
+        [
+          .gainAbility
+            (.singleTarget
+              1
+              (.and [
+                .permanent,
+                .or [.cardType .artifact, .cardType .creature],
+                .controller (.controllerOf .this)]))
+            (.keyword .hexproof),
+          .gainAbility (.targetReference 1) (.keyword .indestructible)]
+        .endOfTurn)]
 ]
 
 def bofurReliableGuardianCard : CardDef :=
@@ -65,10 +65,16 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
   .toughness 2,
   .ability (
     .activated
-      ([.mana [.generic 3, .mono .white]])
-      (.filtered
-        (.and [.permanent, .cardType .creature, .sameController])
-        (.continuous [.addPowerToughness 1 1] .endOfTurn)))
+      [.mana [.generic 3, .mono .white]]
+      (.continuous
+        [.addPowerToughness
+          (.filtered
+            (.and [
+              .permanent,
+              .cardType .creature,
+              .controller (.controllerOf .this)]))
+          1 1]
+        .endOfTurn))
 ]
 
 def dwarvenProvisionerCard : CardDef :=

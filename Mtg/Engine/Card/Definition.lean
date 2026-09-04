@@ -28,7 +28,19 @@ def manaCost : List Cost → ManaCost
 
 end Cost
 
-/-- Whom or what a spell or ability may target (CR 115.1). -/
+/-- An object mentioned relative to the spell or ability being defined. -/
+inductive ObjectRef where
+  /-- This spell or ability (CR 113.7). -/
+  | this
+deriving Repr, Inhabited, BEq
+
+/-- A player identified relative to the spell or ability (CR 109.5). -/
+inductive PlayerRef where
+  /-- The controller of the given object. -/
+  | controllerOf : ObjectRef → PlayerRef
+deriving Repr, Inhabited, BEq
+
+/-- Whom or what a spell or ability may target or affect (CR 115.1). -/
 inductive Filter where
   | and : List Filter → Filter
   | any
@@ -36,8 +48,8 @@ inductive Filter where
   | or : List Filter → Filter
   /-- A permanent (CR 110.1). -/
   | permanent
-  /-- Permanent the spell’s controller controls. -/
-  | sameController
+  /-- Objects whose controller is the given player. -/
+  | controller : PlayerRef → Filter
 deriving Repr, Inhabited, BEq
 
 namespace Filter
@@ -97,7 +109,7 @@ end Shape
 def shape : Filter → Shape
   | .any => {}
   | .permanent => { mustBePermanent := true }
-  | .sameController => { sameController := true }
+  | .controller (.controllerOf .this) => { sameController := true }
   | .cardType t => { types := .oneOf [t] }
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
@@ -137,6 +149,17 @@ inductive Trigger where
   | endOfTurn
 deriving Repr, Inhabited, BEq
 
+/-- Whom a continuous effect applies to. -/
+inductive Affected where
+  /-- A numbered target matching `filter` (CR 115.1). Later effects may
+  refer to it with `targetReference`. -/
+  | singleTarget : Nat → Filter → Affected
+  /-- The target previously declared with `singleTarget` of this number. -/
+  | targetReference : Nat → Affected
+  /-- Every object matching `filter` (not targeted). -/
+  | filtered : Filter → Affected
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -149,29 +172,45 @@ deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
 inductive ContinuousEffect where
-  | gainAbility : Ability → ContinuousEffect
-  | addPowerToughness : Int → Int → ContinuousEffect
+  | gainAbility : Affected → Ability → ContinuousEffect
+  | addPowerToughness : Affected → Int → Int → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
 this tree; player input uses `Action` in `Game`. -/
 inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
-  | targeted : TargetSelector → CardAction → CardAction
-  | filtered : Filter → CardAction → CardAction
 deriving Repr, Inhabited, BEq
 end
 
 namespace ContinuousEffect
 
+def affected : ContinuousEffect → Affected
+  | .gainAbility who _ => who
+  | .addPowerToughness who _ _ => who
+
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
   | [] => some (0, 0)
-  | .addPowerToughness p t :: rest =>
+  | .addPowerToughness _ p t :: rest =>
     match addedPT? rest with
     | some (p', t') => some (p + p', t + t')
     | none => none
-  | .gainAbility _ :: _ => none
+  | .gainAbility _ _ :: _ => none
+
+/-- First declared `singleTarget`, if any. -/
+def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
+  effects.findSome? fun e =>
+    match e.affected with
+    | .singleTarget _n f => some { filter := f }
+    | _ => none
+
+/-- First `filtered` set, if any. -/
+def massFilter? (effects : List ContinuousEffect) : Option Filter :=
+  effects.findSome? fun e =>
+    match e.affected with
+    | .filtered f => some f
+    | _ => none
 
 end ContinuousEffect
 
@@ -180,7 +219,7 @@ namespace CardAction
 /-- Until-end-of-turn keyword grants implied by `continuous` effects. -/
 def grantedKeywords : List ContinuousEffect → Keywords
   | [] => Keywords.none
-  | .gainAbility (.keyword k) :: rest =>
+  | .gainAbility _ (.keyword k) :: rest =>
     k.toKeywords.merge (grantedKeywords rest)
   | _ :: rest => grantedKeywords rest
 
@@ -219,55 +258,42 @@ def continuousEffect (sel : Option TargetSelector) (effects : List ContinuousEff
 
 /-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
 is the shape Dwarven Provisioner prints. -/
-def filteredEffect (f : Filter) (inner : CardAction) (asAbility : Bool) : Effect :=
-  match inner with
-  | .continuous effects _duration =>
-    match ContinuousEffect.addedPT? effects, f.shape with
-    | some (p, t), s =>
-      if s.sameController && s.types.eqTypes [.creature] then
-        creaturesYouControlPumpEffect p t asAbility
-      else
-        continuousEffect none effects asAbility
-    | none, _ =>
+def filteredEffect (f : Filter) (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+  match ContinuousEffect.addedPT? effects, f.shape with
+  | some (p, t), s =>
+    if s.sameController && s.types.eqTypes [.creature] then
+      creaturesYouControlPumpEffect p t asAbility
+    else
       continuousEffect none effects asAbility
-  | .targeted sel inner =>
-    let e := continuousEffect (some sel) (match inner with
-      | .continuous effects _ => effects
-      | _ => []) asAbility
-    { e with targeting := sel.toTargeting }
-  | .filtered f' inner' => filteredEffect f' inner' asAbility
+  | none, _ =>
+    continuousEffect none effects asAbility
+
+/-- Compile `continuous` effects, reading targeting from `singleTarget`
+and mass application from `filtered`. -/
+def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match action with
+  | .continuous effects _duration =>
+    match ContinuousEffect.targetingSelector? effects with
+    | some sel =>
+      let e := continuousEffect (some sel) effects asAbility
+      if asAbility then e
+      else
+        { e with
+          maxTargets :=
+            if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
+          allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
+    | none =>
+      match ContinuousEffect.massFilter? effects with
+      | some f => filteredEffect f effects asAbility
+      | none => continuousEffect none effects asAbility
 
 /-- Compile to a spell-shaped `Effect`. -/
-def toEffect : CardAction → Effect
-  | .continuous effects _duration =>
-    continuousEffect none effects false
-  | .targeted sel (.continuous effects _duration) =>
-    let e := continuousEffect (some sel) effects false
-    { e with
-      maxTargets :=
-        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
-  | .targeted sel inner =>
-    let e := inner.toEffect
-    { e with
-      targeting := sel.toTargeting
-      maxTargets :=
-        if sel.maximumTargets ≤ 1 then e.maxTargets else sel.maximumTargets
-      allowsZeroTargets := e.allowsZeroTargets || sel.minimumTargets == 0 }
-  | .filtered f inner =>
-    filteredEffect f inner false
+def toEffect (action : CardAction) : Effect :=
+  compile action false
 
 /-- Compile to an activated-ability `Effect`. -/
-def toAbilityEffect : CardAction → Effect
-  | .continuous effects _duration =>
-    continuousEffect none effects true
-  | .targeted sel (.continuous effects _duration) =>
-    continuousEffect (some sel) effects true
-  | .targeted sel inner =>
-    let e := inner.toAbilityEffect
-    { e with targeting := sel.toTargeting }
-  | .filtered f inner =>
-    filteredEffect f inner true
+def toAbilityEffect (action : CardAction) : Effect :=
+  compile action true
 
 end CardAction
 
@@ -410,29 +436,30 @@ end TraditionalCardDefinition
 -- and indestructible until end of turn.
 #guard
   let action : CardAction :=
-    .targeted
-      ({filter := .and [
-          .permanent,
-          .or [.cardType .artifact, .cardType .creature],
-          .sameController
-        ]})
-      (.continuous
-        [
-          .gainAbility (.keyword .hexproof),
-          .gainAbility (.keyword .indestructible)]
-        .endOfTurn)
+    .continuous
+      [
+        .gainAbility
+          (.singleTarget
+            1
+            (.and [
+              .permanent,
+              .or [.cardType .artifact, .cardType .creature],
+              .controller (.controllerOf .this)]))
+          (.keyword .hexproof),
+        .gainAbility (.targetReference 1) (.keyword .indestructible)]
+      .endOfTurn
   action.toEffect == Effect.grantHexproofIndestructible
 
 #guard Filter.toTargetKind
   (.and [
     .permanent,
     .or [.cardType .artifact, .cardType .creature],
-    .sameController])
+    .controller (.controllerOf .this)])
   == .artifactOrCreatureYouControl
 
 #guard Filter.toTargetKind
   (.and [
-    .sameController,
+    .controller (.controllerOf .this),
     .or [.cardType .creature, .cardType .artifact],
     .permanent])
   == .artifactOrCreatureYouControl
@@ -440,18 +467,30 @@ end TraditionalCardDefinition
 -- Dwarven Provisioner: {3}{W}: creatures you control get +1/+1 until end of turn.
 #guard
   let action : CardAction :=
-    .filtered
-      (.and [.permanent, .cardType .creature, .sameController])
-      (.continuous [.addPowerToughness 1 1] .endOfTurn)
+    .continuous
+      [.addPowerToughness
+        (.filtered
+          (.and [
+            .permanent,
+            .cardType .creature,
+            .controller (.controllerOf .this)]))
+        1 1]
+      .endOfTurn
   action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
 
 #guard
   match
     (Ability.activated
       [.mana [.generic 3, .mono .white]]
-      (.filtered
-        (.and [.permanent, .cardType .creature, .sameController])
-        (.continuous [.addPowerToughness 1 1] .endOfTurn))).toActivatedAbility? with
+      (.continuous
+        [.addPowerToughness
+          (.filtered
+            (.and [
+              .permanent,
+              .cardType .creature,
+              .controller (.controllerOf .this)]))
+          1 1]
+        .endOfTurn)).toActivatedAbility? with
   | some ab =>
     ab.cost.mana == ManaCost.ofGenericAndColor 3 .white &&
       ab.effect == Effect.abilityCreaturesYouControlGet 1 1
