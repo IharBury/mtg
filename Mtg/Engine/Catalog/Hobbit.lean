@@ -1861,6 +1861,10 @@ def hobbitCards : Array CardDef := #[
   | some adv => adv.spellEffect == some (Effect.scry 2)
   | none => false
 #guard lakeshoreApothecaryCard.matchesOracleText
+#guard confusticateAndBebotherCard.matchesOracleText
+#guard ravenhillFlockCard.matchesOracleText
+#guard thranduilsDecreeCard.matchesOracleText
+#guard bilboLuckwearerCard.matchesOracleText
 #guard lakeshoreApothecaryCard.keywords.vigilance
 #guard lakeshoreApothecaryCard.triggeredAbilities ==
   #[TriggeredAbility.onDrawSecondPlusOne]
