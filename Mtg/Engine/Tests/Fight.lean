@@ -175,7 +175,7 @@ def fireOfOrthancReadyToBlock : Game :=
 /-- A flying creature can still block after Fire of Orthanc. -/
 def fireOfOrthancFlyerReadyToBlock : Game :=
   let g := addPermanent started grayOgre ⟨0⟩ ⟨0⟩
-  let g := addPermanent g velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent g velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
   let g := g.applyEffect ⟨0⟩ (Effect.destroyArtifactOrLandNonflyersCantBlock)
     #[Target.permanent (namedPermanent g "Forest").id]

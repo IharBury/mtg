@@ -23,20 +23,20 @@ def hobbitWhite : Array CardDef :=
   #[bofurReliableGuardianCard] ++
   copies 16 plains ++
   copies 2 dwarvenProvisionerCard ++
-  #[velvetwingButterflies] ++
-  copies 2 magnificentEnd ++
+  #[velvetwingButterfliesCard] ++
+  copies 2 magnificentEndCard ++
   #[mentorOfTheMeek, fiendHunter] ++
   copies 2 errandRiderOfGondor ++
   #[landrovalHorizonWitness, roguesPassage] ++
   copies 2 soldierOfTheGreyHost ++
-  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelf,
-    banishingLight, dawnOfANewAge, vowToErebor] ++
+  #[eaglesOfTheNorth, dunedainBlade, fogOnTheBarrowDowns, eagleOfTheGreatShelfCard,
+    banishingLight, dawnOfANewAge, vowToEreborCard] ++
   copies 2 westfoldRider ++
   #[esquireOfTheKing]
 
 /-- Blue Welcome Deck (40 cards). -/
 def hobbitBlue : Array CardDef :=
-  copies 2 bilboBagginsBurglar ++
+  copies 2 bilboBagginsBurglarCard ++
   copies 16 island ++
   #[pelargirSurvivor] ++
   copies 2 lakeshoreApothecary ++

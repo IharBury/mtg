@@ -329,7 +329,7 @@ def bilbosDeadlySliceSetup : Game :=
     (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
       (Target.permanent (namedPermanent g "Grizzly Bears").id)
 #guard
-  let g := addPermanent afterDraw velvetwingButterflies ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw velvetwingButterfliesCard ⟨1⟩ ⟨1⟩
   let g := withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
   (g.legalTargets ⟨0⟩ (Effect.destroyCreature)).contains
     (Target.permanent (namedPermanent g "Velvetwing Butterflies").id)
@@ -441,12 +441,12 @@ def magnificentEndSetup (tapped : Bool) : Game :=
       g.setObject { o with status := { o.status with tapped := true } }
     else g
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g magnificentEnd ⟨0⟩) ⟨0⟩ 5
+  withWhiteMana (addToHand g magnificentEndCard ⟨0⟩) ⟨0⟩ 5
 
 def magnificentEndFull : Game := magnificentEndSetup false
 def magnificentEndCheap : Game := magnificentEndSetup true
 
-#guard magnificentEnd.costReductionIfTargetTapped == 3
+#guard magnificentEndCard.costReductionIfTargetTapped == 3
 #guard
   match magnificentEndFull.apply ⟨0⟩
       (.cast (handCardNamed magnificentEndFull ⟨0⟩ "Magnificent End").id) with
@@ -580,11 +580,11 @@ def gazeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withWhiteMana (addToHand g velvetwingButterflies ⟨0⟩) ⟨0⟩ 2
+  withWhiteMana (addToHand g velvetwingButterfliesCard ⟨0⟩) ⟨0⟩ 2
 
 #guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
 #guard
-  match velvetwingButterflies.adventure with
+  match velvetwingButterfliesCard.adventure with
   | some adv => adv.spellEffect == some (Effect.tapOneOrTwoCreatures)
   | none => false
 
