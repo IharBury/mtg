@@ -26,7 +26,7 @@ inductive SetPredicate where
   | shareCardType
 deriving Repr, Inhabited, BEq
 
-/-- Where an `ordinal` count starts. -/
+/-- Where an `activatedTimes` count starts. -/
 inductive CountFrom where
   /-- From the start of the turn. -/
   | turnStart
@@ -118,8 +118,8 @@ inductive Trigger where
   selector. -/
   | draw : Selector → Selector → Trigger
   /-- The nth occurrence of the inner trigger, counted from the given
-  point. -/
-  | ordinal : Nat → CountFrom → Trigger → Trigger
+  window. -/
+  | ordinal : Nat → Trigger → Trigger → Trigger
   /-- Whenever the selected object deals combat damage to objects matching
   the given selector. -/
   | combatDamage : Selector → Selector → Trigger
