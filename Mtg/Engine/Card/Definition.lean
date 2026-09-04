@@ -618,6 +618,8 @@ instance : Coe TraditionalCardDefinition CardDef where
 
 end TraditionalCardDefinition
 
+#guard Selector.among? (.allTargets .this) == none
+
 -- Concerted Care: target artifact or creature you control gains hexproof
 -- and indestructible until end of turn.
 #guard
