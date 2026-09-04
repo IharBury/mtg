@@ -355,9 +355,9 @@ inductive Trigger where
   | block : Selector → Selector → Trigger
   /-- When the selected object or objects die (CR 700.4). -/
   | die : Selector → Trigger
-  /-- When objects matching the first selector die at the same time as
-  objects matching the others (CR 700.4 / 603.2d). -/
-  | dieSimultaneously : Selector → List Selector → Trigger
+  /-- When objects matching the selector die at the same time, with
+  set-wide predicates (CR 700.4 / 603.2d). -/
+  | dieSimultaneously : Selector → List SetPredicate → Trigger
 deriving Repr, Inhabited, BEq
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
