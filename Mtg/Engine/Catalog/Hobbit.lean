@@ -220,12 +220,11 @@ def confusticateAndBebother : TraditionalCardDefinition := .card [
   .manaCost [.generic 2, .mono .blue],
   .type .instant,
   .action (
-    .choose [
-      .counterUnless (.target 1 .spell) [.mana [.generic 4]],
+    .chooseMode [
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]] (.counter (.target 1 .spell)),
       .sequence [
         .draw (.controller .this) 2,
-        .discard (.controller .this) 1]])
-]
+        .discard (.controller .this) 1]])]
 
 def confusticateAndBebotherCard : CardDef :=
   confusticateAndBebother.toCardDef

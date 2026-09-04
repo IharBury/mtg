@@ -274,12 +274,12 @@ inductive CardAction where
   | ifAny : Selector → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
-  /-- Choose one of the given actions (CR 700.2). -/
-  | choose : List CardAction → CardAction
+  /-- Choose one of the given modes (CR 700.2). -/
+  | chooseMode : List CardAction → CardAction
   /-- Counter the selected spell (CR 701.5). -/
   | counter : Selector → CardAction
-  /-- Counter the selected spell unless its controller pays the cost. -/
-  | counterUnless : Selector → List Cost → CardAction
+  /-- The given player may pay the cost to prevent the action. -/
+  | preventable : Selector → List Cost → CardAction → CardAction
   /-- The selected player discards that many cards. -/
   | discard : Selector → Nat → CardAction
   /-- Put that many counters of the given kind on the selected object. -/
@@ -507,11 +507,12 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
         | .ifAny _ [] => continuousEffect none [] asAbility
         | .optional inner => compile inner asAbility
         | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
-        | .choose (a :: _) => compile a asAbility
-        | .choose [] => continuousEffect none [] asAbility
+        | .chooseMode (a :: _) => compile a asAbility
+        | .chooseMode [] => continuousEffect none [] asAbility
         | .counter _ => Effect.counterSpell
-        | .counterUnless _ costs =>
+        | .preventable _ costs (.counter _) =>
           Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
+        | .preventable _ _ inner => compile inner asAbility
         | .discard _ n => Effect.drawThenDiscard n
         | .putCounter _ _ _ => continuousEffect none [] asAbility
         | .exile _ => continuousEffect none [] asAbility
@@ -520,7 +521,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
-  | .choose as => some ((as.map fun a => compile a false).toArray)
+  | .chooseMode as => some ((as.map fun a => compile a false).toArray)
   | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -897,8 +898,9 @@ end TraditionalCardDefinition
 -- Confusticate and Bebother: choose counter-unless or loot.
 #guard
   let action : CardAction :=
-    .choose [
-      .counterUnless (.target 1 .spell) [.mana [.generic 4]],
+    .chooseMode [
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
+        (.counter (.target 1 .spell)),
       .sequence [
         .draw (.controller .this) 2,
         .discard (.controller .this) 1]]
