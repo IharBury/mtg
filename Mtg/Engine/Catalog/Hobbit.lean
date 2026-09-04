@@ -106,13 +106,13 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      [.ifAny
+      (.ifAny
         (.intersection [
           .allTargets .this,
           .permanent,
           .cardType .creature,
           .tapped])
-        [.reduceCost .this [.mana [.generic 3]]]]),
+        [.reduceCost .this [.mana [.generic 3]]])),
   .actions [
     .dealDamage
       .this
@@ -274,7 +274,7 @@ def bilboLuckwearer : TraditionalCardDefinition := .card [
   .subtype .rogue,
   .power 1,
   .toughness 1,
-  .ability (.static [.forbid (.block .any .this)]),
+  .ability (.static (.forbid (.block .any .this))),
   .ability (
     .triggered
       (.combatDamage .this .player)
@@ -304,14 +304,14 @@ def uneasyPartings : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      [.ifAny
+      (.ifAny
         (.intersection [
           .allTargets .this,
           .permanent,
           .cardType .creature,
           .attacking .all,
           .not .token])
-        [.reduceCost .this [.mana [.generic 1]]]]),
+        [.reduceCost .this [.mana [.generic 1]]])),
   .actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
     [.putOnTopOfLibrary (.target 1 (.intersection [.permanent, .cardType .creature])),
@@ -372,13 +372,14 @@ def stirUpTrouble : TraditionalCardDefinition := .card [
   .name "Stir Up Trouble",
   .manaCost [.mono .black],
   .type .sorcery,
-  .additionalCost
+  .ability (.static (
+  .additionalCost .this
     [.or [
       .sacrifice
         (.intersection [
           .permanent,
           .union [.cardType .artifact, .cardType .creature]]),
-      .mana [.generic 4]]],
+      .mana [.generic 4]]])),
   .actions [
     .destroy
       (.target 1 (.intersection [.permanent, .cardType .creature]))]

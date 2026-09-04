@@ -375,7 +375,7 @@ inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
   | triggered : Trigger → CardAction → Ability
-  | static : List ContinuousEffect → Ability
+  | static : ContinuousEffect → Ability
   | reduceCost : Selector → List Cost → Ability
   /-- Restrict how often or when the inner ability may be used. -/
   | restrict : ActivationRestriction → Ability → Ability
@@ -389,6 +389,8 @@ inductive ContinuousEffect where
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
+  /-- An additional cost to cast the selected spell (CR 601.2b). -/
+  | additionalCost : Selector → List Cost → ContinuousEffect
   /-- Replace the trigger with the given actions (CR 614). -/
   | replace : Trigger → List CardAction → ContinuousEffect
   /-- The selected trigger is forbidden (CR 509 / 614). -/
@@ -450,6 +452,7 @@ def selector : ContinuousEffect → Selector
   | .ifAny _ (inner :: _) => selector inner
   | .ifAny _ [] => .this
   | .reduceCost who _ => who
+  | .additionalCost who _ => who
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
@@ -464,6 +467,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainAbility _ _ :: _ => none
   | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
+  | .additionalCost _ _ :: _ => none
   | .replace _ _ :: _ => none
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
@@ -771,8 +775,6 @@ inductive CardPart where
   | alternative : List CardPart → CardPart
   /-- The spelled-out actions this part performs, in order. -/
   | actions : List CardAction → CardPart
-  /-- An additional cost to cast this spell (CR 601.2b). -/
-  | additionalCost : List Cost → CardPart
 deriving Repr, Inhabited, BEq
 
 /-- A traditional (non-token, non-DFC-only) printed card. -/
@@ -833,6 +835,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
+  | .additionalCost _ cs =>
+    { b with
+      additionalCostSacrificeArtifactOrCreature :=
+        b.additionalCostSacrificeArtifactOrCreature ||
+          Cost.sacrificesArtifactOrCreature cs
+      additionalCostOrPayGeneric :=
+        b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
@@ -852,7 +861,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
-  | .static effects => effects.foldl applyContinuousEffect b
+  | .static e => applyContinuousEffect b e
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
@@ -874,13 +883,6 @@ def apply (b : CardFace) : CardPart → CardFace
         match as with
         | [a] => some a
         | as => some (.sequence as) }
-  | .additionalCost cs =>
-    { b with
-      additionalCostSacrificeArtifactOrCreature :=
-        b.additionalCostSacrificeArtifactOrCreature ||
-          Cost.sacrificesArtifactOrCreature cs
-      additionalCostOrPayGeneric :=
-        b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
@@ -1051,13 +1053,13 @@ end TraditionalCardDefinition
     .type .instant,
     .ability (
       .static
-        [.ifAny
+        (.ifAny
           (.intersection [
             .allTargets .this,
             .permanent,
             .cardType .creature,
             .tapped])
-          [.reduceCost .this [.mana [.generic 3]]]]),
+          [.reduceCost .this [.mana [.generic 3]]])),
     .actions [
       .dealDamage
         .this
@@ -1181,7 +1183,7 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static [.forbid (.block .any .this)])
+    .ability (.static (.forbid (.block .any .this)))
   ]).toCardDef.keywords.cantBeBlocked
 
 #guard
@@ -1216,14 +1218,14 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (
       .static
-        [.ifAny
+        (.ifAny
           (.intersection [
             .allTargets .this,
             .permanent,
             .cardType .creature,
             .attacking .all,
             .not .token])
-          [.reduceCost .this [.mana [.generic 1]]]]),
+          [.reduceCost .this [.mana [.generic 1]]])),
     .actions [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
         [.putOnTopOfLibrary
@@ -1284,26 +1286,28 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .additionalCost
-      [.or [
-        .sacrifice
-          (.intersection [
-            .permanent,
-            .union [.cardType .artifact, .cardType .creature]]),
-        .mana [.generic 4]]],
+    .ability (.static (
+      .additionalCost .this
+        [.or [
+          .sacrifice
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]]),
+          .mana [.generic 4]]])),
     .actions [
       .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
   ]).toCardDef.additionalCostSacrificeArtifactOrCreature
 
 #guard
   (TraditionalCardDefinition.card [
-    .additionalCost
-      [.or [
-        .sacrifice
-          (.intersection [
-            .permanent,
-            .union [.cardType .artifact, .cardType .creature]]),
-        .mana [.generic 4]]]
+    .ability (.static (
+      .additionalCost .this
+        [.or [
+          .sacrifice
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]]),
+          .mana [.generic 4]]]))
   ]).toCardDef.additionalCostOrPayGeneric == some 4
 
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
