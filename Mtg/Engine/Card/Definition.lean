@@ -45,14 +45,14 @@ inductive Selector where
   /-- A numbered target matching the given selector (CR 115.1). Later
   effects may refer to it with `targetReference`. -/
   | target : Nat → Selector → Selector
-  /-- Numbered targets matching `among`, with a count range. -/
+  /-- Numbered targets matching the given selector, with a count range. -/
   | targets : Nat → Range → Selector → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- The object bound by `forEach` of this number. -/
   | var : Nat → Selector
-  /-- Choose objects from `among` at resolution, with a count range
-  (not targeting; CR 608.2d). -/
+  /-- Choose objects matching the given selector at resolution, with a
+  count range (not targeting; CR 608.2d). -/
   | selected : Range → Selector → Selector
   /-- Every object targeted by anything matching the given selector
   (CR 115.1 / 608.2b). -/
@@ -73,7 +73,7 @@ deriving Repr, Inhabited, BEq
 
 namespace Selector
 
-/-- Card types a filter allows. `any` means the filter does not mention type. -/
+/-- Card types a selector allows. `any` means the selector does not mention type. -/
 inductive TypeSet where
   | any
   | oneOf (ts : List CardType)
