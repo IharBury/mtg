@@ -317,9 +317,6 @@ def orPayGeneric? : List Cost → Option Nat
     | none => orPayGeneric? rest
   | _ :: rest => orPayGeneric? rest
 
-/-- Pay that much life. -/
-def payLife (n : Nat) : Cost := .life n
-
 end Cost
 
 /-- A limit on how often an activated ability may be activated. -/
@@ -1327,7 +1324,7 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.activatedTimes 1 .turnStart
-        [.payLife 2]
+        [.life 2]
         (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)).toActivatedAbility? with
   | some ab =>
     ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
