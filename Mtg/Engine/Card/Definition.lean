@@ -34,6 +34,12 @@ inductive Range where
   | range : Nat → Nat → Range
 deriving Repr, Inhabited, BEq
 
+/-- A constraint on a set of selected objects, not on each object alone. -/
+inductive SetPredicate where
+  /-- The objects share a card type with each other. -/
+  | shareCardType
+deriving Repr, Inhabited, BEq
+
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -49,7 +55,7 @@ inductive Selector where
   | targets : Nat → Range → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range
   and extra constraints that apply to the set as a whole. -/
-  | targetSet : Nat → Range → Selector → List Selector → Selector
+  | targetSet : Nat → Range → Selector → List SetPredicate → Selector
   /-- Objects that do not match the given selector. -/
   | not : Selector → Selector
   /-- The target previously declared with `target` of this number. -/
@@ -80,8 +86,6 @@ inductive Selector where
   | player
   /-- A nonland permanent (CR 110.4). -/
   | nonland
-  /-- Objects that share a card type with each other. -/
-  | shareCardType
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
   /-- The object a replacement effect is replacing. -/
@@ -185,7 +189,6 @@ def shape : Selector → Shape
   | .spell => { isSpell := true }
   | .nonland => { nonland := true }
   | .not s => s.shape.negate
-  | .shareCardType => { shareCardType := true }
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
@@ -194,9 +197,23 @@ def shape : Selector → Shape
   | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
 
+/-- Apply set-wide predicates onto an object-level shape. -/
+def applySetPredicates (s : Shape) : List SetPredicate → Shape
+  | [] => s
+  | .shareCardType :: rest =>
+    applySetPredicates { s with shareCardType := true } rest
+
+/-- Shape used for targeting: unwrap `target` / `targets` / `targetSet`
+and fold in set predicates. -/
+def targetingShape : Selector → Shape
+  | .target _ among => among.shape
+  | .targets _ _ among => among.shape
+  | .targetSet _ _ among preds => applySetPredicates among.shape preds
+  | s => s.shape
+
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
-  let s := f.shape
+  let s := f.targetingShape
   if s.isSpell then .spell
   else if s.nonland && s.shareCardType then .twoNonlandsSharingType
   else if s.nonland then .nonland
@@ -213,7 +230,7 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
 def among? : Selector → Option Selector
   | .target _ among => some among
   | .targets _ _ among => some among
-  | .targetSet _ _ among extras => some (.intersection (among :: extras))
+  | .targetSet _ _ among _ => some among
   | _ => none
 
 /-- Any object. -/
@@ -224,7 +241,7 @@ def land : Selector := .cardType .land
 
 def toTargeting (s : Selector) : EffectTargeting :=
   match s.among? with
-  | some among => .of among.toTargetKind
+  | some _ => .of s.toTargetKind
   | none => .of .none
 
 end Selector
@@ -371,7 +388,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
-    | .allTargets _ | .spell | .player | .shareCardType
+    | .allTargets _ | .spell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
     | s => some s
 
@@ -1019,7 +1036,11 @@ end TraditionalCardDefinition
   action.toEffect == Effect.exchangeControlSharingType
 
 #guard Selector.toTargetKind
-  (.intersection [.permanent, .not .land, .shareCardType])
+  (.targetSet
+    1
+    (.range 2 2)
+    (.intersection [.permanent, .not .land])
+    [.shareCardType])
   == .twoNonlandsSharingType
 
 end Mtg.Engine
