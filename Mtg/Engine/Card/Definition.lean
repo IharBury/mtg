@@ -29,7 +29,12 @@ def manaCost : List Cost → ManaCost
 
 end Cost
 
--- A selector may mention a filter (`.target`, `.filtered`), and a
+/-- How many objects a `.targets` selector may choose. -/
+inductive Range where
+  | range : Nat → Nat → Range
+deriving Repr, Inhabited, BEq
+
+-- A selector may mention a filter (`.target`, `.targets`, `.filtered`), and a
 -- filter may mention a selector (`.controller`).
 mutual
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
@@ -41,12 +46,12 @@ inductive Selector where
   /-- A numbered target matching `filter` (CR 115.1). Later effects may
   refer to it with `targetReference`. -/
   | target : Nat → Filter → Selector
+  /-- Numbered targets matching `filter`, with a count range. -/
+  | targets : Nat → Range → Filter → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- Every object matching `filter` (not targeted). -/
   | filtered : Filter → Selector
-  /-- Up to `n` objects chosen the same way as the inner selector. -/
-  | upTo : Nat → Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability may target or affect (CR 115.1). -/
@@ -204,10 +209,8 @@ namespace Selector
 /-- Targeting implied by a selector, if it announces targets. -/
 def asTargetSelector? : Selector → Option TargetSelector
   | .target _n f => some { filter := f }
-  | .upTo n inner =>
-    match asTargetSelector? inner with
-    | some t => some { t with maximumTargets := n }
-    | none => none
+  | .targets _n (.range lo hi) f =>
+    some { minimumTargets := lo, maximumTargets := hi, filter := f }
   | _ => none
 
 end Selector
@@ -670,9 +673,7 @@ end TraditionalCardDefinition
 -- Gaze in Wonder: tap one or two target creatures.
 #guard
   let action : CardAction :=
-    .tap
-      (.upTo 2
-        (.target 1 (.and [.permanent, .cardType .creature])))
+    .tap (.targets 1 (.range 1 2) (.and [.permanent, .cardType .creature]))
   action.toEffect == Effect.tapOneOrTwoCreatures
 
 -- Magnificent End: 5 damage to target creature; {3} less if that target is tapped.

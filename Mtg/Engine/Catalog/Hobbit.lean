@@ -95,10 +95,7 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .type .instant,
     .subtype .adventure,
     .action (
-      .tap
-        (.upTo 2
-          (.target 1 (.and [.permanent, .cardType .creature]))))]
-]
+      .tap (.targets 1 (.range 1 2) (.and [.permanent, .cardType .creature])))]]
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
