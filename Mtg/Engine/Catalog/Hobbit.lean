@@ -551,14 +551,17 @@ def gnashingOfTeeth : TraditionalCardDefinition := .card [
   .type .sorcery,
   .actions [
     .chooseMode [
-      .continuous
-        [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
-          (-5) (-5),
-          .replace
+      .sequence [
+        .continuous
+          [.replace
             (.putToGraveyard (.targetReference 1))
             [.exile (.replacingObject 1)]]
-        .endOfTurn,
+          .turnStart,
+        .continuous
+          [.addPowerToughness
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            (-5) (-5)]
+          .endOfTurn],
       .continuous
         [.addPowerToughness
           (.intersection [
