@@ -238,7 +238,7 @@ deriving Repr, Inhabited, BEq
 inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
   | addPowerToughness : Selector → Int → Int → ContinuousEffect
-  | conditional : Condition → ContinuousEffect → ContinuousEffect
+  | conditional : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
@@ -264,7 +264,8 @@ namespace ContinuousEffect
 def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .addPowerToughness who _ _ => who
-  | .conditional _ inner => selector inner
+  | .conditional _ (inner :: _) => selector inner
+  | .conditional _ [] => .this
   | .reduceCost who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -523,9 +524,9 @@ namespace CardFace
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness _ _ _ => b
-  | .conditional (.hasTargetIn .this (.filtered f)) inner =>
-    if f.shape.tappedCreature then applyContinuousEffect b inner else b
-  | .conditional _ inner => applyContinuousEffect b inner
+  | .conditional (.hasTargetIn .this (.filtered f)) inners =>
+    if f.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
+  | .conditional _ inners => inners.foldl applyContinuousEffect b
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
@@ -724,7 +725,7 @@ end TraditionalCardDefinition
         [.conditional
           (.hasTargetIn .this
             (.filtered (.and [.permanent, .cardType .creature, .tapped])))
-          (.reduceCost .this [.mana [.generic 3]])]),
+          [.reduceCost .this [.mana [.generic 3]]]]),
     .action (
       .dealDamage
         .this
