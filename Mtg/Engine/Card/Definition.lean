@@ -191,14 +191,6 @@ inductive Trigger where
   | enter : Selector → Trigger
 deriving Repr, Inhabited, BEq
 
-/-- A condition that gates a printed ability or clause. -/
-inductive Condition where
-  /-- `who` has a target among the objects described by `among`. -/
-  | hasTargetIn : Selector → Selector → Condition
-  /-- The given object has the given subtype. -/
-  | hasSubtype : Selector → CardSubtype → Condition
-deriving Repr, Inhabited, BEq
-
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -216,7 +208,6 @@ deriving Repr, Inhabited, BEq
 inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
   | addPowerToughness : Selector → Int → Int → ContinuousEffect
-  | conditional : Condition → List ContinuousEffect → ContinuousEffect
   /-- Apply the given continuous effects only when the selector matches
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
@@ -234,7 +225,6 @@ inductive CardAction where
   | scry : Selector → Nat → CardAction
   | sequence : List CardAction → CardAction
   | forEach : Nat → CardAction → CardAction
-  | conditional : Condition → CardAction → CardAction
   /-- Perform the given actions only when the selector matches anything. -/
   | ifAny : Selector → List CardAction → CardAction
   | optional : CardAction → CardAction
@@ -247,8 +237,6 @@ namespace ContinuousEffect
 def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .addPowerToughness who _ _ => who
-  | .conditional _ (inner :: _) => selector inner
-  | .conditional _ [] => .this
   | .ifAny _ (inner :: _) => selector inner
   | .ifAny _ [] => .this
   | .reduceCost who _ => who
@@ -261,7 +249,6 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | some (p', t') => some (p + p', t + t')
     | none => none
   | .gainAbility _ _ :: _ => none
-  | .conditional _ _ :: _ => none
   | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
 
@@ -436,7 +423,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | .sequence (a :: _) => compile a asAbility
     | .sequence [] => continuousEffect none [] asAbility
     | .forEach _ inner => compile inner asAbility
-    | .conditional _ inner => compile inner asAbility
     | .ifAny _ (a :: _) => compile a asAbility
     | .ifAny _ [] => continuousEffect none [] asAbility
     | .optional inner => compile inner asAbility
@@ -520,9 +506,6 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness _ _ _ => b
   | .ifAny among inners =>
     if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
-  | .conditional (.hasTargetIn .this among) inners =>
-    if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
-  | .conditional _ inners => inners.foldl applyContinuousEffect b
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
