@@ -208,9 +208,8 @@ def lakeshoreApothecary : TraditionalCardDefinition := .card [
   .ability (.keyword .vigilance),
   .ability (
     .triggered
-      (.drawSecond (.controller .this))
-      (.putCounter (.source .this) 1))
-]
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
 
 def lakeshoreApothecaryCard : CardDef :=
   lakeshoreApothecary.toCardDef
@@ -242,8 +241,8 @@ def ravenhillFlock : TraditionalCardDefinition := .card [
   .ability (.keyword .flying),
   .ability (
     .triggered
-      (.draw (.controller .this))
-      (.putCounter (.source .this) 1))
+      (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1))
 ]
 
 def ravenhillFlockCard : CardDef :=

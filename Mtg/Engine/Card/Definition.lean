@@ -204,6 +204,12 @@ def toTargeting (s : Selector) : EffectTargeting :=
 
 end Selector
 
+/-- Where an `ordinal` count starts. -/
+inductive CountFrom where
+  /-- From the start of the turn. -/
+  | turnStart
+deriving Repr, Inhabited, BEq
+
 /-- When a continuous effect ends, or when a triggered ability fires. -/
 inductive Trigger where
   | endOfGame
@@ -213,13 +219,21 @@ inductive Trigger where
   | attack : Selector → Selector → Trigger
   /-- When the selected object enters. -/
   | enter : Selector → Trigger
-  /-- Whenever the selected player draws a card. -/
-  | draw : Selector → Trigger
-  /-- Whenever the selected player draws their second card each turn. -/
-  | drawSecond : Selector → Trigger
+  /-- Whenever the selected player draws a card matching the given
+  selector. -/
+  | draw : Selector → Selector → Trigger
+  /-- The nth occurrence of the inner trigger, counted from the given
+  point. -/
+  | ordinal : Nat → CountFrom → Trigger → Trigger
   /-- Whenever the selected object deals combat damage to objects matching
   the given selector. -/
   | combatDamage : Selector → Selector → Trigger
+deriving Repr, Inhabited, BEq
+
+/-- Kind of counter placed by `putCounter` (CR 122.1). -/
+inductive CounterKind where
+  /-- A +1/+1 counter. -/
+  | plusOnePlusOne
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -268,8 +282,8 @@ inductive CardAction where
   | counterUnless : Selector → List Cost → CardAction
   /-- The selected player discards that many cards. -/
   | discard : Selector → Nat → CardAction
-  /-- Put that many +1/+1 counters on the selected object. -/
-  | putCounter : Selector → Nat → CardAction
+  /-- Put that many counters of the given kind on the selected object. -/
+  | putCounter : Selector → CounterKind → Nat → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
   /-- Cast the selected card without paying its mana cost. -/
@@ -499,7 +513,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
         | .counterUnless _ costs =>
           Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
         | .discard _ n => Effect.drawThenDiscard n
-        | .putCounter _ _ => continuousEffect none [] asAbility
+        | .putCounter _ _ _ => continuousEffect none [] asAbility
         | .exile _ => continuousEffect none [] asAbility
         | .cast _ => continuousEffect none [] asAbility
         | .exchangeControl _ => Effect.exchangeControlSharingType
@@ -538,9 +552,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | _ => none
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
-  | .triggered (.drawSecond (.controller .this)) (.putCounter (.source .this) 1) =>
+  | .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawSecondPlusOne
-  | .triggered (.draw (.controller .this)) (.putCounter (.source .this) 1) =>
+  | .triggered (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawPlusOne
   | .triggered (.combatDamage .this .player)
       (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
@@ -872,8 +889,8 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.drawSecond (.controller .this))
-      (.putCounter (.source .this) 1)).toTriggeredAbility? with
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDrawSecondPlusOne
   | none => false
 
@@ -892,8 +909,8 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.draw (.controller .this))
-      (.putCounter (.source .this) 1)).toTriggeredAbility? with
+      (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDrawPlusOne
   | none => false
 
