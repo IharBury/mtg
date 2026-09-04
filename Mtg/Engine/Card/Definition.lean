@@ -190,8 +190,8 @@ deriving Repr, Inhabited, BEq
 
 /-- A condition that gates a printed ability or clause. -/
 inductive Condition where
-  /-- This spell or ability has a target matching `filter`. -/
-  | hasTarget : Filter → Condition
+  /-- `who` has a target among the objects described by `among`. -/
+  | hasTargetIn : Selector → Selector → Condition
   /-- The given object matches `filter`. -/
   | matches : Selector → Filter → Condition
 deriving Repr, Inhabited, BEq
@@ -224,8 +224,9 @@ inductive Ability where
   | keyword : Keyword → Ability
   | activated : List Cost → CardAction → Ability
   | triggered : When → CardAction → Ability
+  | static : Ability → Ability
   | conditional : Condition → Ability → Ability
-  | reduceCost : List ManaSymbol → Ability
+  | reduceCost : Selector → List Cost → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -240,7 +241,7 @@ inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
   | tap : Selector → CardAction
   | untap : Selector → CardAction
-  | dealDamage : Selector → Nat → CardAction
+  | dealDamage : Selector → Selector → Nat → CardAction
   | draw : Nat → CardAction
   | scry : Nat → CardAction
   | sequence : List CardAction → CardAction
@@ -424,7 +425,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | .continuous effects _duration => compileContinuous effects asAbility
     | .tap s => compileTap s asAbility
     | .untap s => compileUntap s asAbility
-    | .dealDamage s n => compileDamage s n asAbility
+    | .dealDamage _source victim n => compileDamage victim n asAbility
     | .draw n => Effect.draw n
     | .scry n => Effect.scry n
     | .sequence (a :: _) => compile a asAbility
@@ -519,13 +520,14 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
-  | .conditional (.hasTarget f) inner =>
+  | .static inner => applyAbility b inner
+  | .conditional (.hasTargetIn .this (.filtered f)) inner =>
     if f.shape.tappedCreature then applyAbility b inner else b
   | .conditional _ inner => applyAbility b inner
-  | .reduceCost syms =>
+  | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
-        b.costReductionIfTargetTapped + ManaCost.manaValue (syms : ManaCost) }
+        b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -680,12 +682,31 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .dealDamage
+      .this
       (.target 1 (.and [.permanent, .cardType .creature]))
       5
   action.toEffect == Effect.dealDamageToCreature 5
 
 #guard Filter.shape
   (.and [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
+
+#guard
+  (TraditionalCardDefinition.card [
+    .name "Magnificent End",
+    .manaCost [.generic 4, .mono .white],
+    .type .instant,
+    .ability (
+      .static
+        (.conditional
+          (.hasTargetIn .this
+            (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+          (.reduceCost .this [.mana [.generic 3]]))),
+    .action (
+      .dealDamage
+        .this
+        (.target 1 (.and [.permanent, .cardType .creature]))
+        5)
+  ]).toCardDef.costReductionIfTargetTapped == 3
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
 #guard
