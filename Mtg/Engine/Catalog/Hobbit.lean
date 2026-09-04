@@ -154,17 +154,16 @@ def vowToErebor : TraditionalCardDefinition := .card [
             .cardType .creature,
             .controller (.controllerOf .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .conditional
-        (.matches (.targetReference 1) (.subtype .dwarf))
+      .forEach 1 (.conditional
+        (.hasSubtype (.var 1) .dwarf)
         (.optional
-          (.attach
+          (.attach (.selected (.range 1 1)
             (.filtered
               (.and [
                 .permanent,
                 .subtype .equipment,
-                .controller (.controllerOf .this)]))
-            (.targetReference 1)))])
-]
+                .controller (.controllerOf .this)])))
+            (.var 1))))])]
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef

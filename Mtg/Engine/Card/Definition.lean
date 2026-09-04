@@ -52,8 +52,13 @@ inductive Selector where
   | targets : Nat → Range → Filter → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
+  /-- The object bound by `forEach` of this number. -/
+  | var : Nat → Selector
   /-- Every object matching `filter` (not targeted). -/
   | filtered : Filter → Selector
+  /-- Choose objects from `among` at resolution, with a count range
+  (not targeting; CR 608.2d). -/
+  | selected : Range → Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability may target or affect (CR 115.1). -/
@@ -196,6 +201,8 @@ inductive Condition where
   | hasTargetIn : Selector → Selector → Condition
   /-- The given object matches `filter`. -/
   | matches : Selector → Filter → Condition
+  /-- The given object has the given subtype. -/
+  | hasSubtype : Selector → CardSubtype → Condition
 deriving Repr, Inhabited, BEq
 
 /-- When a triggered ability fires. -/
@@ -247,6 +254,7 @@ inductive CardAction where
   | draw : Nat → CardAction
   | scry : Nat → CardAction
   | sequence : List CardAction → CardAction
+  | forEach : Nat → CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
@@ -404,7 +412,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | .sequence [
       .untap ut,
       .continuous effects _,
-      .conditional (.matches _ df) (.optional (.attach _ _))
+      .forEach _n (.conditional (.hasSubtype _who st) (.optional (.attach _eq _to)))
     ] =>
     let youControlCreature :=
       match ut.asTargetSelector? with
@@ -412,7 +420,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
         let s := t.filter.shape
         s.sameController && s.types.eqTypes [.creature]
       | none => false
-    if youControlCreature && df.shape.dwarf then
+    if youControlCreature && st == .dwarf then
       ContinuousEffect.addedPT? effects
     else none
   | _ => none
@@ -432,6 +440,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | .scry n => Effect.scry n
     | .sequence (a :: _) => compile a asAbility
     | .sequence [] => continuousEffect none [] asAbility
+    | .forEach _ inner => compile inner asAbility
     | .conditional _ inner => compile inner asAbility
     | .optional inner => compile inner asAbility
     | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
@@ -740,16 +749,16 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controller (.controllerOf .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .conditional
-        (.matches (.targetReference 1) (.subtype .dwarf))
+      .forEach 1 (.conditional
+        (.hasSubtype (.var 1) .dwarf)
         (.optional
-          (.attach
+          (.attach (.selected (.range 1 1)
             (.filtered
               (.and [
                 .permanent,
                 .subtype .equipment,
-                .controller (.controllerOf .this)]))
-            (.targetReference 1)))]
+                .controller (.controllerOf .this)])))
+            (.var 1))))]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
 -- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
