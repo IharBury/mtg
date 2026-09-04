@@ -97,9 +97,11 @@ inductive CardSubtype where
   | adventure
   | bird
   | citizen
+  | cleric
   | dwarf
   | equipment
   | halfling
+  | human
   | insect
   | rogue
   | scout
@@ -113,9 +115,11 @@ def toString : CardSubtype → String
   | .adventure => "Adventure"
   | .bird => "Bird"
   | .citizen => "Citizen"
+  | .cleric => "Cleric"
   | .dwarf => "Dwarf"
   | .equipment => "Equipment"
   | .halfling => "Halfling"
+  | .human => "Human"
   | .insect => "Insect"
   | .rogue => "Rogue"
   | .scout => "Scout"

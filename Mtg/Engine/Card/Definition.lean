@@ -69,6 +69,14 @@ inductive Selector where
   | tapped
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
+  /-- A spell on the stack (CR 112.1). -/
+  | spell
+  /-- A player (CR 102). -/
+  | player
+  /-- A nonland permanent (CR 110.4). -/
+  | nonland
+  /-- Objects that share a card type with each other. -/
+  | shareCardType
 deriving Repr, Inhabited, BEq
 
 namespace Selector
@@ -111,6 +119,9 @@ structure Shape where
   tapped : Bool := false
   subtype : Option String := none
   types : TypeSet := .any
+  isSpell : Bool := false
+  nonland : Bool := false
+  shareCardType : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Shape
@@ -120,7 +131,10 @@ def meet (a b : Shape) : Shape :=
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
     subtype := a.subtype.orElse fun _ => b.subtype
-    types := a.types.intersect b.types }
+    types := a.types.intersect b.types
+    isSpell := a.isSpell || b.isSpell
+    nonland := a.nonland || b.nonland
+    shareCardType := a.shareCardType || b.shareCardType }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
@@ -130,7 +144,10 @@ def join (a b : Shape) : Shape :=
       match a.subtype, b.subtype with
       | some x, some y => if x == y then some x else none
       | _, _ => none
-    types := a.types.union b.types }
+    types := a.types.union b.types
+    isSpell := a.isSpell && b.isSpell
+    nonland := a.nonland && b.nonland
+    shareCardType := a.shareCardType && b.shareCardType }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
@@ -150,16 +167,22 @@ def shape : Selector → Shape
   | .tapped => { tapped := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
+  | .spell => { isSpell := true }
+  | .nonland => { nonland := true }
+  | .shareCardType => { shareCardType := true }
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => {}
+  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ | .player => {}
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
   let s := f.shape
-  if s.sameController then
+  if s.isSpell then .spell
+  else if s.nonland && s.shareCardType then .twoNonlandsSharingType
+  else if s.nonland then .nonland
+  else if s.sameController then
     if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
     else if s.types.eqTypes [.creature] then .creatureYouControl
     else if s.types.eqTypes [.artifact] then .artifactYouControl
@@ -185,10 +208,18 @@ end Selector
 inductive Trigger where
   | endOfGame
   | endOfTurn
-  /-- Whenever the selected object attacks, restricted by `among`. -/
+  /-- Whenever the selected object attacks, restricted by the given
+  selector. -/
   | attack : Selector → Selector → Trigger
   /-- When the selected object enters. -/
   | enter : Selector → Trigger
+  /-- Whenever the selected player draws a card. -/
+  | draw : Selector → Trigger
+  /-- Whenever the selected player draws their second card each turn. -/
+  | drawSecond : Selector → Trigger
+  /-- Whenever the selected object deals combat damage to objects matching
+  the given selector. -/
+  | combatDamage : Selector → Selector → Trigger
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -229,6 +260,22 @@ inductive CardAction where
   | ifAny : Selector → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
+  /-- Choose one of the given actions (CR 700.2). -/
+  | choose : List CardAction → CardAction
+  /-- Counter the selected spell (CR 701.5). -/
+  | counter : Selector → CardAction
+  /-- Counter the selected spell unless its controller pays the cost. -/
+  | counterUnless : Selector → List Cost → CardAction
+  /-- The selected player discards that many cards. -/
+  | discard : Selector → Nat → CardAction
+  /-- Put that many +1/+1 counters on the selected object. -/
+  | putCounter : Selector → Nat → CardAction
+  /-- Exile the selected object. -/
+  | exile : Selector → CardAction
+  /-- Cast the selected card without paying its mana cost. -/
+  | cast : Selector → CardAction
+  /-- Exchange control of the selected objects. -/
+  | exchangeControl : Selector → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -264,7 +311,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-    | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => none
+    | .targetReference _ | .var _ | .selected _ _ | .allTargets _
+    | .spell | .player | .shareCardType => none
     | s => some s
 
 end ContinuousEffect
@@ -407,26 +455,59 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
     else none
   | _ => none
 
+/-- Draw, then discard a card. -/
+def leftoverDrawDiscard? : CardAction → Option Nat
+  | .sequence [.draw _who n, .discard _p 1] => some n
+  | _ => none
+
+/-- Counter a spell; exile a permanent spell and allow a free cast. -/
+def leftoverCounterExile? : CardAction → Bool
+  | .sequence [
+      .counter _,
+      .ifAny _ [.exile _, .optional (.cast _)]
+    ] => true
+  | _ => false
+
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverUntapPumpAttach? action with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
   | none =>
-    match action with
-    | .continuous effects _duration => compileContinuous effects asAbility
-    | .tap s => compileTap s asAbility
-    | .untap s => compileUntap s asAbility
-    | .dealDamage _source victim n => compileDamage victim n asAbility
-    | .draw _who n => Effect.draw n
-    | .scry _who n => Effect.scry n
-    | .sequence (a :: _) => compile a asAbility
-    | .sequence [] => continuousEffect none [] asAbility
-    | .forEach _ inner => compile inner asAbility
-    | .ifAny _ (a :: _) => compile a asAbility
-    | .ifAny _ [] => continuousEffect none [] asAbility
-    | .optional inner => compile inner asAbility
-    | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
+    if leftoverCounterExile? action then Effect.counterExilePermanentMayCast
+    else
+      match leftoverDrawDiscard? action with
+      | some n => Effect.drawThenDiscard n
+      | none =>
+        match action with
+        | .continuous effects _duration => compileContinuous effects asAbility
+        | .tap s => compileTap s asAbility
+        | .untap s => compileUntap s asAbility
+        | .dealDamage _source victim n => compileDamage victim n asAbility
+        | .draw _who n => Effect.draw n
+        | .scry _who n => Effect.scry n
+        | .sequence (a :: _) => compile a asAbility
+        | .sequence [] => continuousEffect none [] asAbility
+        | .forEach _ inner => compile inner asAbility
+        | .ifAny _ (a :: _) => compile a asAbility
+        | .ifAny _ [] => continuousEffect none [] asAbility
+        | .optional inner => compile inner asAbility
+        | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
+        | .choose (a :: _) => compile a asAbility
+        | .choose [] => continuousEffect none [] asAbility
+        | .counter _ => Effect.counterSpell
+        | .counterUnless _ costs =>
+          Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
+        | .discard _ n => Effect.drawThenDiscard n
+        | .putCounter _ _ => continuousEffect none [] asAbility
+        | .exile _ => continuousEffect none [] asAbility
+        | .cast _ => continuousEffect none [] asAbility
+        | .exchangeControl _ => Effect.exchangeControlSharingType
+
+/-- Modes of a “Choose one” action. -/
+def leftoverModes? : CardAction → Option (Array Effect)
+  | .choose as => some ((as.map fun a => compile a false).toArray)
+  | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
 def toEffect (action : CardAction) : Effect :=
@@ -457,6 +538,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | _ => none
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
+  | .triggered (.drawSecond (.controller .this)) (.putCounter (.source .this) 1) =>
+    some TriggeredAbility.onDrawSecondPlusOne
+  | .triggered (.draw (.controller .this)) (.putCounter (.source .this) 1) =>
+    some TriggeredAbility.onDrawPlusOne
+  | .triggered (.combatDamage .this .player)
+      (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
+    some TriggeredAbility.onCombatDamageToPlayerLoot
   | _ => none
 
 end Ability
@@ -596,7 +684,16 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       power := b.power
       toughness := b.toughness
       keywords := b.keywords
-      spellEffect := b.action.map (·.toEffect)
+      spellModes :=
+        match b.action with
+        | some a => (CardAction.leftoverModes? a).getD #[]
+        | none => #[]
+      spellEffect :=
+        match b.action with
+        | some a =>
+          if (CardAction.leftoverModes? a).isSome then none
+          else some a.toEffect
+        | none => none
       activatedAbilities := b.activatedAbilities
       triggeredAbilities := b.triggeredAbilities
       costReductionIfTargetTapped := b.costReductionIfTargetTapped
@@ -770,5 +867,71 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction := .scry (.controller .this) 2
   action.toEffect == Effect.scry 2
+
+-- Lakeshore Apothecary: draw your second card, +1/+1 counter.
+#guard
+  match
+    (Ability.triggered
+      (.drawSecond (.controller .this))
+      (.putCounter (.source .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDrawSecondPlusOne
+  | none => false
+
+-- Confusticate and Bebother: choose counter-unless or loot.
+#guard
+  let action : CardAction :=
+    .choose [
+      .counterUnless (.target 1 .spell) [.mana [.generic 4]],
+      .sequence [
+        .draw (.controller .this) 2,
+        .discard (.controller .this) 1]]
+  CardAction.leftoverModes? action ==
+    some #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+
+-- Ravenhill Flock: whenever you draw, +1/+1 counter.
+#guard
+  match
+    (Ability.triggered
+      (.draw (.controller .this))
+      (.putCounter (.source .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDrawPlusOne
+  | none => false
+
+-- Thranduil's Decree: counter; exile a permanent spell and maybe cast it.
+#guard
+  let action : CardAction :=
+    .sequence [
+      .counter (.target 1 .spell),
+      .ifAny
+        (.intersection [.allTargets .this, .permanent])
+        [
+          .exile (.allTargets .this),
+          .optional (.cast (.allTargets .this))
+        ]]
+  action.toEffect == Effect.counterExilePermanentMayCast
+
+-- Bilbo, Luckwearer: combat damage loot; Adventure exchanges control.
+#guard
+  match
+    (Ability.triggered
+      (.combatDamage .this .player)
+      (.sequence [
+        .draw (.controller .this) 1,
+        .discard (.controller .this) 1])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCombatDamageToPlayerLoot
+  | none => false
+
+#guard
+  let action : CardAction :=
+    .exchangeControl
+      (.targets
+        1
+        (.range 2 2)
+        (.intersection [.permanent, .nonland, .shareCardType]))
+  action.toEffect == Effect.exchangeControlSharingType
+
+#guard Selector.toTargetKind
+  (.intersection [.permanent, .nonland, .shareCardType])
+  == .twoNonlandsSharingType
 
 end Mtg.Engine
