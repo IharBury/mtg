@@ -106,8 +106,12 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      [.conditional
-        (.hasTargetIn .this (.intersection [.permanent, .cardType .creature, .tapped]))
+      [.ifAny
+        (.intersection [
+          .allTargets .this,
+          .permanent,
+          .cardType .creature,
+          .tapped])
         [.reduceCost .this [.mana [.generic 3]]]]),
   .action (
     .dealDamage
@@ -152,15 +156,17 @@ def vowToErebor : TraditionalCardDefinition := .card [
             .cardType .creature,
             .controlledBy (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .forEach 1 (.conditional
-        (.hasSubtype (.var 1) .dwarf)
-        (.optional
-          (.attach (.selected (.range 1 1)
-            (.intersection [
-              .permanent,
-              .subtype .equipment,
-              .controlledBy (.controller .this)]))
-            (.var 1))))])]
+      .forEach 1 (.ifAny
+        (.intersection [.var 1, .subtype .dwarf])
+        [.optional
+          (.attach
+            (.selected
+              (.range 1 1)
+              (.intersection [
+                .permanent,
+                .subtype .equipment,
+                .controlledBy (.controller .this)]))
+            (.var 1)))])])]
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef

@@ -217,6 +217,9 @@ inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
   | addPowerToughness : Selector → Int → Int → ContinuousEffect
   | conditional : Condition → List ContinuousEffect → ContinuousEffect
+  /-- Apply the given continuous effects only when the selector matches
+  anything. -/
+  | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
@@ -232,6 +235,8 @@ inductive CardAction where
   | sequence : List CardAction → CardAction
   | forEach : Nat → CardAction → CardAction
   | conditional : Condition → CardAction → CardAction
+  /-- Perform the given actions only when the selector matches anything. -/
+  | ifAny : Selector → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
@@ -244,6 +249,8 @@ def selector : ContinuousEffect → Selector
   | .addPowerToughness who _ _ => who
   | .conditional _ (inner :: _) => selector inner
   | .conditional _ [] => .this
+  | .ifAny _ (inner :: _) => selector inner
+  | .ifAny _ [] => .this
   | .reduceCost who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -255,6 +262,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | none => none
   | .gainAbility _ _ :: _ => none
   | .conditional _ _ :: _ => none
+  | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
@@ -399,15 +407,15 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | .sequence [
       .untap ut,
       .continuous effects _,
-      .forEach _n (.conditional (.hasSubtype _who st) (.optional (.attach _eq _to)))
+      .forEach _n (.ifAny among [.optional (.attach _eq _to)])
     ] =>
     let youControlCreature :=
       match ut.among? with
-      | some among =>
-        let s := among.shape
+      | some who =>
+        let s := who.shape
         s.sameController && s.types.eqTypes [.creature]
       | none => false
-    if youControlCreature && st == .dwarf then
+    if youControlCreature && among.shape.dwarf then
       ContinuousEffect.addedPT? effects
     else none
   | _ => none
@@ -429,6 +437,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | .sequence [] => continuousEffect none [] asAbility
     | .forEach _ inner => compile inner asAbility
     | .conditional _ inner => compile inner asAbility
+    | .ifAny _ (a :: _) => compile a asAbility
+    | .ifAny _ [] => continuousEffect none [] asAbility
     | .optional inner => compile inner asAbility
     | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
 
@@ -508,6 +518,8 @@ namespace CardFace
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness _ _ _ => b
+  | .ifAny among inners =>
+    if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
   | .conditional (.hasTargetIn .this among) inners =>
     if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
   | .conditional _ inners => inners.foldl applyContinuousEffect b
@@ -703,9 +715,12 @@ end TraditionalCardDefinition
     .type .instant,
     .ability (
       .static
-        [.conditional
-          (.hasTargetIn .this
-            (.intersection [.permanent, .cardType .creature, .tapped]))
+        [.ifAny
+          (.intersection [
+            .allTargets .this,
+            .permanent,
+            .cardType .creature,
+            .tapped])
           [.reduceCost .this [.mana [.generic 3]]]]),
     .action (
       .dealDamage
@@ -744,15 +759,15 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlledBy (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .forEach 1 (.conditional
-        (.hasSubtype (.var 1) .dwarf)
-        (.optional
+      .forEach 1 (.ifAny
+        (.intersection [.var 1, .subtype .dwarf])
+        [.optional
           (.attach (.selected (.range 1 1)
             (.intersection [
               .permanent,
               .subtype .equipment,
               .controlledBy (.controller .this)]))
-            (.var 1))))]
+            (.var 1)))])]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
 -- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
