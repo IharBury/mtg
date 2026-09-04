@@ -34,6 +34,12 @@ inductive Range where
   | range : Nat → Nat → Range
 deriving Repr, Inhabited, BEq
 
+/-- A constraint on a set of selected objects, not on each object alone. -/
+inductive SetPredicate where
+  /-- The objects share a card type with each other. -/
+  | shareCardType
+deriving Repr, Inhabited, BEq
+
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -47,6 +53,11 @@ inductive Selector where
   | target : Nat → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range. -/
   | targets : Nat → Range → Selector → Selector
+  /-- Numbered targets matching the given selector, with a count range
+  and extra constraints that apply to the set as a whole. -/
+  | targetSet : Nat → Range → Selector → List SetPredicate → Selector
+  /-- Objects that do not match the given selector. -/
+  | not : Selector → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- The object bound by `forEach` of this number. -/
@@ -69,6 +80,18 @@ inductive Selector where
   | tapped
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
+  /-- A spell on the stack (CR 112.1). -/
+  | spell
+  /-- A player (CR 102). -/
+  | player
+  /-- A nonland permanent (CR 110.4). -/
+  | nonland
+  /-- The object of the numbered action. -/
+  | wasObjectOfAction : Nat → Selector
+  /-- The object a replacement effect is replacing. -/
+  | replacingObject : Nat → Selector
+  /-- An object created by the numbered action. -/
+  | wasCreatedByAction : Nat → Selector
 deriving Repr, Inhabited, BEq
 
 namespace Selector
@@ -111,6 +134,9 @@ structure Shape where
   tapped : Bool := false
   subtype : Option String := none
   types : TypeSet := .any
+  isSpell : Bool := false
+  nonland : Bool := false
+  shareCardType : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Shape
@@ -120,7 +146,10 @@ def meet (a b : Shape) : Shape :=
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
     subtype := a.subtype.orElse fun _ => b.subtype
-    types := a.types.intersect b.types }
+    types := a.types.intersect b.types
+    isSpell := a.isSpell || b.isSpell
+    nonland := a.nonland || b.nonland
+    shareCardType := a.shareCardType || b.shareCardType }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
@@ -130,7 +159,10 @@ def join (a b : Shape) : Shape :=
       match a.subtype, b.subtype with
       | some x, some y => if x == y then some x else none
       | _, _ => none
-    types := a.types.union b.types }
+    types := a.types.union b.types
+    isSpell := a.isSpell && b.isSpell
+    nonland := a.nonland && b.nonland
+    shareCardType := a.shareCardType && b.shareCardType }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
@@ -139,6 +171,10 @@ def tappedCreature (s : Shape) : Bool :=
 /-- True when this shape is a Dwarf. -/
 def dwarf (s : Shape) : Bool :=
   s.subtype == some "Dwarf"
+
+/-- Negate a constraint-shaped selector. `.not` of a land type is nonland. -/
+def negate (s : Shape) : Shape :=
+  if s.types.eqTypes [.land] then { nonland := true } else {}
 
 end Shape
 
@@ -150,16 +186,38 @@ def shape : Selector → Shape
   | .tapped => { tapped := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
+  | .spell => { isSpell := true }
+  | .nonland => { nonland := true }
+  | .not s => s.shape.negate
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-  | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => {}
+  | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
+  | .allTargets _ | .player
+  | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => {}
+
+/-- Apply set-wide predicates onto an object-level shape. -/
+def applySetPredicates (s : Shape) : List SetPredicate → Shape
+  | [] => s
+  | .shareCardType :: rest =>
+    applySetPredicates { s with shareCardType := true } rest
+
+/-- Shape used for targeting: unwrap `target` / `targets` / `targetSet`
+and fold in set predicates. -/
+def targetingShape : Selector → Shape
+  | .target _ among => among.shape
+  | .targets _ _ among => among.shape
+  | .targetSet _ _ among preds => applySetPredicates among.shape preds
+  | s => s.shape
 
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
-  let s := f.shape
-  if s.sameController then
+  let s := f.targetingShape
+  if s.isSpell then .spell
+  else if s.nonland && s.shareCardType then .twoNonlandsSharingType
+  else if s.nonland then .nonland
+  else if s.sameController then
     if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
     else if s.types.eqTypes [.creature] then .creatureYouControl
     else if s.types.eqTypes [.artifact] then .artifactYouControl
@@ -172,23 +230,57 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
 def among? : Selector → Option Selector
   | .target _ among => some among
   | .targets _ _ among => some among
+  | .targetSet _ _ among _ => some among
   | _ => none
+
+/-- Any object. -/
+def any : Selector := .all
+
+/-- A land (CR 305). -/
+def land : Selector := .cardType .land
 
 def toTargeting (s : Selector) : EffectTargeting :=
   match s.among? with
-  | some among => .of among.toTargetKind
+  | some _ => .of s.toTargetKind
   | none => .of .none
 
 end Selector
 
-/-- When a continuous effect ends, or when a triggered ability fires. -/
+/-- Where an `ordinal` count starts. -/
+inductive CountFrom where
+  /-- From the start of the turn. -/
+  | turnStart
+deriving Repr, Inhabited, BEq
+
+/-- When a continuous effect ends, when a triggered ability fires, or
+what a replacement effect intercepts. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
-  /-- Whenever the selected object attacks, restricted by `among`. -/
+  /-- Whenever the selected object attacks, restricted by the given
+  selector. -/
   | attack : Selector → Selector → Trigger
   /-- When the selected object enters. -/
   | enter : Selector → Trigger
+  /-- Whenever the selected player draws a card matching the given
+  selector. -/
+  | draw : Selector → Selector → Trigger
+  /-- The nth occurrence of the inner trigger, counted from the given
+  point. -/
+  | ordinal : Nat → CountFrom → Trigger → Trigger
+  /-- Whenever the selected object deals combat damage to objects matching
+  the given selector. -/
+  | combatDamage : Selector → Selector → Trigger
+  /-- The selected object would be put into a graveyard (CR 614). -/
+  | putToGraveyard : Selector → Trigger
+  /-- The first selector blocks the second (CR 509). -/
+  | block : Selector → Selector → Trigger
+deriving Repr, Inhabited, BEq
+
+/-- Kind of counter placed by `putCounter` (CR 122.1). -/
+inductive CounterKind where
+  /-- A +1/+1 counter. -/
+  | plusOnePlusOne
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -212,6 +304,13 @@ inductive ContinuousEffect where
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
+  /-- Replace the trigger with the given actions (CR 614). -/
+  | replace : Trigger → List CardAction → ContinuousEffect
+  /-- The selected trigger is forbidden (CR 509 / 614). -/
+  | forbid : Trigger → ContinuousEffect
+  /-- The selected player may cast the selected card without paying its
+  mana cost. -/
+  | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -229,6 +328,24 @@ inductive CardAction where
   | ifAny : Selector → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
+  /-- Choose one of the given modes (CR 700.2). -/
+  | chooseMode : List CardAction → CardAction
+  /-- Counter the selected spell (CR 701.5). -/
+  | counter : Selector → CardAction
+  /-- The given player may pay the cost to prevent the action. -/
+  | preventable : Selector → List Cost → CardAction → CardAction
+  /-- The selected player discards that many cards. -/
+  | discard : Selector → Nat → CardAction
+  /-- Put that many counters of the given kind on the selected object. -/
+  | putCounter : Selector → CounterKind → Nat → CardAction
+  /-- Exile the selected object. -/
+  | exile : Selector → CardAction
+  /-- Cast the selected card without paying its mana cost. -/
+  | cast : Selector → CardAction
+  /-- Exchange control of the selected objects. -/
+  | exchangeControl : Selector → CardAction
+  /-- Number this action so later clauses can refer to it. -/
+  | actionId : Nat → CardAction → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -240,6 +357,9 @@ def selector : ContinuousEffect → Selector
   | .ifAny _ (inner :: _) => selector inner
   | .ifAny _ [] => .this
   | .reduceCost who _ => who
+  | .replace _ _ => .this
+  | .forbid _ => .this
+  | .canCastWithoutPayingManaCost _ who => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -251,6 +371,9 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainAbility _ _ :: _ => none
   | .ifAny _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
+  | .replace _ _ :: _ => none
+  | .forbid _ :: _ => none
+  | .canCastWithoutPayingManaCost _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -264,7 +387,9 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .target _ _ | .targets _ _ _
-    | .targetReference _ | .var _ | .selected _ _ | .allTargets _ => none
+    | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
+    | .allTargets _ | .spell | .player
+    | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _ => none
     | s => some s
 
 end ContinuousEffect
@@ -326,7 +451,8 @@ def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility :
 /-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
 def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :=
   match sel with
-  | .targets _ (.range lo hi) _ =>
+  | .targets _ (.range lo hi) _
+  | .targetSet _ (.range lo hi) _ _ =>
     if asAbility then e
     else
       { e with
@@ -394,7 +520,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | .sequence [
       .untap ut,
       .continuous effects _,
-      .forEach _n (.ifAny among [.optional (.attach _eq _to)])
+      .ifAny among [.optional (.attach _eq _to)]
     ] =>
     let youControlCreature :=
       match ut.among? with
@@ -407,26 +533,61 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
     else none
   | _ => none
 
+/-- Draw, then discard a card. -/
+def leftoverDrawDiscard? : CardAction → Option Nat
+  | .sequence [.draw _who n, .discard _p 1] => some n
+  | _ => none
+
+/-- Counter a spell; exile a permanent spell and allow a free cast. -/
+def leftoverCounterExile? : CardAction → Bool
+  | .sequence [
+      .actionId _ (.counter _),
+      .continuous (.replace (.putToGraveyard _) _ :: _) _
+    ] => true
+  | _ => false
+
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverUntapPumpAttach? action with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
   | none =>
-    match action with
-    | .continuous effects _duration => compileContinuous effects asAbility
-    | .tap s => compileTap s asAbility
-    | .untap s => compileUntap s asAbility
-    | .dealDamage _source victim n => compileDamage victim n asAbility
-    | .draw _who n => Effect.draw n
-    | .scry _who n => Effect.scry n
-    | .sequence (a :: _) => compile a asAbility
-    | .sequence [] => continuousEffect none [] asAbility
-    | .forEach _ inner => compile inner asAbility
-    | .ifAny _ (a :: _) => compile a asAbility
-    | .ifAny _ [] => continuousEffect none [] asAbility
-    | .optional inner => compile inner asAbility
-    | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
+    if leftoverCounterExile? action then Effect.counterExilePermanentMayCast
+    else
+      match leftoverDrawDiscard? action with
+      | some n => Effect.drawThenDiscard n
+      | none =>
+        match action with
+        | .continuous effects _duration => compileContinuous effects asAbility
+        | .tap s => compileTap s asAbility
+        | .untap s => compileUntap s asAbility
+        | .dealDamage _source victim n => compileDamage victim n asAbility
+        | .draw _who n => Effect.draw n
+        | .scry _who n => Effect.scry n
+        | .sequence (a :: _) => compile a asAbility
+        | .sequence [] => continuousEffect none [] asAbility
+        | .forEach _ inner => compile inner asAbility
+        | .ifAny _ (a :: _) => compile a asAbility
+        | .ifAny _ [] => continuousEffect none [] asAbility
+        | .optional inner => compile inner asAbility
+        | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
+        | .chooseMode (a :: _) => compile a asAbility
+        | .chooseMode [] => continuousEffect none [] asAbility
+        | .counter _ => Effect.counterSpell
+        | .preventable _ costs (.counter _) =>
+          Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
+        | .preventable _ _ inner => compile inner asAbility
+        | .discard _ n => Effect.drawThenDiscard n
+        | .putCounter _ _ _ => continuousEffect none [] asAbility
+        | .exile _ => continuousEffect none [] asAbility
+        | .cast _ => continuousEffect none [] asAbility
+        | .exchangeControl _ => Effect.exchangeControlSharingType
+        | .actionId _ inner => compile inner asAbility
+
+/-- Modes of a “Choose one” action. -/
+def leftoverModes? : CardAction → Option (Array Effect)
+  | .chooseMode as => some ((as.map fun a => compile a false).toArray)
+  | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
 def toEffect (action : CardAction) : Effect :=
@@ -457,6 +618,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     | _ => none
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
+  | .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1) =>
+    some TriggeredAbility.onDrawSecondPlusOne
+  | .triggered (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1) =>
+    some TriggeredAbility.onDrawPlusOne
+  | .triggered (.combatDamage .this .player)
+      (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
+    some TriggeredAbility.onCombatDamageToPlayerLoot
   | _ => none
 
 end Ability
@@ -474,7 +645,8 @@ inductive CardPart where
   | toughness : Nat → CardPart
   | ability : Ability → CardPart
   | alternative : List CardPart → CardPart
-  | action : CardAction → CardPart
+  /-- The spelled-out actions this part performs, in order. -/
+  | actions : List CardAction → CardPart
 deriving Repr, Inhabited, BEq
 
 /-- A traditional (non-token, non-DFC-only) printed card. -/
@@ -506,6 +678,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness _ _ _ => b
   | .ifAny among inners =>
     if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
+  | .replace _ _ => b
+  | .forbid (.block who .this) =>
+    if who == .any then
+      { b with keywords := b.keywords.merge Keyword.cantBeBlocked.toKeywords }
+    else b
+  | .forbid _ => b
+  | .canCastWithoutPayingManaCost _ _ => b
   | .reduceCost _ costs =>
     { b with
       costReductionIfTargetTapped :=
@@ -540,7 +719,12 @@ def apply (b : CardFace) : CardPart → CardFace
   | .toughness n => { b with toughness := some n }
   | .ability a => applyAbility b a
   | .alternative parts => { b with alternatives := b.alternatives.push parts }
-  | .action a => { b with action := some a }
+  | .actions as =>
+    { b with
+      action :=
+        match as with
+        | [a] => some a
+        | as => some (.sequence as) }
 
 def ofParts (parts : List CardPart) : CardFace :=
   parts.foldl apply {}
@@ -596,7 +780,16 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       power := b.power
       toughness := b.toughness
       keywords := b.keywords
-      spellEffect := b.action.map (·.toEffect)
+      spellModes :=
+        match b.action with
+        | some a => (CardAction.leftoverModes? a).getD #[]
+        | none => #[]
+      spellEffect :=
+        match b.action with
+        | some a =>
+          if (CardAction.leftoverModes? a).isSome then none
+          else some a.toEffect
+        | none => none
       activatedAbilities := b.activatedAbilities
       triggeredAbilities := b.triggeredAbilities
       costReductionIfTargetTapped := b.costReductionIfTargetTapped
@@ -705,11 +898,11 @@ end TraditionalCardDefinition
             .cardType .creature,
             .tapped])
           [.reduceCost .this [.mana [.generic 3]]]]),
-    .action (
+    .actions [
       .dealDamage
         .this
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        5)
+        5]
   ]).toCardDef.costReductionIfTargetTapped == 3
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
@@ -742,20 +935,19 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlled (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .forEach 1
-        (.ifAny
-          (.intersection [.var 1, .subtype .dwarf])
-          [
-            .optional
-              (.attach
-                (.selected
-                  (.range 1 1)
-                  (.intersection [
-                    .permanent,
-                    .subtype .equipment,
-                    .controlled (.controller .this)]))
-                (.var 1))
-          ])]
+      .ifAny
+        (.intersection [.targetReference 1, .subtype .dwarf])
+        [
+          .optional
+            (.attach
+              (.selected
+                (.range 1 1)
+                (.intersection [
+                  .permanent,
+                  .subtype .equipment,
+                  .controlled (.controller .this)]))
+              (.targetReference 1))
+        ]]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
 -- Bilbo Baggins, Burglar: enters, draw a card; Adventure scry 2.
@@ -770,5 +962,84 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction := .scry (.controller .this) 2
   action.toEffect == Effect.scry 2
+
+-- Lakeshore Apothecary: draw your second card, +1/+1 counter.
+#guard
+  match
+    (Ability.triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDrawSecondPlusOne
+  | none => false
+
+-- Confusticate and Bebother: choose counter-unless or loot.
+#guard
+  let action : CardAction :=
+    .chooseMode [
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]]
+        (.counter (.target 1 .spell)),
+      .sequence [
+        .draw (.controller .this) 2,
+        .discard (.controller .this) 1]]
+  CardAction.leftoverModes? action ==
+    some #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+
+-- Ravenhill Flock: whenever you draw, +1/+1 counter.
+#guard
+  match
+    (Ability.triggered
+      (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDrawPlusOne
+  | none => false
+
+-- Thranduil's Decree: counter; exile a permanent spell and maybe cast it.
+#guard
+  (TraditionalCardDefinition.card [
+    .actions [
+      .actionId 1 (.counter (.target 1 .spell)),
+      .continuous
+        [.replace
+          (.putToGraveyard (.wasObjectOfAction 1))
+          [.actionId 2 (.exile (.replacingObject 1)),
+            .continuous
+              [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
+              .endOfGame]]
+        .endOfGame]
+  ]).toCardDef.spellEffect == some Effect.counterExilePermanentMayCast
+
+-- Bilbo, Luckwearer: combat damage loot; Adventure exchanges control.
+#guard
+  match
+    (Ability.triggered
+      (.combatDamage .this .player)
+      (.sequence [
+        .draw (.controller .this) 1,
+        .discard (.controller .this) 1])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCombatDamageToPlayerLoot
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static [.forbid (.block .any .this)])
+  ]).toCardDef.keywords.cantBeBlocked
+
+#guard
+  let action : CardAction :=
+    .exchangeControl
+      (.targetSet
+        1
+        (.range 2 2)
+        (.intersection [.permanent, .not .land])
+        [.shareCardType])
+  action.toEffect == Effect.exchangeControlSharingType
+
+#guard Selector.toTargetKind
+  (.targetSet
+    1
+    (.range 2 2)
+    (.intersection [.permanent, .not .land])
+    [.shareCardType])
+  == .twoNonlandsSharingType
 
 end Mtg.Engine

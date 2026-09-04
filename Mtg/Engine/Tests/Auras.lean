@@ -44,7 +44,7 @@ def withBlueMana (g : Game) (p : PlayerId) (n : Nat := 4) : Game :=
 /-- Nissa proposes Thranduil's Decree with Lightning Bolt on the stack. -/
 def proposedDecree : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
+  let g := withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Thranduil's Decree").id)
 
 #guard proposedDecree.pending == .chooseTargets ⟨1⟩
@@ -84,7 +84,7 @@ def clearHandPlayedLand (g : Game) (p : PlayerId) : Game :=
 /-- Chandra has her own Bolt on the stack and a counter in hand. -/
 def agentOwnBoltWithDecree : Game :=
   let g := clearHandPlayedLand paidBolt ⟨0⟩
-  withBlueMana (addToHand g thranduilsDecree ⟨0⟩) ⟨0⟩ 6
+  withBlueMana (addToHand g thranduilsDecreeCard ⟨0⟩) ⟨0⟩ 6
 
 -- The heuristic does not counter its own spell.
 #guard
@@ -97,7 +97,7 @@ def agentOwnBoltWithDecree : Game :=
 def agentOppBoltWithDecree : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
   let g := clearHandPlayedLand g ⟨1⟩
-  withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
+  withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
 
 -- The heuristic does counter an opposing spell.
 #guard
@@ -109,7 +109,7 @@ def agentOppBoltWithDecree : Game :=
 /-- Nissa's instant is under Chandra's Bolt, then Nissa proposes a counter. -/
 def proposedDecreeOverOwnSpell : Game :=
   let g := mustApply afterDraw ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
   let g := mustApply g ⟨1⟩
     (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
   let g := mustApply g ⟨1⟩ (.chooseMode 1)
@@ -120,7 +120,7 @@ def proposedDecreeOverOwnSpell : Game :=
   let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
   let g := mustApply g ⟨0⟩ .pay
   let g := mustApply g ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g thranduilsDecree ⟨1⟩) ⟨1⟩ 6
+  let g := withBlueMana (addToHand g thranduilsDecreeCard ⟨1⟩) ⟨1⟩ 6
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Thranduil's Decree").id)
 
 #guard proposedDecreeOverOwnSpell.pending == .chooseTargets ⟨1⟩
@@ -135,7 +135,7 @@ def proposedDecreeOverOwnSpell : Game :=
 
 /-- Chandra proposes Confusticate with her own Bolt on the stack. -/
 def proposedConfusticateOwnBolt : Game :=
-  let g := withBlueMana (addToHand paidBolt confusticateAndBebother ⟨0⟩) ⟨0⟩ 3
+  let g := withBlueMana (addToHand paidBolt confusticateAndBebotherCard ⟨0⟩) ⟨0⟩ 3
   mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Confusticate and Bebother").id)
 
 -- Draw rather than counter your own spell.
@@ -151,7 +151,7 @@ def proposedConfusticateOwnBolt : Game :=
 /-- Nissa proposes Confusticate with Chandra's Bolt on the stack. -/
 def proposedConfusticateOppBolt : Game :=
   let g := mustApply paidBolt ⟨0⟩ .pass
-  let g := withBlueMana (addToHand g confusticateAndBebother ⟨1⟩) ⟨1⟩ 3
+  let g := withBlueMana (addToHand g confusticateAndBebotherCard ⟨1⟩) ⟨1⟩ 3
   mustApply g ⟨1⟩ (.cast (handCardNamed g ⟨1⟩ "Confusticate and Bebother").id)
 
 -- Counter an opposing spell when that mode is available.

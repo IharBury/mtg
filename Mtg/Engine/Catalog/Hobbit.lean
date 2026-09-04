@@ -36,7 +36,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
     .manaCost [.generic 1, .mono .white],
     .type .instant,
     .subtype .adventure,
-    .action (
+    .actions [
       .continuous
         [
           .gainAbility
@@ -48,7 +48,7 @@ def bofurReliableGuardian : TraditionalCardDefinition := .card [
                 .controlled (.controller .this)]))
             (.keyword .hexproof),
           .gainAbility (.targetReference 1) (.keyword .indestructible)]
-        .endOfTurn)]
+        .endOfTurn]]
 ]
 
 def bofurReliableGuardianCard : CardDef :=
@@ -93,8 +93,8 @@ def velvetwingButterflies : TraditionalCardDefinition := .card [
     .manaCost [.generic 1, .mono .white],
     .type .instant,
     .subtype .adventure,
-    .action (
-      .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature])))]]
+    .actions [
+      .tap (.targets 1 (.range 1 2) (.intersection [.permanent, .cardType .creature]))]]]
 
 def velvetwingButterfliesCard : CardDef :=
   velvetwingButterflies.toCardDef
@@ -113,11 +113,11 @@ def magnificentEnd : TraditionalCardDefinition := .card [
           .cardType .creature,
           .tapped])
         [.reduceCost .this [.mana [.generic 3]]]]),
-  .action (
+  .actions [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
-      5)]
+      5]]
 
 def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
@@ -146,30 +146,28 @@ def vowToErebor : TraditionalCardDefinition := .card [
   .name "Vow to Erebor",
   .manaCost [.generic 1, .mono .white],
   .type .instant,
-  .action (
-    .sequence [
-      .untap
-        (.target
-          1
-          (.intersection [
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])),
-      .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .forEach 1
-        (.ifAny
-          (.intersection [.var 1, .subtype .dwarf])
-          [
-            .optional
-              (.attach
-                (.selected
-                  (.range 1 1)
-                  (.intersection [
-                    .permanent,
-                    .subtype .equipment,
-                    .controlled (.controller .this)]))
-                (.var 1))
-          ])])]
+  .actions [
+    .untap
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])),
+    .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
+    .ifAny
+        (.intersection [.targetReference 1, .subtype .dwarf])
+        [
+          .optional
+            (.attach
+              (.selected
+                (.range 1 1)
+                (.intersection [
+                  .permanent,
+                  .subtype .equipment,
+                  .controlled (.controller .this)]))
+              (.targetReference 1))
+        ]]]
 
 def vowToEreborCard : CardDef :=
   vowToErebor.toCardDef
@@ -190,43 +188,115 @@ def bilboBagginsBurglar : TraditionalCardDefinition := .card [
     .manaCost [.mono .blue],
     .type .sorcery,
     .subtype .adventure,
-    .action (.scry (.controller .this) 2)]
+    .actions [.scry (.controller .this) 2]]
 ]
 
 def bilboBagginsBurglarCard : CardDef :=
   bilboBagginsBurglar.toCardDef
     (oracleText := "When Bilbo Baggins enters, draw a card.\n//ADV//\nTake a Glance {U}\nSorcery — Adventure\nScry 2. (Then exile this card. You may cast the creature later from exile.)")
 
-def lakeshoreApothecary : CardDef :=
-  creature "Lakeshore Apothecary" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Cleric"] 1 2
+def lakeshoreApothecary : TraditionalCardDefinition := .card [
+  .name "Lakeshore Apothecary",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .subtype .human,
+  .subtype .cleric,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (
+    .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.putCounter (.source .this) .plusOnePlusOne 1))]
+
+def lakeshoreApothecaryCard : CardDef :=
+  lakeshoreApothecary.toCardDef
     (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onDrawSecondPlusOne])
 
-def confusticateAndBebother : CardDef :=
-  instant "Confusticate and Bebother" (ManaCost.ofGenericAndColor 2 .blue)
-    "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card."
-    (spellModes := #[(Effect.counterUnlessPays 4), (Effect.drawThenDiscard 2)])
+def confusticateAndBebother : TraditionalCardDefinition := .card [
+  .name "Confusticate and Bebother",
+  .manaCost [.generic 2, .mono .blue],
+  .type .instant,
+  .actions [
+    .chooseMode [
+      .preventable (.controller (.targetReference 1)) [.mana [.generic 4]] (.counter (.target 1 .spell)),
+      .sequence [
+        .draw (.controller .this) 2,
+        .discard (.controller .this) 1]]]]
 
-def ravenhillFlock : CardDef :=
-  creature "Ravenhill Flock" (ManaCost.ofGenericAndColor 3 .blue) #["Bird"] 1 2
+def confusticateAndBebotherCard : CardDef :=
+  confusticateAndBebother.toCardDef
+    (oracleText := "Choose one —\n• Counter target spell unless its controller pays {4}.\n• Draw two cards, then discard a card.")
+
+def ravenhillFlock : TraditionalCardDefinition := .card [
+  .name "Ravenhill Flock",
+  .manaCost [.generic 3, .mono .blue],
+  .type .creature,
+  .subtype .bird,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .flying),
+  .ability (
+    .triggered
+      (.draw (.controller .this) .all)
+      (.putCounter (.source .this) .plusOnePlusOne 1))
+]
+
+def ravenhillFlockCard : CardDef :=
+  ravenhillFlock.toCardDef
     (oracleText := "Flying\nWhenever you draw a card, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onDrawPlusOne])
 
-def thranduilsDecree : CardDef :=
-  instant "Thranduil's Decree" (ManaCost.ofGenericAndColors 4 [.blue, .blue])
-    "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
-    (some (Effect.counterExilePermanentMayCast))
+def thranduilsDecree : TraditionalCardDefinition := .card [
+  .name "Thranduil's Decree",
+  .manaCost [.generic 4, .mono .blue, .mono .blue],
+  .type .instant,
+  .actions [
+    .actionId 1 (.counter (.target 1 .spell)),
+    .continuous
+      [.replace
+        (.putToGraveyard (.wasObjectOfAction 1))
+        [.actionId 2 (.exile (.replacingObject 1)),
+          .continuous
+            [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
+            .endOfGame]]
+      .endOfGame]]
 
-def bilboLuckwearer : CardDef :=
-  legendaryCreature "Bilbo, Luckwearer" (ManaCost.ofGenericAndColor 1 .blue) #["Halfling", "Rogue"] 1 1
+def thranduilsDecreeCard : CardDef :=
+  thranduilsDecree.toCardDef
+    (oracleText := "Counter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled.")
+
+def bilboLuckwearer : TraditionalCardDefinition := .card [
+  .name "Bilbo, Luckwearer",
+  .manaCost [.generic 1, .mono .blue],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .rogue,
+  .power 1,
+  .toughness 1,
+  .ability (.static [.forbid (.block .any .this)]),
+  .ability (
+    .triggered
+      (.combatDamage .this .player)
+      (.sequence [
+        .draw (.controller .this) 1,
+        .discard (.controller .this) 1])),
+  .alternative [
+    .name "Burglar's Plot",
+    .manaCost [.generic 4, .mono .blue],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .exchangeControl
+        (.targetSet
+          1
+          (.range 2 2)
+          (.intersection [.permanent, .not .land])
+          [.shareCardType])]]]
+
+def bilboLuckwearerCard : CardDef :=
+  bilboLuckwearer.toCardDef
     (oracleText := "Bilbo can't be blocked.\nWhenever Bilbo deals combat damage to a player, draw a card, then discard a card.\n//ADV//\nBurglar's Plot {4}{U}\nSorcery — Adventure\nExchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.cantBeBlocked)
-    (triggeredAbilities := #[.onCombatDamageToPlayerLoot])
-    (adventure := some (adventure "Burglar's Plot" (ManaCost.ofGenericAndColor 4 .blue)
-      "Exchange control of two target nonland permanents that share a card type. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.exchangeControlSharingType)))
 
 def uneasyPartings : CardDef :=
   instant "Uneasy Partings" (ManaCost.ofGenericAndColor 3 .blue)
@@ -1369,11 +1439,11 @@ def hobbitCards : Array CardDef := #[
   eagleOfTheGreatShelfCard,
   vowToEreborCard,
   bilboBagginsBurglarCard,
-  lakeshoreApothecary,
-  confusticateAndBebother,
-  ravenhillFlock,
-  thranduilsDecree,
-  bilboLuckwearer,
+  lakeshoreApothecaryCard,
+  confusticateAndBebotherCard,
+  ravenhillFlockCard,
+  thranduilsDecreeCard,
+  bilboLuckwearerCard,
   uneasyPartings,
   frontPorchSentries,
   greatFierceBee,
@@ -1786,8 +1856,25 @@ def hobbitCards : Array CardDef := #[
   match bilboBagginsBurglarCard.adventure with
   | some adv => adv.spellEffect == some (Effect.scry 2)
   | none => false
-#guard (bilboLuckwearer.oracleText.splitOn "//ADV//").length > 1
-#guard (bilboLuckwearer.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
+#guard lakeshoreApothecaryCard.keywords.vigilance
+#guard lakeshoreApothecaryCard.triggeredAbilities ==
+  #[TriggeredAbility.onDrawSecondPlusOne]
+#guard confusticateAndBebotherCard.spellModes ==
+  #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+#guard ravenhillFlockCard.keywords.flying
+#guard ravenhillFlockCard.triggeredAbilities ==
+  #[TriggeredAbility.onDrawPlusOne]
+#guard thranduilsDecreeCard.spellEffect ==
+  some Effect.counterExilePermanentMayCast
+#guard (bilboLuckwearerCard.oracleText.splitOn "//ADV//").length > 1
+#guard (bilboLuckwearerCard.oracleText.splitOn "Burglar's Plot {4}{U}").length > 1
+#guard bilboLuckwearerCard.keywords.cantBeBlocked
+#guard bilboLuckwearerCard.triggeredAbilities ==
+  #[TriggeredAbility.onCombatDamageToPlayerLoot]
+#guard
+  match bilboLuckwearerCard.adventure with
+  | some adv => adv.spellEffect == some Effect.exchangeControlSharingType
+  | none => false
 #guard (gollumSilentSlinker.oracleText.splitOn "//ADV//").length > 1
 #guard (gollumSilentSlinker.oracleText.splitOn "Meager Meal {B}").length > 1
 
