@@ -6756,9 +6756,9 @@ def batCloudReductionIfPlayerLostOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨1⟩) none
   let g := g.setPlayer { (g.player ⟨1⟩) with lost := true }
-  let g := addToHand g dreadedBatCloud ⟨0⟩
+  let g := addToHand g dreadedBatCloudCard ⟨0⟩
   let card := handCardNamed g ⟨0⟩ "Dreaded Bat-Cloud"
-  let cost := g.playManaCost card dreadedBatCloud
+  let cost := g.playManaCost card dreadedBatCloudCard
   g.creatureDiedThisTurn &&
     (g.player ⟨1⟩).lost &&
     cost == ManaCost.ofGenericAndColor 1 .black &&

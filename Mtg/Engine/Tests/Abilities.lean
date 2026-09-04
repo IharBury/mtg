@@ -208,13 +208,13 @@ def hauntInGy : Game :=
   (namedGraveyardCard hauntInGy ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility)
 
 def hauntInGyWithLegend : Game :=
-  addPermanent hauntInGy gollumSilentSlinker ⟨0⟩ ⟨0⟩
+  addPermanent hauntInGy gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
 
 #guard hauntInGyWithLegend.canActivate ⟨0⟩
   (namedGraveyardCard hauntInGyWithLegend ⟨0⟩ "Haunt of the Dead Marshes") hauntAbility
 #guard
   let g := addPermanent hauntInGy hauntOfTheDeadMarshes ⟨0⟩ ⟨0⟩
-  let g := addPermanent g gollumSilentSlinker ⟨0⟩ ⟨0⟩
+  let g := addPermanent g gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
   !(g.canActivate ⟨0⟩ (namedPermanent g "Haunt of the Dead Marshes") hauntAbility)
 
 def hauntReturned : Game :=
@@ -234,7 +234,7 @@ def hauntReturned : Game :=
 
 /-- Gollum, Silent Slinker: menace requires two blockers. -/
 def gollumMenaceField : Game :=
-  let g := addPermanent afterDraw gollumSilentSlinker ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
 
@@ -271,7 +271,7 @@ def gollumBlockedByTwo : Game :=
 def sliceSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g bilbosDeadlySlice ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g bilbosDeadlySliceCard ⟨0⟩) ⟨0⟩ 3
 
 #guard sliceSetup.canCast ⟨0⟩ (handCardNamed sliceSetup ⟨0⟩ "Bilbo's Deadly Slice")
 #guard
@@ -292,7 +292,7 @@ def sliceResolved : Game :=
 /-- Dreaded Bat-Cloud costs {3} less if a creature died this turn. -/
 def batCloudFull : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g dreadedBatCloud ⟨0⟩) ⟨0⟩ 5
+  withBlackMana (addToHand g dreadedBatCloudCard ⟨0⟩) ⟨0⟩ 5
 
 def batCloudReduced : Game :=
   { batCloudFull with creatureDiedThisTurn := true }

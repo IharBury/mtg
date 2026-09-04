@@ -171,22 +171,22 @@ open Mtg.Engine.Catalog
 #guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwlerCard.activatedAbilities[0]!.onceEachTurn
-#guard mentions raveningWarg.summary "deathtouch"
-#guard mentions raveningWarg.summary "Ferocious"
-#guard mentions raveningWarg.summary "power 4 or greater"
-#guard raveningWarg.keywords.deathtouch
-#guard raveningWarg.triggeredAbilities.size == 1
-#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard mentions gollumSilentSlinker.summary "menace"
-#guard !mentions gollumSilentSlinker.summary "can't be blocked except"
-#guard gollumSilentSlinker.keywords.menace
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
-#guard mentions bilbosDeadlySlice.summary "Destroy target creature"
-#guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySlice.requiresTarget
-#guard bilbosDeadlySlice.hasCastKind .destroyCreature
+#guard mentions raveningWargCard.summary "deathtouch"
+#guard mentions raveningWargCard.summary "Ferocious"
+#guard mentions raveningWargCard.summary "power 4 or greater"
+#guard raveningWargCard.keywords.deathtouch
+#guard raveningWargCard.triggeredAbilities.size == 1
+#guard raveningWargCard.triggeredAbilities == #[.onAttackFerociousGainLife 2]
+#guard mentions gollumSilentSlinkerCard.summary "menace"
+#guard !mentions gollumSilentSlinkerCard.summary "can't be blocked except"
+#guard gollumSilentSlinkerCard.keywords.menace
+#guard gollumSilentSlinkerCard.power == some 4
+#guard gollumSilentSlinkerCard.toughness == some 3
+#guard mentions bilbosDeadlySliceCard.summary "Destroy target creature"
+#guard bilbosDeadlySliceCard.isInstant
+#guard bilbosDeadlySliceCard.spellEffect == some (Effect.destroyCreature)
+#guard bilbosDeadlySliceCard.requiresTarget
+#guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
 #guard mentions infernoTitan.summary "+1/+0"
 #guard mentions infernoTitan.summary "divided as you choose"
 #guard infernoTitan.activatedAbilities.size == 1

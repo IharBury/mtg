@@ -52,10 +52,10 @@ def hobbitBlue : Array CardDef :=
 def hobbitBlack : Array CardDef :=
   copies 2 frontPorchSentriesCard ++
   #[greatFierceBeeCard, stirUpTroubleCard, hauntOfTheDeadMarshes, desolationProwlerCard,
-    raveningWarg] ++
-  copies 2 gollumSilentSlinker ++
-  copies 2 bilbosDeadlySlice ++
-  #[dreadedBatCloud, roguesPassage, crudeBentBlade, languish, shadowOfTheEnemy,
+    raveningWargCard] ++
+  copies 2 gollumSilentSlinkerCard ++
+  copies 2 bilbosDeadlySliceCard ++
+  #[dreadedBatCloudCard, roguesPassage, crudeBentBlade, languish, shadowOfTheEnemy,
     gollumTheAbandoned, gnashingOfTeeth, trollOfKhazadDum, mercilessExecutioner,
     bitterDownfall, reverentHowl, nightsWhisper, stonyVoicedGoblins] ++
   copies 16 swamp

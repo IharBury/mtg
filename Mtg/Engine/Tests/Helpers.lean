@@ -326,8 +326,8 @@ def withGoblin : Game := addPermanent started ragingGoblin ⟨0⟩ ⟨0⟩
 def withElves : Game := addPermanent started llanowarElves ⟨0⟩ ⟨0⟩
 def withSpider : Game := addPermanent started giantSpider ⟨0⟩ ⟨0⟩
 def withAttercop : Game := addPermanent started attercop ⟨0⟩ ⟨0⟩
-def withWarg : Game := addPermanent started raveningWarg ⟨0⟩ ⟨0⟩
-def withGollum : Game := addPermanent started gollumSilentSlinker ⟨0⟩ ⟨0⟩
+def withWarg : Game := addPermanent started raveningWargCard ⟨0⟩ ⟨0⟩
+def withGollum : Game := addPermanent started gollumSilentSlinkerCard ⟨0⟩ ⟨0⟩
 def withCrusher : Game := addPermanent started ologHaiCrusher ⟨0⟩ ⟨0⟩
 
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
