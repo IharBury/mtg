@@ -68,11 +68,10 @@ def dwarvenProvisioner : TraditionalCardDefinition := .card [
       [.mana [.generic 3, .mono .white]]
       (.continuous
         [.addPowerToughness
-          (.filtered
-            (.and [
-              .permanent,
-              .cardType .creature,
-              .controller (.controllerOf .this)]))
+          (.and [
+            .permanent,
+            .cardType .creature,
+            .controller (.controllerOf .this)])
           1 1]
         .endOfTurn))
 ]
@@ -108,7 +107,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .ability (
     .static
       [.conditional
-        (.hasTargetIn .this (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+        (.hasTargetIn .this (.and [.permanent, .cardType .creature, .tapped]))
         [.reduceCost .this [.mana [.generic 3]]]]),
   .action (
     .dealDamage
@@ -157,11 +156,10 @@ def vowToErebor : TraditionalCardDefinition := .card [
         (.hasSubtype (.var 1) .dwarf)
         (.optional
           (.attach (.selected (.range 1 1)
-            (.filtered
-              (.and [
-                .permanent,
-                .subtype .equipment,
-                .controller (.controllerOf .this)])))
+            (.and [
+              .permanent,
+              .subtype .equipment,
+              .controller (.controllerOf .this)]))
             (.var 1))))])]
 
 def vowToEreborCard : CardDef :=

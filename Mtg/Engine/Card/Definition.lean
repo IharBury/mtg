@@ -34,9 +34,6 @@ inductive Range where
   | range : Nat → Nat → Range
 deriving Repr, Inhabited, BEq
 
--- A selector may mention a filter (`.target`, `.targets`, `.filtered`), and a
--- filter may mention a selector (`.controller`).
-mutual
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
 inductive Selector where
   /-- This spell or ability (CR 113.7). -/
@@ -45,40 +42,33 @@ inductive Selector where
   | source
   /-- The controller of the given object (CR 109.5). -/
   | controllerOf : Selector → Selector
-  /-- A numbered target matching `filter` (CR 115.1). Later effects may
+  /-- A numbered target matching `among` (CR 115.1). Later effects may
   refer to it with `targetReference`. -/
-  | target : Nat → Filter → Selector
-  /-- Numbered targets matching `filter`, with a count range. -/
-  | targets : Nat → Range → Filter → Selector
+  | target : Nat → Selector → Selector
+  /-- Numbered targets matching `among`, with a count range. -/
+  | targets : Nat → Range → Selector → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
   /-- The object bound by `forEach` of this number. -/
   | var : Nat → Selector
-  /-- Every object matching `filter` (not targeted). -/
-  | filtered : Filter → Selector
   /-- Choose objects from `among` at resolution, with a count range
   (not targeting; CR 608.2d). -/
   | selected : Range → Selector → Selector
-deriving Repr, Inhabited, BEq
-
-/-- Whom or what a spell or ability may target or affect (CR 115.1). -/
-inductive Filter where
-  | and : List Filter → Filter
+  | and : List Selector → Selector
   | any
-  | cardType : CardType → Filter
-  | or : List Filter → Filter
+  | cardType : CardType → Selector
+  | or : List Selector → Selector
   /-- A permanent (CR 110.1). -/
   | permanent
   /-- Objects whose controller is the given player. -/
-  | controller : Selector → Filter
+  | controller : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
   | tapped
   /-- Printed subtype (CR 205.3). -/
-  | subtype : CardSubtype → Filter
+  | subtype : CardSubtype → Selector
 deriving Repr, Inhabited, BEq
-end
 
-namespace Filter
+namespace Selector
 
 /-- Card types a filter allows. `any` means the filter does not mention type. -/
 inductive TypeSet where
@@ -149,7 +139,7 @@ def dwarf (s : Shape) : Bool :=
 
 end Shape
 
-def shape : Filter → Shape
+def shape : Selector → Shape
   | .any => {}
   | .permanent => { mustBePermanent := true }
   | .controller (.controllerOf .this) => { sameController := true }
@@ -160,9 +150,11 @@ def shape : Filter → Shape
   | .and fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .or [] => {}
   | .or (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
+  | .this | .source | .controllerOf _ | .target _ _ | .targets _ _ _
+  | .targetReference _ | .var _ | .selected _ _ => {}
 
-/-- Compile a filter to a targeting shape the engine already understands. -/
-def toTargetKind (f : Filter) : EffectTargetKind :=
+/-- Compile a selector to a targeting shape the engine already understands. -/
+def toTargetKind (f : Selector) : EffectTargetKind :=
   let s := f.shape
   if s.sameController then
     if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
@@ -173,13 +165,13 @@ def toTargetKind (f : Filter) : EffectTargetKind :=
   else if s.types.eqTypes [.artifact] then .artifact
   else .permanent
 
-end Filter
+end Selector
 
 /-- How many objects matching `filter` a spell or ability may target. -/
 structure TargetSelector where
   minimumTargets : Nat := 1
   maximumTargets : Nat := 1
-  filter : Filter := .any
+  filter : Selector := .any
 deriving Repr, Inhabited, BEq
 
 namespace TargetSelector
@@ -193,8 +185,8 @@ end TargetSelector
 inductive Trigger where
   | endOfGame
   | endOfTurn
-  /-- Whenever the selected object attacks, restricted by `filter`. -/
-  | attack : Selector → Filter → Trigger
+  /-- Whenever the selected object attacks, restricted by `among`. -/
+  | attack : Selector → Selector → Trigger
   /-- When the selected object enters. -/
   | enter : Selector → Trigger
 deriving Repr, Inhabited, BEq
@@ -203,8 +195,8 @@ deriving Repr, Inhabited, BEq
 inductive Condition where
   /-- `who` has a target among the objects described by `among`. -/
   | hasTargetIn : Selector → Selector → Condition
-  /-- The given object matches `filter`. -/
-  | matches : Selector → Filter → Condition
+  /-- The given object matches `among`. -/
+  | matches : Selector → Selector → Condition
   /-- The given object has the given subtype. -/
   | hasSubtype : Selector → CardSubtype → Condition
 deriving Repr, Inhabited, BEq
@@ -283,12 +275,13 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
 def targetingSelector? (effects : List ContinuousEffect) : Option TargetSelector :=
   effects.findSome? fun e => e.selector.asTargetSelector?
 
-/-- First `filtered` set, if any. -/
-def massFilter? (effects : List ContinuousEffect) : Option Filter :=
+/-- First constraint-shaped selector, if any. -/
+def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
-    | .filtered f => some f
-    | _ => none
+    | .this | .source | .controllerOf _ | .target _ _ | .targets _ _ _
+    | .targetReference _ | .var _ | .selected _ _ => none
+    | s => some s
 
 end ContinuousEffect
 
@@ -334,10 +327,10 @@ def continuousEffect (sel : Option TargetSelector) (effects : List ContinuousEff
     | none => creaturesYouControlPumpEffect p t asAbility
   | none => grantKeywordsEffect sel effects asAbility
 
-/-- Compile a mass (`filtered`) action. Creatures you control getting +P/+T
+/-- Compile a mass action. Creatures you control getting +P/+T
 is the shape Dwarven Provisioner prints. -/
-def filteredEffect (f : Filter) (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
-  match ContinuousEffect.addedPT? effects, f.shape with
+def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+  match ContinuousEffect.addedPT? effects, among.shape with
   | some (p, t), s =>
     if s.sameController && s.types.eqTypes [.creature] then
       creaturesYouControlPumpEffect p t asAbility
@@ -360,8 +353,8 @@ def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Eff
   | some sel =>
     withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
   | none =>
-    match ContinuousEffect.massFilter? effects with
-    | some f => filteredEffect f effects asAbility
+    match ContinuousEffect.massSelector? effects with
+    | some among => massEffect among effects asAbility
     | none => continuousEffect none effects asAbility
 
 def compileTap (s : Selector) (asAbility : Bool) : Effect :=
@@ -524,8 +517,8 @@ namespace CardFace
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness _ _ _ => b
-  | .conditional (.hasTargetIn .this (.filtered f)) inners =>
-    if f.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
+  | .conditional (.hasTargetIn .this among) inners =>
+    if among.shape.tappedCreature then inners.foldl applyContinuousEffect b else b
   | .conditional _ inners => inners.foldl applyContinuousEffect b
   | .reduceCost _ costs =>
     { b with
@@ -546,8 +539,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
   | .static effects => effects.foldl applyContinuousEffect b
-  | .conditional (.hasTargetIn .this (.filtered f)) inner =>
-    if f.shape.tappedCreature then applyAbility b inner else b
+  | .conditional (.hasTargetIn .this among) inner =>
+    if among.shape.tappedCreature then applyAbility b inner else b
   | .conditional _ inner => applyAbility b inner
   | .reduceCost _ costs =>
     { b with
@@ -651,14 +644,14 @@ end TraditionalCardDefinition
       .endOfTurn
   action.toEffect == Effect.grantHexproofIndestructible
 
-#guard Filter.toTargetKind
+#guard Selector.toTargetKind
   (.and [
     .permanent,
     .or [.cardType .artifact, .cardType .creature],
     .controller (.controllerOf .this)])
   == .artifactOrCreatureYouControl
 
-#guard Filter.toTargetKind
+#guard Selector.toTargetKind
   (.and [
     .controller (.controllerOf .this),
     .or [.cardType .creature, .cardType .artifact],
@@ -670,11 +663,10 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .continuous
       [.addPowerToughness
-        (.filtered
-          (.and [
-            .permanent,
-            .cardType .creature,
-            .controller (.controllerOf .this)]))
+        (.and [
+          .permanent,
+          .cardType .creature,
+          .controller (.controllerOf .this)])
         1 1]
       .endOfTurn
   action.toAbilityEffect == Effect.abilityCreaturesYouControlGet 1 1
@@ -685,11 +677,10 @@ end TraditionalCardDefinition
       [.mana [.generic 3, .mono .white]]
       (.continuous
         [.addPowerToughness
-          (.filtered
-            (.and [
-              .permanent,
-              .cardType .creature,
-              .controller (.controllerOf .this)]))
+          (.and [
+            .permanent,
+            .cardType .creature,
+            .controller (.controllerOf .this)])
           1 1]
         .endOfTurn)).toActivatedAbility? with
   | some ab =>
@@ -712,7 +703,7 @@ end TraditionalCardDefinition
       5
   action.toEffect == Effect.dealDamageToCreature 5
 
-#guard Filter.shape
+#guard Selector.shape
   (.and [.permanent, .cardType .creature, .tapped]) |>.tappedCreature
 
 #guard
@@ -724,7 +715,7 @@ end TraditionalCardDefinition
       .static
         [.conditional
           (.hasTargetIn .this
-            (.filtered (.and [.permanent, .cardType .creature, .tapped])))
+            (.and [.permanent, .cardType .creature, .tapped]))
           [.reduceCost .this [.mana [.generic 3]]]]),
     .action (
       .dealDamage
@@ -743,14 +734,14 @@ end TraditionalCardDefinition
   | none => false
 
 -- Vow to Erebor: untap target creature you control, +2/+2, maybe attach if Dwarf.
-#guard Filter.toTargetKind
+#guard Selector.toTargetKind
   (.and [
     .permanent,
     .cardType .creature,
     .controller (.controllerOf .this)])
   == .creatureYouControl
 
-#guard Filter.shape (.subtype .dwarf) |>.dwarf
+#guard Selector.shape (.subtype .dwarf) |>.dwarf
 
 #guard
   let action : CardAction :=
@@ -767,11 +758,10 @@ end TraditionalCardDefinition
         (.hasSubtype (.var 1) .dwarf)
         (.optional
           (.attach (.selected (.range 1 1)
-            (.filtered
-              (.and [
-                .permanent,
-                .subtype .equipment,
-                .controller (.controllerOf .this)])))
+            (.and [
+              .permanent,
+              .subtype .equipment,
+              .controller (.controllerOf .this)]))
             (.var 1))))]
   action.toEffect == Effect.untapPumpMaybeAttach 2 2
 
