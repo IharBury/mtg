@@ -42,8 +42,8 @@ inductive Selector where
   | source : Selector → Selector
   /-- The controller of the given object (CR 109.5). -/
   | controller : Selector → Selector
-  /-- A numbered target matching `among` (CR 115.1). Later effects may
-  refer to it with `targetReference`. -/
+  /-- A numbered target matching the given selector (CR 115.1). Later
+  effects may refer to it with `targetReference`. -/
   | target : Nat → Selector → Selector
   /-- Numbered targets matching `among`, with a count range. -/
   | targets : Nat → Range → Selector → Selector
