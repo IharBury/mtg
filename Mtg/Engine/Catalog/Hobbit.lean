@@ -1303,19 +1303,7 @@ def hobbitHole : CardDef :=
                   .cardType .land,
                   .supertype .basic]))
               .tapped])),
-    .ability (
-      .activated
-        [.mana [.generic 4], .discard .this]
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .defineVariable 1
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [.inDeck, .subtype .halfling])),
-            .reveal (.variable 1),
-            .returnToHand (.variable 1)]))
+    .ability (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
   ]).toCardDef
     (oracleText :=
       "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)")

@@ -1408,6 +1408,11 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       cost := { mana := Cost.manaCost costs }
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
+  | .keywordWithCost (.subtypecycling st) costs =>
+    some {
+      cost := { mana := Cost.manaCost costs, discardSource := true }
+      effect := Effect.searchLandTypeToHand st.toString
+      activateFromHand := true }
   | .activated costs action => some (activatedAbility costs action)
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
     some (activatedAbility costs action true)
@@ -2324,6 +2329,8 @@ end TraditionalCardDefinition
 
 #guard Keyword.equip.toKeywords == Keywords.none
 #guard Keyword.enchant.toKeywords == Keywords.none
+#guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
+#guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
 
 #guard
   let c :=
@@ -2356,6 +2363,29 @@ end TraditionalCardDefinition
     c.activatedAbilities[0]!.onlyAsSorcery &&
     c.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl &&
     c.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
+
+#guard
+  match
+    (Ability.keywordWithCost
+      (.subtypecycling .halfling)
+      [.mana [.generic 4]]).toActivatedAbility? with
+  | some ab =>
+    ab.activateFromHand &&
+      ab.cost.discardSource &&
+      ab.cost.mana == ManaCost.ofGeneric 4 &&
+      ab.effect == Effect.searchLandTypeToHand "Halfling"
+  | none => false
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability
+        (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
+    ]).toCardDef
+  c.activatedAbilities.size == 1 &&
+    c.activatedAbilities[0]!.activateFromHand &&
+    c.activatedAbilities[0]!.cost.discardSource &&
+    c.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Halfling"
 
 -- Gollum the Abandoned: can't block; ETB exile GY; return from GY.
 #guard
