@@ -879,10 +879,23 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
   .ability (
     .activated
       [.tapSymbol]
-      (.addManaAnyColorEqualToPower
-        (.controller .this)
-        (.controller .this)
-        .this))
+      (.sequence [
+        .actionId 1
+          (.addManaAnyColorEqualToPower
+            (.controller .this)
+            (.controller .this)
+            .this),
+        .continuous
+          [.forbid
+            (.spend
+              (.wasCreatedByAction 1)
+              (.not
+                (.union [
+                  .intersection [.spell, .subtype .elf],
+                  .intersection [
+                    .activatedAbility,
+                    .source (.subtype .elf)]])))]
+          .endOfTurn]))
 ]
 
 def woodlandWeavemasterCard : CardDef :=
