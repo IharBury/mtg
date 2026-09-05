@@ -255,7 +255,7 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
     .actionId 1 (.counter (.target 1 .spell)),
     .continuous
       [.replace
-        (.putToGraveyard (.wasObjectOfAction 1))
+        (.putToGraveyard (.intersection [.wasObjectOfAction 1, .permanentSpell]))
         [.actionId 2 (.exile (.replacingObject 1)),
           .continuous
             [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]

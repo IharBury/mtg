@@ -76,6 +76,8 @@ inductive Selector where
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
   | spell
+  /-- A permanent spell (CR 110.4 / 112.1). -/
+  | permanentSpell
   /-- A player (CR 102). -/
   | player
   /-- Opponents of the given player (CR 102.2). -/
@@ -281,6 +283,7 @@ def shape : Selector → Shape
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
+  | .permanentSpell => { isSpell := true }
   | .nonland => { nonland := true }
   | .not .this => { other := true }
   | .not s => s.shape.negate
@@ -564,7 +567,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
-    | .allTargets _ | .spell | .player
+    | .allTargets _ | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .topOfLibrary _ => none
     | s => some s
@@ -1423,7 +1426,7 @@ end TraditionalCardDefinition
       .actionId 1 (.counter (.target 1 .spell)),
       .continuous
         [.replace
-          (.putToGraveyard (.wasObjectOfAction 1))
+          (.putToGraveyard (.intersection [.wasObjectOfAction 1, .permanentSpell]))
           [.actionId 2 (.exile (.replacingObject 1)),
             .continuous
               [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
