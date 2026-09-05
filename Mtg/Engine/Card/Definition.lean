@@ -414,11 +414,14 @@ inductive CostedKeyword where
   | equip
 deriving Repr, Inhabited, BEq
 
-/-- A boolean check used by a conditional continuous effect. -/
+/-- A boolean check used by a conditional effect or action. -/
 inductive Condition where
   /-- True when any target of the first selector matches the second
   (CR 115.1 / 601.2c). -/
   | targetsIncludeAny : Selector → Selector → Condition
+  /-- True when any object matching the selector has the given subtype
+  (CR 205.3). -/
+  | anySubtype : Selector → CardSubtype → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -478,6 +481,8 @@ inductive CardAction where
   | forEach : Nat → CardAction → CardAction
   /-- Perform the given actions only when the selector matches anything. -/
   | ifAny : Selector → List CardAction → CardAction
+  /-- Perform the given actions only when the condition holds. -/
+  | if : Condition → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
   /-- Choose one of the given modes (CR 700.2). -/
@@ -700,7 +705,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
   | .sequence [
       .untap ut,
       .continuous effects _,
-      .ifAny among [.optional (.attach _eq _to)]
+      .if (.anySubtype _ .dwarf) [.optional (.attach _eq _to)]
     ] =>
     let youControlCreature :=
       match ut.among? with
@@ -708,7 +713,7 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
         let s := who.shape
         s.sameController && s.types.eqTypes [.creature]
       | none => false
-    if youControlCreature && among.shape.dwarf then
+    if youControlCreature then
       ContinuousEffect.addedPT? effects
     else none
   | _ => none
@@ -845,6 +850,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .forEach _ inner => compile inner asAbility
                   | .ifAny _ (a :: _) => compile a asAbility
                   | .ifAny _ [] => continuousEffect none [] asAbility
+                  | .if _ (a :: _) => compile a asAbility
+                  | .if _ [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
                   | .chooseMode (a :: _) => compile a asAbility
@@ -1068,6 +1075,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness _ _ _ => b
   | .ifAny among inners => applyIfShape b among inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
+  | .if (.anySubtype _ _) _ => b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1350,8 +1358,8 @@ end TraditionalCardDefinition
             .cardType .creature,
             .controlled (.controller .this)])),
       .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-      .ifAny
-        (.intersection [.targetReference 1, .subtype .dwarf])
+      .if
+        (.anySubtype (.targetReference 1) .dwarf)
         [
           .optional
             (.attach
