@@ -549,9 +549,10 @@ inductive CardAction where
   /-- The first selected object deals damage equal to its power to the
   second (CR 701.13). -/
   | dealDamageEqualToPower : Selector → Selector → CardAction
-  /-- The selected player adds X mana of any one color, where X is the
-  selected object's power. -/
-  | addManaAnyColorEqualToPower : Selector → CardAction
+  /-- The first selected player chooses a color. The second selected
+  player adds X mana of that color, where X is the third selected
+  object's power. -/
+  | addManaAnyColorEqualToPower : Selector → Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -896,9 +897,11 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
 
 /-- Tap and add mana of any color equal to this object's power. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
-  | .addManaAnyColorEqualToPower who =>
+  | .addManaAnyColorEqualToPower chooser gainer power =>
     Cost.hasTapSymbol costs &&
-      (who == .this || who == .source .this)
+      chooser == .controller .this &&
+      gainer == .controller .this &&
+      (power == .this || power == .source .this)
   | _ => false
 
 /-- Set another creature you control's base P/T equal to this source. -/
@@ -989,7 +992,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
                   | .dealDamageEqualToPower _ _ =>
                     continuousEffect none [] asAbility
-                  | .addManaAnyColorEqualToPower _ =>
+                  | .addManaAnyColorEqualToPower _ _ _ =>
                     continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -2189,7 +2192,8 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.activated [.tapSymbol] (.addManaAnyColorEqualToPower .this))
+    .ability (.activated [.tapSymbol] (.addManaAnyColorEqualToPower
+      (.controller .this) (.controller .this) .this))
   ]).toCardDef.tapAddAnyColorEqualToPower
 
 end Mtg.Engine

@@ -879,7 +879,10 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
   .ability (
     .activated
       [.tapSymbol]
-      (.addManaAnyColorEqualToPower .this))
+      (.addManaAnyColorEqualToPower
+        (.controller .this)
+        (.controller .this)
+        .this))
 ]
 
 def woodlandWeavemasterCard : CardDef :=
