@@ -433,6 +433,9 @@ inductive Condition where
   | didNotHappen : Trigger → Trigger → Condition
   /-- True when the first trigger has occurred since the second. -/
   | happened : Trigger → Trigger → Condition
+  /-- True when the selected player could cast a sorcery
+  (CR 307.1 / 117.1a). -/
+  | timeToCastSorcery : Selector → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -933,6 +936,10 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
   | .activatedTimes _ _ costs action => some (activatedAbility costs action)
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
     some (activatedAbility costs action true)
+  | .activatedIf (.timeToCastSorcery _) costs
+      action@(.returnToHand (.intersection [.inGraveyard, .source .this])) =>
+    some (applyRestriction .fromGraveyard
+      (applyRestriction .onlyAsSorcery (activatedAbility costs action)))
   | .abilityId _ inner => toActivatedAbility? inner
   | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
@@ -1086,6 +1093,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.anySubtype _ _) _ => b
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened t since) inners => applyIfShape b (.wasSubject t since) inners
+  | .if (.timeToCastSorcery _) _ => b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1720,15 +1728,14 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.restrict .onlyAsSorcery
-      (.restrict .fromGraveyard
-        (.activated
-          [.mana [.generic 2],
-            .sacrifice
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .creature]])]
-          (.returnToHand (.source .this))))).toActivatedAbility? with
+    (Ability.activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 2],
+        .sacrifice
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+      (.returnToHand (.intersection [.inGraveyard, .source .this]))).toActivatedAbility? with
   | some ab =>
     ab.onlyAsSorcery &&
       ab.activateFromGraveyard &&

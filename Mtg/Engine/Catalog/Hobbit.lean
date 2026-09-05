@@ -537,15 +537,14 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
           (.targets 1 (.range 0 1) (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2])),
   .ability (
-    .restrict .onlyAsSorcery
-      (.restrict .fromGraveyard
-        (.activated
-          [.mana [.generic 2],
-            .sacrifice
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .creature]])]
-          (.returnToHand (.source .this)))))
+    .activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 2],
+        .sacrifice
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+      (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
 
 def gollumTheAbandonedCard : CardDef :=
