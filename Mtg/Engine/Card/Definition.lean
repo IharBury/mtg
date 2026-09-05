@@ -976,7 +976,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target _ (.opponent _))]))) =>
+            .controlled (.targetReference _)]))) =>
     some TriggeredAbility.onEnterTargetOpponentSacrificesCreature
   | .triggered (.enter .this)
       (.sequence [
@@ -1661,7 +1661,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 (.opponent (.controller .this)))])))).toTriggeredAbility? with
+            .controlled (.targetReference 1)])))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterTargetOpponentSacrificesCreature
   | none => false
 

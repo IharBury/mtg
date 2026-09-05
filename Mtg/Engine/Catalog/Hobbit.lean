@@ -510,7 +510,7 @@ def crudeBentBlade : TraditionalCardDefinition := .card [
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 (.opponent (.controller .this)))])))),
+            .controlled (.targetReference 1)])))),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
   .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
