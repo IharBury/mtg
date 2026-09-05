@@ -97,6 +97,8 @@ inductive Selector where
   | inDeck
   /-- Objects with the given supertype (CR 205.4). -/
   | supertype : CardSupertype → Selector
+  /-- Objects bound to this numbered variable. -/
+  | variable : Nat → Selector
   /-- The top card of the selected player's library (CR 401). -/
   | topOfLibrary : Selector → Selector
 deriving Repr, Inhabited, BEq
@@ -335,7 +337,7 @@ def shape : Selector → Shape
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .topOfLibrary _ => {}
+  | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .variable _ | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -624,6 +626,10 @@ inductive CardAction where
   choose cards from that library while they are visible, then shuffle
   (CR 701.19). -/
   | searchLibraryThenShuffle : Selector → List CardAction → CardAction
+  /-- Bind the selected objects to this numbered variable. -/
+  | defineVariable : Nat → Selector → CardAction
+  /-- Reveal the selected object (CR 701.19a). -/
+  | reveal : Selector → CardAction
   /-- The first selected object deals damage equal to its power to the
   second (CR 701.13). -/
   | dealDamageEqualToPower : Selector → Selector → CardAction
@@ -687,7 +693,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .topOfLibrary _ => none
+    | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .variable _ | .topOfLibrary _ => none
     | s => some s
 
 end ContinuousEffect
@@ -1111,23 +1117,25 @@ def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
   | _ => false
 
 /-- Nested search actions: put a basic land onto the battlefield tapped,
-or put a found card into hand. -/
+or reveal a found card and put it into hand. -/
 def leftoverSearchActions? : List CardAction → Option Effect
   | [.putOntoBattlefield sel, .tap _] =>
     match sel.selectedAmong? with
     | some among =>
       if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
     | none => none
-  | [.returnToHand sel] =>
-    match sel.selectedAmong? with
-    | some among =>
-      if among.basicLandInDeck then some Effect.searchBasicLandToHand
-      else
-        match among.includedSubtype? with
-        | some t =>
-          if among.includesInDeck then some (Effect.searchLandTypeToHand t) else none
-        | none => none
-    | none => none
+  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+    if id == id' && id == id'' then
+      match sel.selectedAmong? with
+      | some among =>
+        if among.basicLandInDeck then some Effect.searchBasicLandToHand
+        else
+          match among.includedSubtype? with
+          | some t =>
+            if among.includesInDeck then some (Effect.searchLandTypeToHand t) else none
+          | none => none
+      | none => none
+    else none
   | _ => none
 
 /-- Search a library, act on the found cards, then shuffle. -/
@@ -1144,13 +1152,15 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
         some TriggeredAbility.onEnterSearchForest
       else none
     | none => none
-  | [.returnToHand sel] =>
-    match sel.selectedAmong? with
-    | some among =>
-      if among.basicLandInDeck then
-        some TriggeredAbility.onEnterSearchBasicToHand
-      else none
-    | none => none
+  | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
+    if id == id' && id == id'' then
+      match sel.selectedAmong? with
+      | some among =>
+        if among.basicLandInDeck then
+          some TriggeredAbility.onEnterSearchBasicToHand
+        else none
+      | none => none
+    else none
   | _ => none
 
 /-- Compile `continuous` effects, reading targeting from `target`
@@ -1255,6 +1265,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putOntoBattlefield _ => continuousEffect none [] asAbility
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
+                  | .defineVariable _ _ => continuousEffect none [] asAbility
+                  | .reveal _ => continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ =>
                     continuousEffect none [] asAbility
                   | .addManaAnyColorEqualToPower _ _ _ =>
@@ -2874,6 +2886,23 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
+        .defineVariable 1
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [
+              .inDeck,
+              .cardType .land,
+              .supertype .basic])),
+        .reveal (.variable 1),
+        .returnToHand (.variable 1)]
+  action.toAbilityEffect == Effect.searchBasicLandToHand
+
+#guard
+  let action : CardAction :=
+    .searchLibraryThenShuffle
+      (.controller .this)
+      [
         .putOntoBattlefield
           (.selected
             (.controller .this)
@@ -2908,14 +2937,16 @@ end TraditionalCardDefinition
       (.searchLibraryThenShuffle
         (.controller .this)
         [
-          .returnToHand
+          .defineVariable 1
             (.selected
               (.controller .this)
               (.range 1 1)
               (.intersection [
                 .inDeck,
                 .cardType .land,
-                .supertype .basic]))])).toTriggeredAbility? with
+                .supertype .basic])),
+          .reveal (.variable 1),
+          .returnToHand (.variable 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
   | none => false
 

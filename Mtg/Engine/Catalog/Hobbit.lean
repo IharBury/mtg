@@ -1422,14 +1422,16 @@ def throrsMap : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .returnToHand
+            .defineVariable 1
               (.selected
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
                   .inDeck,
                   .cardType .land,
-                  .supertype .basic]))])),
+                  .supertype .basic])),
+            .reveal (.variable 1),
+            .returnToHand (.variable 1)])),
     .ability (
       .activated
         [.mana [.generic 2], .tapSymbol]
