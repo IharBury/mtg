@@ -942,9 +942,27 @@ def beornReluctantHost : CardDef :=
     (oracleText := "Trample\n//ADV//\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
 
 def woodElves : CardDef :=
-  creature "Wood Elves" (ManaCost.ofGenericAndColor 2 .green) #["Elf", "Scout"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Wood Elves",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .scout,
+    .power 1,
+    .toughness 1,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .putOntoBattlefield
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [.inDeck, .subtype .forest]))]))
+  ]).toCardDef
     (oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.")
-    (triggeredAbilities := #[.onEnterSearchForest])
 
 def attercop : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1393,12 +1411,36 @@ def theLordOfTheEagles : CardDef :=
     (costReductionEqualFlyingPower := true)
 
 def throrsMap : CardDef :=
-  artifact "Thrór's Map" (ManaCost.ofGeneric 2)
-    "When Thrór's Map enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.\n{2}, {T}: Draw a card, then discard a card."
-    (supertypes := #[.legendary])
-    (triggeredAbilities := #[.onEnterSearchBasicToHand])
-    (activatedAbilities := #[
-      activated (Effect.abilityDrawThenDiscard 1) (ManaCost.ofGeneric 2) (tap := true)])
+  (TraditionalCardDefinition.card [
+    .name "Thrór's Map",
+    .manaCost [.generic 2],
+    .type .artifact,
+    .supertype .legendary,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .defineVariable 1
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .inDeck,
+                  .cardType .land,
+                  .supertype .basic])),
+            .reveal (.variable 1),
+            .returnToHand (.variable 1)])),
+    .ability (
+      .activated
+        [.mana [.generic 2], .tapSymbol]
+        (.sequence [
+          .draw (.controller .this) 1,
+          .discard (.controller .this) 1]))
+  ]).toCardDef
+    (oracleText :=
+      "When Thrór's Map enters, search your library for a basic land card, reveal it, put it into your hand, then shuffle.\n{2}, {T}: Draw a card, then discard a card.")
 
 def theBlackArrow : CardDef :=
   equipment "The Black Arrow" (ManaCost.ofGeneric 3)
@@ -2285,6 +2327,12 @@ def hobbitCards : Array CardDef := #[
 #guard (crudeBentBladeCard.summary.splitOn "target opponent").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard (woodElves.summary.splitOn "Forest card").length > 1
+#guard throrsMap.triggeredAbilities == #[.onEnterSearchBasicToHand]
+#guard throrsMap.activatedAbilities.size == 1
+#guard throrsMap.activatedAbilities[0]!.effect == Effect.abilityDrawThenDiscard 1
+#guard throrsMap.activatedAbilities[0]!.cost.tap
+#guard throrsMap.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
+#guard throrsMap.supertypes.any (· == .legendary)
 #guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard (galionElvenkingsButlerCard.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButlerCard.power == some 4

@@ -756,6 +756,9 @@ def supportedOracleFailures : List String :=
 #guard guardianOfTheHallsCard.matchesOracleText
 #guard beornReluctantHost.matchesOracleText
 #guard thranduilSCompany.matchesOracleText
+#guard woodElves.matchesOracleText
+#guard throrsMap.matchesOracleText
+#guard wayfarersBauble.matchesOracleText
 #guard crudeBentBladeCard.matchesOracleText
 #guard gollumTheAbandonedCard.matchesOracleText
 #guard gnashingOfTeethCard.matchesOracleText

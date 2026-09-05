@@ -281,11 +281,28 @@ def nightsWhisper : CardDef :=
     (oracleText := "You draw two cards and lose 2 life.")
 
 def wayfarersBauble : CardDef :=
-  artifact "Wayfarer's Bauble" (ManaCost.ofGeneric 1)
-    "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle."
-    (activatedAbilities := #[
-      activated (Effect.searchBasicLandTapped) (ManaCost.ofGeneric 2)
-        (tap := true) (sacrificeSource := true)])
+  (TraditionalCardDefinition.card [
+    .name "Wayfarer's Bauble",
+    .manaCost [.generic 1],
+    .type .artifact,
+    .ability (
+      .activated
+        [.mana [.generic 2], .tapSymbol, .sacrifice .this]
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .putOntoBattlefieldInState
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .inDeck,
+                  .cardType .land,
+                  .supertype .basic]))
+              .tapped]))
+  ]).toCardDef
+    (oracleText :=
+      "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")
 
 def battleScarredGoblin : CardDef :=
   creature "Battle-Scarred Goblin" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
@@ -1028,6 +1045,11 @@ def hobbitEternalCards : Array CardDef := #[
 #guard roguesPassage.tapAddMana == #[.colorless]
 #guard elvishMystic.tapAddMana == #[.colored .green]
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
+#guard wayfarersBauble.activatedAbilities.size == 1
+#guard wayfarersBauble.activatedAbilities[0]!.effect == Effect.searchBasicLandTapped
+#guard wayfarersBauble.activatedAbilities[0]!.cost.tap
+#guard wayfarersBauble.activatedAbilities[0]!.cost.sacrificeSource
+#guard wayfarersBauble.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.keywords.trample
 #guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #["Orc", "Goblin"]]

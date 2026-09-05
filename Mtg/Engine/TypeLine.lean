@@ -111,6 +111,7 @@ inductive CardSubtype where
   | elemental
   | elf
   | equipment
+  | forest
   | giant
   | goblin
   | god
@@ -165,6 +166,7 @@ def toString : CardSubtype → String
   | .elemental => "Elemental"
   | .elf => "Elf"
   | .equipment => "Equipment"
+  | .forest => "Forest"
   | .giant => "Giant"
   | .goblin => "Goblin"
   | .god => "God"
@@ -251,6 +253,7 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard formatTypeLine #[.basic] #[.land] #["Forest"] == "Basic Land — Forest"
 #guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
 #guard formatTypeLine #[] #[.instant] #[] == "Instant"
+#guard CardSubtype.toString .forest == "Forest"
 #guard CardSubtype.toString .aura == "Aura"
 #guard CardSubtype.toString .elemental == "Elemental"
 #guard CardSubtype.toString .pilot == "Pilot"
