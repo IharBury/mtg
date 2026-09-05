@@ -136,6 +136,8 @@ inductive Trigger where
   | dieSimultaneously : Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
+  /-- The numbered action occurred. -/
+  | actionWithId : Nat → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -1001,7 +1003,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this)
       (.sequence [
         .optional (.actionId id (.discard _ 1)),
-        .if (.any (.wasObjectOfAction id')) [.draw _ n]]) =>
+        .if (.happened (.actionWithId id') _) [.draw _ n]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | _ => none
 
@@ -1845,7 +1847,7 @@ end TraditionalCardDefinition
       (.sequence [
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
-        .if (.any (.wasObjectOfAction 1)) [.draw (.controller .this) 2]])).toTriggeredAbility? with
+        .if (.happened (.actionWithId 1) .turnStart) [.draw (.controller .this) 2]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
   | none => false
 
