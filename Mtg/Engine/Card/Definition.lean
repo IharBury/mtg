@@ -134,6 +134,8 @@ inductive Trigger where
   /-- When objects matching the selector die at the same time, with
   set-wide predicates (CR 700.4 / 603.2d). -/
   | dieSimultaneously : Selector → List SetPredicate → Trigger
+  /-- The numbered ability was activated (CR 602.2). -/
+  | abilityWithIdActivated : Nat → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -425,6 +427,8 @@ inductive Condition where
   /-- True when any object matching the selector has the given subtype
   (CR 205.3). -/
   | anySubtype : Selector → CardSubtype → Condition
+  /-- True when the first trigger has not occurred since the second. -/
+  | didNotHappen : Trigger → Trigger → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -440,6 +444,10 @@ inductive Ability where
   /-- An activated ability that may be used that many times, counted from
   the given window. -/
   | activatedTimes : Nat → Trigger → List Cost → CardAction → Ability
+  /-- An activated ability that may be used only when the condition holds. -/
+  | activatedIf : Condition → List Cost → CardAction → Ability
+  /-- Number this ability so later clauses can refer to it. -/
+  | abilityId : Nat → Ability → Ability
   | triggered : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
   | reduceCost : Selector → List Cost → Ability
@@ -929,6 +937,9 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
   | .activatedTimes 1 .turnStart costs action =>
     some (activatedAbility costs action true)
   | .activatedTimes _ _ costs action => some (activatedAbility costs action)
+  | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
+    some (activatedAbility costs action true)
+  | .abilityId _ inner => toActivatedAbility? inner
   | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
 
@@ -1079,6 +1090,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .ifAny among inners => applyIfShape b among inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
   | .if (.anySubtype _ _) _ => b
+  | .if (.didNotHappen _ _) _ => b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1114,6 +1126,14 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.activatedTimes n from_ costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
+  | .activatedIf cond costs action =>
+    match (Ability.activatedIf cond costs action).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
+  | .abilityId n a =>
+    match (Ability.abilityId n a).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => applyAbility b a
   | .restrict r a =>
     match Ability.restrict r a |>.toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -1577,9 +1597,11 @@ end TraditionalCardDefinition
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
 #guard
   match
-    (Ability.activatedTimes 1 .turnStart
+    (Ability.abilityId 1
+      (.activatedIf
+        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
-        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)).toActivatedAbility? with
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn))).toActivatedAbility? with
   | some ab =>
     ab.effect == Effect.sourceGets 2 2 && ab.cost.payLife == 2 && ab.onceEachTurn
   | none => false

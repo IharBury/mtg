@@ -399,9 +399,11 @@ def desolationProwler : TraditionalCardDefinition := .card [
   .power 2,
   .toughness 2,
   .ability (
-    .activatedTimes 1 .turnStart
+    .abilityId 1
+      (.activatedIf
+        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
-        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn))
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)))
 ]
 
 def desolationProwlerCard : CardDef :=
