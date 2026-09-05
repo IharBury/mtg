@@ -879,6 +879,19 @@ def leftoverUntapPumpAttach? : CardAction → Option (Int × Int)
     else none
   | _ => none
 
+/-- Untap another target creature you control; if it has the given subtype,
+put a +1/+1 counter on it. -/
+def leftoverUntapPlusOneIfSubtype? : CardAction → Option String
+  | .sequence [
+      .untap ut,
+      .if (.anySubtype _ st) [.putCounter _ .plusOnePlusOne 1]
+    ] =>
+    match ut.among? with
+    | some who =>
+      if who.shape.anotherCreatureYouControl then some st.toString else none
+    | none => none
+  | _ => none
+
 /-- Draw, then discard a card. -/
 def leftoverDrawDiscard? : CardAction → Option Nat
   | .sequence [.draw _who n, .discard _p 1] => some n
@@ -1466,6 +1479,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
       | none => none
     else none
+  | .triggered (.enter .this) action =>
+    match CardAction.leftoverUntapPlusOneIfSubtype? action with
+    | some st => some (TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype st)
+    | none => none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
     | some 2 =>
@@ -2954,6 +2971,34 @@ end TraditionalCardDefinition
           .reveal (.variable 1),
           .returnToHand (.variable 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
+  | none => false
+
+-- Little Bear: flash; enter, untap another creature you control, +1/+1 if Bear.
+#guard Selector.toTargetKind
+  (.intersection [
+    .not .this,
+    .permanent,
+    .cardType .creature,
+    .controlled (.controller .this)])
+  == .anotherCreatureYouControl
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .untap
+          (.target
+            1
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])),
+        .if
+          (.anySubtype (.targetReference 1) .bear)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear"
   | none => false
 
 end Mtg.Engine

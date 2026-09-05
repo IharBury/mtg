@@ -1010,10 +1010,31 @@ def largeBear : CardDef :=
     (oracleText := "Reach, trample, haste")
 
 def littleBear : CardDef :=
-  creature "Little Bear" (ManaCost.ofGenericAndColor 2 .green) #["Bear"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Little Bear",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .subtype .bear,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .flash),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .untap
+            (.target
+              1
+              (.intersection [
+                .not .this,
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])),
+          .if
+            (.anySubtype (.targetReference 1) .bear)
+            [.putCounter (.targetReference 1) .plusOnePlusOne 1]]))
+  ]).toCardDef
     (oracleText := "Flash\nWhen this creature enters, untap another target creature you control. If that creature is a Bear, put a +1/+1 counter on it.")
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterUntapOtherPlusOneIfSubtype "Bear"])
 
 def elvenkingsHarper : CardDef :=
   (TraditionalCardDefinition.card [
@@ -2625,5 +2646,12 @@ def hobbitCards : Array CardDef := #[
 #guard largeBear.keywords.trample
 #guard largeBear.keywords.haste
 #guard largeBear.manaCost == ManaCost.ofGenericAndHybrids 3 .black .green 2
+#guard littleBear.isCreature
+#guard littleBear.hasSubtype "Bear"
+#guard littleBear.power == some 3
+#guard littleBear.toughness == some 2
+#guard littleBear.keywords.flash
+#guard littleBear.manaCost == ManaCost.ofGenericAndColor 2 .green
+#guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
 
 end Mtg.Engine.Catalog
