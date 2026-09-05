@@ -663,10 +663,10 @@ inductive CardAction where
   player adds X mana of that color, where X is the third selected
   object's power. -/
   | addManaAnyColorEqualToPower : Selector → Selector → Selector → CardAction
-  /-- The selected player adds the listed mana types (CR 106.4). A tap-only
-  ability that adds two or more types compiles as `tapAddOneOf`
-  (`{T}: Add {A} or {B}`). -/
-  | addMana : Selector → List ManaType → CardAction
+  /-- The selected player adds mana matching the listed symbols, all at
+  once (CR 106.4). To let the player choose among symbols, use
+  `playerSelectAction`. -/
+  | addMana : Selector → List ManaSymbol → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -1151,13 +1151,33 @@ def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Boo
       (power == .this || power == .source .this)
   | _ => false
 
-/-- `{T}: Add {A} or {B}` as a tap-only mana ability. -/
+/-- Mana produced when this symbol is added to a pool (CR 106.4). -/
+def addedManaType? : ManaSymbol → Option ManaType
+  | .colored c => some (.colored c)
+  | .colorless => some .colorless
+  | .generic _ | .hybrid _ _ | .monoOrDouble _ | .monoOrColorless _
+  | .phyrexianMono _ | .phyrexianGeneric | .phyrexianHybrid _ _ | .x | .snow =>
+    none
+
+/-- Types added by a list of symbols, or `none` if any symbol is not
+addable mana. -/
+def addedManaTypes? (syms : List ManaSymbol) : Option (Array ManaType) :=
+  let ts := syms.filterMap addedManaType?
+  if ts.length == syms.length then some ts.toArray else none
+
+/-- One `addMana` option: `who` adds a single listed type. -/
+def leftoverAddManaOne? (who : Selector) : CardAction → Option ManaType
+  | .addMana gainer [sym] =>
+    if gainer == who then addedManaType? sym else none
+  | _ => none
+
+/-- `{T}: Add {A} or {B}` as a tap-only mana ability. Each listed action
+must be `addMana` of one symbol; the player chooses one. -/
 def leftoverTapAddOneOf? (costs : List Cost) : CardAction → Option (Array ManaType)
-  | .addMana gainer types =>
-    if costs == [.tapSymbol] &&
-        gainer == .controller .this &&
-        types.length >= 2 then
-      some types.toArray
+  | .playerSelectAction who (.range 1 1) actions =>
+    if costs == [.tapSymbol] && who == .controller .this && actions.length >= 2 then
+      let ts := actions.filterMap (leftoverAddManaOne? who)
+      if ts.length == actions.length then some ts.toArray else none
     else none
   | _ => none
 
@@ -1346,7 +1366,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     continuousEffect none [] asAbility
                   | .addManaAnyColorEqualToPower _ _ _ =>
                     continuousEffect none [] asAbility
-                  | .addMana _ types => Effect.addMana types.toArray
+                  | .addMana _ syms =>
+                    match addedManaTypes? syms with
+                    | some types => Effect.addMana types
+                    | none => continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -3085,8 +3108,18 @@ end TraditionalCardDefinition
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .green, .colored .blue]))
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .green],
+            .addMana (.controller .this) [.mono .blue]]))
   ]).toCardDef.tapAddOneOf == #[.colored .green, .colored .blue]
+
+#guard
+  let action : CardAction :=
+    .addMana (.controller .this) [.mono .black, .mono .red]
+  action.toAbilityEffect == Effect.addMana #[.colored .black, .colored .red]
 
 #guard Selector.includedSubtypes
   (.union [.subtype .goblin, .subtype .orc]) == ["Goblin", "Orc"]

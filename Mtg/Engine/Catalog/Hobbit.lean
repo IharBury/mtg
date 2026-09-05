@@ -1101,7 +1101,12 @@ def elvenkingsHalls : CardDef :=
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .green, .colored .blue])),
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .green],
+            .addMana (.controller .this) [.mono .blue]])),
     .ability (
       .activatedIf
         (.timeToCastSorcery (.controller .this))
@@ -1135,7 +1140,12 @@ def ironHills : CardDef :=
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .red, .colored .white])),
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .red],
+            .addMana (.controller .this) [.mono .white]])),
     .ability (
       .activatedIf
         (.timeToCastSorcery (.controller .this))
@@ -1169,7 +1179,12 @@ def lakeTown : CardDef :=
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .white, .colored .blue])),
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .white],
+            .addMana (.controller .this) [.mono .blue]])),
     .ability (
       .activatedIf
         (.timeToCastSorcery (.controller .this))
@@ -1203,7 +1218,12 @@ def goblinTown : CardDef :=
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .black, .colored .red])),
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .black],
+            .addMana (.controller .this) [.mono .red]])),
     .ability (
       .activatedIf
         (.timeToCastSorcery (.controller .this))
@@ -1237,7 +1257,12 @@ def mirkwood : CardDef :=
     .ability (
       .activated
         [.tapSymbol]
-        (.addMana (.controller .this) [.colored .black, .colored .green])),
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .black],
+            .addMana (.controller .this) [.mono .green]])),
     .ability (
       .activatedIf
         (.timeToCastSorcery (.controller .this))
