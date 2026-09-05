@@ -414,6 +414,13 @@ inductive CostedKeyword where
   | equip
 deriving Repr, Inhabited, BEq
 
+/-- A boolean check used by a conditional continuous effect. -/
+inductive Condition where
+  /-- True when any target of the first selector matches the second
+  (CR 115.1 / 601.2c). -/
+  | targetsIncludeAny : Selector → Selector → Condition
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -441,6 +448,8 @@ inductive ContinuousEffect where
   /-- Apply the given continuous effects only when the selector matches
   anything. -/
   | ifAny : Selector → List ContinuousEffect → ContinuousEffect
+  /-- Apply the given continuous effects only when the condition holds. -/
+  | if : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
   /-- An additional cost to cast the selected spell (CR 601.2b). -/
   | additionalCost : Selector → List Cost → ContinuousEffect
@@ -513,6 +522,8 @@ def selector : ContinuousEffect → Selector
   | .addPowerToughness who _ _ => who
   | .ifAny _ (inner :: _) => selector inner
   | .ifAny _ [] => .this
+  | .if _ (inner :: _) => selector inner
+  | .if _ [] => .this
   | .reduceCost who _ => who
   | .additionalCost who _ => who
   | .replace _ _ => .this
@@ -528,6 +539,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | none => none
   | .gainAbility _ _ :: _ => none
   | .ifAny _ _ :: _ => none
+  | .if _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
   | .additionalCost _ _ :: _ => none
   | .replace _ _ :: _ => none
@@ -1026,31 +1038,36 @@ def applyReduceCost (assign : CardFace → Nat → CardFace) (b : CardFace)
     assign b (ManaCost.manaValue (Cost.manaCost costs))
   | _ => b
 
+/-- Cost-reduction leftovers implied by a selector-shaped condition. -/
+def applyIfShape (b : CardFace) (among : Selector)
+    (inners : List ContinuousEffect) : CardFace :=
+  if among.shape.tappedCreature then
+    inners.foldl
+      (applyReduceCost fun b n =>
+        { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n })
+      b
+  else if among.shape.attackingNontokenCreature then
+    inners.foldl
+      (applyReduceCost fun b n =>
+        { b with
+          costReductionIfTargetAttackingNontoken :=
+            b.costReductionIfTargetAttackingNontoken + n })
+      b
+  else if among.shape.diedThisTurnCreature then
+    inners.foldl
+      (applyReduceCost fun b n =>
+        { b with
+          costReductionIfCreatureDied := b.costReductionIfCreatureDied + n })
+      b
+  else b
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness (.hostOf .this) p t =>
     { b with staticAbilities := b.staticAbilities.push (.equippedCreatureGets p t) }
   | .addPowerToughness _ _ _ => b
-  | .ifAny among inners =>
-    if among.shape.tappedCreature then
-      inners.foldl
-        (applyReduceCost fun b n =>
-          { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n })
-        b
-    else if among.shape.attackingNontokenCreature then
-      inners.foldl
-        (applyReduceCost fun b n =>
-          { b with
-            costReductionIfTargetAttackingNontoken :=
-              b.costReductionIfTargetAttackingNontoken + n })
-        b
-    else if among.shape.diedThisTurnCreature then
-      inners.foldl
-        (applyReduceCost fun b n =>
-          { b with
-            costReductionIfCreatureDied := b.costReductionIfCreatureDied + n })
-        b
-    else b
+  | .ifAny among inners => applyIfShape b among inners
+  | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1288,12 +1305,13 @@ end TraditionalCardDefinition
     .type .instant,
     .ability (
       .static
-        (.ifAny
-          (.intersection [
-            .allTargets .this,
-            .permanent,
-            .cardType .creature,
-            .tapped])
+        (.if
+          (.targetsIncludeAny
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .tapped]))
           [.reduceCost .this [.mana [.generic 3]]])),
     .actions [
       .dealDamage
