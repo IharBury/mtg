@@ -470,8 +470,8 @@ def wargSetup : Game :=
   withGreenMana (addToHand g wargTactics ⟨0⟩) ⟨0⟩ 2
 
 #guard wargSetup.canCast ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")
-#guard wargTactics.isModal
-#guard wargTactics.requiresTarget
+#guard wargTacticsCard.isModal
+#guard wargTacticsCard.requiresTarget
 #guard (wargSetup.legalModes ⟨0⟩ (handCardNamed wargSetup ⟨0⟩ "Warg Tactics")).size == 2
 
 -- Cannot cast with no legal mode (no flyer and no creature you control).

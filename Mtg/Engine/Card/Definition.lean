@@ -62,6 +62,8 @@ inductive Selector where
   | controlled : Selector → Selector
   /-- A tapped permanent (CR 110.5). -/
   | tapped
+  /-- An object with the given keyword (CR 702). -/
+  | keyword : Keyword → Selector
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Int → Selector
   /-- Printed subtype (CR 205.3). -/
@@ -130,6 +132,18 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- Mana created by the numbered action is spent to pay for the given
+  event (CR 106.10). -/
+  | spendManaCreatedByAction : Nat → Trigger → Trigger
+  /-- A spell matching the selector is cast (CR 601). -/
+  | castSpell : Selector → Trigger
+  /-- An activated ability of a source matching the selector is activated
+  (CR 602). -/
+  | activateAbility : Selector → Trigger
+  /-- The given trigger does not occur. -/
+  | not : Trigger → Trigger
+  /-- Either trigger occurs. -/
+  | or : Trigger → Trigger → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -172,6 +186,7 @@ structure Shape where
   opponentControls : Bool := false
   mustBePermanent : Bool := false
   tapped : Bool := false
+  flying : Bool := false
   attacking : Bool := false
   token : Bool := false
   nontoken : Bool := false
@@ -192,6 +207,7 @@ def meet (a b : Shape) : Shape :=
     opponentControls := a.opponentControls || b.opponentControls
     mustBePermanent := a.mustBePermanent || b.mustBePermanent
     tapped := a.tapped || b.tapped
+    flying := a.flying || b.flying
     attacking := a.attacking || b.attacking
     token := a.token || b.token
     nontoken := a.nontoken || b.nontoken
@@ -212,6 +228,7 @@ def join (a b : Shape) : Shape :=
     opponentControls := a.opponentControls && b.opponentControls
     mustBePermanent := a.mustBePermanent && b.mustBePermanent
     tapped := a.tapped && b.tapped
+    flying := a.flying && b.flying
     attacking := a.attacking && b.attacking
     token := a.token && b.token
     nontoken := a.nontoken && b.nontoken
@@ -233,6 +250,22 @@ def join (a b : Shape) : Shape :=
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
   s.tapped && s.types.eqTypes [.creature]
+
+/-- True when this shape is a creature with flying. -/
+def flyingCreature (s : Shape) : Bool :=
+  s.flying && s.types.eqTypes [.creature]
+
+/-- True when this shape is another creature you control. -/
+def anotherCreatureYouControl (s : Shape) : Bool :=
+  s.other && s.sameController && s.types.eqTypes [.creature]
+
+/-- True when this shape is a land you control. -/
+def landYouControl (s : Shape) : Bool :=
+  s.sameController && s.types.eqTypes [.land]
+
+/-- True when this shape is another Elf you control. -/
+def anotherElfYouControl (s : Shape) : Bool :=
+  s.other && s.sameController && s.subtype == some "Elf"
 
 /-- True when this shape is a Dwarf. -/
 def dwarf (s : Shape) : Bool :=
@@ -271,6 +304,8 @@ def shape : Selector → Shape
   | .controlled (.opponent _) => { opponentControls := true }
   | .controlled _ => {}
   | .tapped => { tapped := true }
+  | .keyword .flying => { flying := true }
+  | .keyword _ => {}
   | .powerAtLeast n => { powerAtLeast := some n }
   | .attacking _ => { attacking := true }
   | .token => { token := true }
@@ -311,10 +346,12 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
   else if s.nonland then .nonland
   else if s.opponentControls && s.types.eqTypes [.creature] then .oppCreature
   else if s.sameController then
-    if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
+    if s.other && s.types.eqTypes [.creature] then .anotherCreatureYouControl
+    else if s.types.eqTypes [.artifact, .creature] then .artifactOrCreatureYouControl
     else if s.types.eqTypes [.creature] then .creatureYouControl
     else if s.types.eqTypes [.artifact] then .artifactYouControl
     else .permanent
+  else if s.flying && s.types.eqTypes [.creature] then .creatureWithFlying
   else if s.types.eqTypes [.creature] then .creature
   else if s.types.eqTypes [.artifact] then .artifact
   else .permanent
@@ -346,6 +383,9 @@ inductive Cost where
   | life : Nat → Cost
   /-- Sacrifice a selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
+  /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
+  sickness. -/
+  | tapSymbol
   /-- Pay one of the listed costs. -/
   | or : List Cost → Cost
 deriving Repr, Inhabited, BEq
@@ -385,18 +425,17 @@ def orPayGeneric? : List Cost → Option Nat
     | none => orPayGeneric? rest
   | _ :: rest => orPayGeneric? rest
 
+def hasTapSymbol : List Cost → Bool
+  | [] => false
+  | .tapSymbol :: _ => true
+  | _ :: rest => hasTapSymbol rest
+
 end Cost
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
 inductive CounterKind where
   /-- A +1/+1 counter. -/
   | plusOnePlusOne
-deriving Repr, Inhabited, BEq
-
-/-- A keyword ability printed with a cost (CR 702.6). -/
-inductive CostedKeyword where
-  /-- Equip (CR 702.6): attach to target creature you control, only as a sorcery. -/
-  | equip
 deriving Repr, Inhabited, BEq
 
 /-- A boolean check used by a conditional effect or action. -/
@@ -430,7 +469,7 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
-  | keywordWithCost : CostedKeyword → List Cost → Ability
+  | keywordWithCost : Keyword → List Cost → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
@@ -456,6 +495,18 @@ inductive ContinuousEffect where
   /-- The selected player may cast the selected card without paying its
   mana cost. -/
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
+  /-- The first object's base power and toughness become those of the
+  second object. -/
+  | setBasePowerToughnessFrom : Selector → Selector → ContinuousEffect
+  /-- The selected object gains the given card type in addition to its
+  other types (CR 205.1 / 613.1). -/
+  | gainType : Selector → CardType → ContinuousEffect
+  /-- The selected object gains the given subtype in addition to its other
+  types (CR 205.3 / 613.1). -/
+  | gainSubtype : Selector → CardSubtype → ContinuousEffect
+  /-- The selected object's power and toughness are each equal to the
+  number of objects matching the second selector. -/
+  | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -507,6 +558,13 @@ inductive CardAction where
   | sacrifice : Selector → CardAction
   /-- Return the selected object to its owner's hand. -/
   | returnToHand : Selector → CardAction
+  /-- The first selected object deals damage equal to its power to the
+  second (CR 701.13). -/
+  | dealDamageEqualToPower : Selector → Selector → CardAction
+  /-- The first selected player chooses a color. The second selected
+  player adds X mana of that color, where X is the third selected
+  object's power. -/
+  | addManaAnyColorEqualToPower : Selector → Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -522,6 +580,10 @@ def selector : ContinuousEffect → Selector
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
+  | .setBasePowerToughnessFrom who _ => who
+  | .gainType who _ => who
+  | .gainSubtype who _ => who
+  | .setPowerToughnessEqualToCount who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -537,6 +599,10 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .replace _ _ :: _ => none
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
+  | .setBasePowerToughnessFrom _ _ :: _ => none
+  | .gainType _ _ :: _ => none
+  | .gainSubtype _ _ :: _ => none
+  | .setPowerToughnessEqualToCount _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -797,12 +863,96 @@ def leftoverTargetPlayerDrawLoseLife? : CardAction → Option (Nat × Nat)
   | .sequence [.draw (.target _ .player) cards, .loseLife _ life] => some (cards, life)
   | _ => none
 
+/-- A creature you control deals damage equal to its power to an opponent's
+creature. -/
+def leftoverCreatureYouControlDealsPowerToOppCreature? : CardAction → Bool
+  | .dealDamageEqualToPower src dest =>
+    src.toTargetKind == .creatureYouControl && dest.toTargetKind == .oppCreature
+  | _ => false
+
+/-- Put a +1/+1 counter on a creature you control; it gains trample and
+hexproof. -/
+def leftoverPlusOnePlusOneTrampleHexproof? : CardAction → Bool
+  | .sequence [
+      .putCounter sel .plusOnePlusOne 1,
+      .continuous effects _
+    ] =>
+    let youControlCreature :=
+      match sel.among? with
+      | some who =>
+        let s := who.shape
+        s.sameController && s.types.eqTypes [.creature]
+      | none => false
+    let kws := grantedKeywords effects
+    youControlCreature && kws.trample && kws.hexproof
+  | _ => false
+
+/-- Become a creature of the given subtype with P/T equal to lands you
+control. -/
+def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
+  | .continuous effects _ =>
+    let subtype :=
+      effects.findSome? fun
+        | .gainSubtype _ st => some st.toString
+        | _ => none
+    let becomesCreature :=
+      effects.any fun
+        | .gainType _ .creature => true
+        | _ => false
+    let landsPT :=
+      effects.any fun
+        | .setPowerToughnessEqualToCount _ among =>
+          among.shape.landYouControl
+        | _ => false
+    if becomesCreature && landsPT then subtype else none
+  | _ => none
+
+/-- Spend this mana only on Elf spells and activated abilities of Elf
+sources. -/
+def leftoverElfRestrictedSpend? : Trigger → Bool
+  | .not
+      (.or
+        (.castSpell (.subtype .elf))
+        (.activateAbility (.subtype .elf))) => true
+  | _ => false
+
+/-- Tap and add mana of any color equal to this object's power, spendable
+only on Elf spells and Elf sources. -/
+def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
+  | .sequence [
+      .actionId id (.addManaAnyColorEqualToPower chooser gainer power),
+      .continuous [.forbid (.spendManaCreatedByAction spendId restriction)] _
+    ] =>
+    id == spendId &&
+      leftoverElfRestrictedSpend? restriction &&
+      Cost.hasTapSymbol costs &&
+      chooser == .controller .this &&
+      gainer == .controller .this &&
+      (power == .this || power == .source .this)
+  | _ => false
+
+/-- Set another creature you control's base P/T equal to this source. -/
+def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
+  | [.setBasePowerToughnessFrom who (.source .this)] =>
+    match who with
+    | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
+    | _ => false
+  | _ => false
+
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverUntapPumpAttach? action with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
   | none =>
+    if leftoverCreatureYouControlDealsPowerToOppCreature? action then
+      Effect.creatureYouControlDealsPowerToOppCreature
+    else if leftoverPlusOnePlusOneTrampleHexproof? action then
+      Effect.plusOnePlusOneTrampleHexproof
+    else
+    match leftoverBecomeSubtypeWithLandsPT? action with
+    | some subtype => Effect.becomeSubtypeWithLandsPT subtype
+    | none =>
     if leftoverCounterExile? action then Effect.counterExilePermanentMayCast
     else if leftoverEquipAttach? action then Effect.attachToTargetCreatureYouControl
     else
@@ -851,7 +1001,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .exile (.topOfLibrary _) => Effect.exileTopPlayUntilEndOfNextTurn
                   | .exile _ => continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
-                  | .destroy _ => Effect.destroyCreature
+                  | .destroy s =>
+                    if s.toTargetKind == .creatureWithFlying then
+                      Effect.destroyCreatureWithFlying
+                    else Effect.destroyCreature
                   | .gainLife _ n => Effect.gainLife n
                   | .playerSelectAction _ _
                       [.putOnTopOfLibrary _, .putOnBottomOfLibrary _] =>
@@ -864,6 +1017,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
+                  | .dealDamageEqualToPower _ _ =>
+                    continuousEffect none [] asAbility
+                  | .addManaAnyColorEqualToPower _ _ _ =>
+                    continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -888,6 +1045,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
   { cost :=
       { mana := Cost.manaCost costs
         payLife := Cost.lifePaid costs
+        tap := Cost.hasTapSymbol costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs }
     effect := action.toAbilityEffect
     onceEachTurn }
@@ -916,9 +1074,12 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.attack .this .all) (.continuous effects _duration) =>
-    match ContinuousEffect.addedPT? effects with
-    | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
-    | _ => none
+    if CardAction.leftoverSetOtherBasePT? effects then
+      some TriggeredAbility.onAttackSetOtherBasePT
+    else
+      match ContinuousEffect.addedPT? effects with
+      | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
+      | _ => none
   | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ n]) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
@@ -972,6 +1133,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         .optional (.actionId id (.discard _ 1)),
         .if (.happened (.actionWithId id') _) [.draw _ n]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
+  | .triggered (.enter among) (.putCounter sel .plusOnePlusOne 1) =>
+    if among.shape.landYouControl && sel.toTargetKind == .creatureYouControl then
+      some TriggeredAbility.onLandYouControlEntersPlusOnePlusOne
+    else none
+  | .triggered (.enter among) (.continuous effects _duration) =>
+    if among.shape.anotherElfYouControl then
+      match CardAction.leftoverSourcePump? effects with
+      | some (1, 1) => some TriggeredAbility.onAnotherElfYouControlEntersGets1
+      | _ => none
+    else none
   | _ => none
 
 end Ability
@@ -1018,6 +1189,7 @@ structure CardFace where
   additionalCostSacrificeArtifactOrCreature : Bool := false
   additionalCostOrPayGeneric : Option Nat := none
   staticAbilities : Array StaticAbility := #[]
+  tapAddAnyColorEqualToPower : Bool := false
 deriving Inhabited
 
 namespace CardFace
@@ -1076,6 +1248,10 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
+  | .setBasePowerToughnessFrom _ _ => b
+  | .gainType _ _ => b
+  | .gainSubtype _ _ => b
+  | .setPowerToughnessEqualToCount _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -1095,9 +1271,12 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .activated costs action =>
-    { b with
-      activatedAbilities :=
-        b.activatedAbilities.push (Ability.activatedAbility costs action) }
+    if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
+      { b with tapAddAnyColorEqualToPower := true }
+    else
+      { b with
+        activatedAbilities :=
+          b.activatedAbilities.push (Ability.activatedAbility costs action) }
   | .activatedIf cond costs action =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -1202,6 +1381,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
         b.additionalCostSacrificeArtifactOrCreature
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
       staticAbilities := b.staticAbilities
+      tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -1650,6 +1830,8 @@ end TraditionalCardDefinition
           .controlled (.controller .this)]))
   action.toAbilityEffect == Effect.attachToTargetCreatureYouControl
 
+#guard Keyword.equip.toKeywords == Keywords.none
+
 #guard
   match
     (Ability.keywordWithCost .equip [.mana [.generic 2]]).toActivatedAbility? with
@@ -1843,5 +2025,217 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction := .putCounter (.source .this) .plusOnePlusOne 3
   action.toAbilityEffect == Effect.putPlusOnePlusOneOnSource 3
+
+-- Quarrel: a creature you control deals damage equal to its power.
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .controlled (.controller .this)])
+  == .creatureYouControl
+
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .controlled (.opponent (.controller .this))])
+  == .oppCreature
+
+#guard
+  let action : CardAction :=
+    .dealDamageEqualToPower
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+      (.target
+        2
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this))]))
+  action.toEffect == Effect.creatureYouControlDealsPowerToOppCreature
+
+-- Galion: attack, set another creature's base P/T.
+#guard Selector.shape
+  (.intersection [
+    .not .this,
+    .permanent,
+    .cardType .creature,
+    .controlled (.controller .this)]) |>.anotherCreatureYouControl
+
+#guard
+  match
+    (Ability.triggered
+      (.attack .this .all)
+      (.continuous
+        [.setBasePowerToughnessFrom
+          (.targets
+            1
+            (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          (.source .this)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackSetOtherBasePT
+  | none => false
+
+-- Warg Tactics: destroy a flyer, or +1/+1, trample, and hexproof.
+#guard Selector.shape
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .keyword .flying]) |>.flyingCreature
+
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .keyword .flying])
+  == .creatureWithFlying
+
+#guard
+  let action : CardAction :=
+    .destroy
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .keyword .flying]))
+  action.toEffect == Effect.destroyCreatureWithFlying
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .putCounter
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne
+        1,
+      .continuous
+        [.gainAbility (.targetReference 1) (.keyword .trample),
+          .gainAbility (.targetReference 1) (.keyword .hexproof)]
+        .endOfTurn]
+  action.toEffect == Effect.plusOnePlusOneTrampleHexproof
+
+#guard
+  let action : CardAction :=
+    .chooseMode [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .keyword .flying])),
+      .sequence [
+        .putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          1,
+        .continuous
+          [.gainAbility (.targetReference 1) (.keyword .trample),
+            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          .endOfTurn]]
+  CardAction.leftoverModes? action ==
+    some #[Effect.destroyCreatureWithFlying, Effect.plusOnePlusOneTrampleHexproof]
+
+-- Beorn's Hospitality: landfall +1/+1; become a Bear with lands P/T.
+#guard Selector.shape
+  (.intersection [
+    .permanent,
+    .cardType .land,
+    .controlled (.controller .this)]) |>.landYouControl
+
+#guard
+  match
+    (Ability.triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.putCounter
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne
+        1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onLandYouControlEntersPlusOnePlusOne
+  | none => false
+
+#guard
+  let action : CardAction :=
+    .continuous
+      [.gainType .this .creature,
+        .gainSubtype .this .bear,
+        .setPowerToughnessEqualToCount
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)])]
+      .endOfGame
+  action.toAbilityEffect == Effect.becomeSubtypeWithLandsPT "Bear"
+
+-- Woodland Weavemaster: another Elf enters +1/+1; tap for any color equal to power.
+#guard Selector.shape
+  (.intersection [
+    .not .this,
+    .permanent,
+    .subtype .elf,
+    .controlled (.controller .this)]) |>.anotherElfYouControl
+
+#guard
+  match
+    (Ability.triggered
+      (.enter
+        (.intersection [
+          .not .this,
+          .permanent,
+          .subtype .elf,
+          .controlled (.controller .this)]))
+      (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAnotherElfYouControlEntersGets1
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.sequence [
+          .actionId 1
+            (.addManaAnyColorEqualToPower
+              (.controller .this)
+              (.controller .this)
+              .this),
+          .continuous
+            [.forbid
+              (.spendManaCreatedByAction 1
+                (.not
+                  (.or
+                    (.castSpell (.subtype .elf))
+                    (.activateAbility (.subtype .elf)))))]
+            .endOfTurn]))
+  ]).toCardDef.tapAddAnyColorEqualToPower
 
 end Mtg.Engine
