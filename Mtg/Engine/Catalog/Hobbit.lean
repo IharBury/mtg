@@ -926,12 +926,28 @@ def attercop : CardDef :=
     (triggeredAbilities := #[.onLandYouControlEntersGets 1 1])
 
 def ordinaryBear : CardDef :=
-  creature "Ordinary Bear" (ManaCost.ofGenericAndColor 3 .green) #["Bear"] 4 5
+  TraditionalCardDefinition.card [
+    .name "Ordinary Bear",
+    .manaCost [.generic 3, .mono .green],
+    .type .creature,
+    .subtype .bear,
+    .power 4,
+    .toughness 5
+  ].toCardDef
 
 def largeBear : CardDef :=
-  creature "Large Bear" (ManaCost.ofGenericAndHybrids 3 .black .green 2) #["Bear"] 5 5
+  TraditionalCardDefinition.card [
+    .name "Large Bear",
+    .manaCost [.generic 3, .hybrid .black .green, .hybrid .black .green],
+    .type .creature,
+    .subtype .bear,
+    .power 5,
+    .toughness 5,
+    .ability (.keyword .reach),
+    .ability (.keyword .trample),
+    .ability (.keyword .haste)
+  ].toCardDef
     (oracleText := "Reach, trample, haste")
-    (keywords := Keywords.mergeAll #[Keyword.reach, Keyword.trample, Keyword.haste])
 
 def littleBear : CardDef :=
   creature "Little Bear" (ManaCost.ofGenericAndColor 2 .green) #["Bear"] 3 2
@@ -2393,5 +2409,17 @@ def hobbitCards : Array CardDef := #[
 #guard guardianOfTheHallsCard.keywords.trample
 #guard guardianOfTheHallsCard.activatedAbilities[0]!.effect ==
   Effect.putPlusOnePlusOneOnSource 3
+#guard ordinaryBear.isCreature
+#guard ordinaryBear.hasSubtype "Bear"
+#guard ordinaryBear.power == some 4
+#guard ordinaryBear.toughness == some 5
+#guard ordinaryBear.triggeredAbilities.isEmpty
+#guard ordinaryBear.activatedAbilities.isEmpty
+#guard largeBear.isCreature
+#guard largeBear.hasSubtype "Bear"
+#guard largeBear.keywords.reach
+#guard largeBear.keywords.trample
+#guard largeBear.keywords.haste
+#guard largeBear.manaCost == ManaCost.ofGenericAndHybrids 3 .black .green 2
 
 end Mtg.Engine.Catalog

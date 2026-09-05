@@ -110,9 +110,20 @@ def lorienRevealed : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Island"])
 
 def knightsOfDolAmroth : CardDef :=
-  creature "Knights of Dol Amroth" (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Knight"] 3 3
+  TraditionalCardDefinition.card [
+    .name "Knights of Dol Amroth",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .knight,
+    .power 3,
+    .toughness 3,
+    .ability (
+      .triggered
+        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+        (.putCounter (.source .this) .plusOnePlusOne 1))
+  ].toCardDef
     (oracleText := "Whenever you draw your second card each turn, put a +1/+1 counter on this creature.")
-    (triggeredAbilities := #[.onDrawSecondPlusOne])
 
 def greyHavensNavigator : CardDef :=
   creature "Grey Havens Navigator" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Pilot"] 3 2
@@ -286,9 +297,17 @@ def galadhrimGuide : CardDef :=
     (triggeredAbilities := #[.onEnterScry 2])
 
 def elvishVisionary : CardDef :=
-  creature "Elvish Visionary" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Shaman"] 1 1
+  TraditionalCardDefinition.card [
+    .name "Elvish Visionary",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .shaman,
+    .power 1,
+    .toughness 1,
+    .ability (.triggered (.enter .this) (.draw (.controller .this) 1))
+  ].toCardDef
     (oracleText := "When this creature enters, draw a card.")
-    (triggeredAbilities := #[.onEnterDraw 1])
 
 def mirkwoodElk : CardDef :=
   creature "Mirkwood Elk" (ManaCost.ofGenericAndColor 5 .green) #["Elk"] 6 6
@@ -908,6 +927,10 @@ def hobbitEternalCards : Array CardDef := #[
 #guard (galadhrimGuide.summary.splitOn "scry 2").length > 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
+#guard elvishVisionary.hasSubtype "Elf"
+#guard elvishVisionary.hasSubtype "Shaman"
+#guard knightsOfDolAmroth.triggeredAbilities == #[.onDrawSecondPlusOne]
+#guard knightsOfDolAmroth.hasSubtype "Knight"
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
 #guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := "Elf" }]
 #guard elvishArchdruid.manaAbilities == #[.colored .green]

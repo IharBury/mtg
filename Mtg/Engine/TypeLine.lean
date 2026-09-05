@@ -100,7 +100,9 @@ inductive CardSubtype where
   | bard
   | bat
   | bear
+  | beast
   | bird
+  | centaur
   | citizen
   | cleric
   | dragon
@@ -108,17 +110,31 @@ inductive CardSubtype where
   | dwarf
   | elf
   | equipment
+  | giant
   | goblin
+  | god
   | halfling
+  | hero
   | horror
   | human
   | insect
+  | knight
+  | kree
+  | merfolk
+  | minotaur
+  | ogre
   | ranger
   | rogue
   | scout
+  | shaman
   | soldier
+  | spider
+  | spy
+  | villain
+  | warrior
   | wizard
   | wolf
+  | wurm
   | named (s : String)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -131,7 +147,9 @@ def toString : CardSubtype → String
   | .bard => "Bard"
   | .bat => "Bat"
   | .bear => "Bear"
+  | .beast => "Beast"
   | .bird => "Bird"
+  | .centaur => "Centaur"
   | .citizen => "Citizen"
   | .cleric => "Cleric"
   | .dragon => "Dragon"
@@ -139,17 +157,31 @@ def toString : CardSubtype → String
   | .dwarf => "Dwarf"
   | .elf => "Elf"
   | .equipment => "Equipment"
+  | .giant => "Giant"
   | .goblin => "Goblin"
+  | .god => "God"
   | .halfling => "Halfling"
+  | .hero => "Hero"
   | .horror => "Horror"
   | .human => "Human"
   | .insect => "Insect"
+  | .knight => "Knight"
+  | .kree => "Kree"
+  | .merfolk => "Merfolk"
+  | .minotaur => "Minotaur"
+  | .ogre => "Ogre"
   | .ranger => "Ranger"
   | .rogue => "Rogue"
   | .scout => "Scout"
+  | .shaman => "Shaman"
   | .soldier => "Soldier"
+  | .spider => "Spider"
+  | .spy => "Spy"
+  | .villain => "Villain"
+  | .warrior => "Warrior"
   | .wizard => "Wizard"
   | .wolf => "Wolf"
+  | .wurm => "Wurm"
   | .named s => s
 
 instance : ToString CardSubtype where
