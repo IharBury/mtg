@@ -111,6 +111,8 @@ inductive Trigger where
   | endOfTurn
   /-- From the start of the turn (a window bound for `wasSubject`). -/
   | turnStart
+  /-- From the start of the game (a window bound for `happened`). -/
+  | gameStart
   /-- Whenever the selected object attacks, restricted by the given
   selector. -/
   | attack : Selector → Selector → Trigger
@@ -1847,7 +1849,7 @@ end TraditionalCardDefinition
       (.sequence [
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
-        .if (.happened (.actionWithId 1) .turnStart) [.draw (.controller .this) 2]])).toTriggeredAbility? with
+        .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
   | none => false
 

@@ -678,7 +678,7 @@ def raggedShortSpear : TraditionalCardDefinition := .card [
       (.sequence [
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
-        .if (.happened (.actionWithId 1) .turnStart) [.draw (.controller .this) 2]])),
+        .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 0)),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
