@@ -132,8 +132,9 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
-  /-- This mana is spent to pay for the given event (CR 106.10). -/
-  | spendMana : Trigger → Trigger
+  /-- Mana created by the numbered action is spent to pay for the given
+  event (CR 106.10). -/
+  | spendManaCreatedByAction : Nat → Trigger → Trigger
   /-- A spell matching the selector is cast (CR 601). -/
   | castSpell : Selector → Trigger
   /-- An activated ability of a source matching the selector is activated
@@ -919,10 +920,11 @@ def leftoverElfRestrictedSpend? : Trigger → Bool
 only on Elf spells and Elf sources. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
   | .sequence [
-      .addManaAnyColorEqualToPower chooser gainer power,
-      .continuous [.forbid (.spendMana restriction)] _
+      .actionId id (.addManaAnyColorEqualToPower chooser gainer power),
+      .continuous [.forbid (.spendManaCreatedByAction spendId restriction)] _
     ] =>
-    leftoverElfRestrictedSpend? restriction &&
+    id == spendId &&
+      leftoverElfRestrictedSpend? restriction &&
       Cost.hasTapSymbol costs &&
       chooser == .controller .this &&
       gainer == .controller .this &&
@@ -2221,13 +2223,14 @@ end TraditionalCardDefinition
       .activated
         [.tapSymbol]
         (.sequence [
-          .addManaAnyColorEqualToPower
-            (.controller .this)
-            (.controller .this)
-            .this,
+          .actionId 1
+            (.addManaAnyColorEqualToPower
+              (.controller .this)
+              (.controller .this)
+              .this),
           .continuous
             [.forbid
-              (.spendMana
+              (.spendManaCreatedByAction 1
                 (.not
                   (.or
                     (.castSpell (.subtype .elf))

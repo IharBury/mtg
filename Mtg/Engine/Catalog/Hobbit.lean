@@ -880,13 +880,14 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
     .activated
       [.tapSymbol]
       (.sequence [
-        .addManaAnyColorEqualToPower
-          (.controller .this)
-          (.controller .this)
-          .this,
+        .actionId 1
+          (.addManaAnyColorEqualToPower
+            (.controller .this)
+            (.controller .this)
+            .this),
         .continuous
           [.forbid
-            (.spendMana
+            (.spendManaCreatedByAction 1
               (.not
                 (.or
                   (.castSpell (.subtype .elf))
