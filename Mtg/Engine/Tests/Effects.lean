@@ -480,7 +480,7 @@ def sackvilleNontokenSac : Game :=
 
 def thranduilWithGuardianGy : Game :=
   let g := addPermanent afterDraw thranduilTheElvenking ⟨0⟩ ⟨0⟩
-  addToGraveyard g guardianOfTheHalls ⟨0⟩
+  addToGraveyard g guardianOfTheHallsCard ⟨0⟩
 
 def thranduilSource (g : Game) : GameObject :=
   namedPermanent g "Thranduil, the Elvenking"

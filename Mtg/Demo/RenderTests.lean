@@ -921,7 +921,7 @@ def mountainLine (g : Game) : String :=
 -- non-lands, even if it entered before the creature.
 #guard
   let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addAttachedAura g giftOfStrands (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let land := namedPermanent g "Mountain"

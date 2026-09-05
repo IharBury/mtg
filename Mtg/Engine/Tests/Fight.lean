@@ -432,7 +432,7 @@ def agentQuarrel : Game :=
 
 /-- A flying attacker can be blocked by Attercop (reach) but not by a Gray Ogre. -/
 def flyerVsAttercop : Game :=
-  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent started smaugTheGreatCalamityCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g attercop ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"

@@ -749,7 +749,11 @@ def supportedOracleFailures : List String :=
 #guard roguesPassage.matchesOracleText
 #guard nightsWhisper.matchesOracleText
 #guard giftOfStrands.matchesOracleText
-#guard smaugTheGreatCalamity.matchesOracleText
+#guard smaugTheGreatCalamityCard.matchesOracleText
+#guard gandalfSparkStarterCard.matchesOracleText
+#guard raggedShortSpearCard.matchesOracleText
+#guard snowslopeHunterCard.matchesOracleText
+#guard guardianOfTheHallsCard.matchesOracleText
 #guard beornReluctantHost.matchesOracleText
 #guard crudeBentBladeCard.matchesOracleText
 #guard gollumTheAbandonedCard.matchesOracleText

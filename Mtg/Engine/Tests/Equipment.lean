@@ -21,12 +21,12 @@ open Mtg.Engine.Catalog
 /-- Ragged Short Spear in hand, Grizzly Bears on the battlefield, enough mana. -/
 def spearSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
+  withRedMana (addToHand g raggedShortSpearCard ⟨0⟩) ⟨0⟩ 2
 
 #guard spearSetup.canCast ⟨0⟩ (handCardNamed spearSetup ⟨0⟩ "Ragged Short Spear")
 #guard spearSetup.asSorcery? ⟨0⟩
-#guard !raggedShortSpear.requiresTarget
-#guard raggedShortSpear.isEquipment
+#guard !raggedShortSpearCard.requiresTarget
+#guard raggedShortSpearCard.isEquipment
 
 /-- Equipment is cast without announcing a creature (CR 301.5b). -/
 def proposedSpear : Game :=
@@ -129,12 +129,12 @@ def spearEmptyHand : Game :=
 /-- Equip {3} with a creature you control and enough mana. -/
 def spearReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withRedMana g ⟨0⟩ 3
 
 def spearEquipAbility : ActivatedAbility :=
-  raggedShortSpear.activatedAbilities[0]!
+  raggedShortSpearCard.activatedAbilities[0]!
 
 #guard spearReadyToEquip.canActivate ⟨0⟩
   (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility
@@ -145,20 +145,20 @@ def spearEquipAbility : ActivatedAbility :=
 
 -- Cannot Equip with no creature you control.
 #guard
-  let g := addPermanent afterDraw raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
 
 -- Cannot Equip an opponent's creature: Equip needs a creature you control.
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Ragged Short Spear").id 0)
   match g.apply ⟨0⟩ (.target (Target.permanent (namedPermanent g "Gray Ogre").id)) with
@@ -169,7 +169,7 @@ def spearEquipAbility : ActivatedAbility :=
 #guard
   let g := applyIdle (passBoth (skipTo afterDraw .end 80))
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   let g := withRedMana g ⟨0⟩ 3
   !g.asSorcery? ⟨0⟩ &&
     !g.canActivate ⟨0⟩ (namedPermanent g "Ragged Short Spear") spearEquipAbility
@@ -264,7 +264,7 @@ def afterEquippedHostLeaves : Game :=
 /-- Combat uses the equipped power. -/
 def afterEquippedCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addAttachedAura g raggedShortSpear (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g raggedShortSpearCard (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
   let g := passBoth g
@@ -279,7 +279,7 @@ def afterEquippedCombat : Game :=
 def spearTwoCreatures : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   withRedMana g ⟨0⟩ 3
 
 def spearMovedToOgre : Game :=
@@ -305,7 +305,7 @@ def spearMovedToOgre : Game :=
 /-- Illegally attached Equipment becomes unattached and stays (CR 704.5n). -/
 def spearOnMountain : Game :=
   let g := addPermanent started mountain ⟨0⟩ ⟨0⟩
-  addAttachedAura g raggedShortSpear (namedPermanent g "Mountain") ⟨0⟩ ⟨0⟩
+  addAttachedAura g raggedShortSpearCard (namedPermanent g "Mountain") ⟨0⟩ ⟨0⟩
 
 def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
 
@@ -317,7 +317,7 @@ def spearUnattachedFromLand : Game := spearOnMountain.checkSBA
 def agentSpearOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withRedMana (addToHand g raggedShortSpear ⟨0⟩) ⟨0⟩ 2
+  withRedMana (addToHand g raggedShortSpearCard ⟨0⟩) ⟨0⟩ 2
 
 #guard
   match Agent.choose agentSpearOnly ⟨0⟩ with
@@ -581,7 +581,7 @@ def bladeEquipped : Game := passBoth paidBladeEquip
 /-- Bofur (a Dwarf) and unattached Equipment; Vow to Erebor offers the attach. -/
 def vowMayAttach : Game :=
   let g := addPermanent afterDraw bofurReliableGuardianCard ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Bofur, Reliable Guardian").id]
 
@@ -635,7 +635,7 @@ def vowDeclined : Game := mustApply vowMayAttach ⟨0⟩ .decline
 /-- A non-Dwarf is pumped; the spell does not ask to attach Equipment. -/
 def vowOnBears : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g raggedShortSpear ⟨0⟩ ⟨0⟩
+  let g := addPermanent g raggedShortSpearCard ⟨0⟩ ⟨0⟩
   g.applyEffect ⟨0⟩ (Effect.untapPumpMaybeAttach 2 2)
     #[Target.permanent (namedPermanent g "Grizzly Bears").id]
 

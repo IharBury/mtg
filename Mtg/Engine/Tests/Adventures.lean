@@ -23,17 +23,17 @@ open Mtg.Engine.Catalog
 /-- Smaug in hand, an opposing creature, and enough mana for either face. -/
 def smaugSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
+  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 7
 
-#guard smaugTheGreatCalamity.hasAdventure
-#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugTheGreatCalamityCard.hasAdventure
+#guard smaugTheGreatCalamityCard.keywords.flying
 #guard smaugSetup.canCast ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.canCastAdventure ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.asSorcery? ⟨0⟩
 
 /-- Spew Flame requires a creature. -/
 def smaugNoTarget : Game :=
-  withRedMana (addToHand afterDraw smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
+  withRedMana (addToHand afterDraw smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 5
 
 #guard !smaugNoTarget.canCastAdventure ⟨0⟩
   (handCardNamed smaugNoTarget ⟨0⟩ "Smaug, the Great Calamity")
@@ -185,7 +185,7 @@ def smaugAtEndStep : Game := skipTo smaugSetup .end 80
 /-- Reversing an unpaid Adventure returns the creature card to hand. -/
 def unpaidSpewFlame : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  let g := addToHand g smaugTheGreatCalamity ⟨0⟩
+  let g := addToHand g smaugTheGreatCalamityCard ⟨0⟩
   let g := mustApply g ⟨0⟩
     (.castAdventure (handCardNamed g ⟨0⟩ "Smaug, the Great Calamity").id)
   mustApply g ⟨0⟩ (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
@@ -200,7 +200,7 @@ def reversedSpewFlame : Game := mustApply unpaidSpewFlame ⟨0⟩ .pay
 def agentSmaugOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 5
+  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 5
 
 #guard
   match Agent.choose agentSmaugOnly ⟨0⟩ with
@@ -211,7 +211,7 @@ def agentSmaugOnly : Game :=
 /-- With no opposing creature, the heuristic casts Smaug as a creature. -/
 def agentSmaugCreatureOnly : Game :=
   let g := clearHandPlayedLand afterDraw ⟨0⟩
-  withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
+  withRedMana (addToHand g smaugTheGreatCalamityCard ⟨0⟩) ⟨0⟩ 7
 
 #guard
   match Agent.choose agentSmaugCreatureOnly ⟨0⟩ with

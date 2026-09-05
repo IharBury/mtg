@@ -66,19 +66,19 @@ def hobbitRed : Array CardDef :=
   copies 2 wayfarersBauble ++
   copies 2 battleScarredGoblin ++
   #[improvisedClub] ++
-  copies 2 smaugTheGreatCalamity ++
+  copies 2 smaugTheGreatCalamityCard ++
   copies 2 ologHaiCrusher ++
-  #[gandalfSparkStarter] ++
-  copies 2 raggedShortSpear ++
+  #[gandalfSparkStarterCard] ++
+  copies 2 raggedShortSpearCard ++
   copies 2 smiteTheDeathless ++
   copies 2 goblinFireleaper ++
   #[oliphaunt, roguesPassage, goblinCratermaker, infernoTitan, guttersnipe,
-    orcishSiegemaster, snowslopeHunter, fireOfOrthanc]
+    orcishSiegemaster, snowslopeHunterCard, fireOfOrthanc]
 
 /-- Green Welcome Deck (40 cards). -/
 def hobbitGreen : Array CardDef :=
   copies 16 forest ++
-  copies 2 guardianOfTheHalls ++
+  copies 2 guardianOfTheHallsCard ++
   copies 2 quarrel ++
   copies 2 galadhrimGuide ++
   #[galionElvenkingsButler, elvishVisionary, wargTactics, beornsHospitality,

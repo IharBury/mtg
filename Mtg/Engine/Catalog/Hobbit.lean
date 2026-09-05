@@ -106,12 +106,13 @@ def magnificentEnd : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      (.ifAny
-        (.intersection [
-          .allTargets .this,
-          .permanent,
-          .cardType .creature,
-          .tapped])
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .tapped]))
         [.reduceCost .this [.mana [.generic 3]]])),
   .actions [
     .dealDamage
@@ -155,12 +156,13 @@ def vowToErebor : TraditionalCardDefinition := .card [
           .cardType .creature,
           .controlled (.controller .this)])),
     .continuous [.addPowerToughness (.targetReference 1) 2 2] .endOfTurn,
-    .ifAny
-        (.intersection [.targetReference 1, .subtype .dwarf])
+    .if
+        (.anySubtype (.targetReference 1) .dwarf)
         [
           .optional
             (.attach
               (.selected
+                (.controller .this)
                 (.range 1 1)
                 (.intersection [
                   .permanent,
@@ -254,7 +256,7 @@ def thranduilsDecree : TraditionalCardDefinition := .card [
     .actionId 1 (.counter (.target 1 .spell)),
     .continuous
       [.replace
-        (.putToGraveyard (.wasObjectOfAction 1))
+        (.putToGraveyard (.intersection [.wasObjectOfAction 1, .permanentSpell]))
         [.actionId 2 (.exile (.replacingObject 1)),
           .continuous
             [.canCastWithoutPayingManaCost (.controller .this) (.wasCreatedByAction 2)]
@@ -304,13 +306,14 @@ def uneasyPartings : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      (.ifAny
-        (.intersection [
-          .allTargets .this,
-          .permanent,
-          .cardType .creature,
-          .attacking .all,
-          .not .token])
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .not .token]))
         [.reduceCost .this [.mana [.generic 1]]])),
   .actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
@@ -397,9 +400,11 @@ def desolationProwler : TraditionalCardDefinition := .card [
   .power 2,
   .toughness 2,
   .ability (
-    .activatedTimes 1 .turnStart
+    .abilityId 1
+      (.activatedIf
+        (.didNotHappen (.abilityWithIdActivated 1) .turnStart)
         [.life 2]
-        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn))
+        (.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn)))
 ]
 
 def desolationProwlerCard : CardDef :=
@@ -417,12 +422,13 @@ def raveningWarg : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.attack .this .all)
-      (.ifAny
-        (.intersection [
-          .permanent,
-          .cardType .creature,
-          .controlled (.controller .this),
-          .powerAtLeast 4])
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast 4]))
         [.gainLife (.controller .this) 2]))
 ]
 
@@ -478,8 +484,8 @@ def dreadedBatCloud : TraditionalCardDefinition := .card [
   .toughness 2,
   .ability (
     .static
-      (.ifAny
-        (.wasSubject (.die (.cardType .creature)) .turnStart)
+      (.if
+        (.happened (.die (.cardType .creature)) .turnStart)
         [.reduceCost .this [.mana [.generic 3]]])),
   .ability (.keyword .flying),
   .ability (.keyword .deathtouch)
@@ -499,11 +505,12 @@ def crudeBentBlade : TraditionalCardDefinition := .card [
       (.enter .this)
       (.sacrifice
         (.selected
+          (.target 1 (.opponent (.controller .this)))
           (.range 1 1)
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 (.opponent (.controller .this)))])))),
+            .controlled (.targetReference 1)])))),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
   .ability (.keywordWithCost .equip [.mana [.generic 2]])
 ]
@@ -530,15 +537,14 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
           (.targets 1 (.range 0 1) (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
         .loseLife (.opponent (.controller .this)) 2])),
   .ability (
-    .restrict .onlyAsSorcery
-      (.restrict .fromGraveyard
-        (.activated
-          [.mana [.generic 2],
-            .sacrifice
-              (.intersection [
-                .permanent,
-                .union [.cardType .artifact, .cardType .creature]])]
-          (.returnToHand (.source .this)))))
+    .activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 2],
+        .sacrifice
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+      (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
 
 def gollumTheAbandonedCard : CardDef :=
@@ -612,44 +618,119 @@ def stonyVoicedGoblinsCard : CardDef :=
   stonyVoicedGoblins.toCardDef
     (oracleText := "When this creature enters, each opponent discards a card.")
 
-def smaugTheGreatCalamity : CardDef :=
-  legendaryCreature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
-    #["Dragon"] 5 5
+def smaugTheGreatCalamity : TraditionalCardDefinition := .card [
+  .name "Smaug, the Great Calamity",
+  .manaCost [.generic 5, .mono .red, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .dragon,
+  .power 5,
+  .toughness 5,
+  .ability (.keyword .flying),
+  .alternative [
+    .name "Spew Flame",
+    .manaCost [.generic 4, .mono .red],
+    .type .sorcery,
+    .subtype .adventure,
+    .actions [
+      .dealDamage
+        .this
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        5]]
+]
+
+def smaugTheGreatCalamityCard : CardDef :=
+  smaugTheGreatCalamity.toCardDef
     (oracleText := "Flying\n//ADV//\nSpew Flame {4}{R}\nSorcery — Adventure\nSpew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.flying)
-    (adventure := some (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red)
-      "Spew Flame deals 5 damage to target creature. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.dealDamageToCreature 5)))
 
-def gandalfSparkStarter : CardDef :=
-  legendaryCreature "Gandalf, Spark Starter" (ManaCost.ofGenericAndColors 4 [.red, .red])
-    #["Avatar", "Wizard"] 4 3
+def gandalfSparkStarter : TraditionalCardDefinition := .card [
+  .name "Gandalf, Spark Starter",
+  .manaCost [.generic 4, .mono .red, .mono .red],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .avatar,
+  .subtype .wizard,
+  .power 4,
+  .toughness 3,
+  .ability (.keyword .reach),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.divideDamage
+        (.controller .this)
+        (.source .this)
+        (.targets 1 (.range 1 3) .all)
+        3))
+]
+
+def gandalfSparkStarterCard : CardDef :=
+  gandalfSparkStarter.toCardDef
     (oracleText := "Reach\nWhen Gandalf enters, he deals 3 damage divided as you choose among one, two, or three targets.")
-    (keywords := Keyword.reach)
-    (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
 
-def raggedShortSpear : CardDef :=
-  equipment "Ragged Short Spear" (ManaCost.ofGenericAndColor 1 .red)
-    "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 3)
-    (staticAbilities := #[.equippedCreatureGets 2 0])
-    (triggeredAbilities := #[.onEnterMayDiscardDraw 2])
+def raggedShortSpear : TraditionalCardDefinition := .card [
+  .name "Ragged Short Spear",
+  .manaCost [.generic 1, .mono .red],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .optional
+          (.actionId 1 (.discard (.controller .this) 1)),
+        .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]])),
+  .ability (.static (.addPowerToughness (.hostOf .this) 2 0)),
+  .ability (.keywordWithCost .equip [.mana [.generic 3]])
+]
 
-def snowslopeHunter : CardDef :=
-  creature "Snowslope Hunter" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Ranger"] 2 3
+def raggedShortSpearCard : CardDef :=
+  raggedShortSpear.toCardDef
+    (oracleText := "When this Equipment enters, you may discard a card. If you do, draw two cards.\nEquipped creature gets +2/+0.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
+
+def snowslopeHunter : TraditionalCardDefinition := .card [
+  .name "Snowslope Hunter",
+  .manaCost [.generic 2, .mono .red],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .ranger,
+  .power 2,
+  .toughness 3,
+  .ability (
+    .abilityId 1
+      (.activatedIf
+        (.and
+          (.turn (.controller .this))
+          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
+        [.sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+        (.exile (.topOfLibrary (.controller .this)))))
+]
+
+def snowslopeHunterCard : CardDef :=
+  snowslopeHunter.toCardDef
     (oracleText := "Sacrifice another creature or artifact: Exile the top card of your library. You may play it until the end of your next turn. Activate only during your turn and only once each turn.")
-    (activatedAbilities := #[
-      activated (Effect.exileTopPlayUntilEndOfNextTurn)
-        (sacrificeAnotherCreatureOrArtifact := true)
-        (onlyDuringYourTurn := true) (onceEachTurn := true)])
 
-def guardianOfTheHalls : CardDef :=
-  creature "Guardian of the Halls" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Soldier"] 2 2
+def guardianOfTheHalls : TraditionalCardDefinition := .card [
+  .name "Guardian of the Halls",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .soldier,
+  .power 2,
+  .toughness 2,
+  .ability (.keyword .trample),
+  .ability (
+    .activated
+      [.mana [.generic 5, .mono .green, .mono .green]]
+      (.putCounter (.source .this) .plusOnePlusOne 3))
+]
+
+def guardianOfTheHallsCard : CardDef :=
+  guardianOfTheHalls.toCardDef
     (oracleText := "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature.")
-    (keywords := Keyword.trample)
-    (activatedAbilities := #[
-      activated (Effect.putPlusOnePlusOneOnSource 3)
-        (ManaCost.ofGenericAndColors 5 [.green, .green])])
 
 def quarrel : CardDef :=
   instant "Quarrel" (ManaCost.ofGenericAndColor 1 .green)
@@ -1685,11 +1766,11 @@ def hobbitCards : Array CardDef := #[
   gnashingOfTeethCard,
   reverentHowlCard,
   stonyVoicedGoblinsCard,
-  smaugTheGreatCalamity,
-  gandalfSparkStarter,
-  raggedShortSpear,
-  snowslopeHunter,
-  guardianOfTheHalls,
+  smaugTheGreatCalamityCard,
+  gandalfSparkStarterCard,
+  raggedShortSpearCard,
+  snowslopeHunterCard,
+  guardianOfTheHallsCard,
   quarrel,
   galionElvenkingsButler,
   wargTactics,
@@ -1883,16 +1964,16 @@ def hobbitCards : Array CardDef := #[
 #guard attercop.keywords.reach
 #guard attercop.keywords.deathtouch
 #guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets 1 1]
-#guard raggedShortSpear.isEquipment
-#guard !raggedShortSpear.isAura
-#guard !raggedShortSpear.requiresTarget
-#guard raggedShortSpear.staticAbilities == #[.equippedCreatureGets 2 0]
-#guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
-#guard raggedShortSpear.activatedAbilities.size == 1
-#guard raggedShortSpear.activatedAbilities[0]!.onlyAsSorcery
-#guard raggedShortSpear.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
-#guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
+#guard raggedShortSpearCard.isEquipment
+#guard !raggedShortSpearCard.isAura
+#guard !raggedShortSpearCard.requiresTarget
+#guard raggedShortSpearCard.staticAbilities == #[.equippedCreatureGets 2 0]
+#guard raggedShortSpearCard.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
+#guard raggedShortSpearCard.activatedAbilities.size == 1
+#guard raggedShortSpearCard.activatedAbilities[0]!.onlyAsSorcery
+#guard raggedShortSpearCard.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard raggedShortSpearCard.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
+#guard (raggedShortSpearCard.summary.splitOn "Equipped creature").length > 1
 #guard crudeBentBladeCard.isEquipment
 #guard !crudeBentBladeCard.isAura
 #guard !crudeBentBladeCard.requiresTarget
@@ -1947,19 +2028,28 @@ def hobbitCards : Array CardDef := #[
 #guard mirkwoodPathmaker.toughness.isNone
 #guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
-#guard gandalfSparkStarter.keywords.reach
-#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
-#guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1
-#guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
-#guard guardianOfTheHalls.keywords.trample
-#guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
-#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
+#guard gandalfSparkStarterCard.keywords.reach
+#guard gandalfSparkStarterCard.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
+#guard (gandalfSparkStarterCard.summary.splitOn "divided as you choose").length > 1
+#guard (gandalfSparkStarterCard.summary.splitOn "reach").length > 1
+#guard guardianOfTheHallsCard.keywords.trample
+#guard guardianOfTheHallsCard.activatedAbilities.size == 1
+#guard guardianOfTheHallsCard.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHallsCard.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard guardianOfTheHalls.power == some 2
-#guard guardianOfTheHalls.toughness == some 2
-#guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
-#guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
+#guard guardianOfTheHallsCard.power == some 2
+#guard guardianOfTheHallsCard.toughness == some 2
+#guard (guardianOfTheHallsCard.summary.splitOn "trample").length > 1
+#guard (guardianOfTheHallsCard.summary.splitOn "+1/+1").length > 1
+#guard snowslopeHunterCard.activatedAbilities.size == 1
+#guard snowslopeHunterCard.activatedAbilities[0]!.effect ==
+  Effect.exileTopPlayUntilEndOfNextTurn
+#guard snowslopeHunterCard.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
+#guard snowslopeHunterCard.activatedAbilities[0]!.onlyDuringYourTurn
+#guard snowslopeHunterCard.activatedAbilities[0]!.onceEachTurn
+#guard snowslopeHunterCard.power == some 2
+#guard snowslopeHunterCard.toughness == some 3
+#guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1
 #guard desolationProwlerCard.activatedAbilities.size == 1
 #guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2
@@ -2015,13 +2105,13 @@ def hobbitCards : Array CardDef := #[
 #guard bilbosDeadlySliceCard.isInstant
 #guard bilbosDeadlySliceCard.hasCastKind .destroyCreature
 #guard (bilbosDeadlySliceCard.summary.splitOn "Destroy target creature").length > 1
-#guard smaugTheGreatCalamity.keywords.flying
-#guard smaugTheGreatCalamity.hasAdventure
-#guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
-#guard smaugTheGreatCalamity.power == some 5
-#guard smaugTheGreatCalamity.toughness == some 5
+#guard smaugTheGreatCalamityCard.keywords.flying
+#guard smaugTheGreatCalamityCard.hasAdventure
+#guard smaugTheGreatCalamityCard.supertypes.any (· == .legendary)
+#guard smaugTheGreatCalamityCard.power == some 5
+#guard smaugTheGreatCalamityCard.toughness == some 5
 #guard
-  match smaugTheGreatCalamity.adventure with
+  match smaugTheGreatCalamityCard.adventure with
   | some adv =>
     adv.name == "Spew Flame" &&
       adv.manaCost == (ManaCost.ofGenericAndColor 4 .red) &&
@@ -2029,12 +2119,12 @@ def hobbitCards : Array CardDef := #[
       adv.subtypes.any (· == "Adventure") &&
       adv.spellEffect == some (Effect.dealDamageToCreature 5)
   | none => false
-#guard (smaugTheGreatCalamity.oracleText.splitOn "//ADV//").length > 1
-#guard (smaugTheGreatCalamity.oracleText.splitOn "{4}{R}").length > 1
-#guard !smaugTheGreatCalamity.leftoverOracleLines.any (· == "//ADV//")
-#guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
-#guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame {4}{R}").length > 1
-#guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
+#guard (smaugTheGreatCalamityCard.oracleText.splitOn "//ADV//").length > 1
+#guard (smaugTheGreatCalamityCard.oracleText.splitOn "{4}{R}").length > 1
+#guard !smaugTheGreatCalamityCard.leftoverOracleLines.any (· == "//ADV//")
+#guard (smaugTheGreatCalamityCard.summary.splitOn "//ADV//").length == 1
+#guard (smaugTheGreatCalamityCard.summary.splitOn "Spew Flame {4}{R}").length > 1
+#guard (smaugTheGreatCalamityCard.summary.splitOn "flying").length > 1
 #guard beornReluctantHost.keywords.trample
 #guard beornReluctantHost.hasAdventure
 #guard beornReluctantHost.supertypes.any (· == .legendary)
@@ -2147,5 +2237,25 @@ def hobbitCards : Array CardDef := #[
   #[Effect.targetPlayerDrawLoseLife 2 2, Effect.pumpAndLifelink 2 2]
 #guard stonyVoicedGoblinsCard.triggeredAbilities ==
   #[TriggeredAbility.onEnterEachOpponentDiscards]
+#guard smaugTheGreatCalamityCard.keywords.flying
+#guard smaugTheGreatCalamityCard.hasAdventure
+#guard
+  match smaugTheGreatCalamityCard.adventure with
+  | some adv => adv.spellEffect == some (Effect.dealDamageToCreature 5)
+  | none => false
+#guard gandalfSparkStarterCard.keywords.reach
+#guard gandalfSparkStarterCard.triggeredAbilities ==
+  #[TriggeredAbility.onEnterDealDividedDamage 3 3]
+#guard raggedShortSpearCard.isEquipment
+#guard raggedShortSpearCard.staticAbilities == #[.equippedCreatureGets 2 0]
+#guard raggedShortSpearCard.triggeredAbilities ==
+  #[TriggeredAbility.onEnterMayDiscardDraw 2]
+#guard snowslopeHunterCard.activatedAbilities[0]!.onlyDuringYourTurn
+#guard snowslopeHunterCard.activatedAbilities[0]!.onceEachTurn
+#guard snowslopeHunterCard.activatedAbilities[0]!.effect ==
+  Effect.exileTopPlayUntilEndOfNextTurn
+#guard guardianOfTheHallsCard.keywords.trample
+#guard guardianOfTheHallsCard.activatedAbilities[0]!.effect ==
+  Effect.putPlusOnePlusOneOnSource 3
 
 end Mtg.Engine.Catalog

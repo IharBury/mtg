@@ -56,9 +56,9 @@ open Mtg.Engine.Catalog
 #guard mentions giftOfStrands.summary "Enchanted creature"
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
-#guard mentions raggedShortSpear.summary "Equipped creature"
-#guard mentions raggedShortSpear.summary "Equip"
-#guard raggedShortSpear.isEquipment
+#guard mentions raggedShortSpearCard.summary "Equipped creature"
+#guard mentions raggedShortSpearCard.summary "Equip"
+#guard raggedShortSpearCard.isEquipment
 #guard hawkeyeSBow.isEquipment
 #guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 Keyword.reach]
 #guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
@@ -69,9 +69,9 @@ open Mtg.Engine.Catalog
 #guard mentions hawkeyeSBow.summary "Equipped creature"
 #guard mentions hawkeyeSBow.summary "becomes tapped"
 #guard mentions hawkeyeSBow.summary "Equip"
-#guard raggedShortSpear.staticAbilities.size == 1
-#guard raggedShortSpear.triggeredAbilities.size == 1
-#guard raggedShortSpear.activatedAbilities.size == 1
+#guard raggedShortSpearCard.staticAbilities.size == 1
+#guard raggedShortSpearCard.triggeredAbilities.size == 1
+#guard raggedShortSpearCard.activatedAbilities.size == 1
 #guard mentions crudeBentBladeCard.summary "Equipped creature"
 #guard mentions crudeBentBladeCard.summary "Equip"
 #guard mentions crudeBentBladeCard.summary "target opponent"
@@ -155,11 +155,11 @@ open Mtg.Engine.Catalog
 #guard ologHaiCrusher.keywords.trample
 #guard ologHaiCrusher.staticAbilities.size == 1
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #["Goblin", "Orc"]]
-#guard mentions gandalfSparkStarter.summary "reach"
-#guard mentions gandalfSparkStarter.summary "divided as you choose"
-#guard gandalfSparkStarter.keywords.reach
-#guard gandalfSparkStarter.triggeredAbilities.size == 1
-#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
+#guard mentions gandalfSparkStarterCard.summary "reach"
+#guard mentions gandalfSparkStarterCard.summary "divided as you choose"
+#guard gandalfSparkStarterCard.keywords.reach
+#guard gandalfSparkStarterCard.triggeredAbilities.size == 1
+#guard gandalfSparkStarterCard.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard mentions goblinFireleaper.summary "+1/+0"
 #guard mentions goblinFireleaper.summary "dies"
 #guard goblinFireleaper.activatedAbilities.size == 1
@@ -196,12 +196,12 @@ open Mtg.Engine.Catalog
 #guard mentions guttersnipe.summary "each opponent"
 #guard guttersnipe.triggeredAbilities.size == 1
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
-#guard mentions guardianOfTheHalls.summary "trample"
-#guard mentions guardianOfTheHalls.summary "+1/+1"
-#guard guardianOfTheHalls.keywords.trample
-#guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
-#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
+#guard mentions guardianOfTheHallsCard.summary "trample"
+#guard mentions guardianOfTheHallsCard.summary "+1/+1"
+#guard guardianOfTheHallsCard.keywords.trample
+#guard guardianOfTheHallsCard.activatedAbilities.size == 1
+#guard guardianOfTheHallsCard.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
+#guard guardianOfTheHallsCard.activatedAbilities[0]!.cost.mana ==
   ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard mentions improvisedClub.summary "additional cost"
 #guard mentions improvisedClub.summary "4 damage"
@@ -214,10 +214,10 @@ open Mtg.Engine.Catalog
 #guard fireOfOrthanc.isSorcery
 #guard fireOfOrthanc.spellEffect == some (Effect.destroyArtifactOrLandNonflyersCantBlock)
 #guard fireOfOrthanc.requiresTarget
-#guard mentions smaugTheGreatCalamity.summary "flying"
-#guard mentions smaugTheGreatCalamity.summary "Spew Flame"
-#guard smaugTheGreatCalamity.keywords.flying
-#guard smaugTheGreatCalamity.hasAdventure
+#guard mentions smaugTheGreatCalamityCard.summary "flying"
+#guard mentions smaugTheGreatCalamityCard.summary "Spew Flame"
+#guard smaugTheGreatCalamityCard.keywords.flying
+#guard smaugTheGreatCalamityCard.hasAdventure
 #guard mentions beornReluctantHost.summary "trample"
 #guard mentions beornReluctantHost.summary "Till and Tend"
 #guard mentions beornReluctantHost.summary "additional land"

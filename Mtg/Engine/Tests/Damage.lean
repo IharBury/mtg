@@ -22,8 +22,8 @@ open Mtg.Engine.Catalog
 
 /-- A flying attacker can be blocked by Gandalf (reach) but not by a Gray Ogre. -/
 def flyerVsGandalf : Game :=
-  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
-  let g := addPermanent g gandalfSparkStarter ⟨1⟩ ⟨1⟩
+  let g := addPermanent started smaugTheGreatCalamityCard ⟨0⟩ ⟨0⟩
+  let g := addPermanent g gandalfSparkStarterCard ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
   g.setObject { smaug with status := { smaug.status with attacking := true } }
@@ -37,11 +37,11 @@ def flyerVsGandalf : Game :=
 
 /-- Gandalf in hand with enough mana to cast him. -/
 def gandalfSetup : Game :=
-  withRedMana (addToHand afterDraw gandalfSparkStarter ⟨0⟩) ⟨0⟩ 6
+  withRedMana (addToHand afterDraw gandalfSparkStarterCard ⟨0⟩) ⟨0⟩ 6
 
 #guard gandalfSetup.canCast ⟨0⟩ (handCardNamed gandalfSetup ⟨0⟩ "Gandalf, Spark Starter")
 #guard gandalfSetup.asSorcery? ⟨0⟩
-#guard gandalfSparkStarter.hasSorcerySpeed
+#guard gandalfSparkStarterCard.hasSorcerySpeed
 
 def proposedGandalf : Game :=
   mustApply gandalfSetup ⟨0⟩ (.cast (handCardNamed gandalfSetup ⟨0⟩ "Gandalf, Spark Starter").id)
@@ -253,7 +253,7 @@ def gandalfLeftBeforeTrigger : Game :=
 /-- The agent casts Gandalf when that is the playable spell. -/
 def agentGandalfOnly : Game :=
   let g := clearHandPlayedLand afterDraw ⟨0⟩
-  withRedMana (addToHand g gandalfSparkStarter ⟨0⟩) ⟨0⟩ 6
+  withRedMana (addToHand g gandalfSparkStarterCard ⟨0⟩) ⟨0⟩ 6
 
 #guard
   match Agent.choose agentGandalfOnly ⟨0⟩ with
@@ -629,7 +629,7 @@ def afterFireleaperElvesCombat : Game :=
 /-- Sacrificing Fireleaper to Snowslope Hunter puts the dies trigger above the
 activated ability. -/
 def hunterSacrificesFireleaper : Game :=
-  let g := addPermanent afterDraw snowslopeHunter ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw snowslopeHunterCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g goblinFireleaper ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addUntappedLand g mountain
