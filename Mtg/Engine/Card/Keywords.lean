@@ -1,3 +1,5 @@
+import Mtg.Engine.TypeLine
+
 /-!
 # Keyword abilities (CR 702)
 
@@ -141,6 +143,8 @@ inductive Keyword where
   | equip
   /-- Enchant (CR 702.5): printed with a target, e.g. Enchant creature. -/
   | enchant
+  /-- Typecycling (CR 702.29): printed with a cost, e.g. Halflingcycling {4}. -/
+  | subtypecycling : CardSubtype → Keyword
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -167,7 +171,7 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
-  | .equip | .enchant => Keywords.none
+  | .equip | .enchant | .subtypecycling _ => Keywords.none
 
 /-- Union of two single keywords. -/
 def merge (a b : Keyword) : Keywords :=
@@ -177,7 +181,9 @@ instance : Coe Keyword Keywords where
   coe := toKeywords
 
 instance : ToString Keyword where
-  toString k := toString k.toKeywords
+  toString
+    | .subtypecycling st => s!"{st}cycling"
+    | k => toString k.toKeywords
 
 end Keyword
 
