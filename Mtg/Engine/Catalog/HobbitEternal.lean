@@ -44,10 +44,26 @@ def roguesPassage : CardDef :=
       activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 4) (tap := true)])
 
 def soldierOfTheGreyHost : CardDef :=
-  creature "Soldier of the Grey Host" (ManaCost.ofGenericAndColor 3 .white) #["Spirit", "Soldier"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Soldier of the Grey Host",
+    .manaCost [.generic 3, .mono .white],
+    .type .creature,
+    .subtype .spirit,
+    .subtype .soldier,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .flash),
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.continuous
+          [.addPowerToughness
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            2 0]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "Flash\nFlying\nWhen this creature enters, target creature gets +2/+0 until end of turn.")
-    (keywords := Keyword.flash.merge Keyword.flying)
-    (triggeredAbilities := #[.onEnterTargetGets 2 0])
 
 def eaglesOfTheNorth : CardDef :=
   creature "Eagles of the North" (ManaCost.ofGenericAndColor 5 .white) #["Bird", "Soldier"] 3 3
@@ -126,16 +142,31 @@ def knightsOfDolAmroth : CardDef :=
     (oracleText := "Whenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
 def greyHavensNavigator : CardDef :=
-  creature "Grey Havens Navigator" (ManaCost.ofGenericAndColor 2 .blue) #["Elf", "Pilot"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Grey Havens Navigator",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .pilot,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .flash),
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 1))
+  ]).toCardDef
     (oracleText := "Flash\nWhen this creature enters, scry 1.")
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterScry 1])
 
 def ithilienKingfisher : CardDef :=
-  creature "Ithilien Kingfisher" (ManaCost.ofGenericAndColor 2 .blue) #["Bird"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Ithilien Kingfisher",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .bird,
+    .power 2,
+    .toughness 1,
+    .ability (.keyword .flying),
+    .ability (.triggered (.die .this) (.draw (.controller .this) 1))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature dies, draw a card.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onDiesDraw 1])
 
 def hithlainKnots : CardDef :=
   instant "Hithlain Knots" (ManaCost.ofGenericAndColor 1 .blue)
@@ -143,10 +174,20 @@ def hithlainKnots : CardDef :=
     (some (Effect.tapScryDraw 1 1))
 
 def captainOfUmbar : CardDef :=
-  creature "Captain of Umbar" (ManaCost.ofGenericAndColor 2 .blue) #["Human", "Pirate"] 2 3
+  (TraditionalCardDefinition.card [
+    .name "Captain of Umbar",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .pirate,
+    .power 2,
+    .toughness 3,
+    .ability (
+      .activated
+        [.mana [.generic 1], .tapSymbol]
+        (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]))
+  ]).toCardDef
     (oracleText := "{1}, {T}: Draw a card, then discard a card.")
-    (activatedAbilities := #[
-      activated (Effect.abilityDrawThenDiscard 1) (ManaCost.ofGeneric 1) (tap := true)])
 
 def minasTirithGarrison : CardDef :=
   card "Minas Tirith Garrison" #[.creature] (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Soldier"]
@@ -162,10 +203,17 @@ def colossalWhale : CardDef :=
     (triggeredAbilities := #[.onAttackMayExileDefenderUntilLeaves])
 
 def willowWind : CardDef :=
-  creature "Willow-Wind" (ManaCost.ofGenericAndColor 4 .blue) #["Elemental"] 3 4
+  (TraditionalCardDefinition.card [
+    .name "Willow-Wind",
+    .manaCost [.generic 4, .mono .blue],
+    .type .creature,
+    .subtype .elemental,
+    .power 3,
+    .toughness 4,
+    .ability (.keyword .flying),
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, scry 2.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterScry 2])
 
 def nimrodelWatcher : CardDef :=
   creature "Nimrodel Watcher" (ManaCost.ofGenericAndColor 1 .blue) #["Elf", "Scout"] 2 1
@@ -186,9 +234,18 @@ def hauntOfTheDeadMarshes : CardDef :=
         (activateFromGraveyard := true) (onlyIfYouControlLegendary := true)])
 
 def languish : CardDef :=
-  sorcery "Languish" (ManaCost.ofGenericAndColors 2 [.black, .black])
-    "All creatures get -4/-4 until end of turn."
-    (some (Effect.allCreaturesGet (-4) (-4)))
+  (TraditionalCardDefinition.card [
+    .name "Languish",
+    .manaCost [.generic 2, .mono .black, .mono .black],
+    .type .sorcery,
+    .actions [
+      .continuous
+        [.addPowerToughness
+          (.intersection [.permanent, .cardType .creature])
+          (-4) (-4)]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "All creatures get -4/-4 until end of turn.")
 
 def shadowOfTheEnemy : CardDef :=
   sorcery "Shadow of the Enemy" (ManaCost.ofGenericAndColors 3 [.black, .black, .black])
@@ -213,9 +270,15 @@ def bitterDownfall : CardDef :=
     (costReductionIfTargetDamaged := 3)
 
 def nightsWhisper : CardDef :=
-  sorcery "Night's Whisper" (ManaCost.ofGenericAndColor 1 .black)
-    "You draw two cards and lose 2 life."
-    (some (Effect.drawAndLoseLife 2 2))
+  (TraditionalCardDefinition.card [
+    .name "Night's Whisper",
+    .manaCost [.generic 1, .mono .black],
+    .type .sorcery,
+    .actions [
+      .draw (.controller .this) 2,
+      .loseLife (.controller .this) 2]
+  ]).toCardDef
+    (oracleText := "You draw two cards and lose 2 life.")
 
 def wayfarersBauble : CardDef :=
   artifact "Wayfarer's Bauble" (ManaCost.ofGeneric 1)
@@ -247,11 +310,31 @@ def smiteTheDeathless : CardDef :=
     (some (Effect.dealDamageLoseIndestructibleExile 3))
 
 def goblinFireleaper : CardDef :=
-  creature "Goblin Fireleaper" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Goblin Fireleaper",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .warrior,
+    .power 1,
+    .toughness 1,
+    .ability (
+      .activated
+        [.mana [.generic 1, .mono .red]]
+        (.continuous [.addPowerToughness (.source .this) 1 0] .endOfTurn)),
+    .ability (
+      .triggered
+        (.die .this)
+        (.dealDamageEqualToPower
+          .this
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))]))))
+  ]).toCardDef
     (oracleText := "{1}{R}: This creature gets +1/+0 until end of turn.\nWhen this creature dies, it deals damage equal to its power to target creature an opponent controls.")
-    (activatedAbilities := #[
-      activated (Effect.sourceGets 1 0) (ManaCost.ofGenericAndColor 1 .red)])
-    (triggeredAbilities := #[.onDiesDealDamageEqualToPowerToOppCreature])
 
 def oliphaunt : CardDef :=
   creature "Oliphaunt" (ManaCost.ofGenericAndColor 5 .red) #["Elephant"] 6 4
@@ -269,10 +352,27 @@ def goblinCratermaker : CardDef :=
         (otherModes := #[Effect.destroyTargetColorlessNonland])])
 
 def infernoTitan : CardDef :=
-  creature "Inferno Titan" (ManaCost.ofGenericAndColors 4 [.red, .red]) #["Giant"] 6 6
+  (TraditionalCardDefinition.card [
+    .name "Inferno Titan",
+    .manaCost [.generic 4, .mono .red, .mono .red],
+    .type .creature,
+    .subtype .giant,
+    .power 6,
+    .toughness 6,
+    .ability (
+      .activated
+        [.mana [.mono .red]]
+        (.continuous [.addPowerToughness (.source .this) 1 0] .endOfTurn)),
+    .ability (
+      .triggered
+        (.or (.enter .this) (.attack .this .all))
+        (.divideDamage
+          (.controller .this)
+          .this
+          (.targets 1 (.range 1 3) .all)
+          3))
+  ]).toCardDef
     (oracleText := "{R}: This creature gets +1/+0 until end of turn.\nWhenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets.")
-    (activatedAbilities := #[activated (Effect.sourceGets 1 0) (ManaCost.ofColor .red)])
-    (triggeredAbilities := #[.onEnterOrAttackDealDividedDamage 3 3])
 
 def guttersnipe : CardDef :=
   creature "Guttersnipe" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Shaman"] 2 2
@@ -292,9 +392,17 @@ def fireOfOrthanc : CardDef :=
     (some (Effect.destroyArtifactOrLandNonflyersCantBlock))
 
 def galadhrimGuide : CardDef :=
-  creature "Galadhrim Guide" (ManaCost.ofGenericAndColor 3 .green) #["Elf", "Scout"] 3 4
+  (TraditionalCardDefinition.card [
+    .name "Galadhrim Guide",
+    .manaCost [.generic 3, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .scout,
+    .power 3,
+    .toughness 4,
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
+  ]).toCardDef
     (oracleText := "When this creature enters, scry 2.")
-    (triggeredAbilities := #[.onEnterScry 2])
 
 def elvishVisionary : CardDef :=
   (TraditionalCardDefinition.card [
@@ -321,11 +429,21 @@ def celebornTheWise : CardDef :=
     (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
 
 def giftOfStrands : CardDef :=
-  aura "Gift of Strands" (ManaCost.ofGenericAndColor 3 .green)
-    "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3."
-    (keywords := Keyword.flash)
-    (staticAbilities := #[.enchantedCreatureGets 3 3])
-    (triggeredAbilities := #[.onEnterScry 2])
+  (TraditionalCardDefinition.card [
+    .name "Gift of Strands",
+    .manaCost [.generic 3, .mono .green],
+    .type .enchantment,
+    .subtype .aura,
+    .ability (.keyword .flash),
+    .ability (
+      .keywordWithTarget
+        .enchant
+        1
+        (.intersection [.permanent, .cardType .creature])),
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
+    .ability (.static (.addPowerToughness (.hostOf .this) 3 3))
+  ]).toCardDef
+    (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3.")
 
 def elvishArchdruid : CardDef :=
   creature "Elvish Archdruid" (ManaCost.ofGenericAndColors 1 [.green, .green])
@@ -335,9 +453,17 @@ def elvishArchdruid : CardDef :=
     (tapAddManaForEach := #[{ mana := .colored .green, subtype := "Elf" }])
 
 def lothlorienLookout : CardDef :=
-  creature "Lothlórien Lookout" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Scout"] 1 3
+  (TraditionalCardDefinition.card [
+    .name "Lothlórien Lookout",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .scout,
+    .power 1,
+    .toughness 3,
+    .ability (.triggered (.attack .this .all) (.scry (.controller .this) 1))
+  ]).toCardDef
     (oracleText := "Whenever this creature attacks, scry 1.")
-    (triggeredAbilities := #[.onAttackScry 1])
 
 def elvishMystic : CardDef :=
   creature "Elvish Mystic" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1

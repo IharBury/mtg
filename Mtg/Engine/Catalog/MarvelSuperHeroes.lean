@@ -305,10 +305,18 @@ def takeUpTheShield : CardDef :=
     (spellEffect := some (Effect.plusOneLifelinkIndestructible))
 
 def wakandanDroneFlock : CardDef :=
-  artifactCreature "Wakandan Drone Flock" (ManaCost.ofGenericAndColor 3 .white) #["Robot"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Wakandan Drone Flock",
+    .manaCost [.generic 3, .mono .white],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .power 3,
+    .toughness 3,
+    .ability (.keyword .flying),
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterScry 2])
 
 def webUp : CardDef :=
   enchantment "Web Up" (ManaCost.ofGenericAndColor 2 .white)
@@ -374,10 +382,29 @@ def bruceBanner : CardDef :=
     (otherFace := some theIncredibleHulk)
 
 def depower : CardDef :=
-  card "Depower" #[.instant] (ManaCost.ofGenericAndColor 2 .blue)
+  (TraditionalCardDefinition.card [
+    .name "Depower",
+    .manaCost [.generic 2, .mono .blue],
+    .type .instant,
+    .ability (
+      .static
+        (.if
+          (.targetsIncludeAny
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all]))
+          [.reduceCost .this [.mana [.generic 2]]])),
+    .actions [
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (-4) 0]
+        .endOfTurn,
+      .draw (.controller .this) 1]
+  ]).toCardDef
     (oracleText := "This spell costs {2} less to cast if it targets an attacking creature.\nTarget creature gets -4/-0 until end of turn.\nDraw a card.")
-    (costReductionIfTargetAttacking := 2)
-    (spellEffect := some (Effect.pumpThenDraw (-4) 0))
 
 def echoPerceptiveProdigy : CardDef :=
   legendaryCreature "Echo, Perceptive Prodigy" (ManaCost.ofGenericAndColor 2 .blue) #["Human", "Hero"] 1 4
@@ -407,10 +434,17 @@ def frozenInIce : CardDef :=
     (staticAbilities := #[StaticAbility.enchantedLosesAbilitiesCantUntap])
 
 def futuristForge : CardDef :=
-  artifact "Futurist Forge" (ManaCost.ofGenericAndColor 1 .blue)
-    "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards."
-    (triggeredAbilities := #[.onEnterDraw 1])
-    (activatedAbilities := #[activated (Effect.abilityDraw 2) (ManaCost.ofGenericAndColor 3 .blue) (sacrificeSource := true)])
+  (TraditionalCardDefinition.card [
+    .name "Futurist Forge",
+    .manaCost [.generic 1, .mono .blue],
+    .type .artifact,
+    .ability (.triggered (.enter .this) (.draw (.controller .this) 1)),
+    .ability (
+      .activated
+        [.mana [.generic 3, .mono .blue], .sacrifice .this]
+        (.draw (.controller .this) 2))
+  ]).toCardDef
+    (oracleText := "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards.")
 
 def giantSizedFlyingAnt : CardDef :=
   creature "Giant-Sized Flying Ant" (ManaCost.ofGenericAndColor 3 .blue) #["Insect"] 3 2
@@ -557,13 +591,29 @@ def superIntelligence : CardDef :=
     (triggeredAbilities := #[.onStep Effect.stepEnchantedControllerDraws])
 
 def superSuit : CardDef :=
-  artifact "Super Suit" (ManaCost.ofGenericAndColor 1 .blue)
-    "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterAttachThen .untap])
-    (staticAbilities := #[StaticAbility.equippedCreatureGets 1 2])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
+  (TraditionalCardDefinition.card [
+    .name "Super Suit",
+    .manaCost [.generic 1, .mono .blue],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (.keyword .flash),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .attach
+            .this
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])),
+          .untap (.targetReference 1)])),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 2)),
+    .ability (.keywordWithCost .equip [.mana [.generic 2]])
+  ]).toCardDef
+    (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. Untap that creature.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def thirstForKnowledge : CardDef :=
   instant "Thirst for Knowledge" (ManaCost.ofGenericAndColor 2 .blue)
@@ -649,9 +699,18 @@ def cruelAlliance : CardDef :=
     (spellEffect := some (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3))
 
 def darkDeed : CardDef :=
-  instant "Dark Deed" (ManaCost.ofGenericAndColor 1 .black)
-    "Target creature gets -4/-4 until end of turn."
-    (spellEffect := some (Effect.pump (-4) (-4)))
+  (TraditionalCardDefinition.card [
+    .name "Dark Deed",
+    .manaCost [.generic 1, .mono .black],
+    .type .instant,
+    .actions [
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (-4) (-4)]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Target creature gets -4/-4 until end of turn.")
 
 def decoyPloy : CardDef :=
   instant "Decoy Ploy" (ManaCost.ofGenericAndColor 1 .black)
@@ -742,9 +801,21 @@ def ninjaOfTheHand : CardDef :=
     (activatedAbilities := #[activated (Effect.eachOppDiscardThenPlusOne) (ManaCost.ofGenericAndColor 4 .black) (powerUp := true)])
 
 def projectDeathlokSoldier : CardDef :=
-  artifactCreature "Project Deathlok Soldier" (ManaCost.ofColor .black) #["Zombie", "Soldier"] 1 2
+  (TraditionalCardDefinition.card [
+    .name "Project Deathlok Soldier",
+    .manaCost [.mono .black],
+    .type .artifact,
+    .type .creature,
+    .subtype .zombie,
+    .subtype .soldier,
+    .power 1,
+    .toughness 2,
+    .ability (
+      .activated
+        [.mana [.generic 2, .mono .black]]
+        (.returnToHand (.intersection [.inGraveyard, .source .this])))
+  ]).toCardDef
     (oracleText := "{2}{B}: Return this card from your graveyard to your hand.")
-    (activatedAbilities := #[activated (Effect.returnFromGraveyardToHand) (ManaCost.ofGenericAndColor 2 .black)])
 
 def redRoomRecruit : CardDef :=
   creature "Red Room Recruit" (ManaCost.ofGenericAndColor 1 .black) #["Human", "Spy", "Villain"] 1 2
@@ -810,10 +881,20 @@ def unlivingLegionnaire : CardDef :=
     (activatedAbilities := #[activated (Effect.returnGyCreatureThenPlusOne 2) (ManaCost.ofGenericAndColors 5 [.black, .black]) (powerUp := true)])
 
 def visionsOfVillainy : CardDef :=
-  card "Visions of Villainy" #[.instant] (ManaCost.ofGenericAndColor 2 .black)
+  (TraditionalCardDefinition.card [
+    .name "Visions of Villainy",
+    .manaCost [.generic 2, .mono .black],
+    .type .instant,
+    .ability (
+      .static
+        (.if
+          (.anySubtype (.controlled (.controller .this)) .villain)
+          [.reduceCost .this [.mana [.generic 1]]])),
+    .actions [
+      .draw (.controller .this) 2,
+      .loseLife (.controller .this) 2]
+  ]).toCardDef
     (oracleText := "This spell costs {1} less to cast if you control a Villain.\nYou draw two cards and lose 2 life.")
-    (costReductionIfYouControl := some (1, "Villain"))
-    (spellEffect := some (Effect.drawAndLoseLife 2 2))
 
 def whiplashVengefulEngineer : CardDef :=
   card "Whiplash, Vengeful Engineer" #[.creature] (ManaCost.ofColor .black)
@@ -1663,12 +1744,16 @@ def ultronDrone : CardDef :=
     (activatedAbilities := #[activated (Effect.plusOneAndCreateTokens 2 .robotVillain22) (ManaCost.ofGeneric 6) (powerUp := true)])
 
 def vibraniumEnergyDaggers : CardDef :=
-  artifact "Vibranium Energy Daggers" (ManaCost.ofGeneric 1)
-    "Indestructible (Effects that say \"destroy\" don't destroy this Equipment.)\nEquipped creature gets +2/+2.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
-    (keywords := Keyword.indestructible)
-    (staticAbilities := #[StaticAbility.equippedCreatureGets 2 2])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+  (TraditionalCardDefinition.card [
+    .name "Vibranium Energy Daggers",
+    .manaCost [.generic 1],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (.keyword .indestructible),
+    .ability (.static (.addPowerToughness (.hostOf .this) 2 2)),
+    .ability (.keywordWithCost .equip [.mana [.generic 3]])
+  ]).toCardDef
+    (oracleText := "Indestructible (Effects that say \"destroy\" don't destroy this Equipment.)\nEquipped creature gets +2/+2.\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def theVision : CardDef :=
   artifactCreature "The Vision" (ManaCost.ofGeneric 4) #["Robot", "Hero"] 2 5

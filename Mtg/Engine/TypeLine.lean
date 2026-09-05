@@ -91,11 +91,11 @@ end Supertype
 /-- Subtype as printed on the type line. Basic land types are the five listed in CR 305.6. -/
 abbrev Subtype := String
 
-/-- Named subtypes used when composing a `TraditionalCardDefinition`.
-Unknown or catalog-only types use `named`. -/
+/-- Named subtypes used when composing a `TraditionalCardDefinition`. -/
 inductive CardSubtype where
   | adventure
   | advisor
+  | aura
   | avatar
   | bard
   | bat
@@ -108,6 +108,7 @@ inductive CardSubtype where
   | dragon
   | druid
   | dwarf
+  | elemental
   | elf
   | equipment
   | giant
@@ -123,19 +124,23 @@ inductive CardSubtype where
   | merfolk
   | minotaur
   | ogre
+  | pilot
+  | pirate
   | ranger
+  | robot
   | rogue
   | scout
   | shaman
   | soldier
   | spider
+  | spirit
   | spy
   | villain
   | warrior
   | wizard
   | wolf
   | wurm
-  | named (s : String)
+  | zombie
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace CardSubtype
@@ -143,6 +148,7 @@ namespace CardSubtype
 def toString : CardSubtype → String
   | .adventure => "Adventure"
   | .advisor => "Advisor"
+  | .aura => "Aura"
   | .avatar => "Avatar"
   | .bard => "Bard"
   | .bat => "Bat"
@@ -155,6 +161,7 @@ def toString : CardSubtype → String
   | .dragon => "Dragon"
   | .druid => "Druid"
   | .dwarf => "Dwarf"
+  | .elemental => "Elemental"
   | .elf => "Elf"
   | .equipment => "Equipment"
   | .giant => "Giant"
@@ -170,19 +177,23 @@ def toString : CardSubtype → String
   | .merfolk => "Merfolk"
   | .minotaur => "Minotaur"
   | .ogre => "Ogre"
+  | .pilot => "Pilot"
+  | .pirate => "Pirate"
   | .ranger => "Ranger"
+  | .robot => "Robot"
   | .rogue => "Rogue"
   | .scout => "Scout"
   | .shaman => "Shaman"
   | .soldier => "Soldier"
   | .spider => "Spider"
+  | .spirit => "Spirit"
   | .spy => "Spy"
   | .villain => "Villain"
   | .warrior => "Warrior"
   | .wizard => "Wizard"
   | .wolf => "Wolf"
   | .wurm => "Wurm"
-  | .named s => s
+  | .zombie => "Zombie"
 
 instance : ToString CardSubtype where
   toString := CardSubtype.toString
@@ -238,5 +249,12 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard formatTypeLine #[.basic] #[.land] #["Forest"] == "Basic Land — Forest"
 #guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
 #guard formatTypeLine #[] #[.instant] #[] == "Instant"
+#guard CardSubtype.toString .aura == "Aura"
+#guard CardSubtype.toString .elemental == "Elemental"
+#guard CardSubtype.toString .pilot == "Pilot"
+#guard CardSubtype.toString .pirate == "Pirate"
+#guard CardSubtype.toString .robot == "Robot"
+#guard CardSubtype.toString .spirit == "Spirit"
+#guard CardSubtype.toString .zombie == "Zombie"
 
 end Mtg.Engine
