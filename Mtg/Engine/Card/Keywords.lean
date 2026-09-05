@@ -136,6 +136,8 @@ inductive Keyword where
   | ascend
   | shadow
   | changeling
+  /-- Equip (CR 702.6): printed with a cost, e.g. Equip {2}. -/
+  | equip
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -163,6 +165,7 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
+  | .equip => Keywords.none
 
 /-- Union of two single keywords. -/
 def merge (a b : Keyword) : Keywords :=

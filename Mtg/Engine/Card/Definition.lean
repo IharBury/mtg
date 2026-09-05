@@ -425,12 +425,6 @@ inductive CounterKind where
   | plusOnePlusOne
 deriving Repr, Inhabited, BEq
 
-/-- A keyword ability printed with a cost (CR 702.6). -/
-inductive CostedKeyword where
-  /-- Equip (CR 702.6): attach to target creature you control, only as a sorcery. -/
-  | equip
-deriving Repr, Inhabited, BEq
-
 /-- A boolean check used by a conditional effect or action. -/
 inductive Condition where
   /-- True when any object matching the selector exists. -/
@@ -462,7 +456,7 @@ mutual
 inductive Ability where
   | keyword : Keyword → Ability
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
-  | keywordWithCost : CostedKeyword → List Cost → Ability
+  | keywordWithCost : Keyword → List Cost → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
@@ -1794,6 +1788,8 @@ end TraditionalCardDefinition
           .cardType .creature,
           .controlled (.controller .this)]))
   action.toAbilityEffect == Effect.attachToTargetCreatureYouControl
+
+#guard Keyword.equip.toKeywords == Keywords.none
 
 #guard
   match
