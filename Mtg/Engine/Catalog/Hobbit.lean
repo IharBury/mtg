@@ -696,9 +696,11 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
   .power 2,
   .toughness 3,
   .ability (
-    .activatedTimes 1 .turnStart
+    .abilityId 1
       (.activatedIf
-        (.turn (.controller .this))
+        (.and
+          (.turn (.controller .this))
+          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
         [.sacrifice
           (.intersection [
             .not .this,

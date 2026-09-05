@@ -442,6 +442,8 @@ inductive Condition where
   | timeToCastSorcery : Selector → Condition
   /-- True when it is the selected player's turn (CR 500.1). -/
   | turn : Selector → Condition
+  /-- True when both conditions hold. -/
+  | and : Condition → Condition → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -948,6 +950,10 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       (applyRestriction .onlyAsSorcery (activatedAbility costs action)))
   | .activatedIf (.turn _) costs action =>
     some (applyRestriction .onlyDuringYourTurn (activatedAbility costs action))
+  | .activatedIf
+      (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
+      costs action =>
+    some (applyRestriction .onlyDuringYourTurn (activatedAbility costs action true))
   | .abilityId _ inner => toActivatedAbility? inner
   | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
@@ -1103,6 +1109,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.happened t since) inners => applyIfShape b (.wasSubject t since) inners
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
+  | .if (.and _ _) _ => b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1870,9 +1877,11 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.activatedTimes 1 .turnStart
+    (Ability.abilityId 1
       (.activatedIf
-        (.turn (.controller .this))
+        (.and
+          (.turn (.controller .this))
+          (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
         [.sacrifice
           (.intersection [
             .not .this,
