@@ -435,6 +435,11 @@ def giftOfStrands : CardDef :=
     .type .enchantment,
     .subtype .aura,
     .ability (.keyword .flash),
+    .ability (
+      .keywordWithTarget
+        .enchant
+        1
+        (.intersection [.permanent, .cardType .creature])),
     .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
     .ability (.static (.addPowerToughness (.hostOf .this) 3 3))
   ]).toCardDef

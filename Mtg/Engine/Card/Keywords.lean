@@ -139,6 +139,8 @@ inductive Keyword where
   | changeling
   /-- Equip (CR 702.6): printed with a cost, e.g. Equip {2}. -/
   | equip
+  /-- Enchant (CR 702.5): printed with a target, e.g. Enchant creature. -/
+  | enchant
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -165,7 +167,7 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
-  | .equip => Keywords.none
+  | .equip | .enchant => Keywords.none
 
 /-- Union of two single keywords. -/
 def merge (a b : Keyword) : Keywords :=

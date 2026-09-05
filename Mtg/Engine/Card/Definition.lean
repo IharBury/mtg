@@ -482,6 +482,10 @@ inductive Ability where
   | keyword : Keyword → Ability
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
   | keywordWithCost : Keyword → List Cost → Ability
+  /-- A keyword ability that is printed with a target, e.g. Enchant
+  creature (CR 702.5). The `Nat` numbers the target so later clauses can
+  refer to it. -/
+  | keywordWithTarget : Keyword → Nat → Selector → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
@@ -1467,6 +1471,7 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
+  | .keywordWithTarget _ _ _ => b
   | .activated costs action =>
     if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
@@ -2030,6 +2035,20 @@ end TraditionalCardDefinition
   action.toAbilityEffect == Effect.attachToTargetCreatureYouControl
 
 #guard Keyword.equip.toKeywords == Keywords.none
+#guard Keyword.enchant.toKeywords == Keywords.none
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .type .enchantment,
+      .subtype .aura,
+      .ability (
+        .keywordWithTarget
+          .enchant
+          1
+          (.intersection [.permanent, .cardType .creature]))
+    ]).toCardDef
+  c.isAura && c.keywords == Keywords.none && c.activatedAbilities.isEmpty
 
 #guard
   match
