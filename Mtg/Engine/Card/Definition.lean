@@ -440,6 +440,8 @@ inductive Condition where
   /-- True when the selected player could cast a sorcery
   (CR 307.1 / 117.1a). -/
   | timeToCastSorcery : Selector → Condition
+  /-- True when it is the selected player's turn (CR 500.1). -/
+  | turn : Selector → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -944,6 +946,9 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       action@(.returnToHand (.intersection [.inGraveyard, .source .this])) =>
     some (applyRestriction .fromGraveyard
       (applyRestriction .onlyAsSorcery (activatedAbility costs action)))
+  | .activatedIf (.turn _) costs action@(.exile (.topOfLibrary _)) =>
+    some (applyRestriction .onlyDuringYourTurn
+      (applyRestriction .onceEachTurn (activatedAbility costs action)))
   | .abilityId _ inner => toActivatedAbility? inner
   | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
@@ -1098,6 +1103,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened t since) inners => applyIfShape b (.wasSubject t since) inners
   | .if (.timeToCastSorcery _) _ => b
+  | .if (.turn _) _ => b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1865,14 +1871,14 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.restrict .onlyDuringYourTurn
-      (.activatedTimes 1 .turnStart
-        [.sacrifice
-          (.intersection [
-            .not .this,
-            .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
-        (.exile (.topOfLibrary (.controller .this))))).toActivatedAbility? with
+    (Ability.activatedIf
+      (.turn (.controller .this))
+      [.sacrifice
+        (.intersection [
+          .not .this,
+          .permanent,
+          .union [.cardType .artifact, .cardType .creature]])]
+      (.exile (.topOfLibrary (.controller .this)))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       ab.onceEachTurn &&
