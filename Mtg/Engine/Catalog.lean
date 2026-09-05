@@ -716,47 +716,47 @@ def damageInstant (name : String) (amount : Nat) : CardDef :=
     (some (Effect.dealDamage amount))
 
 def grizzlyBears : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Grizzly Bears",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
     .subtype .bear,
     .power 2,
     .toughness 2
-  ].toCardDef
+  ]).toCardDef
 
 def grayOgre : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Gray Ogre",
     .manaCost [.generic 2, .mono .red],
     .type .creature,
     .subtype .ogre,
     .power 2,
     .toughness 2
-  ].toCardDef
+  ]).toCardDef
 
 def hillGiant : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Hill Giant",
     .manaCost [.generic 3, .mono .red],
     .type .creature,
     .subtype .giant,
     .power 3,
     .toughness 3
-  ].toCardDef
+  ]).toCardDef
 
 def canyonMinotaur : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Canyon Minotaur",
     .manaCost [.generic 3, .mono .red],
     .type .creature,
     .subtype .minotaur,
     .power 3,
     .toughness 3
-  ].toCardDef
+  ]).toCardDef
 
 def ragingGoblin : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Raging Goblin",
     .manaCost [.mono .red],
     .type .creature,
@@ -764,7 +764,7 @@ def ragingGoblin : CardDef :=
     .power 1,
     .toughness 1,
     .ability (.keyword .haste)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
 
 def llanowarElves : CardDef :=
@@ -772,37 +772,37 @@ def llanowarElves : CardDef :=
     (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
 
 def crawWurm : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Craw Wurm",
     .manaCost [.generic 4, .mono .green],
     .type .creature,
     .subtype .wurm,
     .power 6,
     .toughness 4
-  ].toCardDef
+  ]).toCardDef
 
 def centaurCourser : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Centaur Courser",
     .manaCost [.generic 2, .mono .green],
     .type .creature,
     .subtype .centaur,
     .power 3,
     .toughness 3
-  ].toCardDef
+  ]).toCardDef
 
 def rumblingBaloth : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Rumbling Baloth",
     .manaCost [.generic 2, .mono .green, .mono .green],
     .type .creature,
     .subtype .beast,
     .power 4,
     .toughness 4
-  ].toCardDef
+  ]).toCardDef
 
 def giantSpider : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Giant Spider",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
@@ -810,7 +810,7 @@ def giantSpider : CardDef :=
     .power 2,
     .toughness 4,
     .ability (.keyword .reach)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Reach (This creature can block creatures with flying.)")
 
 def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3

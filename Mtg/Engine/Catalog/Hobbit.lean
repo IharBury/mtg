@@ -926,17 +926,17 @@ def attercop : CardDef :=
     (triggeredAbilities := #[.onLandYouControlEntersGets 1 1])
 
 def ordinaryBear : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Ordinary Bear",
     .manaCost [.generic 3, .mono .green],
     .type .creature,
     .subtype .bear,
     .power 4,
     .toughness 5
-  ].toCardDef
+  ]).toCardDef
 
 def largeBear : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Large Bear",
     .manaCost [.generic 3, .hybrid .black .green, .hybrid .black .green],
     .type .creature,
@@ -946,7 +946,7 @@ def largeBear : CardDef :=
     .ability (.keyword .reach),
     .ability (.keyword .trample),
     .ability (.keyword .haste)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Reach, trample, haste")
 
 def littleBear : CardDef :=

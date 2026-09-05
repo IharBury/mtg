@@ -110,7 +110,7 @@ def lorienRevealed : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Island"])
 
 def knightsOfDolAmroth : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Knights of Dol Amroth",
     .manaCost [.generic 3, .mono .blue],
     .type .creature,
@@ -122,7 +122,7 @@ def knightsOfDolAmroth : CardDef :=
       .triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))
         (.putCounter (.source .this) .plusOnePlusOne 1))
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Whenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
 def greyHavensNavigator : CardDef :=
@@ -297,7 +297,7 @@ def galadhrimGuide : CardDef :=
     (triggeredAbilities := #[.onEnterScry 2])
 
 def elvishVisionary : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Elvish Visionary",
     .manaCost [.generic 1, .mono .green],
     .type .creature,
@@ -306,7 +306,7 @@ def elvishVisionary : CardDef :=
     .power 1,
     .toughness 1,
     .ability (.triggered (.enter .this) (.draw (.controller .this) 1))
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "When this creature enters, draw a card.")
 
 def mirkwoodElk : CardDef :=

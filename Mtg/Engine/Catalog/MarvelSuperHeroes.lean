@@ -61,7 +61,7 @@ def agentMariaHill : CardDef :=
     (triggeredAbilities := #[.onTappedForTeamworkPlusOneAndDraw])
 
 def agentOfAtlas : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Agent of Atlas",
     .manaCost [.generic 1, .mono .white],
     .type .creature,
@@ -71,7 +71,7 @@ def agentOfAtlas : CardDef :=
     .power 2,
     .toughness 2,
     .ability (.keyword .prowess)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
 
 def agentPhilCoulson : CardDef :=
@@ -165,7 +165,7 @@ def jenniferWalters : CardDef :=
     (otherFace := some theSensationalSheHulk)
 
 def kreeCommandos : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Kree Commandos",
     .manaCost [.generic 2, .mono .white],
     .type .creature,
@@ -177,7 +177,7 @@ def kreeCommandos : CardDef :=
     .ability (.keyword .flying),
     .ability (.keyword .vigilance),
     .ability (.keyword .prowess)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Flying, vigilance\nProwess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
 
 def lukeCagePowerMan : CardDef :=
@@ -333,7 +333,7 @@ def aIMScientists : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def atlanteanCavalry : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Atlantean Cavalry",
     .manaCost [.generic 2, .mono .blue],
     .type .creature,
@@ -346,7 +346,7 @@ def atlanteanCavalry : CardDef :=
       .triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))
         (.putCounter (.source .this) .plusOnePlusOne 1))
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
 
 def atlantisAttacks : CardDef :=
@@ -1374,7 +1374,7 @@ def daredevilManWithoutFear : CardDef :=
     (triggeredAbilities := #[.onYouAttacking Effect.youAttackingExileTopHeroPump])
 
 def ghostSpectralSaboteur : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Ghost, Spectral Saboteur",
     .manaCost [.generic 2, .hybrid .blue .black],
     .type .creature,
@@ -1386,7 +1386,7 @@ def ghostSpectralSaboteur : CardDef :=
     .toughness 2,
     .ability (.keyword .flash),
     .ability (.keyword .cantBeBlocked)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Flash\nIntangibility — Ghost can't be blocked.")
 
 def hulkGammaGoliath : CardDef :=
@@ -1506,7 +1506,7 @@ def thanosTheMadTitan : CardDef :=
     (activatedAbilities := #[activated (Effect.plusTwoThenOddEvenDestroy) ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
 
 def thorOdinson : CardDef :=
-  TraditionalCardDefinition.card [
+  (TraditionalCardDefinition.card [
     .name "Thor Odinson",
     .manaCost [.generic 3, .mono .red, .mono .white],
     .type .creature,
@@ -1520,7 +1520,7 @@ def thorOdinson : CardDef :=
     .ability (.keyword .vigilance),
     .ability (.keyword .prowess),
     .ability (.keyword .prowess)
-  ].toCardDef
+  ]).toCardDef
     (oracleText := "Flying, vigilance, prowess, prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn twice.)")
 
 def titaniaRuggedRumbler : CardDef :=
