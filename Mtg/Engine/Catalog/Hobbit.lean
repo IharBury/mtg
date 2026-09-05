@@ -1093,42 +1093,99 @@ def wellWornSpatula : CardDef :=
 for two +1/+1 counters on a typed creature you control. One type or several
 types both use `plusOneOnTarget`. The Oracle text is reconstructed from the
 colors and creature types. -/
-def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) :
+def hobbitDualLand (name : String) (a b : Color) (creatureTypes : List CardSubtype) :
     CardDef :=
-  land name
-    (s!"This land enters tapped.\n{dualAddClause a b}\n" ++
-      s!"\{2}{manaSymbolsText #[.colored a, .colored b]}, \{T}, Sacrifice this land: " ++
-      s!"Put two +1/+1 counters on target {orJoin creatureTypes.toList} you control. " ++
-      "Activate only as a sorcery.")
-    (entersTapped := true)
-    (tapAddOneOf := #[.colored a, .colored b])
-    (activatedAbilities := #[
-      activated
-        (Effect.plusOneOnTarget 2 creatureTypes)
-        (ManaCost.ofGenericAndColors 2 [a, b])
-        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
+  let typeSel : Selector :=
+    match creatureTypes with
+    | [] => .all
+    | [t] => .subtype t
+    | ts => .union (ts.map .subtype)
+  (TraditionalCardDefinition.card [
+    .name name,
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.addMana (.controller .this) [.colored a, .colored b])),
+    .ability (
+      .activatedIf
+        (.timeToCastSorcery (.controller .this))
+        [
+          .mana [.generic 2, .mono a, .mono b],
+          .tapSymbol,
+          .sacrifice .this]
+        (.putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              typeSel,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          2))
+  ]).toCardDef
+    (oracleText :=
+      s!"This land enters tapped.\n{dualAddClause a b}\n" ++
+        s!"\{2}{manaSymbolsText #[.colored a, .colored b]}, \{T}, Sacrifice this land: " ++
+        s!"Put two +1/+1 counters on target {orJoin (creatureTypes.map CardSubtype.toString)} you control. " ++
+        "Activate only as a sorcery.")
 
 def elvenkingsHalls : CardDef :=
-  hobbitDualLand "Elvenking's Halls" .green .blue #["Elf"]
+  hobbitDualLand "Elvenking's Halls" .green .blue [.elf]
 
 def ironHills : CardDef :=
-  hobbitDualLand "Iron Hills" .red .white #["Dwarf"]
+  hobbitDualLand "Iron Hills" .red .white [.dwarf]
 
 def lakeTown : CardDef :=
-  hobbitDualLand "Lake-town" .white .blue #["Human"]
+  hobbitDualLand "Lake-town" .white .blue [.human]
 
 def goblinTown : CardDef :=
-  hobbitDualLand "Goblin-town" .black .red #["Goblin", "Orc"]
+  hobbitDualLand "Goblin-town" .black .red [.goblin, .orc]
 
 def mirkwood : CardDef :=
-  hobbitDualLand "Mirkwood" .black .green #["Bear", "Spider", "Wolf"]
+  hobbitDualLand "Mirkwood" .black .green [.bear, .spider, .wolf]
 
 def hobbitHole : CardDef :=
-  land "Hobbit Hole"
-    "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)"
-    (activatedAbilities := #[
-      activated (Effect.searchBasicLandTapped) (tap := true) (sacrificeSource := true),
-      typecyclingAbility "Halfling" (ManaCost.ofGeneric 4)])
+  (TraditionalCardDefinition.card [
+    .name "Hobbit Hole",
+    .type .land,
+    .ability (
+      .activated
+        [.tapSymbol, .sacrifice .this]
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .putOntoBattlefieldInState
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .inDeck,
+                  .cardType .land,
+                  .supertype .basic]))
+              .tapped])),
+    .ability (
+      .activated
+        [.mana [.generic 4], .discard .this]
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .defineVariable 1
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [.inDeck, .subtype .halfling])),
+            .reveal (.variable 1),
+            .returnToHand (.variable 1)]))
+  ]).toCardDef
+    (oracleText :=
+      "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)")
 
 def nighthowlPursuer : CardDef :=
   creature "Nighthowl Pursuer" (ManaCost.ofColor .black) #["Wolf"] 1 1
@@ -2348,6 +2405,26 @@ def hobbitCards : Array CardDef := #[
 #guard (crudeBentBladeCard.summary.splitOn "target opponent").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard (woodElves.summary.splitOn "Forest card").length > 1
+#guard elvenkingsHalls.entersTapped
+#guard elvenkingsHalls.tapAddOneOf == #[.colored .green, .colored .blue]
+#guard elvenkingsHalls.activatedAbilities.size == 1
+#guard elvenkingsHalls.activatedAbilities[0]!.effect == Effect.plusOneOnTarget 2 #["Elf"]
+#guard elvenkingsHalls.activatedAbilities[0]!.onlyAsSorcery
+#guard elvenkingsHalls.activatedAbilities[0]!.cost.tap
+#guard elvenkingsHalls.activatedAbilities[0]!.cost.sacrificeSource
+#guard goblinTown.tapAddOneOf == #[.colored .black, .colored .red]
+#guard goblinTown.activatedAbilities[0]!.effect ==
+  Effect.plusOneOnTarget 2 #["Goblin", "Orc"]
+#guard mirkwood.activatedAbilities[0]!.effect ==
+  Effect.plusOneOnTarget 2 #["Bear", "Spider", "Wolf"]
+#guard hobbitHole.activatedAbilities.size == 2
+#guard hobbitHole.activatedAbilities[0]!.effect == Effect.searchBasicLandTapped
+#guard hobbitHole.activatedAbilities[0]!.cost.tap
+#guard hobbitHole.activatedAbilities[0]!.cost.sacrificeSource
+#guard hobbitHole.activatedAbilities[1]!.effect == Effect.searchLandTypeToHand "Halfling"
+#guard hobbitHole.activatedAbilities[1]!.cost.discardSource
+#guard hobbitHole.activatedAbilities[1]!.activateFromHand
+#guard hobbitHole.activatedAbilities[1]!.cost.mana == ManaCost.ofGeneric 4
 #guard throrsMap.triggeredAbilities == #[.onEnterSearchBasicToHand]
 #guard throrsMap.activatedAbilities.size == 1
 #guard throrsMap.activatedAbilities[0]!.effect == Effect.abilityDrawThenDiscard 1
