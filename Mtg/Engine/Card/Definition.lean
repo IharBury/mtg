@@ -408,6 +408,14 @@ def includedSubtype? : Selector → Option String
   | .intersection (f :: fs) => (includedSubtype? f).orElse fun _ => includedSubtype? (.intersection fs)
   | _ => none
 
+/-- Printed subtypes mentioned by this selector, including unions, in order. -/
+def includedSubtypes : Selector → List String
+  | .subtype st => [st.toString]
+  | .union fs => fs.flatMap includedSubtypes
+  | .intersection fs => fs.flatMap includedSubtypes
+  | .target _ among | .targets _ _ among => includedSubtypes among
+  | _ => []
+
 /-- A basic land card in a library. -/
 def basicLandInDeck (s : Selector) : Bool :=
   includesInDeck s && includesLand s && includesBasic s
@@ -434,6 +442,8 @@ inductive Cost where
   /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
   sickness. -/
   | tapSymbol
+  /-- Discard a selected card (CR 701.9 / 702.29). -/
+  | discard : Selector → Cost
   /-- Pay one of the listed costs. -/
   | or : List Cost → Cost
 deriving Repr, Inhabited, BEq
@@ -484,6 +494,13 @@ def sacrificesThis : List Cost → Bool
   | .sacrifice s :: rest =>
     (s == .this || s == .source .this) || sacrificesThis rest
   | _ :: rest => sacrificesThis rest
+
+/-- True when a cost discards this object. -/
+def discardsThis : List Cost → Bool
+  | [] => false
+  | .discard s :: rest =>
+    (s == .this || s == .source .this) || discardsThis rest
+  | _ :: rest => discardsThis rest
 
 end Cost
 
@@ -646,6 +663,10 @@ inductive CardAction where
   player adds X mana of that color, where X is the third selected
   object's power. -/
   | addManaAnyColorEqualToPower : Selector → Selector → Selector → CardAction
+  /-- The selected player adds the listed mana types (CR 106.4). A tap-only
+  ability that adds two or more types compiles as `tapAddOneOf`
+  (`{T}: Add {A} or {B}`). -/
+  | addMana : Selector → List ManaType → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -1130,6 +1151,34 @@ def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Boo
       (power == .this || power == .source .this)
   | _ => false
 
+/-- `{T}: Add {A} or {B}` as a tap-only mana ability. -/
+def leftoverTapAddOneOf? (costs : List Cost) : CardAction → Option (Array ManaType)
+  | .addMana gainer types =>
+    if costs == [.tapSymbol] &&
+        gainer == .controller .this &&
+        types.length >= 2 then
+      some types.toArray
+    else none
+  | _ => none
+
+/-- Replacement “this enters tapped”. -/
+def leftoverEntersTapped? : List CardAction → Bool
+  | [.putOntoBattlefieldInState obj .tapped] =>
+    obj == .this || obj == .source .this
+  | _ => false
+
+/-- Put +1/+1 counters on a targeted creature you control, optionally of
+listed subtypes. -/
+def leftoverPlusOneOnTarget? : CardAction → Option Effect
+  | .putCounter sel .plusOnePlusOne n =>
+    match sel.among? with
+    | some among =>
+      if among.shape.sameController && among.shape.types.eqTypes [.creature] then
+        some (Effect.plusOneOnTarget n among.includedSubtypes.toArray)
+      else none
+    | none => none
+  | _ => none
+
 /-- Set another creature you control's base P/T equal to this source. -/
 def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
   | [.setBasePowerToughnessFrom who (.source .this)] =>
@@ -1189,6 +1238,9 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
   match leftoverSearchLibraryThenShuffle? action with
+  | some e => e
+  | none =>
+  match leftoverPlusOneOnTarget? action with
   | some e => e
   | none =>
   match leftoverUntapPumpAttach? action with
@@ -1294,6 +1346,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     continuousEffect none [] asAbility
                   | .addManaAnyColorEqualToPower _ _ _ =>
                     continuousEffect none [] asAbility
+                  | .addMana _ types => Effect.addMana types.toArray
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -1320,9 +1373,11 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         payLife := Cost.lifePaid costs
         tap := Cost.hasTapSymbol costs
         sacrificeSource := Cost.sacrificesThis costs
-        sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs }
+        sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs
+        discardSource := Cost.discardsThis costs }
     effect := action.toAbilityEffect
-    onceEachTurn }
+    onceEachTurn
+    activateFromHand := Cost.discardsThis costs }
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
@@ -1338,6 +1393,8 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
     some { activatedAbility costs action with
       onlyAsSorcery := true
       activateFromGraveyard := true }
+  | .activatedIf (.timeToCastSorcery _) costs action =>
+    some { activatedAbility costs action with onlyAsSorcery := true }
   | .activatedIf
       (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
       costs action =>
@@ -1540,6 +1597,8 @@ structure CardFace where
   extraLandIfOtherSubtype : Option String := none
   staticAbilities : Array StaticAbility := #[]
   tapAddAnyColorEqualToPower : Bool := false
+  tapAddOneOf : Array ManaType := #[]
+  entersTapped : Bool := false
 deriving Inhabited
 
 namespace CardFace
@@ -1627,6 +1686,11 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
+  | .replace (.enter who) actions =>
+    if (who == .this || who == .source .this) &&
+        CardAction.leftoverEntersTapped? actions then
+      { b with entersTapped := true }
+    else b
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1671,9 +1735,12 @@ def applyAbility (b : CardFace) : Ability → CardFace
     if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
     else
-      { b with
-        activatedAbilities :=
-          b.activatedAbilities.push (Ability.activatedAbility costs action) }
+      match CardAction.leftoverTapAddOneOf? costs action with
+      | some types => { b with tapAddOneOf := types }
+      | none =>
+        { b with
+          activatedAbilities :=
+            b.activatedAbilities.push (Ability.activatedAbility costs action) }
   | .activatedIf cond costs action =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -1782,6 +1849,8 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       extraLandIfOtherSubtype := b.extraLandIfOtherSubtype
       staticAbilities := b.staticAbilities
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
+      tapAddOneOf := b.tapAddOneOf
+      entersTapped := b.entersTapped
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -2999,6 +3068,102 @@ end TraditionalCardDefinition
           (.anySubtype (.targetReference 1) .bear)
           [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear"
+  | none => false
+
+-- Dual land: enters tapped; tap-add one of two colors; counters on a typed creature.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped]))
+  ]).toCardDef.entersTapped
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.addMana (.controller .this) [.colored .green, .colored .blue]))
+  ]).toCardDef.tapAddOneOf == #[.colored .green, .colored .blue]
+
+#guard Selector.includedSubtypes
+  (.union [.subtype .goblin, .subtype .orc]) == ["Goblin", "Orc"]
+
+#guard
+  let action : CardAction :=
+    .putCounter
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .subtype .elf,
+          .controlled (.controller .this)]))
+      .plusOnePlusOne
+      2
+  action.toAbilityEffect == Effect.plusOneOnTarget 2 #["Elf"]
+
+#guard
+  let action : CardAction :=
+    .putCounter
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .union [.subtype .goblin, .subtype .orc],
+          .controlled (.controller .this)]))
+      .plusOnePlusOne
+      2
+  action.toAbilityEffect == Effect.plusOneOnTarget 2 #["Goblin", "Orc"]
+
+#guard
+  match
+    (Ability.activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [
+        .mana [.generic 2, .mono .green, .mono .blue],
+        .tapSymbol,
+        .sacrifice .this]
+      (.putCounter
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .subtype .elf,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne
+        2)).toActivatedAbility? with
+  | some ab =>
+    ab.onlyAsSorcery &&
+      ab.cost.tap &&
+      ab.cost.sacrificeSource &&
+      ab.cost.mana == ManaCost.ofGenericAndColors 2 [.green, .blue] &&
+      ab.effect == Effect.plusOneOnTarget 2 #["Elf"]
+  | none => false
+
+#guard
+  match
+    (Ability.activated
+      [.mana [.generic 4], .discard .this]
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineVariable 1
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inDeck, .subtype .halfling])),
+          .reveal (.variable 1),
+          .returnToHand (.variable 1)])).toActivatedAbility? with
+  | some ab =>
+    ab.cost.discardSource &&
+      ab.activateFromHand &&
+      ab.cost.mana == ManaCost.ofGeneric 4 &&
+      ab.effect == Effect.searchLandTypeToHand "Halfling"
   | none => false
 
 end Mtg.Engine
