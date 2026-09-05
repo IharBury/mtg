@@ -965,8 +965,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
-      (.optional (.sequence [.discard _ 1, .draw _ n])) =>
-    some (TriggeredAbility.onEnterMayDiscardDraw n)
+      (.sequence [
+        .optional (.actionId id (.discard _ 1)),
+        .ifAny (.wasObjectOfAction id') [.draw _ n]]) =>
+    if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | _ => none
 
 end Ability
@@ -1784,10 +1786,10 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.optional
-        (.sequence [
-          .discard (.controller .this) 1,
-          .draw (.controller .this) 2]))).toTriggeredAbility? with
+      (.sequence [
+        .optional
+          (.actionId 1 (.discard (.controller .this) 1)),
+        .ifAny (.wasObjectOfAction 1) [.draw (.controller .this) 2]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
   | none => false
 

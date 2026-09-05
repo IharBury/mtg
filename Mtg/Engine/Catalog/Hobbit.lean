@@ -669,10 +669,10 @@ def raggedShortSpear : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.enter .this)
-      (.optional
-        (.sequence [
-          .discard (.controller .this) 1,
-          .draw (.controller .this) 2]))),
+      (.sequence [
+        .optional
+          (.actionId 1 (.discard (.controller .this) 1)),
+        .ifAny (.wasObjectOfAction 1) [.draw (.controller .this) 2]])),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 0)),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
