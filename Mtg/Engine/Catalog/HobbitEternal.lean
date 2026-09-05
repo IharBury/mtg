@@ -685,7 +685,7 @@ def glamdring : CardDef :=
 
 def grimaSarumanSFootman : CardDef :=
   legendaryCreature "Gríma, Saruman's Footman" (ManaCost.ofGenericAndColors 2 [.blue, .black]) #["Human", "Advisor"] 1 4 (oracleText := "Gríma can't be blocked.\nWhenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order.")
-    (keywords := Keyword.cantBeBlocked)
+    (keywords := { Keywords.none with cantBeBlocked := true })
     (triggeredAbilities := #[.onCombatDamageImpulseInstantSorcery])
 
 def minasMorgulDarkFortress : CardDef :=

@@ -573,7 +573,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.logMsg "The target is no longer legal"
   | .grantVigilanceUnblockable =>
     g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-      let g := g.grantUntilEotKeywords o [Keyword.vigilance, Keyword.cantBeBlocked]
+      let g := g.grantUntilEotKeywords o
+        [Keyword.vigilance, { Keywords.none with cantBeBlocked := true }]
       g.draw controller 1)
       none (some "The target is no longer legal. You won't draw a card.")
   | .becomeArtifactCreature44Flying =>
