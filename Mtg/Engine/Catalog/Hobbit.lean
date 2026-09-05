@@ -305,13 +305,14 @@ def uneasyPartings : TraditionalCardDefinition := .card [
   .type .instant,
   .ability (
     .static
-      (.ifAny
-        (.intersection [
-          .allTargets .this,
-          .permanent,
-          .cardType .creature,
-          .attacking .all,
-          .not .token])
+      (.if
+        (.targetsIncludeAny
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .not .token]))
         [.reduceCost .this [.mana [.generic 1]]])),
   .actions [
     .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)

@@ -1472,7 +1472,6 @@ end TraditionalCardDefinition
 -- owner puts it on top or bottom.
 #guard Selector.shape
   (.intersection [
-    .allTargets .this,
     .permanent,
     .cardType .creature,
     .attacking .all,
@@ -1482,13 +1481,14 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (
       .static
-        (.ifAny
-          (.intersection [
-            .allTargets .this,
-            .permanent,
-            .cardType .creature,
-            .attacking .all,
-            .not .token])
+        (.if
+          (.targetsIncludeAny
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all,
+              .not .token]))
           [.reduceCost .this [.mana [.generic 1]]])),
     .actions [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
