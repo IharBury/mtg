@@ -51,9 +51,9 @@ inductive Selector where
   | targetReference : Nat → Selector
   /-- The object bound by `forEach` of this number. -/
   | var : Nat → Selector
-  /-- Choose objects matching the given selector at resolution, with a
-  count range (not targeting; CR 608.2d). -/
-  | selected : Range → Selector → Selector
+  /-- The given player chooses objects matching the given selector at
+  resolution, with a count range (not targeting; CR 608.2d). -/
+  | selected : Selector → Range → Selector → Selector
   /-- Every object targeted by anything matching the given selector
   (CR 115.1 / 608.2b). -/
   | allTargets : Selector → Selector
@@ -294,7 +294,7 @@ def shape : Selector → Shape
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _ | .var _
-  | .selected _ _ | .allTargets _ | .player
+  | .selected _ _ _ | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
   | .hostOf _ | .inGraveyard | .topOfLibrary _ => {}
 
@@ -570,7 +570,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
-    | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
+    | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _ _
     | .allTargets _ | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .topOfLibrary _ => none
@@ -972,7 +972,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.enter .this)
       (.sacrifice
-        (.selected _
+        (.selected (.target _ (.opponent _)) _
           (.intersection [
             .permanent,
             .cardType .creature,
@@ -1382,6 +1382,7 @@ end TraditionalCardDefinition
           .optional
             (.attach
               (.selected
+                (.controller .this)
                 (.range 1 1)
                 (.intersection [
                   .permanent,
@@ -1655,6 +1656,7 @@ end TraditionalCardDefinition
       (.enter .this)
       (.sacrifice
         (.selected
+          (.target 1 (.opponent (.controller .this)))
           (.range 1 1)
           (.intersection [
             .permanent,

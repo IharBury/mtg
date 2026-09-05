@@ -162,6 +162,7 @@ def vowToErebor : TraditionalCardDefinition := .card [
           .optional
             (.attach
               (.selected
+                (.controller .this)
                 (.range 1 1)
                 (.intersection [
                   .permanent,
@@ -504,6 +505,7 @@ def crudeBentBlade : TraditionalCardDefinition := .card [
       (.enter .this)
       (.sacrifice
         (.selected
+          (.target 1 (.opponent (.controller .this)))
           (.range 1 1)
           (.intersection [
             .permanent,
