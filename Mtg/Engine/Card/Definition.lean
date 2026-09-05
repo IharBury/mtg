@@ -268,6 +268,10 @@ def landYouControl (s : Shape) : Bool :=
 def anotherElfYouControl (s : Shape) : Bool :=
   s.other && s.sameController && s.subtype == some "Elf"
 
+/-- The named subtype when this shape is another of that subtype you control. -/
+def anotherSubtypeYouControl (s : Shape) : Option String :=
+  if s.other && s.sameController then s.subtype else none
+
 /-- True when this shape is a Dwarf. -/
 def dwarf (s : Shape) : Bool :=
   s.subtype == some "Dwarf"
@@ -523,6 +527,9 @@ inductive ContinuousEffect where
   /-- The selected object's power and toughness are each equal to the
   number of objects matching the second selector. -/
   | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
+  /-- The selected player may play that many additional lands on each of
+  their turns (CR 305.2b). -/
+  | increaseLandPlayLimit : Selector → Nat → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -600,6 +607,7 @@ def selector : ContinuousEffect → Selector
   | .gainType who _ => who
   | .gainSubtype who _ => who
   | .setPowerToughnessEqualToCount who _ => who
+  | .increaseLandPlayLimit who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -619,6 +627,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
   | .setPowerToughnessEqualToCount _ _ :: _ => none
+  | .increaseLandPlayLimit _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -718,7 +727,16 @@ def leftoverTargetPump? (effects : List ContinuousEffect) : Option (Int × Int) 
     if sel.toTargetKind == .creature then some (p, t) else none
   | _, _ => none
 
+/-- You may play an additional land this turn. -/
+def leftoverIncreaseLandPlayLimit? : List ContinuousEffect → Bool
+  | [.increaseLandPlayLimit who 1] =>
+    who == .controller .this
+  | _ => false
+
 def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
+  if leftoverIncreaseLandPlayLimit? effects then
+    Effect.playAdditionalLandThisTurn
+  else
   match leftoverSourcePump? effects with
   | some (p, t) => Effect.sourceGets p t
   | none =>
@@ -980,6 +998,22 @@ def leftoverPlusOnePlusOneTrampleHexproof? : CardAction → Bool
     let kws := grantedKeywords effects
     youControlCreature && kws.trample && kws.hexproof
   | _ => false
+
+/-- Put +1/+1 counters on a creature you control; it gains vigilance. -/
+def leftoverPlusOneVigilance? : CardAction → Option Nat
+  | .sequence [
+      .putCounter sel .plusOnePlusOne n,
+      .continuous effects _
+    ] =>
+    let youControlCreature :=
+      match sel.among? with
+      | some who =>
+        let s := who.shape
+        s.sameController && s.types.eqTypes [.creature]
+      | none => false
+    let kws := grantedKeywords effects
+    if youControlCreature && kws.vigilance then some n else none
+  | _ => none
 
 /-- Become a creature of the given subtype with P/T equal to lands you
 control. -/
@@ -1316,6 +1350,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
       | none => none
     else none
+  | .triggered (.enter among) action =>
+    match CardAction.leftoverPlusOneVigilance? action with
+    | some 2 =>
+      if among.shape.landYouControl then
+        some TriggeredAbility.onLandYouControlEntersPlusOneVigilance
+      else none
+    | _ => none
   | _ => none
 
 end Ability
@@ -1363,6 +1404,7 @@ structure CardFace where
   costReductionIfYouControl : Option (Nat × String) := none
   additionalCostSacrificeArtifactOrCreature : Bool := false
   additionalCostOrPayGeneric : Option Nat := none
+  extraLandIfOtherSubtype : Option String := none
   staticAbilities : Array StaticAbility := #[]
   tapAddAnyColorEqualToPower : Bool := false
 deriving Inhabited
@@ -1406,6 +1448,15 @@ def applyIfShape (b : CardFace) (s : Selector.Shape)
       b
   else b
 
+/-- Extra land plays while you control another of a subtype. -/
+def extraLandIfOtherSubtype? (among : Selector) (inners : List ContinuousEffect)
+    : Option String :=
+  match inners with
+  | [.increaseLandPlayLimit who 1] =>
+    if who == .controller .this then among.shape.anotherSubtypeYouControl
+    else none
+  | _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness (.hostOf .this) p t =>
@@ -1417,15 +1468,25 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           else
             .equippedCreatureGets p t) }
   | .addPowerToughness _ _ _ => b
-  | .if (.any among) inners => applyIfShape b among.shape inners
+  | .if (.any among) inners =>
+    match extraLandIfOtherSubtype? among inners with
+    | some t => { b with extraLandIfOtherSubtype := some t }
+    | none => applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
-  | .if (.anySubtype who st) inners =>
-    if who.shape.sameController then
-      inners.foldl
-        (applyReduceCost fun b n =>
-          { b with costReductionIfYouControl := some (n, st.toString) })
-        b
-    else b
+  | .if (.anySubtype among st) inners =>
+    match inners with
+    | [.increaseLandPlayLimit who 1] =>
+      if who == .controller .this && among.shape.other &&
+          among.shape.sameController then
+        { b with extraLandIfOtherSubtype := some st.toString }
+      else b
+    | _ =>
+      if among.shape.sameController then
+        inners.foldl
+          (applyReduceCost fun b n =>
+            { b with costReductionIfYouControl := some (n, st.toString) })
+          b
+      else b
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
@@ -1453,6 +1514,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         staticAbilities :=
           b.staticAbilities.push .powerToughnessEqualLandsYouControl }
     else b
+  | .increaseLandPlayLimit _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -1584,6 +1646,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
+      extraLandIfOtherSubtype := b.extraLandIfOtherSubtype
       staticAbilities := b.staticAbilities
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
       adventure := adventure
@@ -2542,6 +2605,59 @@ end TraditionalCardDefinition
           (.anySubtype (.controlled (.controller .this)) .villain)
           [.reduceCost .this [.mana [.generic 1]]]))
   ]).toCardDef.costReductionIfYouControl == some (1, "Villain")
+
+#guard
+  let action : CardAction :=
+    .continuous [.increaseLandPlayLimit (.controller .this) 1] .endOfTurn
+  action.toEffect == Effect.playAdditionalLandThisTurn
+
+#guard
+  let s :=
+    Selector.shape
+      (.intersection [
+        .not .this,
+        .permanent,
+        .subtype .elf,
+        .controlled (.controller .this)])
+  s.anotherSubtypeYouControl == some "Elf"
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        (.if
+          (.any
+            (.intersection [
+              .not .this,
+              .permanent,
+              .subtype .elf,
+              .controlled (.controller .this)]))
+          [.increaseLandPlayLimit (.controller .this) 1]))
+  ]).toCardDef.extraLandIfOtherSubtype == some "Elf"
+
+#guard
+  match
+    (Ability.triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.sequence [
+        .putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          2,
+        .continuous
+          [.gainAbility (.targetReference 1) (.keyword .vigilance)]
+          .endOfTurn])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onLandYouControlEntersPlusOneVigilance
+  | none => false
 
 #guard
   match

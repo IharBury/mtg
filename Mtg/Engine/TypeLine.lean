@@ -131,6 +131,7 @@ inductive CardSubtype where
   | rogue
   | scout
   | shaman
+  | shapeshifter
   | soldier
   | spider
   | spirit
@@ -184,6 +185,7 @@ def toString : CardSubtype → String
   | .rogue => "Rogue"
   | .scout => "Scout"
   | .shaman => "Shaman"
+  | .shapeshifter => "Shapeshifter"
   | .soldier => "Soldier"
   | .spider => "Spider"
   | .spirit => "Spirit"
