@@ -86,10 +86,10 @@ open Mtg.Engine.Catalog
 #guard mentions elvishVisionary.summary "draw a card"
 #guard elvishVisionary.triggeredAbilities.size == 1
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
-#guard mentions quarrel.summary "deals damage equal to its power"
-#guard quarrel.isInstant
-#guard quarrel.requiresTarget
-#guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
+#guard mentions quarrelCard.summary "deals damage equal to its power"
+#guard quarrelCard.isInstant
+#guard quarrelCard.requiresTarget
+#guard quarrelCard.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
 #guard mentions smiteTheDeathless.summary "loses indestructible"
 #guard mentions smiteTheDeathless.summary "exile it instead"
 #guard smiteTheDeathless.isInstant
@@ -113,19 +113,19 @@ open Mtg.Engine.Catalog
 #guard celebornTheWise.triggeredAbilities.size == 2
 #guard celebornTheWise.triggeredAbilities ==
   #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
-#guard mentions galionElvenkingsButler.summary "base power and toughness"
-#guard galionElvenkingsButler.triggeredAbilities.size == 1
-#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard mentions galionElvenkingsButlerCard.summary "base power and toughness"
+#guard galionElvenkingsButlerCard.triggeredAbilities.size == 1
+#guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard mentions lothlorienLookout.summary "scry 1"
 #guard lothlorienLookout.triggeredAbilities.size == 1
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
-#guard mentions woodlandWeavemaster.summary "vigilance"
-#guard mentions woodlandWeavemaster.summary "another Elf"
-#guard mentions woodlandWeavemaster.summary "any one color"
-#guard woodlandWeavemaster.keywords.vigilance
-#guard woodlandWeavemaster.triggeredAbilities.size == 1
-#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard mentions woodlandWeavemasterCard.summary "vigilance"
+#guard mentions woodlandWeavemasterCard.summary "another Elf"
+#guard mentions woodlandWeavemasterCard.summary "any one color"
+#guard woodlandWeavemasterCard.keywords.vigilance
+#guard woodlandWeavemasterCard.triggeredAbilities.size == 1
+#guard woodlandWeavemasterCard.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemasterCard.tapAddAnyColorEqualToPower
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
@@ -134,17 +134,17 @@ open Mtg.Engine.Catalog
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
 #guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
-#guard mentions wargTactics.summary "Choose one"
-#guard mentions wargTactics.summary "hexproof"
-#guard wargTactics.isModal
-#guard wargTactics.modes.size == 2
+#guard mentions wargTacticsCard.summary "Choose one"
+#guard mentions wargTacticsCard.summary "hexproof"
+#guard wargTacticsCard.isModal
+#guard wargTacticsCard.modes.size == 2
 #guard mentions goblinCratermaker.summary "Choose one"
 #guard mentions goblinCratermaker.summary "colorless nonland"
 #guard goblinCratermaker.activatedAbilities.size == 1
-#guard mentions beornsHospitality.summary "Landfall"
-#guard mentions beornsHospitality.summary "Bear creature"
-#guard beornsHospitality.triggeredAbilities.size == 1
-#guard beornsHospitality.activatedAbilities.size == 1
+#guard mentions beornsHospitalityCard.summary "Landfall"
+#guard mentions beornsHospitalityCard.summary "Bear creature"
+#guard beornsHospitalityCard.triggeredAbilities.size == 1
+#guard beornsHospitalityCard.activatedAbilities.size == 1
 #guard mentions mirkwoodPathmaker.summary "lands you control"
 #guard mentions mirkwoodPathmaker.summary "*/*"
 #guard mirkwoodPathmaker.staticAbilities.size == 1

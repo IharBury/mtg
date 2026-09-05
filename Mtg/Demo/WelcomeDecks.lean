@@ -79,11 +79,11 @@ def hobbitRed : Array CardDef :=
 def hobbitGreen : Array CardDef :=
   copies 16 forest ++
   copies 2 guardianOfTheHallsCard ++
-  copies 2 quarrel ++
+  copies 2 quarrelCard ++
   copies 2 galadhrimGuide ++
-  #[galionElvenkingsButler, elvishVisionary, wargTactics, beornsHospitality,
+  #[galionElvenkingsButlerCard, elvishVisionary, wargTacticsCard, beornsHospitalityCard,
     roguesPassage, mirkwoodElk, celebornTheWise, giftOfStrands, elvishArchdruid,
-    lothlorienLookout, woodlandWeavemaster, mirkwoodPathmaker,
+    lothlorienLookout, woodlandWeavemasterCard, mirkwoodPathmaker,
     beornReluctantHost] ++
   copies 2 woodElves ++
   copies 2 elvishMystic ++

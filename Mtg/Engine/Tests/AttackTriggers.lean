@@ -24,7 +24,7 @@ open Mtg.Engine.Catalog
 def galionAndElves : Game :=
   addPermanent (addPermanent started galionElvenkingsButler ⟨0⟩ ⟨0⟩) llanowarElves ⟨0⟩ ⟨0⟩
 
-#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard galionAndElves.power (namedPermanent galionAndElves "Galion, Elvenking's Butler") == 4
 #guard galionAndElves.power (namedPermanent galionAndElves "Llanowar Elves") == 1
 

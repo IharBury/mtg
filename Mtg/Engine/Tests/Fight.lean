@@ -228,8 +228,8 @@ def quarrelSetup : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   withGreenMana (addToHand g quarrel ⟨0⟩) ⟨0⟩ 2
 
-#guard quarrel.isInstant
-#guard quarrel.requiresTarget
+#guard quarrelCard.isInstant
+#guard quarrelCard.requiresTarget
 #guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
 #guard quarrelSetup.canCast ⟨0⟩ (handCardNamed quarrelSetup ⟨0⟩ "Quarrel")
 #guard quarrelSetup.asSorcery? ⟨0⟩

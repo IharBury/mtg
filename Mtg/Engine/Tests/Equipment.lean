@@ -802,8 +802,8 @@ def hospitalityLandfallSetup : Game :=
   addToHand g forest ⟨0⟩
 
 #guard hospitalityLandfallSetup.canPlayLand ⟨0⟩
-#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
+#guard beornsHospitalityCard.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
+#guard beornsHospitalityCard.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
 
 def hospitalityLandPlayed : Game :=
   mustApply hospitalityLandfallSetup ⟨0⟩
@@ -900,7 +900,7 @@ def hospitalityAnimateSetup : Game :=
 
 #guard hospitalityAnimateSetup.canActivate ⟨0⟩
   (namedPermanent hospitalityAnimateSetup "Beorn's Hospitality")
-  (beornsHospitality.activatedAbilities[0]!)
+  (beornsHospitalityCard.activatedAbilities[0]!)
 #guard !(namedPermanent hospitalityAnimateSetup "Beorn's Hospitality").isCreature
 #guard hospitalityAnimateSetup.landsYouControl ⟨0⟩ == 3
 

@@ -732,36 +732,158 @@ def guardianOfTheHallsCard : CardDef :=
   guardianOfTheHalls.toCardDef
     (oracleText := "Trample\n{5}{G}{G}: Put three +1/+1 counters on this creature.")
 
-def quarrel : CardDef :=
-  instant "Quarrel" (ManaCost.ofGenericAndColor 1 .green)
-    "Target creature you control deals damage equal to its power to target creature an opponent controls."
-    (some (Effect.creatureYouControlDealsPowerToOppCreature))
+def quarrel : TraditionalCardDefinition := .card [
+  .name "Quarrel",
+  .manaCost [.generic 1, .mono .green],
+  .type .instant,
+  .actions [
+    .dealDamageEqualToPower
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+      (.target
+        2
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.opponent (.controller .this))]))]
+]
 
-def galionElvenkingsButler : CardDef :=
-  legendaryCreature "Galion, Elvenking's Butler" (ManaCost.ofGenericAndColors 2 [.green, .green])
-    #["Elf", "Advisor"] 4 4
+def quarrelCard : CardDef :=
+  quarrel.toCardDef
+    (oracleText := "Target creature you control deals damage equal to its power to target creature an opponent controls.")
+
+def galionElvenkingsButler : TraditionalCardDefinition := .card [
+  .name "Galion, Elvenking's Butler",
+  .manaCost [.generic 2, .mono .green, .mono .green],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .elf,
+  .subtype .advisor,
+  .power 4,
+  .toughness 4,
+  .ability (
+    .triggered
+      (.attack .this .all)
+      (.continuous
+        [.setBasePowerToughness
+          (.targets
+            1
+            (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          (.source .this)]
+        .endOfTurn))
+]
+
+def galionElvenkingsButlerCard : CardDef :=
+  galionElvenkingsButler.toCardDef
     (oracleText := "Whenever Galion attacks, choose up to one other target creature you control. Its base power and toughness become equal to Galion's power and toughness until end of turn.")
-    (triggeredAbilities := #[.onAttackSetOtherBasePT])
 
-def wargTactics : CardDef :=
-  instant "Warg Tactics" (ManaCost.ofGenericAndColor 1 .green)
-    "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)"
-    (spellModes := #[(Effect.destroyCreatureWithFlying), (Effect.plusOnePlusOneTrampleHexproof)])
+def wargTactics : TraditionalCardDefinition := .card [
+  .name "Warg Tactics",
+  .manaCost [.generic 1, .mono .green],
+  .type .instant,
+  .actions [
+    .chooseMode [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .keyword .flying])),
+      .sequence [
+        .putCounter
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          .plusOnePlusOne
+          1,
+        .continuous
+          [.gainAbility (.targetReference 1) (.keyword .trample),
+            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          .endOfTurn]]]
+]
 
-def beornsHospitality : CardDef :=
-  enchantment "Beorn's Hospitality" (ManaCost.ofGenericAndColor 1 .green)
-    "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)"
-    (triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne])
-    (activatedAbilities := #[
-      activated (Effect.becomeSubtypeWithLandsPT "Bear")
-        (ManaCost.ofGenericAndColors 5 [.green, .green])])
+def wargTacticsCard : CardDef :=
+  wargTactics.toCardDef
+    (oracleText := "Choose one —\n• Destroy target creature with flying.\n• Put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)")
 
-def woodlandWeavemaster : CardDef :=
-  creature "Woodland Weavemaster" (ManaCost.ofGenericAndColor 1 .green) #["Elf", "Druid"] 1 2
+def beornsHospitality : TraditionalCardDefinition := .card [
+  .name "Beorn's Hospitality",
+  .manaCost [.generic 1, .mono .green],
+  .type .enchantment,
+  .ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.putCounter
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        .plusOnePlusOne
+        1)),
+  .ability (
+    .activated
+      [.mana [.generic 5, .mono .green, .mono .green]]
+      (.continuous
+        [.become .this [.creature] [.bear],
+          .setPowerToughnessEqualTo
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)])]
+        .endOfGame))
+]
+
+def beornsHospitalityCard : CardDef :=
+  beornsHospitality.toCardDef
+    (oracleText := "Landfall — Whenever a land you control enters, put a +1/+1 counter on target creature you control.\n{5}{G}{G}: This enchantment becomes a Bear creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\" (This effect doesn't end.)")
+
+def woodlandWeavemaster : TraditionalCardDefinition := .card [
+  .name "Woodland Weavemaster",
+  .manaCost [.generic 1, .mono .green],
+  .type .creature,
+  .subtype .elf,
+  .subtype .druid,
+  .power 1,
+  .toughness 2,
+  .ability (.keyword .vigilance),
+  .ability (
+    .triggered
+      (.enter
+        (.intersection [
+          .not .this,
+          .permanent,
+          .subtype .elf,
+          .controlled (.controller .this)]))
+      (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn)),
+  .ability (
+    .activated
+      [.tap]
+      (.addManaAnyColorEqualToPower .this))
+]
+
+def woodlandWeavemasterCard : CardDef :=
+  woodlandWeavemaster.toCardDef
     (oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onAnotherElfYouControlEntersGets1])
-    (tapAddAnyColorEqualToPower := true)
 
 def mirkwoodPathmaker : CardDef :=
   card "Mirkwood Pathmaker" #[.creature]
@@ -1771,11 +1893,11 @@ def hobbitCards : Array CardDef := #[
   raggedShortSpearCard,
   snowslopeHunterCard,
   guardianOfTheHallsCard,
-  quarrel,
-  galionElvenkingsButler,
-  wargTactics,
-  beornsHospitality,
-  woodlandWeavemaster,
+  quarrelCard,
+  galionElvenkingsButlerCard,
+  wargTacticsCard,
+  beornsHospitalityCard,
+  woodlandWeavemasterCard,
   mirkwoodPathmaker,
   beornReluctantHost,
   woodElves,
@@ -1987,42 +2109,42 @@ def hobbitCards : Array CardDef := #[
 #guard (crudeBentBladeCard.summary.splitOn "target opponent").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard (woodElves.summary.splitOn "Forest card").length > 1
-#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
-#guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
-#guard galionElvenkingsButler.power == some 4
-#guard galionElvenkingsButler.toughness == some 4
-#guard woodlandWeavemaster.keywords.vigilance
-#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
-#guard woodlandWeavemaster.manaAbilities == #[
+#guard galionElvenkingsButlerCard.triggeredAbilities == #[.onAttackSetOtherBasePT]
+#guard (galionElvenkingsButlerCard.summary.splitOn "base power and toughness").length > 1
+#guard galionElvenkingsButlerCard.power == some 4
+#guard galionElvenkingsButlerCard.toughness == some 4
+#guard woodlandWeavemasterCard.keywords.vigilance
+#guard woodlandWeavemasterCard.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
+#guard woodlandWeavemasterCard.tapAddAnyColorEqualToPower
+#guard woodlandWeavemasterCard.manaAbilities == #[
   .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-#guard woodlandWeavemaster.power == some 1
-#guard woodlandWeavemaster.toughness == some 2
-#guard (woodlandWeavemaster.summary.splitOn "vigilance").length > 1
-#guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
-#guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
-#guard quarrel.isInstant
-#guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
-#guard quarrel.requiresTarget
+#guard woodlandWeavemasterCard.power == some 1
+#guard woodlandWeavemasterCard.toughness == some 2
+#guard (woodlandWeavemasterCard.summary.splitOn "vigilance").length > 1
+#guard (woodlandWeavemasterCard.summary.splitOn "another Elf").length > 1
+#guard (woodlandWeavemasterCard.summary.splitOn "any one color").length > 1
+#guard quarrelCard.isInstant
+#guard quarrelCard.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
+#guard quarrelCard.requiresTarget
 #guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
-#guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
-#guard wargTactics.isInstant
-#guard wargTactics.isModal
-#guard wargTactics.requiresTarget
-#guard wargTactics.spellModes == #[
+#guard (quarrelCard.summary.splitOn "deals damage equal to its power").length > 1
+#guard wargTacticsCard.isInstant
+#guard wargTacticsCard.isModal
+#guard wargTacticsCard.requiresTarget
+#guard wargTacticsCard.spellModes == #[
   Effect.destroyCreatureWithFlying,
   Effect.plusOnePlusOneTrampleHexproof]
-#guard (wargTactics.summary.splitOn "Choose one").length > 1
-#guard (wargTactics.summary.splitOn "hexproof").length > 1
-#guard beornsHospitality.isEnchantment
-#guard !beornsHospitality.isCreature
-#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities.size == 1
-#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
-#guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
+#guard (wargTacticsCard.summary.splitOn "Choose one").length > 1
+#guard (wargTacticsCard.summary.splitOn "hexproof").length > 1
+#guard beornsHospitalityCard.isEnchantment
+#guard !beornsHospitalityCard.isCreature
+#guard beornsHospitalityCard.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
+#guard beornsHospitalityCard.activatedAbilities.size == 1
+#guard beornsHospitalityCard.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
+#guard beornsHospitalityCard.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard (beornsHospitality.summary.splitOn "Landfall").length > 1
-#guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
+#guard (beornsHospitalityCard.summary.splitOn "Landfall").length > 1
+#guard (beornsHospitalityCard.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
 #guard mirkwoodPathmaker.power.isNone
 #guard mirkwoodPathmaker.toughness.isNone

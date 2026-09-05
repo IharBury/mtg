@@ -6382,7 +6382,7 @@ def meditatorOverwritesSetPTOk : Bool :=
 -/
 
 def typeChangeLastsOk : Bool :=
-  beornsHospitality.activatedAbilities[0]!.effect ==
+  beornsHospitalityCard.activatedAbilities[0]!.effect ==
       Effect.becomeBearCreatureWithLandsPT &&
     (ruling 287).comment.contains "lasts indefinitely" &&
     (ruling 303).comment.contains "don't wear off during the cleanup step" &&
@@ -6438,7 +6438,7 @@ def dainCountsOnResolveOk : Bool :=
 -/
 
 def weavemasterManaAbilityOk : Bool :=
-  woodlandWeavemaster.tapAddAnyColorEqualToPower &&
+  woodlandWeavemasterCard.tapAddAnyColorEqualToPower &&
     (ruling 329).comment.contains "mana ability"
 
 #guard weavemasterManaAbilityOk
