@@ -435,6 +435,13 @@ def hasTapSymbol : List Cost → Bool
   | .tapSymbol :: _ => true
   | _ :: rest => hasTapSymbol rest
 
+/-- True when a cost sacrifices this object. -/
+def sacrificesThis : List Cost → Bool
+  | [] => false
+  | .sacrifice s :: rest =>
+    (s == .this || s == .source .this) || sacrificesThis rest
+  | _ :: rest => sacrificesThis rest
+
 end Cost
 
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
@@ -1080,7 +1087,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .untap s => compileUntap s asAbility
                   | .dealDamage _source victim n => compileDamage victim n asAbility
                   | .divideDamage _who _source victim n => compileDamage victim n asAbility
-                  | .draw _who n => Effect.draw n
+                  | .draw _who n =>
+                    if asAbility then Effect.abilityDraw n else Effect.draw n
                   | .scry _who n => Effect.scry n
                   | .sequence (a :: _) => compile a asAbility
                   | .sequence [] => continuousEffect none [] asAbility
@@ -1146,6 +1154,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
       { mana := Cost.manaCost costs
         payLife := Cost.lifePaid costs
         tap := Cost.hasTapSymbol costs
+        sacrificeSource := Cost.sacrificesThis costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs }
     effect := action.toAbilityEffect
     onceEachTurn }
@@ -1396,7 +1405,13 @@ def applyIfShape (b : CardFace) (s : Selector.Shape)
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness (.hostOf .this) p t =>
-    { b with staticAbilities := b.staticAbilities.push (.equippedCreatureGets p t) }
+    { b with
+      staticAbilities :=
+        b.staticAbilities.push
+          (if b.types.contains .enchantment then
+            .enchantedCreatureGets p t
+          else
+            .equippedCreatureGets p t) }
   | .addPowerToughness _ _ _ => b
   | .if (.any among) inners => applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
@@ -2606,5 +2621,20 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction := .returnToHand .this
   action.toAbilityEffect == Effect.returnFromGraveyardToHand
+
+#guard
+  (TraditionalCardDefinition.card [
+    .type .enchantment,
+    .ability (.static (.addPowerToughness (.hostOf .this) 3 3))
+  ]).toCardDef.staticAbilities == #[.enchantedCreatureGets 3 3]
+
+#guard
+  let action : CardAction := .draw (.controller .this) 2
+  action.toAbilityEffect == Effect.abilityDraw 2
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.activated [.sacrifice .this] (.draw (.controller .this) 2))
+  ]).toCardDef.activatedAbilities[0]!.cost.sacrificeSource
 
 end Mtg.Engine

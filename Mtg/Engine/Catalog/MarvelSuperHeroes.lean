@@ -434,10 +434,17 @@ def frozenInIce : CardDef :=
     (staticAbilities := #[StaticAbility.enchantedLosesAbilitiesCantUntap])
 
 def futuristForge : CardDef :=
-  artifact "Futurist Forge" (ManaCost.ofGenericAndColor 1 .blue)
-    "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards."
-    (triggeredAbilities := #[.onEnterDraw 1])
-    (activatedAbilities := #[activated (Effect.abilityDraw 2) (ManaCost.ofGenericAndColor 3 .blue) (sacrificeSource := true)])
+  (TraditionalCardDefinition.card [
+    .name "Futurist Forge",
+    .manaCost [.generic 1, .mono .blue],
+    .type .artifact,
+    .ability (.triggered (.enter .this) (.draw (.controller .this) 1)),
+    .ability (
+      .activated
+        [.mana [.generic 3, .mono .blue], .sacrifice .this]
+        (.draw (.controller .this) 2))
+  ]).toCardDef
+    (oracleText := "When this artifact enters, draw a card.\n{3}{U}, Sacrifice this artifact: Draw two cards.")
 
 def giantSizedFlyingAnt : CardDef :=
   creature "Giant-Sized Flying Ant" (ManaCost.ofGenericAndColor 3 .blue) #["Insect"] 3 2

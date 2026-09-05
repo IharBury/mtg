@@ -429,11 +429,16 @@ def celebornTheWise : CardDef :=
     (triggeredAbilities := #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt])
 
 def giftOfStrands : CardDef :=
-  aura "Gift of Strands" (ManaCost.ofGenericAndColor 3 .green)
-    "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3."
-    (keywords := Keyword.flash)
-    (staticAbilities := #[.enchantedCreatureGets 3 3])
-    (triggeredAbilities := #[.onEnterScry 2])
+  (TraditionalCardDefinition.card [
+    .name "Gift of Strands",
+    .manaCost [.generic 3, .mono .green],
+    .type .enchantment,
+    .subtype (.named "Aura"),
+    .ability (.keyword .flash),
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
+    .ability (.static (.addPowerToughness (.hostOf .this) 3 3))
+  ]).toCardDef
+    (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3.")
 
 def elvishArchdruid : CardDef :=
   creature "Elvish Archdruid" (ManaCost.ofGenericAndColors 1 [.green, .green])
