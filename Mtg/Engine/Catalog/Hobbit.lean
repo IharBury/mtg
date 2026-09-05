@@ -696,14 +696,15 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
   .power 2,
   .toughness 3,
   .ability (
-    .activatedIf
-      (.turn (.controller .this))
-      [.sacrifice
-        (.intersection [
-          .not .this,
-          .permanent,
-          .union [.cardType .artifact, .cardType .creature]])]
-      (.exile (.topOfLibrary (.controller .this))))
+    .activatedTimes 1 .turnStart
+      (.activatedIf
+        (.turn (.controller .this))
+        [.sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+        (.exile (.topOfLibrary (.controller .this)))))
 ]
 
 def snowslopeHunterCard : CardDef :=

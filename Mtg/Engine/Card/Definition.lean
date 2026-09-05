@@ -454,9 +454,9 @@ inductive Ability where
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
   | keywordWithCost : CostedKeyword → List Cost → Ability
   | activated : List Cost → CardAction → Ability
-  /-- An activated ability that may be used that many times, counted from
+  /-- The inner activated ability may be used that many times, counted from
   the given window. -/
-  | activatedTimes : Nat → Trigger → List Cost → CardAction → Ability
+  | activatedTimes : Nat → Trigger → Ability → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
   /-- Number this ability so later clauses can refer to it. -/
@@ -937,18 +937,17 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   | .activated costs action => some (activatedAbility costs action)
-  | .activatedTimes 1 .turnStart costs action =>
-    some (activatedAbility costs action true)
-  | .activatedTimes _ _ costs action => some (activatedAbility costs action)
+  | .activatedTimes 1 .turnStart inner =>
+    (toActivatedAbility? inner).map (applyRestriction .onceEachTurn)
+  | .activatedTimes _ _ inner => toActivatedAbility? inner
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
     some (activatedAbility costs action true)
   | .activatedIf (.timeToCastSorcery _) costs
       action@(.returnToHand (.intersection [.inGraveyard, .source .this])) =>
     some (applyRestriction .fromGraveyard
       (applyRestriction .onlyAsSorcery (activatedAbility costs action)))
-  | .activatedIf (.turn _) costs action@(.exile (.topOfLibrary _)) =>
-    some (applyRestriction .onlyDuringYourTurn
-      (applyRestriction .onceEachTurn (activatedAbility costs action)))
+  | .activatedIf (.turn _) costs action =>
+    some (applyRestriction .onlyDuringYourTurn (activatedAbility costs action))
   | .abilityId _ inner => toActivatedAbility? inner
   | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
@@ -1135,8 +1134,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with
       activatedAbilities :=
         b.activatedAbilities.push (Ability.activatedAbility costs action) }
-  | .activatedTimes n from_ costs action =>
-    match (Ability.activatedTimes n from_ costs action).toActivatedAbility? with
+  | .activatedTimes n from_ a =>
+    match (Ability.activatedTimes n from_ a).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .activatedIf cond costs action =>
@@ -1871,14 +1870,15 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.activatedIf
-      (.turn (.controller .this))
-      [.sacrifice
-        (.intersection [
-          .not .this,
-          .permanent,
-          .union [.cardType .artifact, .cardType .creature]])]
-      (.exile (.topOfLibrary (.controller .this)))).toActivatedAbility? with
+    (Ability.activatedTimes 1 .turnStart
+      (.activatedIf
+        (.turn (.controller .this))
+        [.sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+        (.exile (.topOfLibrary (.controller .this))))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       ab.onceEachTurn &&
