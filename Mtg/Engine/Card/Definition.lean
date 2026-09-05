@@ -49,14 +49,9 @@ inductive Selector where
   | not : Selector → Selector
   /-- The target previously declared with `target` of this number. -/
   | targetReference : Nat → Selector
-  /-- The object bound by `forEach` of this number. -/
-  | var : Nat → Selector
   /-- The given player chooses objects matching the given selector at
   resolution, with a count range (not targeting; CR 608.2d). -/
   | selected : Selector → Range → Selector → Selector
-  /-- Every object targeted by anything matching the given selector
-  (CR 115.1 / 608.2b). -/
-  | allTargets : Selector → Selector
   | intersection : List Selector → Selector
   | all
   | cardType : CardType → Selector
@@ -69,9 +64,6 @@ inductive Selector where
   | tapped
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Int → Selector
-  /-- Objects that were the subject of the first event, bounded by the
-  second (e.g. a creature that died this turn). -/
-  | wasSubject : Trigger → Trigger → Selector
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
@@ -88,8 +80,6 @@ inductive Selector where
   | attacking : Selector → Selector
   /-- A token (CR 111.1). -/
   | token
-  /-- A nonland permanent (CR 110.4). -/
-  | nonland
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
   /-- The object a replacement effect is replacing. -/
@@ -109,7 +99,7 @@ what a replacement effect intercepts. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
-  /-- From the start of the turn (a window bound for `wasSubject`). -/
+  /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
   | gameStart
@@ -282,23 +272,20 @@ def shape : Selector → Shape
   | .controlled _ => {}
   | .tapped => { tapped := true }
   | .powerAtLeast n => { powerAtLeast := some n }
-  | .wasSubject (.die who) .turnStart => { who.shape with diedThisTurn := true }
-  | .wasSubject _ _ => {}
   | .attacking _ => { attacking := true }
   | .token => { token := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
   | .permanentSpell => { isSpell := true }
-  | .nonland => { nonland := true }
   | .not .this => { other := true }
   | .not s => s.shape.negate
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
   | .union [] => {}
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
-  | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _ | .var _
-  | .selected _ _ _ | .allTargets _ | .player
+  | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
+  | .selected _ _ _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
   | .hostOf _ | .inGraveyard | .topOfLibrary _ => {}
 
@@ -400,17 +387,6 @@ def orPayGeneric? : List Cost → Option Nat
 
 end Cost
 
-/-- A limit on how often or from where an activated ability may be activated. -/
-inductive ActivationRestriction where
-  | onceEachTurn
-  /-- “Activate only as a sorcery” (CR 117.1a / 702.6). -/
-  | onlyAsSorcery
-  /-- “Activate only during your turn” (CR 117.1a). -/
-  | onlyDuringYourTurn
-  /-- Activate only while the source is in a graveyard (CR 112.6 / 404). -/
-  | fromGraveyard
-deriving Repr, Inhabited, BEq
-
 /-- Kind of counter placed by `putCounter` (CR 122.1). -/
 inductive CounterKind where
   /-- A +1/+1 counter. -/
@@ -456,18 +432,12 @@ inductive Ability where
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
   | keywordWithCost : CostedKeyword → List Cost → Ability
   | activated : List Cost → CardAction → Ability
-  /-- The inner activated ability may be used that many times, counted from
-  the given window. -/
-  | activatedTimes : Nat → Trigger → Ability → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
   /-- Number this ability so later clauses can refer to it. -/
   | abilityId : Nat → Ability → Ability
   | triggered : Trigger → CardAction → Ability
   | static : ContinuousEffect → Ability
-  | reduceCost : Selector → List Cost → Ability
-  /-- Restrict how often or when the inner ability may be used. -/
-  | restrict : ActivationRestriction → Ability → Ability
 deriving Repr, Inhabited, BEq
 
 /-- A continuous effect granted by a spell or ability. -/
@@ -501,7 +471,6 @@ inductive CardAction where
   | draw : Selector → Nat → CardAction
   | scry : Selector → Nat → CardAction
   | sequence : List CardAction → CardAction
-  | forEach : Nat → CardAction → CardAction
   /-- Perform the given actions only when the condition holds. -/
   | if : Condition → List CardAction → CardAction
   | optional : CardAction → CardAction
@@ -581,8 +550,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
   effects.findSome? fun e =>
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
-    | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _ _
-    | .allTargets _ | .spell | .permanentSpell | .player
+    | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
+    | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .topOfLibrary _ => none
     | s => some s
@@ -865,7 +834,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .scry _who n => Effect.scry n
                   | .sequence (a :: _) => compile a asAbility
                   | .sequence [] => continuousEffect none [] asAbility
-                  | .forEach _ inner => compile inner asAbility
                   | .if _ (a :: _) => compile a asAbility
                   | .if _ [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
@@ -924,14 +892,6 @@ def activatedAbility (costs : List Cost) (action : CardAction)
     effect := action.toAbilityEffect
     onceEachTurn }
 
-def applyRestriction (r : ActivationRestriction) (ab : ActivatedAbility) :
-    ActivatedAbility :=
-  match r with
-  | .onceEachTurn => { ab with onceEachTurn := true }
-  | .onlyAsSorcery => { ab with onlyAsSorcery := true }
-  | .onlyDuringYourTurn => { ab with onlyDuringYourTurn := true }
-  | .fromGraveyard => { ab with activateFromGraveyard := true }
-
 def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost .equip costs =>
     some {
@@ -939,23 +899,18 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   | .activated costs action => some (activatedAbility costs action)
-  | .activatedTimes 1 .turnStart inner =>
-    (toActivatedAbility? inner).map (applyRestriction .onceEachTurn)
-  | .activatedTimes _ _ inner => toActivatedAbility? inner
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
     some (activatedAbility costs action true)
   | .activatedIf (.timeToCastSorcery _) costs
       action@(.returnToHand (.intersection [.inGraveyard, .source .this])) =>
-    some (applyRestriction .fromGraveyard
-      (applyRestriction .onlyAsSorcery (activatedAbility costs action)))
-  | .activatedIf (.turn _) costs action =>
-    some (applyRestriction .onlyDuringYourTurn (activatedAbility costs action))
+    some { activatedAbility costs action with
+      onlyAsSorcery := true
+      activateFromGraveyard := true }
   | .activatedIf
       (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
       costs action =>
-    some (applyRestriction .onlyDuringYourTurn (activatedAbility costs action true))
+    some { activatedAbility costs action true with onlyDuringYourTurn := true }
   | .abilityId _ inner => toActivatedAbility? inner
-  | .restrict r inner => (toActivatedAbility? inner).map (applyRestriction r)
   | _ => none
 
 /-- Compile a `.triggered` ability. -/
@@ -1075,21 +1030,21 @@ def applyReduceCost (assign : CardFace → Nat → CardFace) (b : CardFace)
   | _ => b
 
 /-- Cost-reduction leftovers implied by a selector-shaped condition. -/
-def applyIfShape (b : CardFace) (among : Selector)
+def applyIfShape (b : CardFace) (s : Selector.Shape)
     (inners : List ContinuousEffect) : CardFace :=
-  if among.shape.tappedCreature then
+  if s.tappedCreature then
     inners.foldl
       (applyReduceCost fun b n =>
         { b with costReductionIfTargetTapped := b.costReductionIfTargetTapped + n })
       b
-  else if among.shape.attackingNontokenCreature then
+  else if s.attackingNontokenCreature then
     inners.foldl
       (applyReduceCost fun b n =>
         { b with
           costReductionIfTargetAttackingNontoken :=
             b.costReductionIfTargetAttackingNontoken + n })
       b
-  else if among.shape.diedThisTurnCreature then
+  else if s.diedThisTurnCreature then
     inners.foldl
       (applyReduceCost fun b n =>
         { b with
@@ -1102,11 +1057,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness (.hostOf .this) p t =>
     { b with staticAbilities := b.staticAbilities.push (.equippedCreatureGets p t) }
   | .addPowerToughness _ _ _ => b
-  | .if (.any among) inners => applyIfShape b among inners
-  | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
+  | .if (.any among) inners => applyIfShape b among.shape inners
+  | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
   | .if (.anySubtype _ _) _ => b
   | .if (.didNotHappen _ _) _ => b
-  | .if (.happened t since) inners => applyIfShape b (.wasSubject t since) inners
+  | .if (.happened (.die who) .turnStart) inners =>
+    applyIfShape b { who.shape with diedThisTurn := true } inners
+  | .if (.happened _ _) _ => b
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
@@ -1141,10 +1098,6 @@ def applyAbility (b : CardFace) : Ability → CardFace
     { b with
       activatedAbilities :=
         b.activatedAbilities.push (Ability.activatedAbility costs action) }
-  | .activatedTimes n from_ a =>
-    match (Ability.activatedTimes n from_ a).toActivatedAbility? with
-    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
-    | none => b
   | .activatedIf cond costs action =>
     match (Ability.activatedIf cond costs action).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
@@ -1153,19 +1106,11 @@ def applyAbility (b : CardFace) : Ability → CardFace
     match (Ability.abilityId n a).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => applyAbility b a
-  | .restrict r a =>
-    match Ability.restrict r a |>.toActivatedAbility? with
-    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
-    | none => applyAbility b a
   | .triggered w action =>
     match (Ability.triggered w action).toTriggeredAbility? with
     | some t => { b with triggeredAbilities := b.triggeredAbilities.push t }
     | none => b
   | .static e => applyContinuousEffect b e
-  | .reduceCost _ costs =>
-    { b with
-      costReductionIfTargetTapped :=
-        b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
 def apply (b : CardFace) : CardPart → CardFace
   | .name n => { b with name := n }
@@ -1265,8 +1210,6 @@ instance : Coe TraditionalCardDefinition CardDef where
   coe d := d.toCardDef
 
 end TraditionalCardDefinition
-
-#guard Selector.among? (.allTargets .this) == none
 
 -- Concerted Care: target artifact or creature you control gains hexproof
 -- and indestructible until end of turn.
@@ -1661,8 +1604,9 @@ end TraditionalCardDefinition
   action.toEffect == Effect.plusOneUpToOneAndPlayerGainsLife 2
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
-#guard Selector.shape
-  (.wasSubject (.die (.cardType .creature)) .turnStart) |>.diedThisTurnCreature
+#guard
+  let s : Selector.Shape := { Selector.shape (.cardType .creature) with diedThisTurn := true }
+  s.diedThisTurnCreature
 
 #guard
   (TraditionalCardDefinition.card [
