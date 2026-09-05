@@ -877,7 +877,7 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
       (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn)),
   .ability (
     .activated
-      [.tap]
+      [.tapSymbol]
       (.addManaAnyColorEqualToPower .this))
 ]
 

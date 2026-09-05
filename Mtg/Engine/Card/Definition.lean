@@ -371,8 +371,9 @@ inductive Cost where
   | life : Nat → Cost
   /-- Sacrifice a selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
-  /-- Tap this permanent (CR 107.5 / 602.1). -/
-  | tap
+  /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
+  sickness. -/
+  | tapSymbol
   /-- Pay one of the listed costs. -/
   | or : List Cost → Cost
 deriving Repr, Inhabited, BEq
@@ -412,10 +413,10 @@ def orPayGeneric? : List Cost → Option Nat
     | none => orPayGeneric? rest
   | _ :: rest => orPayGeneric? rest
 
-def taps : List Cost → Bool
+def hasTapSymbol : List Cost → Bool
   | [] => false
-  | .tap :: _ => true
-  | _ :: rest => taps rest
+  | .tapSymbol :: _ => true
+  | _ :: rest => hasTapSymbol rest
 
 end Cost
 
@@ -887,7 +888,7 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
 /-- Tap and add mana of any color equal to this object's power. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
   | .addManaAnyColorEqualToPower who =>
-    Cost.taps costs &&
+    Cost.hasTapSymbol costs &&
       (who == .this || who == .source .this)
   | _ => false
 
@@ -1005,7 +1006,7 @@ def activatedAbility (costs : List Cost) (action : CardAction)
   { cost :=
       { mana := Cost.manaCost costs
         payLife := Cost.lifePaid costs
-        tap := Cost.taps costs
+        tap := Cost.hasTapSymbol costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs }
     effect := action.toAbilityEffect
     onceEachTurn }
@@ -2177,7 +2178,7 @@ end TraditionalCardDefinition
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.activated [.tap] (.addManaAnyColorEqualToPower .this))
+    .ability (.activated [.tapSymbol] (.addManaAnyColorEqualToPower .this))
   ]).toCardDef.tapAddAnyColorEqualToPower
 
 end Mtg.Engine
