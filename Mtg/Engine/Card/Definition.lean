@@ -93,6 +93,10 @@ inductive Selector where
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/
   | inGraveyard
+  /-- An object in a library (CR 401). -/
+  | inDeck
+  /-- Objects with the given supertype (CR 205.4). -/
+  | supertype : CardSupertype → Selector
   /-- The top card of the selected player's library (CR 401). -/
   | topOfLibrary : Selector → Selector
 deriving Repr, Inhabited, BEq
@@ -331,7 +335,7 @@ def shape : Selector → Shape
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .hostOf _ | .inGraveyard | .topOfLibrary _ => {}
+  | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -377,6 +381,39 @@ def any : Selector := .all
 
 /-- A land (CR 305). -/
 def land : Selector := .cardType .land
+
+/-- True when this selector includes `inDeck`. -/
+def includesInDeck : Selector → Bool
+  | .inDeck => true
+  | .intersection (f :: fs) => includesInDeck f || includesInDeck (.intersection fs)
+  | _ => false
+
+/-- True when this selector includes the Basic supertype. -/
+def includesBasic : Selector → Bool
+  | .supertype .basic => true
+  | .intersection (f :: fs) => includesBasic f || includesBasic (.intersection fs)
+  | _ => false
+
+/-- True when this selector includes the land card type. -/
+def includesLand : Selector → Bool
+  | .cardType .land => true
+  | .intersection (f :: fs) => includesLand f || includesLand (.intersection fs)
+  | _ => false
+
+/-- Printed subtype mentioned by this selector, if any. -/
+def includedSubtype? : Selector → Option String
+  | .subtype st => some st.toString
+  | .intersection (f :: fs) => (includedSubtype? f).orElse fun _ => includedSubtype? (.intersection fs)
+  | _ => none
+
+/-- A basic land card in a library. -/
+def basicLandInDeck (s : Selector) : Bool :=
+  includesInDeck s && includesLand s && includesBasic s
+
+/-- The constraint a `selected` choice matches. -/
+def selectedAmong? : Selector → Option Selector
+  | .selected _ _ among => some among
+  | _ => none
 
 def toTargeting (s : Selector) : EffectTargeting :=
   match s.among? with
@@ -581,6 +618,12 @@ inductive CardAction where
   | sacrifice : Selector → CardAction
   /-- Return the selected object to its owner's hand. -/
   | returnToHand : Selector → CardAction
+  /-- Put the selected object onto the battlefield. -/
+  | putOntoBattlefield : Selector → CardAction
+  /-- Search the selected player's library. Nested actions may move or
+  choose cards from that library while they are visible, then shuffle
+  (CR 701.19). -/
+  | searchLibraryThenShuffle : Selector → List CardAction → CardAction
   /-- The first selected object deals damage equal to its power to the
   second (CR 701.13). -/
   | dealDamageEqualToPower : Selector → Selector → CardAction
@@ -644,7 +687,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard | .topOfLibrary _ => none
+    | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .topOfLibrary _ => none
     | s => some s
 
 end ContinuousEffect
@@ -1067,9 +1110,55 @@ def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
     | _ => false
   | _ => false
 
+/-- Nested search actions: put a basic land onto the battlefield tapped,
+or put a found card into hand. -/
+def leftoverSearchActions? : List CardAction → Option Effect
+  | [.putOntoBattlefield sel, .tap _] =>
+    match sel.selectedAmong? with
+    | some among =>
+      if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
+    | none => none
+  | [.returnToHand sel] =>
+    match sel.selectedAmong? with
+    | some among =>
+      if among.basicLandInDeck then some Effect.searchBasicLandToHand
+      else
+        match among.includedSubtype? with
+        | some t =>
+          if among.includesInDeck then some (Effect.searchLandTypeToHand t) else none
+        | none => none
+    | none => none
+  | _ => none
+
+/-- Search a library, act on the found cards, then shuffle. -/
+def leftoverSearchLibraryThenShuffle? : CardAction → Option Effect
+  | .searchLibraryThenShuffle _ actions => leftoverSearchActions? actions
+  | _ => none
+
+/-- Enters-the-battlefield library searches. -/
+def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
+  | [.putOntoBattlefield sel] =>
+    match sel.selectedAmong? with
+    | some among =>
+      if among.includesInDeck && among.includedSubtype? == some "Forest" then
+        some TriggeredAbility.onEnterSearchForest
+      else none
+    | none => none
+  | [.returnToHand sel] =>
+    match sel.selectedAmong? with
+    | some among =>
+      if among.basicLandInDeck then
+        some TriggeredAbility.onEnterSearchBasicToHand
+      else none
+    | none => none
+  | _ => none
+
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match leftoverSearchLibraryThenShuffle? action with
+  | some e => e
+  | none =>
   match leftoverUntapPumpAttach? action with
   | some (p, t) => Effect.untapPumpMaybeAttach p t
   | none =>
@@ -1163,6 +1252,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
+                  | .putOntoBattlefield _ => continuousEffect none [] asAbility
+                  | .searchLibraryThenShuffle _ _ =>
+                    continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ =>
                     continuousEffect none [] asAbility
                   | .addManaAnyColorEqualToPower _ _ _ =>
@@ -1246,6 +1338,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterScry n)
   | .triggered (.enter .this) (.gainLife _ n) =>
     some (TriggeredAbility.onEnterGainLife n)
+  | .triggered (.enter .this) (.searchLibraryThenShuffle _ actions) =>
+    CardAction.leftoverEnterSearch? actions
   | .triggered (.enter .this) (.continuous effects _duration) =>
     match ContinuousEffect.targetingSelector? effects, ContinuousEffect.addedPT? effects with
     | some sel, some (p, t) =>
@@ -2771,5 +2865,58 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (.activated [.sacrifice .this] (.draw (.controller .this) 2))
   ]).toCardDef.activatedAbilities[0]!.cost.sacrificeSource
+
+#guard Selector.basicLandInDeck
+  (.intersection [.inDeck, .cardType .land, .supertype .basic])
+
+#guard
+  let action : CardAction :=
+    .searchLibraryThenShuffle
+      (.controller .this)
+      [
+        .putOntoBattlefield
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [.inDeck, .cardType .land, .supertype .basic])),
+        .tap
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [.inDeck, .cardType .land, .supertype .basic]))]
+  action.toAbilityEffect == Effect.searchBasicLandTapped
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .putOntoBattlefield
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [.inDeck, .subtype .forest]))])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterSearchForest
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .returnToHand
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .inDeck,
+                .cardType .land,
+                .supertype .basic]))])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
+  | none => false
 
 end Mtg.Engine
