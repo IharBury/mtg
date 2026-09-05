@@ -769,7 +769,7 @@ def galionElvenkingsButler : TraditionalCardDefinition := .card [
     .triggered
       (.attack .this .all)
       (.continuous
-        [.setBasePowerToughness
+        [.setBasePowerToughnessFrom
           (.targets
             1
             (.range 0 1)

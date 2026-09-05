@@ -483,9 +483,9 @@ inductive ContinuousEffect where
   /-- The selected player may cast the selected card without paying its
   mana cost. -/
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
-  /-- The first object's base power and toughness become equal to the
-  second object's power and toughness. -/
-  | setBasePowerToughness : Selector → Selector → ContinuousEffect
+  /-- The first object's base power and toughness become those of the
+  second object. -/
+  | setBasePowerToughnessFrom : Selector → Selector → ContinuousEffect
   /-- The selected object becomes the given types and subtypes in addition
   to its other types. -/
   | become : Selector → List CardType → List CardSubtype → ContinuousEffect
@@ -564,7 +564,7 @@ def selector : ContinuousEffect → Selector
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
-  | .setBasePowerToughness who _ => who
+  | .setBasePowerToughnessFrom who _ => who
   | .become who _ _ => who
   | .setPowerToughnessEqualTo who _ => who
 
@@ -582,7 +582,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .replace _ _ :: _ => none
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
-  | .setBasePowerToughness _ _ :: _ => none
+  | .setBasePowerToughnessFrom _ _ :: _ => none
   | .become _ _ _ :: _ => none
   | .setPowerToughnessEqualTo _ _ :: _ => none
 
@@ -894,7 +894,7 @@ def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Boo
 
 /-- Set another creature you control's base P/T equal to this source. -/
 def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
-  | [.setBasePowerToughness who (.source .this)] =>
+  | [.setBasePowerToughnessFrom who (.source .this)] =>
     match who with
     | .targets _ (.range 0 1) among => among.shape.anotherCreatureYouControl
     | _ => false
@@ -1209,7 +1209,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
-  | .setBasePowerToughness _ _ => b
+  | .setBasePowerToughnessFrom _ _ => b
   | .become _ _ _ => b
   | .setPowerToughnessEqualTo _ _ => b
   | .additionalCost _ cs =>
@@ -2031,7 +2031,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.attack .this .all)
       (.continuous
-        [.setBasePowerToughness
+        [.setBasePowerToughnessFrom
           (.targets
             1
             (.range 0 1)
