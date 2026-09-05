@@ -918,13 +918,28 @@ def mirkwoodPathmaker : CardDef :=
     (oracleText := "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control.")
 
 def beornReluctantHost : CardDef :=
-  legendaryCreature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
-    #["Human", "Bear", "Shapeshifter"] 5 5
+  (TraditionalCardDefinition.card [
+    .name "Beorn, Reluctant Host",
+    .manaCost [.generic 4, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .bear,
+    .subtype .shapeshifter,
+    .power 5,
+    .toughness 5,
+    .ability (.keyword .trample),
+    .alternative [
+      .name "Till and Tend",
+      .manaCost [.generic 1, .mono .green],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .continuous
+          [.increaseLandPlayLimit (.controller .this) 1]
+          .endOfTurn]]
+  ]).toCardDef
     (oracleText := "Trample\n//ADV//\nTill and Tend {1}{G}\nSorcery — Adventure\nYou may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)")
-    (keywords := Keyword.trample)
-    (adventure := some (adventure "Till and Tend" (ManaCost.ofGenericAndColor 1 .green)
-      "You may play an additional land this turn. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.playAdditionalLandThisTurn)))
 
 def woodElves : CardDef :=
   creature "Wood Elves" (ManaCost.ofGenericAndColor 2 .green) #["Elf", "Scout"] 1 1
@@ -1947,9 +1962,46 @@ def thorinMountainKing : CardDef :=
     (triggeredAbilities := #[.onEnterAttachEquipmentThenFight])
 
 def thranduilSCompany : CardDef :=
-  creature "Thranduil's Company" (ManaCost.ofGenericAndColors 2 [.green, .blue]) #["Elf", "Soldier"] 3 4 (oracleText := "As long as you control another Elf, you may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn.")
-    (extraLandIfOtherSubtype := some "Elf")
-    (triggeredAbilities := #[.onLandYouControlEntersPlusOneVigilance])
+  (TraditionalCardDefinition.card [
+    .name "Thranduil's Company",
+    .manaCost [.generic 2, .mono .green, .mono .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .soldier,
+    .power 3,
+    .toughness 4,
+    .ability (
+      .static
+        (.if
+          (.any
+            (.intersection [
+              .not .this,
+              .permanent,
+              .subtype .elf,
+              .controlled (.controller .this)]))
+          [.increaseLandPlayLimit (.controller .this) 1])),
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.sequence [
+          .putCounter
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))
+            .plusOnePlusOne
+            2,
+          .continuous
+            [.gainAbility (.targetReference 1) (.keyword .vigilance)]
+            .endOfTurn]))
+  ]).toCardDef
+    (oracleText := "As long as you control another Elf, you may play an additional land on each of your turns.\nLandfall — Whenever a land you control enters, put two +1/+1 counters on target creature you control. It gains vigilance until end of turn.")
 
 def thranduilTheElvenking : CardDef :=
   legendaryCreature "Thranduil, the Elvenking" (ManaCost.ofGenericAndColors 2 [.black, .green, .blue]) #["Elf", "Noble"] 5 6 (oracleText := "Thranduil has all activated abilities of all Elf cards in your graveyard.\nWhenever another legendary Elf you control enters, draw two cards, then discard a card.")
@@ -2376,6 +2428,9 @@ def hobbitCards : Array CardDef := #[
 #guard beornReluctantHost.supertypes.any (· == .legendary)
 #guard beornReluctantHost.power == some 5
 #guard beornReluctantHost.toughness == some 5
+#guard beornReluctantHost.hasSubtype "Human"
+#guard beornReluctantHost.hasSubtype "Bear"
+#guard beornReluctantHost.hasSubtype "Shapeshifter"
 #guard
   match beornReluctantHost.adventure with
   | some adv =>
@@ -2392,6 +2447,13 @@ def hobbitCards : Array CardDef := #[
 #guard (beornReluctantHost.summary.splitOn "Till and Tend {1}{G}").length > 1
 #guard (beornReluctantHost.summary.splitOn "trample").length > 1
 #guard (beornReluctantHost.summary.splitOn "additional land").length > 1
+#guard thranduilSCompany.extraLandIfOtherSubtype == some "Elf"
+#guard thranduilSCompany.triggeredAbilities ==
+  #[TriggeredAbility.onLandYouControlEntersPlusOneVigilance]
+#guard thranduilSCompany.power == some 3
+#guard thranduilSCompany.toughness == some 4
+#guard thranduilSCompany.hasSubtype "Elf"
+#guard thranduilSCompany.hasSubtype "Soldier"
 #guard (bofurReliableGuardianCard.oracleText.splitOn "//ADV//").length > 1
 #guard (bofurReliableGuardianCard.oracleText.splitOn "Concerted Care {1}{W}").length > 1
 #guard (velvetwingButterfliesCard.oracleText.splitOn "//ADV//").length > 1
