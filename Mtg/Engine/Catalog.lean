@@ -716,40 +716,102 @@ def damageInstant (name : String) (amount : Nat) : CardDef :=
     (some (Effect.dealDamage amount))
 
 def grizzlyBears : CardDef :=
-  creature "Grizzly Bears" (ManaCost.ofGenericAndColor 1 .green) #["Bear"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Grizzly Bears",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .bear,
+    .power 2,
+    .toughness 2
+  ]).toCardDef
 
 def grayOgre : CardDef :=
-  creature "Gray Ogre" (ManaCost.ofGenericAndColor 2 .red) #["Ogre"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Gray Ogre",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .subtype .ogre,
+    .power 2,
+    .toughness 2
+  ]).toCardDef
 
 def hillGiant : CardDef :=
-  creature "Hill Giant" (ManaCost.ofGenericAndColor 3 .red) #["Giant"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Hill Giant",
+    .manaCost [.generic 3, .mono .red],
+    .type .creature,
+    .subtype .giant,
+    .power 3,
+    .toughness 3
+  ]).toCardDef
 
 def canyonMinotaur : CardDef :=
-  creature "Canyon Minotaur" (ManaCost.ofGenericAndColor 3 .red) #["Minotaur"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Canyon Minotaur",
+    .manaCost [.generic 3, .mono .red],
+    .type .creature,
+    .subtype .minotaur,
+    .power 3,
+    .toughness 3
+  ]).toCardDef
 
 def ragingGoblin : CardDef :=
-  creature "Raging Goblin" (ManaCost.ofColor .red) #["Goblin"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Raging Goblin",
+    .manaCost [.mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .power 1,
+    .toughness 1,
+    .ability (.keyword .haste)
+  ]).toCardDef
     (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
-    (keywords := Keyword.haste)
 
 def llanowarElves : CardDef :=
   creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
     (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
 
 def crawWurm : CardDef :=
-  creature "Craw Wurm" (ManaCost.ofGenericAndColor 4 .green) #["Wurm"] 6 4
+  (TraditionalCardDefinition.card [
+    .name "Craw Wurm",
+    .manaCost [.generic 4, .mono .green],
+    .type .creature,
+    .subtype .wurm,
+    .power 6,
+    .toughness 4
+  ]).toCardDef
 
 def centaurCourser : CardDef :=
-  creature "Centaur Courser" (ManaCost.ofGenericAndColor 2 .green) #["Centaur"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Centaur Courser",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .subtype .centaur,
+    .power 3,
+    .toughness 3
+  ]).toCardDef
 
 def rumblingBaloth : CardDef :=
-  creature "Rumbling Baloth" (ManaCost.ofGenericAndColors 2 [.green, .green])
-    #["Beast"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Rumbling Baloth",
+    .manaCost [.generic 2, .mono .green, .mono .green],
+    .type .creature,
+    .subtype .beast,
+    .power 4,
+    .toughness 4
+  ]).toCardDef
 
 def giantSpider : CardDef :=
-  creature "Giant Spider" (ManaCost.ofGenericAndColor 3 .green) #["Spider"] 2 4
+  (TraditionalCardDefinition.card [
+    .name "Giant Spider",
+    .manaCost [.generic 3, .mono .green],
+    .type .creature,
+    .subtype .spider,
+    .power 2,
+    .toughness 4,
+    .ability (.keyword .reach)
+  ]).toCardDef
     (oracleText := "Reach (This creature can block creatures with flying.)")
-    (keywords := Keyword.reach)
 
 def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
 
@@ -810,6 +872,16 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
 #guard (sorcery "Silent Flame" (ManaCost.ofColor .red) "" (some (Effect.dealDamage 1))).isSorcery
 #guard mountain.colors.isColorless
 #guard grizzlyBears.colors.isMonocolored
+#guard grizzlyBears.hasSubtype "Bear"
+#guard grizzlyBears.power == some 2
+#guard grizzlyBears.toughness == some 2
+#guard grayOgre.hasSubtype "Ogre"
+#guard hillGiant.hasSubtype "Giant"
+#guard canyonMinotaur.hasSubtype "Minotaur"
+#guard crawWurm.hasSubtype "Wurm"
+#guard crawWurm.power == some 6
+#guard centaurCourser.hasSubtype "Centaur"
+#guard rumblingBaloth.hasSubtype "Beast"
 #guard grizzlyBears.hasSorcerySpeed
 #guard !lightningBolt.hasSorcerySpeed
 #guard !mountain.hasSorcerySpeed

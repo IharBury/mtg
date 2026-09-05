@@ -253,7 +253,8 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat) : 
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
+  let g := g.mapObjectStatus o
+    (·.grantUntilEot { Keywords.none with cantBeBlocked := true })
   g.logMsg s!"{o.name} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/

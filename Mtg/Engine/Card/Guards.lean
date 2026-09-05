@@ -630,7 +630,8 @@ namespace CardDef
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
 #guard !(Effect.sourceGets 1 0).requiresTarget
 #guard !(Effect.putPlusOnePlusOneOnSource 3).requiresTarget
-#guard toString Keyword.cantBeBlocked == "can't be blocked"
+#guard toString ({ Keywords.none with cantBeBlocked := true } : Keywords) ==
+  "can't be blocked"
 #guard toString Keyword.menace == "menace"
 #guard CardDef.isKeywordRestatement Keyword.menace "Menace"
 #guard CardDef.isKeywordRestatement Keyword.menace

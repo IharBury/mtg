@@ -13,7 +13,9 @@ structure Keywords where
   haste : Bool := false
   vigilance : Bool := false
   flying : Bool := false
-  /-- This creature can't be blocked (printed or granted until end of turn). -/
+  /-- This creature can't be blocked. Not a CR 702 keyword; printed as
+  `.ability (.static (.forbid (.block .any .this)))` and also granted
+  until end of turn. -/
   cantBeBlocked : Bool := false
   /-- This creature can't be blocked except by two or more creatures (CR 702.111). -/
   menace : Bool := false
@@ -119,7 +121,6 @@ inductive Keyword where
   | haste
   | vigilance
   | flying
-  | cantBeBlocked
   | menace
   | hexproof
   | indestructible
@@ -148,7 +149,6 @@ def toKeywords : Keyword → Keywords
   | .haste => { Keywords.none with haste := true }
   | .vigilance => { Keywords.none with vigilance := true }
   | .flying => { Keywords.none with flying := true }
-  | .cantBeBlocked => { Keywords.none with cantBeBlocked := true }
   | .menace => { Keywords.none with menace := true }
   | .hexproof => { Keywords.none with hexproof := true }
   | .indestructible => { Keywords.none with indestructible := true }

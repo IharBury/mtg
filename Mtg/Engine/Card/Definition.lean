@@ -1244,7 +1244,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
   | .forbid (.block who .this) =>
     if who == .any then
-      { b with keywords := b.keywords.merge Keyword.cantBeBlocked.toKeywords }
+      { b with keywords := { b.keywords with cantBeBlocked := true } }
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b

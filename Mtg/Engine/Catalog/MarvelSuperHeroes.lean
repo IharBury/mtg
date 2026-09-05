@@ -61,9 +61,18 @@ def agentMariaHill : CardDef :=
     (triggeredAbilities := #[.onTappedForTeamworkPlusOneAndDraw])
 
 def agentOfAtlas : CardDef :=
-  creature "Agent of Atlas" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Spy", "Hero"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Agent of Atlas",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .spy,
+    .subtype .hero,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .prowess)
+  ]).toCardDef
     (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
-    (keywords := Keyword.prowess)
 
 def agentPhilCoulson : CardDef :=
   legendaryCreature "Agent Phil Coulson" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Spy", "Hero"] 2 2
@@ -156,9 +165,20 @@ def jenniferWalters : CardDef :=
     (otherFace := some theSensationalSheHulk)
 
 def kreeCommandos : CardDef :=
-  creature "Kree Commandos" (ManaCost.ofGenericAndColor 2 .white) #["Kree", "Soldier", "Villain"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Kree Commandos",
+    .manaCost [.generic 2, .mono .white],
+    .type .creature,
+    .subtype .kree,
+    .subtype .soldier,
+    .subtype .villain,
+    .power 2,
+    .toughness 1,
+    .ability (.keyword .flying),
+    .ability (.keyword .vigilance),
+    .ability (.keyword .prowess)
+  ]).toCardDef
     (oracleText := "Flying, vigilance\nProwess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)")
-    (keywords := ((Keyword.flying).merge Keyword.vigilance).merge Keyword.prowess)
 
 def lukeCagePowerMan : CardDef :=
   legendaryCreature "Luke Cage, Power Man" (ManaCost.ofGenericAndColor 3 .white) #["Human", "Hero"] 2 5
@@ -313,10 +333,21 @@ def aIMScientists : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def atlanteanCavalry : CardDef :=
-  creature "Atlantean Cavalry" (ManaCost.ofGenericAndColor 2 .blue) #["Merfolk", "Soldier"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Atlantean Cavalry",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .merfolk,
+    .subtype .soldier,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .vigilance),
+    .ability (
+      .triggered
+        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+        (.putCounter (.source .this) .plusOnePlusOne 1))
+  ]).toCardDef
     (oracleText := "Vigilance\nWhenever you draw your second card each turn, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onDrawSecondPlusOne])
 
 def atlantisAttacks : CardDef :=
   sorcery "Atlantis Attacks" (ManaCost.ofGenericAndColors 5 [.blue, .blue])
@@ -1343,9 +1374,20 @@ def daredevilManWithoutFear : CardDef :=
     (triggeredAbilities := #[.onYouAttacking Effect.youAttackingExileTopHeroPump])
 
 def ghostSpectralSaboteur : CardDef :=
-  legendaryCreature "Ghost, Spectral Saboteur" (ManaCost.ofGenericAndHybrids 2 .blue .black) #["Human", "Rogue", "Villain"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Ghost, Spectral Saboteur",
+    .manaCost [.generic 2, .hybrid .blue .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .rogue,
+    .subtype .villain,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .flash),
+    .ability (.static (.forbid (.block .any .this)))
+  ]).toCardDef
     (oracleText := "Flash\nIntangibility — Ghost can't be blocked.")
-    (keywords := (Keyword.flash).merge Keyword.cantBeBlocked)
 
 def hulkGammaGoliath : CardDef :=
   legendaryCreature "Hulk, Gamma Goliath" (ManaCost.ofGenericAndColors 3 [.red, .green]) #["Gamma", "Berserker", "Hero"] 6 5
@@ -1464,9 +1506,22 @@ def thanosTheMadTitan : CardDef :=
     (activatedAbilities := #[activated (Effect.plusTwoThenOddEvenDestroy) ({ symbols := #[.colorless, .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green] }) (powerUp := true)])
 
 def thorOdinson : CardDef :=
-  legendaryCreature "Thor Odinson" (ManaCost.ofGenericAndColors 3 [.red, .white]) #["God", "Warrior", "Hero"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Thor Odinson",
+    .manaCost [.generic 3, .mono .red, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .god,
+    .subtype .warrior,
+    .subtype .hero,
+    .power 4,
+    .toughness 4,
+    .ability (.keyword .flying),
+    .ability (.keyword .vigilance),
+    .ability (.keyword .prowess),
+    .ability (.keyword .prowess)
+  ]).toCardDef
     (oracleText := "Flying, vigilance, prowess, prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn twice.)")
-    (keywords := (((Keyword.flying).merge Keyword.vigilance).merge Keyword.prowess).merge Keyword.prowess)
 
 def titaniaRuggedRumbler : CardDef :=
   card "Titania, Rugged Rumbler" #[.creature] (ManaCost.ofGenericAndHybrids 2 .black .green)
@@ -2006,5 +2061,18 @@ def mshCards : Array CardDef :=
 
 #guard mshCards.size >= 281
 #guard mshCards.all (fun c => c.name != "")
+#guard agentOfAtlas.keywords.prowess
+#guard agentOfAtlas.hasSubtype "Spy"
+#guard kreeCommandos.keywords.flying
+#guard kreeCommandos.keywords.vigilance
+#guard kreeCommandos.keywords.prowess
+#guard atlanteanCavalry.keywords.vigilance
+#guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
+#guard ghostSpectralSaboteur.keywords.flash
+#guard ghostSpectralSaboteur.keywords.cantBeBlocked
+#guard ghostSpectralSaboteur.hasSupertype .legendary
+#guard thorOdinson.keywords.flying
+#guard thorOdinson.keywords.vigilance
+#guard thorOdinson.keywords.prowess
 
 end Mtg.Engine.Catalog

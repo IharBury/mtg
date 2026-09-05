@@ -604,7 +604,8 @@ def applyModeledReflexive (g : Game) (targets : Array Target := #[])
             g.dealDamageToPlayer pid 2
           | Target.permanent id =>
             match g.findObject? id with
-            | some o => g.mapObjectStatus o (·.grantUntilEot Keyword.cantBeBlocked)
+            | some o => g.mapObjectStatus o
+                (·.grantUntilEot { Keywords.none with cantBeBlocked := true })
             | none => g
           | Target.card _ => g) sourceId (some "The target is no longer legal")
     else if kind == 3 then
