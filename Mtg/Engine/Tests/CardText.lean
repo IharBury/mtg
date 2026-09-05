@@ -72,14 +72,14 @@ open Mtg.Engine.Catalog
 #guard raggedShortSpear.staticAbilities.size == 1
 #guard raggedShortSpear.triggeredAbilities.size == 1
 #guard raggedShortSpear.activatedAbilities.size == 1
-#guard mentions crudeBentBlade.summary "Equipped creature"
-#guard mentions crudeBentBlade.summary "Equip"
-#guard mentions crudeBentBlade.summary "target opponent"
-#guard crudeBentBlade.isEquipment
-#guard crudeBentBlade.staticAbilities.size == 1
-#guard crudeBentBlade.triggeredAbilities.size == 1
-#guard crudeBentBlade.activatedAbilities.size == 1
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard mentions crudeBentBladeCard.summary "Equipped creature"
+#guard mentions crudeBentBladeCard.summary "Equip"
+#guard mentions crudeBentBladeCard.summary "target opponent"
+#guard crudeBentBladeCard.isEquipment
+#guard crudeBentBladeCard.staticAbilities.size == 1
+#guard crudeBentBladeCard.triggeredAbilities.size == 1
+#guard crudeBentBladeCard.activatedAbilities.size == 1
+#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]

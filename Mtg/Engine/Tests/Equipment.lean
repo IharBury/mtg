@@ -329,14 +329,14 @@ def agentSpearOnly : Game :=
 /-- Crude Bent Blade in hand, Nissa has a Grizzly Bears, enough mana. -/
 def bladeSetup : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
-  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
 
 #guard bladeSetup.canCast ⟨0⟩ (handCardNamed bladeSetup ⟨0⟩ "Crude Bent Blade")
 #guard bladeSetup.asSorcery? ⟨0⟩
-#guard !crudeBentBlade.requiresTarget
-#guard crudeBentBlade.isEquipment
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard !crudeBentBladeCard.requiresTarget
+#guard crudeBentBladeCard.isEquipment
+#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBladeCard.staticAbilities == #[.equippedCreatureGets 2 1]
 
 /-- Equipment is cast without announcing a creature (CR 301.5b). -/
 def proposedBlade : Game :=
@@ -459,7 +459,7 @@ def bladeIdleSacrificed : Game := applyIdle bladeMustSac
 
 /-- With no opposing creature, the trigger still targets and then does nothing. -/
 def bladeNoCreatureSetup : Game :=
-  withBlackMana (addToHand afterDraw crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand afterDraw crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
 
 def bladeNoCreatureEntered : Game :=
   let g := mustApply bladeNoCreatureSetup ⟨0⟩
@@ -493,7 +493,7 @@ def bladeNoCreatureResolved : Game :=
 def bladeFireleaperSetup : Game :=
   let g := addPermanent afterDraw goblinFireleaper ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
-  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
 
 def bladeSacrificesFireleaper : Game :=
   let g := mustApply bladeFireleaperSetup ⟨0⟩
@@ -516,12 +516,12 @@ def bladeSacrificesFireleaper : Game :=
 /-- Equip {2} with a creature you control and enough mana. -/
 def bladeReadyToEquip : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addPermanent g crudeBentBlade ⟨0⟩ ⟨0⟩
+  let g := addPermanent g crudeBentBladeCard ⟨0⟩ ⟨0⟩
   let g := g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })
   withBlackMana g ⟨0⟩ 2
 
 def bladeEquipAbility : ActivatedAbility :=
-  crudeBentBlade.activatedAbilities[0]!
+  crudeBentBladeCard.activatedAbilities[0]!
 
 #guard bladeReadyToEquip.canActivate ⟨0⟩
   (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility
@@ -533,7 +533,7 @@ def bladeEquipAbility : ActivatedAbility :=
 
 -- Cannot Equip with no creature you control.
 #guard
-  let g := addPermanent afterDraw crudeBentBlade ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw crudeBentBladeCard ⟨0⟩ ⟨0⟩
   let g := withBlackMana g ⟨0⟩ 2
   !g.canActivate ⟨0⟩ (namedPermanent g "Crude Bent Blade") bladeEquipAbility
 
@@ -767,7 +767,7 @@ def afterBladeCleanup : Game := passBoth (skipTo bladeEquipped .end 80)
 /-- Combat uses the equipped power and toughness. -/
 def afterEquippedBladeCombat : Game :=
   let g := addPermanent started grizzlyBears ⟨0⟩ ⟨0⟩
-  let g := addAttachedAura g crudeBentBlade (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
+  let g := addAttachedAura g crudeBentBladeCard (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
   let g := passBoth g
@@ -782,7 +782,7 @@ def afterEquippedBladeCombat : Game :=
 def agentBladeOnly : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := clearHandPlayedLand g ⟨0⟩
-  withBlackMana (addToHand g crudeBentBlade ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g crudeBentBladeCard ⟨0⟩) ⟨0⟩ 3
 
 #guard
   match Agent.choose agentBladeOnly ⟨0⟩ with

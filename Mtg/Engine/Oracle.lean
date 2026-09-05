@@ -751,7 +751,11 @@ def supportedOracleFailures : List String :=
 #guard giftOfStrands.matchesOracleText
 #guard smaugTheGreatCalamity.matchesOracleText
 #guard beornReluctantHost.matchesOracleText
-#guard gollumTheAbandoned.matchesOracleText
+#guard crudeBentBladeCard.matchesOracleText
+#guard gollumTheAbandonedCard.matchesOracleText
+#guard gnashingOfTeethCard.matchesOracleText
+#guard reverentHowlCard.matchesOracleText
+#guard stonyVoicedGoblinsCard.matchesOracleText
 #guard gollumSilentSlinkerCard.keywords.menace
 #guard bofurReliableGuardianCard.matchesOracleText
 #guard magnificentEndCard.matchesOracleText

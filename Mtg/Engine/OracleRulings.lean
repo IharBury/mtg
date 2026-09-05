@@ -6448,7 +6448,7 @@ def weavemasterManaAbilityOk : Bool :=
 -/
 
 def gollumAbandonedOptionalTargetOk : Bool :=
-  gollumTheAbandoned.triggeredAbilities ==
+  gollumTheAbandonedCard.triggeredAbilities ==
       #[.onEnterExileOppGyCardOppsLoseLife 2] &&
     (ruling 344).comment.contains "don't have to choose a target"
 

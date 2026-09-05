@@ -489,37 +489,128 @@ def dreadedBatCloudCard : CardDef :=
   dreadedBatCloud.toCardDef
     (oracleText := "This spell costs {3} less to cast if a creature died this turn.\nFlying, deathtouch")
 
-def crudeBentBlade : CardDef :=
-  equipment "Crude Bent Blade" (ManaCost.ofGenericAndColor 2 .black)
-    "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 2)
-    (staticAbilities := #[.equippedCreatureGets 2 1])
-    (triggeredAbilities := #[.onEnterTargetOpponentSacrificesCreature])
+def crudeBentBlade : TraditionalCardDefinition := .card [
+  .name "Crude Bent Blade",
+  .manaCost [.generic 2, .mono .black],
+  .type .artifact,
+  .subtype .equipment,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sacrifice
+        (.selected
+          (.range 1 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.target 1 (.opponent (.controller .this)))])))),
+  .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
+  .ability (.keywordWithCost .equip [.mana [.generic 2]])
+]
 
-def gollumTheAbandoned : CardDef :=
-  legendaryCreature "Gollum the Abandoned" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Horror"] 2 2
+def crudeBentBladeCard : CardDef :=
+  crudeBentBlade.toCardDef
+    (oracleText := "When this Equipment enters, target opponent sacrifices a creature of their choice.\nEquipped creature gets +2/+1.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
+
+def gollumTheAbandoned : TraditionalCardDefinition := .card [
+  .name "Gollum the Abandoned",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .supertype .legendary,
+  .subtype .halfling,
+  .subtype .horror,
+  .power 2,
+  .toughness 2,
+  .ability (.static (.forbid (.block .this .any))),
+  .ability (
+    .triggered
+      (.enter .this)
+      (.sequence [
+        .exile
+          (.targets 1 (.range 0 1) (.intersection [.inGraveyard, .owner (.opponent (.controller .this))])),
+        .loseLife (.opponent (.controller .this)) 2])),
+  .ability (
+    .restrict .onlyAsSorcery
+      (.restrict .fromGraveyard
+        (.activated
+          [.mana [.generic 2],
+            .sacrifice
+              (.intersection [
+                .permanent,
+                .union [.cardType .artifact, .cardType .creature]])]
+          (.returnToHand (.source .this)))))
+]
+
+def gollumTheAbandonedCard : CardDef :=
+  gollumTheAbandoned.toCardDef
     (oracleText := "Gollum can't block.\nWhen Gollum enters, exile up to one target card from an opponent's graveyard. Each opponent loses 2 life.\n{2}, Sacrifice an artifact or creature: Return this card from your graveyard to your hand. Activate only as a sorcery.")
-    (staticAbilities := #[.cantBlockUnlessYouControl #[]])
-    (triggeredAbilities := #[.onEnterExileOppGyCardOppsLoseLife 2])
-    (activatedAbilities := #[
-      activated (Effect.returnFromGraveyardToHand) (ManaCost.ofGeneric 2)
-        (sacrificeAnotherCreatureOrArtifact := true)
-        (onlyAsSorcery := true) (activateFromGraveyard := true)])
 
-def gnashingOfTeeth : CardDef :=
-  sorcery "Gnashing of Teeth" (ManaCost.ofGenericAndColors 1 [.black, .black])
-    "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn."
-    (spellModes := #[(Effect.pumpAndExileIfDies (-5) (-5)), (Effect.creaturesTargetPlayerGet (-1) (-1))])
+def gnashingOfTeeth : TraditionalCardDefinition := .card [
+  .name "Gnashing of Teeth",
+  .manaCost [.generic 1, .mono .black, .mono .black],
+  .type .sorcery,
+  .actions [
+    .chooseMode [
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (-5) (-5),
+          .replace
+            (.putToGraveyard (.targetReference 1))
+            [.exile (.replacingObject 1)]]
+        .endOfTurn,
+      .continuous
+        [.addPowerToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.target 1 .player)])
+          (-1) (-1)]
+        .endOfTurn]]
+]
 
-def reverentHowl : CardDef :=
-  instant "Reverent Howl" (ManaCost.ofGenericAndColor 2 .black)
-    "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn."
-    (spellModes := #[(Effect.targetPlayerDrawLoseLife 2 2), (Effect.pumpAndLifelink 2 2)])
+def gnashingOfTeethCard : CardDef :=
+  gnashingOfTeeth.toCardDef
+    (oracleText := "Choose one —\n• Target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead.\n• Creatures target player controls get -1/-1 until end of turn.")
 
-def stonyVoicedGoblins : CardDef :=
-  creature "Stony-Voiced Goblins" (ManaCost.ofGenericAndColor 1 .black) #["Goblin", "Bard"] 1 1
+def reverentHowl : TraditionalCardDefinition := .card [
+  .name "Reverent Howl",
+  .manaCost [.generic 2, .mono .black],
+  .type .instant,
+  .actions [
+    .chooseMode [
+      .sequence [
+        .draw (.target 1 .player) 2,
+        .loseLife (.targetReference 1) 2],
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          2 2,
+          .gainAbility (.targetReference 1) (.keyword .lifelink)]
+        .endOfTurn]]
+]
+
+def reverentHowlCard : CardDef :=
+  reverentHowl.toCardDef
+    (oracleText := "Choose one —\n• Target player draws two cards and loses 2 life.\n• Target creature gets +2/+2 and gains lifelink until end of turn.")
+
+def stonyVoicedGoblins : TraditionalCardDefinition := .card [
+  .name "Stony-Voiced Goblins",
+  .manaCost [.generic 1, .mono .black],
+  .type .creature,
+  .subtype .goblin,
+  .subtype .bard,
+  .power 1,
+  .toughness 1,
+  .ability (
+    .triggered
+      (.enter .this)
+      (.discard (.opponent (.controller .this)) 1))
+]
+
+def stonyVoicedGoblinsCard : CardDef :=
+  stonyVoicedGoblins.toCardDef
     (oracleText := "When this creature enters, each opponent discards a card.")
-    (triggeredAbilities := #[.onEnterEachOpponentDiscards])
 
 def smaugTheGreatCalamity : CardDef :=
   legendaryCreature "Smaug, the Great Calamity" (ManaCost.ofGenericAndColors 5 [.red, .red])
@@ -1589,11 +1680,11 @@ def hobbitCards : Array CardDef := #[
   gollumSilentSlinkerCard,
   bilbosDeadlySliceCard,
   dreadedBatCloudCard,
-  crudeBentBlade,
-  gollumTheAbandoned,
-  gnashingOfTeeth,
-  reverentHowl,
-  stonyVoicedGoblins,
+  crudeBentBladeCard,
+  gollumTheAbandonedCard,
+  gnashingOfTeethCard,
+  reverentHowlCard,
+  stonyVoicedGoblinsCard,
   smaugTheGreatCalamity,
   gandalfSparkStarter,
   raggedShortSpear,
@@ -1802,17 +1893,17 @@ def hobbitCards : Array CardDef := #[
 #guard raggedShortSpear.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
 #guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
-#guard crudeBentBlade.isEquipment
-#guard !crudeBentBlade.isAura
-#guard !crudeBentBlade.requiresTarget
-#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.activatedAbilities.size == 1
-#guard crudeBentBlade.activatedAbilities[0]!.onlyAsSorcery
-#guard crudeBentBlade.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
-#guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
-#guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
+#guard crudeBentBladeCard.isEquipment
+#guard !crudeBentBladeCard.isAura
+#guard !crudeBentBladeCard.requiresTarget
+#guard crudeBentBladeCard.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBladeCard.activatedAbilities.size == 1
+#guard crudeBentBladeCard.activatedAbilities[0]!.onlyAsSorcery
+#guard crudeBentBladeCard.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard crudeBentBladeCard.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
+#guard (crudeBentBladeCard.summary.splitOn "Equipped creature").length > 1
+#guard (crudeBentBladeCard.summary.splitOn "target opponent").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
 #guard (woodElves.summary.splitOn "Forest card").length > 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
@@ -1899,24 +1990,24 @@ def hobbitCards : Array CardDef := #[
 #guard dreadedBatCloudCard.costReductionIfCreatureDied == 3
 #guard dreadedBatCloudCard.keywords.flying
 #guard dreadedBatCloudCard.keywords.deathtouch
-#guard crudeBentBlade.isEquipment
-#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.activatedAbilities.size == 1
-#guard gollumTheAbandoned.staticAbilities == #[.cantBlockUnlessYouControl #[]]
-#guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
-#guard gollumTheAbandoned.activatedAbilities[0]!.activateFromGraveyard
-#guard gollumTheAbandoned.activatedAbilities[0]!.onlyAsSorcery
-#guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand
-#guard gnashingOfTeeth.isModal
-#guard gnashingOfTeeth.spellModes ==
+#guard crudeBentBladeCard.isEquipment
+#guard crudeBentBladeCard.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBladeCard.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBladeCard.activatedAbilities.size == 1
+#guard gollumTheAbandonedCard.staticAbilities == #[.cantBlockUnlessYouControl #[]]
+#guard gollumTheAbandonedCard.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
+#guard gollumTheAbandonedCard.activatedAbilities[0]!.activateFromGraveyard
+#guard gollumTheAbandonedCard.activatedAbilities[0]!.onlyAsSorcery
+#guard gollumTheAbandonedCard.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand
+#guard gnashingOfTeethCard.isModal
+#guard gnashingOfTeethCard.spellModes ==
   #[Effect.pumpAndExileIfDies (-5) (-5),
     Effect.creaturesTargetPlayerGet (-1) (-1)]
-#guard reverentHowl.isModal
-#guard reverentHowl.spellModes ==
+#guard reverentHowlCard.isModal
+#guard reverentHowlCard.spellModes ==
   #[Effect.targetPlayerDrawLoseLife 2 2,
     Effect.pumpAndLifelink 2 2]
-#guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
+#guard stonyVoicedGoblinsCard.triggeredAbilities == #[.onEnterEachOpponentDiscards]
 #guard gollumSilentSlinkerCard.power == some 4
 #guard gollumSilentSlinkerCard.toughness == some 3
 #guard gollumSilentSlinkerCard.supertypes.any (· == .legendary)
@@ -2041,5 +2132,20 @@ def hobbitCards : Array CardDef := #[
 #guard dreadedBatCloudCard.costReductionIfCreatureDied == 3
 #guard dreadedBatCloudCard.keywords.flying
 #guard dreadedBatCloudCard.keywords.deathtouch
+#guard crudeBentBladeCard.isEquipment
+#guard crudeBentBladeCard.staticAbilities == #[.equippedCreatureGets 2 1]
+#guard crudeBentBladeCard.triggeredAbilities ==
+  #[TriggeredAbility.onEnterTargetOpponentSacrificesCreature]
+#guard crudeBentBladeCard.activatedAbilities[0]!.onlyAsSorcery
+#guard gollumTheAbandonedCard.staticAbilities == #[.cantBlockUnlessYouControl #[]]
+#guard gollumTheAbandonedCard.triggeredAbilities ==
+  #[TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2]
+#guard gollumTheAbandonedCard.activatedAbilities[0]!.activateFromGraveyard
+#guard gnashingOfTeethCard.spellModes ==
+  #[Effect.pumpAndExileIfDies (-5) (-5), Effect.creaturesTargetPlayerGet (-1) (-1)]
+#guard reverentHowlCard.spellModes ==
+  #[Effect.targetPlayerDrawLoseLife 2 2, Effect.pumpAndLifelink 2 2]
+#guard stonyVoicedGoblinsCard.triggeredAbilities ==
+  #[TriggeredAbility.onEnterEachOpponentDiscards]
 
 end Mtg.Engine.Catalog

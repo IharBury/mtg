@@ -95,6 +95,7 @@ abbrev Subtype := String
 Unknown or catalog-only types use `named`. -/
 inductive CardSubtype where
   | adventure
+  | bard
   | bat
   | bird
   | citizen
@@ -117,6 +118,7 @@ namespace CardSubtype
 
 def toString : CardSubtype → String
   | .adventure => "Adventure"
+  | .bard => "Bard"
   | .bat => "Bat"
   | .bird => "Bird"
   | .citizen => "Citizen"

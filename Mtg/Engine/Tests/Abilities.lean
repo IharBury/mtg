@@ -402,14 +402,14 @@ def shadowCastOgre : Game :=
 
 /-- Gollum the Abandoned: can't block; ETB exile GY + opps lose 2; GY to hand. -/
 def abandonedAbility : ActivatedAbility :=
-  gollumTheAbandoned.activatedAbilities[0]!
+  gollumTheAbandonedCard.activatedAbilities[0]!
 
 #guard
-  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw gollumTheAbandonedCard ⟨1⟩ ⟨1⟩
   !g.mayDeclareAsBlocker (namedPermanent g "Gollum the Abandoned")
 
 #guard
-  let g := addPermanent afterDraw gollumTheAbandoned ⟨1⟩ ⟨1⟩
+  let g := addPermanent afterDraw gollumTheAbandonedCard ⟨1⟩ ⟨1⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
   let g := mustApply g ⟨0⟩ (.declareAttackers #[(namedPermanent g "Raging Goblin").id])
@@ -423,7 +423,7 @@ def abandonedAbility : ActivatedAbility :=
 def abandonedEtbReady : Game :=
   let g := addToGraveyard afterDraw llanowarElves ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gollumTheAbandoned ⟨0⟩) ⟨0⟩ 2
+  withBlackMana (addToHand g gollumTheAbandonedCard ⟨0⟩) ⟨0⟩ 2
 
 def abandonedEntered : Game :=
   let g := mustApply abandonedEtbReady ⟨0⟩
@@ -453,7 +453,7 @@ def abandonedExiled : Game :=
 #guard (abandonedExiled.player ⟨1⟩).life == 18
 
 def abandonedInGy : Game :=
-  let g := addToGraveyard afterDraw gollumTheAbandoned ⟨0⟩
+  let g := addToGraveyard afterDraw gollumTheAbandonedCard ⟨0⟩
   let g := addPermanent g ragingGoblin ⟨0⟩ ⟨0⟩
   let g := readyMain g
   withBlackMana g ⟨0⟩ 2
@@ -479,9 +479,9 @@ def abandonedReturnedToHand : Game :=
 def gnashingReady : Game :=
   let g := addPermanent afterDraw rumblingBaloth ⟨1⟩ ⟨1⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g gnashingOfTeeth ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g gnashingOfTeethCard ⟨0⟩) ⟨0⟩ 3
 
-#guard gnashingOfTeeth.isModal
+#guard gnashingOfTeethCard.isModal
 #guard
   match Agent.choose gnashingReady ⟨0⟩ with
   | some (.cast id) => (gnashingReady.object! id).name == "Gnashing of Teeth"
@@ -625,7 +625,7 @@ def downfallResolved : Game :=
 def howlReady : Game :=
   let g := addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩
   let g := readyMain (emptyHand g ⟨0⟩)
-  withBlackMana (addToHand g reverentHowl ⟨0⟩) ⟨0⟩ 3
+  withBlackMana (addToHand g reverentHowlCard ⟨0⟩) ⟨0⟩ 3
 
 def howlDraw : Game :=
   let g := mustApply howlReady ⟨0⟩
@@ -686,7 +686,7 @@ def whisperResolved : Game :=
 /-- Stony-Voiced Goblins: each opponent discards a card. -/
 def stonyReady : Game :=
   let g := readyMain (emptyHand afterDraw ⟨0⟩)
-  withBlackMana (addToHand g stonyVoicedGoblins ⟨0⟩) ⟨0⟩ 2
+  withBlackMana (addToHand g stonyVoicedGoblinsCard ⟨0⟩) ⟨0⟩ 2
 
 def stonyEntered : Game :=
   let g := mustApply stonyReady ⟨0⟩
