@@ -904,13 +904,24 @@ def leftoverPumpAndGrantKeywords? : CardAction → Option (Int × Int × Keyword
     | none => none
   | _ => none
 
-/-- All creatures get +P/+T (not only yours). -/
+/-- True when a selector names a controller or a target (not “all creatures”). -/
+def namesControllerOrTarget : Selector → Bool
+  | .controlled _ | .target _ _ | .targets _ _ _ | .targetSet _ _ _ _
+  | .targetReference _ | .selected _ _ _ => true
+  | .not s => namesControllerOrTarget s
+  | .intersection (f :: fs) => namesControllerOrTarget f || namesControllerOrTarget (.intersection fs)
+  | .union (f :: fs) => namesControllerOrTarget f || namesControllerOrTarget (.union fs)
+  | _ => false
+
+/-- All creatures get +P/+T (not only yours, and not a targeted player's). -/
 def leftoverAllCreaturesGet? : CardAction → Option (Int × Int)
   | .continuous effects _ =>
     match ContinuousEffect.addedPT? effects, ContinuousEffect.massSelector? effects with
     | some (p, t), some among =>
       let s := among.shape
-      if s.types.eqTypes [.creature] && !s.sameController then some (p, t)
+      if s.types.eqTypes [.creature] && !s.sameController &&
+          !namesControllerOrTarget among then
+        some (p, t)
       else none
     | _, _ => none
   | _ => none
@@ -1048,15 +1059,15 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
               match leftoverPumpThenDraw? action with
               | some (p, t) => Effect.pumpThenDraw p t
               | none =>
+              match leftoverCreaturesTargetPlayerGet? action with
+              | some (p, t) => Effect.creaturesTargetPlayerGet p t
+              | none =>
               match leftoverAllCreaturesGet? action with
               | some (p, t) => Effect.allCreaturesGet p t
               | none =>
               if leftoverTargetCantBeBlocked? action then
                 Effect.targetCantBeBlockedThisTurn
               else
-              match leftoverCreaturesTargetPlayerGet? action with
-              | some (p, t) => Effect.creaturesTargetPlayerGet p t
-              | none =>
                 match leftoverDrawLoseLifeSelf? action with
                 | some (cards, life) => Effect.drawAndLoseLife cards life
                 | none =>
