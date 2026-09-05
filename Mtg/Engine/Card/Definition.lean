@@ -494,7 +494,7 @@ inductive CardAction where
   | actionId : Nat → CardAction → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
   | loseLife : Selector → Nat → CardAction
-  /-- The selected player or controller sacrifices the selected object (CR 701.17). -/
+  /-- The controller sacrifices the selected object (CR 701.17). -/
   | sacrifice : Selector → CardAction
   /-- Return the selected object to its owner's hand. -/
   | returnToHand : Selector → CardAction
