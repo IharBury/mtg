@@ -1385,7 +1385,7 @@ def ghostSpectralSaboteur : CardDef :=
     .power 2,
     .toughness 2,
     .ability (.keyword .flash),
-    .ability (.keyword .cantBeBlocked)
+    .ability (.static (.forbid (.block .any .this)))
   ]).toCardDef
     (oracleText := "Flash\nIntangibility — Ghost can't be blocked.")
 
