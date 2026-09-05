@@ -931,10 +931,19 @@ def blazingCrescendo : CardDef :=
     (spellEffect := some (Effect.pumpThenExileTopPlay 3 1))
 
 def crimsonOperative : CardDef :=
-  artifactCreature "Crimson Operative" (ManaCost.ofGenericAndColor 3 .red) #["Human", "Villain"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Crimson Operative",
+    .manaCost [.generic 3, .mono .red],
+    .type .artifact,
+    .type .creature,
+    .subtype .human,
+    .subtype .villain,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .prowess),
+    .ability (.triggered (.enter .this) (.exile (.topOfLibrary (.controller .this))))
+  ]).toCardDef
     (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nWhen this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
-    (keywords := Keyword.prowess)
-    (triggeredAbilities := #[.onEnterExileTop])
 
 def deathToOurEnemies : CardDef :=
   enchantment "Death to Our Enemies" (ManaCost.ofGenericAndColor 2 .red)
@@ -1024,9 +1033,13 @@ def kreeSentinel : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def lightningStrike : CardDef :=
-  instant "Lightning Strike" (ManaCost.ofGenericAndColor 1 .red)
-    "Lightning Strike deals 3 damage to any target."
-    (spellEffect := some (Effect.dealDamage 3))
+  (TraditionalCardDefinition.card [
+    .name "Lightning Strike",
+    .manaCost [.generic 1, .mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) 3]
+  ]).toCardDef
+    (oracleText := "Lightning Strike deals 3 damage to any target.")
 
 def lokiLaufeyson : CardDef :=
   legendaryCreature "Loki Laufeyson" (ManaCost.ofGenericAndColor 1 .red) #["God", "Sorcerer", "Villain"] 2 1
@@ -1034,10 +1047,27 @@ def lokiLaufeyson : CardDef :=
     (activatedAbilities := #[activated (Effect.nextInstantSorceryCopyIfMvAtMostSourcePower) (ManaCost.ofGeneric 1) (tap := true), powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 4 .red)])
 
 def machinesmithAutomaton : CardDef :=
-  artifactCreature "Machinesmith Automaton" (ManaCost.ofGenericAndColor 2 .red) #["Robot", "Villain"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Machinesmith Automaton",
+    .manaCost [.generic 2, .mono .red],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .subtype .villain,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .trample),
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)]))
+        (.putCounter (.source .this) .plusOnePlusOne 1))
+  ]).toCardDef
     (oracleText := "Trample\nWhenever another artifact you control enters, put a +1/+1 counter on this creature.")
-    (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onAnotherArtifactEntersPlusOne])
 
 def mistyKnightHeroForHire : CardDef :=
   legendaryCreature "Misty Knight, Hero for Hire" (ManaCost.ofGenericAndColor 1 .red) #["Human", "Detective", "Hero"] 3 1
@@ -1117,10 +1147,18 @@ def thorGodOfThunder : CardDef :=
     (triggeredAbilities := #[.onEnter Effect.enterExileGyPlayUntilNextTurn, .onCasting Effect.castingDamageEqualMv])
 
 def truckToss : CardDef :=
-  card "Truck Toss" #[.instant] (ManaCost.ofGenericAndColors 2 [.red, .red])
+  (TraditionalCardDefinition.card [
+    .name "Truck Toss",
+    .manaCost [.generic 2, .mono .red, .mono .red],
+    .type .instant,
+    .ability (
+      .static
+        (.if
+          (.anySubtype (.controlled (.controller .this)) .vehicle)
+          [.reduceCost .this [.mana [.generic 2]]])),
+    .actions [.dealDamage .this (.target 1 .all) 4]
+  ]).toCardDef
     (oracleText := "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target.")
-    (costReductionIfYouControl := some (2, "Vehicle"))
-    (spellEffect := some (Effect.dealDamage 4))
 
 def visionOfLove : CardDef :=
   instant "Vision of Love" (ManaCost.ofGenericAndColor 1 .red)

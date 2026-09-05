@@ -124,11 +124,45 @@ def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
     (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
-def plains : CardDef := basicLand "Plains" .white
-def island : CardDef := basicLand "Island" .blue
-def swamp : CardDef := basicLand "Swamp" .black
-def mountain : CardDef := basicLand "Mountain" .red
-def forest : CardDef := basicLand "Forest" .green
+def plains : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Plains",
+    .type .land,
+    .supertype .basic,
+    .subtype .plains
+  ]).toCardDef (oracleText := "({T}: Add {W}.)")
+
+def island : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Island",
+    .type .land,
+    .supertype .basic,
+    .subtype .island
+  ]).toCardDef (oracleText := "({T}: Add {U}.)")
+
+def swamp : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Swamp",
+    .type .land,
+    .supertype .basic,
+    .subtype .swamp
+  ]).toCardDef (oracleText := "({T}: Add {B}.)")
+
+def mountain : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Mountain",
+    .type .land,
+    .supertype .basic,
+    .subtype .mountain
+  ]).toCardDef (oracleText := "({T}: Add {R}.)")
+
+def forest : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Forest",
+    .type .land,
+    .supertype .basic,
+    .subtype .forest
+  ]).toCardDef (oracleText := "({T}: Add {G}.)")
 
 /-- A creature used by engine tests and the Hobbit catalog. -/
 def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -711,9 +745,13 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
 
 /-- A red instant that deals `amount` damage to any target. -/
 def damageInstant (name : String) (amount : Nat) : CardDef :=
-  instant name (ManaCost.ofColor .red)
-    s!"{name} deals {amount} damage to any target."
-    (some (Effect.dealDamage amount))
+  (TraditionalCardDefinition.card [
+    .name name,
+    .manaCost [.mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) amount]
+  ]).toCardDef
+    (oracleText := s!"{name} deals {amount} damage to any target.")
 
 def grizzlyBears : CardDef :=
   (TraditionalCardDefinition.card [
@@ -768,8 +806,16 @@ def ragingGoblin : CardDef :=
     (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
 
 def llanowarElves : CardDef :=
-  creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
-    (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
+  (TraditionalCardDefinition.card [
+    .name "Llanowar Elves",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .druid,
+    .power 1,
+    .toughness 1,
+    .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))
+  ]).toCardDef (oracleText := "{T}: Add {G}.")
 
 def crawWurm : CardDef :=
   (TraditionalCardDefinition.card [
@@ -848,11 +894,27 @@ def dualAddClause (a b : Color) : String :=
 /-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of two colors.
 The Oracle text is reconstructed from the colors. -/
 def gainLifeDualLand (name : String) (a b : Color) : CardDef :=
-  land name
-    s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}"
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (tapAddOneOf := #[.colored a, .colored b])
+  (TraditionalCardDefinition.card [
+    .name name,
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono a],
+            .addMana (.controller .this) [.mono b]]))
+  ]).toCardDef
+    (oracleText :=
+      s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}")
 
 /-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
 entered this turn or a basic land you control. The Oracle text is
