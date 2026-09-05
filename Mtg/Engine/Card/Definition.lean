@@ -421,6 +421,8 @@ deriving Repr, Inhabited, BEq
 
 /-- A boolean check used by a conditional effect or action. -/
 inductive Condition where
+  /-- True when any object matching the selector exists. -/
+  | any : Selector → Condition
   /-- True when any target of the first selector matches the second
   (CR 115.1 / 601.2c). -/
   | targetsIncludeAny : Selector → Selector → Condition
@@ -459,9 +461,6 @@ deriving Repr, Inhabited, BEq
 inductive ContinuousEffect where
   | gainAbility : Selector → Ability → ContinuousEffect
   | addPowerToughness : Selector → Int → Int → ContinuousEffect
-  /-- Apply the given continuous effects only when the selector matches
-  anything. -/
-  | ifAny : Selector → List ContinuousEffect → ContinuousEffect
   /-- Apply the given continuous effects only when the condition holds. -/
   | if : Condition → List ContinuousEffect → ContinuousEffect
   | reduceCost : Selector → List Cost → ContinuousEffect
@@ -490,8 +489,6 @@ inductive CardAction where
   | scry : Selector → Nat → CardAction
   | sequence : List CardAction → CardAction
   | forEach : Nat → CardAction → CardAction
-  /-- Perform the given actions only when the selector matches anything. -/
-  | ifAny : Selector → List CardAction → CardAction
   /-- Perform the given actions only when the condition holds. -/
   | if : Condition → List CardAction → CardAction
   | optional : CardAction → CardAction
@@ -536,8 +533,6 @@ namespace ContinuousEffect
 def selector : ContinuousEffect → Selector
   | .gainAbility who _ => who
   | .addPowerToughness who _ _ => who
-  | .ifAny _ (inner :: _) => selector inner
-  | .ifAny _ [] => .this
   | .if _ (inner :: _) => selector inner
   | .if _ [] => .this
   | .reduceCost who _ => who
@@ -554,7 +549,6 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
     | some (p', t') => some (p + p', t + t')
     | none => none
   | .gainAbility _ _ :: _ => none
-  | .ifAny _ _ :: _ => none
   | .if _ _ :: _ => none
   | .reduceCost _ _ :: _ => none
   | .additionalCost _ _ :: _ => none
@@ -859,8 +853,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .sequence (a :: _) => compile a asAbility
                   | .sequence [] => continuousEffect none [] asAbility
                   | .forEach _ inner => compile inner asAbility
-                  | .ifAny _ (a :: _) => compile a asAbility
-                  | .ifAny _ [] => continuousEffect none [] asAbility
                   | .if _ (a :: _) => compile a asAbility
                   | .if _ [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
@@ -949,7 +941,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     match ContinuousEffect.addedPT? effects with
     | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
     | _ => none
-  | .triggered (.attack .this .all) (.ifAny among [.gainLife _ n]) =>
+  | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ n]) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
     else none
@@ -1000,7 +992,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this)
       (.sequence [
         .optional (.actionId id (.discard _ 1)),
-        .ifAny (.wasObjectOfAction id') [.draw _ n]]) =>
+        .if (.any (.wasObjectOfAction id')) [.draw _ n]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | _ => none
 
@@ -1087,7 +1079,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness (.hostOf .this) p t =>
     { b with staticAbilities := b.staticAbilities.push (.equippedCreatureGets p t) }
   | .addPowerToughness _ _ _ => b
-  | .ifAny among inners => applyIfShape b among inners
+  | .if (.any among) inners => applyIfShape b among inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
   | .if (.anySubtype _ _) _ => b
   | .if (.didNotHappen _ _) _ => b
@@ -1618,12 +1610,13 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.attack .this .all)
-      (.ifAny
-        (.intersection [
-          .permanent,
-          .cardType .creature,
-          .controlled (.controller .this),
-          .powerAtLeast 4])
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast 4]))
         [.gainLife (.controller .this) 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousGainLife 2
   | none => false
@@ -1647,8 +1640,8 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (
       .static
-        (.ifAny
-          (.wasSubject (.die (.cardType .creature)) .turnStart)
+        (.if
+          (.any (.wasSubject (.die (.cardType .creature)) .turnStart))
           [.reduceCost .this [.mana [.generic 3]]]))
   ]).toCardDef.costReductionIfCreatureDied == 3
 
@@ -1840,7 +1833,7 @@ end TraditionalCardDefinition
       (.sequence [
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
-        .ifAny (.wasObjectOfAction 1) [.draw (.controller .this) 2]])).toTriggeredAbility? with
+        .if (.any (.wasObjectOfAction 1)) [.draw (.controller .this) 2]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
   | none => false
 

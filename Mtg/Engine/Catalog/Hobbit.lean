@@ -421,12 +421,13 @@ def raveningWarg : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.attack .this .all)
-      (.ifAny
-        (.intersection [
-          .permanent,
-          .cardType .creature,
-          .controlled (.controller .this),
-          .powerAtLeast 4])
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast 4]))
         [.gainLife (.controller .this) 2]))
 ]
 
@@ -482,8 +483,8 @@ def dreadedBatCloud : TraditionalCardDefinition := .card [
   .toughness 2,
   .ability (
     .static
-      (.ifAny
-        (.wasSubject (.die (.cardType .creature)) .turnStart)
+      (.if
+        (.any (.wasSubject (.die (.cardType .creature)) .turnStart))
         [.reduceCost .this [.mana [.generic 3]]])),
   .ability (.keyword .flying),
   .ability (.keyword .deathtouch)
@@ -676,7 +677,7 @@ def raggedShortSpear : TraditionalCardDefinition := .card [
       (.sequence [
         .optional
           (.actionId 1 (.discard (.controller .this) 1)),
-        .ifAny (.wasObjectOfAction 1) [.draw (.controller .this) 2]])),
+        .if (.any (.wasObjectOfAction 1)) [.draw (.controller .this) 2]])),
   .ability (.static (.addPowerToughness (.hostOf .this) 2 0)),
   .ability (.keywordWithCost .equip [.mana [.generic 3]])
 ]
