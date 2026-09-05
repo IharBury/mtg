@@ -900,10 +900,22 @@ def woodlandWeavemasterCard : CardDef :=
     (oracleText := "Vigilance\nWhenever another Elf you control enters, this creature gets +1/+1 until end of turn.\n{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources.")
 
 def mirkwoodPathmaker : CardDef :=
-  card "Mirkwood Pathmaker" #[.creature]
-    (ManaCost.ofGenericAndColor 2 .green) #["Elf", "Ranger"]
-    "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control."
-    (staticAbilities := #[.powerToughnessEqualLandsYouControl])
+  (TraditionalCardDefinition.card [
+    .name "Mirkwood Pathmaker",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .ranger,
+    .ability
+      (.static
+        (.setPowerToughnessEqualToCount
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)])))
+  ]).toCardDef
+    (oracleText := "Mirkwood Pathmaker's power and toughness are each equal to the number of lands you control.")
 
 def beornReluctantHost : CardDef :=
   legendaryCreature "Beorn, Reluctant Host" (ManaCost.ofGenericAndColor 4 .green)
@@ -920,10 +932,25 @@ def woodElves : CardDef :=
     (triggeredAbilities := #[.onEnterSearchForest])
 
 def attercop : CardDef :=
-  creature "Attercop" (ManaCost.ofGenericAndColor 1 .green) #["Spider"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Attercop",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .spider,
+    .power 2,
+    .toughness 1,
+    .ability (.keyword .reach),
+    .ability (.keyword .deathtouch),
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.continuous [.addPowerToughness (.source .this) 1 1] .endOfTurn))
+  ]).toCardDef
     (oracleText := "Reach, deathtouch\nLandfall — Whenever a land you control enters, this creature gets +1/+1 until end of turn.")
-    (keywords := Keyword.reach.merge Keyword.deathtouch)
-    (triggeredAbilities := #[.onLandYouControlEntersGets 1 1])
 
 def ordinaryBear : CardDef :=
   (TraditionalCardDefinition.card [
@@ -956,22 +983,57 @@ def littleBear : CardDef :=
     (triggeredAbilities := #[.onEnterUntapOtherPlusOneIfSubtype "Bear"])
 
 def elvenkingsHarper : CardDef :=
-  creature "Elvenking's Harper" (ManaCost.ofGenericAndColor 1 .blue) #["Elf", "Bard"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Elvenking's Harper",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .bard,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .activated
+        [.mana [.generic 4, .mono .blue]]
+        (.continuous
+          [.forbid
+            (.block
+              .any
+              (.target 1 (.intersection [.permanent, .cardType .creature])))]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "{4}{U}: Target creature can't be blocked this turn.")
-    (activatedAbilities := #[
-      activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGenericAndColor 4 .blue)])
 
 def smaugsFury : CardDef :=
-  instant "Smaug's Fury" (ManaCost.ofGenericAndColor 1 .red)
-    "Target creature gets +3/+0 and gains reach and first strike until end of turn."
-    (some (Effect.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike)))
+  (TraditionalCardDefinition.card [
+    .name "Smaug's Fury",
+    .manaCost [.generic 1, .mono .red],
+    .type .instant,
+    .actions [
+      .continuous
+        [
+          .addPowerToughness
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            3 0,
+          .gainAbility (.targetReference 1) (.keyword .reach),
+          .gainAbility (.targetReference 1) (.keyword .firstStrike)]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Target creature gets +3/+0 and gains reach and first strike until end of turn.")
 
 def wellWornSpatula : CardDef :=
-  equipment "Well-Worn Spatula" (ManaCost.ofGeneric 1)
-    "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 1)
-    (triggeredAbilities := #[.onEnterGainLife 2])
-    (staticAbilities := #[.equippedCreatureGets 1 1])
+  (TraditionalCardDefinition.card [
+    .name "Well-Worn Spatula",
+    .manaCost [.generic 1],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.gainLife (.controller .this) 2)),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 1)),
+    .ability (.keywordWithCost .equip [.mana [.generic 1]])
+  ]).toCardDef
+    (oracleText := "When this Equipment enters, you gain 2 life.\nEquipped creature gets +1/+1.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
 
 /-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
 for two +1/+1 counters on a typed creature you control. One type or several
@@ -1053,11 +1115,23 @@ def stoneBySunlight : CardDef :=
     (spellModes := #[(Effect.destroyCreaturePowerAtLeast 4), (Effect.becomeArtifactGainIndestructible)])
 
 def duskwatchHunter : CardDef :=
-  creature "Duskwatch Hunter" (ManaCost.ofGenericAndHybrids 2 .black .green 1)
-    #["Wolf"] 3 1
+  (TraditionalCardDefinition.card [
+    .name "Duskwatch Hunter",
+    .manaCost [.generic 2, .hybrid .black .green],
+    .type .creature,
+    .subtype .wolf,
+    .power 3,
+    .toughness 1,
+    .ability (.static (.forbid (.block .token .this))),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1))
+  ]).toCardDef
     (oracleText := "This creature can't be blocked by tokens.\nWhen this creature enters, put a +1/+1 counter on target creature.")
-    (staticAbilities := #[.cantBeBlockedByTokens])
-    (triggeredAbilities := #[.onEnterPlusOneOnCreature])
 
 def patientInstructor : CardDef :=
   creature "Patient Instructor" (ManaCost.ofGenericAndHybrids 2 .white .blue 1)
@@ -1271,10 +1345,30 @@ def bolgsCompany : CardDef :=
         (sacrificeAnotherSubtype := some "Goblin")])
 
 def noriTellerOfTales : CardDef :=
-  legendaryCreature "Nori, Teller of Tales" (ManaCost.ofGenericAndHybrids 1 .red .white)
-    #["Dwarf", "Bard"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Nori, Teller of Tales",
+    .manaCost [.generic 1, .hybrid .red .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .bard,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.continuous
+          [.gainAbility
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .attacking .all]))
+            (.keyword .firstStrike)]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "Whenever Nori attacks, target attacking creature gains first strike until end of turn.")
-    (triggeredAbilities := #[.onAttackTargetGainsKeywords Keyword.firstStrike])
 
 def theLordOfTheEagles : CardDef :=
   legendaryCreature "The Lord of the Eagles" (ManaCost.ofGenericAndColors 7 [.blue, .blue])

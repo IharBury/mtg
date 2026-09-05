@@ -1,5 +1,6 @@
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.Keywords
+import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.TriggeredAbility
 import Mtg.Engine.Mana
@@ -270,6 +271,10 @@ def anotherElfYouControl (s : Shape) : Bool :=
 /-- True when this shape is a Dwarf. -/
 def dwarf (s : Shape) : Bool :=
   s.subtype == some "Dwarf"
+
+/-- True when this shape is an attacking creature. -/
+def attackingCreature (s : Shape) : Bool :=
+  s.attacking && s.types.eqTypes [.creature]
 
 /-- True when this shape is an attacking nontoken creature. -/
 def attackingNontokenCreature (s : Shape) : Bool :=
@@ -695,17 +700,33 @@ def leftoverSourcePump? : List ContinuousEffect → Option (Int × Int)
   | [.addPowerToughness (.source .this) p t] => some (p, t)
   | _ => none
 
+/-- Target creature gets +P/+T (Giant Growth, Dark Deed). -/
+def leftoverTargetPump? (effects : List ContinuousEffect) : Option (Int × Int) :=
+  match ContinuousEffect.addedPT? effects, ContinuousEffect.targetingSelector? effects with
+  | some (p, t), some sel =>
+    if sel.toTargetKind == .creature then some (p, t) else none
+  | _, _ => none
+
 def compileContinuous (effects : List ContinuousEffect) (asAbility : Bool) : Effect :=
   match leftoverSourcePump? effects with
   | some (p, t) => Effect.sourceGets p t
   | none =>
-    match ContinuousEffect.targetingSelector? effects with
-    | some sel =>
-      withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
+    match leftoverTargetPump? effects with
+    | some (p, t) =>
+      if asAbility then
+        match ContinuousEffect.targetingSelector? effects with
+        | some sel =>
+          withTargetCounts (continuousEffect (some sel) effects true) sel true
+        | none => continuousEffect none effects true
+      else Effect.pump p t
     | none =>
-      match ContinuousEffect.massSelector? effects with
-      | some among => massEffect among effects asAbility
-      | none => continuousEffect none effects asAbility
+      match ContinuousEffect.targetingSelector? effects with
+      | some sel =>
+        withTargetCounts (continuousEffect (some sel) effects asAbility) sel asAbility
+      | none =>
+        match ContinuousEffect.massSelector? effects with
+        | some among => massEffect among effects asAbility
+        | none => continuousEffect none effects asAbility
 
 def compileTap (s : Selector) (asAbility : Bool) : Effect :=
   match s.among? with
@@ -863,6 +884,57 @@ def leftoverTargetPlayerDrawLoseLife? : CardAction → Option (Nat × Nat)
   | .sequence [.draw (.target _ .player) cards, .loseLife _ life] => some (cards, life)
   | _ => none
 
+/-- You draw cards and lose life. -/
+def leftoverDrawLoseLifeSelf? : CardAction → Option (Nat × Nat)
+  | .sequence [.draw (.controller .this) cards, .loseLife (.controller .this) life] =>
+    some (cards, life)
+  | _ => none
+
+/-- Target creature gets +P/+T and gains keywords. -/
+def leftoverPumpAndGrantKeywords? : CardAction → Option (Int × Int × Keywords)
+  | .continuous effects _ =>
+    let pt :=
+      effects.findSome? fun
+        | .addPowerToughness _ p t => some (p, t)
+        | _ => none
+    let kws := grantedKeywords effects
+    match pt with
+    | some (p, t) =>
+      if kws == Keywords.none then none else some (p, t, kws)
+    | none => none
+  | _ => none
+
+/-- All creatures get +P/+T (not only yours). -/
+def leftoverAllCreaturesGet? : CardAction → Option (Int × Int)
+  | .continuous effects _ =>
+    match ContinuousEffect.addedPT? effects, ContinuousEffect.massSelector? effects with
+    | some (p, t), some among =>
+      let s := among.shape
+      if s.types.eqTypes [.creature] && !s.sameController then some (p, t)
+      else none
+    | _, _ => none
+  | _ => none
+
+/-- Target creature gets +P/+T, then you draw a card. -/
+def leftoverPumpThenDraw? : CardAction → Option (Int × Int)
+  | .sequence [.continuous effects _, .draw (.controller .this) 1] =>
+    match ContinuousEffect.addedPT? effects, ContinuousEffect.targetingSelector? effects with
+    | some (p, t), some sel =>
+      if sel.toTargetKind == .creature then some (p, t) else none
+    | _, _ => none
+  | _ => none
+
+/-- Target creature can't be blocked this turn. -/
+def leftoverTargetCantBeBlocked? : CardAction → Bool
+  | .continuous [.forbid (.block .any sel)] _ =>
+    match sel with
+    | .target _ among => among.shape.types.eqTypes [.creature]
+    | _ =>
+      match sel.among? with
+      | some among => among.shape.types.eqTypes [.creature]
+      | none => false
+  | _ => false
+
 /-- A creature you control deals damage equal to its power to an opponent's
 creature. -/
 def leftoverCreatureYouControlDealsPowerToOppCreature? : CardAction → Bool
@@ -957,7 +1029,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     else if leftoverEquipAttach? action then Effect.attachToTargetCreatureYouControl
     else
       match leftoverDrawDiscard? action with
-      | some n => Effect.drawThenDiscard n
+      | some n =>
+        if asAbility then Effect.abilityDrawThenDiscard n
+        else Effect.drawThenDiscard n
       | none =>
         match leftoverPlusOneAndGainLife? action with
         | some n => Effect.plusOneUpToOneAndPlayerGainsLife n
@@ -968,9 +1042,24 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
             match leftoverPumpAndLifelink? action with
             | some (p, t) => Effect.pumpAndLifelink p t
             | none =>
+              match leftoverPumpAndGrantKeywords? action with
+              | some (p, t, k) => Effect.pumpAndGrantKeywords p t k
+              | none =>
+              match leftoverPumpThenDraw? action with
+              | some (p, t) => Effect.pumpThenDraw p t
+              | none =>
+              match leftoverAllCreaturesGet? action with
+              | some (p, t) => Effect.allCreaturesGet p t
+              | none =>
+              if leftoverTargetCantBeBlocked? action then
+                Effect.targetCantBeBlockedThisTurn
+              else
               match leftoverCreaturesTargetPlayerGet? action with
               | some (p, t) => Effect.creaturesTargetPlayerGet p t
               | none =>
+                match leftoverDrawLoseLifeSelf? action with
+                | some (cards, life) => Effect.drawAndLoseLife cards life
+                | none =>
                 match leftoverTargetPlayerDrawLoseLife? action with
                 | some (cards, life) => Effect.targetPlayerDrawLoseLife cards life
                 | none =>
@@ -1079,13 +1168,55 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else
       match ContinuousEffect.addedPT? effects with
       | some (1, 1) => some TriggeredAbility.onAttackPumpForEachOtherCreature
-      | _ => none
+      | _ =>
+        let kws := CardAction.grantedKeywords effects
+        match ContinuousEffect.targetingSelector? effects with
+        | some sel =>
+          if kws != Keywords.none && sel.targetingShape.attackingCreature then
+            some (TriggeredAbility.onAttackTargetGainsKeywords kws)
+          else none
+        | none => none
   | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ n]) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
     else none
+  | .triggered (.attack .this .all) (.scry _ n) =>
+    some (TriggeredAbility.onAttackScry n)
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
+  | .triggered (.enter .this) (.scry _ n) =>
+    some (TriggeredAbility.onEnterScry n)
+  | .triggered (.enter .this) (.gainLife _ n) =>
+    some (TriggeredAbility.onEnterGainLife n)
+  | .triggered (.enter .this) (.continuous effects _duration) =>
+    match ContinuousEffect.targetingSelector? effects, ContinuousEffect.addedPT? effects with
+    | some sel, some (p, t) =>
+      if sel.toTargetKind == .creature then
+        some (TriggeredAbility.onEnterTargetGets p t)
+      else none
+    | _, _ => none
+  | .triggered (.enter .this) (.putCounter sel .plusOnePlusOne 1) =>
+    if sel.toTargetKind == .creature then
+      some TriggeredAbility.onEnterPlusOneOnCreature
+    else none
+  | .triggered (.enter .this) (.attach .this sel) =>
+    match sel.among? with
+    | some among =>
+      let s := among.shape
+      if s.sameController && s.types.eqTypes [.creature] then
+        match s.subtype with
+        | some st => some (TriggeredAbility.onEnterAttachToSubtype st)
+        | none => some TriggeredAbility.onEnterAttachToCreatureYouControl
+      else none
+    | none => none
+  | .triggered (.enter .this) (.sequence [.attach .this sel, .untap _]) =>
+    match sel.among? with
+    | some among =>
+      let s := among.shape
+      if s.sameController && s.types.eqTypes [.creature] then
+        some (TriggeredAbility.onEnterAttachThen PermanentAction.untap)
+      else none
+    | none => none
   | .triggered
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
@@ -1096,6 +1227,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatDamage .this .player)
       (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
     some TriggeredAbility.onCombatDamageToPlayerLoot
+  | .triggered (.combatDamage .this .player) (.draw _ n) =>
+    some (TriggeredAbility.onCombatDamageDraw n)
   | .triggered (.die .this) (.continuous effects _duration) =>
     match ContinuousEffect.targetingSelector? effects, ContinuousEffect.addedPT? effects with
     | some sel, some (p, t) =>
@@ -1103,6 +1236,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onDiesOppCreatureGets p t)
       else none
     | _, _ => none
+  | .triggered (.die .this) (.draw _ n) =>
+    some (TriggeredAbility.onDiesDraw n)
+  | .triggered (.die .this) (.dealDamageEqualToPower _ dest) =>
+    if dest.toTargetKind == .oppCreature then
+      some TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
+    else none
   | .triggered (.dieSimultaneously among _) (.scry _ n) =>
     if among.shape.otherCreatures then
       some (TriggeredAbility.onOneOrMoreOtherCreaturesDieScry n)
@@ -1128,6 +1267,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this)
       (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
+  | .triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
+    some (TriggeredAbility.onEnterOrAttackDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.sequence [
         .optional (.actionId id (.discard _ 1)),
@@ -1136,12 +1279,18 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter among) (.putCounter sel .plusOnePlusOne 1) =>
     if among.shape.landYouControl && sel.toTargetKind == .creatureYouControl then
       some TriggeredAbility.onLandYouControlEntersPlusOnePlusOne
+    else if among == .this && sel.toTargetKind == .creature then
+      some TriggeredAbility.onEnterPlusOneOnCreature
     else none
   | .triggered (.enter among) (.continuous effects _duration) =>
     if among.shape.anotherElfYouControl then
       match CardAction.leftoverSourcePump? effects with
       | some (1, 1) => some TriggeredAbility.onAnotherElfYouControlEntersGets1
       | _ => none
+    else if among.shape.landYouControl then
+      match CardAction.leftoverSourcePump? effects with
+      | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
+      | none => none
     else none
   | _ => none
 
@@ -1185,7 +1334,9 @@ structure CardFace where
   triggeredAbilities : Array TriggeredAbility := #[]
   costReductionIfTargetTapped : Nat := 0
   costReductionIfTargetAttackingNontoken : Nat := 0
+  costReductionIfTargetAttacking : Nat := 0
   costReductionIfCreatureDied : Nat := 0
+  costReductionIfYouControl : Option (Nat × String) := none
   additionalCostSacrificeArtifactOrCreature : Bool := false
   additionalCostOrPayGeneric : Option Nat := none
   staticAbilities : Array StaticAbility := #[]
@@ -1216,6 +1367,13 @@ def applyIfShape (b : CardFace) (s : Selector.Shape)
           costReductionIfTargetAttackingNontoken :=
             b.costReductionIfTargetAttackingNontoken + n })
       b
+  else if s.attackingCreature then
+    inners.foldl
+      (applyReduceCost fun b n =>
+        { b with
+          costReductionIfTargetAttacking :=
+            b.costReductionIfTargetAttacking + n })
+      b
   else if s.diedThisTurnCreature then
     inners.foldl
       (applyReduceCost fun b n =>
@@ -1231,7 +1389,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .addPowerToughness _ _ _ => b
   | .if (.any among) inners => applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
-  | .if (.anySubtype _ _) _ => b
+  | .if (.anySubtype who st) inners =>
+    if who.shape.sameController then
+      inners.foldl
+        (applyReduceCost fun b n =>
+          { b with costReductionIfYouControl := some (n, st.toString) })
+        b
+    else b
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
@@ -1245,13 +1409,20 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .forbid (.block who .this) =>
     if who == .any then
       { b with keywords := { b.keywords with cantBeBlocked := true } }
+    else if who == .token then
+      { b with staticAbilities := b.staticAbilities.push .cantBeBlockedByTokens }
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .setBasePowerToughnessFrom _ _ => b
   | .gainType _ _ => b
   | .gainSubtype _ _ => b
-  | .setPowerToughnessEqualToCount _ _ => b
+  | .setPowerToughnessEqualToCount who among =>
+    if (who == .this || who == .source .this) && among.shape.landYouControl then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push .powerToughnessEqualLandsYouControl }
+    else b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -1376,7 +1547,9 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       triggeredAbilities := b.triggeredAbilities
       costReductionIfTargetTapped := b.costReductionIfTargetTapped
       costReductionIfTargetAttackingNontoken := b.costReductionIfTargetAttackingNontoken
+      costReductionIfTargetAttacking := b.costReductionIfTargetAttacking
       costReductionIfCreatureDied := b.costReductionIfCreatureDied
+      costReductionIfYouControl := b.costReductionIfYouControl
       additionalCostSacrificeArtifactOrCreature :=
         b.additionalCostSacrificeArtifactOrCreature
       additionalCostOrPayGeneric := b.additionalCostOrPayGeneric
@@ -2237,5 +2410,190 @@ end TraditionalCardDefinition
                     (.activateAbility (.subtype .elf)))))]
             .endOfTurn]))
   ]).toCardDef.tapAddAnyColorEqualToPower
+
+#guard
+  let action : CardAction :=
+    .continuous
+      [.addPowerToughness
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        3 3]
+      .endOfTurn
+  action.toEffect == Effect.pump 3 3
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .draw (.controller .this) 2,
+      .loseLife (.controller .this) 2]
+  action.toEffect == Effect.drawAndLoseLife 2 2
+
+#guard
+  let action : CardAction :=
+    .continuous
+      [.addPowerToughness
+        (.intersection [.permanent, .cardType .creature])
+        (-4) (-4)]
+      .endOfTurn
+  action.toEffect == Effect.allCreaturesGet (-4) (-4)
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.scry (.controller .this) 2)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterScry 2
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.die .this)
+      (.draw (.controller .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesDraw 1
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.setPowerToughnessEqualToCount
+          .this
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)])))
+  ]).toCardDef.staticAbilities == #[.powerToughnessEqualLandsYouControl]
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (-4) 0]
+        .endOfTurn,
+      .draw (.controller .this) 1]
+  action.toEffect == Effect.pumpThenDraw (-4) 0
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        (.if
+          (.targetsIncludeAny
+            .this
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all]))
+          [.reduceCost .this [.mana [.generic 2]]]))
+  ]).toCardDef.costReductionIfTargetAttacking == 2
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        (.if
+          (.anySubtype (.controlled (.controller .this)) .villain)
+          [.reduceCost .this [.mana [.generic 1]]]))
+  ]).toCardDef.costReductionIfYouControl == some (1, "Villain")
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          2 0]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterTargetGets 2 0
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterPlusOneOnCreature
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attack .this .all)
+      (.continuous
+        [.gainAbility
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all]))
+          (.keyword .firstStrike)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackTargetGainsKeywords Keyword.firstStrike
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.divideDamage
+        (.controller .this)
+        .this
+        (.targets 1 (.range 1 3) .all)
+        3)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterOrAttackDealDividedDamage 3 3
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.die .this)
+      (.dealDamageEqualToPower
+        .this
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))])))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .attach
+          .this
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])),
+        .untap (.targetReference 1)])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterAttachThen PermanentAction.untap
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.forbid (.block .token .this)))
+  ]).toCardDef.staticAbilities == #[.cantBeBlockedByTokens]
+
+#guard
+  let action : CardAction :=
+    .sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]
+  action.toAbilityEffect == Effect.abilityDrawThenDiscard 1
+
+#guard
+  let action : CardAction := .returnToHand .this
+  action.toAbilityEffect == Effect.returnFromGraveyardToHand
 
 end Mtg.Engine

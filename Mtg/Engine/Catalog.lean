@@ -818,9 +818,18 @@ def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
 def shock : CardDef := damageInstant "Shock" 2
 
 def giantGrowth : CardDef :=
-  instant "Giant Growth" (ManaCost.ofColor .green)
-    "Target creature gets +3/+3 until end of turn."
-    (some (Effect.pump 3 3))
+  (TraditionalCardDefinition.card [
+    .name "Giant Growth",
+    .manaCost [.mono .green],
+    .type .instant,
+    .actions [
+      .continuous
+        [.addPowerToughness
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          3 3]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Target creature gets +3/+3 until end of turn.")
 
 /-- Repeat a card `n` times. -/
 def copies (n : Nat) (c : CardDef) : Array CardDef :=
