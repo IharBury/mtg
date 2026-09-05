@@ -844,7 +844,7 @@ def beornsHospitality : TraditionalCardDefinition := .card [
       [.mana [.generic 5, .mono .green, .mono .green]]
       (.continuous
         [.become .this [.creature] [.bear],
-          .setPowerToughnessEqualTo
+          .setPowerToughnessEqualToCount
             .this
             (.intersection [
               .permanent,

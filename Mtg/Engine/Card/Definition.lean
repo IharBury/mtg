@@ -491,7 +491,7 @@ inductive ContinuousEffect where
   | become : Selector → List CardType → List CardSubtype → ContinuousEffect
   /-- The selected object's power and toughness are each equal to the
   number of objects matching the second selector. -/
-  | setPowerToughnessEqualTo : Selector → Selector → ContinuousEffect
+  | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
 deriving Repr, Inhabited, BEq
 
 /-- What a spell or ability does. `CardAction` is the printed-card name for
@@ -566,7 +566,7 @@ def selector : ContinuousEffect → Selector
   | .canCastWithoutPayingManaCost _ who => who
   | .setBasePowerToughnessFrom who _ => who
   | .become who _ _ => who
-  | .setPowerToughnessEqualTo who _ => who
+  | .setPowerToughnessEqualToCount who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
 def addedPT? : List ContinuousEffect → Option (Int × Int)
@@ -584,7 +584,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .canCastWithoutPayingManaCost _ _ :: _ => none
   | .setBasePowerToughnessFrom _ _ :: _ => none
   | .become _ _ _ :: _ => none
-  | .setPowerToughnessEqualTo _ _ :: _ => none
+  | .setPowerToughnessEqualToCount _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
 def targetingSelector? (effects : List ContinuousEffect) : Option Selector :=
@@ -879,7 +879,7 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
         | _ => none
     let landsPT :=
       effects.any fun
-        | .setPowerToughnessEqualTo _ among =>
+        | .setPowerToughnessEqualToCount _ among =>
           among.shape.landYouControl
         | _ => false
     if landsPT then subtype else none
@@ -1211,7 +1211,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .canCastWithoutPayingManaCost _ _ => b
   | .setBasePowerToughnessFrom _ _ => b
   | .become _ _ _ => b
-  | .setPowerToughnessEqualTo _ _ => b
+  | .setPowerToughnessEqualToCount _ _ => b
   | .additionalCost _ cs =>
     { b with
       additionalCostSacrificeArtifactOrCreature :=
@@ -2146,7 +2146,7 @@ end TraditionalCardDefinition
   let action : CardAction :=
     .continuous
       [.become .this [.creature] [.bear],
-        .setPowerToughnessEqualTo
+        .setPowerToughnessEqualToCount
           .this
           (.intersection [
             .permanent,
