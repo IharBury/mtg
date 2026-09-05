@@ -88,8 +88,6 @@ inductive Selector where
   | replacingObject : Nat → Selector
   /-- An object created by the numbered action. -/
   | wasCreatedByAction : Nat → Selector
-  /-- An activated ability (CR 602.1). -/
-  | activatedAbility
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/
@@ -134,9 +132,17 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
-  /-- The selected mana is spent on objects matching the second selector
-  (CR 106.10). -/
-  | spend : Selector → Selector → Trigger
+  /-- This mana is spent to pay for the given event (CR 106.10). -/
+  | spendMana : Trigger → Trigger
+  /-- A spell matching the selector is cast (CR 601). -/
+  | castSpell : Selector → Trigger
+  /-- An activated ability of a source matching the selector is activated
+  (CR 602). -/
+  | activateAbility : Selector → Trigger
+  /-- The given trigger does not occur. -/
+  | not : Trigger → Trigger
+  /-- Either trigger occurs. -/
+  | or : Trigger → Trigger → Trigger
 deriving Repr, Inhabited, BEq
 end
 
@@ -315,7 +321,6 @@ def shape : Selector → Shape
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .activatedAbility
   | .hostOf _ | .inGraveyard | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
@@ -903,23 +908,21 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
 
 /-- Spend this mana only on Elf spells and activated abilities of Elf
 sources. -/
-def leftoverElfRestrictedSpend? : Selector → Bool
+def leftoverElfRestrictedSpend? : Trigger → Bool
   | .not
-      (.union [
-        .intersection [.spell, .subtype .elf],
-        .intersection [.activatedAbility, .source (.subtype .elf)]
-      ]) => true
+      (.or
+        (.castSpell (.subtype .elf))
+        (.activateAbility (.subtype .elf))) => true
   | _ => false
 
 /-- Tap and add mana of any color equal to this object's power, spendable
 only on Elf spells and Elf sources. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
   | .sequence [
-      .actionId id (.addManaAnyColorEqualToPower chooser gainer power),
-      .continuous [.forbid (.spend (.wasCreatedByAction id') among)] _
+      .addManaAnyColorEqualToPower chooser gainer power,
+      .continuous [.forbid (.spendMana restriction)] _
     ] =>
-    id == id' &&
-      leftoverElfRestrictedSpend? among &&
+    leftoverElfRestrictedSpend? restriction &&
       Cost.hasTapSymbol costs &&
       chooser == .controller .this &&
       gainer == .controller .this &&
@@ -2218,21 +2221,17 @@ end TraditionalCardDefinition
       .activated
         [.tapSymbol]
         (.sequence [
-          .actionId 1
-            (.addManaAnyColorEqualToPower
-              (.controller .this)
-              (.controller .this)
-              .this),
+          .addManaAnyColorEqualToPower
+            (.controller .this)
+            (.controller .this)
+            .this,
           .continuous
             [.forbid
-              (.spend
-                (.wasCreatedByAction 1)
+              (.spendMana
                 (.not
-                  (.union [
-                    .intersection [.spell, .subtype .elf],
-                    .intersection [
-                      .activatedAbility,
-                      .source (.subtype .elf)]])))]
+                  (.or
+                    (.castSpell (.subtype .elf))
+                    (.activateAbility (.subtype .elf)))))]
             .endOfTurn]))
   ]).toCardDef.tapAddAnyColorEqualToPower
 

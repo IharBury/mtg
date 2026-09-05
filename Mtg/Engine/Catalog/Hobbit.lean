@@ -880,21 +880,17 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
     .activated
       [.tapSymbol]
       (.sequence [
-        .actionId 1
-          (.addManaAnyColorEqualToPower
-            (.controller .this)
-            (.controller .this)
-            .this),
+        .addManaAnyColorEqualToPower
+          (.controller .this)
+          (.controller .this)
+          .this,
         .continuous
           [.forbid
-            (.spend
-              (.wasCreatedByAction 1)
+            (.spendMana
               (.not
-                (.union [
-                  .intersection [.spell, .subtype .elf],
-                  .intersection [
-                    .activatedAbility,
-                    .source (.subtype .elf)]])))]
+                (.or
+                  (.castSpell (.subtype .elf))
+                  (.activateAbility (.subtype .elf)))))]
           .endOfTurn]))
 ]
 
