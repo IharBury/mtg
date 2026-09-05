@@ -486,9 +486,12 @@ inductive ContinuousEffect where
   /-- The first object's base power and toughness become those of the
   second object. -/
   | setBasePowerToughnessFrom : Selector → Selector → ContinuousEffect
-  /-- The selected object becomes the given types and subtypes in addition
-  to its other types. -/
-  | become : Selector → List CardType → List CardSubtype → ContinuousEffect
+  /-- The selected object gains the given card type in addition to its
+  other types (CR 205.1 / 613.1). -/
+  | gainType : Selector → CardType → ContinuousEffect
+  /-- The selected object gains the given subtype in addition to its other
+  types (CR 205.3 / 613.1). -/
+  | gainSubtype : Selector → CardSubtype → ContinuousEffect
   /-- The selected object's power and toughness are each equal to the
   number of objects matching the second selector. -/
   | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
@@ -565,7 +568,8 @@ def selector : ContinuousEffect → Selector
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
   | .setBasePowerToughnessFrom who _ => who
-  | .become who _ _ => who
+  | .gainType who _ => who
+  | .gainSubtype who _ => who
   | .setPowerToughnessEqualToCount who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -583,7 +587,8 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
   | .setBasePowerToughnessFrom _ _ :: _ => none
-  | .become _ _ _ :: _ => none
+  | .gainType _ _ :: _ => none
+  | .gainSubtype _ _ :: _ => none
   | .setPowerToughnessEqualToCount _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
@@ -875,14 +880,18 @@ def leftoverBecomeSubtypeWithLandsPT? : CardAction → Option String
   | .continuous effects _ =>
     let subtype :=
       effects.findSome? fun
-        | .become _ [.creature] [st] => some st.toString
+        | .gainSubtype _ st => some st.toString
         | _ => none
+    let becomesCreature :=
+      effects.any fun
+        | .gainType _ .creature => true
+        | _ => false
     let landsPT :=
       effects.any fun
         | .setPowerToughnessEqualToCount _ among =>
           among.shape.landYouControl
         | _ => false
-    if landsPT then subtype else none
+    if becomesCreature && landsPT then subtype else none
   | _ => none
 
 /-- Tap and add mana of any color equal to this object's power. -/
@@ -1210,7 +1219,8 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
   | .setBasePowerToughnessFrom _ _ => b
-  | .become _ _ _ => b
+  | .gainType _ _ => b
+  | .gainSubtype _ _ => b
   | .setPowerToughnessEqualToCount _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -2145,7 +2155,8 @@ end TraditionalCardDefinition
 #guard
   let action : CardAction :=
     .continuous
-      [.become .this [.creature] [.bear],
+      [.gainType .this .creature,
+        .gainSubtype .this .bear,
         .setPowerToughnessEqualToCount
           .this
           (.intersection [
