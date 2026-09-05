@@ -291,22 +291,15 @@ def wayfarersBauble : CardDef :=
         (.searchLibraryThenShuffle
           (.controller .this)
           [
-            .putOntoBattlefield
+            .putOntoBattlefieldInState
               (.selected
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
                   .inDeck,
                   .cardType .land,
-                  .supertype .basic])),
-            .tap
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [
-                  .inDeck,
-                  .cardType .land,
-                  .supertype .basic]))]))
+                  .supertype .basic]))
+              .tapped]))
   ]).toCardDef
     (oracleText :=
       "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")

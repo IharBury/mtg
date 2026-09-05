@@ -516,6 +516,12 @@ inductive Condition where
   | and : Condition → Condition → Condition
 deriving Repr, Inhabited, BEq
 
+/-- Status a permanent has as it enters the battlefield (CR 110.5). -/
+inductive CardState where
+  /-- The permanent enters tapped. -/
+  | tapped
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -622,6 +628,9 @@ inductive CardAction where
   | returnToHand : Selector → CardAction
   /-- Put the selected object onto the battlefield. -/
   | putOntoBattlefield : Selector → CardAction
+  /-- Put the selected object onto the battlefield in the given state
+  (CR 110.5). -/
+  | putOntoBattlefieldInState : Selector → CardState → CardAction
   /-- Search the selected player's library. Nested actions may move or
   choose cards from that library while they are visible, then shuffle
   (CR 701.19). -/
@@ -1119,7 +1128,7 @@ def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
 /-- Nested search actions: put a basic land onto the battlefield tapped,
 or reveal a found card and put it into hand. -/
 def leftoverSearchActions? : List CardAction → Option Effect
-  | [.putOntoBattlefield sel, .tap _] =>
+  | [.putOntoBattlefieldInState sel .tapped] =>
     match sel.selectedAmong? with
     | some among =>
       if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
@@ -1263,6 +1272,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .sacrifice _ => continuousEffect none [] asAbility
                   | .returnToHand _ => Effect.returnFromGraveyardToHand
                   | .putOntoBattlefield _ => continuousEffect none [] asAbility
+                  | .putOntoBattlefieldInState _ _ => continuousEffect none [] asAbility
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
                   | .defineVariable _ _ => continuousEffect none [] asAbility
@@ -2903,16 +2913,12 @@ end TraditionalCardDefinition
     .searchLibraryThenShuffle
       (.controller .this)
       [
-        .putOntoBattlefield
+        .putOntoBattlefieldInState
           (.selected
             (.controller .this)
             (.range 1 1)
-            (.intersection [.inDeck, .cardType .land, .supertype .basic])),
-        .tap
-          (.selected
-            (.controller .this)
-            (.range 1 1)
-            (.intersection [.inDeck, .cardType .land, .supertype .basic]))]
+            (.intersection [.inDeck, .cardType .land, .supertype .basic]))
+          .tapped]
   action.toAbilityEffect == Effect.searchBasicLandTapped
 
 #guard
