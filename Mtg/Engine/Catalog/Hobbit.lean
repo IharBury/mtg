@@ -650,8 +650,9 @@ def gandalfSparkStarter : TraditionalCardDefinition := .card [
   .ability (
     .triggered
       (.enter .this)
-      (.dealDamage
-        .this
+      (.divideDamage
+        (.controller .this)
+        (.source .this)
         (.targets 1 (.range 1 3) .all)
         3))
 ]

@@ -460,6 +460,9 @@ inductive CardAction where
   | tap : Selector → CardAction
   | untap : Selector → CardAction
   | dealDamage : Selector → Selector → Nat → CardAction
+  /-- The selected player divides that much damage from the source among
+  the selected objects (CR 601.2d). -/
+  | divideDamage : Selector → Selector → Selector → Nat → CardAction
   | draw : Selector → Nat → CardAction
   | scry : Selector → Nat → CardAction
   | sequence : List CardAction → CardAction
@@ -822,6 +825,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .tap s => compileTap s asAbility
                   | .untap s => compileUntap s asAbility
                   | .dealDamage _source victim n => compileDamage victim n asAbility
+                  | .divideDamage _who _source victim n => compileDamage victim n asAbility
                   | .draw _who n => Effect.draw n
                   | .scry _who n => Effect.scry n
                   | .sequence (a :: _) => compile a asAbility
@@ -958,7 +962,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
     some TriggeredAbility.onEnterEachOpponentDiscards
   | .triggered (.enter .this)
-      (.dealDamage _ (.targets _ (.range 1 maxTargets) _) amount) =>
+      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.optional (.sequence [.discard _ 1, .draw _ n])) =>
@@ -1767,8 +1771,9 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.dealDamage
-        .this
+      (.divideDamage
+        (.controller .this)
+        (.source .this)
         (.targets 1 (.range 1 3) .all)
         3)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterDealDividedDamage 3 3
