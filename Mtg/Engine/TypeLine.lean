@@ -95,21 +95,26 @@ abbrev Subtype := String
 Unknown or catalog-only types use `named`. -/
 inductive CardSubtype where
   | adventure
+  | avatar
   | bard
   | bat
   | bird
   | citizen
   | cleric
+  | dragon
   | dwarf
+  | elf
   | equipment
   | goblin
   | halfling
   | horror
   | human
   | insect
+  | ranger
   | rogue
   | scout
   | soldier
+  | wizard
   | wolf
   | named (s : String)
 deriving DecidableEq, Repr, Inhabited, BEq
@@ -118,21 +123,26 @@ namespace CardSubtype
 
 def toString : CardSubtype → String
   | .adventure => "Adventure"
+  | .avatar => "Avatar"
   | .bard => "Bard"
   | .bat => "Bat"
   | .bird => "Bird"
   | .citizen => "Citizen"
   | .cleric => "Cleric"
+  | .dragon => "Dragon"
   | .dwarf => "Dwarf"
+  | .elf => "Elf"
   | .equipment => "Equipment"
   | .goblin => "Goblin"
   | .halfling => "Halfling"
   | .horror => "Horror"
   | .human => "Human"
   | .insect => "Insect"
+  | .ranger => "Ranger"
   | .rogue => "Rogue"
   | .scout => "Scout"
   | .soldier => "Soldier"
+  | .wizard => "Wizard"
   | .wolf => "Wolf"
   | .named s => s
 

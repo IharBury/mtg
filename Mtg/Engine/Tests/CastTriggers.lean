@@ -655,16 +655,16 @@ def clubSacrificesFireleaper : Game :=
 /- Guardian of the Halls: trample and {5}{G}{G} for three +1/+1 counters. -/
 
 def guardianAbility : ActivatedAbility :=
-  guardianOfTheHalls.activatedAbilities[0]!
+  guardianOfTheHallsCard.activatedAbilities[0]!
 
 #guard guardianAbility.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianAbility.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard !guardianAbility.effect.requiresTarget
-#guard guardianOfTheHalls.keywords.trample
+#guard guardianOfTheHallsCard.keywords.trample
 
 /-- Guardian in play with {5}{G}{G} in the pool; a land drop is already used. -/
 def guardianReady : Game :=
-  let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw guardianOfTheHallsCard ⟨0⟩ ⟨0⟩
   withGreenMana (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 7
 
 def guardianSource (g : Game) : GameObject :=
@@ -680,7 +680,7 @@ def guardianSource (g : Game) : GameObject :=
 
 -- Six green cannot pay {5}{G}{G}.
 #guard
-  let g := addPermanent afterDraw guardianOfTheHalls ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw guardianOfTheHallsCard ⟨0⟩ ⟨0⟩
   let g := withGreenMana
     (g.modifyPlayer ⟨0⟩ (fun pl => { pl with landsPlayedThisTurn := 1 })) ⟨0⟩ 6
   !(g.player ⟨0⟩).manaPool.canPay guardianAbility.cost.mana

@@ -98,6 +98,8 @@ inductive Selector where
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/
   | inGraveyard
+  /-- The top card of the selected player's library (CR 401). -/
+  | topOfLibrary : Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or
@@ -289,7 +291,7 @@ def shape : Selector → Shape
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _ | .var _
   | .selected _ _ | .allTargets _ | .player
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .hostOf _ | .inGraveyard => {}
+  | .hostOf _ | .inGraveyard | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -394,6 +396,8 @@ inductive ActivationRestriction where
   | onceEachTurn
   /-- “Activate only as a sorcery” (CR 117.1a / 702.6). -/
   | onlyAsSorcery
+  /-- “Activate only during your turn” (CR 117.1a). -/
+  | onlyDuringYourTurn
   /-- Activate only while the source is in a graveyard (CR 112.6 / 404). -/
   | fromGraveyard
 deriving Repr, Inhabited, BEq
@@ -542,7 +546,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .var _ | .selected _ _
     | .allTargets _ | .spell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard => none
+    | .hostOf _ | .inGraveyard | .topOfLibrary _ => none
     | s => some s
 
 end ContinuousEffect
@@ -834,7 +838,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
                   | .preventable _ _ inner => compile inner asAbility
                   | .discard _ n => Effect.drawThenDiscard n
+                  | .putCounter (.source .this) .plusOnePlusOne n =>
+                    Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
+                  | .exile (.topOfLibrary _) => Effect.exileTopPlayUntilEndOfNextTurn
                   | .exile _ => continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy _ => Effect.destroyCreature
@@ -883,6 +890,7 @@ def applyRestriction (r : ActivationRestriction) (ab : ActivatedAbility) :
   match r with
   | .onceEachTurn => { ab with onceEachTurn := true }
   | .onlyAsSorcery => { ab with onlyAsSorcery := true }
+  | .onlyDuringYourTurn => { ab with onlyDuringYourTurn := true }
   | .fromGraveyard => { ab with activateFromGraveyard := true }
 
 def toActivatedAbility? : Ability → Option ActivatedAbility
@@ -949,6 +957,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterExileOppGyCardOppsLoseLife n)
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
     some TriggeredAbility.onEnterEachOpponentDiscards
+  | .triggered (.enter .this)
+      (.dealDamage _ (.targets _ (.range 1 maxTargets) _) amount) =>
+    some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
+  | .triggered (.enter .this)
+      (.optional (.sequence [.discard _ 1, .draw _ n])) =>
+    some (TriggeredAbility.onEnterMayDiscardDraw n)
   | _ => none
 
 end Ability
@@ -1738,5 +1752,70 @@ end TraditionalCardDefinition
       (.discard (.opponent (.controller .this)) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterEachOpponentDiscards
   | none => false
+
+-- Spew Flame: 5 damage to target creature.
+#guard
+  let action : CardAction :=
+    .dealDamage
+      .this
+      (.target 1 (.intersection [.permanent, .cardType .creature]))
+      5
+  action.toEffect == Effect.dealDamageToCreature 5
+
+-- Gandalf, Spark Starter: enters, 3 damage divided among one to three targets.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.dealDamage
+        .this
+        (.targets 1 (.range 1 3) .all)
+        3)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterDealDividedDamage 3 3
+  | none => false
+
+-- Ragged Short Spear: enters, you may discard a card. If you do, draw two.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.optional
+        (.sequence [
+          .discard (.controller .this) 1,
+          .draw (.controller .this) 2]))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterMayDiscardDraw 2
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.addPowerToughness (.hostOf .this) 2 0))
+  ]).toCardDef.staticAbilities == #[.equippedCreatureGets 2 0]
+
+-- Snowslope Hunter: sacrifice another creature or artifact; exile top; your turn, once.
+#guard
+  let action : CardAction := .exile (.topOfLibrary (.controller .this))
+  action.toAbilityEffect == Effect.exileTopPlayUntilEndOfNextTurn
+
+#guard
+  match
+    (Ability.restrict .onlyDuringYourTurn
+      (.activatedTimes 1 .turnStart
+        [.sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])]
+        (.exile (.topOfLibrary (.controller .this))))).toActivatedAbility? with
+  | some ab =>
+    ab.onlyDuringYourTurn &&
+      ab.onceEachTurn &&
+      ab.cost.sacrificeAnotherCreatureOrArtifact &&
+      ab.effect == Effect.exileTopPlayUntilEndOfNextTurn
+  | none => false
+
+-- Guardian of the Halls: put three +1/+1 counters on this creature.
+#guard
+  let action : CardAction := .putCounter (.source .this) .plusOnePlusOne 3
+  action.toAbilityEffect == Effect.putPlusOnePlusOneOnSource 3
 
 end Mtg.Engine

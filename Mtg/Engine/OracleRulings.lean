@@ -2501,7 +2501,7 @@ def smaugAdventureExileOk : Bool :=
 /-- Ruling 6: exile for any other reason does not grant the Adventure
 cast-as-permanent permission. -/
 def smaugExiledOtherwise : Game :=
-  let g := addToHand started smaugTheGreatCalamity ⟨0⟩
+  let g := addToHand started smaugTheGreatCalamityCard ⟨0⟩
   let id := (handCardNamed g ⟨0⟩ "Smaug, the Great Calamity").id
   (g.move id .exile none).1
 
@@ -2515,15 +2515,15 @@ def smaugExiledOtherwiseCard : GameObject :=
 
 /-- Ruling 4 / 11: legality uses the Adventure face. Spew Flame is a sorcery. -/
 def spewFlameIsSorcery : Bool :=
-  match smaugTheGreatCalamity.adventure with
+  match smaugTheGreatCalamityCard.adventure with
   | some adv => adv.types.contains CardType.sorcery
   | none => false
 
 #guard spewFlameIsSorcery
 #guard (ruling 11).comment.contains "use only its alternative characteristics"
 #guard (ruling 8).comment.contains "alternative Adventure name"
-#guard smaugTheGreatCalamity.choosableNames.contains "Spew Flame"
-#guard !smaugTheGreatCalamity.choosableNames.contains "Burglar's Plot"
+#guard smaugTheGreatCalamityCard.choosableNames.contains "Spew Flame"
+#guard !smaugTheGreatCalamityCard.choosableNames.contains "Burglar's Plot"
 
 def canCastSpewFlame : Bool :=
   smaugSetup.canCastAdventure ⟨0⟩
@@ -3494,7 +3494,7 @@ def amassFailedOk : Bool :=
 
 def adventureCopyCannotRecast : Bool :=
   (ruling 7).comment.contains "ceases to exist" &&
-    smaugTheGreatCalamity.adventure.isSome
+    smaugTheGreatCalamityCard.adventure.isSome
 
 #guard adventureCopyCannotRecast
 
@@ -5386,7 +5386,7 @@ def azogDestroysOppOk : Bool :=
 -/
 
 def gandalfDividedIllegal : Game :=
-  let g := addPermanent afterDraw gandalfSparkStarter ⟨0⟩ ⟨0⟩
+  let g := addPermanent afterDraw gandalfSparkStarterCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
   let bearId := (namedPermanent g "Grizzly Bears").id

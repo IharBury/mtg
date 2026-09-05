@@ -923,7 +923,7 @@ def hawkeyeBowEquipped : Game :=
 
 /-- Reach from the Bow lets a ground creature block a flyer. -/
 def flyerVsHawkeyeBow : Game :=
-  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent started smaugTheGreatCalamityCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
@@ -933,7 +933,7 @@ def flyerVsHawkeyeBow : Game :=
   (namedPermanent flyerVsHawkeyeBow "Grizzly Bears")
   (namedPermanent flyerVsHawkeyeBow "Smaug, the Great Calamity")
 #guard
-  let g := addPermanent started smaugTheGreatCalamity ⟨0⟩ ⟨0⟩
+  let g := addPermanent started smaugTheGreatCalamityCard ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let smaug := namedPermanent g "Smaug, the Great Calamity"
   let g := g.setObject { smaug with status := { smaug.status with attacking := true } }
