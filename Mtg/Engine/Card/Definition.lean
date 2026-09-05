@@ -476,8 +476,6 @@ inductive CardAction where
   | putCounter : Selector → CounterKind → Nat → CardAction
   /-- Exile the selected object. -/
   | exile : Selector → CardAction
-  /-- Cast the selected card without paying its mana cost. -/
-  | cast : Selector → CardAction
   /-- Exchange control of the selected objects. -/
   | exchangeControl : Selector → CardAction
   /-- Destroy the selected permanent (CR 701.7). -/
@@ -838,7 +836,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .discard _ n => Effect.drawThenDiscard n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
                   | .exile _ => continuousEffect none [] asAbility
-                  | .cast _ => continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy _ => Effect.destroyCreature
                   | .gainLife _ n => Effect.gainLife n
