@@ -431,6 +431,8 @@ inductive Condition where
   | anySubtype : Selector → CardSubtype → Condition
   /-- True when the first trigger has not occurred since the second. -/
   | didNotHappen : Trigger → Trigger → Condition
+  /-- True when the first trigger has occurred since the second. -/
+  | happened : Trigger → Trigger → Condition
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -1083,6 +1085,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among inners
   | .if (.anySubtype _ _) _ => b
   | .if (.didNotHappen _ _) _ => b
+  | .if (.happened t since) inners => applyIfShape b (.wasSubject t since) inners
   | .replace _ _ => b
   | .forbid (.block .this .all) =>
     { b with staticAbilities := b.staticAbilities.push (.cantBlockUnlessYouControl #[]) }
@@ -1641,7 +1644,7 @@ end TraditionalCardDefinition
     .ability (
       .static
         (.if
-          (.any (.wasSubject (.die (.cardType .creature)) .turnStart))
+          (.happened (.die (.cardType .creature)) .turnStart)
           [.reduceCost .this [.mana [.generic 3]]]))
   ]).toCardDef.costReductionIfCreatureDied == 3
 

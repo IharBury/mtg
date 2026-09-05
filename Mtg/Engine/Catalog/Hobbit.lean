@@ -484,7 +484,7 @@ def dreadedBatCloud : TraditionalCardDefinition := .card [
   .ability (
     .static
       (.if
-        (.any (.wasSubject (.die (.cardType .creature)) .turnStart))
+        (.happened (.die (.cardType .creature)) .turnStart)
         [.reduceCost .this [.mana [.generic 3]]])),
   .ability (.keyword .flying),
   .ability (.keyword .deathtouch)
