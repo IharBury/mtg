@@ -741,9 +741,14 @@ inductive CardAction where
   | putOntoBattlefieldInState : Selector → CardState → CardAction
   /-- Search the selected player's library. Nested actions may move or
   choose cards from that library while they are visible, then shuffle
-  (CR 701.19). Put a found card on top *after* this action; nested
-  `putOnTopOfLibrary` would be shuffled in. -/
+  (CR 701.19). Nested `holdOutInLibrary` keeps selected cards in the
+  library but out of the shuffle; act on them after this action.
+  Nested `putOnTopOfLibrary` would be shuffled in. -/
   | searchLibraryThenShuffle : Selector → List CardAction → CardAction
+  /-- Temporarily exclude the selected cards from a library shuffle.
+  Held-out cards are still in the library, but not at the top, bottom,
+  or among the shuffled cards. -/
+  | holdOutInLibrary : Selector → CardAction
   /-- Bind the selected objects to this numbered variable. -/
   | defineVariable : Nat → Selector → CardAction
   /-- Execute the given actions for each of the given objects, binding the
@@ -1619,22 +1624,23 @@ def leftoverExileThenReturnTapped? : CardAction → Option Selector
     if id == id' then some sel else none
   | _ => none
 
-/-- Find and reveal a basic land while searching (shuffle happens after). -/
-def leftoverSearchBasicReveal? : List CardAction → Option Nat
-  | [.defineVariable id sel, .reveal (.variable id')] =>
-    if id == id' then
+/-- Find, reveal, and hold out a basic land while searching so shuffle
+does not mix it back in. -/
+def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
+  | [.defineVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
+    if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among => if among.basicLandInDeck then some id else none
       | none => none
     else none
   | _ => none
 
-/-- Search a basic land, shuffle, then put that card on top. -/
+/-- Search a basic land, hold it out, shuffle, then put that card on top. -/
 def leftoverSearchBasicOnTop? : CardAction → Bool
   | .sequence [
       .searchLibraryThenShuffle _ actions,
       .putOnTopOfLibrary (.variable id)
-    ] => leftoverSearchBasicReveal? actions == some id
+    ] => leftoverSearchBasicHoldOut? actions == some id
   | _ => false
 
 /-- Sequence leftovers that compile to a named `Effect` without taking
@@ -1862,6 +1868,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putOntoBattlefieldInState _ _ => continuousEffect none [] asAbility
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
+                  | .holdOutInLibrary _ => continuousEffect none [] asAbility
                   | .defineVariable _ _ => continuousEffect none [] asAbility
                   | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
@@ -4033,7 +4040,7 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
   | none => false
 
--- Old Thrush: put the found land on top *after* shuffle.
+-- Old Thrush: hold the found land out of the shuffle, then put it on top.
 #guard
   match
     (Ability.triggered
@@ -4053,7 +4060,8 @@ end TraditionalCardDefinition
                       .inDeck,
                       .cardType .land,
                       .supertype .basic])),
-                .reveal (.variable 1)],
+                .reveal (.variable 1),
+                .holdOutInLibrary (.variable 1)],
             .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterGainLifeSearchBasicOnTop 2
   | none => false
@@ -4077,6 +4085,27 @@ end TraditionalCardDefinition
                   .supertype .basic])),
             .reveal (.variable 1),
             .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .gainLife (.controller .this) 2,
+      .optional
+        (.sequence [
+          .searchLibraryThenShuffle
+            (.controller .this)
+            [
+              .defineVariable 1
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .inDeck,
+                    .cardType .land,
+                    .supertype .basic])),
+              .reveal (.variable 1)],
+          .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility?.isNone
 
 -- Little Bear: flash; enter, untap another creature you control, +1/+1 if Bear.
 #guard Selector.toTargetKind

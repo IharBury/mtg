@@ -1938,7 +1938,8 @@ def oldThrush : CardDef :=
                         .inDeck,
                         .cardType .land,
                         .supertype .basic])),
-                  .reveal (.variable 1)],
+                  .reveal (.variable 1),
+                  .holdOutInLibrary (.variable 1)],
               .putOnTopOfLibrary (.variable 1)])]))
   ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.")

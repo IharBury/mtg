@@ -83,7 +83,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
-  `putOntoBattlefieldInState`, `searchLibraryThenShuffle`, `defineVariable`,
+  `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
+  `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
