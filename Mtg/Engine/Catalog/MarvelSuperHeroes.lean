@@ -641,7 +641,7 @@ def giantSizedFlyingAnt : CardDef :=
               (.intersection [.permanent, .not (.cardType .land)])),
           .untap
             (.target
-              1
+              2
               (.intersection [.permanent, .not (.cardType .land)]))]))
   ]).toCardDef
     (oracleText := "Flash\nFlying\nWhen this creature enters, choose one —\n• Tap target nonland permanent.\n• Untap target nonland permanent.")
@@ -746,7 +746,7 @@ def pymParticles : CardDef :=
           .forbid
             (.block
               .any
-              (.target 1 (.intersection [.permanent, .cardType .creature])))]
+              (.targetReference 1))]
         .endOfTurn,
       .draw (.controller .this) 1]
   ]).toCardDef
@@ -1585,11 +1585,11 @@ def callDamageControl : CardDef :=
           .returnToHand
             (.target 1 (.intersection [.inGraveyard, .cardType .artifact, .owner (.controller .this)])),
           .returnToHand
-            (.target 1 (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])),
+            (.target 2 (.intersection [.inGraveyard, .cardType .creature, .owner (.controller .this)])),
           .returnToHand
-            (.target 1 (.intersection [.inGraveyard, .cardType .enchantment, .owner (.controller .this)])),
+            (.target 3 (.intersection [.inGraveyard, .cardType .enchantment, .owner (.controller .this)])),
           .returnToHand
-            (.target 1 (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))]]
+            (.target 4 (.intersection [.inGraveyard, .cardType .land, .owner (.controller .this)]))]]
   ]).toCardDef
     (oracleText := "Choose up to two. Return those cards from your graveyard to your hand.\n• Target artifact card.\n• Target creature card.\n• Target enchantment card.\n• Target land card.")
 

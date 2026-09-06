@@ -1202,6 +1202,7 @@ def leftoverGrantVigilanceUnblockable? : CardAction → Bool
         | .forbid (.block .any sel) =>
           match sel with
           | .target _ among => among.shape.types.eqTypes [.creature]
+          | .targetReference _ => true
           | _ =>
             match sel.among? with
             | some among => among.shape.types.eqTypes [.creature]
@@ -3390,7 +3391,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 .player)])
+            .controlled (.target 2 .player)])
           (-1) (-1)]
         .endOfTurn]
   CardAction.leftoverModes? action ==
@@ -3622,7 +3623,7 @@ end TraditionalCardDefinition
       .sequence [
         .putCounter
           (.target
-            1
+            2
             (.intersection [
               .permanent,
               .cardType .creature,
@@ -3630,8 +3631,8 @@ end TraditionalCardDefinition
           .plusOnePlusOne
           1,
         .continuous
-          [.gainAbility (.targetReference 1) (.keyword .trample),
-            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          [.gainAbility (.targetReference 2) (.keyword .trample),
+            .gainAbility (.targetReference 2) (.keyword .hexproof)]
           .endOfTurn]]
   CardAction.leftoverModes? action ==
     some #[Effect.destroyCreatureWithFlying, Effect.plusOnePlusOneTrampleHexproof]
@@ -4689,7 +4690,7 @@ end TraditionalCardDefinition
           .forbid
             (.block
               .any
-              (.target 1 (.intersection [.permanent, .cardType .creature])))]
+              (.targetReference 1))]
         .endOfTurn,
       .draw (.controller .this) 1]) == true
 

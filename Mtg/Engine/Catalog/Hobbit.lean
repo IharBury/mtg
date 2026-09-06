@@ -572,7 +572,7 @@ def gnashingOfTeeth : TraditionalCardDefinition := .card [
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 .player)])
+            .controlled (.target 2 .player)])
           (-1) (-1)]
         .endOfTurn]]
 ]
@@ -592,9 +592,9 @@ def reverentHowl : TraditionalCardDefinition := .card [
         .loseLife (.targetReference 1) 2],
       .continuous
         [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 2 (.intersection [.permanent, .cardType .creature]))
           2 2,
-          .gainAbility (.targetReference 1) (.keyword .lifelink)]
+          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]
 ]
 
@@ -809,7 +809,7 @@ def wargTactics : TraditionalCardDefinition := .card [
       .sequence [
         .putCounter
           (.target
-            1
+            2
             (.intersection [
               .permanent,
               .cardType .creature,
@@ -817,8 +817,8 @@ def wargTactics : TraditionalCardDefinition := .card [
           .plusOnePlusOne
           1,
         .continuous
-          [.gainAbility (.targetReference 1) (.keyword .trample),
-            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          [.gainAbility (.targetReference 2) (.keyword .trample),
+            .gainAbility (.targetReference 2) (.keyword .hexproof)]
           .endOfTurn]]]
 ]
 
@@ -1479,9 +1479,9 @@ def stoneBySunlight : CardDef :=
         .continuous
           [
             .gainType
-              (.target 1 (.intersection [.permanent, .cardType .creature]))
+              (.target 2 (.intersection [.permanent, .cardType .creature]))
               .artifact,
-            .gainAbility (.targetReference 1) (.keyword .indestructible)]
+            .gainAbility (.targetReference 2) (.keyword .indestructible)]
           .endOfTurn]]
   ]).toCardDef
     (oracleText := "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)")
@@ -2102,7 +2102,7 @@ def elvenRaftSteerer : CardDef :=
                 .controlled (.opponent (.controller .this))])),
           .untap
             (.target
-              1
+              2
               (.intersection [
                 .permanent,
                 .cardType .creature,
