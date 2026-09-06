@@ -122,6 +122,8 @@ inductive Trigger where
   | endOfTurn
   /-- At the end of the selected player's turn (CR 514.3). -/
   | endOfPlayerTurn : Selector → Trigger
+  /-- At the beginning of combat on the selected player's turn (CR 507.1). -/
+  | combatStart : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
@@ -2379,6 +2381,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some TriggeredAbility.onYouAttackDraw
       else none
     else none
+  | .triggered (.combatStart who) (.if (.any among) [.putCounter sel .plusOnePlusOne 1]) =>
+    if who == .controller .this && among.shape.ferocious &&
+        (sel == .source .this || sel == .this) then
+      some TriggeredAbility.onYourBeginCombatFerociousPlusOne
+    else none
   | _ => none
 
 end Ability
@@ -4559,6 +4566,38 @@ end TraditionalCardDefinition
         [.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackFerociousSourceGets 2 2
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.combatStart (.controller .this))
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast 4]))
+        [.putCounter (.source .this) .plusOnePlusOne 1])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onYourBeginCombatFerociousPlusOne
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.combatStart (.opponent (.controller .this)))
+    (.if
+      (.any
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this),
+          .powerAtLeast 4]))
+      [.putCounter (.source .this) .plusOnePlusOne 1])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.combatStart (.controller .this))
+    (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility?.isNone
 
 #guard
   match

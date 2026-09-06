@@ -990,4 +990,41 @@ def agentNightsWhisperOnly : Game :=
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
 
+/- Nasty Little Rabbit: Ferocious beginning of combat puts a +1/+1 counter. -/
+
+#guard nastyLittleRabbit.triggeredAbilities == #[.onYourBeginCombatFerociousPlusOne]
+#guard nastyLittleRabbit.subtypes == #["Rabbit"]
+#guard nastyLittleRabbit.power == some 1
+#guard nastyLittleRabbit.toughness == some 2
+
+def rabbitAndBaloth : Game :=
+  addPermanent (addPermanent started nastyLittleRabbit ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
+
+#guard rabbitAndBaloth.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne
+
+/-- Alone, Nasty Little Rabbit is 1/2, so Ferocious does not trigger. -/
+#guard
+  let g := skipTo (addPermanent started nastyLittleRabbit ⟨0⟩ ⟨0⟩) .beginningOfCombat 80
+  g.stack.isEmpty &&
+    (namedPermanent g "Nasty Little Rabbit").status.plusOnePlusOne == 0 &&
+    !g.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne
+
+def rabbitBeginCombat : Game :=
+  skipTo rabbitAndBaloth .beginningOfCombat 80
+
+#guard rabbitBeginCombat.step == .beginningOfCombat
+#guard rabbitBeginCombat.stack.size == 1
+#guard (rabbitBeginCombat.object! rabbitBeginCombat.stack.back!.objectId).triggeredAbility ==
+  some .onYourBeginCombatFerociousPlusOne
+#guard rabbitBeginCombat.log.any (fun s => mentions s "begin-combat trigger")
+
+def rabbitBeginCombatResolved : Game := passBoth rabbitBeginCombat
+
+#guard rabbitBeginCombatResolved.stack.isEmpty
+#guard (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit").status.plusOnePlusOne == 1
+#guard rabbitBeginCombatResolved.power
+  (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit") == 2
+#guard rabbitBeginCombatResolved.toughness
+  (namedPermanent rabbitBeginCombatResolved "Nasty Little Rabbit") == 3
+
 end Mtg.Engine.Tests
