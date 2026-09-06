@@ -115,6 +115,7 @@ inductive CardSubtype where
   | centaur
   | citizen
   | cleric
+  | clue
   | demigod
   | detective
   | dinosaur
@@ -129,6 +130,7 @@ inductive CardSubtype where
   | elk
   | equipment
   | eternal
+  | food
   | forest
   | frog
   | gamma
@@ -184,6 +186,7 @@ inductive CardSubtype where
   | stone
   | swamp
   | troll
+  | treasure
   | vampire
   | vehicle
   | villain
@@ -222,6 +225,7 @@ def toString : CardSubtype → String
   | .centaur => "Centaur"
   | .citizen => "Citizen"
   | .cleric => "Cleric"
+  | .clue => "Clue"
   | .demigod => "Demigod"
   | .detective => "Detective"
   | .dinosaur => "Dinosaur"
@@ -236,6 +240,7 @@ def toString : CardSubtype → String
   | .elk => "Elk"
   | .equipment => "Equipment"
   | .eternal => "Eternal"
+  | .food => "Food"
   | .forest => "Forest"
   | .frog => "Frog"
   | .gamma => "Gamma"
@@ -291,6 +296,7 @@ def toString : CardSubtype → String
   | .stone => "Stone"
   | .swamp => "Swamp"
   | .troll => "Troll"
+  | .treasure => "Treasure"
   | .vampire => "Vampire"
   | .vehicle => "Vehicle"
   | .villain => "Villain"
@@ -426,6 +432,8 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard CardSubtype.toString .vampire == "Vampire"
 #guard CardSubtype.toString .warlock == "Warlock"
 #guard CardSubtype.toString .whale == "Whale"
-#guard CardSubtype.toString .wraith == "Wraith"
+#guard CardSubtype.toString .treasure == "Treasure"
+#guard CardSubtype.toString .food == "Food"
+#guard CardSubtype.toString .clue == "Clue"
 
 end Mtg.Engine
