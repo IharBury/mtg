@@ -81,6 +81,8 @@ inductive Selector where
   | owner : Selector → Selector
   /-- A permanent attacking objects matching the given selector (CR 508). -/
   | attacking : Selector → Selector
+  /-- Permanents blocking the given permanents (CR 509). -/
+  | blocking : Selector → Selector
   /-- A token (CR 111.1). -/
   | token
   /-- The object of the numbered action. -/
@@ -331,6 +333,7 @@ def shape : Selector → Shape
   | .keyword _ => {}
   | .powerAtLeast n => { powerAtLeast := some n }
   | .attacking _ => { attacking := true }
+  | .blocking _ => {}
   | .token => { token := true }
   | .subtype st => { subtype := some st.toString }
   | .cardType t => { types := .oneOf [t] }
@@ -1550,8 +1553,9 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.attack .this .all) (.scry _ n) =>
     some (TriggeredAbility.onAttackScry n)
-  | .triggered (.block _ src) (.dealDamage _ _ 1) =>
-    if src == .this then some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
+  | .triggered (.block _ src) (.dealDamage dealer dest 1) =>
+    if src == .this && dealer == .this && dest == .blocking .this then
+      some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
     else none
   | .triggered (.castSpell among) (.dealDamage _ (.opponent _) n) =>
     if among.shape.types.eqTypes [.instant, .sorcery] then
@@ -3571,7 +3575,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.block .all .this)
-      (.dealDamage .this (.cardType .creature) 1)).toTriggeredAbility? with
+      (.dealDamage .this (.blocking .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onBecomesBlockedDeal1ToBlockers
   | none => false
 

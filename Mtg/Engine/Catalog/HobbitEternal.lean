@@ -375,7 +375,7 @@ def battleScarredGoblin : CardDef :=
     .ability (
       .triggered
         (.block .all .this)
-        (.dealDamage .this (.cardType .creature) 1))
+        (.dealDamage .this (.blocking .this) 1))
   ]).toCardDef
     (oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it.")
 
