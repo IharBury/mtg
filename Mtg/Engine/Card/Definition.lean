@@ -841,7 +841,8 @@ inductive CardPart where
 deriving Repr, Inhabited, BEq
 end
 
-namespace CardPart
+/-- Predefined token characteristics from CR 111.10. -/
+namespace PredefinedToken
 
 /-- Printed Treasure token characteristics (CR 111.10a). -/
 def treasureToken : List CardPart := [
@@ -863,7 +864,7 @@ def foodToken : List CardPart := [
       (.gainLife (.controller .this) 3))
 ]
 
-end CardPart
+end PredefinedToken
 
 namespace ContinuousEffect
 
@@ -5676,8 +5677,8 @@ end TraditionalCardDefinition
 #guard CardAction.toEffect (.keyword .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.amass .goblin 1)) == Effect.amassGoblins 1
 
-#guard CardAction.leftoverTokenKind? CardPart.treasureToken == some TokenKind.treasure
-#guard CardAction.leftoverTokenKind? CardPart.foodToken == some TokenKind.food
+#guard CardAction.leftoverTokenKind? PredefinedToken.treasureToken == some TokenKind.treasure
+#guard CardAction.leftoverTokenKind? PredefinedToken.foodToken == some TokenKind.food
 #guard CardAction.leftoverTokenKind?
   [.type .creature, .subtype .dwarf, .power 2, .toughness 2] ==
   some TokenKind.dwarf
@@ -5706,27 +5707,27 @@ end TraditionalCardDefinition
 
 #guard
   CardAction.toAbilityEffect
-    (.createTokens (.controller .this) 1 CardPart.treasureToken) ==
+    (.createTokens (.controller .this) 1 PredefinedToken.treasureToken) ==
     Effect.abilityCreateTokens .treasure 1
 
 #guard
   match
     (Ability.triggered
       (.enter .this)
-      (.createTokens (.controller .this) 1 CardPart.treasureToken)).toTriggeredAbility? with
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1
   | none => false
 
 #guard
   CardAction.toAbilityEffect
-    (.createTokensInState (.controller .this) 1 CardPart.treasureToken [.tapped]) ==
+    (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken [.tapped]) ==
     Effect.createTappedTokens .treasure 1
 
 #guard
   match
     (Ability.triggered
       (.enter .this)
-      (.createTokensInState (.controller .this) 1 CardPart.treasureToken
+      (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken
         [.tapped])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1 true
   | none => false

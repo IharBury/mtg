@@ -834,7 +834,7 @@ def lothoCorruptShirriff : CardDef :=
         (.ordinal 2 .turnStart (.castSpell .spell))
         (.sequence [
           .loseLife (.controller .this) 1,
-          .createTokens (.controller .this) 1 CardPart.treasureToken]))
+          .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))
   ]).toCardDef
     (oracleText := "Whenever a player casts their second spell each turn, you lose 1 life and create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
 
@@ -1077,7 +1077,7 @@ def dragonCursedHalls : CardDef :=
               (.target 1 (.intersection [.permanent, .cardType .creature]))
               (.triggered
                 (.combatDamage .this .player)
-                (.createTokens (.controller .this) 1 CardPart.treasureToken))]
+                (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))]
           .endOfTurn))
   ]).toCardDef
     (oracleText := "{T}: Add {C}.\n{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\"")
@@ -1242,7 +1242,7 @@ def thorinCompanySLeader : CardDef :=
             .subtype .dwarf,
             .controlled (.controller .this)])
           (.union [.player, .cardType .battle]))
-        (.createTokens (.controller .this) 2 CardPart.treasureToken)),
+        (.createTokens (.controller .this) 2 PredefinedToken.treasureToken)),
     .ability (
       .activated
         [.mana [.generic 10]]

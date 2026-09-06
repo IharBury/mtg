@@ -1596,7 +1596,7 @@ def longBodiedGreyDog : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.createTokensInState (.controller .this) 1 CardPart.treasureToken
+        (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken
           [.tapped]))
   ]).toCardDef
     (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
@@ -1615,7 +1615,7 @@ def doriBearerOfFriends : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.createTokens (.controller .this) 1 CardPart.treasureToken))
+        (.createTokens (.controller .this) 1 PredefinedToken.treasureToken))
   ]).toCardDef
     (oracleText := "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
 
@@ -2443,7 +2443,7 @@ def bejeweledWarg : CardDef :=
                 .subtype .wolf,
                 .controlled (.controller .this)]))
             .plusOnePlusOne 1,
-          .createTokens (.controller .this) 1 CardPart.treasureToken]))
+          .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))
   ]).toCardDef
     (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
 
@@ -2731,7 +2731,7 @@ def theSackvilleBagginses : CardDef :=
           .if (.happened (.actionWithId 1) .gameStart)
             [
               .draw (.controller .this) 1,
-              .createTokens (.controller .this) 1 CardPart.treasureToken]])),
+              .createTokens (.controller .this) 1 PredefinedToken.treasureToken]])),
     .ability (
       .triggered
         (.die
