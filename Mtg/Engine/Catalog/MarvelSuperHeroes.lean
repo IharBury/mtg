@@ -540,6 +540,7 @@ def attumaAtlanteanWarlord : CardDef :=
             .cardType .creature,
             .subtype .merfolk,
             .controlled (.controller .this)])
+          .player
           [])
         (.draw (.controller .this) 1))
   ]).toCardDef
@@ -2923,6 +2924,9 @@ def mshCards : Array CardDef :=
 #guard crimsonOperative.triggeredAbilities == #[.onEnterExileTop]
 #guard theMightyThorJaneFoster.triggeredAbilities ==
   #[.onThisAttack Effect.thisAttackBlinkNontoken, .onEquipmentYouControlEntersDraw]
+#guard attumaAtlanteanWarlord.staticAbilities == #[.otherCreaturesGet #["Merfolk"] 1 1]
+#guard attumaAtlanteanWarlord.triggeredAbilities ==
+  #[.onWatch Effect.watchMerfolkAttackDraw]
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash

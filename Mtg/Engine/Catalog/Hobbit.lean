@@ -1421,6 +1421,7 @@ def theChiefWarg : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)])
+          .all
           [])
         (.if
           (.any

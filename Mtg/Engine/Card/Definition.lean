@@ -142,9 +142,10 @@ inductive Trigger where
   /-- When objects matching the selector die at the same time, with
   set-wide predicates (CR 700.4 / 603.2d). -/
   | dieSimultaneously : Selector → List SetPredicate → Trigger
-  /-- Whenever objects matching the selector attack at the same time, with
-  set-wide predicates (CR 508.3 / 603.2d). -/
-  | attackSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Whenever objects matching the first selector attack objects matching
+  the second at the same time, with set-wide predicates
+  (CR 508.3 / 603.2d). -/
+  | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
@@ -2301,19 +2302,20 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         else none
       | _ => none
     | none => none
-  | .triggered (.attackSimultaneously among _)
+  | .triggered (.attackSimultaneously among dest _)
       (.if (.any ferociousSel) [action]) =>
-    if among.shape.sameController && ferociousSel.shape.ferocious then
+    if dest == .all && among.shape.sameController && ferociousSel.shape.ferocious then
       match CardAction.leftoverDrawLoseLifeSelf? action with
       | some (1, 1) => some TriggeredAbility.onYouAttackFerociousDrawLoseLife
       | _ => none
     else none
-  | .triggered (.attackSimultaneously among _) (.draw (.controller .this) 1) =>
+  | .triggered (.attackSimultaneously among dest _) (.draw (.controller .this) 1) =>
     if among.shape.sameController then
-      if among.shape.subtype == some "Merfolk" then
+      if among.shape.subtype == some "Merfolk" && dest == .player then
         some (TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw)
-      else
+      else if dest == .all then
         some TriggeredAbility.onYouAttackDraw
+      else none
     else none
   | _ => none
 
@@ -4574,10 +4576,49 @@ end TraditionalCardDefinition
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])
+        .all
         [])
       (.draw (.controller .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackDraw
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .subtype .merfolk,
+          .controlled (.controller .this)])
+        .player
+        [])
+      (.draw (.controller .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .subtype .merfolk,
+        .controlled (.controller .this)])
+      .all
+      [])
+    (.draw (.controller .this) 1)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)])
+      .player
+      [])
+    (.draw (.controller .this) 1)).toTriggeredAbility?.isNone
 
 #guard
   match

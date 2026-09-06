@@ -61,7 +61,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`, `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
   `putToGraveyard`, `block`, `die`, `dieSimultaneously`,
-  `attackSimultaneously`, `abilityWithIdActivated`, `actionWithId`,
+  `attackSimultaneously` (who attacks, who is attacked),
+  `abilityWithIdActivated`, `actionWithId`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
   `not`, `or`.
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),

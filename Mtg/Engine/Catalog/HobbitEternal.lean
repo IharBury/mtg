@@ -699,6 +699,7 @@ def bardHeirOfGirion : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)])
+          .all
           [])
         (.draw (.controller .this) 1))
   ]).toCardDef
