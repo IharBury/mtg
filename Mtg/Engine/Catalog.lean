@@ -743,16 +743,6 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
   additionalCostSacrificeCreature
 }
 
-/-- A red instant that deals `amount` damage to any target. -/
-def damageInstant (name : String) (amount : Nat) : CardDef :=
-  (TraditionalCardDefinition.card [
-    .name name,
-    .manaCost [.mono .red],
-    .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) amount]
-  ]).toCardDef
-    (oracleText := s!"{name} deals {amount} damage to any target.")
-
 def grizzlyBears : CardDef :=
   (TraditionalCardDefinition.card [
     .name "Grizzly Bears",
@@ -859,9 +849,23 @@ def giantSpider : CardDef :=
   ]).toCardDef
     (oracleText := "Reach (This creature can block creatures with flying.)")
 
-def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
+def lightningBolt : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Lightning Bolt",
+    .manaCost [.mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) 3]
+  ]).toCardDef
+    (oracleText := "Lightning Bolt deals 3 damage to any target.")
 
-def shock : CardDef := damageInstant "Shock" 2
+def shock : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Shock",
+    .manaCost [.mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) 2]
+  ]).toCardDef
+    (oracleText := "Shock deals 2 damage to any target.")
 
 def giantGrowth : CardDef :=
   (TraditionalCardDefinition.card [
