@@ -706,7 +706,11 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
             .not .this,
             .permanent,
             .union [.cardType .artifact, .cardType .creature]])]
-        (.exile (.topOfLibrary (.controller .this)))))
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))
 ]
 
 def snowslopeHunterCard : CardDef :=
@@ -1309,10 +1313,27 @@ def hobbitHole : CardDef :=
       "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nHalflingcycling {4} ({4}, Discard this card: Search your library for a Halfling card, reveal it, put it into your hand, then shuffle.)")
 
 def nighthowlPursuer : CardDef :=
-  creature "Nighthowl Pursuer" (ManaCost.ofColor .black) #["Wolf"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Nighthowl Pursuer",
+    .manaCost [.mono .black],
+    .type .creature,
+    .subtype .wolf,
+    .power 1,
+    .toughness 1,
+    .ability (.keyword .menace),
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast 4]))
+          [.continuous [.addPowerToughness (.source .this) 2 2] .endOfTurn]))
+  ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
-    (keywords := Keyword.menace)
-    (triggeredAbilities := #[.onAttackFerociousSourceGets 2 2])
 
 def wargling : CardDef :=
   creature "Wargling" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 2 2
@@ -1384,13 +1405,24 @@ def laketownLookout : CardDef :=
     (triggeredAbilities := #[.onDiesRecruit])
 
 def giantsBoulder : CardDef :=
-  artifact "Giant's Boulder" (ManaCost.ofGeneric 1)
-    "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent."
-    (triggeredAbilities := #[.onEnterScry 2])
-    (activatedAbilities := #[
-      activated (Effect.addAnyColor) (ManaCost.ofGeneric 1) (tap := true),
-      activated (Effect.destroyTargetPermanent) (ManaCost.ofGeneric 7) (tap := true)
-        (sacrificeSource := true)])
+  (TraditionalCardDefinition.card [
+    .name "Giant's Boulder",
+    .manaCost [.generic 1],
+    .type .artifact,
+    .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
+    .ability (
+      .activated
+        [.mana [.generic 1], .tapSymbol]
+        (.addManaAnyColor
+          (.controller .this)
+          (.controller .this)
+          1)),
+    .ability (
+      .activated
+        [.mana [.generic 7], .tapSymbol, .sacrifice .this]
+        (.destroy (.target 1 .permanent)))
+  ]).toCardDef
+    (oracleText := "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent.")
 
 def longBodiedGreyDog : CardDef :=
   creature "Long-Bodied Grey Dog" (ManaCost.ofGeneric 3) #["Dog"] 2 2
@@ -1414,10 +1446,24 @@ def esgarothGarrison : CardDef :=
     (triggeredAbilities := #[.onEnterRecruit])
 
 def gundabadOpportunist : CardDef :=
-  creature "Gundabad Opportunist" (ManaCost.ofGenericAndColor 3 .red)
-    #["Goblin", "Rogue"] 4 2
+  (TraditionalCardDefinition.card [
+    .name "Gundabad Opportunist",
+    .manaCost [.generic 3, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .rogue,
+    .power 4,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))
+  ]).toCardDef
     (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
-    (triggeredAbilities := #[.onEnterExileTop])
 
 def giganticBigBear : CardDef :=
   creature "Gigantic Big Bear" (ManaCost.ofGenericAndColors 5 [.green, .green])
@@ -1475,9 +1521,20 @@ def soundTheTrumpets : CardDef :=
     (some (Effect.counterThenRecruitIfMvAtMost 2))
 
 def fatefulDiscovery : CardDef :=
-  enchantment "Fateful Discovery" (ManaCost.ofGenericAndColors 3 [.blue, .blue])
-    "Whenever an artifact you control enters, draw a card."
-    (triggeredAbilities := #[.onArtifactYouControlEntersDraw])
+  (TraditionalCardDefinition.card [
+    .name "Fateful Discovery",
+    .manaCost [.generic 3, .mono .blue, .mono .blue],
+    .type .enchantment,
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)]))
+        (.draw (.controller .this) 1))
+  ]).toCardDef
+    (oracleText := "Whenever an artifact you control enters, draw a card.")
 
 def chiefWargsCompany : CardDef :=
   creature "Chief Warg's Company" (ManaCost.ofGenericAndColors 1 [.black, .green])
@@ -2615,6 +2672,7 @@ def hobbitCards : Array CardDef := #[
 #guard snowslopeHunterCard.power == some 2
 #guard snowslopeHunterCard.toughness == some 3
 #guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1
+#guard gundabadOpportunist.triggeredAbilities == #[.onEnterExileTop]
 #guard desolationProwlerCard.activatedAbilities.size == 1
 #guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2

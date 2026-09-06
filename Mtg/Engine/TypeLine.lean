@@ -109,6 +109,7 @@ inductive CardSubtype where
   | druid
   | dwarf
   | elemental
+  | elephant
   | elf
   | equipment
   | forest
@@ -120,14 +121,17 @@ inductive CardSubtype where
   | horror
   | human
   | insect
+  | island
   | knight
   | kree
   | merfolk
   | minotaur
+  | mountain
   | ogre
   | orc
   | pilot
   | pirate
+  | plains
   | ranger
   | robot
   | rogue
@@ -138,6 +142,8 @@ inductive CardSubtype where
   | spider
   | spirit
   | spy
+  | swamp
+  | vehicle
   | villain
   | warrior
   | wizard
@@ -165,6 +171,7 @@ def toString : CardSubtype → String
   | .druid => "Druid"
   | .dwarf => "Dwarf"
   | .elemental => "Elemental"
+  | .elephant => "Elephant"
   | .elf => "Elf"
   | .equipment => "Equipment"
   | .forest => "Forest"
@@ -176,14 +183,17 @@ def toString : CardSubtype → String
   | .horror => "Horror"
   | .human => "Human"
   | .insect => "Insect"
+  | .island => "Island"
   | .knight => "Knight"
   | .kree => "Kree"
   | .merfolk => "Merfolk"
   | .minotaur => "Minotaur"
+  | .mountain => "Mountain"
   | .ogre => "Ogre"
   | .orc => "Orc"
   | .pilot => "Pilot"
   | .pirate => "Pirate"
+  | .plains => "Plains"
   | .ranger => "Ranger"
   | .robot => "Robot"
   | .rogue => "Rogue"
@@ -194,6 +204,8 @@ def toString : CardSubtype → String
   | .spider => "Spider"
   | .spirit => "Spirit"
   | .spy => "Spy"
+  | .swamp => "Swamp"
+  | .vehicle => "Vehicle"
   | .villain => "Villain"
   | .warrior => "Warrior"
   | .wizard => "Wizard"
@@ -256,6 +268,12 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard formatTypeLine #[] #[.creature] #["Bear"] == "Creature — Bear"
 #guard formatTypeLine #[] #[.instant] #[] == "Instant"
 #guard CardSubtype.toString .forest == "Forest"
+#guard CardSubtype.toString .plains == "Plains"
+#guard CardSubtype.toString .island == "Island"
+#guard CardSubtype.toString .swamp == "Swamp"
+#guard CardSubtype.toString .mountain == "Mountain"
+#guard CardSubtype.toString .elephant == "Elephant"
+#guard CardSubtype.toString .vehicle == "Vehicle"
 #guard CardSubtype.toString .aura == "Aura"
 #guard CardSubtype.toString .elemental == "Elemental"
 #guard CardSubtype.toString .pilot == "Pilot"

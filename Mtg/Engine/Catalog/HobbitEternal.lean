@@ -66,11 +66,36 @@ def soldierOfTheGreyHost : CardDef :=
     (oracleText := "Flash\nFlying\nWhen this creature enters, target creature gets +2/+0 until end of turn.")
 
 def eaglesOfTheNorth : CardDef :=
-  creature "Eagles of the North" (ManaCost.ofGenericAndColor 5 .white) #["Bird", "Soldier"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Eagles of the North",
+    .manaCost [.generic 5, .mono .white],
+    .type .creature,
+    .subtype .bird,
+    .subtype .soldier,
+    .power 3,
+    .toughness 3,
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.continuous
+          [
+            .addPowerToughness
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              1 0,
+            .gainAbility
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              (.keyword .firstStrike)]
+          .endOfTurn)),
+    .ability (.keywordWithCost (.subtypecycling .plains) [.mana [.generic 1]])
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, creatures you control get +1/+0 and gain first strike until end of turn.\nPlainscycling {1} ({1}, Discard this card: Search your library for a Plains card, reveal it, put it into your hand, then shuffle.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterCreaturesYouControlGetAndFirstStrike 1])
-    (activatedAbilities := #[typecyclingAbility "Plains"])
 
 def dunedainBlade : CardDef :=
   artifact "Dúnedain Blade" (ManaCost.ofGenericAndColor 1 .white)
@@ -98,11 +123,22 @@ def dawnOfANewAge : CardDef :=
     (triggeredAbilities := #[.onYourEndStepRemoveHopeDrawSac])
 
 def westfoldRider : CardDef :=
-  creature "Westfold Rider" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Knight"] 3 1
+  (TraditionalCardDefinition.card [
+    .name "Westfold Rider",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .knight,
+    .power 3,
+    .toughness 1,
+    .ability (
+      .activatedIf
+        (.timeToCastSorcery (.controller .this))
+        [.sacrifice .this]
+        (.destroy
+          (.target 1 (.union [.cardType .artifact, .cardType .enchantment]))))
+  ]).toCardDef
     (oracleText := "Sacrifice this creature: Destroy target artifact or enchantment. Activate only as a sorcery.")
-    (activatedAbilities := #[
-      activated (Effect.destroyTargetArtifactOrEnchantment) (sacrificeSource := true)
-        (onlyAsSorcery := true)])
 
 def esquireOfTheKing : CardDef :=
   creature "Esquire of the King" (ManaCost.ofColor .white) #["Human", "Soldier"] 1 1
@@ -120,10 +156,14 @@ def pelargirSurvivor : CardDef :=
       activated (Effect.millPlayer 3) (ManaCost.ofGenericAndColor 5 .blue) (tap := true)])
 
 def lorienRevealed : CardDef :=
-  sorcery "Lórien Revealed" (ManaCost.ofGenericAndColors 3 [.blue, .blue])
-    "Draw three cards.\nIslandcycling {1} ({1}, Discard this card: Search your library for an Island card, reveal it, put it into your hand, then shuffle.)"
-    (some (Effect.draw 3))
-    (activatedAbilities := #[typecyclingAbility "Island"])
+  (TraditionalCardDefinition.card [
+    .name "Lórien Revealed",
+    .manaCost [.generic 3, .mono .blue, .mono .blue],
+    .type .sorcery,
+    .actions [.draw (.controller .this) 3],
+    .ability (.keywordWithCost (.subtypecycling .island) [.mana [.generic 1]])
+  ]).toCardDef
+    (oracleText := "Draw three cards.\nIslandcycling {1} ({1}, Discard this card: Search your library for an Island card, reveal it, put it into your hand, then shuffle.)")
 
 def knightsOfDolAmroth : CardDef :=
   (TraditionalCardDefinition.card [
@@ -259,9 +299,28 @@ def trollOfKhazadDum : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Swamp"])
 
 def mercilessExecutioner : CardDef :=
-  creature "Merciless Executioner" (ManaCost.ofGenericAndColor 2 .black) #["Orc", "Warrior"] 3 1
+  (TraditionalCardDefinition.card [
+    .name "Merciless Executioner",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .orc,
+    .subtype .warrior,
+    .power 3,
+    .toughness 1,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.forEachVariable 1 .player [
+          .sacrifice
+            (.selected
+              (.variable 1)
+              (.range 1 1)
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.variable 1)]))]))
+  ]).toCardDef
     (oracleText := "When this creature enters, each player sacrifices a creature of their choice.")
-    (triggeredAbilities := #[.onEnterEachPlayerSacrificesCreature])
 
 def bitterDownfall : CardDef :=
   instant "Bitter Downfall" (ManaCost.ofGenericAndColor 3 .black)
@@ -305,15 +364,37 @@ def wayfarersBauble : CardDef :=
       "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")
 
 def battleScarredGoblin : CardDef :=
-  creature "Battle-Scarred Goblin" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Battle-Scarred Goblin",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .warrior,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.block .all .this)
+        (.dealDamage .this (.blocking .this) 1))
+  ]).toCardDef
     (oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it.")
-    (triggeredAbilities := #[.onBecomesBlockedDeal1ToBlockers])
 
 def improvisedClub : CardDef :=
-  instant "Improvised Club" (ManaCost.ofGenericAndColor 1 .red)
-    "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target."
-    (some (Effect.dealDamage 4))
-    (additionalCostSacrificeArtifactOrCreature := true)
+  (TraditionalCardDefinition.card [
+    .name "Improvised Club",
+    .manaCost [.generic 1, .mono .red],
+    .type .instant,
+    .ability (
+      .static
+        (.additionalCost .this
+          [.sacrificeCount
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]])
+            1])),
+    .actions [.dealDamage .this (.target 1 .all) 4]
+  ]).toCardDef
+    (oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target.")
 
 def ologHaiCrusher : CardDef :=
   creature "Olog-hai Crusher" (ManaCost.ofGenericAndColor 3 .red) #["Troll", "Soldier"] 4 4
@@ -354,11 +435,33 @@ def goblinFireleaper : CardDef :=
     (oracleText := "{1}{R}: This creature gets +1/+0 until end of turn.\nWhen this creature dies, it deals damage equal to its power to target creature an opponent controls.")
 
 def oliphaunt : CardDef :=
-  creature "Oliphaunt" (ManaCost.ofGenericAndColor 5 .red) #["Elephant"] 6 4
+  (TraditionalCardDefinition.card [
+    .name "Oliphaunt",
+    .manaCost [.generic 5, .mono .red],
+    .type .creature,
+    .subtype .elephant,
+    .power 6,
+    .toughness 4,
+    .ability (.keyword .trample),
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.continuous
+          [
+            .addPowerToughness
+              (.target
+                1
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)]))
+              2 0,
+            .gainAbility (.targetReference 1) (.keyword .trample)]
+          .endOfTurn)),
+    .ability (.keywordWithCost (.subtypecycling .mountain) [.mana [.generic 1]])
+  ]).toCardDef
     (oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)")
-    (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
-    (activatedAbilities := #[typecyclingAbility "Mountain"])
 
 def goblinCratermaker : CardDef :=
   creature "Goblin Cratermaker" (ManaCost.ofGenericAndColor 1 .red) #["Goblin", "Warrior"] 2 2
@@ -392,9 +495,23 @@ def infernoTitan : CardDef :=
     (oracleText := "{R}: This creature gets +1/+0 until end of turn.\nWhenever this creature enters or attacks, it deals 3 damage divided as you choose among one, two, or three targets.")
 
 def guttersnipe : CardDef :=
-  creature "Guttersnipe" (ManaCost.ofGenericAndColor 2 .red) #["Goblin", "Shaman"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Guttersnipe",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .shaman,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.castSpell
+          (.intersection [
+            .union [.cardType .instant, .cardType .sorcery],
+            .controlled (.controller .this)]))
+        (.dealDamage .this (.opponent (.controller .this)) 2))
+  ]).toCardDef
     (oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent.")
-    (triggeredAbilities := #[.onCastInstantOrSorceryDealDamageToEachOpponent 2])
 
 def orcishSiegemaster : CardDef :=
   creature "Orcish Siegemaster" (ManaCost.ofGenericAndColor 2 .red) #["Orc", "Soldier"] 0 5
@@ -483,9 +600,16 @@ def lothlorienLookout : CardDef :=
     (oracleText := "Whenever this creature attacks, scry 1.")
 
 def elvishMystic : CardDef :=
-  creature "Elvish Mystic" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
-    (oracleText := "{T}: Add {G}.")
-    (tapAddMana := #[.colored .green])
+  (TraditionalCardDefinition.card [
+    .name "Elvish Mystic",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .druid,
+    .power 1,
+    .toughness 1,
+    .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))
+  ]).toCardDef (oracleText := "{T}: Add {G}.")
 
 def bardHeirOfGirion : CardDef :=
   legendaryCreature "Bard, Heir of Girion" (ManaCost.ofGenericAndColors 2 [.white, .blue])
@@ -529,14 +653,30 @@ def floweringOfTheWhiteTree : CardDef :=
       .nonlegendaryCreaturesGet 1 1])
 
 def mithrilCoat : CardDef :=
-  artifact "Mithril Coat" (ManaCost.ofGeneric 3)
-    "Flash\nIndestructible\nWhen Mithril Coat enters, attach it to target legendary creature you control.\nEquipped creature has indestructible.\nEquip {3}"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
-    (keywords := Keyword.flash.merge Keyword.indestructible)
-    (triggeredAbilities := #[.onEnterAttachToLegendary])
-    (staticAbilities := #[.equippedCreatureHasKeywords Keyword.indestructible])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
+  (TraditionalCardDefinition.card [
+    .name "Mithril Coat",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .subtype .equipment,
+    .supertype .legendary,
+    .ability (.keyword .flash),
+    .ability (.keyword .indestructible),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.attach
+          .this
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .supertype .legendary])))),
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .indestructible))),
+    .ability (.keywordWithCost .equip [.mana [.generic 3]])
+  ]).toCardDef
+    (oracleText := "Flash\nIndestructible\nWhen Mithril Coat enters, attach it to target legendary creature you control.\nEquipped creature has indestructible.\nEquip {3}")
 
 def rivendell : CardDef :=
   legendaryLand "Rivendell"

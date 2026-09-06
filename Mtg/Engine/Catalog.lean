@@ -124,11 +124,45 @@ def basicLand (landName : String) (color : Color) : CardDef :=
   card landName #[.land] (subtypes := #[landName]) (supertypes := #[.basic])
     (oracleText := s!"(\{T}: Add \{{color.letter}}.)")
 
-def plains : CardDef := basicLand "Plains" .white
-def island : CardDef := basicLand "Island" .blue
-def swamp : CardDef := basicLand "Swamp" .black
-def mountain : CardDef := basicLand "Mountain" .red
-def forest : CardDef := basicLand "Forest" .green
+def plains : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Plains",
+    .type .land,
+    .supertype .basic,
+    .subtype .plains
+  ]).toCardDef (oracleText := "({T}: Add {W}.)")
+
+def island : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Island",
+    .type .land,
+    .supertype .basic,
+    .subtype .island
+  ]).toCardDef (oracleText := "({T}: Add {U}.)")
+
+def swamp : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Swamp",
+    .type .land,
+    .supertype .basic,
+    .subtype .swamp
+  ]).toCardDef (oracleText := "({T}: Add {B}.)")
+
+def mountain : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Mountain",
+    .type .land,
+    .supertype .basic,
+    .subtype .mountain
+  ]).toCardDef (oracleText := "({T}: Add {R}.)")
+
+def forest : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Forest",
+    .type .land,
+    .supertype .basic,
+    .subtype .forest
+  ]).toCardDef (oracleText := "({T}: Add {G}.)")
 
 /-- A creature used by engine tests and the Hobbit catalog. -/
 def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
@@ -709,12 +743,6 @@ def adventure (name : String) (manaCost : ManaCost) (oracleText : String)
   additionalCostSacrificeCreature
 }
 
-/-- A red instant that deals `amount` damage to any target. -/
-def damageInstant (name : String) (amount : Nat) : CardDef :=
-  instant name (ManaCost.ofColor .red)
-    s!"{name} deals {amount} damage to any target."
-    (some (Effect.dealDamage amount))
-
 def grizzlyBears : CardDef :=
   (TraditionalCardDefinition.card [
     .name "Grizzly Bears",
@@ -768,8 +796,16 @@ def ragingGoblin : CardDef :=
     (oracleText := "Haste (This creature can attack and {T} as soon as it comes under your control.)")
 
 def llanowarElves : CardDef :=
-  creature "Llanowar Elves" (ManaCost.ofColor .green) #["Elf", "Druid"] 1 1
-    (oracleText := "{T}: Add {G}.") (tapAddMana := #[.colored .green])
+  (TraditionalCardDefinition.card [
+    .name "Llanowar Elves",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .elf,
+    .subtype .druid,
+    .power 1,
+    .toughness 1,
+    .ability (.activated [.tapSymbol] (.addMana (.controller .this) [.mono .green]))
+  ]).toCardDef (oracleText := "{T}: Add {G}.")
 
 def crawWurm : CardDef :=
   (TraditionalCardDefinition.card [
@@ -813,9 +849,23 @@ def giantSpider : CardDef :=
   ]).toCardDef
     (oracleText := "Reach (This creature can block creatures with flying.)")
 
-def lightningBolt : CardDef := damageInstant "Lightning Bolt" 3
+def lightningBolt : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Lightning Bolt",
+    .manaCost [.mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) 3]
+  ]).toCardDef
+    (oracleText := "Lightning Bolt deals 3 damage to any target.")
 
-def shock : CardDef := damageInstant "Shock" 2
+def shock : CardDef :=
+  (TraditionalCardDefinition.card [
+    .name "Shock",
+    .manaCost [.mono .red],
+    .type .instant,
+    .actions [.dealDamage .this (.target 1 .all) 2]
+  ]).toCardDef
+    (oracleText := "Shock deals 2 damage to any target.")
 
 def giantGrowth : CardDef :=
   (TraditionalCardDefinition.card [
@@ -845,15 +895,6 @@ def powerUpAbility (effect : Effect) (mana : ManaCost)
 def dualAddClause (a b : Color) : String :=
   s!"\{T}: Add {manaSymbolsText #[.colored a, .colored b] " or "}."
 
-/-- Dual land: enters tapped, gains 1 life, `{T}: Add` one of two colors.
-The Oracle text is reconstructed from the colors. -/
-def gainLifeDualLand (name : String) (a b : Color) : CardDef :=
-  land name
-    s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}"
-    (entersTapped := true)
-    (triggeredAbilities := #[.onEnterGainLife 1])
-    (tapAddOneOf := #[.colored a, .colored b])
-
 /-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
 entered this turn or a basic land you control. The Oracle text is
 reconstructed from the colors. -/
@@ -863,12 +904,6 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
     (tapAddMana := #[.colorless])
     (tapAddOneOfIfEnteredOrBasic := #[.colored a, .colored b])
 
-#guard (gainLifeDualLand "Silent Plaza" .blue .black).tapAddOneOf ==
-  #[.colored .blue, .colored .black]
-#guard (gainLifeDualLand "Silent Plaza" .blue .black).triggeredAbilities ==
-  #[.onEnterGainLife 1]
-#guard (gainLifeDualLand "Silent Plaza" .blue .black).oracleText ==
-  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
 #guard (conditionalDualLand "Silent Lair" .blue .black).tapAddOneOfIfEnteredOrBasic ==
   #[.colored .blue, .colored .black]
 #guard (conditionalDualLand "Silent Lair" .blue .black).requiresEnteredOrBasicAdd
@@ -940,7 +975,6 @@ def conditionalDualLand (name : String) (a b : Color) : CardDef :=
   (legendary := true)).hasType .artifact
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (legendary := true)).hasType .creature
-#guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTapped
 #guard (conditionalDualLand "Silent Keep" .blue .black).tapAddMana == #[.colorless]
 #guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
 #guard (Keywords.mergeAll #[Keyword.flying, Keyword.trample, Keyword.haste]) ==
