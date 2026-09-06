@@ -5,10 +5,12 @@ This note records what is missing from the part-based printed-card types in
 supported catalog card** that is not yet written as a
 `TraditionalCardDefinition`.
 
-It is a type-level gap analysis, not a conversion of those cards. Compiler
-leftovers in `toCardDef` / `CardAction.compile` are mentioned only when a
-constructor already exists but cannot express the printed ability without a
-new constructor.
+Thirty cards that previously had no tagged constructor gap are now spelled
+as `TraditionalCardDefinition`. Fourteen others still cannot be spelled;
+see [Cards that still cannot convert](#cards-that-still-cannot-convert).
+Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
+when a constructor already exists but cannot express the printed ability
+without a new constructor.
 
 ## Scope
 
@@ -17,12 +19,18 @@ new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 126 |
-| The Hobbit Eternal (HOC) | 86 |
-| Marvel Super Heroes (MSH) | 246 |
-| **Total remaining** | **458** |
+| The Hobbit (HOB) | 117 |
+| The Hobbit Eternal (HOC) | 84 |
+| Marvel Super Heroes (MSH) | 227 |
+| **Total remaining** | **428** |
 
-414 of those have at least one identified constructor gap. 44 did not match a tagged gap; a subset of those can already be spelled with the current types (see [Cards with no tagged type gap](#cards-with-no-tagged-type-gap)).
+All **428** remaining cards have at least one identified constructor gap.
+Of the 44 that previously had no tagged gap, **30 are now written as
+`TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
+onto existing engine constructors; `#guard supportedCardsMatchOracle`
+holds). The other **14 cannot be spelled** with the current types; closer
+reading found constructor gaps the first pass missed (see [Cards that still
+cannot convert](#cards-that-still-cannot-convert)).
 
 Evidence for each remaining card is its catalog definition (Oracle text plus
 modeled `CardDef` fields, triggered/static/activated constructors, and
@@ -93,10 +101,10 @@ complete.
 
 ### `Range`
 
-- **`computed`** (52 cards) — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-  - An Unexpected Party; Armor Wars; Azog, Moria's Ruin; Balin, Loremaster; Bard, King of Dale; Bolg of the North; Bruce Banner; Call Forth the Tempest; Captain America, Wings of Freedom; Cavern-Hoard Dragon; … (42 more)
-- **`anyNumber`** (2 cards) — Any number (range 0 ∞); Range.range needs a finite Nat hi
-  - Last March of the Ents; Worlds Within Worlds
+- **`computed`** (53 cards) — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+  - An Unexpected Party; Armor Wars; Azog, Moria's Ruin; Balin, Loremaster; Bard, King of Dale; Bolg of the North; Bruce Banner; Call Forth the Tempest; Captain America, Wings of Freedom; Cavern-Hoard Dragon; Ori, Plate Stacker; … (42 more)
+- **`anyNumber`** (3 cards) — Any number (range 0 ∞); Range.range needs a finite Nat hi
+  - Last March of the Ents; Worlds Within Worlds; Super-Soldier Serum
 
 ### `SetPredicate`
 
@@ -107,10 +115,10 @@ complete.
 
 ### `Selector`
 
-- **`topNOfLibrary`** (29 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
-  - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; … (19 more)
-- **`countOf`** (26 cards) — Numeric value derived from a count or characteristic
-  - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; … (16 more)
+- **`topNOfLibrary`** (30 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
+  - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (19 more)
+- **`countOf`** (27 cards) — Numeric value derived from a count or characteristic
+  - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
 - **`inHand`** (26 cards) — An object in a hand
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Errand-Rider of Gondor; Gandalf, Party Guest; Glamdring; Great Gilded Boat; H.E.R.B.I.E. Scout Unit; … (16 more)
 - **`manaValue`** (25 cards) — Mana-value comparisons
@@ -121,20 +129,20 @@ complete.
   - Azog, Moria's Ruin; Bolg of the North; Bothersome Noisemaker; Down, Down to Goblin-town; Fearsome Goblin Pair; Gathering of Darkness; Goblin Plate Mail; Goblin-town Flunkies; Great Goblin, Foul-Hearted; Misty Mountains Raider; … (5 more)
 - **`color`** (14 cards) — Objects of a color / colorless
   - Aragorn, the Uniter; Baron Helmut Zemo; Castle Doom; Doctor Doom; Dáin Ironfoot; Goblin Cratermaker; Invisible Woman, Sue Storm; Iron Hills Blacksmith; Necklace of Girion; Robot Domination; … (4 more)
-- **`inExile`** (14 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
-  - An Unexpected Party; Baron Helmut Zemo; Call Forth the Tempest; Doom Reigns Supreme; Gandalf, Goblins' Bane; Glamdring, Foe-hammer; Glóin the Mighty; Great Ugly-Looking Goblin; Gríma, Saruman's Footman; My Precious; … (4 more)
+- **`inExile`** (15 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
+  - An Unexpected Party; Baron Helmut Zemo; Call Forth the Tempest; Doom Reigns Supreme; Gandalf, Goblins' Bane; Glamdring, Foe-hammer; Glóin the Mighty; Great Ugly-Looking Goblin; Gríma, Saruman's Footman; My Precious; Black Widow, Super Spy; … (4 more)
 - **`attackingAlone`** (8 cards) — A creature attacking alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
 - **`powerAtMost`** (8 cards) — Power at most N (only powerAtLeast exists)
   - Dwarven Warriors; Eagle's Rescue; Elektra, Daughter of the Hand; Hulkling, Burgeoning Bruiser; Mentor of the Meek; Old Fat Spider; Raft Security Officer; Stern Scolding
 - **`toughness`** (8 cards) — Toughness comparisons / bind toughness as a number
   - Arwen, Weaver of Hope; Baxter Building; I Am Iron Man; Last March of the Ents; Murdock's Crusade; Reptil, Dinomorpher; Stern Scolding; The Kingpin of Crime
-- **`attached`** (6 cards) — Objects attached to a given object (inverse of hostOf)
-  - Eagle's Rescue; Galadriel's Dismissal; Ronin, Shadow Stalker; Thorin, Mountain-king; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin
+- **`attached`** (7 cards) — Objects attached to a given object (inverse of hostOf)
+  - Eagle's Rescue; Galadriel's Dismissal; Ronin, Shadow Stalker; Thorin, Mountain-king; Whiplash, Vengeful Engineer; Winter Soldier, Icy Assassin; Long-Lost Lances
 - **`named`** (5 cards) — Objects with a given name
   - Castle Doom; Dáin Ironfoot; Iron Hills Blacksmith; Mole Man, Moloid Master; U.S.Agent, John Walker
-- **`hasCounter`** (4 cards) — Objects with / without a given counter kind
-  - Captain America, Super-Soldier; Dawn of a New Age; Great Ugly-Looking Goblin; Hellcat, Undying Vigilante
+- **`hasCounter`** (5 cards) — Objects with / without a given counter kind
+  - Captain America, Super-Soldier; Dawn of a New Age; Great Ugly-Looking Goblin; Hellcat, Undying Vigilante; Kid Loki
 - **`chosenType`** (3 cards) — Objects of the chosen creature type
   - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`defendingPlayer`** (3 cards) — The defending player relative to an attacker
@@ -147,6 +155,10 @@ complete.
   - Arcane Signet
 - **`worthy`** (1 cards) — Worthy (Marvel)
   - Mjölnir, Hammer of Thor
+- **`putFromBattlefieldThisTurn`** (1 cards) — Cards put into a graveyard from the battlefield this turn (Shape.diedThisTurn is Condition-only)
+  - Supper for Spiders
+- **`receivedCounterThisTurn`** (1 cards) — Objects you put +1/+1 counters on this turn
+  - Kid Loki
 
 ### `Trigger`
 
@@ -160,8 +172,8 @@ complete.
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Secret Invasion; Super Villain Lockup; Web Up
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
   - Agent 13, Sharon Carter; Agents of S.H.I.E.L.D.; Bilbo's Ring; Black Widow, Double Agent; Crowd of True Believers; HYDRA Infiltration; Luke Cage, Power Man; S.H.I.E.L.D. Spy Kit
-- **`becomeTarget`** (8 cards) — When the selected object becomes the target of a spell or ability
-  - Dwarven Mattock; Falcon's Wing Harness; Gandalf, Wandering Wizard; Lake-town Mariners; Loki, God of Mischief; Old Fat Spider; Super Strength; Titania, Rugged Rumbler
+- **`becomeTarget`** (9 cards) — When the selected object becomes the target of a spell or ability
+  - Dwarven Mattock; Falcon's Wing Harness; Gandalf, Wandering Wizard; Lake-town Mariners; Loki, God of Mischief; Old Fat Spider; Super Strength; Titania, Rugged Rumbler; Speedball, New Warrior
 - **`becomeTapped`** (4 cards) — When the selected object becomes tapped (including tapped to pay a cost)
   - Agent Maria Hill; Captain America, Living Legend; Hawkeye's Bow; Hawkeye, Master Marksman
 - **`dealtDamage`** (4 cards) — When the selected object is dealt damage (Enrage / watch-damage)
@@ -176,6 +188,8 @@ complete.
   - Sauron, the Dark Lord; Witch-king of Angmar
 - **`wouldDraw`** (2 cards) — Would-draw replacement window (Trigger.draw is the actual event)
   - Bard, King of Dale; Plunder the Trollshaws
+- **`whenYouDo`** (1 cards) — Nested delayed trigger after an optional action ('when you do')
+  - Spider-Man, To the Rescue
 
 ### `Cost`
 
@@ -230,6 +244,8 @@ complete.
   - Andúril, Narsil Reforged
 - **`resolvedThisTurnCount`** (1 cards) — This ability has resolved N times this turn
   - Belladonna Took
+- **`modeNotChosenThisTurn`** (1 cards) — Choose a mode that hasn't been chosen this turn
+  - The Vision
 
 ### `Ability`
 
@@ -292,16 +308,16 @@ complete.
   - Delighted Halfling; Gigantic Big Bear; Last March of the Ents
 - **`forbidCast`** (3 cards) — Players matching a selector can't cast spells matching a selector
   - Bilbo's Gambit; Jennifer Walters; The Sensational She-Hulk
-- **`skipsUntap`** (3 cards) — Selected permanents don't untap during the untap step
-  - Bombur, Gentle Dreamer; Frozen in Ice; enchantedRiverSGrasp
+- **`skipsUntap`** (4 cards) — Selected permanents don't untap during the untap step
+  - Bombur, Gentle Dreamer; Frozen in Ice; enchantedRiverSGrasp; Spider-Woman, Secret Agent
 - **`cantBeBlockedBy`** (2 cards) — Can't be blocked by / if matching a selector (power at most/at least, tokens already exist as forbid block token this)
   - Bilbo, Unexpected Adventurer; Old Fat Spider
 - **`cantBeBlockedExceptBy`** (2 cards) — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
   - Troll of Khazad-dûm; Witch-king of Angmar
 - **`gainAbility`** (2 cards) — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
   - Elven Chorus; Thranduil the Strategist
-- **`gainAbilityIf`** (2 cards) — Matching spells have flash / cost less with a 'first this turn' condition
-  - Bard's Company; Radagast of Rhosgobel
+- **`gainAbilityIf`** (3 cards) — Matching spells have flash / cost less with a 'first this turn' condition
+  - Bard's Company; Radagast of Rhosgobel; Captain Mar-Vell, Space-Born
 - **`handSize`** (2 cards) — Set / remove maximum hand size
   - Ms. Marvel, Kamala Khan; The Ten Rings
 - **`modifyDamage`** (2 cards) — Replacement that changes how much damage is dealt
@@ -324,6 +340,12 @@ complete.
   - Arwen, Weaver of Hope
 - **`setSubtypes`** (1 cards) — Overwrite subtypes (gainSubtype only adds)
   - fogOnTheBarrowDowns
+- **`reduceCostIfTargeting`** (1 cards) — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
+  - Dwarven Mauler
+- **`gainSupertype`** (1 cards) — Gain a supertype in addition to other types (legendary)
+  - Super-Soldier Serum
+- **`forbidUntapWhileYouControl`** (1 cards) — Can't become untapped for as long as you control this
+  - Spider-Woman, Secret Agent
 
 ### `CardAction`
 
@@ -341,8 +363,8 @@ complete.
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Kang, Temporal Tyrant; Leader, Super-Genius; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem; … (1 more)
 - **`addManaPer`** (10 cards) — Add mana for each matching object
   - Armor Wars; Avengers: Under Siege; Bag End Banquet; Desert Were-Worm; Dragon's Desire; Elvish Archdruid; Roads Go Ever, Ever On; The Eagles Are Coming!; The Lonely Mountain; The Notary Hobbits
-- **`chooseModes`** (10 cards) — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-  - Atlantis Attacks; Avengers Disassembled; Decoy Ploy; Epic Fight; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Pinecone Strike; Widow's Bite
+- **`chooseModes`** (11 cards) — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+  - Atlantis Attacks; Avengers Disassembled; Decoy Ploy; Epic Fight; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Pinecone Strike; Widow's Bite; The Vision
 - **`randomize`** (10 cards) — Put on bottom in random order / pick a random card among
   - Boughside Wanderers; Call Forth the Tempest; Cosmic Cube; Dáin's Company; Getaway Barrel; Gríma, Saruman's Footman; Nick Fury, Agent of S.H.I.E.L.D.; Part in Friendship; Tom Bombadil; Tony Stark
 - **`recruit`** (10 cards) — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
@@ -351,8 +373,8 @@ complete.
   - Absorbing Man; Echo, Perceptive Prodigy; Multiversal Incursion; Photon Blast Barrage; Scientist Supreme of A.I.M.; Secret Invasion; Shuri, Wakandan Inventor; Taskmaster, Mercenary Mimic; Ultron, Artificial Malevolence
 - **`returnExiled`** (8 cards) — Return objects exiled by a linked action
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Super Villain Lockup; Web Up
-- **`eventAmount`** (7 cards) — Use the amount of damage/life/cards from the triggering event ('that much')
-  - Bolg of the North; Hawkeye, Young Avenger; Red Hulk; The Black Arrow; The Incredible Hulk; The Kingpin of Crime; The Sensational She-Hulk
+- **`eventAmount`** (8 cards) — Use the amount of damage/life/cards from the triggering event ('that much')
+  - Bolg of the North; Hawkeye, Young Avenger; Red Hulk; The Black Arrow; The Incredible Hulk; The Kingpin of Crime; The Sensational She-Hulk; Ori, Plate Stacker
 - **`removeCounter`** (6 cards) — Remove counters from the selected object
   - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age; Mister Hyde, Monster Within; The Astonishing Ant-Man; enchantedRiverSGrasp
 - **`transform`** (6 cards) — Transform this permanent
@@ -381,6 +403,14 @@ complete.
   - Elven Passage
 - **`cascade`** (1 cards) — Exile until a cheaper nonland; you may cast it
   - Call Forth the Tempest
+- **`becomeWithAbility`** (1 cards) — Lose other types, become Food artifacts, and gain a stated activated ability
+  - Supper for Spiders
+- **`exileUntil`** (1 cards) — Exile from the top until a matching card (nonland leftover)
+  - Black Widow, Super Spy
+- **`forEachCounterKind`** (1 cards) — For each kind of counter on a selected object, give another of that kind
+  - Powerful Broker
+- **`changeTargets`** (1 cards) — Choose new targets for another spell or ability
+  - Speedball, New Warrior
 
 ### `TraditionalCardDefinition`
 
@@ -396,8 +426,8 @@ complete.
   - A.I.M. Scientists; Arnim Zola, Bio-Fanatic; Beast, Erudite Aerialist; Bold Biochemist; Bruce Banner; Doctor Doom; Leader, Super-Genius; Mister Fantastic, Reed Richards; Scientist Supreme of A.I.M.; The Astonishing Ant-Man
 - **`CardSubtype.Gamma`** (8 cards) — CardPart.subtype uses CardSubtype; Gamma has no constructor
   - Abomination, Terrifying Titan; Doc Samson, Super Psychiatrist; Hulk, Gamma Goliath; Leader, Super-Genius; Red Hulk; She-Hulk, Jade Defender; The Incredible Hulk; The Sensational She-Hulk
-- **`CardSubtype.Plan`** (7 cards) — CardPart.subtype uses CardSubtype; Plan has no constructor
-  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination
+- **`CardSubtype.Plan`** (8 cards) — CardPart.subtype uses CardSubtype; Plan has no constructor
+  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination; The Masters of Evil
 - **`entersTappedUnless`** (7 cards) — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`CardSubtype.Saga`** (6 cards) — CardPart.subtype uses CardSubtype; Saga has no constructor
@@ -498,88 +528,96 @@ complete.
 
 ## Cards with no tagged type gap
 
-These remaining cards did not match a missing-constructor pattern above.
-That is **not** a proof they compile today: `toCardDef` still needs a leftover
-for every printed shape. It does mean a spelling in the current types is
-plausible.
+The first pass listed 44 remaining cards that did not match a missing-constructor
+pattern. Conversion against `toCardDef` split them:
 
-### Likely spellable with current constructors
+### Converted to `TraditionalCardDefinition`
 
-- **Bard the Bowman** — Reach / Whenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn.
-- **Bolg's Company** — This creature has haste as long as you control another Goblin. / {T}, Sacrifice another Goblin: Add {B}{R}.
-- **Elven Raft-Steerer** — Landfall â Whenever a land you control enters, choose one â / â¢ Tap target creature an opponent controls. / â¢ Untap target creature you control.
-- **Iron Hills Stalwart** — Reach, trample / When this creature enters, attach target Equipment you control to up to one target creature you control.
-- **The Chief Warg** — Menace (This creature can't be blocked except by two or more creatures.) / Ferocious â Whenever you attack while you control a creature with power 4 or gre…
-- **Wargling** — Ferocious â Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures …
-- **Wilderland Scrounger** — Ferocious â Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.
-- **Agent Phil Coulson** — Vigilance / {T}: Put a +1/+1 counter on each other Hero you control.
-- **Blazing Crescendo** — Target creature gets +3/+1 until end of turn. / Exile the top card of your library. Until the end of your next turn, you may play that card.
-- **Giant-Sized Flying Ant** — Flash / Flying / When this creature enters, choose one â / â¢ Tap target nonland permanent. / â¢ Untap target nonland permanent.
-- **Photon, Living Light** — Flying, hexproof, prowess / Whenever you cast a noncreature spell, put a +1/+1 counter on each other creature you control.
-- **Pym Particles** — Target creature gains vigilance until end of turn and can't be blocked this turn. / Draw a card.
-- **White Widow, Free Agent** — When White Widow enters, choose one â / â¢ Put a +1/+1 counter on each of up to two target creatures. / â¢ Return target artifact or enchantment card fro…
-- **Yellowjacket, Heartless Marauder** — Flying / Whenever another Villain you control enters, Yellowjacket gets +1/+0 and gains lifelink until end of turn.
+These 30 cards now compile through leftovers onto the same modeled `CardDef`
+(Oracle still matches). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
+`MarvelSuperHeroes.lean`.
 
-Sketches:
+**Hobbit (9):** Bard the Bowman, Bolg's Company, Elven Raft-Steerer, Iron Hills
+Stalwart, Mirkwood Nurturer, Old Thrush, The Chief Warg, Wargling, Wilderland
+Scrounger.
 
-- Bard the Bowman — `Trigger.ordinal 2 turnStart (draw (controller this) all)` then
-  `putCounter` + `gainAbility lifelink` until `endOfTurn`.
-- Elven Raft-Steerer / Giant-Sized Flying Ant — `Trigger.enter` + `chooseMode`
-  of `tap` / `untap`.
-- Iron Hills Stalwart — `Trigger.enter this` + `attach` of a targeted Equipment
-  you control onto a targeted creature you control.
-- Pym Particles — `continuous` (`gainAbility vigilance` + `forbid (block any this-target)`)
-  then `draw`.
-- Photon, Living Light / Yellowjacket — `Trigger.castSpell` / `Trigger.enter`
-  with an `intersection` selector, then `putCounter` or `continuous` pump.
-- Agent Phil Coulson — `activated [tapSymbol]` + `forEachVariable` /
-  `putCounter` on other Heroes you control (`subtype .hero` exists).
-- Bolg's Company — `static (if (any another-Goblin-you-control) [gainAbility haste])`
-  and `activated [tapSymbol, sacrifice another Goblin] (addMana {B}{R})`.
-- The Chief Warg / Wargling / Wilderland Scrounger — Ferocious is
-  `Selector.Shape.ferocious` (`powerAtLeast 4` on a creature you control)
-  wrapping an `attack` trigger.
-- Blazing Crescendo — target pump (Giant Growth) sequenced with exile-top /
-  `canPlay` until end of next turn (Gundabad Opportunist).
-- White Widow, Free Agent — `chooseMode` of mass `putCounter` vs
-  `returnToHand` from graveyard.
+**Hobbit Eternal (2):** Esquire of the King, Gandalf, Shadow's Foe.
 
-### Untagged remaining printings
+**Marvel Super Heroes (19):** Agent Phil Coulson, Attuma, Atlantean Warlord,
+Blazing Crescendo, Call Damage Control, Giant-Sized Flying Ant, HYDRA Assault
+Robot, Hero in Training, K'un-Lun Warrior, Mockingbird, Ace Agent, Photon,
+Living Light, Pym Particles, Restorative Technique, The Mighty Thor, Jane
+Foster, The Thing, Ben Grimm, Thirst for Knowledge, Vision of Love, Wakandan
+Royal Guard, White Widow, Free Agent, Yellowjacket, Heartless Marauder.
 
-These also had no tagged constructor gap, but the Oracle is not a simple
-composition of the sketches above. Treat them as **needs a closer reading**
-rather than “nothing missing”:
+Leftovers added in `Definition.lean` include ferocious attack shapes, landfall
+tap/untap, attach-target-equipment, second-draw +1/+1/lifelink, haste-if-other-
+subtype, sacrifice-another-subtype mana, grant-vigilance-unblockable,
+pump-then-exile-top, choose-mode ETB, you-cast-noncreature +1/+1 each other,
+another-Villain pump/lifelink, plus-one-on-each-other-subtype, Merfolk attack
+draw, legendary-creature activated cost reduction, and the enter/search/modal
+spell leftovers those printings need.
 
-- **Dwarven Mauler** (Hobbit.lean) — Equip abilities you activate that target this creature cost {2} less to activate.
-- **Mirkwood Nurturer** (Hobbit.lean) — When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on thi…
-- **Old Thrush** (Hobbit.lean) — Flying / When this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put t…
-- **Supper for Spiders** (Hobbit.lean) — Put onto the battlefield under your control all creature cards in your opponents' graveyards that were put there from the battlefield thi…
-- **Esquire of the King** (HobbitEternal.lean) — {4}{W}, {T}: Creatures you control get +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.
-- **Gandalf, Shadow's Foe** (HobbitEternal.lean) — Vigilance / When Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner…
-- **Long-Lost Lances** (HobbitEternal.lean) — Equipped creature gets +2/+0. / During your turn, creatures you control that are equipped have first strike and vigilance. / Equip {2}
-- **Ori, Plate Stacker** (HobbitEternal.lean) — When Ori enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way.
-- **Attuma, Atlantean Warlord** (MarvelSuperHeroes.lean) — Other Merfolk you control get +1/+1. / Whenever one or more Merfolk you control attack a player, draw a card.
-- **Black Widow, Super Spy** (MarvelSuperHeroes.lean) — Menace / Whenever Black Widow deals combat damage to a player, that player exiles cards from the top of their library until they exile a …
-- **Call Damage Control** (MarvelSuperHeroes.lean) — Choose up to two. Return those cards from your graveyard to your hand. / â¢ Target artifact card. / â¢ Target creature card. / â¢ Targ…
-- **Captain Mar-Vell, Space-Born** (MarvelSuperHeroes.lean) — Flying, vigilance / Cosmic Awareness â As long as an opponent has cast a spell this turn, you may cast spells as though they had flash.
-- **HYDRA Assault Robot** (MarvelSuperHeroes.lean) — Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent.
-- **Hero in Training** (MarvelSuperHeroes.lean) — When this creature enters, draw a card. If you control another Hero, you gain 2 life.
-- **K'un-Lun Warrior** (MarvelSuperHeroes.lean) — When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card.
-- **Kid Loki** (MarvelSuperHeroes.lean) — Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof. / Whenever you draw your second card each…
-- **Mockingbird, Ace Agent** (MarvelSuperHeroes.lean) — Double strike / Whenever you cast a spell that targets a creature you control, put a +1/+1 counter on Mockingbird.
-- **Powerful Broker** (MarvelSuperHeroes.lean) — {T}: For each kind of counter on target permanent or player, give that permanent or player another counter of that kind. Activate only as…
-- **Restorative Technique** (MarvelSuperHeroes.lean) — Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a …
-- **Speedball, New Warrior** (MarvelSuperHeroes.lean) — Whenever a player casts a spell that targets Speedball, he gets +2/+2 until end of turn. You may choose new targets for that spell.
-- **Spider-Man, To the Rescue** (MarvelSuperHeroes.lean) — Flash / Reach, vigilance / No One Dies! â When Spider-Man enters, you may tap him. When you do, another target nonattacking creature yo…
-- **Spider-Woman, Secret Agent** (MarvelSuperHeroes.lean) — Flash / When Spider-Woman enters, tap target creature an opponent controls. That creature can't become untapped for as long as you contro…
-- **Super-Soldier Serum** (MarvelSuperHeroes.lean) — Enchant creature / Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other typ…
-- **The Masters of Evil** (MarvelSuperHeroes.lean) — Other Villains you control get +2/+1. / {1}{B}, Discard this card: Search your library for a Plan card, reveal it, put it into your hand,…
-- **The Mighty Thor, Jane Foster** (MarvelSuperHeroes.lean) — Flying / Whenever The Mighty Thor attacks, exile up to one target nontoken artifact or creature, then return that card to the battlefield…
-- **The Thing, Ben Grimm** (MarvelSuperHeroes.lean) — Trample / Whenever one or more Heroes you control deal damage to a player, put two +1/+1 counters on The Thing.
-- **The Vision** (MarvelSuperHeroes.lean) — Flying, vigilance / Whenever you cast a noncreature spell, choose one that hasn't been chosen this turn â / â¢ Solar Beam â The Visi…
-- **Thirst for Knowledge** (MarvelSuperHeroes.lean) — Draw three cards. Then discard two cards unless you discard an artifact card.
-- **Vision of Love** (MarvelSuperHeroes.lean) — You may sacrifice an artifact or discard a card. If you do, draw two cards.
-- **Wakandan Royal Guard** (MarvelSuperHeroes.lean) — Vigilance / When this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters o…
+### Cards that still cannot convert
+
+Closer reading of the remaining 14 found constructor gaps. They stay in the
+catalog as `CardDef` helpers. Evidence is the printed ability vs the current
+inductives (not a missing leftover for an expressible spelling).
+
+- **Dwarven Mauler** — Equip abilities you activate that target this creature
+  cost {2} less. `ContinuousEffect.reduceCost` only reduces *this object's*
+  costs. There is no selector for “equip abilities you activate that target
+  this.”
+- **Supper for Spiders** — Put onto the battlefield all creature cards in
+  opponents' graveyards that were put there *from the battlefield this turn*;
+  they become Food artifacts with an activated ability. `Shape.diedThisTurn`
+  is only set from a `Condition`, not a selector conjunct, and there is no
+  `CardAction` to change types to Food and grant an ability.
+- **Long-Lost Lances** — During your turn, *creatures you control that are
+  equipped* have first strike and vigilance. That needs `Selector.attached`
+  (inverse of `hostOf`). Equipped-creature host bonuses already exist; this
+  static is the other direction.
+- **Ori, Plate Stacker** — Destroy all artifacts and enchantments opponents
+  control; gain 1 life *for each permanent destroyed this way*.
+  `CardAction.gainLife` takes a literal `Nat`; `CardAction.eventAmount` /
+  `Selector.countOf` / `Range.computed` are missing.
+- **Black Widow, Super Spy** — Combat-damage exile from the top until a
+  nonland, then an optional +1/+1 or cast-the-exiled-card. Needs
+  `Selector.topNOfLibrary` / exile-until and `Selector.inExile` for the
+  leftover nonland.
+- **Captain Mar-Vell, Space-Born** — As long as an opponent has cast a spell
+  this turn, you may cast spells as though they had flash.
+  `ContinuousEffect.gainAbilityIf` / “as though they had flash” is missing
+  (`Condition.happened` on an opponent's `castSpell` exists, but granting
+  flash to spells you cast does not).
+- **Kid Loki** — Each creature you control that you've put +1/+1 counters on
+  *this turn* has hexproof. `Selector.hasCounter` and a “this turn” put-
+  counters window are missing. (The second-card +1/+1 on self is already
+  leftover-expressible as `onDrawSecondPlusOne`, but the static is not.)
+- **Powerful Broker** — For each *kind of counter* on target permanent or
+  player, give another counter of that kind. No constructor iterates counter
+  kinds.
+- **Speedball, New Warrior** — Whenever a player casts a spell that targets
+  Speedball, pump and *choose new targets for that spell*. `Trigger.becomeTarget`
+  is missing (also listed for other cards); changing targets of another spell
+  is not a `CardAction`.
+- **Spider-Man, To the Rescue** — You may tap him. *When you do*, another
+  target nonattacking creature gains indestructible. Nested “when you do”
+  delayed trigger is not a `Trigger` constructor.
+- **Spider-Woman, Secret Agent** — Tap target opponent creature; it can't
+  become untapped for as long as you control Spider-Woman.
+  `ContinuousEffect.skipsUntap` / “can't become untapped while you control
+  this” is missing.
+- **Super-Soldier Serum** — Enchanted creature is a *legendary Soldier* in
+  addition to its other types, and attach *any number* of Equipment you
+  control. No `ContinuousEffect.gainSupertype`; `Range.anyNumber` is missing
+  (only finite `range lo hi`).
+- **The Masters of Evil** — Search your library for a *Plan* card.
+  `CardSubtype.plan` does not exist (`CardPart.subtype` / `Selector.subtype`
+  can't name it). Other Villains +2/+1 is already expressible.
+- **The Vision** — Choose one *that hasn't been chosen this turn*.
+  `Condition.firstThisTurn` / “mode not chosen this turn” is missing.
+  `CardAction.chooseMode` has no per-mode-this-turn exclusion.
 
 ## Adjacent inductives
 
@@ -598,9 +636,9 @@ face (`alternative` is the Adventure face). Those are listed under
 ## Per-card index
 
 Every remaining supported catalog card. Constructors are `Type.ctor`.
-Cards in the previous section appear with an empty list.
+Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (126 cards)
+### The Hobbit (HOB) (117 cards)
 
 **Along the Crooked Way** (`alongTheCrookedWay`)
 
@@ -629,7 +667,6 @@ Cards in the previous section appear with an empty list.
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
-**Bard the Bowman** (`bardTheBowman`) — no tagged type gap; likely spellable with current constructors.
 
 **Bard's Company** (`bardsCompany`)
 
@@ -693,7 +730,6 @@ Cards in the previous section appear with an empty list.
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-**Bolg's Company** (`bolgsCompany`) — no tagged type gap; likely spellable with current constructors.
 
 **Bombur, Gentle Dreamer** (`bomburGentleDreamer`)
 
@@ -799,7 +835,10 @@ Cards in the previous section appear with an empty list.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 
-**Dwarven Mauler** (`dwarvenMauler`) — no tagged type gap; Oracle still needs a closer reading.
+**Dwarven Mauler** (`dwarvenMauler`)
+
+- `ContinuousEffect.reduceCostIfTargeting` — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
+
 
 **Dwarven Shortsword** (`dwarvenShortsword`)
 
@@ -842,7 +881,6 @@ Cards in the previous section appear with an empty list.
 - `Selector.inHand` — An object in a hand
 - `CardAction.behold` — Behold a subtype
 
-**Elven Raft-Steerer** (`elvenRaftSteerer`) — no tagged type gap; likely spellable with current constructors.
 
 **Esgaroth Garrison** (`esgarothGarrison`)
 
@@ -976,7 +1014,6 @@ Cards in the previous section appear with an empty list.
 - `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
 
-**Iron Hills Stalwart** (`ironHillsStalwart`) — no tagged type gap; likely spellable with current constructors.
 
 **Key to the Side-Door** (`keyToTheSideDoor`)
 
@@ -1031,7 +1068,6 @@ Cards in the previous section appear with an empty list.
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
-**Mirkwood Nurturer** (`mirkwoodNurturer`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Misty Mountains Raider** (`mistyMountainsRaider`)
 
@@ -1074,7 +1110,6 @@ Cards in the previous section appear with an empty list.
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
 
-**Old Thrush** (`oldThrush`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Orcrist, Goblin-cleaver** (`orcristGoblinCleaver`)
 
@@ -1199,7 +1234,11 @@ Cards in the previous section appear with an empty list.
 - `CardAction.createToken` — Create n tokens of a described kind
 - `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
-**Supper for Spiders** (`supperForSpiders`) — no tagged type gap; Oracle still needs a closer reading.
+**Supper for Spiders** (`supperForSpiders`)
+
+- `Selector.putFromBattlefieldThisTurn` — Cards put into a graveyard from the battlefield this turn (Shape.diedThisTurn is Condition-only)
+- `CardAction.becomeWithAbility` — Lose other types, become Food artifacts, and gain a stated activated ability
+
 
 **The Arkenstone** (`theArkenstone`)
 
@@ -1211,7 +1250,6 @@ Cards in the previous section appear with an empty list.
 - `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 
-**The Chief Warg** (`theChiefWarg`) — no tagged type gap; likely spellable with current constructors.
 
 **The Eagles Are Coming!** (`theEaglesAreComing`)
 
@@ -1346,9 +1384,6 @@ Cards in the previous section appear with an empty list.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 
-**Wargling** (`wargling`) — no tagged type gap; likely spellable with current constructors.
-
-**Wilderland Scrounger** (`wilderlandScrounger`) — no tagged type gap; likely spellable with current constructors.
 
 **Wizard's Staff** (`wizardSStaff`)
 
@@ -1365,7 +1400,7 @@ Cards in the previous section appear with an empty list.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (86 cards)
+### The Hobbit Eternal (HOC) (84 cards)
 
 **Andúril, Flame of the West** (`andurilFlameOfTheWest`)
 
@@ -1535,7 +1570,6 @@ Cards in the previous section appear with an empty list.
 
 - `Selector.inHand` — An object in a hand
 
-**Esquire of the King** (`esquireOfTheKing`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Fiend Hunter** (`fiendHunter`)
 
@@ -1574,7 +1608,6 @@ Cards in the previous section appear with an empty list.
 - `Selector.inHand` — An object in a hand
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 
-**Gandalf, Shadow's Foe** (`gandalfShadowSFoe`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Glamdring** (`glamdring`)
 
@@ -1621,7 +1654,10 @@ Cards in the previous section appear with an empty list.
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
 
-**Long-Lost Lances** (`longLostLances`) — no tagged type gap; Oracle still needs a closer reading.
+**Long-Lost Lances** (`longLostLances`)
+
+- `Selector.attached` — Objects attached to a given object (inverse of hostOf)
+
 
 **Lotho, Corrupt Shirriff** (`lothoCorruptShirriff`)
 
@@ -1690,7 +1726,12 @@ Cards in the previous section appear with an empty list.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 
-**Ori, Plate Stacker** (`oriPlateStacker`) — no tagged type gap; Oracle still needs a closer reading.
+**Ori, Plate Stacker** (`oriPlateStacker`)
+
+- `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
+- `Selector.countOf` — Numeric value derived from a count or characteristic
+- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
@@ -1853,7 +1894,7 @@ Cards in the previous section appear with an empty list.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (246 cards)
+### Marvel Super Heroes (MSH) (227 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
@@ -1899,7 +1940,6 @@ Cards in the previous section appear with an empty list.
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
 
-**Agent Phil Coulson** (`agentPhilCoulson`) — no tagged type gap; likely spellable with current constructors.
 
 **Agents of HYDRA** (`agentsOfHYDRA`)
 
@@ -1964,7 +2004,6 @@ Cards in the previous section appear with an empty list.
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 - `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
 
-**Attuma, Atlantean Warlord** (`attumaAtlanteanWarlord`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Avengers Assemble!** (`avengersAssemble`)
 
@@ -2032,9 +2071,12 @@ Cards in the previous section appear with an empty list.
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
 
-**Black Widow, Super Spy** (`blackWidowSuperSpy`) — no tagged type gap; Oracle still needs a closer reading.
+**Black Widow, Super Spy** (`blackWidowSuperSpy`)
 
-**Blazing Crescendo** (`blazingCrescendo`) — no tagged type gap; likely spellable with current constructors.
+- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
+- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
+- `CardAction.exileUntil` — Exile from the top until a matching card (nonland leftover)
+
 
 **Bold Biochemist** (`boldBiochemist`)
 
@@ -2066,7 +2108,6 @@ Cards in the previous section appear with an empty list.
 
 - `TraditionalCardDefinition.CardSubtype.Assassin` — CardPart.subtype uses CardSubtype; Assassin has no constructor
 
-**Call Damage Control** (`callDamageControl`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Captain America's Shield** (`captainAmericaSShield`)
 
@@ -2089,7 +2130,10 @@ Cards in the previous section appear with an empty list.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 
-**Captain Mar-Vell, Space-Born** (`captainMarVellSpaceBorn`) — no tagged type gap; Oracle still needs a closer reading.
+**Captain Mar-Vell, Space-Born** (`captainMarVellSpaceBorn`)
+
+- `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
+
 
 **Captain Marvel, Earth's Protector** (`captainMarvelEarthSProtector`)
 
@@ -2252,7 +2296,6 @@ Cards in the previous section appear with an empty list.
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities
 - `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
 
-**Giant-Sized Flying Ant** (`giantSizedFlyingAnt`) — no tagged type gap; likely spellable with current constructors.
 
 **Go Nuts!** (`goNuts`)
 
@@ -2283,7 +2326,6 @@ Cards in the previous section appear with an empty list.
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-**HYDRA Assault Robot** (`hYDRAAssaultRobot`) — no tagged type gap; Oracle still needs a closer reading.
 
 **HYDRA Infiltration** (`hYDRAInfiltration`)
 
@@ -2331,7 +2373,6 @@ Cards in the previous section appear with an empty list.
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `TraditionalCardDefinition.CardSubtype.Demigod` — CardPart.subtype uses CardSubtype; Demigod has no constructor
 
-**Hero in Training** (`heroInTraining`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Heroic Feast** (`heroicFeast`)
 
@@ -2435,7 +2476,6 @@ Cards in the previous section appear with an empty list.
 
 - `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
-**K'un-Lun Warrior** (`kUnLunWarrior`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Ka-Zar of the Savage Land** (`kaZarOfTheSavageLand`)
 
@@ -2456,7 +2496,11 @@ Cards in the previous section appear with an empty list.
 - `CardAction.connive` — Connive
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
-**Kid Loki** (`kidLoki`) — no tagged type gap; Oracle still needs a closer reading.
+**Kid Loki** (`kidLoki`)
+
+- `Selector.hasCounter` — Objects with / without a given counter kind
+- `Selector.receivedCounterThisTurn` — Objects you put +1/+1 counters on this turn
+
 
 **Killmonger, Scourge of Wakanda** (`killmongerScourgeOfWakanda`)
 
@@ -2540,7 +2584,6 @@ Cards in the previous section appear with an empty list.
 - `Selector.worthy` — Worthy (Marvel)
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
 
-**Mockingbird, Ace Agent** (`mockingbirdAceAgent`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
@@ -2658,20 +2701,21 @@ Cards in the previous section appear with an empty list.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.copy` — Copy a permanent, spell, or ability
 
-**Photon, Living Light** (`photonLivingLight`) — no tagged type gap; likely spellable with current constructors.
 
 **Political Triumph** (`politicalTriumph`)
 
 - `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
 
-**Powerful Broker** (`powerfulBroker`) — no tagged type gap; Oracle still needs a closer reading.
+**Powerful Broker** (`powerfulBroker`)
+
+- `CardAction.forEachCounterKind` — For each kind of counter on a selected object, give another of that kind
+
 
 **Punishing Punch** (`punishingPunch`)
 
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
 
-**Pym Particles** (`pymParticles`) — no tagged type gap; likely spellable with current constructors.
 
 **Quake, Agent of S.H.I.E.L.D.** (`quakeAgentOfSHIELD`)
 
@@ -2724,7 +2768,6 @@ Cards in the previous section appear with an empty list.
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
-**Restorative Technique** (`restorativeTechnique`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Rewrite History** (`rewriteHistory`)
 
@@ -2821,11 +2864,22 @@ Cards in the previous section appear with an empty list.
 
 - `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
-**Speedball, New Warrior** (`speedballNewWarrior`) — no tagged type gap; Oracle still needs a closer reading.
+**Speedball, New Warrior** (`speedballNewWarrior`)
 
-**Spider-Man, To the Rescue** (`spiderManToTheRescue`) — no tagged type gap; Oracle still needs a closer reading.
+- `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
+- `CardAction.changeTargets` — Choose new targets for another spell or ability
 
-**Spider-Woman, Secret Agent** (`spiderWomanSecretAgent`) — no tagged type gap; Oracle still needs a closer reading.
+
+**Spider-Man, To the Rescue** (`spiderManToTheRescue`)
+
+- `Trigger.whenYouDo` — Nested delayed trigger after an optional action ('when you do')
+
+
+**Spider-Woman, Secret Agent** (`spiderWomanSecretAgent`)
+
+- `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
+- `ContinuousEffect.forbidUntapWhileYouControl` — Can't become untapped for as long as you control this
+
 
 **Stark Industries Executive** (`starkIndustriesExecutive`)
 
@@ -2874,7 +2928,11 @@ Cards in the previous section appear with an empty list.
 - `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Skrull` — CardPart.subtype uses CardSubtype; Skrull has no constructor
 
-**Super-Soldier Serum** (`superSoldierSerum`) — no tagged type gap; Oracle still needs a closer reading.
+**Super-Soldier Serum** (`superSoldierSerum`)
+
+- `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
+- `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
+
 
 **Surveillance Room** (`surveillanceRoom`)
 
@@ -2945,9 +3003,10 @@ Cards in the previous section appear with an empty list.
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
-**The Masters of Evil** (`theMastersOfEvil`) — no tagged type gap; Oracle still needs a closer reading.
+**The Masters of Evil** (`theMastersOfEvil`)
 
-**The Mighty Thor, Jane Foster** (`theMightyThorJaneFoster`) — no tagged type gap; Oracle still needs a closer reading.
+- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+
 
 **The Mind Stone** (`theMindStone`)
 
@@ -3003,7 +3062,6 @@ Cards in the previous section appear with an empty list.
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
 
-**The Thing, Ben Grimm** (`theThingBenGrimm`) — no tagged type gap; Oracle still needs a closer reading.
 
 **The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
 
@@ -3012,13 +3070,16 @@ Cards in the previous section appear with an empty list.
 - `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Squirrel` — CardPart.subtype uses CardSubtype; Squirrel has no constructor
 
-**The Vision** (`theVision`) — no tagged type gap; Oracle still needs a closer reading.
+**The Vision** (`theVision`)
+
+- `Condition.modeNotChosenThisTurn` — Choose a mode that hasn't been chosen this turn
+- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities
 
-**Thirst for Knowledge** (`thirstForKnowledge`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Thor, God of Thunder** (`thorGodOfThunder`)
 
@@ -3116,7 +3177,6 @@ Cards in the previous section appear with an empty list.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 
-**Vision of Love** (`visionOfLove`) — no tagged type gap; Oracle still needs a closer reading.
 
 **Viv Vision, Teen Synthezoid** (`vivVisionTeenSynthezoid`)
 
@@ -3130,7 +3190,6 @@ Cards in the previous section appear with an empty list.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 
-**Wakandan Royal Guard** (`wakandanRoyalGuard`) — no tagged type gap; Oracle still needs a closer reading.
 
 **War Machine, Legacy of Iron** (`warMachineLegacyOfIron`)
 
@@ -3163,7 +3222,6 @@ Cards in the previous section appear with an empty list.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 
-**White Widow, Free Agent** (`whiteWidowFreeAgent`) — no tagged type gap; likely spellable with current constructors.
 
 **Wiccan, Rising Magician** (`wiccanRisingMagician`)
 
@@ -3214,7 +3272,6 @@ Cards in the previous section appear with an empty list.
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 - `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
 
-**Yellowjacket, Heartless Marauder** (`yellowjacketHeartlessMarauder`) — no tagged type gap; likely spellable with current constructors.
 
 **Dark Fortress** (`darkFortress`)
 
