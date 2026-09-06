@@ -840,7 +840,7 @@ end
 
 namespace CardPart
 
-/-- Printed Treasure token characteristics (CR 111). -/
+/-- Printed Treasure token characteristics (CR 111.10a). -/
 def treasureToken : List CardPart := [
   .type .artifact,
   .subtype .treasure,
@@ -850,7 +850,7 @@ def treasureToken : List CardPart := [
       (.addManaAnyColor (.controller .this) (.controller .this) 1))
 ]
 
-/-- Printed Food token characteristics (CR 111). -/
+/-- Printed Food token characteristics (CR 111.10b). -/
 def foodToken : List CardPart := [
   .type .artifact,
   .subtype .food,
@@ -858,34 +858,6 @@ def foodToken : List CardPart := [
     (.activated
       [.mana [.generic 2], .tapSymbol, .sacrifice .this]
       (.gainLife (.controller .this) 3))
-]
-
-/-- A 2/2 red Dwarf creature token. -/
-def dwarfToken : List CardPart := [
-  .type .creature, .subtype .dwarf, .power 2, .toughness 2
-]
-
-/-- A 1/1 white Spirit creature token with flying. -/
-def spiritToken : List CardPart := [
-  .type .creature, .subtype .spirit, .power 1, .toughness 1,
-  .ability (.keyword .flying)
-]
-
-/-- A 3/2 white Hero creature token with vigilance. -/
-def hero32vigilanceToken : List CardPart := [
-  .type .creature, .subtype .hero, .power 3, .toughness 2,
-  .ability (.keyword .vigilance)
-]
-
-/-- A 2/1 black Villain creature token with menace. -/
-def villain21menaceToken : List CardPart := [
-  .type .creature, .subtype .villain, .power 2, .toughness 1,
-  .ability (.keyword .menace)
-]
-
-/-- A 1/1 white Soldier creature token. -/
-def soldier11whiteToken : List CardPart := [
-  .type .creature, .subtype .soldier, .power 1, .toughness 1
 ]
 
 end CardPart
@@ -5685,18 +5657,30 @@ end TraditionalCardDefinition
 
 #guard CardAction.leftoverTokenKind? CardPart.treasureToken == some TokenKind.treasure
 #guard CardAction.leftoverTokenKind? CardPart.foodToken == some TokenKind.food
-#guard CardAction.leftoverTokenKind? CardPart.dwarfToken == some TokenKind.dwarf
-#guard CardAction.leftoverTokenKind? CardPart.spiritToken == some TokenKind.spirit
-#guard CardAction.leftoverTokenKind? CardPart.hero32vigilanceToken ==
+#guard CardAction.leftoverTokenKind?
+  [.type .creature, .subtype .dwarf, .power 2, .toughness 2] ==
+  some TokenKind.dwarf
+#guard CardAction.leftoverTokenKind?
+  [.type .creature, .subtype .spirit, .power 1, .toughness 1,
+    .ability (.keyword .flying)] ==
+  some TokenKind.spirit
+#guard CardAction.leftoverTokenKind?
+  [.type .creature, .subtype .hero, .power 3, .toughness 2,
+    .ability (.keyword .vigilance)] ==
   some TokenKind.hero32vigilance
-#guard CardAction.leftoverTokenKind? CardPart.villain21menaceToken ==
+#guard CardAction.leftoverTokenKind?
+  [.type .creature, .subtype .villain, .power 2, .toughness 1,
+    .ability (.keyword .menace)] ==
   some TokenKind.villain21menace
-#guard CardAction.leftoverTokenKind? CardPart.soldier11whiteToken ==
+#guard CardAction.leftoverTokenKind?
+  [.type .creature, .subtype .soldier, .power 1, .toughness 1] ==
   some TokenKind.soldier11white
 
 #guard
   CardAction.toEffect
-    (.createTokens (.controller .this) 2 CardPart.hero32vigilanceToken) ==
+    (.createTokens (.controller .this) 2 [
+      .type .creature, .subtype .hero, .power 3, .toughness 2,
+      .ability (.keyword .vigilance)]) ==
     Effect.createTokens .hero32vigilance 2
 
 #guard
@@ -5716,7 +5700,9 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.die .this)
-      (.createTokens (.controller .this) 1 CardPart.villain21menaceToken)).toTriggeredAbility? with
+      (.createTokens (.controller .this) 1 [
+        .type .creature, .subtype .villain, .power 2, .toughness 1,
+        .ability (.keyword .menace)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesCreateTokens .villain21menace 1
   | none => false
 
@@ -5726,7 +5712,8 @@ end TraditionalCardDefinition
       (.enter .this)
       (.sequence [
         .actionId 1
-          (.createTokens (.controller .this) 1 CardPart.dwarfToken),
+          (.createTokens (.controller .this) 1 [
+            .type .creature, .subtype .dwarf, .power 2, .toughness 2]),
         .attach .this (.wasCreatedByAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateThenAttach .dwarf
   | none => false
@@ -5734,7 +5721,9 @@ end TraditionalCardDefinition
 #guard
   CardAction.toEffect
     (.sequence [
-      .createTokens (.controller .this) 1 CardPart.villain21menaceToken,
+      .createTokens (.controller .this) 1 [
+        .type .creature, .subtype .villain, .power 2, .toughness 1,
+        .ability (.keyword .menace)],
       .continuous
         [.addPowerToughness
           (.intersection [
