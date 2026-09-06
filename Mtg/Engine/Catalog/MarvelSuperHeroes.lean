@@ -2402,6 +2402,8 @@ def mshCards : Array CardDef :=
 #guard kreeCommandos.keywords.flying
 #guard kreeCommandos.keywords.vigilance
 #guard kreeCommandos.keywords.prowess
+#guard crimsonOperative.keywords.prowess
+#guard crimsonOperative.triggeredAbilities == #[.onEnterExileTop]
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash
