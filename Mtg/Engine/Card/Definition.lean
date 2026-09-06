@@ -676,6 +676,9 @@ inductive CardAction where
   | searchLibraryThenShuffle : Selector → List CardAction → CardAction
   /-- Bind the selected objects to this numbered variable. -/
   | defineVariable : Nat → Selector → CardAction
+  /-- Execute the given actions for each of the given objects, binding the
+  numbered variable to the current object. -/
+  | forEachVariable : Nat → Selector → List CardAction → CardAction
   /-- Reveal the selected object (CR 701.19a). -/
   | reveal : Selector → CardAction
   /-- The first selected object deals damage equal to its power to the
@@ -1291,6 +1294,17 @@ def leftoverSearchLibraryThenShuffle? : CardAction → Option Effect
   | .searchLibraryThenShuffle _ actions => leftoverSearchActions? actions
   | _ => none
 
+/-- Each player sacrifices a creature they choose. -/
+def leftoverEachPlayerSacrificesCreature? : CardAction → Bool
+  | .forEachVariable n among [
+      .sacrifice
+        (.selected chooser (.range 1 1) sacAmong)
+    ] =>
+    among == .player &&
+      chooser == .variable n &&
+      sacAmong.shape.types.eqTypes [.creature]
+  | _ => false
+
 /-- Enters-the-battlefield library searches. -/
 def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
   | [.putOntoBattlefield sel] =>
@@ -1424,6 +1438,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
                   | .defineVariable _ _ => continuousEffect none [] asAbility
+                  | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
                   | .dealDamageEqualToPower _ _ =>
                     continuousEffect none [] asAbility
@@ -1643,8 +1658,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             .controlled (.targetReference _)]))) =>
     some TriggeredAbility.onEnterTargetOpponentSacrificesCreature
   | .triggered (.enter .this)
-      (.sacrifice (.selected .player _ among)) =>
-    if among.shape.types.eqTypes [.creature] then
+      (.forEachVariable n among actions) =>
+    if CardAction.leftoverEachPlayerSacrificesCreature? (.forEachVariable n among actions) then
       some TriggeredAbility.onEnterEachPlayerSacrificesCreature
     else none
   | .triggered (.enter .this)
@@ -3540,11 +3555,15 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.sacrifice
-        (.selected
-          .player
-          (.range 1 1)
-          (.intersection [.permanent, .cardType .creature])))).toTriggeredAbility? with
+      (.forEachVariable 1 .player [
+        .sacrifice
+          (.selected
+            (.variable 1)
+            (.range 1 1)
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.variable 1)]))])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterEachPlayerSacrificesCreature
   | none => false
 

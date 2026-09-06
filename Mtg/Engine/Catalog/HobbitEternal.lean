@@ -310,11 +310,15 @@ def mercilessExecutioner : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.sacrifice
-          (.selected
-            .player
-            (.range 1 1)
-            (.intersection [.permanent, .cardType .creature]))))
+        (.forEachVariable 1 .player [
+          .sacrifice
+            (.selected
+              (.variable 1)
+              (.range 1 1)
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.variable 1)]))]))
   ]).toCardDef
     (oracleText := "When this creature enters, each player sacrifices a creature of their choice.")
 
