@@ -710,7 +710,7 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            .endOfTurn])))
+            (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])])))
 ]
 
 def snowslopeHunterCard : CardDef :=
@@ -1461,7 +1461,7 @@ def gundabadOpportunist : CardDef :=
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            .endOfTurn]))
+            (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])]))
   ]).toCardDef
     (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
 

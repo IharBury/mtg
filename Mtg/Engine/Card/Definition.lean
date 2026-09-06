@@ -110,6 +110,8 @@ what a replacement effect intercepts. -/
 inductive Trigger where
   | endOfGame
   | endOfTurn
+  /-- At the end of the selected player's turn (CR 514.3). -/
+  | endOfPlayerTurn : Selector → Trigger
   /-- From the start of the turn (a window bound for `happened`). -/
   | turnStart
   /-- From the start of the game (a window bound for `happened`). -/
@@ -149,6 +151,8 @@ inductive Trigger where
   /-- An activated ability of a source matching the selector is activated
   (CR 602). -/
   | activateAbility : Selector → Trigger
+  /-- After the listed triggers have occurred in order. -/
+  | sequence : List Trigger → Trigger
   /-- The given trigger does not occur. -/
   | not : Trigger → Trigger
   /-- Either trigger occurs. -/
@@ -985,15 +989,22 @@ def leftoverCounterExile? : CardAction → Bool
     ] => true
   | _ => false
 
+/-- Duration “until the end of your next turn” (CR 611.2a). -/
+def leftoverUntilEndOfYourNextTurn? : Trigger → Bool
+  | .sequence [.endOfTurn, .endOfPlayerTurn who] =>
+    who == .controller .this
+  | _ => false
+
 /-- Exile the top card; you may play it until the end of your next turn. -/
 def leftoverExileTopPlayUntilEndOfNextTurn? : CardAction → Bool
   | .sequence [
       .actionId id (.exile (.topOfLibrary who)),
-      .continuous [.canPlay permit (.wasCreatedByAction created)] _
+      .continuous [.canPlay permit (.wasCreatedByAction created)] duration
     ] =>
     id == created &&
       who == .controller .this &&
-      permit == .controller .this
+      permit == .controller .this &&
+      leftoverUntilEndOfYourNextTurn? duration
   | _ => false
 
 /-- Attach this Equipment to target creature you control. -/
@@ -2746,8 +2757,16 @@ end TraditionalCardDefinition
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-        .endOfTurn]
+        (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])]
   action.toAbilityEffect == Effect.exileTopPlayUntilEndOfNextTurn
+
+#guard
+  !(CardAction.leftoverExileTopPlayUntilEndOfNextTurn?
+    (.sequence [
+      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .continuous
+        [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+        .endOfTurn]))
 
 #guard
   match
@@ -2765,7 +2784,7 @@ end TraditionalCardDefinition
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            .endOfTurn]))).toActivatedAbility? with
+            (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])]))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       ab.onceEachTurn &&
@@ -3485,7 +3504,7 @@ end TraditionalCardDefinition
         .actionId 1 (.exile (.topOfLibrary (.controller .this))),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-          .endOfTurn])).toTriggeredAbility? with
+          (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterExileTop
   | none => false
 
