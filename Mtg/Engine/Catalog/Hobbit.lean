@@ -378,10 +378,11 @@ def stirUpTrouble : TraditionalCardDefinition := .card [
   .ability (.static (
   .additionalCost .this
     [.or [
-      .sacrifice
+      .sacrificeCount
         (.intersection [
           .permanent,
-          .union [.cardType .artifact, .cardType .creature]]),
+          .union [.cardType .artifact, .cardType .creature]])
+        1,
       .mana [.generic 4]]])),
   .actions [
     .destroy
@@ -540,10 +541,11 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
     .activatedIf
       (.timeToCastSorcery (.controller .this))
       [.mana [.generic 2],
-        .sacrifice
+        .sacrificeCount
           (.intersection [
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
       (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
 
@@ -701,11 +703,12 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
         (.and
           (.turn (.controller .this))
           (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
-        [.sacrifice
+        [.sacrificeCount
           (.intersection [
             .not .this,
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
         (.sequence [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
@@ -1764,12 +1767,13 @@ def bolgsCompany : CardDef :=
       .activated
         [
           .tapSymbol,
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .not .this,
               .permanent,
               .subtype .goblin,
-              .controlled (.controller .this)])]
+              .controlled (.controller .this)])
+            1]
         (.addMana (.controller .this) [.mono .black, .mono .red]))
   ]).toCardDef
     (oracleText := "This creature has haste as long as you control another Goblin.\n{T}, Sacrifice another Goblin: Add {B}{R}.")
@@ -2929,6 +2933,8 @@ def hobbitCards : Array CardDef := #[
 #guard snowslopeHunterCard.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
 #guard snowslopeHunterCard.activatedAbilities[0]!.onlyDuringYourTurn
 #guard snowslopeHunterCard.activatedAbilities[0]!.onceEachTurn
+#guard bolgsCompany.activatedAbilities[0]!.cost.tap
+#guard bolgsCompany.activatedAbilities[0]!.cost.sacrificeAnotherSubtype == some "Goblin"
 #guard snowslopeHunterCard.power == some 2
 #guard snowslopeHunterCard.toughness == some 3
 #guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1

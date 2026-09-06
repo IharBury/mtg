@@ -64,7 +64,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `attackSimultaneously`, `abilityWithIdActivated`, `actionWithId`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
   `not`, `or`.
-- **Cost** — `mana`, `life`, `sacrifice`, `sacrificeCount`, `tapSymbol`,
+- **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
+  `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard`, `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
@@ -207,8 +208,6 @@ complete.
   - Mount Doom
 - **`or`** (1 cards) — Cost.or exists; need discard-a-card (inHand) OR pay generic
   - Titania, Rugged Rumbler
-- **`sacrifice`** (1 cards) — sacrifice exists; creature-only additional cost is Selector-shaped — likely expressible
-  - My Precious
 - **`tapOther`** (1 cards) — Tap another matching permanent (not the tap symbol on the source)
   - The Shire
 
@@ -1090,7 +1089,6 @@ Converted cards from the previous untagged set are omitted here.
 **My Precious** (`myPrecious`)
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `Cost.sacrifice` — sacrifice exists; creature-only additional cost is Selector-shaped — likely expressible
 
 **Nasty Little Rabbit** (`nastyLittleRabbit`)
 

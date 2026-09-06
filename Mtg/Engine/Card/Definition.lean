@@ -512,9 +512,10 @@ inductive Cost where
   | mana : List ManaSymbol → Cost
   /-- Pay that much life (CR 118.3). -/
   | life : Nat → Cost
-  /-- Sacrifice a selected permanent (CR 701.17). -/
+  /-- Sacrifice every selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
-  /-- Sacrifice that many permanents matching the selector (CR 701.17). -/
+  /-- Sacrifice that many permanents matching the selector (CR 701.17).
+  Use this to sacrifice one of a set; `sacrifice` would take all of them. -/
   | sacrificeCount : Selector → Nat → Cost
   /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
   sickness. -/
@@ -539,11 +540,9 @@ def lifePaid : List Cost → Nat
   | _ :: rest => lifePaid rest
 
 def isSacArtifactOrCreature : Cost → Bool
-  | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
   | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
   | .or cs =>
     cs.any fun
-      | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
       | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
       | _ => false
   | _ => false
@@ -577,7 +576,7 @@ def sacrificesThis : List Cost → Bool
 /-- Sacrifice another permanent you control of a printed subtype. -/
 def sacrificeAnotherSubtype? : List Cost → Option String
   | [] => none
-  | .sacrifice s :: rest =>
+  | .sacrificeCount s 1 :: rest =>
     s.shape.anotherSubtypeYouControl.orElse fun _ =>
       sacrificeAnotherSubtype? rest
   | _ :: rest => sacrificeAnotherSubtype? rest
@@ -3008,10 +3007,11 @@ end TraditionalCardDefinition
     .ability (.static (
       .additionalCost .this
         [.or [
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]]),
+              .union [.cardType .artifact, .cardType .creature]])
+            1,
           .mana [.generic 4]]])),
     .actions [
       .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
@@ -3022,10 +3022,11 @@ end TraditionalCardDefinition
     .ability (.static (
       .additionalCost .this
         [.or [
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]]),
+              .union [.cardType .artifact, .cardType .creature]])
+            1,
           .mana [.generic 4]]]))
   ]).toCardDef.additionalCostOrPayGeneric == some 4
 
@@ -3056,6 +3057,39 @@ end TraditionalCardDefinition
     ab.cost.sacrificeAnotherCreatureOrArtifact &&
       ab.cost.mana == ManaCost.ofGenericAndColor 2 .black &&
       ab.effect == Effect.abilityDraw 1
+  | none => false
+
+-- Sacrifice another Goblin is `sacrificeCount` 1, not `sacrifice` (all of them).
+#guard
+  match
+    (Ability.activated
+      [.tapSymbol,
+        .sacrificeCount
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .goblin,
+            .controlled (.controller .this)])
+          1]
+      (.addMana (.controller .this) [.mono .black, .mono .red])).toActivatedAbility? with
+  | some ab =>
+      ab.cost.tap &&
+      ab.cost.sacrificeAnotherSubtype == some "Goblin" &&
+      ab.effect == Effect.addMana #[.colored .black, .colored .red]
+  | none => false
+
+#guard
+  match
+    (Ability.activated
+      [.tapSymbol,
+        .sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .goblin,
+            .controlled (.controller .this)])]
+      (.addMana (.controller .this) [.mono .black, .mono .red])).toActivatedAbility? with
+  | some ab => ab.cost.sacrificeAnotherSubtype.isNone
   | none => false
 
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
@@ -3284,10 +3318,11 @@ end TraditionalCardDefinition
     (Ability.activatedIf
       (.timeToCastSorcery (.controller .this))
       [.mana [.generic 2],
-        .sacrifice
+        .sacrificeCount
           (.intersection [
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
       (.returnToHand (.intersection [.inGraveyard, .source .this]))).toActivatedAbility? with
   | some ab =>
     ab.onlyAsSorcery &&
@@ -3432,11 +3467,12 @@ end TraditionalCardDefinition
         (.and
           (.turn (.controller .this))
           (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
-        [.sacrifice
+        [.sacrificeCount
           (.intersection [
             .not .this,
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
         (.sequence [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
