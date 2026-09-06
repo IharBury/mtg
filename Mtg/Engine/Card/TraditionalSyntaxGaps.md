@@ -67,7 +67,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `not`, `or`.
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
-  `discard`, `or`.
+  `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
 - **CardState** — `tapped`, `controlled` (who controls as the permanent enters).

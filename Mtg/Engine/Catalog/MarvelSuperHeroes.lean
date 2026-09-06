@@ -832,12 +832,10 @@ def thirstForKnowledge : CardDef :=
     .type .instant,
     .actions [
       .draw (.controller .this) 3,
-      .playerSelectAction
+      .preventable
         (.controller .this)
-        (.range 1 1)
-        [
-          .discard (.intersection [.cardType .artifact]) 1,
-          .discard (.controller .this) 2]]
+        [.discard (.cardType .artifact)]
+        (.discard (.controller .this) 2)]
   ]).toCardDef
     (oracleText := "Draw three cards. Then discard two cards unless you discard an artifact card.")
 
@@ -2927,6 +2925,7 @@ def mshCards : Array CardDef :=
 #guard attumaAtlanteanWarlord.staticAbilities == #[.otherCreaturesGet #["Merfolk"] 1 1]
 #guard attumaAtlanteanWarlord.triggeredAbilities ==
   #[.onWatch Effect.watchMerfolkAttackDraw]
+#guard thirstForKnowledge.spellEffect == some Effect.drawThreeDiscardUnlessArtifact
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash

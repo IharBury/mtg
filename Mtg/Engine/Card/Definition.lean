@@ -1506,11 +1506,11 @@ def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
 def leftoverDrawThreeDiscardUnlessArtifact? : CardAction → Option Bool
   | .sequence [
       .draw _ 3,
-      .playerSelectAction _ (.range 1 1) [
-        .discard art 1,
-        .discard _ 2]
+      .preventable who [.discard art] (.discard _ 2)
     ] =>
-    if art.shape.types.eqTypes [.artifact] then some true else none
+    if who == .controller .this && art.shape.types.eqTypes [.artifact] then
+      some true
+    else none
   | _ => none
 
 /-- Choose up to two: return an artifact, creature, enchantment, or land
@@ -2896,6 +2896,36 @@ end TraditionalCardDefinition
         .discard (.controller .this) 1]]
   CardAction.leftoverModes? action ==
     some #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
+
+-- Thirst for Knowledge: discard two unless you discard an artifact card.
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .preventable
+        (.controller .this)
+        [.discard (.cardType .artifact)]
+        (.discard (.controller .this) 2)]) == some true
+
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .discard (.intersection [.cardType .artifact]) 1,
+          .discard (.controller .this) 2]]) |>.isNone
+
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .preventable
+        (.controller .this)
+        [.discard .this]
+        (.discard (.controller .this) 2)]) |>.isNone
 
 -- Ravenhill Flock: whenever you draw, +1/+1 counter.
 #guard
