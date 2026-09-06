@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 117 |
+| The Hobbit (HOB) | 116 |
 | The Hobbit Eternal (HOC) | 84 |
 | Marvel Super Heroes (MSH) | 227 |
-| **Total remaining** | **428** |
+| **Total remaining** | **427** |
 
-All **428** remaining cards have at least one identified constructor gap.
+All **427** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -57,7 +57,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`, `inDeck`,
   `supertype`, `variable`, `topOfLibrary`.
-- **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`, `turnStart`,
+- **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
+  `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
   `putToGraveyard`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
@@ -165,8 +166,8 @@ complete.
 
 ### `Trigger`
 
-- **`beginStep`** (27 cards) — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-  - Absorbing Man; Alien Invasion; Avengers Assemble!; Beorn the Fierce; Bolg, Erebor's Reckoning; Chief Warg's Company; Dawn of a New Age; Doctor Doom; Gandalf, Party Guest; Glóin the Mighty; … (17 more)
+- **`beginStep`** (26 cards) — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
+  - Absorbing Man; Alien Invasion; Avengers Assemble!; Beorn the Fierce; Bolg, Erebor's Reckoning; Chief Warg's Company; Dawn of a New Age; Doctor Doom; Gandalf, Party Guest; Glóin the Mighty; … (16 more)
 - **`onceEachTurn`** (15 cards) — Limit a trigger to once each turn
   - Ant-Man, Colony Commander; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Kíli the Resourceful; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; … (5 more)
 - **`sagaChapter`** (14 cards) — When a lore counter is put / a (final) chapter ability resolves
@@ -499,8 +500,6 @@ complete.
   - Haunt of the Dead Marshes
 - **`CardSubtype.Performer`** (1 cards) — CardPart.subtype uses CardSubtype; Performer has no constructor
   - Wonder Man, Hollywood Hero
-- **`CardSubtype.Rabbit`** (1 cards) — CardPart.subtype uses CardSubtype; Rabbit has no constructor
-  - Nasty Little Rabbit
 - **`CardSubtype.Samurai`** (1 cards) — CardPart.subtype uses CardSubtype; Samurai has no constructor
   - Colleen Wing, Street Samurai
 - **`CardSubtype.Squirrel`** (1 cards) — CardPart.subtype uses CardSubtype; Squirrel has no constructor
@@ -1091,11 +1090,6 @@ Converted cards from the previous untagged set are omitted here.
 **My Precious** (`myPrecious`)
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-
-**Nasty Little Rabbit** (`nastyLittleRabbit`)
-
-- `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `TraditionalCardDefinition.CardSubtype.Rabbit` — CardPart.subtype uses CardSubtype; Rabbit has no constructor
 
 **Old Fat Spider** (`oldFatSpider`)
 

@@ -134,6 +134,7 @@ inductive CardSubtype where
   | pilot
   | pirate
   | plains
+  | rabbit
   | ranger
   | robot
   | rogue
@@ -198,6 +199,7 @@ def toString : CardSubtype → String
   | .pilot => "Pilot"
   | .pirate => "Pirate"
   | .plains => "Plains"
+  | .rabbit => "Rabbit"
   | .ranger => "Ranger"
   | .robot => "Robot"
   | .rogue => "Rogue"
@@ -288,5 +290,6 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard CardSubtype.toString .zombie == "Zombie"
 #guard CardSubtype.toString .archer == "Archer"
 #guard CardSubtype.toString .dinosaur == "Dinosaur"
+#guard CardSubtype.toString .rabbit == "Rabbit"
 
 end Mtg.Engine

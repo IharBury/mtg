@@ -449,6 +449,8 @@ namespace CardDef
   .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
 #guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
   .triggered .yourBeginCombat (Effect.ofTrigger (.plusOneOn .creatureYouControl))
+#guard TriggeredAbility.onYourBeginCombatFerociousPlusOne ==
+  .triggered .yourBeginCombat (Effect.ofTrigger .plusOneOnSource) .ferocious
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
   .triggered .enterOrAttack (Effect.ofTrigger (.createTokens .wall 1))
 #guard TriggeredAbility.onEnterConnive == .triggered .enter (Effect.ofTrigger .connive)

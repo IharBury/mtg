@@ -1400,9 +1400,26 @@ def wilderlandScrounger : CardDef :=
     (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.")
 
 def nastyLittleRabbit : CardDef :=
-  creature "Nasty Little Rabbit" (ManaCost.ofColor .green) #["Rabbit"] 1 2
+  (TraditionalCardDefinition.card [
+    .name "Nasty Little Rabbit",
+    .manaCost [.mono .green],
+    .type .creature,
+    .subtype .rabbit,
+    .power 1,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.combatStart (.controller .this))
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast 4]))
+          [.putCounter (.source .this) .plusOnePlusOne 1]))
+  ]).toCardDef
     (oracleText := "Ferocious — At the beginning of combat on your turn, if you control a creature with power 4 or greater, put a +1/+1 counter on this creature.")
-    (triggeredAbilities := #[.onYourBeginCombatFerociousPlusOne])
 
 def theChiefWarg : CardDef :=
   (TraditionalCardDefinition.card [
