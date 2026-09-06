@@ -1669,9 +1669,12 @@ def antManSArmy : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.chooseMode [
-          .createTokens (.controller .this) 1 PredefinedToken.foodToken,
-          .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .createTokens (.controller .this) 1 PredefinedToken.foodToken,
+            .createTokens (.controller .this) 1 PredefinedToken.treasureToken]))
   ]).toCardDef
     (oracleText := "When this creature enters, create a Food token or a Treasure token. (A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
 

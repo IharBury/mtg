@@ -2130,8 +2130,8 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     if id == id' && n == 1 && leftoverYou who then
       leftoverTokenKind? parts |>.map TriggeredAbility.onEnterCreateThenAttach
     else none
-  | .chooseMode modes =>
-    if leftoverCreateFoodOrTreasure? modes then
+  | .playerSelectAction who (.range 1 1) actions =>
+    if leftoverYou who && leftoverCreateFoodOrTreasure? actions then
       some TriggeredAbility.onEnterCreateFoodOrTreasure
     else none
   | .keyword .recruit => some TriggeredAbility.onEnterRecruit
@@ -2732,8 +2732,6 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onEnterTapOrUntapNonland
     else if CardAction.leftoverPlusOnesOrReturnArtEnch? modes then
       some (TriggeredAbility.onEnter Effect.enterPlusOnesOrReturnArtEnch)
-    else if CardAction.leftoverCreateFoodOrTreasure? modes then
-      some TriggeredAbility.onEnterCreateFoodOrTreasure
     else none
   | .triggered (.enter .this) action =>
     if CardAction.leftoverAttachTargetEquipment? action then
@@ -5785,6 +5783,27 @@ end TraditionalCardDefinition
         [.tapped])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1 true
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .createTokens (.controller .this) 1 PredefinedToken.foodToken,
+          .createTokens (.controller .this) 1 PredefinedToken.treasureToken])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterCreateFoodOrTreasure
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.chooseMode [
+      .createTokens (.controller .this) 1 PredefinedToken.foodToken,
+      .createTokens (.controller .this) 1 PredefinedToken.treasureToken])).toTriggeredAbility?
+    |>.isNone
 
 #guard
   match
