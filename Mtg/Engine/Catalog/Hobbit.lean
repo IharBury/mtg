@@ -378,10 +378,11 @@ def stirUpTrouble : TraditionalCardDefinition := .card [
   .ability (.static (
   .additionalCost .this
     [.or [
-      .sacrifice
+      .sacrificeCount
         (.intersection [
           .permanent,
-          .union [.cardType .artifact, .cardType .creature]]),
+          .union [.cardType .artifact, .cardType .creature]])
+        1,
       .mana [.generic 4]]])),
   .actions [
     .destroy
@@ -540,10 +541,11 @@ def gollumTheAbandoned : TraditionalCardDefinition := .card [
     .activatedIf
       (.timeToCastSorcery (.controller .this))
       [.mana [.generic 2],
-        .sacrifice
+        .sacrificeCount
           (.intersection [
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
       (.returnToHand (.intersection [.inGraveyard, .source .this])))
 ]
 
@@ -570,7 +572,7 @@ def gnashingOfTeeth : TraditionalCardDefinition := .card [
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 .player)])
+            .controlled (.target 2 .player)])
           (-1) (-1)]
         .endOfTurn]]
 ]
@@ -590,9 +592,9 @@ def reverentHowl : TraditionalCardDefinition := .card [
         .loseLife (.targetReference 1) 2],
       .continuous
         [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          (.target 2 (.intersection [.permanent, .cardType .creature]))
           2 2,
-          .gainAbility (.targetReference 1) (.keyword .lifelink)]
+          .gainAbility (.targetReference 2) (.keyword .lifelink)]
         .endOfTurn]]
 ]
 
@@ -701,11 +703,12 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
         (.and
           (.turn (.controller .this))
           (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
-        [.sacrifice
+        [.sacrificeCount
           (.intersection [
             .not .this,
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
         (.sequence [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
@@ -806,7 +809,7 @@ def wargTactics : TraditionalCardDefinition := .card [
       .sequence [
         .putCounter
           (.target
-            1
+            2
             (.intersection [
               .permanent,
               .cardType .creature,
@@ -814,8 +817,8 @@ def wargTactics : TraditionalCardDefinition := .card [
           .plusOnePlusOne
           1,
         .continuous
-          [.gainAbility (.targetReference 1) (.keyword .trample),
-            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          [.gainAbility (.targetReference 2) (.keyword .trample),
+            .gainAbility (.targetReference 2) (.keyword .hexproof)]
           .endOfTurn]]]
 ]
 
@@ -1101,7 +1104,7 @@ def elvenkingsHalls : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1140,7 +1143,7 @@ def ironHills : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1179,7 +1182,7 @@ def lakeTown : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1218,7 +1221,7 @@ def goblinTown : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1257,7 +1260,7 @@ def mirkwood : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1306,7 +1309,7 @@ def hobbitHole : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              .tapped])),
+              [.tapped]])),
     .ability (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
   ]).toCardDef
     (oracleText :=
@@ -1336,14 +1339,65 @@ def nighthowlPursuer : CardDef :=
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever this creature attacks while you control a creature with power 4 or greater, this creature gets +2/+2 until end of turn.")
 
 def wargling : CardDef :=
-  creature "Wargling" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Wargling",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .wolf,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast 4]))
+          [
+            .continuous
+              [
+                .addPowerToughness (.source .this) 1 0,
+                .gainAbility
+                  (.intersection [
+                    .permanent,
+                    .cardType .creature,
+                    .controlled (.controller .this)])
+                  (.keyword .trample)]
+              .endOfTurn]))
+  ]).toCardDef
     (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, until end of turn, this creature gets +1/+0 and creatures you control gain trample.")
-    (triggeredAbilities := #[.onAttackFerociousSourceGetsAndTeamTrample 1])
 
 def wilderlandScrounger : CardDef :=
-  creature "Wilderland Scrounger" (ManaCost.ofGenericAndColor 4 .green) #["Wolf"] 3 6
+  (TraditionalCardDefinition.card [
+    .name "Wilderland Scrounger",
+    .manaCost [.generic 4, .mono .green],
+    .type .creature,
+    .subtype .wolf,
+    .power 3,
+    .toughness 6,
+    .ability (
+      .triggered
+        (.attack .this .all)
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast 4]))
+          [
+            .putCounter
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              .plusOnePlusOne
+              1]))
+  ]).toCardDef
     (oracleText := "Ferocious — Whenever this creature attacks while you control a creature with power 4 or greater, put a +1/+1 counter on each creature you control.")
-    (triggeredAbilities := #[.onAttackFerociousPlusOneEach])
 
 def nastyLittleRabbit : CardDef :=
   creature "Nasty Little Rabbit" (ManaCost.ofColor .green) #["Rabbit"] 1 2
@@ -1351,11 +1405,37 @@ def nastyLittleRabbit : CardDef :=
     (triggeredAbilities := #[.onYourBeginCombatFerociousPlusOne])
 
 def theChiefWarg : CardDef :=
-  legendaryCreature "The Chief Warg" (ManaCost.ofGenericAndColors 2 [.black, .green])
-    #["Wolf"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "The Chief Warg",
+    .manaCost [.generic 2, .mono .black, .mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .wolf,
+    .power 3,
+    .toughness 3,
+    .ability (.keyword .menace),
+    .ability (
+      .triggered
+        (.attackSimultaneously
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .all
+          [])
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .powerAtLeast 4]))
+          [
+            .sequence [
+              .draw (.controller .this) 1,
+              .loseLife (.controller .this) 1]]))
+  ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nFerocious — Whenever you attack while you control a creature with power 4 or greater, you draw a card and lose 1 life.")
-    (keywords := Keyword.menace)
-    (triggeredAbilities := #[.onYouAttackFerociousDrawLoseLife])
 
 def thorinsLastStand : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1400,9 +1480,9 @@ def stoneBySunlight : CardDef :=
         .continuous
           [
             .gainType
-              (.target 1 (.intersection [.permanent, .cardType .creature]))
+              (.target 2 (.intersection [.permanent, .cardType .creature]))
               .artifact,
-            .gainAbility (.targetReference 1) (.keyword .indestructible)]
+            .gainAbility (.targetReference 2) (.keyword .indestructible)]
           .endOfTurn]]
   ]).toCardDef
     (oracleText := "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)")
@@ -1666,12 +1746,38 @@ def theArkenstone : CardDef :=
       (Effect.searchLegendaryCreatureToHand)))
 
 def bolgsCompany : CardDef :=
-  creature "Bolg's Company" (ManaCost.ofColors [.black, .red]) #["Goblin", "Soldier"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Bolg's Company",
+    .manaCost [.mono .black, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .static
+        (.if
+          (.any
+            (.intersection [
+              .not .this,
+              .permanent,
+              .subtype .goblin,
+              .controlled (.controller .this)]))
+          [.gainAbility .this (.keyword .haste)])),
+    .ability (
+      .activated
+        [
+          .tapSymbol,
+          .sacrificeCount
+            (.intersection [
+              .not .this,
+              .permanent,
+              .subtype .goblin,
+              .controlled (.controller .this)])
+            1]
+        (.addMana (.controller .this) [.mono .black, .mono .red]))
+  ]).toCardDef
     (oracleText := "This creature has haste as long as you control another Goblin.\n{T}, Sacrifice another Goblin: Add {B}{R}.")
-    (staticAbilities := #[.hasteIfYouControlOtherSubtype "Goblin"])
-    (activatedAbilities := #[
-      activated (Effect.addMana #[.colored .black, .colored .red]) (tap := true)
-        (sacrificeAnotherSubtype := some "Goblin")])
 
 def noriTellerOfTales : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1807,10 +1913,37 @@ def dainLordOfTheIronHills : CardDef :=
     (staticAbilities := #[.creaturesCantAttackYouUnlessPayIfEnduringStory 1])
 
 def oldThrush : CardDef :=
-  creature "Old Thrush" (ManaCost.ofGeneric 2) #["Bird"] 1 2
+  (TraditionalCardDefinition.card [
+    .name "Old Thrush",
+    .manaCost [.generic 2],
+    .type .creature,
+    .subtype .bird,
+    .power 1,
+    .toughness 2,
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .gainLife (.controller .this) 2,
+          .optional
+            (.sequence [
+              .searchLibraryThenShuffle
+                (.controller .this)
+                [
+                  .defineVariable 1
+                    (.selected
+                      (.controller .this)
+                      (.range 1 1)
+                      (.intersection [
+                        .inDeck,
+                        .cardType .land,
+                        .supertype .basic])),
+                  .reveal (.variable 1),
+                  .holdOutInLibrary (.variable 1)],
+              .putOnTopOfLibrary (.variable 1)])]))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterGainLifeSearchBasicOnTop 2])
 
 def mostDecrepitOldBird : CardDef :=
   creature "Most Decrepit Old Bird" (ManaCost.ofColor .blue) #["Bird"] 1 1
@@ -1867,11 +2000,35 @@ def gloinTheMighty : CardDef :=
       (Effect.dealDamageToEachOppCreature 1)))
 
 def ironHillsStalwart : CardDef :=
-  creature "Iron Hills Stalwart" (ManaCost.ofGenericAndColor 4 .red)
-    #["Dwarf", "Warrior"] 4 5
+  (TraditionalCardDefinition.card [
+    .name "Iron Hills Stalwart",
+    .manaCost [.generic 4, .mono .red],
+    .type .creature,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 4,
+    .toughness 5,
+    .ability (.keyword .reach),
+    .ability (.keyword .trample),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.attach
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .subtype .equipment,
+              .controlled (.controller .this)]))
+          (.targets
+            2
+            (.range 0 1)
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))))
+  ]).toCardDef
     (oracleText := "Reach, trample\nWhen this creature enters, attach target Equipment you control to up to one target creature you control.")
-    (keywords := Keyword.reach.merge Keyword.trample)
-    (triggeredAbilities := #[.onEnterAttachTargetEquipment])
 
 def oldFatSpider : CardDef :=
   creature "Old Fat Spider" (ManaCost.ofGenericAndColors 4 [.green, .green])
@@ -1921,10 +2078,38 @@ def troopOfPonies : CardDef :=
         (tap := true) (sacrificeSource := true)])
 
 def elvenRaftSteerer : CardDef :=
-  creature "Elven Raft-Steerer" (ManaCost.ofGenericAndColor 2 .blue)
-    #["Elf", "Pilot"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Elven Raft-Steerer",
+    .manaCost [.generic 2, .mono .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .pilot,
+    .power 3,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.chooseMode [
+          .tap
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.opponent (.controller .this))])),
+          .untap
+            (.target
+              2
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))]))
+  ]).toCardDef
     (oracleText := "Landfall — Whenever a land you control enters, choose one —\n• Tap target creature an opponent controls.\n• Untap target creature you control.")
-    (triggeredAbilities := #[.onLandYouControlEntersTapOrUntap])
 
 def mirkwoodMeditator : CardDef :=
   creature "Mirkwood Meditator" (ManaCost.ofGenericAndColor 2 .blue)
@@ -1933,10 +2118,32 @@ def mirkwoodMeditator : CardDef :=
     (triggeredAbilities := #[.onLandYouControlEntersBecomePT 4 2])
 
 def mirkwoodNurturer : CardDef :=
-  creature "Mirkwood Nurturer" (ManaCost.ofGenericAndHybrids 2 .green .blue)
-    #["Elf", "Ranger"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Mirkwood Nurturer",
+    .manaCost [.generic 2, .hybrid .green .blue],
+    .type .creature,
+    .subtype .elf,
+    .subtype .ranger,
+    .power 3,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1
+            (.returnToHand
+              (.targets
+                1
+                (.range 0 1)
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .controlled (.controller .this)]))),
+          .if
+            (.happened (.actionWithId 1) .gameStart)
+            [.putCounter (.source .this) .plusOnePlusOne 1]]))
+  ]).toCardDef
     (oracleText := "When this creature enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature.")
-    (triggeredAbilities := #[.onEnterReturnOtherPlusOne])
 
 def kiliTheResourceful : CardDef :=
   legendaryCreature "Kíli the Resourceful" (ManaCost.ofGenericAndColor 1 .white)
@@ -2019,9 +2226,29 @@ def balinLoremaster : CardDef :=
     (triggeredAbilities := #[.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf"])
 
 def bardTheBowman : CardDef :=
-  legendaryCreature "Bard the Bowman" (ManaCost.ofGenericAndColors 1 [.white, .blue]) #["Human", "Archer"] 1 3 (oracleText := "Reach\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn.")
-    (keywords := Keyword.reach)
-    (triggeredAbilities := #[.onDrawSecondPlusOneLifelink])
+  (TraditionalCardDefinition.card [
+    .name "Bard the Bowman",
+    .manaCost [.generic 1, .mono .white, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .archer,
+    .power 1,
+    .toughness 3,
+    .ability (.keyword .reach),
+    .ability (
+      .triggered
+        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+        (.sequence [
+          .putCounter
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            .plusOnePlusOne
+            1,
+          .continuous
+            [.gainAbility (.targetReference 1) (.keyword .lifelink)]
+            .endOfTurn]))
+  ]).toCardDef
+    (oracleText := "Reach\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature. It gains lifelink until end of turn.")
 
 def bardKingOfDale : CardDef :=
   legendaryCreature "Bard, King of Dale" (ManaCost.ofGenericAndColors 4 [.white, .blue]) #["Human", "Noble", "Archer"] 3 5 (oracleText := "Reach, vigilance\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.")
@@ -2709,6 +2936,9 @@ def hobbitCards : Array CardDef := #[
 #guard snowslopeHunterCard.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
 #guard snowslopeHunterCard.activatedAbilities[0]!.onlyDuringYourTurn
 #guard snowslopeHunterCard.activatedAbilities[0]!.onceEachTurn
+#guard bolgsCompany.activatedAbilities[0]!.cost.tap
+#guard bolgsCompany.activatedAbilities[0]!.cost.sacrificeAnotherSubtype == some "Goblin"
+#guard oldThrush.triggeredAbilities == #[.onEnterGainLifeSearchBasicOnTop 2]
 #guard snowslopeHunterCard.power == some 2
 #guard snowslopeHunterCard.toughness == some 3
 #guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1
@@ -2949,5 +3179,6 @@ def hobbitCards : Array CardDef := #[
 #guard littleBear.keywords.flash
 #guard littleBear.manaCost == ManaCost.ofGenericAndColor 2 .green
 #guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
+#guard ironHillsStalwart.triggeredAbilities == #[.onEnterAttachTargetEquipment]
 
 end Mtg.Engine.Catalog

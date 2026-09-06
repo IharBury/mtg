@@ -42,16 +42,23 @@ inductive Selector where
   /-- The controller of the given object (CR 109.5). -/
   | controller : Selector → Selector
   /-- A numbered target matching the given selector (CR 115.1). Later
-  effects may refer to it with `targetReference`. -/
+  effects may refer to it with `targetReference`. The number is unique
+  within a `TraditionalCardDefinition`, including `targets` /
+  `targetSet`. -/
   | target : Nat → Selector → Selector
-  /-- Numbered targets matching the given selector, with a count range. -/
+  /-- Numbered targets matching the given selector, with a count range.
+  The number is unique within a `TraditionalCardDefinition`, including
+  `target` / `targetSet`. -/
   | targets : Nat → Range → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range
-  and extra constraints that apply to the set as a whole. -/
+  and extra constraints that apply to the set as a whole. The number is
+  unique within a `TraditionalCardDefinition`, including `target` /
+  `targets`. -/
   | targetSet : Nat → Range → Selector → List SetPredicate → Selector
   /-- Objects that do not match the given selector. -/
   | not : Selector → Selector
-  /-- The target previously declared with `target` of this number. -/
+  /-- The target previously declared with `target`, `targets`, or
+  `targetSet` of this number. -/
   | targetReference : Nat → Selector
   /-- The given player chooses objects matching the given selector at
   resolution, with a count range (not targeting; CR 608.2d). -/
@@ -142,9 +149,10 @@ inductive Trigger where
   /-- When objects matching the selector die at the same time, with
   set-wide predicates (CR 700.4 / 603.2d). -/
   | dieSimultaneously : Selector → List SetPredicate → Trigger
-  /-- Whenever objects matching the selector attack at the same time, with
-  set-wide predicates (CR 508.3 / 603.2d). -/
-  | attackSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Whenever objects matching the first selector attack objects matching
+  the second at the same time, with set-wide predicates
+  (CR 508.3 / 603.2d). -/
+  | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
@@ -404,6 +412,20 @@ def among? : Selector → Option Selector
   | .targetSet _ _ among _ => some among
   | _ => none
 
+/-- The number of a `.target`, `.targets`, or `.targetSet` selector. -/
+def targetNumber? : Selector → Option Nat
+  | .target n _ => some n
+  | .targets n _ _ => some n
+  | .targetSet n _ _ _ => some n
+  | _ => none
+
+/-- True when two selectors do not share a target number. Unnumbered
+selectors do not conflict. -/
+def leftoverDistinctTargetNumbers (a b : Selector) : Bool :=
+  match targetNumber? a, targetNumber? b with
+  | some n, some m => n != m
+  | _, _ => true
+
 /-- True when this targeting selector is “any target”. -/
 def leftoverAnyTarget? (s : Selector) : Bool :=
   s.among? == some .all || s == .all
@@ -418,6 +440,17 @@ def land : Selector := .cardType .land
 def includesInDeck : Selector → Bool
   | .inDeck => true
   | .intersection (f :: fs) => includesInDeck f || includesInDeck (.intersection fs)
+  | _ => false
+
+/-- True when this selector names a numbered target so a later clause can
+refer to that chosen object. -/
+def includesTargetReference : Selector → Bool
+  | .targetReference _ => true
+  | .intersection (f :: fs) =>
+    includesTargetReference f || includesTargetReference (.intersection fs)
+  | .union (f :: fs) =>
+    includesTargetReference f || includesTargetReference (.union fs)
+  | .not s => includesTargetReference s
   | _ => false
 
 /-- True when this selector includes the Basic supertype. -/
@@ -438,6 +471,44 @@ def includesLand : Selector → Bool
   | .cardType .land => true
   | .intersection (f :: fs) => includesLand f || includesLand (.intersection fs)
   | _ => false
+
+/-- True when this selector includes the graveyard zone. -/
+def includesInGraveyard : Selector → Bool
+  | .inGraveyard => true
+  | .intersection (f :: fs) =>
+    includesInGraveyard f || includesInGraveyard (.intersection fs)
+  | .target _ among | .targets _ _ among => includesInGraveyard among
+  | _ => false
+
+/-- True when this selector includes `.spell`. -/
+def includesSpell : Selector → Bool
+  | .spell | .permanentSpell => true
+  | .intersection (f :: fs) => includesSpell f || includesSpell (.intersection fs)
+  | _ => false
+
+/-- True when this selector includes “noncreature” (`.not` of creature). -/
+def includesNoncreature : Selector → Bool
+  | .not (.cardType .creature) => true
+  | .intersection (f :: fs) =>
+    includesNoncreature f || includesNoncreature (.intersection fs)
+  | _ => false
+
+/-- True when this selector is a noncreature spell you cast. -/
+def youCastNoncreatureSpell (s : Selector) : Bool :=
+  s.shape.sameController && includesSpell s && includesNoncreature s
+
+/-- True when this selector is another Villain you control. -/
+def anotherVillainYouControl (s : Selector) : Bool :=
+  s.shape.other && s.shape.sameController && s.shape.subtype == some "Villain"
+
+/-- True when this selector is another Villain and/or artifact you control. -/
+def anotherVillainOrArtifactYouControl : Selector → Bool
+  | .union fs =>
+    let villain := fs.any anotherVillainYouControl
+    let artifact := fs.any fun a => a.shape.anotherArtifactYouControl
+    villain && artifact
+  | s =>
+    anotherVillainYouControl s || s.shape.anotherArtifactYouControl
 
 /-- Printed subtype mentioned by this selector, if any. -/
 def includedSubtype? : Selector → Option String
@@ -474,9 +545,10 @@ inductive Cost where
   | mana : List ManaSymbol → Cost
   /-- Pay that much life (CR 118.3). -/
   | life : Nat → Cost
-  /-- Sacrifice a selected permanent (CR 701.17). -/
+  /-- Sacrifice every selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
-  /-- Sacrifice that many permanents matching the selector (CR 701.17). -/
+  /-- Sacrifice that many permanents matching the selector (CR 701.17).
+  Use this to sacrifice one of a set; `sacrifice` would take all of them. -/
   | sacrificeCount : Selector → Nat → Cost
   /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
   sickness. -/
@@ -501,11 +573,9 @@ def lifePaid : List Cost → Nat
   | _ :: rest => lifePaid rest
 
 def isSacArtifactOrCreature : Cost → Bool
-  | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
   | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
   | .or cs =>
     cs.any fun
-      | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
       | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
       | _ => false
   | _ => false
@@ -535,6 +605,14 @@ def sacrificesThis : List Cost → Bool
   | .sacrifice s :: rest =>
     (s == .this || s == .source .this) || sacrificesThis rest
   | _ :: rest => sacrificesThis rest
+
+/-- Sacrifice another permanent you control of a printed subtype. -/
+def sacrificeAnotherSubtype? : List Cost → Option String
+  | [] => none
+  | .sacrificeCount s 1 :: rest =>
+    s.shape.anotherSubtypeYouControl.orElse fun _ =>
+      sacrificeAnotherSubtype? rest
+  | _ :: rest => sacrificeAnotherSubtype? rest
 
 /-- True when a cost discards this object. -/
 def discardsThis : List Cost → Bool
@@ -578,6 +656,8 @@ deriving Repr, Inhabited, BEq
 inductive CardState where
   /-- The permanent enters tapped. -/
   | tapped
+  /-- The permanent enters under the selected player's control (CR 110.2). -/
+  | controlled : Selector → CardState
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -691,13 +771,19 @@ inductive CardAction where
   | returnToHand : Selector → CardAction
   /-- Put the selected object onto the battlefield. -/
   | putOntoBattlefield : Selector → CardAction
-  /-- Put the selected object onto the battlefield in the given state
+  /-- Put the selected object onto the battlefield in the given states
   (CR 110.5). -/
-  | putOntoBattlefieldInState : Selector → CardState → CardAction
+  | putOntoBattlefieldInState : Selector → List CardState → CardAction
   /-- Search the selected player's library. Nested actions may move or
   choose cards from that library while they are visible, then shuffle
-  (CR 701.19). -/
+  (CR 701.19). Nested `holdOutInLibrary` keeps selected cards in the
+  library but out of the shuffle; act on them after this action.
+  Nested `putOnTopOfLibrary` would be shuffled in. -/
   | searchLibraryThenShuffle : Selector → List CardAction → CardAction
+  /-- Temporarily exclude the selected cards from a library shuffle.
+  Held-out cards are still in the library, but not at the top, bottom,
+  or among the shuffled cards. -/
+  | holdOutInLibrary : Selector → CardAction
   /-- Bind the selected objects to this numbered variable. -/
   | defineVariable : Nat → Selector → CardAction
   /-- Execute the given actions for each of the given objects, binding the
@@ -985,7 +1071,11 @@ def leftoverPlusOneAndGainLife? : CardAction → Option Nat
     ] =>
     let upToOneCreature :=
       match sel with
-      | .targets _ (.range 0 1) among => among.shape.types.eqTypes [.creature]
+      | .targets n (.range 0 1) among =>
+        among.shape.types.eqTypes [.creature] &&
+          match who with
+          | .target m .player => n != m
+          | _ => true
       | _ => false
     let playerTarget :=
       match who with
@@ -1142,6 +1232,41 @@ def leftoverPumpThenDraw? : CardAction → Option (Int × Int)
     | _, _ => none
   | _ => none
 
+/-- Target creature gains vigilance and can't be blocked; draw a card. -/
+def leftoverGrantVigilanceUnblockable? : CardAction → Bool
+  | .sequence [.continuous effects _, .draw (.controller .this) 1] =>
+    let vigil := grantedKeywords effects |>.vigilance
+    let unblockable :=
+      effects.any fun
+        | .forbid (.block .any sel) =>
+          match sel with
+          | .target _ among => among.shape.types.eqTypes [.creature]
+          | .targetReference _ => true
+          | _ =>
+            match sel.among? with
+            | some among => among.shape.types.eqTypes [.creature]
+            | none => false
+        | _ => false
+    vigil && unblockable
+  | _ => false
+
+/-- Target creature gets +P/+T, then exile the top card and play it until
+the end of your next turn. -/
+def leftoverPumpThenExileTopPlay? : CardAction → Option (Int × Int)
+  | .sequence [
+      .continuous effects _,
+      .actionId id (.exile (.topOfLibrary who)),
+      .continuous [.canPlay permit (.wasCreatedByAction created)] duration
+    ] =>
+    if leftoverExileTopPlayUntilEndOfNextTurn?
+        (.sequence [
+          .actionId id (.exile (.topOfLibrary who)),
+          .continuous [.canPlay permit (.wasCreatedByAction created)] duration
+        ]) then
+      leftoverTargetPump? effects
+    else none
+  | _ => none
+
 /-- Target creature can't be blocked this turn. -/
 def leftoverTargetCantBeBlocked? : CardAction → Bool
   | .continuous [.forbid (.block .any sel)] _ =>
@@ -1196,24 +1321,6 @@ def leftoverPlusOneLifelinkIndestructible? : CardAction → Bool
     let kws := grantedKeywords effects
     sel.toTargetKind == .creature && kws.lifelink && kws.indestructible
   | _ => false
-
-/-- Sequence leftovers that compile to a named `Effect` without taking
-only the first action. -/
-def leftoverCompiled? (action : CardAction) : Option Effect :=
-  match leftoverTapScryDraw? action with
-  | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
-  | none =>
-    if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
-    else if leftoverDestroyArtOrLandNonflyers? action then
-      some Effect.destroyArtifactOrLandNonflyersCantBlock
-    else if leftoverBecomeArtifactIndestructible? action then
-      some Effect.becomeArtifactGainIndestructible
-    else if leftoverPlusOneLifelinkIndestructible? action then
-      some Effect.plusOneLifelinkIndestructible
-    else
-      match leftoverDestroyArtEnchGainLife? action with
-      | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
-      | none => none
 
 /-- A creature you control deals damage equal to its power to an opponent's
 creature. -/
@@ -1346,7 +1453,7 @@ def leftoverAddAnyColor? : CardAction → Bool
 
 /-- Replacement “this enters tapped”. -/
 def leftoverEntersTapped? : List CardAction → Bool
-  | [.putOntoBattlefieldInState obj .tapped] =>
+  | [.putOntoBattlefieldInState obj [.tapped]] =>
     obj == .this || obj == .source .this
   | _ => false
 
@@ -1373,7 +1480,7 @@ def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
 /-- Nested search actions: put a basic land onto the battlefield tapped,
 or reveal a found card and put it into hand. -/
 def leftoverSearchActions? : List CardAction → Option Effect
-  | [.putOntoBattlefieldInState sel .tapped] =>
+  | [.putOntoBattlefieldInState sel [.tapped]] =>
     match sel.selectedAmong? with
     | some among =>
       if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
@@ -1407,6 +1514,283 @@ def leftoverEachPlayerSacrificesCreature? : CardAction → Bool
       chooser == .variable n &&
       sacAmong.shape.types.eqTypes [.creature]
   | _ => false
+
+/-- Put +1/+1 counters on each other permanent you control of a subtype. -/
+def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
+  | .putCounter sel .plusOnePlusOne n =>
+    if sel.among?.isNone then
+      match sel.shape.anotherSubtypeYouControl with
+      | some st => some (Effect.plusOneOnEachOtherSubtype st n)
+      | none => none
+    else none
+  | _ => none
+
+/-- Sacrifice one matching permanent the player chooses, not every match. -/
+def leftoverSacrificeOneArtifact? : Selector → Bool
+  | .selected _ (.range 1 1) among => among.shape.types.eqTypes [.artifact]
+  | _ => false
+
+/-- You may sacrifice an artifact or discard a card. If you do, draw. -/
+def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
+  | .sequence [
+      .optional
+        (.actionId id
+          (.playerSelectAction _ (.range 1 1) [
+            .sacrifice sac,
+            .discard _ 1])),
+      .if (.happened (.actionWithId id') _) [.draw _ n]
+    ] =>
+    if id == id' && leftoverSacrificeOneArtifact? sac then some n else none
+  | _ => none
+
+/-- Draw three cards, then discard two unless you discard an artifact. -/
+def leftoverDrawThreeDiscardUnlessArtifact? : CardAction → Option Bool
+  | .sequence [
+      .draw _ 3,
+      .preventable who [.discard art] (.discard _ 2)
+    ] =>
+    if who == .controller .this && art.shape.types.eqTypes [.artifact] then
+      some true
+    else none
+  | _ => none
+
+/-- Choose up to two: return an artifact, creature, enchantment, or land
+card from your graveyard to your hand. -/
+def leftoverReturnUpToTwoGyModal? : CardAction → Option Bool
+  | .playerSelectAction _ (.range 0 2) modes =>
+    let gyReturns :=
+      modes.all fun
+        | .returnToHand sel => Selector.includesInGraveyard sel
+        | _ => false
+    if modes.length == 4 && gyReturns then some true else none
+  | _ => none
+
+/-- Target player gains life, searches a basic land onto the battlefield
+tapped, and you put a +1/+1 counter on up to one creature. -/
+def leftoverGainLifeSearchBasicPlusOne? : CardAction → Option Nat
+  | .sequence [
+      .gainLife who n,
+      .searchLibraryThenShuffle _ actions,
+      .putCounter sel .plusOnePlusOne 1
+    ] =>
+    let playerNum : Option Nat :=
+      match who with
+      | .target n .player => some n
+      | _ => none
+    let player := playerNum.isSome || who == .player
+    let searchOk := leftoverSearchActions? actions == some Effect.searchBasicLandTapped
+    let creatureNum : Option Nat :=
+      match sel with
+      | .targets n (.range 0 1) among =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | .target n among =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | _ => none
+    let numsOk :=
+      match playerNum, creatureNum with
+      | some p, some c => p != c
+      | _, _ => creatureNum.isSome
+    if player && searchOk && numsOk then some n else none
+  | _ => none
+
+/-- Source gets +P/+0 and creatures you control gain trample. -/
+def leftoverSourceGetsAndTeamTrample? : List ContinuousEffect → Option Int
+  | effects =>
+    let pt :=
+      effects.findSome? fun
+        | .addPowerToughness (.source .this) p t =>
+          if t == 0 then some p else none
+        | _ => none
+    let trample :=
+      effects.any fun
+        | .gainAbility among (.keyword .trample) =>
+          among.shape.sameController && among.shape.types.eqTypes [.creature]
+        | _ => false
+    if trample then pt else none
+
+/-- Put a +1/+1 counter on target creature; it gains lifelink. -/
+def leftoverPlusOneAndLifelinkTarget? : CardAction → Bool
+  | .sequence [.putCounter sel .plusOnePlusOne 1, .continuous effects _] =>
+    let kws := grantedKeywords effects
+    sel.toTargetKind == .creature && kws.lifelink && !kws.indestructible
+  | _ => false
+
+/-- Choose tap or untap target nonland permanent. -/
+def leftoverTapOrUntapNonland? : List CardAction → Bool
+  | [.tap s1, .untap s2] | [.untap s1, .tap s2] =>
+    s1.toTargetKind == .nonland && s2.toTargetKind == .nonland
+  | _ => false
+
+/-- Choose tap target opponent creature or untap target creature you
+control. -/
+def leftoverTapOppOrUntapYours? : List CardAction → Bool
+  | [.tap s1, .untap s2] =>
+    s1.toTargetKind == .oppCreature && s2.toTargetKind == .creatureYouControl
+  | [.untap s1, .tap s2] =>
+    s1.toTargetKind == .creatureYouControl && s2.toTargetKind == .oppCreature
+  | _ => false
+
+/-- Choose: +1/+1 on up to two creatures, or return an artifact or
+enchantment card from your graveyard. -/
+def leftoverPlusOnesOrReturnArtEnch? : List CardAction → Bool
+  | [a, b] =>
+    let plusOnes (x : CardAction) : Option Nat :=
+      match x with
+      | .putCounter (.targets n (.range 0 2) among) .plusOnePlusOne 1 =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | _ => none
+    let ret (x : CardAction) : Option Nat :=
+      match x with
+      | .returnToHand (.target n among) =>
+        if Selector.includesInGraveyard among &&
+            (among.toTargetKind == .artifactOrEnchantment ||
+              among.toTargetKind == .permanent) then
+          some n
+        else none
+      | _ => none
+    match plusOnes a, ret b with
+    | some n, some m => n != m
+    | _, _ =>
+      match plusOnes b, ret a with
+      | some n, some m => n != m
+      | _, _ => false
+  | _ => false
+
+/-- Attach target Equipment you control to up to one target creature you
+control. -/
+def leftoverAttachTargetEquipment? : CardAction → Bool
+  | .attach eq cre =>
+    let destOk (dest : Selector) : Bool :=
+      dest.shape.sameController && dest.shape.types.eqTypes [.creature]
+    match eq.among?, cre with
+    | some among, .targets _ (.range 0 1) dest =>
+      Selector.leftoverDistinctTargetNumbers eq cre &&
+        among.shape.sameController &&
+        among.includedSubtype? == some "Equipment" &&
+        destOk dest
+    | some among, .target _ dest =>
+      Selector.leftoverDistinctTargetNumbers eq cre &&
+        among.shape.sameController &&
+        among.includedSubtype? == some "Equipment" &&
+        destOk dest
+    | _, _ => false
+  | _ => false
+
+/-- Battlefield states that are exactly tapped under the selected object's
+owner's control (order-independent). -/
+def leftoverTappedUnderOwner (obj : Selector) : List CardState → Bool
+  | [.tapped, .controlled who] => who == .owner obj
+  | [.controlled who, .tapped] => who == .owner obj
+  | _ => false
+
+/-- Exile then return the same objects tapped under their owner's control. -/
+def leftoverExileThenReturnTapped? : CardAction → Option Selector
+  | .sequence [
+      .actionId id (.exile sel),
+      .putOntoBattlefieldInState (.wasCreatedByAction id') states
+    ] =>
+    if id == id' && leftoverTappedUnderOwner (.wasCreatedByAction id') states then
+      some sel
+    else none
+  | _ => none
+
+/-- Find, reveal, and hold out a basic land while searching so shuffle
+does not mix it back in. -/
+def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
+  | [.defineVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
+    if id == id' && id == id'' then
+      match sel.selectedAmong? with
+      | some among => if among.basicLandInDeck then some id else none
+      | none => none
+    else none
+  | _ => none
+
+/-- Search a basic land, hold it out, shuffle, then put that card on top. -/
+def leftoverSearchBasicOnTop? : CardAction → Bool
+  | .sequence [
+      .searchLibraryThenShuffle _ actions,
+      .putOnTopOfLibrary (.variable id)
+    ] => leftoverSearchBasicHoldOut? actions == some id
+  | _ => false
+
+/-- Sequence leftovers that compile to a named `Effect` without taking
+only the first action. -/
+def leftoverCompiled? (action : CardAction) : Option Effect :=
+  match leftoverTapScryDraw? action with
+  | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+  | none =>
+    if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+    else if leftoverDestroyArtOrLandNonflyers? action then
+      some Effect.destroyArtifactOrLandNonflyersCantBlock
+    else if leftoverBecomeArtifactIndestructible? action then
+      some Effect.becomeArtifactGainIndestructible
+    else if leftoverPlusOneLifelinkIndestructible? action then
+      some Effect.plusOneLifelinkIndestructible
+    else if leftoverGrantVigilanceUnblockable? action then
+      some Effect.grantVigilanceUnblockable
+    else
+      match leftoverPumpThenExileTopPlay? action with
+      | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
+      | none =>
+        match leftoverDestroyArtEnchGainLife? action with
+        | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
+        | none =>
+          match leftoverMaySacArtifactOrDiscardDraw? action with
+          | some n => some (Effect.maySacArtifactOrDiscardDraw n)
+          | none =>
+            match leftoverDrawThreeDiscardUnlessArtifact? action with
+            | some _ => some Effect.drawThreeDiscardUnlessArtifact
+            | none =>
+              match leftoverReturnUpToTwoGyModal? action with
+              | some _ => some Effect.returnUpToTwoGyModal
+              | none =>
+                match leftoverGainLifeSearchBasicPlusOne? action with
+                | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                | none =>
+                  leftoverPlusOneOnEachOtherSubtype? action
+
+/-- Enters-the-battlefield actions that compile to a named trigger. -/
+def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
+  | .sequence [
+      .actionId id (.returnToHand sel),
+      .if (.happened (.actionWithId id') _)
+        [.putCounter (.source .this) .plusOnePlusOne 1]
+    ] =>
+    if id == id' then
+      match sel with
+      | .targets _ (.range 0 1) among =>
+        if among.shape.other && among.shape.sameController then
+          some TriggeredAbility.onEnterReturnOtherPlusOne
+        else none
+      | _ => none
+    else none
+  | .sequence [
+      .gainLife _ n,
+      .optional search
+    ] =>
+    if leftoverSearchBasicOnTop? search then
+      some (TriggeredAbility.onEnterGainLifeSearchBasicOnTop n)
+    else none
+  | .sequence [
+      .draw (.controller .this) 1,
+      .if (.any among) [.gainLife _ 2]
+    ] =>
+    if among.shape.other && among.shape.sameController &&
+        among.shape.subtype == some "Hero" then
+      some TriggeredAbility.onEnterDrawGainLifeIfAnotherHero
+    else none
+  | .sequence [
+      .putCounter sel .plusOnePlusOne 1,
+      .if (.anySubtype among .hero)
+        [.putCounter _ .plusOnePlusOne 1]
+    ] =>
+    -- “If that creature is another Hero”: the extra counter is about the
+    -- chosen target, and must not fire when that target is the source.
+    if (sel.toTargetKind == .creature || sel.toTargetKind == .creatureYouControl) &&
+        among.shape.other && among.includesTargetReference then
+      some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+    else none
+  | _ => none
 
 /-- Enters-the-battlefield library searches. -/
 def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
@@ -1557,6 +1941,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putOntoBattlefieldInState _ _ => continuousEffect none [] asAbility
                   | .searchLibraryThenShuffle _ _ =>
                     continuousEffect none [] asAbility
+                  | .holdOutInLibrary _ => continuousEffect none [] asAbility
                   | .defineVariable _ _ => continuousEffect none [] asAbility
                   | .forEachVariable _ _ _ => continuousEffect none [] asAbility
                   | .reveal _ => continuousEffect none [] asAbility
@@ -1604,7 +1989,8 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         tap := Cost.hasTapSymbol costs
         sacrificeSource := Cost.sacrificesThis costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs
-        discardSource := Cost.discardsThis costs }
+        discardSource := Cost.discardsThis costs
+        sacrificeAnotherSubtype := Cost.sacrificeAnotherSubtype? costs }
     effect :=
       if cyclingBasic then Effect.searchLandTypeToHand "Basic land"
       else action.toAbilityEffect
@@ -1683,9 +2069,17 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.attack .this .all) (.if (.any among) [.continuous effects _]) =>
     if among.shape.ferocious then
-      match CardAction.leftoverSourcePump? effects with
-      | some (p, t) => some (TriggeredAbility.onAttackFerociousSourceGets p t)
-      | none => none
+      match CardAction.leftoverSourceGetsAndTeamTrample? effects with
+      | some p => some (TriggeredAbility.onAttackFerociousSourceGetsAndTeamTrample p)
+      | none =>
+        match CardAction.leftoverSourcePump? effects with
+        | some (p, t) => some (TriggeredAbility.onAttackFerociousSourceGets p t)
+        | none => none
+    else none
+  | .triggered (.attack .this .all) (.if (.any among) [.putCounter sel .plusOnePlusOne 1]) =>
+    if among.shape.ferocious &&
+        sel.shape.sameController && sel.shape.types.eqTypes [.creature] then
+      some TriggeredAbility.onAttackFerociousPlusOneEach
     else none
   | .triggered (.attack .this .all) (.scry _ n) =>
     some (TriggeredAbility.onAttackScry n)
@@ -1696,6 +2090,20 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.castSpell among) (.dealDamage _ (.opponent _) n) =>
     if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
       some (TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent n)
+    else none
+  | .triggered (.castSpell among) (.putCounter sel .plusOnePlusOne 1) =>
+    if Selector.youCastNoncreatureSpell among &&
+        sel.shape.other && sel.shape.sameController &&
+        sel.shape.types.eqTypes [.creature] then
+      some (TriggeredAbility.onCasting Effect.castingPlusOneEachOther)
+    else none
+  | .triggered (.castSpell among)
+      (.if (.targetsIncludeAny _ creatureSel)
+        [.putCounter (.source .this) .plusOnePlusOne 1]) =>
+    if among.shape.sameController && Selector.includesSpell among &&
+        creatureSel.shape.sameController &&
+        creatureSel.shape.types.eqTypes [.creature] then
+      some (TriggeredAbility.onCasting Effect.castingPlusOneThis)
     else none
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
     some (TriggeredAbility.onEnterDraw n)
@@ -1778,6 +2186,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       (.ordinal 2 .turnStart (.draw (.controller .this) .all))
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawSecondPlusOne
+  | .triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      action =>
+    if CardAction.leftoverPlusOneAndLifelinkTarget? action then
+      some TriggeredAbility.onDrawSecondPlusOneLifelink
+    else none
   | .triggered (.draw (.controller .this) .all)
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawPlusOne
@@ -1786,6 +2200,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some TriggeredAbility.onCombatDamageToPlayerLoot
   | .triggered (.combatDamage .this .player) (.draw _ n) =>
     some (TriggeredAbility.onCombatDamageDraw n)
+  | .triggered (.combatDamage among .player)
+      (.putCounter (.source .this) .plusOnePlusOne 2) =>
+    if among.shape.sameController && among.shape.subtype == some "Hero" then
+      some (TriggeredAbility.onWatch Effect.watchHeroesDamagePlusTwo)
+    else none
   | .triggered (.die .this) (.continuous effects _duration) =>
     match ContinuousEffect.targetingSelector? effects, ContinuousEffect.addedPT? effects with
     | some sel, some (p, t) =>
@@ -1848,7 +2267,9 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onAnotherArtifactEntersPlusOne
     else none
   | .triggered (.enter among) (.draw (.controller .this) 1) =>
-    if among.shape.artifactYouControl then
+    if among.includedSubtype? == some "Equipment" && among.shape.sameController then
+      some TriggeredAbility.onEquipmentYouControlEntersDraw
+    else if among.shape.artifactYouControl then
       some TriggeredAbility.onArtifactYouControlEntersDraw
     else none
   | .triggered (.enter among) (.continuous effects _duration) =>
@@ -1856,25 +2277,107 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       match CardAction.leftoverSourcePump? effects with
       | some (1, 1) => some TriggeredAbility.onAnotherElfYouControlEntersGets1
       | _ => none
+    else if Selector.anotherVillainYouControl among then
+      match CardAction.leftoverPumpAndGrantKeywords? (.continuous effects .endOfTurn) with
+      | some (1, 0, kws) =>
+        if kws.lifelink then
+          some (TriggeredAbility.onWatch Effect.watchVillainPlusOneLifelink)
+        else none
+      | _ => none
     else if among.shape.landYouControl then
       match CardAction.leftoverSourcePump? effects with
       | some (p, t) => some (TriggeredAbility.onLandYouControlEntersGets p t)
       | none => none
     else none
+  | .triggered (.enter .this) (.chooseMode modes) =>
+    if CardAction.leftoverTapOrUntapNonland? modes then
+      some TriggeredAbility.onEnterTapOrUntapNonland
+    else if CardAction.leftoverPlusOnesOrReturnArtEnch? modes then
+      some (TriggeredAbility.onEnter Effect.enterPlusOnesOrReturnArtEnch)
+    else none
   | .triggered (.enter .this) action =>
+    if CardAction.leftoverAttachTargetEquipment? action then
+      some TriggeredAbility.onEnterAttachTargetEquipment
+    else
     match CardAction.leftoverUntapPlusOneIfSubtype? action with
     | some st => some (TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype st)
-    | none => none
+    | none =>
+      match CardAction.leftoverExileThenReturnTapped? action with
+      | some sel =>
+        match sel with
+        | .targets _ (.range 0 3) among =>
+          if among.shape.landYouControl then
+            some TriggeredAbility.onEnterExileLandsThenReturnTapped
+          else none
+        | _ => none
+      | none =>
+        match CardAction.leftoverMaySacArtifactOrDiscardDraw? action with
+        | some 1 => some TriggeredAbility.onEnterMaySacArtifactOrDiscardDraw
+        | _ =>
+          CardAction.leftoverEnterThisAction? action
+  | .triggered (.enter among) (.chooseMode modes) =>
+    if among.shape.landYouControl && CardAction.leftoverTapOppOrUntapYours? modes then
+      some TriggeredAbility.onLandYouControlEntersTapOrUntap
+    else none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
     | some 2 =>
       if among.shape.landYouControl then
         some TriggeredAbility.onLandYouControlEntersPlusOneVigilance
       else none
-    | _ => none
-  | .triggered (.attackSimultaneously among _) (.draw (.controller .this) 1) =>
+    | _ =>
+      match action with
+      | .dealDamage _ dest 1 =>
+        let opp :=
+          dest == .opponent (.controller .this) ||
+            match dest with
+            | .target _ .player => true
+            | .target _ (.opponent _) => true
+            | _ => false
+        if Selector.anotherVillainOrArtifactYouControl among && opp then
+          some (TriggeredAbility.onWatch Effect.watchVillainOrArtifactDamage)
+        else none
+      | .draw (.controller .this) 1 =>
+        if among.includedSubtype? == some "Equipment" && among.shape.sameController then
+          some TriggeredAbility.onEquipmentYouControlEntersDraw
+        else if among.shape.artifactYouControl then
+          some TriggeredAbility.onArtifactYouControlEntersDraw
+        else none
+      | .sequence [.draw (.controller .this) 1, .putCounter sel .plusOnePlusOne 1] =>
+        if among.shape.landYouControl &&
+            (sel == .source .this || sel == .this) then
+          some TriggeredAbility.onLandYouControlEntersDrawPlusOneSource
+        else none
+      | _ => none
+  | .triggered (.attack .this .all) action =>
+    match CardAction.leftoverExileThenReturnTapped? action with
+    | some sel =>
+      match sel with
+      | .targets _ (.range 0 1) among =>
+        if among.shape.nontoken &&
+            (among.shape.types.eqTypes [.artifact, .creature] ||
+              among.shape.types.eqTypes [.creature] ||
+              among.shape.types.eqTypes [.artifact]) then
+          some (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken)
+        else none
+      | _ => none
+    | none => none
+  | .triggered (.attackSimultaneously among dest _)
+      (.if (.any ferociousSel) [action]) =>
+    if dest == .all && among.shape.sameController && ferociousSel.shape.ferocious then
+      match CardAction.leftoverDrawLoseLifeSelf? action with
+      | some (1, 1) => some TriggeredAbility.onYouAttackFerociousDrawLoseLife
+      | _ => none
+    else none
+  | .triggered (.attackSimultaneously among dest _) (.draw (.controller .this) 1) =>
     if among.shape.sameController then
-      some TriggeredAbility.onYouAttackDraw
+      if among.shape.subtype == some "Merfolk" then
+        if dest == .player then
+          some (TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw)
+        else none
+      else if dest == .all then
+        some TriggeredAbility.onYouAttackDraw
+      else none
     else none
   | _ => none
 
@@ -2021,6 +2524,16 @@ def extraLandIfOtherSubtype? (among : Selector) (inners : List ContinuousEffect)
     else none
   | _ => none
 
+/-- This has haste as long as you control another of a subtype. -/
+def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEffect)
+    : Option String :=
+  match inners with
+  | [.gainAbility who (.keyword .haste)] =>
+    if who == .this || who == .source .this then
+      among.shape.anotherSubtypeYouControl
+    else none
+  | _ => none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -2038,7 +2551,25 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.any among) inners =>
     match extraLandIfOtherSubtype? among inners with
     | some t => { b with extraLandIfOtherSubtype := some t }
-    | none => applyIfShape b among.shape inners
+    | none =>
+      match leftoverHasteIfOtherSubtype? among inners with
+      | some t =>
+        { b with
+          staticAbilities :=
+            b.staticAbilities.push (.hasteIfYouControlOtherSubtype t) }
+      | none =>
+        if Selector.includesLegendary among && among.shape.sameController &&
+            among.shape.types.eqTypes [.creature] then
+          inners.foldl
+            (applyReduceCost fun b n =>
+              { b with
+                activatedAbilities :=
+                  b.activatedAbilities.map fun ab =>
+                    { ab with
+                      costReductionIfYouControlLegendary :=
+                        ab.costReductionIfYouControlLegendary + n } })
+            b
+        else applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
   | .if (.anySubtype among st) inners =>
     match inners with
@@ -2426,6 +2957,36 @@ end TraditionalCardDefinition
   CardAction.leftoverModes? action ==
     some #[Effect.counterUnlessPays 4, Effect.drawThenDiscard 2]
 
+-- Thirst for Knowledge: discard two unless you discard an artifact card.
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .preventable
+        (.controller .this)
+        [.discard (.cardType .artifact)]
+        (.discard (.controller .this) 2)]) == some true
+
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .playerSelectAction
+        (.controller .this)
+        (.range 1 1)
+        [
+          .discard (.intersection [.cardType .artifact]) 1,
+          .discard (.controller .this) 2]]) |>.isNone
+
+#guard
+  CardAction.leftoverDrawThreeDiscardUnlessArtifact?
+    (.sequence [
+      .draw (.controller .this) 3,
+      .preventable
+        (.controller .this)
+        [.discard .this]
+        (.discard (.controller .this) 2)]) |>.isNone
+
 -- Ravenhill Flock: whenever you draw, +1/+1 counter.
 #guard
   match
@@ -2569,10 +3130,11 @@ end TraditionalCardDefinition
     .ability (.static (
       .additionalCost .this
         [.or [
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]]),
+              .union [.cardType .artifact, .cardType .creature]])
+            1,
           .mana [.generic 4]]])),
     .actions [
       .destroy (.target 1 (.intersection [.permanent, .cardType .creature]))]
@@ -2583,10 +3145,11 @@ end TraditionalCardDefinition
     .ability (.static (
       .additionalCost .this
         [.or [
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]]),
+              .union [.cardType .artifact, .cardType .creature]])
+            1,
           .mana [.generic 4]]]))
   ]).toCardDef.additionalCostOrPayGeneric == some 4
 
@@ -2617,6 +3180,39 @@ end TraditionalCardDefinition
     ab.cost.sacrificeAnotherCreatureOrArtifact &&
       ab.cost.mana == ManaCost.ofGenericAndColor 2 .black &&
       ab.effect == Effect.abilityDraw 1
+  | none => false
+
+-- Sacrifice another Goblin is `sacrificeCount` 1, not `sacrifice` (all of them).
+#guard
+  match
+    (Ability.activated
+      [.tapSymbol,
+        .sacrificeCount
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .goblin,
+            .controlled (.controller .this)])
+          1]
+      (.addMana (.controller .this) [.mono .black, .mono .red])).toActivatedAbility? with
+  | some ab =>
+      ab.cost.tap &&
+      ab.cost.sacrificeAnotherSubtype == some "Goblin" &&
+      ab.effect == Effect.addMana #[.colored .black, .colored .red]
+  | none => false
+
+#guard
+  match
+    (Ability.activated
+      [.tapSymbol,
+        .sacrifice
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .goblin,
+            .controlled (.controller .this)])]
+      (.addMana (.controller .this) [.mono .black, .mono .red])).toActivatedAbility? with
+  | some ab => ab.cost.sacrificeAnotherSubtype.isNone
   | none => false
 
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
@@ -2664,6 +3260,79 @@ end TraditionalCardDefinition
         1,
       .gainLife (.target 2 .player) 2]
   action.toEffect == Effect.plusOneUpToOneAndPlayerGainsLife 2
+
+#guard
+  CardAction.leftoverPlusOneAndGainLife?
+    (.sequence [
+      .putCounter
+        (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .gainLife (.target 1 .player) 2]) |>.isNone
+
+#guard
+  CardAction.leftoverPlusOnesOrReturnArtEnch?
+    [
+      .putCounter
+        (.targets 1 (.range 0 2) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .returnToHand
+        (.target
+          2
+          (.intersection [
+            .inGraveyard,
+            .union [.cardType .artifact, .cardType .enchantment],
+            .owner (.controller .this)]))]
+
+#guard
+  !CardAction.leftoverPlusOnesOrReturnArtEnch?
+    [
+      .putCounter
+        (.targets 1 (.range 0 2) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .returnToHand
+        (.target
+          1
+          (.intersection [
+            .inGraveyard,
+            .union [.cardType .artifact, .cardType .enchantment],
+            .owner (.controller .this)]))]
+
+#guard
+  CardAction.leftoverAttachTargetEquipment?
+    (.attach
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .subtype .equipment,
+          .controlled (.controller .this)]))
+      (.targets
+        2
+        (.range 0 1)
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])))
+
+#guard
+  !CardAction.leftoverAttachTargetEquipment?
+    (.attach
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .subtype .equipment,
+          .controlled (.controller .this)]))
+      (.targets
+        1
+        (.range 0 1)
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])))
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
 #guard
@@ -2845,10 +3514,11 @@ end TraditionalCardDefinition
     (Ability.activatedIf
       (.timeToCastSorcery (.controller .this))
       [.mana [.generic 2],
-        .sacrifice
+        .sacrificeCount
           (.intersection [
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
       (.returnToHand (.intersection [.inGraveyard, .source .this]))).toActivatedAbility? with
   | some ab =>
     ab.onlyAsSorcery &&
@@ -2899,7 +3569,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .controlled (.target 1 .player)])
+            .controlled (.target 2 .player)])
           (-1) (-1)]
         .endOfTurn]
   CardAction.leftoverModes? action ==
@@ -2993,11 +3663,12 @@ end TraditionalCardDefinition
         (.and
           (.turn (.controller .this))
           (.didNotHappen (.abilityWithIdActivated 1) .turnStart))
-        [.sacrifice
+        [.sacrificeCount
           (.intersection [
             .not .this,
             .permanent,
-            .union [.cardType .artifact, .cardType .creature]])]
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
         (.sequence [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
@@ -3130,7 +3801,7 @@ end TraditionalCardDefinition
       .sequence [
         .putCounter
           (.target
-            1
+            2
             (.intersection [
               .permanent,
               .cardType .creature,
@@ -3138,8 +3809,8 @@ end TraditionalCardDefinition
           .plusOnePlusOne
           1,
         .continuous
-          [.gainAbility (.targetReference 1) (.keyword .trample),
-            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          [.gainAbility (.targetReference 2) (.keyword .trample),
+            .gainAbility (.targetReference 2) (.keyword .hexproof)]
           .endOfTurn]]
   CardAction.leftoverModes? action ==
     some #[Effect.destroyCreatureWithFlying, Effect.plusOnePlusOneTrampleHexproof]
@@ -3510,7 +4181,7 @@ end TraditionalCardDefinition
             (.controller .this)
             (.range 1 1)
             (.intersection [.inDeck, .cardType .land, .supertype .basic]))
-          .tapped]
+          [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
 
 #guard
@@ -3548,6 +4219,73 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterSearchBasicToHand
   | none => false
 
+-- Old Thrush: hold the found land out of the shuffle, then put it on top.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .gainLife (.controller .this) 2,
+        .optional
+          (.sequence [
+            .searchLibraryThenShuffle
+              (.controller .this)
+              [
+                .defineVariable 1
+                  (.selected
+                    (.controller .this)
+                    (.range 1 1)
+                    (.intersection [
+                      .inDeck,
+                      .cardType .land,
+                      .supertype .basic])),
+                .reveal (.variable 1),
+                .holdOutInLibrary (.variable 1)],
+            .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterGainLifeSearchBasicOnTop 2
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .gainLife (.controller .this) 2,
+      .optional
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .defineVariable 1
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .inDeck,
+                  .cardType .land,
+                  .supertype .basic])),
+            .reveal (.variable 1),
+            .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .gainLife (.controller .this) 2,
+      .optional
+        (.sequence [
+          .searchLibraryThenShuffle
+            (.controller .this)
+            [
+              .defineVariable 1
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .inDeck,
+                    .cardType .land,
+                    .supertype .basic])),
+              .reveal (.variable 1)],
+          .putOnTopOfLibrary (.variable 1)])])).toTriggeredAbility?.isNone
+
 -- Little Bear: flash; enter, untap another creature you control, +1/+1 if Bear.
 #guard Selector.toTargetKind
   (.intersection [
@@ -3576,6 +4314,62 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear"
   | none => false
 
+-- Wakandan Royal Guard: extra counters only if the target is another Hero,
+-- not when the source targets itself.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .if
+          (.anySubtype (.intersection [.targetReference 1, .not .this]) .hero)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .if
+          (.anySubtype (.intersection [.not .this, .targetReference 1]) .hero)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .if
+        (.anySubtype (.targetReference 1) .hero)
+        [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .if
+        (.anySubtype (.not .this) .hero)
+        [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility?.isNone
+
 -- Dual land: enters tapped; tap-add one of two colors; counters on a typed creature.
 #guard
   (TraditionalCardDefinition.card [
@@ -3583,7 +4377,7 @@ end TraditionalCardDefinition
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped]))
+          [.putOntoBattlefieldInState .this [.tapped]]))
   ]).toCardDef.entersTapped
 
 #guard
@@ -3824,6 +4618,44 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterEachPlayerSacrificesCreature
   | none => false
 
+-- Sacrifice an artifact is `selected` 1, not every artifact you control.
+#guard
+  CardAction.leftoverMaySacArtifactOrDiscardDraw?
+    (.sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [
+              .sacrifice
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .permanent,
+                    .cardType .artifact,
+                    .controlled (.controller .this)])),
+              .discard (.controller .this) 1])),
+      .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 1]]) == some 1
+
+#guard
+  CardAction.leftoverMaySacArtifactOrDiscardDraw?
+    (.sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [
+              .sacrifice
+                (.intersection [
+                  .permanent,
+                  .cardType .artifact,
+                  .controlled (.controller .this)]),
+              .discard (.controller .this) 1])),
+      .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 1]]) |>.isNone
+
 #guard
   match
     (Ability.triggered
@@ -4003,10 +4835,49 @@ end TraditionalCardDefinition
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])
+        .all
         [])
       (.draw (.controller .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackDraw
   | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .subtype .merfolk,
+          .controlled (.controller .this)])
+        .player
+        [])
+      (.draw (.controller .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .subtype .merfolk,
+        .controlled (.controller .this)])
+      .all
+      [])
+    (.draw (.controller .this) 1)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)])
+      .player
+      [])
+    (.draw (.controller .this) 1)).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -4092,6 +4963,128 @@ end TraditionalCardDefinition
     ab.activateFromHand &&
       ab.cost.discardSource &&
       ab.effect == Effect.searchLandTypeToHand "Basic land"
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attack .this .all)
+      (.if
+        (.any
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .powerAtLeast 4]))
+        [
+          .continuous
+            [
+              .addPowerToughness (.source .this) 1 0,
+              .gainAbility
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)])
+                (.keyword .trample)]
+            .endOfTurn])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackFerociousSourceGetsAndTeamTrample 1
+  | none => false
+
+#guard
+  CardAction.leftoverGrantVigilanceUnblockable?
+    (.sequence [
+      .continuous
+        [
+          .gainAbility
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            (.keyword .vigilance),
+          .forbid
+            (.block
+              .any
+              (.targetReference 1))]
+        .endOfTurn,
+      .draw (.controller .this) 1]) == true
+
+#guard
+  CardAction.leftoverPumpThenExileTopPlay?
+    (.sequence [
+      .continuous
+        [
+          .addPowerToughness
+            (.target 1 (.intersection [.permanent, .cardType .creature]))
+            3 1]
+        .endOfTurn,
+      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .continuous
+        [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+        (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]) == some (3, 1)
+
+-- Exile then return tapped under owner's control (Gandalf / Mighty Thor).
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.targets
+            1
+            (.range 0 3)
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))),
+      .putOntoBattlefieldInState
+        (.wasCreatedByAction 1)
+        [
+          .tapped,
+          .controlled (.owner (.wasCreatedByAction 1))]])
+  |>.isSome
+
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.targets
+            1
+            (.range 0 3)
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))),
+      .putOntoBattlefieldInState (.wasCreatedByAction 1) [.tapped]])
+  |>.isNone
+
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1 (.exile (.targets 1 (.range 0 3) .permanent)),
+      .putOntoBattlefieldInState
+        (.wasCreatedByAction 1)
+        [
+          .tapped,
+          .controlled (.controller .this)]])
+  |>.isNone
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1
+          (.exile
+            (.targets
+              1
+              (.range 0 3)
+              (.intersection [
+                .permanent,
+                .cardType .land,
+                .controlled (.controller .this)]))),
+        .putOntoBattlefieldInState
+          (.wasCreatedByAction 1)
+          [
+            .tapped,
+            .controlled (.owner (.wasCreatedByAction 1))]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterExileLandsThenReturnTapped
   | none => false
 
 end Mtg.Engine

@@ -155,12 +155,38 @@ def westfoldRider : CardDef :=
     (oracleText := "Sacrifice this creature: Destroy target artifact or enchantment. Activate only as a sorcery.")
 
 def esquireOfTheKing : CardDef :=
-  creature "Esquire of the King" (ManaCost.ofColor .white) #["Human", "Soldier"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Esquire of the King",
+    .manaCost [.mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .soldier,
+    .power 1,
+    .toughness 1,
+    .ability (
+      .activated
+        [.mana [.generic 4, .mono .white], .tapSymbol]
+        (.continuous
+          [
+            .addPowerToughness
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              1 1]
+          .endOfTurn)),
+    .ability (
+      .static
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .supertype .legendary,
+              .controlled (.controller .this)]))
+          [.reduceCost .this [.mana [.generic 2]]]))
+  ]).toCardDef
     (oracleText := "{4}{W}, {T}: Creatures you control get +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
-    (activatedAbilities := #[
-      activated (Effect.abilityCreaturesYouControlGet 1 1)
-        (ManaCost.ofGenericAndColor 4 .white) (tap := true)
-        (costReductionIfYouControlLegendary := 2)])
 
 def pelargirSurvivor : CardDef :=
   creature "Pelargir Survivor" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Peasant"] 1 3
@@ -379,7 +405,7 @@ def wayfarersBauble : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              .tapped]))
+              [.tapped]]))
   ]).toCardDef
     (oracleText :=
       "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")
@@ -673,6 +699,7 @@ def bardHeirOfGirion : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)])
+          .all
           [])
         (.draw (.controller .this) 1))
   ]).toCardDef
@@ -1018,10 +1045,46 @@ def gandalfPartyGuest : CardDef :=
     (triggeredAbilities := #[.onYourBeginCombatCastInstantSorceryFromHand])
 
 def gandalfShadowSFoe : CardDef :=
-  legendaryCreature "Gandalf, Shadow's Foe" (ManaCost.ofGenericAndColors 5 [.blue, .blue]) #["Avatar", "Wizard"] 3 4 (oracleText := "Vigilance\nWhen Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control.\nLandfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onEnterExileLandsThenReturnTapped,
-      .onLandYouControlEntersDrawPlusOneSource])
+  (TraditionalCardDefinition.card [
+    .name "Gandalf, Shadow's Foe",
+    .manaCost [.generic 5, .mono .blue, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .avatar,
+    .subtype .wizard,
+    .power 3,
+    .toughness 4,
+    .ability (.keyword .vigilance),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1
+            (.exile
+              (.targets
+                1
+                (.range 0 3)
+                (.intersection [
+                  .permanent,
+                  .cardType .land,
+                  .controlled (.controller .this)]))),
+          .putOntoBattlefieldInState
+            (.wasCreatedByAction 1)
+            [
+              .tapped,
+              .controlled (.owner (.wasCreatedByAction 1))]])),
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.sequence [
+          .draw (.controller .this) 1,
+          .putCounter (.source .this) .plusOnePlusOne 1]))
+  ]).toCardDef
+    (oracleText := "Vigilance\nWhen Gandalf enters, exile up to three target lands you control, then return them to the battlefield tapped under their owner's control.\nLandfall — Whenever a land you control enters, draw a card and put a +1/+1 counter on Gandalf.")
 
 def glamdring : CardDef :=
   artifact "Glamdring" (ManaCost.ofGeneric 2) "Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard.\nWhenever equipped creature deals combat damage to a player, you may cast an instant or sorcery spell from your hand with mana value less than or equal to that damage without paying its mana cost.\nEquip {3}"
@@ -1399,6 +1462,8 @@ def hobbitEternalCards : Array CardDef := #[
 #guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
+#guard gandalfShadowSFoe.triggeredAbilities ==
+  #[.onEnterExileLandsThenReturnTapped, .onLandYouControlEntersDrawPlusOneSource]
 #guard arwenMortalQueen.entersWithIndestructibleCounter
 #guard arwenMortalQueen.activatedAbilities[0]!.effect == Effect.arwenShare
 #guard callForthTheTempest.spellEffect == some (Effect.damageOppCreaturesEqualOtherSpellsMv)
