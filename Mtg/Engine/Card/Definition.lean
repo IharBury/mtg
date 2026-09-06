@@ -383,7 +383,11 @@ def toTargetKind (f : Selector) : EffectTargetKind :=
     else .permanent
   else if s.flying && s.types.eqTypes [.creature] then .creatureWithFlying
   else if s.types.eqTypes [.artifact, .enchantment] then .artifactOrEnchantment
-  else if s.types.eqTypes [.creature] then .creature
+  else if s.types.eqTypes [.artifact, .land] then .artifactOrLand
+  else if s.types.eqTypes [.creature] then
+    match s.powerAtLeast with
+    | some n => .creaturePowerAtLeast n
+    | none => .creature
   else if s.types.eqTypes [.artifact] then .artifact
   else .permanent
 
@@ -1017,6 +1021,16 @@ def leftoverEquipAttach? : CardAction → Bool
     | none => false
   | _ => false
 
+/-- Equip `Subtype {cost}` when the attach target names a subtype. -/
+def leftoverEquipSubtype? : CardAction → Option String
+  | .attach .this sel =>
+    if leftoverEquipAttach? (.attach .this sel) then
+      match sel.among? with
+      | some among => among.includedSubtype?
+      | none => none
+    else none
+  | _ => none
+
 /-- Target creature gets +P/+T; if it would die this turn, exile it instead. -/
 def leftoverPumpAndExileIfDies? : CardAction → Option (Int × Int)
   | .continuous effects _ =>
@@ -1129,6 +1143,68 @@ def leftoverTargetCantBeBlocked? : CardAction → Bool
       | some among => among.shape.types.eqTypes [.creature]
       | none => false
   | _ => false
+
+/-- Tap target creature, then scry and draw. -/
+def leftoverTapScryDraw? : CardAction → Option (Nat × Nat)
+  | .sequence [.tap sel, .scry _ scryN, .draw _ drawN] =>
+    if sel.toTargetKind == .creature then some (scryN, drawN) else none
+  | _ => none
+
+/-- Return target spell to its owner's hand, then draw a card. -/
+def leftoverReturnSpellDraw? : CardAction → Bool
+  | .sequence [.returnToHand sel, .draw _ 1] => sel.toTargetKind == .spell
+  | _ => false
+
+/-- Destroy target artifact or enchantment; you gain life. -/
+def leftoverDestroyArtEnchGainLife? : CardAction → Option Nat
+  | .sequence [.destroy sel, .gainLife _ n] =>
+    if sel.toTargetKind == .artifactOrEnchantment then some n else none
+  | _ => none
+
+/-- Destroy target artifact or land; creatures without flying can't block. -/
+def leftoverDestroyArtOrLandNonflyers? : CardAction → Bool
+  | .sequence [
+      .destroy sel,
+      .continuous [.forbid (.block (.not (.keyword .flying)) _)] _
+    ] =>
+    sel.toTargetKind == .artifactOrLand
+  | _ => false
+
+/-- Target creature becomes an artifact and gains indestructible. -/
+def leftoverBecomeArtifactIndestructible? : CardAction → Bool
+  | .continuous effects _ =>
+    let becomesArtifact :=
+      effects.any fun
+        | .gainType sel .artifact => sel.toTargetKind == .creature
+        | _ => false
+    becomesArtifact && (grantedKeywords effects).indestructible
+  | _ => false
+
+/-- Put a +1/+1 counter on target creature; it gains lifelink and
+indestructible. -/
+def leftoverPlusOneLifelinkIndestructible? : CardAction → Bool
+  | .sequence [.putCounter sel .plusOnePlusOne 1, .continuous effects _] =>
+    let kws := grantedKeywords effects
+    sel.toTargetKind == .creature && kws.lifelink && kws.indestructible
+  | _ => false
+
+/-- Sequence leftovers that compile to a named `Effect` without taking
+only the first action. -/
+def leftoverCompiled? (action : CardAction) : Option Effect :=
+  match leftoverTapScryDraw? action with
+  | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+  | none =>
+    if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+    else if leftoverDestroyArtOrLandNonflyers? action then
+      some Effect.destroyArtifactOrLandNonflyersCantBlock
+    else if leftoverBecomeArtifactIndestructible? action then
+      some Effect.becomeArtifactGainIndestructible
+    else if leftoverPlusOneLifelinkIndestructible? action then
+      some Effect.plusOneLifelinkIndestructible
+    else
+      match leftoverDestroyArtEnchGainLife? action with
+      | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
+      | none => none
 
 /-- A creature you control deals damage equal to its power to an opponent's
 creature. -/
@@ -1346,6 +1422,9 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
 /-- Compile `continuous` effects, reading targeting from `target`
 and mass application from constraint selectors. -/
 def compile (action : CardAction) (asAbility : Bool) : Effect :=
+  match leftoverCompiled? action with
+  | some e => e
+  | none =>
   match leftoverSearchLibraryThenShuffle? action with
   | some e => e
   | none =>
@@ -1383,7 +1462,18 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
             | some (p, t) => Effect.pumpAndLifelink p t
             | none =>
               match leftoverPumpAndGrantKeywords? action with
-              | some (p, t, k) => Effect.pumpAndGrantKeywords p t k
+              | some (p, t, k) =>
+                if asAbility then
+                  match action with
+                  | .continuous effects _ =>
+                    match ContinuousEffect.targetingSelector? effects with
+                    | some sel =>
+                      if sel.targetingShape.anotherCreatureYouControl then
+                        Effect.anotherYouControlGetsAndGrant p t k
+                      else Effect.pumpAndGrantKeywords p t k
+                    | none => Effect.pumpAndGrantKeywords p t k
+                  | _ => Effect.pumpAndGrantKeywords p t k
+                else Effect.pumpAndGrantKeywords p t k
               | none =>
               match leftoverPumpThenDraw? action with
               | some (p, t) => Effect.pumpThenDraw p t
@@ -1437,7 +1527,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                       Effect.destroyTargetArtifactOrEnchantment
                     else if asAbility && s.toTargetKind == .permanent then
                       Effect.destroyTargetPermanent
-                    else Effect.destroyCreature
+                    else
+                      match s.toTargetKind with
+                      | .creaturePowerAtLeast n => Effect.destroyCreaturePowerAtLeast n
+                      | _ => Effect.destroyCreature
                   | .gainLife _ n => Effect.gainLife n
                   | .playerSelectAction _ _ actions =>
                     match actions with
@@ -1492,6 +1585,10 @@ namespace Ability
 /-- Compile an `.activated` ability; `none` for a keyword. -/
 def activatedAbility (costs : List Cost) (action : CardAction)
     (onceEachTurn : Bool := false) : ActivatedAbility :=
+  let cyclingBasic :=
+    Cost.discardsThis costs &&
+      CardAction.leftoverSearchLibraryThenShuffle? action ==
+        some Effect.searchBasicLandToHand
   { cost :=
       { mana := Cost.manaCost costs
         payLife := Cost.lifePaid costs
@@ -1499,7 +1596,9 @@ def activatedAbility (costs : List Cost) (action : CardAction)
         sacrificeSource := Cost.sacrificesThis costs
         sacrificeAnotherCreatureOrArtifact := Cost.sacrificesArtifactOrCreature costs
         discardSource := Cost.discardsThis costs }
-    effect := action.toAbilityEffect
+    effect :=
+      if cyclingBasic then Effect.searchLandTypeToHand "Basic land"
+      else action.toAbilityEffect
     onceEachTurn
     activateFromHand := Cost.discardsThis costs }
 
@@ -1523,7 +1622,9 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       onlyAsSorcery := true
       activateFromGraveyard := true }
   | .activatedIf (.timeToCastSorcery _) costs action =>
-    some { activatedAbility costs action with onlyAsSorcery := true }
+    some { activatedAbility costs action with
+      onlyAsSorcery := true
+      equipSubtype := CardAction.leftoverEquipSubtype? action }
   | .activatedIf
       (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
       costs action =>
@@ -1613,7 +1714,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             else none
           | none => none
         else none
-      | _ => none
+      | _ =>
+        let kws := CardAction.grantedKeywords effects
+        if kws != Keywords.none &&
+            effects.any (fun e => ContinuousEffect.selector e == .hostOf .this) then
+          some (TriggeredAbility.onEnterEnchanted (.grantKeywords kws))
+        else none
   | .triggered (.enter .this) (.putCounter sel .plusOnePlusOne 1) =>
     if sel.toTargetKind == .creature then
       some TriggeredAbility.onEnterPlusOneOnCreature
@@ -1637,6 +1743,15 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       let s := among.shape
       if s.sameController && s.types.eqTypes [.creature] then
         some (TriggeredAbility.onEnterAttachThen PermanentAction.untap)
+      else none
+    | none => none
+  | .triggered (.enter .this) (.sequence [.attach .this sel, .continuous effects _]) =>
+    match sel.among? with
+    | some among =>
+      let s := among.shape
+      let kws := CardAction.grantedKeywords effects
+      if s.sameController && s.types.eqTypes [.creature] && kws != Keywords.none then
+        some (TriggeredAbility.onEnterAttachThen (.grantKeywords kws))
       else none
     | none => none
   | .triggered
@@ -1737,6 +1852,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some TriggeredAbility.onLandYouControlEntersPlusOneVigilance
       else none
     | _ => none
+  | .triggered (.attack among .all) (.draw (.controller .this) 1) =>
+    if among != .this && among.shape.sameController then
+      some TriggeredAbility.onYouAttackDraw
+    else none
   | _ => none
 
 end Ability
@@ -1888,7 +2007,14 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility _ _ => b
   | .addPowerToughness (.hostOf .this) p t =>
     pushHostBonus b p t Keywords.none
-  | .addPowerToughness _ _ _ => b
+  | .addPowerToughness sel p t =>
+    let s := sel.shape
+    if s.other && s.sameController && s.types.eqTypes [.creature] then
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push
+            (.otherCreaturesGet sel.includedSubtypes.toArray p t) }
+    else b
   | .if (.any among) inners =>
     match extraLandIfOtherSubtype? among inners with
     | some t => { b with extraLandIfOtherSubtype := some t }
@@ -3667,6 +3793,213 @@ end TraditionalCardDefinition
     ab.activateFromHand &&
       ab.cost.discardSource &&
       ab.effect == Effect.searchLandTypeToHand "Mountain"
+  | none => false
+
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .union [.cardType .artifact, .cardType .land]])
+  == .artifactOrLand
+
+#guard Selector.toTargetKind
+  (.intersection [
+    .permanent,
+    .cardType .creature,
+    .powerAtLeast 4])
+  == .creaturePowerAtLeast 4
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .tap
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+      .scry (.controller .this) 1,
+      .draw (.controller .this) 1]
+  action.toEffect == Effect.tapScryDraw 1 1
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .returnToHand (.target 1 .spell),
+      .draw (.controller .this) 1]
+  action.toEffect == Effect.returnSpellDraw
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .enchantment]])),
+      .gainLife (.controller .this) 2]
+  action.toEffect == Effect.destroyArtifactOrEnchantmentGainLife 2
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .land]])),
+      .continuous
+        [.forbid (.block (.not (.keyword .flying)) .all)]
+        .endOfTurn]
+  action.toEffect == Effect.destroyArtifactOrLandNonflyersCantBlock
+
+#guard
+  let action : CardAction :=
+    .destroy
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .powerAtLeast 4]))
+  action.toEffect == Effect.destroyCreaturePowerAtLeast 4
+
+#guard
+  let action : CardAction :=
+    .continuous
+      [
+        .gainType
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .artifact,
+        .gainAbility (.targetReference 1) (.keyword .indestructible)]
+      .endOfTurn
+  action.toEffect == Effect.becomeArtifactGainIndestructible
+
+#guard
+  let action : CardAction :=
+    .sequence [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .continuous
+        [
+          .gainAbility (.targetReference 1) (.keyword .lifelink),
+          .gainAbility (.targetReference 1) (.keyword .indestructible)]
+        .endOfTurn]
+  action.toEffect == Effect.plusOneLifelinkIndestructible
+
+#guard
+  let action : CardAction :=
+    .continuous
+      [
+        .addPowerToughness
+          (.target
+            1
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))
+          2 0,
+        .gainAbility (.targetReference 1) (.keyword .hexproof)]
+      .endOfTurn
+  action.toAbilityEffect == Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof
+
+#guard
+  match
+    (Ability.triggered
+      (.attack
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all)
+      (.draw (.controller .this) 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onYouAttackDraw
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.continuous
+        [.gainAbility (.hostOf .this) (.keyword .firstStrike)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterEnchanted (.grantKeywords Keyword.firstStrike)
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .attach
+          .this
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])),
+        .continuous
+          [.gainAbility (.hostOf .this) (.keyword .indestructible)]
+          .endOfTurn])).toTriggeredAbility? with
+  | some ab =>
+    ab == TriggeredAbility.onEnterAttachThen (.grantKeywords Keyword.indestructible)
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.addPowerToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          1 1))
+  ]).toCardDef.staticAbilities == #[.otherCreaturesGet #[] 1 1]
+
+#guard
+  match
+    (Ability.activatedIf
+      (.timeToCastSorcery (.controller .this))
+      [.mana [.generic 1]]
+      (.attach
+        .this
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this),
+            .subtype .human])))).toActivatedAbility? with
+  | some ab =>
+    ab.onlyAsSorcery &&
+      ab.equipSubtype == some "Human" &&
+      ab.effect == Effect.attachToTargetCreatureYouControl
+  | none => false
+
+#guard
+  match
+    (Ability.activated
+      [.mana [.generic 2], .discard .this]
+      (.searchLibraryThenShuffle
+        (.controller .this)
+        [
+          .defineVariable 1
+            (.selected
+              (.controller .this)
+              (.range 1 1)
+              (.intersection [
+                .inDeck,
+                .cardType .land,
+                .supertype .basic])),
+          .reveal (.variable 1),
+          .returnToHand (.variable 1)])).toActivatedAbility? with
+  | some ab =>
+    ab.activateFromHand &&
+      ab.cost.discardSource &&
+      ab.effect == Effect.searchLandTypeToHand "Basic land"
   | none => false
 
 end Mtg.Engine
