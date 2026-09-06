@@ -12,6 +12,9 @@ import Mtg.Engine.TypeLine
 A printed card as a list of `CardPart`s: name, mana cost, type line,
 abilities, and (for adventurer cards) an `alternative` face. Compiles to
 `CardDef` so the engine and existing catalogs stay unchanged.
+
+Remaining supported catalog cards that are not yet in this syntax, and
+the constructors they need, are listed in `TraditionalSyntaxGaps.md`.
 -/
 
 namespace Mtg.Engine
