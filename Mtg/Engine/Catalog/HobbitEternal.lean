@@ -37,11 +37,22 @@ def landrovalHorizonWitness : CardDef :=
     (triggeredAbilities := #[.onAttackWithTwoOrMoreGrantFlying])
 
 def roguesPassage : CardDef :=
-  land "Rogue's Passage"
-    "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn."
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[
-      activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 4) (tap := true)])
+  (TraditionalCardDefinition.card [
+    .name "Rogue's Passage",
+    .type .land,
+    .ability
+      (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+    .ability
+      (.activated
+        [.mana [.generic 4], .tapSymbol]
+        (.continuous
+          [.forbid
+            (.block
+              .any
+              (.target 1 (.intersection [.permanent, .cardType .creature])))]
+          .endOfTurn))
+  ]).toCardDef
+    (oracleText := "{T}: Add {C}.\n{4}, {T}: Target creature can't be blocked this turn.")
 
 def soldierOfTheGreyHost : CardDef :=
   (TraditionalCardDefinition.card [
@@ -98,13 +109,28 @@ def eaglesOfTheNorth : CardDef :=
     (oracleText := "Flying\nWhen this creature enters, creatures you control get +1/+0 and gain first strike until end of turn.\nPlainscycling {1} ({1}, Discard this card: Search your library for a Plains card, reveal it, put it into your hand, then shuffle.)")
 
 def dunedainBlade : CardDef :=
-  artifact "Dúnedain Blade" (ManaCost.ofGenericAndColor 1 .white)
-    "Equipped creature gets +2/+1.\nEquip Human {1}\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
-    (staticAbilities := #[.equippedCreatureGets 2 1])
-    (activatedAbilities := #[
-      equipAbility (ManaCost.ofGeneric 1) (some "Human"),
-      equipAbility (ManaCost.ofGeneric 3)])
+  (TraditionalCardDefinition.card [
+    .name "Dúnedain Blade",
+    .manaCost [.generic 1, .mono .white],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
+    .ability
+      (.activatedIf
+        (.timeToCastSorcery (.controller .this))
+        [.mana [.generic 1]]
+        (.attach
+          .this
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this),
+              .subtype .human])))),
+    .ability (.keywordWithCost .equip [.mana [.generic 3]])
+  ]).toCardDef
+    (oracleText := "Equipped creature gets +2/+1.\nEquip Human {1}\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def fogOnTheBarrowDowns : CardDef :=
   aura "Fog on the Barrow-Downs" (ManaCost.ofGenericAndColor 2 .white)
@@ -209,9 +235,16 @@ def ithilienKingfisher : CardDef :=
     (oracleText := "Flying\nWhen this creature dies, draw a card.")
 
 def hithlainKnots : CardDef :=
-  instant "Hithlain Knots" (ManaCost.ofGenericAndColor 1 .blue)
-    "Tap target creature. Scry 1.\nDraw a card."
-    (some (Effect.tapScryDraw 1 1))
+  (TraditionalCardDefinition.card [
+    .name "Hithlain Knots",
+    .manaCost [.generic 1, .mono .blue],
+    .type .instant,
+    .actions [
+      .tap (.target 1 (.intersection [.permanent, .cardType .creature])),
+      .scry (.controller .this) 1,
+      .draw (.controller .this) 1]
+  ]).toCardDef
+    (oracleText := "Tap target creature. Scry 1.\nDraw a card.")
 
 def captainOfUmbar : CardDef :=
   (TraditionalCardDefinition.card [
@@ -521,9 +554,22 @@ def orcishSiegemaster : CardDef :=
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
 
 def fireOfOrthanc : CardDef :=
-  sorcery "Fire of Orthanc" (ManaCost.ofGenericAndColor 3 .red)
-    "Destroy target artifact or land. Creatures without flying can't block this turn."
-    (some (Effect.destroyArtifactOrLandNonflyersCantBlock))
+  (TraditionalCardDefinition.card [
+    .name "Fire of Orthanc",
+    .manaCost [.generic 3, .mono .red],
+    .type .sorcery,
+    .actions [
+      .destroy
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .land]])),
+      .continuous
+        [.forbid (.block (.not (.keyword .flying)) .all)]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Destroy target artifact or land. Creatures without flying can't block this turn.")
 
 def galadhrimGuide : CardDef :=
   (TraditionalCardDefinition.card [
@@ -612,17 +658,48 @@ def elvishMystic : CardDef :=
   ]).toCardDef (oracleText := "{T}: Add {G}.")
 
 def bardHeirOfGirion : CardDef :=
-  legendaryCreature "Bard, Heir of Girion" (ManaCost.ofGenericAndColors 2 [.white, .blue])
-    #["Human", "Archer"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Bard, Heir of Girion",
+    .manaCost [.generic 2, .mono .white, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .archer,
+    .power 4,
+    .toughness 4,
+    .ability (.keyword .reach),
+    .ability (.keyword .vigilance),
+    .ability
+      (.static
+        (.addPowerToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          1 1)),
+    .ability
+      (.triggered
+        (.attack
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .all)
+        (.draw (.controller .this) 1))
+  ]).toCardDef
     (oracleText := "Reach, vigilance\nOther creatures you control get +1/+1.\nWhenever you attack, draw a card.")
-    (keywords := Keyword.reach.merge Keyword.vigilance)
-    (staticAbilities := #[.otherCreaturesGet #[] 1 1])
-    (triggeredAbilities := #[.onYouAttackDraw])
 
 def reprieve : CardDef :=
-  instant "Reprieve" (ManaCost.ofGenericAndColor 1 .white)
-    "Return target spell to its owner's hand.\nDraw a card."
-    (some (Effect.returnSpellDraw))
+  (TraditionalCardDefinition.card [
+    .name "Reprieve",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .actions [
+      .returnToHand (.target 1 .spell),
+      .draw (.controller .this) 1]
+  ]).toCardDef
+    (oracleText := "Return target spell to its owner's hand.\nDraw a card.")
 
 def greatGoblinFoulHearted : CardDef :=
   legendaryCreature "Great Goblin, Foul-Hearted"
