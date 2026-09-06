@@ -442,6 +442,17 @@ def includesInDeck : Selector → Bool
   | .intersection (f :: fs) => includesInDeck f || includesInDeck (.intersection fs)
   | _ => false
 
+/-- True when this selector names a numbered target so a later clause can
+refer to that chosen object. -/
+def includesTargetReference : Selector → Bool
+  | .targetReference _ => true
+  | .intersection (f :: fs) =>
+    includesTargetReference f || includesTargetReference (.intersection fs)
+  | .union (f :: fs) =>
+    includesTargetReference f || includesTargetReference (.union fs)
+  | .not s => includesTargetReference s
+  | _ => false
+
 /-- True when this selector includes the Basic supertype. -/
 def includesBasic : Selector → Bool
   | .supertype .basic => true
@@ -1770,10 +1781,13 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     else none
   | .sequence [
       .putCounter sel .plusOnePlusOne 1,
-      .if (.anySubtype (.targetReference _) .hero)
+      .if (.anySubtype among .hero)
         [.putCounter _ .plusOnePlusOne 1]
     ] =>
-    if sel.toTargetKind == .creature || sel.toTargetKind == .creatureYouControl then
+    -- “If that creature is another Hero”: the extra counter is about the
+    -- chosen target, and must not fire when that target is the source.
+    if (sel.toTargetKind == .creature || sel.toTargetKind == .creatureYouControl) &&
+        among.shape.other && among.includesTargetReference then
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
   | _ => none
@@ -4299,6 +4313,62 @@ end TraditionalCardDefinition
           [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear"
   | none => false
+
+-- Wakandan Royal Guard: extra counters only if the target is another Hero,
+-- not when the source targets itself.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .if
+          (.anySubtype (.intersection [.targetReference 1, .not .this]) .hero)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .putCounter
+          (.target 1 (.intersection [.permanent, .cardType .creature]))
+          .plusOnePlusOne
+          1,
+        .if
+          (.anySubtype (.intersection [.not .this, .targetReference 1]) .hero)
+          [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .if
+        (.anySubtype (.targetReference 1) .hero)
+        [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .if
+        (.anySubtype (.not .this) .hero)
+        [.putCounter (.targetReference 1) .plusOnePlusOne 1]])).toTriggeredAbility?.isNone
 
 -- Dual land: enters tapped; tap-add one of two colors; counters on a typed creature.
 #guard

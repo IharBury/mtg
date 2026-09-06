@@ -1854,7 +1854,9 @@ def wakandanRoyalGuard : CardDef :=
             .plusOnePlusOne
             1,
           .if
-            (.anySubtype (.targetReference 1) .hero)
+            (.anySubtype
+              (.intersection [.targetReference 1, .not .this])
+              .hero)
             [.putCounter (.targetReference 1) .plusOnePlusOne 1]]))
   ]).toCardDef
     (oracleText := "Vigilance\nWhen this creature enters, put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead.")

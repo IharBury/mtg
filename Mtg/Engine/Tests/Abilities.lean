@@ -964,6 +964,17 @@ def wakandanRoyalGuardHeroOk : Bool :=
 
 #guard wakandanRoyalGuardHeroOk
 
+/-- Wakandan Royal Guard: one +1/+1 when the target is this Hero. -/
+def wakandanRoyalGuardSelfOk : Bool :=
+  let g := addPermanent afterDraw wakandanRoyalGuard ⟨0⟩ ⟨0⟩
+  let guard := namedPermanent g "Wakandan Royal Guard"
+  let before := (g.object! guard.id).status.plusOnePlusOne
+  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterPlusOneOrTwoIfAnotherHero
+    (some guard.id) #[Target.permanent guard.id]
+  (g.object! guard.id).status.plusOnePlusOne == before + 1
+
+#guard wakandanRoyalGuardSelfOk
+
 /-- K'un-Lun Warrior: discard, then draw. -/
 def kunLunDiscardDrawOk : Bool :=
   let g := addPermanent afterDraw kUnLunWarrior ⟨0⟩ ⟨0⟩
