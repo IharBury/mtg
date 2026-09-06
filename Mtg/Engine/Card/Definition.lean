@@ -1757,41 +1757,43 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
     match leftoverReturnCreatureFromGyThenAmass? action with
     | some n => some (Effect.returnCreatureFromGyThenAmass n)
     | none =>
-  match leftoverTapScryDraw? action with
-  | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
-  | none =>
-    if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
-    else if leftoverDestroyArtOrLandNonflyers? action then
-      some Effect.destroyArtifactOrLandNonflyersCantBlock
-    else if leftoverBecomeArtifactIndestructible? action then
-      some Effect.becomeArtifactGainIndestructible
-    else if leftoverPlusOneLifelinkIndestructible? action then
-      some Effect.plusOneLifelinkIndestructible
-    else if leftoverGrantVigilanceUnblockable? action then
-      some Effect.grantVigilanceUnblockable
-    else
-      match leftoverPumpThenExileTopPlay? action with
-      | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
+      match leftoverTapScryDraw? action with
+      | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
       | none =>
-        match leftoverDestroyArtEnchGainLife? action with
-        | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
-        | none =>
-          match leftoverMaySacArtifactOrDiscardDraw? action with
-          | some n => some (Effect.maySacArtifactOrDiscardDraw n)
+        if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+        else if leftoverDestroyArtOrLandNonflyers? action then
+          some Effect.destroyArtifactOrLandNonflyersCantBlock
+        else if leftoverBecomeArtifactIndestructible? action then
+          some Effect.becomeArtifactGainIndestructible
+        else if leftoverPlusOneLifelinkIndestructible? action then
+          some Effect.plusOneLifelinkIndestructible
+        else if leftoverGrantVigilanceUnblockable? action then
+          some Effect.grantVigilanceUnblockable
+        else
+          match leftoverPumpThenExileTopPlay? action with
+          | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
           | none =>
-            match leftoverDrawThreeDiscardUnlessArtifact? action with
-            | some _ => some Effect.drawThreeDiscardUnlessArtifact
+            match leftoverDestroyArtEnchGainLife? action with
+            | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
             | none =>
-              match leftoverReturnUpToTwoGyModal? action with
-              | some _ => some Effect.returnUpToTwoGyModal
+              match leftoverMaySacArtifactOrDiscardDraw? action with
+              | some n => some (Effect.maySacArtifactOrDiscardDraw n)
               | none =>
-                match leftoverGainLifeSearchBasicPlusOne? action with
-                | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                match leftoverDrawThreeDiscardUnlessArtifact? action with
+                | some _ => some Effect.drawThreeDiscardUnlessArtifact
                 | none =>
-                  leftoverPlusOneOnEachOtherSubtype? action
+                  match leftoverReturnUpToTwoGyModal? action with
+                  | some _ => some Effect.returnUpToTwoGyModal
+                  | none =>
+                    match leftoverGainLifeSearchBasicPlusOne? action with
+                    | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                    | none =>
+                      leftoverPlusOneOnEachOtherSubtype? action
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
+  | .keyword .recruit => some TriggeredAbility.onEnterRecruit
+  | .keyword (.amass .goblin n) => some (TriggeredAbility.onEnterAmassGoblins n)
   | .sequence [
       .actionId id (.returnToHand sel),
       .if (.happened (.actionWithId id') _)
