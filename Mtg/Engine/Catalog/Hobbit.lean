@@ -1784,13 +1784,8 @@ def goblinPlateMail : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .keyword (.amass .goblin 1),
-          .attach
-            .this
-            (.intersection [
-              .permanent,
-              .subtype .army,
-              .controlled (.controller .this)])])),
+          .actionId 1 (.keyword (.amass .goblin 1)),
+          .attach .this (.wasObjectOfAction 1)])),
     .ability (.static (.addPowerToughness (.hostOf .this) 1 0)),
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
     .ability (.keywordWithCost .equip [.mana [.generic 4]])

@@ -1833,8 +1833,11 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
         among.shape.other && among.includesTargetReference then
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
-  | .sequence [.keyword (.amass .goblin n), .attach .this _] =>
-    some (TriggeredAbility.onEnterAmassThenAttach n)
+  | .sequence [
+      .actionId id (.keyword (.amass .goblin n)),
+      .attach .this (.wasObjectOfAction id')
+    ] =>
+    if id == id' then some (TriggeredAbility.onEnterAmassThenAttach n) else none
   | _ => none
 
 /-- Enters-the-battlefield library searches. -/
@@ -5280,15 +5283,29 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .keyword (.amass .goblin 1),
-        .attach
-          .this
-          (.intersection [
-            .permanent,
-            .subtype .army,
-            .controlled (.controller .this)])])).toTriggeredAbility? with
+        .actionId 1 (.keyword (.amass .goblin 1)),
+        .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
   | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .keyword (.amass .goblin 1),
+      .attach
+        .this
+        (.intersection [
+          .permanent,
+          .subtype .army,
+          .controlled (.controller .this)])])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1 (.keyword (.amass .goblin 1)),
+      .attach .this (.wasObjectOfAction 2)])).toTriggeredAbility?.isNone
 
 #guard
   CardAction.leftoverDrawLoseLifeThenAmass?
