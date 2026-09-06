@@ -979,11 +979,11 @@ def leftoverCounterExile? : CardAction → Bool
 def leftoverExileTopPlayUntilEndOfNextTurn? : CardAction → Bool
   | .sequence [
       .actionId id (.exile (.topOfLibrary who)),
-      .continuous [.canPlay player (.wasCreatedByAction created)] _
+      .continuous [.canPlay permit (.wasCreatedByAction created)] _
     ] =>
     id == created &&
       who == .controller .this &&
-      player == .controller .this
+      permit == .controller .this
   | _ => false
 
 /-- Attach this Equipment to target creature you control. -/
@@ -1551,12 +1551,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this)
       (.sequence [
         .actionId id (.exile (.topOfLibrary who)),
-        .continuous [.canPlay player (.wasCreatedByAction created)] duration
+        .continuous [.canPlay permit (.wasCreatedByAction created)] duration
       ]) =>
     if CardAction.leftoverExileTopPlayUntilEndOfNextTurn?
         (.sequence [
           .actionId id (.exile (.topOfLibrary who)),
-          .continuous [.canPlay player (.wasCreatedByAction created)] duration
+          .continuous [.canPlay permit (.wasCreatedByAction created)] duration
         ]) then
       some TriggeredAbility.onEnterExileTop
     else none

@@ -710,7 +710,7 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            .endOfTurn]))
+            .endOfTurn])))
 ]
 
 def snowslopeHunterCard : CardDef :=
