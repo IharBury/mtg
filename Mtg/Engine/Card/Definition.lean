@@ -1562,7 +1562,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
     else none
   | .triggered (.castSpell among) (.dealDamage _ (.opponent _) n) =>
-    if among.shape.types.eqTypes [.instant, .sorcery] then
+    if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
       some (TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent n)
     else none
   | .triggered (.enter .this) (.draw (.controller .this) n) =>
@@ -3598,10 +3598,18 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
+      (.castSpell
+        (.intersection [
+          .union [.cardType .instant, .cardType .sorcery],
+          .controlled (.controller .this)]))
       (.dealDamage .this (.opponent (.controller .this)) 2)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2
   | none => false
+
+#guard
+  (Ability.triggered
+    (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
+    (.dealDamage .this (.opponent (.controller .this)) 2)).toTriggeredAbility?.isNone
 
 #guard
   match

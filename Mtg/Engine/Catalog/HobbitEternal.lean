@@ -505,7 +505,10 @@ def guttersnipe : CardDef :=
     .toughness 2,
     .ability (
       .triggered
-        (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
+        (.castSpell
+          (.intersection [
+            .union [.cardType .instant, .cardType .sorcery],
+            .controlled (.controller .this)]))
         (.dealDamage .this (.opponent (.controller .this)) 2))
   ]).toCardDef
     (oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent.")
