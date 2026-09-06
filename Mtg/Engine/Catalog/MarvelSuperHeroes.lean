@@ -1727,7 +1727,7 @@ def restorativeTechnique : CardDef :=
                 .inDeck,
                 .cardType .land,
                 .supertype .basic]))
-            [.tapped],
+            [.tapped]],
       .putCounter
         (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
         .plusOnePlusOne
@@ -2055,7 +2055,7 @@ def theMightyThorJaneFoster : CardDef :=
             (.wasCreatedByAction 1)
             [
               .tapped,
-              .controlled (.owner (.wasCreatedByAction 1))])),
+              .controlled (.owner (.wasCreatedByAction 1))]])),
     .ability (
       .triggered
         (.enter

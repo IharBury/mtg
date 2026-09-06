@@ -405,7 +405,7 @@ def wayfarersBauble : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              [.tapped]))
+              [.tapped]]))
   ]).toCardDef
     (oracleText :=
       "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")
@@ -1071,7 +1071,7 @@ def gandalfShadowSFoe : CardDef :=
             (.wasCreatedByAction 1)
             [
               .tapped,
-              .controlled (.owner (.wasCreatedByAction 1))])),
+              .controlled (.owner (.wasCreatedByAction 1))]])),
     .ability (
       .triggered
         (.enter

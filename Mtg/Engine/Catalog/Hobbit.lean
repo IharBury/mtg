@@ -1309,7 +1309,7 @@ def hobbitHole : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              [.tapped])),
+              [.tapped]])),
     .ability (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
   ]).toCardDef
     (oracleText :=
