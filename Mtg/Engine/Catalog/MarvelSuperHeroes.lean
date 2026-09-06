@@ -1429,21 +1429,9 @@ def savageLandDinosaur : CardDef :=
     .toughness 6,
     .ability (.keyword .trample),
     .ability
-      (.activated
-        [.mana [.generic 2], .discard .this]
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .defineVariable 1
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [
-                  .inDeck,
-                  .cardType .land,
-                  .supertype .basic])),
-            .reveal (.variable 1),
-            .returnToHand (.variable 1)]))
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Trample\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
 
@@ -2524,6 +2512,12 @@ def mshCards : Array CardDef :=
 #guard kreeSentinel.activatedAbilities[0]!.activateFromHand
 #guard kreeSentinel.activatedAbilities[0]!.cost.discardSource
 #guard kreeSentinel.activatedAbilities[0]!.effect ==
+  Effect.searchLandTypeToHand "Basic land"
+#guard savageLandDinosaur.keywords.trample
+#guard savageLandDinosaur.activatedAbilities.size == 1
+#guard savageLandDinosaur.activatedAbilities[0]!.activateFromHand
+#guard savageLandDinosaur.activatedAbilities[0]!.cost.discardSource
+#guard savageLandDinosaur.activatedAbilities[0]!.effect ==
   Effect.searchLandTypeToHand "Basic land"
 #guard mshCards.size >= 281
 #guard mshCards.all (fun c => c.name != "")
