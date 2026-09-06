@@ -990,7 +990,7 @@ def agentNightsWhisperOnly : Game :=
     ids.contains (namedPermanent g "Ravening Warg").id
   | _ => false
 
-/- Nasty Little Rabbit: Ferocious beginning of combat puts a +1/+1 counter. -/
+-- Nasty Little Rabbit: Ferocious beginning of combat puts a +1/+1 counter.
 
 #guard nastyLittleRabbit.triggeredAbilities == #[.onYourBeginCombatFerociousPlusOne]
 #guard nastyLittleRabbit.subtypes == #["Rabbit"]
@@ -1002,7 +1002,7 @@ def rabbitAndBaloth : Game :=
 
 #guard rabbitAndBaloth.triggerConditionHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne
 
-/-- Alone, Nasty Little Rabbit is 1/2, so Ferocious does not trigger. -/
+-- Alone, Nasty Little Rabbit is 1/2, so Ferocious does not trigger.
 #guard
   let g := skipTo (addPermanent started nastyLittleRabbit ⟨0⟩ ⟨0⟩) .beginningOfCombat 80
   g.stack.isEmpty &&
