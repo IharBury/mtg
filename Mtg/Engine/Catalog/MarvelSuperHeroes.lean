@@ -941,7 +941,14 @@ def crimsonOperative : CardDef :=
     .power 3,
     .toughness 2,
     .ability (.keyword .prowess),
-    .ability (.triggered (.enter .this) (.exile (.topOfLibrary (.controller .this))))
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            .endOfTurn]))
   ]).toCardDef
     (oracleText := "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\nWhen this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
 

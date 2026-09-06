@@ -706,7 +706,11 @@ def snowslopeHunter : TraditionalCardDefinition := .card [
             .not .this,
             .permanent,
             .union [.cardType .artifact, .cardType .creature]])]
-        (.exile (.topOfLibrary (.controller .this)))))
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            .endOfTurn]))
 ]
 
 def snowslopeHunterCard : CardDef :=
@@ -1450,7 +1454,14 @@ def gundabadOpportunist : CardDef :=
     .subtype .rogue,
     .power 4,
     .toughness 2,
-    .ability (.triggered (.enter .this) (.exile (.topOfLibrary (.controller .this))))
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            .endOfTurn]))
   ]).toCardDef
     (oracleText := "When this creature enters, exile the top card of your library. Until the end of your next turn, you may play that card.")
 
@@ -2661,6 +2672,7 @@ def hobbitCards : Array CardDef := #[
 #guard snowslopeHunterCard.power == some 2
 #guard snowslopeHunterCard.toughness == some 3
 #guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1
+#guard gundabadOpportunist.triggeredAbilities == #[.onEnterExileTop]
 #guard desolationProwlerCard.activatedAbilities.size == 1
 #guard desolationProwlerCard.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwlerCard.activatedAbilities[0]!.cost.payLife == 2

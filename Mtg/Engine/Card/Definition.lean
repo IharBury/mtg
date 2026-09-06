@@ -597,6 +597,8 @@ inductive ContinuousEffect where
   /-- The selected player may cast the selected card without paying its
   mana cost. -/
   | canCastWithoutPayingManaCost : Selector → Selector → ContinuousEffect
+  /-- The selected player may play the selected card. -/
+  | canPlay : Selector → Selector → ContinuousEffect
   /-- The first object's base power and toughness become those of the
   second object. -/
   | setBasePowerToughnessFrom : Selector → Selector → ContinuousEffect
@@ -706,6 +708,7 @@ def selector : ContinuousEffect → Selector
   | .replace _ _ => .this
   | .forbid _ => .this
   | .canCastWithoutPayingManaCost _ who => who
+  | .canPlay _ card => card
   | .setBasePowerToughnessFrom who _ => who
   | .gainType who _ => who
   | .gainSubtype who _ => who
@@ -726,6 +729,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .replace _ _ :: _ => none
   | .forbid _ :: _ => none
   | .canCastWithoutPayingManaCost _ _ :: _ => none
+  | .canPlay _ _ :: _ => none
   | .setBasePowerToughnessFrom _ _ :: _ => none
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
@@ -969,6 +973,17 @@ def leftoverCounterExile? : CardAction → Bool
       .actionId _ (.counter _),
       .continuous (.replace (.putToGraveyard _) _ :: _) _
     ] => true
+  | _ => false
+
+/-- Exile the top card; you may play it until the end of your next turn. -/
+def leftoverExileTopPlayUntilEndOfNextTurn? : CardAction → Bool
+  | .sequence [
+      .actionId id (.exile (.topOfLibrary who)),
+      .continuous [.canPlay player (.wasCreatedByAction created)] _
+    ] =>
+    id == created &&
+      who == .controller .this &&
+      player == .controller .this
   | _ => false
 
 /-- Attach this Equipment to target creature you control. -/
@@ -1317,6 +1332,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
     | some subtype => Effect.becomeSubtypeWithLandsPT subtype
     | none =>
     if leftoverCounterExile? action then Effect.counterExilePermanentMayCast
+    else if leftoverExileTopPlayUntilEndOfNextTurn? action then
+      Effect.exileTopPlayUntilEndOfNextTurn
     else if leftoverEquipAttach? action then Effect.attachToTargetCreatureYouControl
     else
       match leftoverDrawDiscard? action with
@@ -1379,7 +1396,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
-                  | .exile (.topOfLibrary _) => Effect.exileTopPlayUntilEndOfNextTurn
                   | .exile _ => continuousEffect none [] asAbility
                   | .exchangeControl _ => Effect.exchangeControlSharingType
                   | .destroy s =>
@@ -1532,8 +1548,18 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterScry n)
   | .triggered (.enter .this) (.gainLife _ n) =>
     some (TriggeredAbility.onEnterGainLife n)
-  | .triggered (.enter .this) (.exile (.topOfLibrary _)) =>
-    some TriggeredAbility.onEnterExileTop
+  | .triggered (.enter .this)
+      (.sequence [
+        .actionId id (.exile (.topOfLibrary who)),
+        .continuous [.canPlay player (.wasCreatedByAction created)] duration
+      ]) =>
+    if CardAction.leftoverExileTopPlayUntilEndOfNextTurn?
+        (.sequence [
+          .actionId id (.exile (.topOfLibrary who)),
+          .continuous [.canPlay player (.wasCreatedByAction created)] duration
+        ]) then
+      some TriggeredAbility.onEnterExileTop
+    else none
   | .triggered (.enter .this) (.searchLibraryThenShuffle _ actions) =>
     CardAction.leftoverEnterSearch? actions
   | .triggered (.enter .this) (.continuous effects _duration) =>
@@ -1871,6 +1897,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
     else b
   | .forbid _ => b
   | .canCastWithoutPayingManaCost _ _ => b
+  | .canPlay _ _ => b
   | .setBasePowerToughnessFrom _ _ => b
   | .gainType _ _ => b
   | .gainSubtype _ _ => b
@@ -2679,7 +2706,12 @@ end TraditionalCardDefinition
 
 -- Snowslope Hunter: sacrifice another creature or artifact; exile top; your turn, once.
 #guard
-  let action : CardAction := .exile (.topOfLibrary (.controller .this))
+  let action : CardAction :=
+    .sequence [
+      .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+      .continuous
+        [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+        .endOfTurn]
   action.toAbilityEffect == Effect.exileTopPlayUntilEndOfNextTurn
 
 #guard
@@ -2694,7 +2726,11 @@ end TraditionalCardDefinition
             .not .this,
             .permanent,
             .union [.cardType .artifact, .cardType .creature]])]
-        (.exile (.topOfLibrary (.controller .this))))).toActivatedAbility? with
+        (.sequence [
+          .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+          .continuous
+            [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+            .endOfTurn]))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       ab.onceEachTurn &&
@@ -3410,7 +3446,11 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.exile (.topOfLibrary (.controller .this)))).toTriggeredAbility? with
+      (.sequence [
+        .actionId 1 (.exile (.topOfLibrary (.controller .this))),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          .endOfTurn])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterExileTop
   | none => false
 
