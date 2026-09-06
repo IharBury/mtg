@@ -583,6 +583,9 @@ inductive Ability where
   | keyword : Keyword → Ability
   /-- A keyword ability that is printed with a cost, e.g. Equip {2}. -/
   | keywordWithCost : Keyword → List Cost → Ability
+  /-- A keyword ability that is printed with a subtype and a cost, e.g.
+  Equip Human {1} (CR 702.6). -/
+  | keywordWithSubtypeAndCost : Keyword → CardSubtype → Cost → Ability
   /-- A keyword ability that is printed with a target, e.g. Enchant
   creature (CR 702.5). The `Nat` numbers the target so later clauses can
   refer to it. -/
@@ -1608,6 +1611,12 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       cost := { mana := Cost.manaCost costs }
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
+  | .keywordWithSubtypeAndCost .equip st cost =>
+    some {
+      cost := { mana := Cost.manaCost [cost] }
+      effect := Effect.attachToTargetCreatureYouControl
+      onlyAsSorcery := true
+      equipSubtype := some st.toString }
   | .keywordWithCost (.subtypecycling st) costs =>
     some {
       cost := { mana := Cost.manaCost costs, discardSource := true }
@@ -2084,6 +2093,10 @@ def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
   | .keywordWithCost k costs =>
     match (Ability.keywordWithCost k costs).toActivatedAbility? with
+    | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
+    | none => b
+  | .keywordWithSubtypeAndCost k st cost =>
+    match (Ability.keywordWithSubtypeAndCost k st cost).toActivatedAbility? with
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .keywordWithTarget _ _ _ => b
@@ -2707,6 +2720,29 @@ end TraditionalCardDefinition
     c.activatedAbilities[0]!.onlyAsSorcery &&
     c.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl &&
     c.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 2
+
+#guard
+  match
+    (Ability.keywordWithSubtypeAndCost
+      .equip .human (.mana [.generic 1])).toActivatedAbility? with
+  | some ab =>
+    ab.onlyAsSorcery &&
+      ab.equipSubtype == some "Human" &&
+      ab.effect == Effect.attachToTargetCreatureYouControl &&
+      ab.cost.mana == ManaCost.ofGeneric 1
+  | none => false
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability
+        (.keywordWithSubtypeAndCost .equip .human (.mana [.generic 1]))
+    ]).toCardDef
+  c.activatedAbilities.size == 1 &&
+    c.activatedAbilities[0]!.onlyAsSorcery &&
+    c.activatedAbilities[0]!.equipSubtype == some "Human" &&
+    c.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl &&
+    c.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
 
 #guard
   match

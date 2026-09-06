@@ -115,19 +115,7 @@ def dunedainBlade : CardDef :=
     .type .artifact,
     .subtype .equipment,
     .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
-    .ability
-      (.activatedIf
-        (.timeToCastSorcery (.controller .this))
-        [.mana [.generic 1]]
-        (.attach
-          .this
-          (.target
-            1
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this),
-              .subtype .human])))),
+    .ability (.keywordWithSubtypeAndCost .equip .human (.mana [.generic 1])),
     .ability (.keywordWithCost .equip [.mana [.generic 3]])
   ]).toCardDef
     (oracleText := "Equipped creature gets +2/+1.\nEquip Human {1}\nEquip {3} ({3}: Attach to target creature you control. Equip only as a sorcery.)")
