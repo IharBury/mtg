@@ -841,7 +841,7 @@ inductive CardPart where
 deriving Repr, Inhabited, BEq
 end
 
-/-- Predefined token characteristics from CR 111.10. -/
+/-! Predefined token characteristics from CR 111.10. -/
 namespace PredefinedToken
 
 /-- Printed Treasure token characteristics (CR 111.10a). -/
