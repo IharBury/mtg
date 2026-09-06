@@ -2311,8 +2311,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.attackSimultaneously among dest _) (.draw (.controller .this) 1) =>
     if among.shape.sameController then
-      if among.shape.subtype == some "Merfolk" && dest == .player then
-        some (TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw)
+      if among.shape.subtype == some "Merfolk" then
+        if dest == .player then
+          some (TriggeredAbility.onWatch Effect.watchMerfolkAttackDraw)
+        else none
       else if dest == .all then
         some TriggeredAbility.onYouAttackDraw
       else none
