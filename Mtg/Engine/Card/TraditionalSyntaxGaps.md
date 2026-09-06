@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 101 |
+| The Hobbit (HOB) | 100 |
 | The Hobbit Eternal (HOC) | 79 |
 | Marvel Super Heroes (MSH) | 218 |
-| **Total remaining** | **398** |
+| **Total remaining** | **397** |
 
-All **398** remaining cards have at least one identified constructor gap.
+All **397** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -88,7 +88,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
-  `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`.
+  `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
+  `createTokensInState`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `power`, `toughness`,
   `ability`, `alternative` (Adventure face), `actions`.
@@ -99,6 +100,7 @@ Instructor, Goblin-town Flunkies, …) already use that inventory. Remaining
 cards need the constructors below. `CardAction.keyword` compiles keyword
 actions such as recruit and amass. `CardAction.createTokens` compiles token
 creation from a selector, count, and `CardPart` characteristics.
+`CardAction.createTokensInState` is the same with an entering state (tapped).
 
 ## Missing constructors by type
 
@@ -459,8 +461,8 @@ complete.
   - Bullseye, Death Dealer; Winter Soldier, Icy Assassin
 - **`CardSubtype.Detective`** (2 cards) — CardPart.subtype uses CardSubtype; Detective has no constructor
   - Jessica Jones, Private Eye; Misty Knight, Hero for Hire
-- **`CardSubtype.Dog`** (2 cards) — CardPart.subtype uses CardSubtype; Dog has no constructor
-  - Long-Bodied Grey Dog; Pet Avengers
+- **`CardSubtype.Dog`** (1 cards) — CardPart.subtype uses CardSubtype; Dog has no constructor
+  - Pet Avengers
 - **`CardSubtype.Inhuman`** (2 cards) — CardPart.subtype uses CardSubtype; Inhuman has no constructor
   - Ms. Marvel, Kamala Khan; Quake, Agent of S.H.I.E.L.D.
 - **`CardSubtype.Ninja`** (2 cards) — CardPart.subtype uses CardSubtype; Ninja has no constructor
@@ -950,10 +952,6 @@ Converted cards from the previous untagged set are omitted here.
 **Last Light of Durin's Day** (`lastLightOfDurinSDay`)
 
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-
-**Long-Bodied Grey Dog** (`longBodiedGreyDog`)
-
-- `TraditionalCardDefinition.CardSubtype.Dog` — CardPart.subtype uses CardSubtype; Dog has no constructor
 
 **Master's Councillors** (`masterSCouncillors`)
 

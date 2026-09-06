@@ -817,10 +817,13 @@ inductive CardAction where
   /-- The selected player creates that many tokens with the given
   characteristics (CR 111). -/
   | createTokens : Selector → Nat → List CardPart → CardAction
+  /-- The selected player creates that many tokens with the given
+  characteristics, entering in the given states (CR 111, CR 110.5). -/
+  | createTokensInState : Selector → Nat → List CardPart → List CardState → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
-created by `CardAction.createTokens`. -/
+created by `CardAction.createTokens` or `CardAction.createTokensInState`. -/
 inductive CardPart where
   | name : String → CardPart
   /-- Printed symbols; `ManaCost` is the engine structure, this list is the
@@ -1749,6 +1752,11 @@ def leftoverAttachTargetEquipment? : CardAction → Bool
     | _, _ => false
   | _ => false
 
+/-- Battlefield states that are exactly tapped (CR 110.5). -/
+def leftoverTappedOnly : List CardState → Bool
+  | [.tapped] => true
+  | _ => false
+
 /-- Battlefield states that are exactly tapped under the selected object's
 owner's control (order-independent). -/
 def leftoverTappedUnderOwner (obj : Selector) : List CardState → Bool
@@ -2063,6 +2071,10 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     if leftoverYou who then
       leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
     else none
+  | .createTokensInState who n parts states =>
+    if leftoverYou who && leftoverTappedOnly states then
+      leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n true)
+    else none
   | .sequence [
       .actionId id (.createTokens who n parts),
       .attach .this (.wasCreatedByAction id')
@@ -2300,6 +2312,13 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     | some kind =>
                       if asAbility then Effect.abilityCreateTokens kind n
                       else Effect.createTokens kind n
+                    | none => continuousEffect none [] asAbility
+                  | .createTokensInState _ n parts states =>
+                    match leftoverTokenKind? parts with
+                    | some kind =>
+                      if leftoverTappedOnly states then
+                        Effect.createTappedTokens kind n
+                      else continuousEffect none [] asAbility
                     | none => continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -2778,8 +2797,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens st kind n)
       | _, _ => none
     else none
-  | .triggered (.attack (.hostOf .this) .all) (.createTokens who n parts) =>
+  | .triggered (.attack (.hostOf .this) .all)
+      (.createTokensInState who n parts states) =>
     if CardAction.leftoverYou who && n == 2 &&
+        CardAction.leftoverTappedOnly states &&
         CardAction.leftoverTokenKind? parts == some .spirit then
       some TriggeredAbility.onEquippedAttacksCreateSpirits
     else none
@@ -5694,6 +5715,31 @@ end TraditionalCardDefinition
       (.enter .this)
       (.createTokens (.controller .this) 1 CardPart.treasureToken)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1
+  | none => false
+
+#guard
+  CardAction.toAbilityEffect
+    (.createTokensInState (.controller .this) 1 CardPart.treasureToken [.tapped]) ==
+    Effect.createTappedTokens .treasure 1
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.createTokensInState (.controller .this) 1 CardPart.treasureToken
+        [.tapped])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1 true
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attack (.hostOf .this) .all)
+      (.createTokensInState (.controller .this) 2
+        [.type .creature, .subtype .spirit, .power 1, .toughness 1,
+          .ability (.keyword .flying)]
+        [.tapped])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEquippedAttacksCreateSpirits
   | none => false
 
 #guard

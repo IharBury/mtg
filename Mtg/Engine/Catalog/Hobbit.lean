@@ -1584,10 +1584,22 @@ def giantsBoulder : CardDef :=
     (oracleText := "When this artifact enters, scry 2. (Look at the top two cards of your library, then put any number of them on the bottom and the rest on top in any order.)\n{1}, {T}: Add one mana of any color.\n{7}, {T}, Sacrifice this artifact: Destroy target permanent.")
 
 def longBodiedGreyDog : CardDef :=
-  creature "Long-Bodied Grey Dog" (ManaCost.ofGeneric 3) #["Dog"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Long-Bodied Grey Dog",
+    .manaCost [.generic 3],
+    .type .creature,
+    .subtype .dog,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .flash),
+    .ability (.keyword .reach),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.createTokensInState (.controller .this) 1 CardPart.treasureToken
+          [.tapped]))
+  ]).toCardDef
     (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (keywords := Keyword.flash.merge Keyword.reach)
-    (triggeredAbilities := #[.onEnterCreateTokens .treasure 1 true])
 
 def doriBearerOfFriends : CardDef :=
   (TraditionalCardDefinition.card [
