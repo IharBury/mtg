@@ -51,8 +51,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
 - **Range** — `range lo hi` (literal `Nat` bounds).
 - **SetPredicate** — `shareCardType`.
-- **Selector** — `this`, `source`, `controller`, `target` / `targets` /
-  `targetSet`, `not`, `targetReference`, `selected`, `intersection`, `all`,
+- **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,

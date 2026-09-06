@@ -42,16 +42,23 @@ inductive Selector where
   /-- The controller of the given object (CR 109.5). -/
   | controller : Selector → Selector
   /-- A numbered target matching the given selector (CR 115.1). Later
-  effects may refer to it with `targetReference`. -/
+  effects may refer to it with `targetReference`. The number is unique
+  within a `TraditionalCardDefinition`, including `targets` /
+  `targetSet`. -/
   | target : Nat → Selector → Selector
-  /-- Numbered targets matching the given selector, with a count range. -/
+  /-- Numbered targets matching the given selector, with a count range.
+  The number is unique within a `TraditionalCardDefinition`, including
+  `target` / `targetSet`. -/
   | targets : Nat → Range → Selector → Selector
   /-- Numbered targets matching the given selector, with a count range
-  and extra constraints that apply to the set as a whole. -/
+  and extra constraints that apply to the set as a whole. The number is
+  unique within a `TraditionalCardDefinition`, including `target` /
+  `targets`. -/
   | targetSet : Nat → Range → Selector → List SetPredicate → Selector
   /-- Objects that do not match the given selector. -/
   | not : Selector → Selector
-  /-- The target previously declared with `target` of this number. -/
+  /-- The target previously declared with `target`, `targets`, or
+  `targetSet` of this number. -/
   | targetReference : Nat → Selector
   /-- The given player chooses objects matching the given selector at
   resolution, with a count range (not targeting; CR 608.2d). -/
@@ -404,6 +411,20 @@ def among? : Selector → Option Selector
   | .targets _ _ among => some among
   | .targetSet _ _ among _ => some among
   | _ => none
+
+/-- The number of a `.target`, `.targets`, or `.targetSet` selector. -/
+def targetNumber? : Selector → Option Nat
+  | .target n _ => some n
+  | .targets n _ _ => some n
+  | .targetSet n _ _ _ => some n
+  | _ => none
+
+/-- True when two selectors do not share a target number. Unnumbered
+selectors do not conflict. -/
+def leftoverDistinctTargetNumbers (a b : Selector) : Bool :=
+  match targetNumber? a, targetNumber? b with
+  | some n, some m => n != m
+  | _, _ => true
 
 /-- True when this targeting selector is “any target”. -/
 def leftoverAnyTarget? (s : Selector) : Bool :=
@@ -1039,7 +1060,11 @@ def leftoverPlusOneAndGainLife? : CardAction → Option Nat
     ] =>
     let upToOneCreature :=
       match sel with
-      | .targets _ (.range 0 1) among => among.shape.types.eqTypes [.creature]
+      | .targets n (.range 0 1) among =>
+        among.shape.types.eqTypes [.creature] &&
+          match who with
+          | .target m .player => n != m
+          | _ => true
       | _ => false
     let playerTarget :=
       match who with
@@ -1537,17 +1562,24 @@ def leftoverGainLifeSearchBasicPlusOne? : CardAction → Option Nat
       .searchLibraryThenShuffle _ actions,
       .putCounter sel .plusOnePlusOne 1
     ] =>
-    let player :=
+    let playerNum : Option Nat :=
       match who with
-      | .target _ .player => true
-      | _ => who == .player
+      | .target n .player => some n
+      | _ => none
+    let player := playerNum.isSome || who == .player
     let searchOk := leftoverSearchActions? actions == some Effect.searchBasicLandTapped
-    let plusOne :=
+    let creatureNum : Option Nat :=
       match sel with
-      | .targets _ (.range 0 1) among => among.shape.types.eqTypes [.creature]
-      | .target _ among => among.shape.types.eqTypes [.creature]
-      | _ => false
-    if player && searchOk && plusOne then some n else none
+      | .targets n (.range 0 1) among =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | .target n among =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | _ => none
+    let numsOk :=
+      match playerNum, creatureNum with
+      | some p, some c => p != c
+      | _, _ => creatureNum.isSome
+    if player && searchOk && numsOk then some n else none
   | _ => none
 
 /-- Source gets +P/+0 and creatures you control gain trample. -/
@@ -1591,36 +1623,45 @@ def leftoverTapOppOrUntapYours? : List CardAction → Bool
 enchantment card from your graveyard. -/
 def leftoverPlusOnesOrReturnArtEnch? : List CardAction → Bool
   | [a, b] =>
-    let plusOnes (x : CardAction) : Bool :=
+    let plusOnes (x : CardAction) : Option Nat :=
       match x with
-      | .putCounter sel .plusOnePlusOne 1 =>
-        match sel with
-        | .targets _ (.range 0 2) among => among.shape.types.eqTypes [.creature]
-        | _ => false
-      | _ => false
-    let ret (x : CardAction) : Bool :=
+      | .putCounter (.targets n (.range 0 2) among) .plusOnePlusOne 1 =>
+        if among.shape.types.eqTypes [.creature] then some n else none
+      | _ => none
+    let ret (x : CardAction) : Option Nat :=
       match x with
-      | .returnToHand sel =>
-        Selector.includesInGraveyard sel &&
-          (sel.toTargetKind == .artifactOrEnchantment ||
-            sel.toTargetKind == .permanent)
-      | _ => false
-    (plusOnes a && ret b) || (plusOnes b && ret a)
+      | .returnToHand (.target n among) =>
+        if Selector.includesInGraveyard among &&
+            (among.toTargetKind == .artifactOrEnchantment ||
+              among.toTargetKind == .permanent) then
+          some n
+        else none
+      | _ => none
+    match plusOnes a, ret b with
+    | some n, some m => n != m
+    | _, _ =>
+      match plusOnes b, ret a with
+      | some n, some m => n != m
+      | _, _ => false
   | _ => false
 
 /-- Attach target Equipment you control to up to one target creature you
 control. -/
 def leftoverAttachTargetEquipment? : CardAction → Bool
   | .attach eq cre =>
+    let destOk (dest : Selector) : Bool :=
+      dest.shape.sameController && dest.shape.types.eqTypes [.creature]
     match eq.among?, cre with
     | some among, .targets _ (.range 0 1) dest =>
-      among.shape.sameController &&
+      Selector.leftoverDistinctTargetNumbers eq cre &&
+        among.shape.sameController &&
         among.includedSubtype? == some "Equipment" &&
-        dest.shape.sameController && dest.shape.types.eqTypes [.creature]
+        destOk dest
     | some among, .target _ dest =>
-      among.shape.sameController &&
+      Selector.leftoverDistinctTargetNumbers eq cre &&
+        among.shape.sameController &&
         among.includedSubtype? == some "Equipment" &&
-        dest.shape.sameController && dest.shape.types.eqTypes [.creature]
+        destOk dest
     | _, _ => false
   | _ => false
 
@@ -3205,6 +3246,79 @@ end TraditionalCardDefinition
         1,
       .gainLife (.target 2 .player) 2]
   action.toEffect == Effect.plusOneUpToOneAndPlayerGainsLife 2
+
+#guard
+  CardAction.leftoverPlusOneAndGainLife?
+    (.sequence [
+      .putCounter
+        (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .gainLife (.target 1 .player) 2]) |>.isNone
+
+#guard
+  CardAction.leftoverPlusOnesOrReturnArtEnch?
+    [
+      .putCounter
+        (.targets 1 (.range 0 2) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .returnToHand
+        (.target
+          2
+          (.intersection [
+            .inGraveyard,
+            .union [.cardType .artifact, .cardType .enchantment],
+            .owner (.controller .this)]))]
+
+#guard
+  !CardAction.leftoverPlusOnesOrReturnArtEnch?
+    [
+      .putCounter
+        (.targets 1 (.range 0 2) (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .returnToHand
+        (.target
+          1
+          (.intersection [
+            .inGraveyard,
+            .union [.cardType .artifact, .cardType .enchantment],
+            .owner (.controller .this)]))]
+
+#guard
+  CardAction.leftoverAttachTargetEquipment?
+    (.attach
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .subtype .equipment,
+          .controlled (.controller .this)]))
+      (.targets
+        2
+        (.range 0 1)
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])))
+
+#guard
+  !CardAction.leftoverAttachTargetEquipment?
+    (.attach
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .subtype .equipment,
+          .controlled (.controller .this)]))
+      (.targets
+        1
+        (.range 0 1)
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])))
 
 -- Dreaded Bat-Cloud: {3} less if a creature died this turn.
 #guard

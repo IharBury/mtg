@@ -2021,7 +2021,7 @@ def ironHillsStalwart : CardDef :=
               .subtype .equipment,
               .controlled (.controller .this)]))
           (.targets
-            1
+            2
             (.range 0 1)
             (.intersection [
               .permanent,
@@ -3179,5 +3179,6 @@ def hobbitCards : Array CardDef := #[
 #guard littleBear.keywords.flash
 #guard littleBear.manaCost == ManaCost.ofGenericAndColor 2 .green
 #guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
+#guard ironHillsStalwart.triggeredAbilities == #[.onEnterAttachTargetEquipment]
 
 end Mtg.Engine.Catalog

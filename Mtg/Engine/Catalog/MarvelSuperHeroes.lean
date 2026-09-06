@@ -467,7 +467,7 @@ def whiteWidowFreeAgent : CardDef :=
             1,
           .returnToHand
             (.target
-              1
+              2
               (.intersection [
                 .inGraveyard,
                 .union [.cardType .artifact, .cardType .enchantment],
@@ -1734,7 +1734,7 @@ def restorativeTechnique : CardDef :=
                 .supertype .basic]))
             [.tapped]],
       .putCounter
-        (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
+        (.targets 2 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
         .plusOnePlusOne
         1]
   ]).toCardDef
@@ -2934,6 +2934,9 @@ def mshCards : Array CardDef :=
 #guard thirstForKnowledge.spellEffect == some Effect.drawThreeDiscardUnlessArtifact
 #guard kUnLunWarrior.triggeredAbilities == #[.onEnterMaySacArtifactOrDiscardDraw]
 #guard visionOfLove.spellEffect == some (Effect.maySacArtifactOrDiscardDraw 2)
+#guard whiteWidowFreeAgent.triggeredAbilities ==
+  #[.onEnter Effect.enterPlusOnesOrReturnArtEnch]
+#guard restorativeTechnique.spellEffect == some (Effect.gainLifeSearchBasicPlusOne 2)
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash
