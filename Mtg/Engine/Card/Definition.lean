@@ -462,6 +462,8 @@ inductive Cost where
   | life : Nat → Cost
   /-- Sacrifice a selected permanent (CR 701.17). -/
   | sacrifice : Selector → Cost
+  /-- Sacrifice that many permanents matching the selector (CR 701.17). -/
+  | sacrificeCount : Selector → Nat → Cost
   /-- The `{T}` tap symbol (CR 107.5 / 302.6). Affected by summoning
   sickness. -/
   | tapSymbol
@@ -486,9 +488,11 @@ def lifePaid : List Cost → Nat
 
 def isSacArtifactOrCreature : Cost → Bool
   | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
+  | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
   | .or cs =>
     cs.any fun
       | .sacrifice s => s.shape.types.eqTypes [.artifact, .creature]
+      | .sacrificeCount s 1 => s.shape.types.eqTypes [.artifact, .creature]
       | _ => false
   | _ => false
 
@@ -2424,6 +2428,18 @@ end TraditionalCardDefinition
               .union [.cardType .artifact, .cardType .creature]]),
           .mana [.generic 4]]]))
   ]).toCardDef.additionalCostOrPayGeneric == some 4
+
+-- Improvised Club: sacrifice one artifact or creature as an additional cost.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (
+      .additionalCost .this
+        [.sacrificeCount
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])
+          1]))
+  ]).toCardDef.additionalCostSacrificeArtifactOrCreature
 
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
 #guard

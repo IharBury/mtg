@@ -387,10 +387,11 @@ def improvisedClub : CardDef :=
     .ability (
       .static
         (.additionalCost .this
-          [.sacrifice
+          [.sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]])])),
+              .union [.cardType .artifact, .cardType .creature]])
+            1])),
     .actions [.dealDamage .this (.target 1 .all) 4]
   ]).toCardDef
     (oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target.")
