@@ -1360,10 +1360,13 @@ def kUnLunWarrior : CardDef :=
                 (.range 1 1)
                 [
                   .sacrifice
-                    (.intersection [
-                      .permanent,
-                      .cardType .artifact,
-                      .controlled (.controller .this)]),
+                    (.selected
+                      (.controller .this)
+                      (.range 1 1)
+                      (.intersection [
+                        .permanent,
+                        .cardType .artifact,
+                        .controlled (.controller .this)])),
                   .discard (.controller .this) 1])),
           .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 1]]))
   ]).toCardDef
@@ -1544,10 +1547,13 @@ def visionOfLove : CardDef :=
             (.range 1 1)
             [
               .sacrifice
-                (.intersection [
-                  .permanent,
-                  .cardType .artifact,
-                  .controlled (.controller .this)]),
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .permanent,
+                    .cardType .artifact,
+                    .controlled (.controller .this)])),
               .discard (.controller .this) 1])),
       .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 2]]
   ]).toCardDef
@@ -2926,6 +2932,8 @@ def mshCards : Array CardDef :=
 #guard attumaAtlanteanWarlord.triggeredAbilities ==
   #[.onWatch Effect.watchMerfolkAttackDraw]
 #guard thirstForKnowledge.spellEffect == some Effect.drawThreeDiscardUnlessArtifact
+#guard kUnLunWarrior.triggeredAbilities == #[.onEnterMaySacArtifactOrDiscardDraw]
+#guard visionOfLove.spellEffect == some (Effect.maySacArtifactOrDiscardDraw 2)
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash

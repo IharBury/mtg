@@ -1489,6 +1489,11 @@ def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
     else none
   | _ => none
 
+/-- Sacrifice one matching permanent the player chooses, not every match. -/
+def leftoverSacrificeOneArtifact? : Selector → Bool
+  | .selected _ (.range 1 1) among => among.shape.types.eqTypes [.artifact]
+  | _ => false
+
 /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
 def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
   | .sequence [
@@ -1499,7 +1504,7 @@ def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
             .discard _ 1])),
       .if (.happened (.actionWithId id') _) [.draw _ n]
     ] =>
-    if id == id' && sac.shape.types.eqTypes [.artifact] then some n else none
+    if id == id' && leftoverSacrificeOneArtifact? sac then some n else none
   | _ => none
 
 /-- Draw three cards, then discard two unless you discard an artifact. -/
@@ -4428,6 +4433,44 @@ end TraditionalCardDefinition
               .controlled (.variable 1)]))])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterEachPlayerSacrificesCreature
   | none => false
+
+-- Sacrifice an artifact is `selected` 1, not every artifact you control.
+#guard
+  CardAction.leftoverMaySacArtifactOrDiscardDraw?
+    (.sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [
+              .sacrifice
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .permanent,
+                    .cardType .artifact,
+                    .controlled (.controller .this)])),
+              .discard (.controller .this) 1])),
+      .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 1]]) == some 1
+
+#guard
+  CardAction.leftoverMaySacArtifactOrDiscardDraw?
+    (.sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [
+              .sacrifice
+                (.intersection [
+                  .permanent,
+                  .cardType .artifact,
+                  .controlled (.controller .this)]),
+              .discard (.controller .this) 1])),
+      .if (.happened (.actionWithId 1) .gameStart) [.draw (.controller .this) 1]]) |>.isNone
 
 #guard
   match
