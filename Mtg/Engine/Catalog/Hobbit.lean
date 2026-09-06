@@ -1524,22 +1524,44 @@ def duskwatchHunter : CardDef :=
     (oracleText := "This creature can't be blocked by tokens.\nWhen this creature enters, put a +1/+1 counter on target creature.")
 
 def patientInstructor : CardDef :=
-  creature "Patient Instructor" (ManaCost.ofGenericAndHybrids 2 .white .blue 1)
-    #["Human", "Citizen"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Patient Instructor",
+    .manaCost [.generic 2, .hybrid .white .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .citizen,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .vigilance),
+    .ability (.triggered (.enter .this) (.keyword .recruit))
+  ]).toCardDef
     (oracleText := "Vigilance\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onEnterRecruit])
 
 def longLakeNuisance : CardDef :=
-  creature "Long Lake Nuisance" (ManaCost.ofGenericAndColor 3 .blue) #["Bird"] 3 1
+  (TraditionalCardDefinition.card [
+    .name "Long Lake Nuisance",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .subtype .bird,
+    .power 3,
+    .toughness 1,
+    .ability (.keyword .flying),
+    .ability (.triggered (.enter .this) (.keyword .recruit))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterRecruit])
 
 def laketownLookout : CardDef :=
-  creature "Lake-town Lookout" (ManaCost.ofColor .white) #["Human", "Scout"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Lake-town Lookout",
+    .manaCost [.mono .white],
+    .type .creature,
+    .subtype .human,
+    .subtype .scout,
+    .power 1,
+    .toughness 1,
+    .ability (.triggered (.die .this) (.keyword .recruit))
+  ]).toCardDef
     (oracleText := "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
-    (triggeredAbilities := #[.onDiesRecruit])
 
 def giantsBoulder : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1610,29 +1632,73 @@ def giganticBigBear : CardDef :=
     (cantBeCountered := true)
 
 def bothersomeNoisemaker : CardDef :=
-  creature "Bothersome Noisemaker" (ManaCost.ofGenericAndColor 1 .red)
-    #["Goblin", "Bard"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Bothersome Noisemaker",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .bard,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.castSpell
+          (.intersection [
+            .spell,
+            .not (.cardType .creature),
+            .controlled (.controller .this)]))
+        (.keyword (.amass .goblin 1)))
+  ]).toCardDef
     (oracleText := "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onCastNoncreatureAmassGoblins 1])
 
 def fearsomeGoblinPair : CardDef :=
-  creature "Fearsome Goblin Pair" (ManaCost.ofGenericAndHybrids 2 .black .red 1)
-    #["Goblin", "Soldier"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Fearsome Goblin Pair",
+    .manaCost [.generic 2, .hybrid .black .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 1,
+    .toughness 1,
+    .ability (.triggered (.die .this) (.keyword (.amass .goblin 4)))
+  ]).toCardDef
     (oracleText := "When this creature dies, amass Goblins 4. (Put four +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onDiesAmassGoblins 4])
 
 def goblinTownFlunkies : CardDef :=
-  creature "Goblin-town Flunkies" (ManaCost.ofGenericAndColor 1 .red)
-    #["Goblin", "Soldier"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Goblin-town Flunkies",
+    .manaCost [.generic 1, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 1,
+    .toughness 1,
+    .ability (.keyword .haste),
+    .ability (.triggered (.enter .this) (.keyword (.amass .goblin 1)))
+  ]).toCardDef
     (oracleText := "Haste\nWhen this creature enters, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (keywords := Keyword.haste)
-    (triggeredAbilities := #[.onEnterAmassGoblins 1])
 
 def mistyMountainsRaider : CardDef :=
-  creature "Misty Mountains Raider" (ManaCost.ofGenericAndColor 4 .red)
-    #["Goblin", "Soldier"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Misty Mountains Raider",
+    .manaCost [.generic 4, .mono .red],
+    .type .creature,
+    .subtype .goblin,
+    .subtype .soldier,
+    .power 4,
+    .toughness 4,
+    .ability (
+      .triggered
+        (.attackSimultaneously
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .all
+          [])
+        (.keyword (.amass .goblin 2)))
+  ]).toCardDef
     (oracleText := "Whenever you attack, amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
-    (triggeredAbilities := #[.onYouAttackAmassGoblins 2])
 
 def bardsCompany : CardDef :=
   creature "Bard's Company" (ManaCost.ofGenericAndColors 2 [.white, .blue])
@@ -1643,14 +1709,34 @@ def bardsCompany : CardDef :=
     (triggeredAbilities := #[.onEnterOrAttackRecruit])
 
 def rageIntoTheValley : CardDef :=
-  sorcery "Rage into the Valley" (ManaCost.ofGenericAndColor 2 .black)
-    "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
-    (some (Effect.drawLoseLifeThenAmass 2))
+  (TraditionalCardDefinition.card [
+    .name "Rage into the Valley",
+    .manaCost [.generic 2, .mono .black],
+    .type .sorcery,
+    .actions [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1,
+      .keyword (.amass .goblin 2)]
+  ]).toCardDef
+    (oracleText := "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
 def gatheringOfDarkness : CardDef :=
-  sorcery "Gathering of Darkness" (ManaCost.ofGenericAndColor 3 .black)
-    "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)"
-    (some (Effect.returnCreatureFromGyThenAmass 3))
+  (TraditionalCardDefinition.card [
+    .name "Gathering of Darkness",
+    .manaCost [.generic 3, .mono .black],
+    .type .sorcery,
+    .actions [
+      .returnToHand
+        (.targets
+          1
+          (.range 0 1)
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)])),
+      .keyword (.amass .goblin 3)]
+  ]).toCardDef
+    (oracleText := "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
 def soundTheTrumpets : CardDef :=
   instant "Sound the Trumpets" (ManaCost.ofGenericAndColors 1 [.blue, .blue])
@@ -1689,11 +1775,27 @@ def dwarvenShortsword : CardDef :=
     (staticAbilities := #[.equippedCreatureGets 1 2])
 
 def goblinPlateMail : CardDef :=
-  equipment "Goblin Plate Mail" (ManaCost.ofGenericAndHybrids 1 .black .red)
-    "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}"
-    (ManaCost.ofGeneric 4)
-    (triggeredAbilities := #[.onEnterAmassThenAttach 1])
-    (staticAbilities := #[.equippedCreatureGetsAndHas 1 0 Keyword.menace])
+  (TraditionalCardDefinition.card [
+    .name "Goblin Plate Mail",
+    .manaCost [.generic 1, .hybrid .black .red],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .keyword (.amass .goblin 1),
+          .attach
+            .this
+            (.intersection [
+              .permanent,
+              .subtype .army,
+              .controlled (.controller .this)])])),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 0)),
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
+    .ability (.keywordWithCost .equip [.mana [.generic 4]])
+  ]).toCardDef
+    (oracleText := "When this Equipment enters, amass Goblins 1, then attach this Equipment to the amassed Army. (To amass Goblins 1, put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nEquipped creature gets +1/+0 and has menace.\nEquip {4}")
 
 def momentOfGlory : CardDef :=
   sorcery "Moment of Glory" (ManaCost.ofColor .white)
@@ -1878,10 +1980,26 @@ def smaugTheMagnificent : CardDef :=
     (triggeredAbilities := #[.onAttackDamageEqualTreasures, .onYourUpkeepCreateTokens .treasure 1])
 
 def theQueenOfDale : CardDef :=
-  legendaryCreature "The Queen of Dale" (ManaCost.ofGenericAndColor 1 .white)
-    #["Human", "Noble"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "The Queen of Dale",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .noble,
+    .power 2,
+    .toughness 1,
+    .ability (
+      .triggered
+        (.ordinal 1 .turnStart
+          (.castSpell
+            (.intersection [
+              .spell,
+              .not (.cardType .creature),
+              .controlled (.opponent (.controller .this))])))
+        (.keyword .recruit))
+  ]).toCardDef
     (oracleText := "Whenever an opponent casts their first noncreature spell each turn, you recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
-    (triggeredAbilities := #[.onOpponentCastsFirstNoncreatureRecruit])
 
 def oriKeeperOfSongs : CardDef :=
   legendaryCreature "Ori, Keeper of Songs" (ManaCost.ofGenericAndColor 2 .white)
