@@ -144,7 +144,7 @@ def boroughBackup : CardDef :=
     .type .sorcery,
     .actions [
       .createTokens (.controller .this) 2 [
-        .type .creature, .subtype .hero, .power 3, .toughness 2,
+        .type .creature, .subtype .hero, .colorIndicator [.white], .power 3, .toughness 2,
         .ability (.keyword .vigilance)]],
     .ability
       (.keywordWithCost
@@ -337,7 +337,7 @@ def okoyeDoraMilajeLeader : CardDef :=
       .triggered
         (.enter .this)
         (.createTokens (.controller .this) 2 [
-          .type .creature, .subtype .soldier, .power 1, .toughness 1])),
+          .type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1])),
     .ability (
       .static
         (.gainAbility
@@ -813,7 +813,7 @@ def sHIELDDeploymentDrone : CardDef :=
       .triggered
         (.enter .this)
         (.createTokens (.controller .this) 1 [
-          .type .creature, .subtype .soldier, .power 1, .toughness 1]))
+          .type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1]))
   ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, create a 1/1 white Soldier creature token.")
 
@@ -928,7 +928,7 @@ def agentsOfHYDRA : CardDef :=
       .triggered
         (.die .this)
         (.createTokens (.controller .this) 1 [
-          .type .creature, .subtype .villain, .power 2, .toughness 1,
+          .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
           .ability (.keyword .menace)]))
   ]).toCardDef
     (oracleText := "When this creature dies, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
@@ -1348,7 +1348,7 @@ def hireACrew : CardDef :=
     .type .instant,
     .actions [
       .createTokens (.controller .this) 1 [
-        .type .creature, .subtype .villain, .power 2, .toughness 1,
+        .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
         .ability (.keyword .menace)],
       .continuous
         [
@@ -2046,7 +2046,7 @@ def blackPantherVanguard : CardDef :=
             .controlled (.controller .this)]))
         (.chooseMode [
           .createTokens (.controller .this) 1 [
-            .type .creature, .subtype .soldier, .power 1, .toughness 1],
+            .type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1],
           .continuous
             [
               .addPowerToughness
@@ -2175,7 +2175,7 @@ def madameHydra : CardDef :=
             .subtype .villain,
             .controlled (.controller .this)]))
         (.createTokens (.controller .this) 1 [
-          .type .creature, .subtype .villain, .power 2, .toughness 1,
+          .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
           .ability (.keyword .menace)]))
   ]).toCardDef
     (oracleText := "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")

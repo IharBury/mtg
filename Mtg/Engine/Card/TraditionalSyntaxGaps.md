@@ -91,8 +91,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
   `createTokensInState`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
-  `name`, `manaCost`, `type`, `supertype`, `subtype`, `power`, `toughness`,
-  `ability`, `alternative` (Adventure face), `actions`.
+  `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
+  `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
 
 Converted catalog cards (Bofur, Lightning Bolt, Wood Elves, Rogue's Passage,
 Gundabad Opportunist, Elvish Mystic, Guttersnipe, Fisk Tower, Patient
@@ -630,7 +630,7 @@ These are not in the requested list but block a conversion of the listed types:
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Ward, Crew, Kicker, Flashback, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Daybound/Nightbound (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Recruit and amass are keyword actions via `CardAction.keyword`. |
 | `CounterKind` | `CardAction.putCounter` | lore, shield, hope, hone, trample, quest, shadow, finality, indestructible, and other named counters |
 
-`CardPart` also has no `loyalty`, `colorIndicator`, `chapter`, or DFC-back
+`CardPart` also has no `loyalty`, `chapter`, or DFC-back
 face (`alternative` is the Adventure face). Those are listed under
 `TraditionalCardDefinition`.
 

@@ -995,7 +995,7 @@ def andurilFlameOfTheWest : CardDef :=
       .triggered
         (.attack (.hostOf .this) .all)
         (.createTokensInState (.controller .this) 2
-          [.type .creature, .subtype .spirit, .power 1, .toughness 1,
+          [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
             .ability (.keyword .flying)]
           [.tapped])),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])

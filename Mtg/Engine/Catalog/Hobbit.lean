@@ -1802,7 +1802,7 @@ def dwarvenShortsword : CardDef :=
         (.sequence [
           .actionId 1
             (.createTokens (.controller .this) 1 [
-              .type .creature, .subtype .dwarf, .power 2, .toughness 2]),
+              .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]),
           .attach .this (.wasCreatedByAction 1)])),
     .ability (.static (.addPowerToughness (.hostOf .this) 1 2)),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])

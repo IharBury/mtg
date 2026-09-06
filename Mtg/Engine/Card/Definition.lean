@@ -832,6 +832,9 @@ inductive CardPart where
   | type : CardType → CardPart
   | supertype : CardSupertype → CardPart
   | subtype : CardSubtype → CardPart
+  /-- Color indicator (CR 107.13 / 202.2e). Tokens without a mana cost use
+  this for their color; colorless tokens omit it. -/
+  | colorIndicator : List Color → CardPart
   | power : Nat → CardPart
   | toughness : Nat → CardPart
   | ability : Ability → CardPart
@@ -1807,6 +1810,7 @@ structure TokenParts where
   name : String := ""
   types : List CardType := []
   subtypes : List String := []
+  colors : ColorSet := {}
   power : Option Nat := none
   toughness : Option Nat := none
   keywords : Keywords := Keywords.none
@@ -1819,12 +1823,18 @@ def collectTokenParts (parts : List CardPart) : TokenParts :=
       | .name n => { acc with name := n }
       | .type t => { acc with types := acc.types ++ [t] }
       | .subtype s => { acc with subtypes := acc.subtypes ++ [s.toString] }
+      | .colorIndicator cs =>
+        { acc with colors := cs.foldl ColorSet.insert acc.colors }
       | .power n => { acc with power := some n }
       | .toughness n => { acc with toughness := some n }
       | .ability (.keyword k) =>
         { acc with keywords := acc.keywords.merge k.toKeywords }
       | _ => acc)
     {}
+
+/-- True when the collected color indicator is exactly that color. -/
+def leftoverIsColor (p : TokenParts) (c : Color) : Bool :=
+  p.colors == ColorSet.singleton c
 
 /-- The selected player is this object's controller (“you create”). -/
 def leftoverYou : Selector → Bool
@@ -1842,25 +1852,28 @@ def leftoverTokenKind? (parts : List CardPart) : Option TokenKind :=
   else if p.types.contains .creature then
     match p.power, p.toughness with
     | some 2, some 2 =>
-      if has "Dwarf" then some .dwarf
+      if has "Dwarf" && leftoverIsColor p .red then some .dwarf
       else if has "Wolf" then some .wolf
       else if has "Bear" then some .bear
       else if has "Robot" && has "Villain" then some .robotVillain22
       else none
     | some 1, some 1 =>
-      if has "Spirit" && p.keywords.flying then some .spirit
+      if has "Spirit" && p.keywords.flying && leftoverIsColor p .white then
+        some .spirit
       else if has "Human" && has "Soldier" then some .humanSoldier
-      else if has "Soldier" then some .soldier11white
+      else if has "Soldier" && leftoverIsColor p .white then some .soldier11white
       else if has "Elf" then some .elf
       else if has "Squirrel" then some .squirrel11green
       else if has "Insect" then some .insect11green
       else if p.name == "Moloid" then some .moloid
       else none
     | some 3, some 2 =>
-      if has "Hero" && p.keywords.vigilance then some .hero32vigilance
+      if has "Hero" && p.keywords.vigilance && leftoverIsColor p .white then
+        some .hero32vigilance
       else none
     | some 2, some 1 =>
-      if has "Villain" && p.keywords.menace then some .villain21menace
+      if has "Villain" && p.keywords.menace && leftoverIsColor p .black then
+        some .villain21menace
       else none
     | some 4, some 4 =>
       if has "Bird" && has "Soldier" && p.keywords.flying then some .birdSoldier
@@ -2852,6 +2865,7 @@ structure CardFace where
   tapAddAnyColorEqualToPower : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
+  colorIndicator : Option ColorSet := none
 deriving Inhabited
 
 namespace CardFace
@@ -3102,6 +3116,11 @@ def apply (b : CardFace) : CardPart → CardFace
   | .type t => { b with types := b.types.push t }
   | .supertype s => { b with supertypes := b.supertypes.push s }
   | .subtype s => { b with subtypes := b.subtypes.push s.toString }
+  | .colorIndicator cs =>
+    { b with
+      colorIndicator :=
+        if cs.isEmpty then none
+        else some (cs.foldl ColorSet.insert ColorSet.empty) }
   | .power n => { b with power := some n }
   | .toughness n => { b with toughness := some n }
   | .ability a => applyAbility b a
@@ -3193,6 +3212,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
+      colorIndicator := b.colorIndicator
       adventure := adventure
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
@@ -5680,28 +5700,28 @@ end TraditionalCardDefinition
 #guard CardAction.leftoverTokenKind? PredefinedToken.treasureToken == some TokenKind.treasure
 #guard CardAction.leftoverTokenKind? PredefinedToken.foodToken == some TokenKind.food
 #guard CardAction.leftoverTokenKind?
-  [.type .creature, .subtype .dwarf, .power 2, .toughness 2] ==
+  [.type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2] ==
   some TokenKind.dwarf
 #guard CardAction.leftoverTokenKind?
-  [.type .creature, .subtype .spirit, .power 1, .toughness 1,
+  [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
     .ability (.keyword .flying)] ==
   some TokenKind.spirit
 #guard CardAction.leftoverTokenKind?
-  [.type .creature, .subtype .hero, .power 3, .toughness 2,
+  [.type .creature, .subtype .hero, .colorIndicator [.white], .power 3, .toughness 2,
     .ability (.keyword .vigilance)] ==
   some TokenKind.hero32vigilance
 #guard CardAction.leftoverTokenKind?
-  [.type .creature, .subtype .villain, .power 2, .toughness 1,
+  [.type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
     .ability (.keyword .menace)] ==
   some TokenKind.villain21menace
 #guard CardAction.leftoverTokenKind?
-  [.type .creature, .subtype .soldier, .power 1, .toughness 1] ==
+  [.type .creature, .subtype .soldier, .colorIndicator [.white], .power 1, .toughness 1] ==
   some TokenKind.soldier11white
 
 #guard
   CardAction.toEffect
     (.createTokens (.controller .this) 2 [
-      .type .creature, .subtype .hero, .power 3, .toughness 2,
+      .type .creature, .subtype .hero, .colorIndicator [.white], .power 3, .toughness 2,
       .ability (.keyword .vigilance)]) ==
     Effect.createTokens .hero32vigilance 2
 
@@ -5737,7 +5757,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.attack (.hostOf .this) .all)
       (.createTokensInState (.controller .this) 2
-        [.type .creature, .subtype .spirit, .power 1, .toughness 1,
+        [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
           .ability (.keyword .flying)]
         [.tapped])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEquippedAttacksCreateSpirits
@@ -5748,7 +5768,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.die .this)
       (.createTokens (.controller .this) 1 [
-        .type .creature, .subtype .villain, .power 2, .toughness 1,
+        .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
         .ability (.keyword .menace)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesCreateTokens .villain21menace 1
   | none => false
@@ -5760,7 +5780,7 @@ end TraditionalCardDefinition
       (.sequence [
         .actionId 1
           (.createTokens (.controller .this) 1 [
-            .type .creature, .subtype .dwarf, .power 2, .toughness 2]),
+            .type .creature, .subtype .dwarf, .colorIndicator [.red], .power 2, .toughness 2]),
         .attach .this (.wasCreatedByAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateThenAttach .dwarf
   | none => false
@@ -5769,7 +5789,7 @@ end TraditionalCardDefinition
   CardAction.toEffect
     (.sequence [
       .createTokens (.controller .this) 1 [
-        .type .creature, .subtype .villain, .power 2, .toughness 1,
+        .type .creature, .subtype .villain, .colorIndicator [.black], .power 2, .toughness 1,
         .ability (.keyword .menace)],
       .continuous
         [.addPowerToughness
