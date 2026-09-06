@@ -806,10 +806,11 @@ def kingpinSEnforcers : CardDef :=
     .ability
       (.activated
         [.mana [.generic 2, .mono .black],
-          .sacrifice
+          .sacrificeCount
             (.intersection [
               .permanent,
-              .union [.cardType .artifact, .cardType .creature]])]
+              .union [.cardType .artifact, .cardType .creature]])
+            1]
         (.draw (.controller .this) 1))
   ]).toCardDef
     (oracleText := "Lifelink\n{2}{B}, Sacrifice an artifact or creature: Draw a card.")
@@ -2526,6 +2527,10 @@ def mshCards : Array CardDef :=
     forest
   ]
 
+#guard kingpinSEnforcers.keywords.lifelink
+#guard kingpinSEnforcers.activatedAbilities.size == 1
+#guard kingpinSEnforcers.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
+#guard kingpinSEnforcers.activatedAbilities[0]!.effect == Effect.abilityDraw 1
 #guard mshCards.size >= 281
 #guard mshCards.all (fun c => c.name != "")
 #guard agentOfAtlas.keywords.prowess

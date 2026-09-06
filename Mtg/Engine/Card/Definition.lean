@@ -2594,6 +2594,23 @@ end TraditionalCardDefinition
           1]))
   ]).toCardDef.additionalCostSacrificeArtifactOrCreature
 
+-- Kingpin's Enforcers: {2}{B}, sacrifice an artifact or creature: draw a card.
+#guard
+  match
+    (Ability.activated
+      [.mana [.generic 2, .mono .black],
+        .sacrificeCount
+          (.intersection [
+            .permanent,
+            .union [.cardType .artifact, .cardType .creature]])
+          1]
+      (.draw (.controller .this) 1)).toActivatedAbility? with
+  | some ab =>
+    ab.cost.sacrificeAnotherCreatureOrArtifact &&
+      ab.cost.mana == ManaCost.ofGenericAndColor 2 .black &&
+      ab.effect == Effect.abilityDraw 1
+  | none => false
+
 -- Desolation Prowler: pay 2 life, +2/+2, once each turn.
 #guard
   match
