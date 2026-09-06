@@ -881,7 +881,7 @@ def woodlandWeavemaster : TraditionalCardDefinition := .card [
       [.tapSymbol]
       (.sequence [
         .actionId 1
-          (.addManaAnyColorEqualToPower
+          (.addManaAnyColorEqualToObjectPower
             (.controller .this)
             (.controller .this)
             .this),
@@ -1409,15 +1409,10 @@ def giantsBoulder : CardDef :=
     .ability (
       .activated
         [.mana [.generic 1], .tapSymbol]
-        (.playerSelectAction
+        (.addManaAnyColorEqualToPower
           (.controller .this)
-          (.range 1 1)
-          [
-            .addMana (.controller .this) [.mono .white],
-            .addMana (.controller .this) [.mono .blue],
-            .addMana (.controller .this) [.mono .black],
-            .addMana (.controller .this) [.mono .red],
-            .addMana (.controller .this) [.mono .green]])),
+          (.controller .this)
+          1)),
     .ability (
       .activated
         [.mana [.generic 7], .tapSymbol, .sacrifice .this]
