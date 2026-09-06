@@ -668,12 +668,12 @@ def bardHeirOfGirion : CardDef :=
           1 1)),
     .ability
       (.triggered
-        (.attack
+        (.attackSimultaneously
           (.intersection [
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)])
-          .all)
+          [])
         (.draw (.controller .this) 1))
   ]).toCardDef
     (oracleText := "Reach, vigilance\nOther creatures you control get +1/+1.\nWhenever you attack, draw a card.")

@@ -139,6 +139,9 @@ inductive Trigger where
   /-- When objects matching the selector die at the same time, with
   set-wide predicates (CR 700.4 / 603.2d). -/
   | dieSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Whenever objects matching the selector attack at the same time, with
+  set-wide predicates (CR 508.3 / 603.2d). -/
+  | attackSimultaneously : Selector → List SetPredicate → Trigger
   /-- The numbered ability was activated (CR 602.2). -/
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
@@ -1861,8 +1864,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some TriggeredAbility.onLandYouControlEntersPlusOneVigilance
       else none
     | _ => none
-  | .triggered (.attack among .all) (.draw (.controller .this) 1) =>
-    if among != .this && among.shape.sameController then
+  | .triggered (.attackSimultaneously among _) (.draw (.controller .this) 1) =>
+    if among.shape.sameController then
       some TriggeredAbility.onYouAttackDraw
     else none
   | _ => none
@@ -3942,12 +3945,12 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.attack
+      (.attackSimultaneously
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])
-        .all)
+        [])
       (.draw (.controller .this) 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackDraw
   | none => false
