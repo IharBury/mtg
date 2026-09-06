@@ -244,9 +244,33 @@ def pantherPounce : CardDef :=
     (spellEffect := some (Effect.investigatePumpFlyingUntap))
 
 def patriotShieldWielder : CardDef :=
-  legendaryCreature "Patriot, Shield Wielder" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Hero"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Patriot, Shield Wielder",
+    .manaCost [.generic 1, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .power 2,
+    .toughness 2,
+    .ability
+      (.activated
+        [.mana [.generic 2], .tapSymbol]
+        (.continuous
+          [
+            .addPowerToughness
+              (.target
+                1
+                (.intersection [
+                  .not .this,
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)]))
+              2 0,
+            .gainAbility (.targetReference 1) (.keyword .hexproof)]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "{2}, {T}: Another target creature you control gets +2/+0 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)")
-    (activatedAbilities := #[activated (Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof) (ManaCost.ofGeneric 2) (tap := true)])
 
 def politicalTriumph : CardDef :=
   enchantment "Political Triumph" (ManaCost.ofColor .white)
@@ -300,9 +324,22 @@ def superSoldierSerum : CardDef :=
       (Keyword.firstStrike.merge Keyword.vigilance) #["legendary", "Soldier"]])
 
 def takeUpTheShield : CardDef :=
-  instant "Take Up the Shield" (ManaCost.ofGenericAndColor 1 .white)
-    "Put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)"
-    (spellEffect := some (Effect.plusOneLifelinkIndestructible))
+  (TraditionalCardDefinition.card [
+    .name "Take Up the Shield",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .actions [
+      .putCounter
+        (.target 1 (.intersection [.permanent, .cardType .creature]))
+        .plusOnePlusOne
+        1,
+      .continuous
+        [
+          .gainAbility (.targetReference 1) (.keyword .lifelink),
+          .gainAbility (.targetReference 1) (.keyword .indestructible)]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)")
 
 def wakandanDroneFlock : CardDef :=
   (TraditionalCardDefinition.card [
@@ -757,11 +794,26 @@ def hYDRATroopers : CardDef :=
     (triggeredAbilities := #[.onEnterVillainIfGyElseMill])
 
 def kingpinSEnforcers : CardDef :=
-  creature "Kingpin's Enforcers" (ManaCost.ofGenericAndColor 2 .black) #["Human", "Villain"] 2 3
+  (TraditionalCardDefinition.card [
+    .name "Kingpin's Enforcers",
+    .manaCost [.generic 2, .mono .black],
+    .type .creature,
+    .subtype .human,
+    .subtype .villain,
+    .power 2,
+    .toughness 3,
+    .ability (.keyword .lifelink),
+    .ability
+      (.activated
+        [.mana [.generic 2, .mono .black],
+          .sacrificeCount
+            (.intersection [
+              .permanent,
+              .union [.cardType .artifact, .cardType .creature]])
+            1]
+        (.draw (.controller .this) 1))
+  ]).toCardDef
     (oracleText := "Lifelink\n{2}{B}, Sacrifice an artifact or creature: Draw a card.")
-    (keywords := Keyword.lifelink)
-    (activatedAbilities := #[activated (Effect.abilityDraw 1) (ManaCost.ofGenericAndColor 2 .black)
-      (sacrificeArtifactOrCreature := true)])
 
 def klawSonicSubjugator : CardDef :=
   legendaryCreature "Klaw, Sonic Subjugator" (ManaCost.ofGenericAndColor 2 .black) #["Human", "Rogue", "Villain"] 2 2
@@ -843,13 +895,31 @@ def roxxonBrutes : CardDef :=
     (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def stolenStarkTech : CardDef :=
-  artifact "Stolen Stark Tech" (ManaCost.ofGenericAndColor 1 .black)
-    "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
-    (subtypes := #["Equipment"])
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterAttachThen (.grantKeywords Keyword.indestructible)])
-    (staticAbilities := #[StaticAbility.equippedCreatureGets 1 0])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 1)])
+  (TraditionalCardDefinition.card [
+    .name "Stolen Stark Tech",
+    .manaCost [.generic 1, .mono .black],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (.keyword .flash),
+    .ability
+      (.triggered
+        (.enter .this)
+        (.sequence [
+          .attach
+            .this
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])),
+          .continuous
+            [.gainAbility (.hostOf .this) (.keyword .indestructible)]
+            .endOfTurn])),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 0)),
+    .ability (.keywordWithCost .equip [.mana [.generic 1]])
+  ]).toCardDef
+    (oracleText := "Flash\nWhen this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn. (Damage and effects that say \"destroy\" don't destroy it.)\nEquipped creature gets +1/+0.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def superSkrull : CardDef :=
   legendaryCreature "Super-Skrull" (ManaCost.ofGenericAndColors 1 [.black, .black, .black]) #["Skrull", "Shapeshifter", "Villain"] 4 5
@@ -1034,10 +1104,23 @@ def kUnLunWarrior : CardDef :=
     (triggeredAbilities := #[.onEnterMaySacArtifactOrDiscardDraw])
 
 def kreeSentinel : CardDef :=
-  artifactCreature "Kree Sentinel" (ManaCost.ofGenericAndColor 4 .red) #["Kree", "Robot", "Villain"] 5 5
+  (TraditionalCardDefinition.card [
+    .name "Kree Sentinel",
+    .manaCost [.generic 4, .mono .red],
+    .type .artifact,
+    .type .creature,
+    .subtype .kree,
+    .subtype .robot,
+    .subtype .villain,
+    .power 5,
+    .toughness 5,
+    .ability (.keyword .reach),
+    .ability
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
+  ]).toCardDef
     (oracleText := "Reach\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
-    (keywords := Keyword.reach)
-    (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def lightningStrike : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1134,12 +1217,27 @@ def starkIndustriesExecutive : CardDef :=
     (activatedAbilities := #[activated (Effect.abilityCreateTokens .treasure 1) (ManaCost.ofGeneric 2) (tap := true)])
 
 def superSpeed : CardDef :=
-  enchantment "Super Speed" (ManaCost.ofColor .red)
-    "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste."
-    (subtypes := #["Aura"])
-    (keywords := Keyword.flash)
-    (triggeredAbilities := #[.onEnterEnchanted (.grantKeywords Keyword.firstStrike)])
-    (staticAbilities := #[StaticAbility.enchantedCreatureGetsAndHas 1 0 Keyword.haste])
+  (TraditionalCardDefinition.card [
+    .name "Super Speed",
+    .manaCost [.mono .red],
+    .type .enchantment,
+    .subtype .aura,
+    .ability (.keyword .flash),
+    .ability
+      (.keywordWithTarget
+        .enchant
+        1
+        (.intersection [.permanent, .cardType .creature])),
+    .ability
+      (.triggered
+        (.enter .this)
+        (.continuous
+          [.gainAbility (.hostOf .this) (.keyword .firstStrike)]
+          .endOfTurn)),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 0)),
+    .ability (.static (.gainAbility (.hostOf .this) (.keyword .haste)))
+  ]).toCardDef
+    (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, enchanted creature gains first strike until end of turn.\nEnchanted creature gets +1/+0 and has haste.")
 
 def teamTactics : CardDef :=
   instant "Team Tactics" (ManaCost.ofGenericAndColor 1 .red)
@@ -1322,10 +1420,20 @@ def rickJonesDestinedSidekick : CardDef :=
     (activatedAbilities := #[activated (Effect.millThenPutSubtypeOrEnchantment 4 "Hero") (ManaCost.ofGeneric 3) (tap := true)])
 
 def savageLandDinosaur : CardDef :=
-  creature "Savage Land Dinosaur" (ManaCost.ofGenericAndColors 4 [.green, .green]) #["Dinosaur"] 7 6
+  (TraditionalCardDefinition.card [
+    .name "Savage Land Dinosaur",
+    .manaCost [.generic 4, .mono .green, .mono .green],
+    .type .creature,
+    .subtype .dinosaur,
+    .power 7,
+    .toughness 6,
+    .ability (.keyword .trample),
+    .ability
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
+  ]).toCardDef
     (oracleText := "Trample\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
-    (keywords := Keyword.trample)
-    (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def serpentSpecialist : CardDef :=
   creature "Serpent Specialist" (ManaCost.ofColor .green) #["Human", "Snake", "Villain"] 1 1
@@ -2395,6 +2503,22 @@ def mshCards : Array CardDef :=
     forest
   ]
 
+#guard kingpinSEnforcers.keywords.lifelink
+#guard kingpinSEnforcers.activatedAbilities.size == 1
+#guard kingpinSEnforcers.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
+#guard kingpinSEnforcers.activatedAbilities[0]!.effect == Effect.abilityDraw 1
+#guard kreeSentinel.keywords.reach
+#guard kreeSentinel.activatedAbilities.size == 1
+#guard kreeSentinel.activatedAbilities[0]!.activateFromHand
+#guard kreeSentinel.activatedAbilities[0]!.cost.discardSource
+#guard kreeSentinel.activatedAbilities[0]!.effect ==
+  Effect.searchLandTypeToHand "Basic land"
+#guard savageLandDinosaur.keywords.trample
+#guard savageLandDinosaur.activatedAbilities.size == 1
+#guard savageLandDinosaur.activatedAbilities[0]!.activateFromHand
+#guard savageLandDinosaur.activatedAbilities[0]!.cost.discardSource
+#guard savageLandDinosaur.activatedAbilities[0]!.effect ==
+  Effect.searchLandTypeToHand "Basic land"
 #guard mshCards.size >= 281
 #guard mshCards.all (fun c => c.name != "")
 #guard agentOfAtlas.keywords.prowess

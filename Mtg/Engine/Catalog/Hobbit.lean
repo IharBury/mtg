@@ -1358,14 +1358,54 @@ def theChiefWarg : CardDef :=
     (triggeredAbilities := #[.onYouAttackFerociousDrawLoseLife])
 
 def thorinsLastStand : CardDef :=
-  instant "Thorin's Last Stand" (ManaCost.ofGenericAndColors 2 [.white, .white])
-    "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life."
-    (spellModes := #[(Effect.creaturesYouControlGet 2 1), (Effect.destroyArtifactOrEnchantmentGainLife 2)])
+  (TraditionalCardDefinition.card [
+    .name "Thorin's Last Stand",
+    .manaCost [.generic 2, .mono .white, .mono .white],
+    .type .instant,
+    .actions [
+      .chooseMode [
+        .continuous
+          [.addPowerToughness
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            2 1]
+          .endOfTurn,
+        .sequence [
+          .destroy
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .union [.cardType .artifact, .cardType .enchantment]])),
+          .gainLife (.controller .this) 2]]]
+  ]).toCardDef
+    (oracleText := "Choose one —\n• Creatures you control get +2/+1 until end of turn.\n• Destroy target artifact or enchantment. You gain 2 life.")
 
 def stoneBySunlight : CardDef :=
-  instant "Stone by Sunlight" (ManaCost.ofGenericAndColor 1 .white)
-    "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)"
-    (spellModes := #[(Effect.destroyCreaturePowerAtLeast 4), (Effect.becomeArtifactGainIndestructible)])
+  (TraditionalCardDefinition.card [
+    .name "Stone by Sunlight",
+    .manaCost [.generic 1, .mono .white],
+    .type .instant,
+    .actions [
+      .chooseMode [
+        .destroy
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .powerAtLeast 4])),
+        .continuous
+          [
+            .gainType
+              (.target 1 (.intersection [.permanent, .cardType .creature]))
+              .artifact,
+            .gainAbility (.targetReference 1) (.keyword .indestructible)]
+          .endOfTurn]]
+  ]).toCardDef
+    (oracleText := "Choose one —\n• Destroy target creature with power 4 or greater.\n• Until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible. (Damage and effects that say \"destroy\" don't destroy it.)")
 
 def duskwatchHunter : CardDef :=
   (TraditionalCardDefinition.card [

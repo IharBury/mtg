@@ -95,6 +95,7 @@ abbrev Subtype := String
 inductive CardSubtype where
   | adventure
   | advisor
+  | archer
   | aura
   | avatar
   | bard
@@ -105,6 +106,7 @@ inductive CardSubtype where
   | centaur
   | citizen
   | cleric
+  | dinosaur
   | dragon
   | druid
   | dwarf
@@ -157,6 +159,7 @@ namespace CardSubtype
 def toString : CardSubtype → String
   | .adventure => "Adventure"
   | .advisor => "Advisor"
+  | .archer => "Archer"
   | .aura => "Aura"
   | .avatar => "Avatar"
   | .bard => "Bard"
@@ -167,6 +170,7 @@ def toString : CardSubtype → String
   | .centaur => "Centaur"
   | .citizen => "Citizen"
   | .cleric => "Cleric"
+  | .dinosaur => "Dinosaur"
   | .dragon => "Dragon"
   | .druid => "Druid"
   | .dwarf => "Dwarf"
@@ -282,5 +286,7 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard CardSubtype.toString .robot == "Robot"
 #guard CardSubtype.toString .spirit == "Spirit"
 #guard CardSubtype.toString .zombie == "Zombie"
+#guard CardSubtype.toString .archer == "Archer"
+#guard CardSubtype.toString .dinosaur == "Dinosaur"
 
 end Mtg.Engine
