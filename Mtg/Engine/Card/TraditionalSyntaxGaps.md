@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 105 |
-| The Hobbit Eternal (HOC) | 83 |
-| Marvel Super Heroes (MSH) | 227 |
-| **Total remaining** | **415** |
+| The Hobbit (HOB) | 101 |
+| The Hobbit Eternal (HOC) | 79 |
+| Marvel Super Heroes (MSH) | 218 |
+| **Total remaining** | **398** |
 
-All **415** remaining cards have at least one identified constructor gap.
+All **398** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -88,7 +88,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
-  `addManaAnyColorEqualToPower`, `addMana`, `keyword`.
+  `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `power`, `toughness`,
   `ability`, `alternative` (Adventure face), `actions`.
@@ -97,7 +97,8 @@ Converted catalog cards (Bofur, Lightning Bolt, Wood Elves, Rogue's Passage,
 Gundabad Opportunist, Elvish Mystic, Guttersnipe, Fisk Tower, Patient
 Instructor, Goblin-town Flunkies, …) already use that inventory. Remaining
 cards need the constructors below. `CardAction.keyword` compiles keyword
-actions such as recruit and amass.
+actions such as recruit and amass. `CardAction.createTokens` compiles token
+creation from a selector, count, and `CardPart` characteristics.
 
 ## Missing constructors by type
 
@@ -357,8 +358,6 @@ complete.
 
 ### `CardAction`
 
-- **`createToken`** (87 cards) — Create n tokens of a described kind
-  - Agent 13, Sharon Carter; Agents of HYDRA; Alien Invasion; Andúril, Flame of the West; Ant-Man's Army; Ant-Man, Colony Commander; Aragorn, the Uniter; Arnim Zola, Bio-Fanatic; Avengers: Under Siege; Azog, Moria's Ruin; … (77 more)
 - **`repeatN`** (22 cards) — Repeat an action / deal damage / draw / put counters X times where X is computed
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Iron Fist, Living Weapon; Last March of the Ents; … (12 more)
 - **`lookAt`** (21 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
@@ -418,8 +417,6 @@ complete.
 
 ### `TraditionalCardDefinition`
 
-- **`tokenDescription`** (87 cards) — Inline token characteristics (or a TokenKind reference)
-  - Agent 13, Sharon Carter; Agents of HYDRA; Alien Invasion; Andúril, Flame of the West; Ant-Man's Army; Ant-Man, Colony Commander; Aragorn, the Uniter; Arnim Zola, Bio-Fanatic; Avengers: Under Siege; Azog, Moria's Ruin; … (77 more)
 - **`CardSubtype.Noble`** (25 cards) — CardPart.subtype uses CardSubtype; Noble has no constructor
   - Aragorn and Arwen, Wed; Aragorn, the Uniter; Arwen, Mortal Queen; Arwen, Weaver of Hope; Bard, King of Dale; Baron Helmut Zemo; Celeborn the Wise; Dáin of the Ancient Halls; Dáin, Lord of the Iron Hills; Elrond, Moon-Reader; … (15 more)
 - **`sagaChapters`** (14 cards) — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
@@ -640,7 +637,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (106 cards)
+### The Hobbit (HOB) (101 cards)
 
 **Along the Crooked Way** (`alongTheCrookedWay`)
 
@@ -680,10 +677,7 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create twice as many instead
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
-**Bejeweled Warg** (`bejeweledWarg`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Belladonna Took** (`belladonnaTook`)
 
@@ -706,8 +700,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Ability.gift` — Gift (promise an opponent a token)
 - `ContinuousEffect.forbidCast` — Players matching a selector can't cast spells matching a selector
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Bilbo, Thief in the Night** (`bilboThiefInTheNight`)
 
@@ -762,15 +754,11 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
 - `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
 - `Condition.controlCount` — Controller controls N or more matching objects
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Dancing from Dark to Dawn** (`dancingFromDarkToDawn`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Desert Were-Worm** (`desertWereWorm`)
 
@@ -784,18 +772,13 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
 - `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
 
-**Dori, Bearer of Friends** (`doriBearerOfFriends`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Down in the Valley** (`downInTheValley`)
 
 - `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Down, Down to Goblin-town** (`downDownToGoblinTown`)
 
@@ -818,17 +801,12 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.reduceCostIfTargeting` — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
 
 
-**Dwarven Shortsword** (`dwarvenShortsword`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Dáin Ironfoot** (`dainIronfoot`)
 
 - `Selector.color` — Objects of a color / colorless
 - `Selector.named` — Objects with a given name
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Dáin's Company** (`dainsCompany`)
 
@@ -870,8 +848,6 @@ Converted cards from the previous untagged set are omitted here.
 **Fíli the Pathfinder** (`filiThePathfinder`)
 
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Gandalf, Goblins' Bane** (`gandalfGoblinsBane`)
 
@@ -907,8 +883,6 @@ Converted cards from the previous untagged set are omitted here.
 **Gleaming Splendor** (`gleamingSplendor`)
 
 - `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Glóin the Mighty** (`gloinTheMighty`)
 
@@ -937,8 +911,6 @@ Converted cards from the previous untagged set are omitted here.
 **Head of the Hunt** (`headOfTheHunt`)
 
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Inside Information** (`insideInformation`)
 
@@ -952,8 +924,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 - `Selector.named` — Objects with a given name
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
 
 
@@ -983,8 +953,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Long-Bodied Grey Dog** (`longBodiedGreyDog`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Dog` — CardPart.subtype uses CardSubtype; Dog has no constructor
 
 **Master's Councillors** (`masterSCouncillors`)
@@ -1033,8 +1001,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
 - `Selector.chosenType` — Objects of the chosen creature type
 - `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Ori, Keeper of Songs** (`oriKeeperOfSongs`)
 
@@ -1108,8 +1074,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
@@ -1128,8 +1092,6 @@ Converted cards from the previous untagged set are omitted here.
 **Stone-Giant of High Pass** (`stoneGiantOfHighPass`)
 
 - `Selector.color` — Objects of a color / colorless
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Supper for Spiders** (`supperForSpiders`)
 
@@ -1153,8 +1115,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Cost.optionalAdditional` — Optional additional cost (Kicker)
 - `Ability.keywordKicker` — Kicker
 - `Condition.kicked` — This spell was kicked
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.addManaPer` — Add mana for each matching object
 
 **The Great Goblin** (`theGreatGoblin`)
@@ -1166,8 +1126,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.addManaPer` — Add mana for each matching object
 
 **The Lord of the Eagles** (`theLordOfTheEagles`)
@@ -1188,8 +1146,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **The Mountain-king's Return** (`theMountainKingSReturn`)
 
@@ -1200,14 +1156,9 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Notary Hobbits** (`theNotaryHobbits`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.addManaPer` — Add mana for each matching object
 
-**The Sackville-Bagginses** (`theSackvilleBagginses`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Thorin Oakenshield** (`thorinOakenshield`)
 
@@ -1227,8 +1178,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.mill` — Target player mills N cards
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
@@ -1282,12 +1231,9 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (83 cards)
+### The Hobbit Eternal (HOC) (79 cards)
 
-**Andúril, Flame of the West** (`andurilFlameOfTheWest`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -1300,8 +1246,6 @@ Converted cards from the previous untagged set are omitted here.
 **Aragorn, the Uniter** (`aragornTheUniter`)
 
 - `Selector.color` — Objects of a color / colorless
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Arcane Signet** (`arcaneSignet`)
@@ -1345,8 +1289,6 @@ Converted cards from the previous untagged set are omitted here.
 **Bilbo, Fellow Conspirator** (`bilboFellowConspirator`)
 
 - `ContinuousEffect.replaceTokenCreation` — If you would create a Food, also create a Treasure
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Bilbo, Unexpected Adventurer** (`bilboUnexpectedAdventurer`)
 
@@ -1381,8 +1323,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Celeborn the Wise** (`celebornTheWise`)
 
@@ -1419,10 +1359,7 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.addManaPer` — Add mana for each matching object
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-**Dragon-Cursed Halls** (`dragonCursedHalls`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Dwarven Warriors** (`dwarvenWarriors`)
 
@@ -1533,10 +1470,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 
 
-**Lotho, Corrupt Shirriff** (`lothoCorruptShirriff`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Mentor of the Meek** (`mentorOfTheMeek`)
 
@@ -1703,25 +1637,16 @@ Converted cards from the previous untagged set are omitted here.
 - `Cost.tapOther` — Tap another matching permanent (not the tap symbol on the source)
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
-**Thorin, Company's Leader** (`thorinCompanySLeader`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Thorin, King of Durin's Folk** (`thorinKingOfDurinsFolk`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Thranduil the Strategist** (`thranduilTheStrategist`)
 
 - `ContinuousEffect.gainAbility` — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Tom Bombadil** (`tomBombadil`)
@@ -1766,7 +1691,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (227 cards)
+### Marvel Super Heroes (MSH) (218 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
@@ -1804,8 +1729,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.attackingAlone` — A creature attacking alone
 - `Trigger.attackAlone` — When the selected object attacks alone
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.investigate` — Investigate / create a Clue
 
 **Agent Maria Hill** (`agentMariaHill`)
@@ -1813,10 +1736,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
 
 
-**Agents of HYDRA** (`agentsOfHYDRA`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Agents of S.H.I.E.L.D.** (`agentsOfSHIELD`)
 
@@ -1828,19 +1748,12 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
 - `Condition.controlCount` — Controller controls N or more matching objects
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
-**Ant-Man's Army** (`antManSArmy`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Arc Reactor** (`arcReactor`)
 
@@ -1865,8 +1778,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Arnim Zola, Bio-Fanatic** (`arnimZolaBioFanatic`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Atlantis Attacks** (`atlantisAttacks`)
@@ -1897,8 +1808,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.addManaPer` — Add mana for each matching object
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 - `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
@@ -1933,10 +1842,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
 
-**Black Panther, Vanguard** (`blackPantherVanguard`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Black Widow, Double Agent** (`blackWidowDoubleAgent`)
 
@@ -1957,10 +1863,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
-**Borough Backup** (`boroughBackup`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Brave Brawler** (`braveBrawler`)
 
@@ -2017,8 +1920,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 - `Selector.named` — Objects with a given name
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
 
 **Claim the Kingdom** (`claimTheKingdom`)
@@ -2040,8 +1941,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
 
 **Cosmic Cube** (`cosmicCube`)
@@ -2084,8 +1983,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Death to Our Enemies** (`deathToOurEnemies`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
 
 **Decoy Ploy** (`decoyPloy`)
@@ -2109,8 +2006,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
@@ -2207,8 +2102,6 @@ Converted cards from the previous untagged set are omitted here.
 **HYDRA Troopers** (`hYDRATroopers`)
 
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.mill` — Target player mills N cards
 
 **Hawkeye's Bow** (`hawkeyeSBow`)
@@ -2250,8 +2143,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.gainLife` — Whenever the selected player gains life
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Hex Magic** (`hexMagic`)
 
@@ -2259,10 +2150,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — An object in a hand
 - `TraditionalCardDefinition.CardSubtype.Arcane` — CardPart.subtype uses CardSubtype; Arcane has no constructor
 
-**Hire a Crew** (`hireACrew`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Hour of Defeat** (`hourOfDefeat`)
 
@@ -2302,8 +2190,6 @@ Converted cards from the previous untagged set are omitted here.
 **Invisible Woman, Sue Storm** (`invisibleWomanSueStorm`)
 
 - `Selector.color` — Objects of a color / colorless
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Iron Fist, Living Weapon** (`ironFistLivingWeapon`)
 
@@ -2425,15 +2311,10 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `CardAction.connive` — Connive
 
-**Madame Hydra** (`madameHydra`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Madame Masque** (`madameMasque`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.connive` — Connive
 
 **Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
@@ -2460,8 +2341,6 @@ Converted cards from the previous untagged set are omitted here.
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
 - `Selector.named` — Objects with a given name
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.mill` — Target player mills N cards
 
 **Monica Rambeau** (`monicaRambeau`)
@@ -2492,8 +2371,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Multiversal Incursion** (`multiversalIncursion`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.copy` — Copy a permanent, spell, or ability
 
 **Murdock's Crusade** (`murdockSCrusade`)
@@ -2537,10 +2414,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 - `TraditionalCardDefinition.CardSubtype.Ninja` — CardPart.subtype uses CardSubtype; Ninja has no constructor
 
-**Okoye, Dora Milaje Leader** (`okoyeDoraMilajeLeader`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Origin of the Avengers** (`originOfTheAvengers`)
 
@@ -2553,8 +2427,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Panther Pounce** (`pantherPounce`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.investigate` — Investigate / create a Clue
 
 **Pet Avengers** (`petAvengers`)
@@ -2562,8 +2434,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Cat` — CardPart.subtype uses CardSubtype; Cat has no constructor
 - `TraditionalCardDefinition.CardSubtype.Dog` — CardPart.subtype uses CardSubtype; Dog has no constructor
 - `TraditionalCardDefinition.CardSubtype.Frog` — CardPart.subtype uses CardSubtype; Frog has no constructor
@@ -2665,10 +2535,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
 
-**S.H.I.E.L.D. Deployment Drone** (`sHIELDDeploymentDrone`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **S.H.I.E.L.D. Flying Car** (`sHIELDFlyingCar`)
 
@@ -2680,8 +2547,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Cost.tapPowerTotal` — Tap creatures with total power N or more
 - `Ability.keywordCrew` — Crew N
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
@@ -2753,10 +2618,7 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.forbidUntapWhileYouControl` — Can't become untapped for as long as you control this
 
 
-**Stark Industries Executive** (`starkIndustriesExecutive`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Stature, Size Shifter** (`statureSizeShifter`)
 
@@ -2796,8 +2658,6 @@ Converted cards from the previous untagged set are omitted here.
 **Super-Skrull** (`superSkrull`)
 
 - `Selector.color` — Objects of a color / colorless
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Skrull` — CardPart.subtype uses CardSubtype; Skrull has no constructor
 
 **Super-Soldier Serum** (`superSoldierSerum`)
@@ -2938,8 +2798,6 @@ Converted cards from the previous untagged set are omitted here.
 **The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `TraditionalCardDefinition.CardSubtype.Squirrel` — CardPart.subtype uses CardSubtype; Squirrel has no constructor
 
 **The Vision** (`theVision`)
@@ -3006,8 +2864,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 - `Selector.named` — Objects with a given name
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Ultron Drone** (`ultronDrone`)
 
@@ -3015,13 +2871,9 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
 - `CardAction.copy` — Copy a permanent, spell, or ability
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)

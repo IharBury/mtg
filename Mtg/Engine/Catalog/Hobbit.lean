@@ -1590,11 +1590,22 @@ def longBodiedGreyDog : CardDef :=
     (triggeredAbilities := #[.onEnterCreateTokens .treasure 1 true])
 
 def doriBearerOfFriends : CardDef :=
-  legendaryCreature "Dori, Bearer of Friends" (ManaCost.ofGenericAndColor 2 .red)
-    #["Dwarf", "Warrior"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Dori, Bearer of Friends",
+    .manaCost [.generic 2, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .trample),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.createTokens (.controller .this) 1 CardPart.treasureToken))
+  ]).toCardDef
     (oracleText := "Trample\nWhen Dori enters, create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onEnterCreateTokens .treasure 1])
 
 def esgarothGarrison : CardDef :=
   card "Esgaroth Garrison" #[.creature] (ManaCost.ofGenericAndColor 4 .white)
@@ -1768,11 +1779,22 @@ def chiefWargsCompany : CardDef :=
     (triggeredAbilities := #[.onYourUpkeepCreateTokens .wolf 1])
 
 def dwarvenShortsword : CardDef :=
-  equipment "Dwarven Shortsword" (ManaCost.ofGenericAndColor 3 .white)
-    "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)"
-    (ManaCost.ofGeneric 2)
-    (triggeredAbilities := #[.onEnterCreateThenAttach .dwarf])
-    (staticAbilities := #[.equippedCreatureGets 1 2])
+  (TraditionalCardDefinition.card [
+    .name "Dwarven Shortsword",
+    .manaCost [.generic 3, .mono .white],
+    .type .artifact,
+    .subtype .equipment,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .actionId 1
+            (.createTokens (.controller .this) 1 CardPart.dwarfToken),
+          .attach .this (.wasCreatedByAction 1)])),
+    .ability (.static (.addPowerToughness (.hostOf .this) 1 2)),
+    .ability (.keywordWithCost .equip [.mana [.generic 2]])
+  ]).toCardDef
+    (oracleText := "When this Equipment enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it.\nEquipped creature gets +1/+2.\nEquip {2} ({2}: Attach to target creature you control. Equip only as a sorcery.)")
 
 def goblinPlateMail : CardDef :=
   (TraditionalCardDefinition.card [
@@ -2387,9 +2409,30 @@ def bardKingOfDale : CardDef :=
     (drawTwoExceptFirstDrawStep := true)
 
 def bejeweledWarg : CardDef :=
-  creature "Bejeweled Warg" (ManaCost.ofGenericAndColor 1 .green) #["Wolf"] 3 2 (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (keywords := Keyword.trample)
-    (triggeredAbilities := #[.onCombatDamageWolfPlusOneOrTreasure])
+  (TraditionalCardDefinition.card [
+    .name "Bejeweled Warg",
+    .manaCost [.generic 1, .mono .green],
+    .type .creature,
+    .subtype .wolf,
+    .power 3,
+    .toughness 2,
+    .ability (.keyword .trample),
+    .ability (
+      .triggered
+        (.combatDamage .this .player)
+        (.chooseMode [
+          .putCounter
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .subtype .wolf,
+                .controlled (.controller .this)]))
+            .plusOnePlusOne 1,
+          .createTokens (.controller .this) 1 CardPart.treasureToken]))
+  ]).toCardDef
+    (oracleText := "Trample\nWhenever this creature deals combat damage to a player, choose one —\n• Put a +1/+1 counter on target Wolf you control.\n• Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
 
 def belladonnaTook : CardDef :=
   legendaryCreature "Belladonna Took" (ManaCost.ofGenericAndColor 1 .white) #["Halfling", "Citizen"] 2 2 (oracleText := "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control.")
@@ -2648,8 +2691,43 @@ def theNotaryHobbits : CardDef :=
     (triggeredAbilities := #[.onEnterIfNotTokenCopySelf])
 
 def theSackvilleBagginses : CardDef :=
-  legendaryCreature "The Sackville-Bagginses" (ManaCost.ofGenericAndColor 1 .black) #["Halfling", "Citizen"] 2 2 (oracleText := "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.")
-    (triggeredAbilities := #[.onEnterMaySacDrawTreasure, .onYouSacrificeTokenOppLosesLife])
+  (TraditionalCardDefinition.card [
+    .name "The Sackville-Bagginses",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .citizen,
+    .power 2,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.sequence [
+          .optional
+            (.actionId 1
+              (.sacrifice
+                (.selected
+                  (.controller .this)
+                  (.range 1 1)
+                  (.intersection [
+                    .not .this,
+                    .permanent,
+                    .union [.cardType .creature, .cardType .artifact],
+                    .controlled (.controller .this)])))),
+          .if (.happened (.actionWithId 1) .gameStart)
+            [
+              .draw (.controller .this) 1,
+              .createTokens (.controller .this) 1 CardPart.treasureToken]])),
+    .ability (
+      .triggered
+        (.die
+          (.intersection [
+            .token,
+            .controlled (.controller .this)]))
+        (.loseLife (.target 1 (.opponent (.controller .this))) 1))
+  ]).toCardDef
+    (oracleText := "When The Sackville-Bagginses enter, you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token.\nWhenever you sacrifice a token, target opponent loses 1 life.")
 
 def thorinMountainKing : CardDef :=
   legendaryCreature "Thorin, Mountain-king" (ManaCost.ofGenericAndColor 3 .red) #["Dwarf", "Noble"] 3 4 (oracleText := "Trample\nWhen Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature.")

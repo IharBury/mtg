@@ -814,8 +814,81 @@ inductive CardAction where
   | addMana : Selector → List ManaSymbol → CardAction
   /-- Perform a keyword action (CR 701), e.g. recruit or amass Goblins 1. -/
   | keyword : Keyword → CardAction
+  /-- The selected player creates that many tokens with the given
+  characteristics (CR 111). -/
+  | createTokens : Selector → Nat → List CardPart → CardAction
+deriving Repr, Inhabited, BEq
+
+/-- One printed characteristic or ability of a card face, or of a token
+created by `CardAction.createTokens`. -/
+inductive CardPart where
+  | name : String → CardPart
+  /-- Printed symbols; `ManaCost` is the engine structure, this list is the
+  prototype spelling (`.manaCost [.mono .white]`). -/
+  | manaCost : List ManaSymbol → CardPart
+  | type : CardType → CardPart
+  | supertype : CardSupertype → CardPart
+  | subtype : CardSubtype → CardPart
+  | power : Nat → CardPart
+  | toughness : Nat → CardPart
+  | ability : Ability → CardPart
+  | alternative : List CardPart → CardPart
+  /-- The spelled-out actions this part performs, in order. -/
+  | actions : List CardAction → CardPart
 deriving Repr, Inhabited, BEq
 end
+
+namespace CardPart
+
+/-- Printed Treasure token characteristics (CR 111). -/
+def treasureToken : List CardPart := [
+  .type .artifact,
+  .subtype .treasure,
+  .ability
+    (.activated
+      [.tapSymbol, .sacrifice .this]
+      (.addManaAnyColor (.controller .this) (.controller .this) 1))
+]
+
+/-- Printed Food token characteristics (CR 111). -/
+def foodToken : List CardPart := [
+  .type .artifact,
+  .subtype .food,
+  .ability
+    (.activated
+      [.mana [.generic 2], .tapSymbol, .sacrifice .this]
+      (.gainLife (.controller .this) 3))
+]
+
+/-- A 2/2 red Dwarf creature token. -/
+def dwarfToken : List CardPart := [
+  .type .creature, .subtype .dwarf, .power 2, .toughness 2
+]
+
+/-- A 1/1 white Spirit creature token with flying. -/
+def spiritToken : List CardPart := [
+  .type .creature, .subtype .spirit, .power 1, .toughness 1,
+  .ability (.keyword .flying)
+]
+
+/-- A 3/2 white Hero creature token with vigilance. -/
+def hero32vigilanceToken : List CardPart := [
+  .type .creature, .subtype .hero, .power 3, .toughness 2,
+  .ability (.keyword .vigilance)
+]
+
+/-- A 2/1 black Villain creature token with menace. -/
+def villain21menaceToken : List CardPart := [
+  .type .creature, .subtype .villain, .power 2, .toughness 1,
+  .ability (.keyword .menace)
+]
+
+/-- A 1/1 white Soldier creature token. -/
+def soldier11whiteToken : List CardPart := [
+  .type .creature, .subtype .soldier, .power 1, .toughness 1
+]
+
+end CardPart
 
 namespace ContinuousEffect
 
@@ -1748,9 +1821,231 @@ def leftoverKeywordAction? : Keyword → Option Effect
   | .amass .orc n => some (Effect.ofTrigger (.amassOrcs n))
   | _ => none
 
+/-- Flattened token characteristics used to recover a `TokenKind`. -/
+structure TokenParts where
+  name : String := ""
+  types : List CardType := []
+  subtypes : List String := []
+  power : Option Nat := none
+  toughness : Option Nat := none
+  keywords : Keywords := Keywords.none
+deriving Repr, Inhabited, BEq
+
+def collectTokenParts (parts : List CardPart) : TokenParts :=
+  parts.foldl
+    (fun acc p =>
+      match p with
+      | .name n => { acc with name := n }
+      | .type t => { acc with types := acc.types ++ [t] }
+      | .subtype s => { acc with subtypes := acc.subtypes ++ [s.toString] }
+      | .power n => { acc with power := some n }
+      | .toughness n => { acc with toughness := some n }
+      | .ability (.keyword k) =>
+        { acc with keywords := acc.keywords.merge k.toKeywords }
+      | _ => acc)
+    {}
+
+/-- The selected player is this object's controller (“you create”). -/
+def leftoverYou : Selector → Bool
+  | .controller .this => true
+  | _ => false
+
+/-- Match printed token characteristics to a modeled `TokenKind`. -/
+def leftoverTokenKind? (parts : List CardPart) : Option TokenKind :=
+  let p := collectTokenParts parts
+  let has (st : String) : Bool := p.subtypes.contains st
+  if has "Treasure" then some .treasure
+  else if has "Food" then some .food
+  else if has "Clue" then some .clue
+  else if p.name == "Vibranium" then some .vibranium
+  else if p.types.contains .creature then
+    match p.power, p.toughness with
+    | some 2, some 2 =>
+      if has "Dwarf" then some .dwarf
+      else if has "Wolf" then some .wolf
+      else if has "Bear" then some .bear
+      else if has "Robot" && has "Villain" then some .robotVillain22
+      else none
+    | some 1, some 1 =>
+      if has "Spirit" && p.keywords.flying then some .spirit
+      else if has "Human" && has "Soldier" then some .humanSoldier
+      else if has "Soldier" then some .soldier11white
+      else if has "Elf" then some .elf
+      else if has "Squirrel" then some .squirrel11green
+      else if has "Insect" then some .insect11green
+      else if p.name == "Moloid" then some .moloid
+      else none
+    | some 3, some 2 =>
+      if has "Hero" && p.keywords.vigilance then some .hero32vigilance
+      else none
+    | some 2, some 1 =>
+      if has "Villain" && p.keywords.menace then some .villain21menace
+      else none
+    | some 4, some 4 =>
+      if has "Bird" && has "Soldier" && p.keywords.flying then some .birdSoldier
+      else none
+    | some 3, some 1 =>
+      if has "Wall" && p.keywords.defender then some .wall
+      else none
+    | some 6, some 6 =>
+      if has "Dragon" && p.keywords.flying then some .dragon
+      else none
+    | some 6, some 5 =>
+      if p.keywords.hexproof then some .leviathan65hexproof
+      else none
+    | some 0, some 4 =>
+      if has "Wall" && p.keywords.defender then some .wall04defender
+      else none
+    | some 3, some 3 =>
+      if p.name == "Doombot" || (has "Robot" && has "Villain") then some .doombot
+      else none
+    | _, _ => none
+  else none
+
+/-- `createTokens` for this controller, with a known token kind. -/
+def leftoverCreateTokensKindN? : CardAction → Option (TokenKind × Nat)
+  | .createTokens who n parts =>
+    if leftoverYou who then leftoverTokenKind? parts |>.map (fun k => (k, n))
+    else none
+  | _ => none
+
+/-- Create tokens, then creatures you control get +P/+T. -/
+def leftoverCreateThenTeamPump? : CardAction → Option Effect
+  | .sequence [.createTokens who n parts, .continuous effects _] =>
+    match leftoverTokenKind? parts, ContinuousEffect.addedPT? effects,
+        ContinuousEffect.massSelector? effects with
+    | some kind, some (p, t), some among =>
+      if leftoverYou who && among.shape.sameController &&
+          among.shape.types.eqTypes [.creature] then
+        some (Effect.createTokensThenTeamPump kind n p t)
+      else none
+    | _, _, _ => none
+  | _ => none
+
+/-- Grant “whenever this deals combat damage to a player, create a Treasure”. -/
+def leftoverGrantCombatDamageCreateTreasure? : List ContinuousEffect → Bool
+  | [.gainAbility sel (.triggered (.combatDamage who dest) action)] =>
+    (who == .this || who == .source .this) && dest == .player &&
+      sel.toTargetKind == .creature &&
+      leftoverCreateTokensKindN? action == some (.treasure, 1)
+  | _ => false
+
+/-- Creatures you control gain keywords until end of turn. -/
+def leftoverTeamGain? (effects : List ContinuousEffect) : Option Keywords :=
+  match ContinuousEffect.massSelector? effects with
+  | some among =>
+    let kws := grantedKeywords effects
+    if among.shape.sameController && among.shape.types.eqTypes [.creature] &&
+        kws != Keywords.none then
+      some kws
+    else none
+  | none => none
+
+/-- Choose: +1/+1 on a Wolf you control, or create a Treasure. -/
+def leftoverWolfPlusOneOrTreasure? : List CardAction → Bool
+  | [a, b] =>
+    let plusWolf (x : CardAction) : Bool :=
+      match x with
+      | .putCounter sel .plusOnePlusOne 1 =>
+        let s := sel.targetingShape
+        s.sameController && s.subtype == some "Wolf"
+      | _ => false
+    let treasure (x : CardAction) : Bool :=
+      leftoverCreateTokensKindN? x == some (.treasure, 1)
+    (plusWolf a && treasure b) || (plusWolf b && treasure a)
+  | _ => false
+
+/-- Choose: create a Food or a Treasure. -/
+def leftoverCreateFoodOrTreasure? : List CardAction → Bool
+  | [a, b] =>
+    let kind (x : CardAction) : Option TokenKind :=
+      match leftoverCreateTokensKindN? x with
+      | some (k, 1) => some k
+      | _ => none
+    match kind a, kind b with
+    | some .food, some .treasure | some .treasure, some .food => true
+    | _, _ => false
+  | _ => false
+
+/-- Sacrifice another creature or artifact the player chooses. -/
+def leftoverSacrificeAnotherCreatureOrArtifact? : Selector → Bool
+  | .selected _ (.range 1 1) among =>
+    among.shape.other && among.shape.sameController &&
+      (among.shape.types.eqTypes [.creature, .artifact] ||
+        among.shape.types.eqTypes [.artifact, .creature])
+  | _ => false
+
+/-- You may sacrifice another creature or artifact. If you do, draw and
+create a Treasure. -/
+def leftoverMaySacDrawTreasure? : CardAction → Bool
+  | .sequence [
+      .optional (.actionId id (.sacrifice sel)),
+      .if (.happened (.actionWithId id') _)
+        [.draw _ 1, .createTokens who 1 parts]
+    ] =>
+    id == id' && leftoverSacrificeAnotherCreatureOrArtifact? sel &&
+      leftoverYou who && leftoverTokenKind? parts == some .treasure
+  | .sequence [
+      .optional (.actionId id (.sacrifice sel)),
+      .if (.happened (.actionWithId id') _)
+        [.createTokens who 1 parts, .draw _ 1]
+    ] =>
+    id == id' && leftoverSacrificeAnotherCreatureOrArtifact? sel &&
+      leftoverYou who && leftoverTokenKind? parts == some .treasure
+  | _ => false
+
+/-- Target opponent as a numbered target. -/
+def leftoverTargetOpponent? : Selector → Bool
+  | .target _ (.opponent _) => true
+  | _ => false
+
+/-- Combat-damage destination is a player, or a player or battle. -/
+def leftoverPlayerOrBattle : Selector → Bool
+  | .player => true
+  | .union fs =>
+    fs.any (fun s => s == .player) &&
+      fs.any (fun s => s == .cardType .battle)
+  | _ => false
+
+/-- Another nontoken Hero you control enters: create a Soldier or team pump. -/
+def leftoverNontokenHeroModal? (among : Selector) : List CardAction → Bool
+  | [a, b] =>
+    let soldier (x : CardAction) : Bool :=
+      leftoverCreateTokensKindN? x == some (.soldier11white, 1)
+    let pump (x : CardAction) : Bool :=
+      match x with
+      | .continuous effects _ =>
+        ContinuousEffect.addedPT? effects == some (1, 1) &&
+          match ContinuousEffect.massSelector? effects with
+          | some s => s.shape.sameController && s.shape.types.eqTypes [.creature]
+          | none => false
+      | _ => false
+    among.shape.other && among.shape.nontoken && among.shape.sameController &&
+      among.shape.subtype == some "Hero" &&
+      ((soldier a && pump b) || (soldier b && pump a))
+  | _ => false
+
+/-- Lose 1 life and create a Treasure (second spell each turn). -/
+def leftoverLoseLifeCreateTreasure? : CardAction → Bool
+  | .sequence [.loseLife who 1, .createTokens c 1 parts] =>
+    leftoverYou who && leftoverYou c && leftoverTokenKind? parts == some .treasure
+  | .sequence [.createTokens c 1 parts, .loseLife who 1] =>
+    leftoverYou who && leftoverYou c && leftoverTokenKind? parts == some .treasure
+  | _ => false
+
+/-- Continuous leftovers that compile to a named `Effect`. -/
+def leftoverContinuousCompiled? : CardAction → Option Effect
+  | .continuous effects _ =>
+    if leftoverGrantCombatDamageCreateTreasure? effects then
+      some Effect.grantCombatDamageCreateTreasure
+    else leftoverTeamGain? effects |>.map Effect.teamGain
+  | _ => none
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  (leftoverCreateThenTeamPump? action).orElse fun _ =>
+  (leftoverContinuousCompiled? action).orElse fun _ =>
   match leftoverDrawLoseLifeThenAmass? action with
   | some n => some (Effect.drawLoseLifeThenAmass n)
   | none =>
@@ -1792,6 +2087,21 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
+  | .createTokens who n parts =>
+    if leftoverYou who then
+      leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
+    else none
+  | .sequence [
+      .actionId id (.createTokens who n parts),
+      .attach .this (.wasCreatedByAction id')
+    ] =>
+    if id == id' && n == 1 && leftoverYou who then
+      leftoverTokenKind? parts |>.map TriggeredAbility.onEnterCreateThenAttach
+    else none
+  | .chooseMode modes =>
+    if leftoverCreateFoodOrTreasure? modes then
+      some TriggeredAbility.onEnterCreateFoodOrTreasure
+    else none
   | .keyword .recruit => some TriggeredAbility.onEnterRecruit
   | .keyword (.amass .goblin n) => some (TriggeredAbility.onEnterAmassGoblins n)
   | .sequence [
@@ -1838,7 +2148,10 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       .attach .this (.wasObjectOfAction id')
     ] =>
     if id == id' then some (TriggeredAbility.onEnterAmassThenAttach n) else none
-  | _ => none
+  | action =>
+    if leftoverMaySacDrawTreasure? action then
+      some TriggeredAbility.onEnterMaySacDrawTreasure
+    else none
 
 /-- Enters-the-battlefield library searches. -/
 def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
@@ -2009,6 +2322,12 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .keyword k =>
                     match leftoverKeywordAction? k with
                     | some e => e
+                    | none => continuousEffect none [] asAbility
+                  | .createTokens _ n parts =>
+                    match leftoverTokenKind? parts with
+                    | some kind =>
+                      if asAbility then Effect.abilityCreateTokens kind n
+                      else Effect.createTokens kind n
                     | none => continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -2371,6 +2690,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onEnterTapOrUntapNonland
     else if CardAction.leftoverPlusOnesOrReturnArtEnch? modes then
       some (TriggeredAbility.onEnter Effect.enterPlusOnesOrReturnArtEnch)
+    else if CardAction.leftoverCreateFoodOrTreasure? modes then
+      some TriggeredAbility.onEnterCreateFoodOrTreasure
     else none
   | .triggered (.enter .this) action =>
     if CardAction.leftoverAttachTargetEquipment? action then
@@ -2395,6 +2716,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter among) (.chooseMode modes) =>
     if among.shape.landYouControl && CardAction.leftoverTapOppOrUntapYours? modes then
       some TriggeredAbility.onLandYouControlEntersTapOrUntap
+    else if CardAction.leftoverNontokenHeroModal? among modes then
+      some (TriggeredAbility.onWatch Effect.watchNontokenHeroModal)
     else none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
@@ -2462,26 +2785,46 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onYourBeginCombatFerociousPlusOne
     else none
   | .triggered w (.keyword k) => leftoverKeywordTriggered? w k
+  | .triggered (.die .this) (.createTokens who n parts) =>
+    if CardAction.leftoverYou who then
+      CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
+    else none
+  | .triggered (.die among) (.loseLife sel 1) =>
+    if among.shape.token && among.shape.sameController &&
+        CardAction.leftoverTargetOpponent? sel then
+      some TriggeredAbility.onYouSacrificeTokenOppLosesLife
+    else none
+  | .triggered (.combatDamage .this .player) (.chooseMode modes) =>
+    if CardAction.leftoverWolfPlusOneOrTreasure? modes then
+      some TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure
+    else none
+  | .triggered (.combatDamage among dest) (.createTokens who n parts) =>
+    if CardAction.leftoverYou who && CardAction.leftoverPlayerOrBattle dest &&
+        among.shape.sameController then
+      match CardAction.leftoverTokenKind? parts, among.includedSubtype? with
+      | some kind, some st =>
+        some (TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens st kind n)
+      | _, _ => none
+    else none
+  | .triggered (.attack (.hostOf .this) .all) (.createTokens who n parts) =>
+    if CardAction.leftoverYou who && n == 2 &&
+        CardAction.leftoverTokenKind? parts == some .spirit then
+      some TriggeredAbility.onEquippedAttacksCreateSpirits
+    else none
+  | .triggered (.ordinal 2 .turnStart (.castSpell among)) action =>
+    if (among == .spell || among == .all) &&
+        CardAction.leftoverLoseLifeCreateTreasure? action then
+      some TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure
+    else none
+  | .triggered (.castSpell among) (.createTokens who n parts) =>
+    if among.shape.sameController && among.shape.subtype == some "Villain" &&
+        n == 1 && CardAction.leftoverYou who &&
+        CardAction.leftoverTokenKind? parts == some .villain21menace then
+      some (TriggeredAbility.onCasting Effect.castingVillainToken)
+    else none
   | _ => none
 
 end Ability
-
-/-- One printed characteristic or ability of a card face. -/
-inductive CardPart where
-  | name : String → CardPart
-  /-- Printed symbols; `ManaCost` is the engine structure, this list is the
-  prototype spelling (`.manaCost [.mono .white]`). -/
-  | manaCost : List ManaSymbol → CardPart
-  | type : CardType → CardPart
-  | supertype : CardSupertype → CardPart
-  | subtype : CardSubtype → CardPart
-  | power : Nat → CardPart
-  | toughness : Nat → CardPart
-  | ability : Ability → CardPart
-  | alternative : List CardPart → CardPart
-  /-- The spelled-out actions this part performs, in order. -/
-  | actions : List CardAction → CardPart
-deriving Repr, Inhabited, BEq
 
 /-- A traditional (non-token, non-DFC-only) printed card. -/
 inductive TraditionalCardDefinition where
@@ -2620,8 +2963,11 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
-  | .gainAbility sel (.keyword .trample) =>
-    if sel.includedSubtype? == some "Army" && sel.shape.sameController then
+  | .gainAbility sel (.keyword k) =>
+    let s := sel.shape
+    if s.attacking && s.token && s.sameController then
+      { b with staticAbilities := b.staticAbilities.push (.attackingTokensHave k.toKeywords) }
+    else if k == .trample && sel.includedSubtype? == some "Army" && s.sameController then
       { b with staticAbilities := b.staticAbilities.push .armiesYouControlHaveTrample }
     else b
   | .gainAbility _ _ => b
@@ -5336,6 +5682,68 @@ end TraditionalCardDefinition
 
 #guard CardAction.toEffect (.keyword .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.amass .goblin 1)) == Effect.amassGoblins 1
+
+#guard CardAction.leftoverTokenKind? CardPart.treasureToken == some TokenKind.treasure
+#guard CardAction.leftoverTokenKind? CardPart.foodToken == some TokenKind.food
+#guard CardAction.leftoverTokenKind? CardPart.dwarfToken == some TokenKind.dwarf
+#guard CardAction.leftoverTokenKind? CardPart.spiritToken == some TokenKind.spirit
+#guard CardAction.leftoverTokenKind? CardPart.hero32vigilanceToken ==
+  some TokenKind.hero32vigilance
+#guard CardAction.leftoverTokenKind? CardPart.villain21menaceToken ==
+  some TokenKind.villain21menace
+#guard CardAction.leftoverTokenKind? CardPart.soldier11whiteToken ==
+  some TokenKind.soldier11white
+
+#guard
+  CardAction.toEffect
+    (.createTokens (.controller .this) 2 CardPart.hero32vigilanceToken) ==
+    Effect.createTokens .hero32vigilance 2
+
+#guard
+  CardAction.toAbilityEffect
+    (.createTokens (.controller .this) 1 CardPart.treasureToken) ==
+    Effect.abilityCreateTokens .treasure 1
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 CardPart.treasureToken)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.die .this)
+      (.createTokens (.controller .this) 1 CardPart.villain21menaceToken)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesCreateTokens .villain21menace 1
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1
+          (.createTokens (.controller .this) 1 CardPart.dwarfToken),
+        .attach .this (.wasCreatedByAction 1)])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterCreateThenAttach .dwarf
+  | none => false
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .createTokens (.controller .this) 1 CardPart.villain21menaceToken,
+      .continuous
+        [.addPowerToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          1 0]
+        .endOfTurn]) ==
+    Effect.createTokensThenTeamPump .villain21menace 1 1 0
 
 #guard
   match

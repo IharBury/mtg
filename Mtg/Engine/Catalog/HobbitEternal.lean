@@ -820,10 +820,23 @@ def longLostLances : CardDef :=
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
 
 def lothoCorruptShirriff : CardDef :=
-  legendaryCreature "Lotho, Corrupt Shirriff" (ManaCost.ofColors [.white, .black])
-    #["Halfling", "Rogue"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Lotho, Corrupt Shirriff",
+    .manaCost [.mono .white, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .halfling,
+    .subtype .rogue,
+    .power 2,
+    .toughness 1,
+    .ability (
+      .triggered
+        (.ordinal 2 .turnStart (.castSpell .spell))
+        (.sequence [
+          .loseLife (.controller .this) 1,
+          .createTokens (.controller .this) 1 CardPart.treasureToken]))
+  ]).toCardDef
     (oracleText := "Whenever a player casts their second spell each turn, you lose 1 life and create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (triggeredAbilities := #[.onPlayerCastsSecondSpellLoseLifeCreateTreasure])
 
 def flameOfAnor : CardDef :=
   instant "Flame of Anor" (ManaCost.ofGenericAndColors 1 [.blue, .red])
@@ -971,12 +984,20 @@ def bilboUnexpectedAdventurer : CardDef :=
     (triggeredAbilities := #[.onCombatDamagePutNonlandMvAtMost 3])
 
 def andurilFlameOfTheWest : CardDef :=
-  artifact "Andúril, Flame of the West" (ManaCost.ofGeneric 3) "Equipped creature gets +3/+1.\nWhenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking.\nEquip {2}"
-    (subtypes := #["Equipment"])
-    (supertypes := #[.legendary])
-    (staticAbilities := #[.equippedCreatureGets 3 1])
-    (triggeredAbilities := #[.onEquippedAttacksCreateSpirits])
-    (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
+  (TraditionalCardDefinition.card [
+    .name "Andúril, Flame of the West",
+    .manaCost [.generic 3],
+    .type .artifact,
+    .supertype .legendary,
+    .subtype .equipment,
+    .ability (.static (.addPowerToughness (.hostOf .this) 3 1)),
+    .ability (
+      .triggered
+        (.attack (.hostOf .this) .all)
+        (.createTokens (.controller .this) 2 CardPart.spiritToken)),
+    .ability (.keywordWithCost .equip [.mana [.generic 2]])
+  ]).toCardDef
+    (oracleText := "Equipped creature gets +3/+1.\nWhenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking.\nEquip {2}")
 
 def andurilNarsilReforged : CardDef :=
   artifact "Andúril, Narsil Reforged" (ManaCost.ofGeneric 2) "Ascend (If you control ten or more permanents, you get the city's blessing for the rest of the game.)\nWhenever equipped creature attacks, put a +1/+1 counter on each creature you control. If you have the city's blessing, put two +1/+1 counters on each creature you control instead.\nEquip {3}"
@@ -1037,10 +1058,26 @@ def chiefOfTheWilds : CardDef :=
     (triggeredAbilities := #[.onAnotherSubtypeEntersPlusOneOnSource "Wolf" 2])
 
 def dragonCursedHalls : CardDef :=
-  land "Dragon-Cursed Halls" "{T}: Add {C}.\n{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
-    (tapAddMana := #[.colorless])
-    (activatedAbilities := #[
-      activated (Effect.grantCombatDamageCreateTreasure) (ManaCost.ofGeneric 1) (tap := true)])
+  (TraditionalCardDefinition.card [
+    .name "Dragon-Cursed Halls",
+    .type .land,
+    .ability
+      (.activated
+        [.tapSymbol]
+        (.addMana (.controller .this) [.colorless])),
+    .ability
+      (.activated
+        [.mana [.generic 1], .tapSymbol]
+        (.continuous
+          [
+            .gainAbility
+              (.target 1 (.intersection [.permanent, .cardType .creature]))
+              (.triggered
+                (.combatDamage .this .player)
+                (.createTokens (.controller .this) 1 CardPart.treasureToken))]
+          .endOfTurn))
+  ]).toCardDef
+    (oracleText := "{T}: Add {C}.\n{1}, {T}: Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\"")
 
 def elvenChorus : CardDef :=
   let c :=
@@ -1184,9 +1221,39 @@ def theReaverCleaver : CardDef :=
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
 
 def thorinCompanySLeader : CardDef :=
-  legendaryCreature "Thorin, Company's Leader" (ManaCost.ofGenericAndColor 4 .red) #["Dwarf", "Warrior"] 4 5 (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
-    (activatedAbilities := #[activated (Effect.teamGain Keyword.doubleStrike) (ManaCost.ofGeneric 10)])
-    (triggeredAbilities := #[.onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2])
+  (TraditionalCardDefinition.card [
+    .name "Thorin, Company's Leader",
+    .manaCost [.generic 4, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 4,
+    .toughness 5,
+    .ability (
+      .triggered
+        (.combatDamage
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .subtype .dwarf,
+            .controlled (.controller .this)])
+          (.union [.player, .cardType .battle]))
+        (.createTokens (.controller .this) 2 CardPart.treasureToken)),
+    .ability (
+      .activated
+        [.mana [.generic 10]]
+        (.continuous
+          [
+            .gainAbility
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)])
+              (.keyword .doubleStrike)]
+          .endOfTurn))
+  ]).toCardDef
+    (oracleText := "Whenever a Dwarf you control deals combat damage to a player or battle, create two Treasure tokens.\n{10}: Creatures you control gain double strike until end of turn.")
 
 def tomBombadil : CardDef :=
   let c :=

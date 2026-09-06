@@ -138,10 +138,18 @@ def avengersAssemble : CardDef :=
     (staticAbilities := #[StaticAbility.creaturesYouControlOfSubtypeGet "Hero" 2 2])
 
 def boroughBackup : CardDef :=
-  sorcery "Borough Backup" (ManaCost.ofGenericAndColor 4 .white)
-    "Create two 3/2 white Hero creature tokens with vigilance.\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)"
-    (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
-    (spellEffect := some (Effect.createTokens .hero32vigilance 2))
+  (TraditionalCardDefinition.card [
+    .name "Borough Backup",
+    .manaCost [.generic 4, .mono .white],
+    .type .sorcery,
+    .actions [
+      .createTokens (.controller .this) 2 CardPart.hero32vigilanceToken],
+    .ability
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
+  ]).toCardDef
+    (oracleText := "Create two 3/2 white Hero creature tokens with vigilance.\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
 
 def braveBrawler : CardDef :=
   creature "Brave Brawler" (ManaCost.ofGenericAndColor 1 .white) #["Human", "Warrior", "Hero"] 2 1
@@ -313,10 +321,32 @@ def nightNurseHealerOfHeroes : CardDef :=
     (triggeredAbilities := #[.onEnter Effect.enterReturnGyPermanentThisTurn])
 
 def okoyeDoraMilajeLeader : CardDef :=
-  legendaryCreature "Okoye, Dora Milaje Leader" (ManaCost.ofGenericAndColor 3 .white) #["Human", "Warrior", "Hero"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Okoye, Dora Milaje Leader",
+    .manaCost [.generic 3, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .warrior,
+    .subtype .hero,
+    .power 3,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.createTokens (.controller .this) 2 CardPart.soldier11whiteToken)),
+    .ability (
+      .static
+        (.gainAbility
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .token,
+            .attacking .all,
+            .controlled (.controller .this)])
+          (.keyword .firstStrike)))
+  ]).toCardDef
     (oracleText := "When Okoye enters, create two 1/1 white Soldier creature tokens.\nAttacking creature tokens you control have first strike.")
-    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 2])
-    (staticAbilities := #[StaticAbility.attackingTokensHave Keyword.firstStrike])
 
 def originOfTheAvengers : CardDef :=
   enchantment "Origin of the Avengers" (ManaCost.ofGenericAndColor 1 .white)
@@ -767,10 +797,21 @@ def secretInvasion : CardDef :=
     (staticAbilities := #[StaticAbility.enchantedCreatureHasWard 2])
 
 def sHIELDDeploymentDrone : CardDef :=
-  artifactCreature "S.H.I.E.L.D. Deployment Drone" (ManaCost.ofGenericAndColor 2 .blue) #["Robot"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "S.H.I.E.L.D. Deployment Drone",
+    .manaCost [.generic 2, .mono .blue],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.createTokens (.controller .this) 1 CardPart.soldier11whiteToken))
+  ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, create a 1/1 white Soldier creature token.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnterCreateTokens .soldier11white 1])
 
 def sHIELDFlyingCar : CardDef :=
   artifact "S.H.I.E.L.D. Flying Car" (ManaCost.ofGenericAndColor 2 .blue)
@@ -870,9 +911,21 @@ def theWondrousWasp : CardDef :=
     (triggeredAbilities := #[.onEnter Effect.enterTapLoseAbilitiesWhileSource])
 
 def agentsOfHYDRA : CardDef :=
-  creature "Agents of HYDRA" (ManaCost.ofGenericAndColor 1 .black) #["Human", "Spy", "Villain"] 1 1
+  (TraditionalCardDefinition.card [
+    .name "Agents of HYDRA",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .human,
+    .subtype .spy,
+    .subtype .villain,
+    .power 1,
+    .toughness 1,
+    .ability (
+      .triggered
+        (.die .this)
+        (.createTokens (.controller .this) 1 CardPart.villain21menaceToken))
+  ]).toCardDef
     (oracleText := "When this creature dies, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
-    (triggeredAbilities := #[.onDiesCreateTokens .villain21menace 1])
 
 def arnimZolaBioFanatic : CardDef :=
   artifactCreature "Arnim Zola, Bio-Fanatic" (ManaCost.ofGenericAndColor 2 .black) #["Scientist", "Villain"] 2 3
@@ -1283,9 +1336,23 @@ def hexMagic : CardDef :=
     (spellEffect := some (Effect.exileHandDrawPlayUntilNext))
 
 def hireACrew : CardDef :=
-  instant "Hire a Crew" (ManaCost.ofGenericAndColor 2 .red)
-    "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn. (A creature with menace can't be blocked except by two or more creatures.)"
-    (spellEffect := some (Effect.createTokensThenTeamPump .villain21menace 1 1 0))
+  (TraditionalCardDefinition.card [
+    .name "Hire a Crew",
+    .manaCost [.generic 2, .mono .red],
+    .type .instant,
+    .actions [
+      .createTokens (.controller .this) 1 CardPart.villain21menaceToken,
+      .continuous
+        [
+          .addPowerToughness
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])
+            1 0]
+        .endOfTurn]
+  ]).toCardDef
+    (oracleText := "Create a 2/1 black Villain creature token with menace, then creatures you control get +1/+0 until end of turn. (A creature with menace can't be blocked except by two or more creatures.)")
 
 def hULKSMASH : CardDef :=
   instant "HULK SMASH!" (ManaCost.ofGenericAndColor 1 .red)
@@ -1481,9 +1548,20 @@ def speedYoungAvenger : CardDef :=
     (triggeredAbilities := #[.onCasting Effect.castingMayPayHasteUnblockable])
 
 def starkIndustriesExecutive : CardDef :=
-  creature "Stark Industries Executive" (ManaCost.ofColor .red) #["Human", "Advisor"] 1 2
+  (TraditionalCardDefinition.card [
+    .name "Stark Industries Executive",
+    .manaCost [.mono .red],
+    .type .creature,
+    .subtype .human,
+    .subtype .advisor,
+    .power 1,
+    .toughness 2,
+    .ability (
+      .activated
+        [.mana [.generic 2], .tapSymbol]
+        (.createTokens (.controller .this) 1 CardPart.treasureToken))
+  ]).toCardDef
     (oracleText := "{2}, {T}: Create a Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (activatedAbilities := #[activated (Effect.abilityCreateTokens .treasure 1) (ManaCost.ofGeneric 2) (tap := true)])
 
 def superSpeed : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1573,9 +1651,21 @@ def wonderManHollywoodHero : CardDef :=
     (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColors 5 [.red, .red])])
 
 def antManSArmy : CardDef :=
-  creature "Ant-Man's Army" (ManaCost.ofGenericAndColor 2 .green) #["Insect"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Ant-Man's Army",
+    .manaCost [.generic 2, .mono .green],
+    .type .creature,
+    .subtype .insect,
+    .power 3,
+    .toughness 2,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.chooseMode [
+          .createTokens (.controller .this) 1 CardPart.foodToken,
+          .createTokens (.controller .this) 1 CardPart.treasureToken]))
+  ]).toCardDef
     (oracleText := "When this creature enters, create a Food token or a Treasure token. (A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\" A Treasure token is an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")
-    (triggeredAbilities := #[.onEnterCreateFoodOrTreasure])
 
 def callDamageControl : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1926,9 +2016,39 @@ def beastEruditeAerialist : CardDef :=
     (staticAbilities := #[StaticAbility.flyingIfPlusOneThisTurn])
 
 def blackPantherVanguard : CardDef :=
-  legendaryCreature "Black Panther, Vanguard" (ManaCost.ofGenericAndColors 2 [.green, .white]) #["Human", "Warrior", "Hero"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Black Panther, Vanguard",
+    .manaCost [.generic 2, .mono .green, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .warrior,
+    .subtype .hero,
+    .power 4,
+    .toughness 4,
+    .ability (
+      .triggered
+        (.enter
+          (.intersection [
+            .not .this,
+            .not .token,
+            .permanent,
+            .cardType .creature,
+            .subtype .hero,
+            .controlled (.controller .this)]))
+        (.chooseMode [
+          .createTokens (.controller .this) 1 CardPart.soldier11whiteToken,
+          .continuous
+            [
+              .addPowerToughness
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .controlled (.controller .this)])
+                1 1]
+            .endOfTurn]))
+  ]).toCardDef
     (oracleText := "Whenever another nontoken Hero you control enters, choose one —\n• Create a 1/1 white Soldier creature token.\n• Creatures you control get +1/+1 until end of turn.")
-    (triggeredAbilities := #[.onWatch Effect.watchNontokenHeroModal])
 
 def blackWidowDoubleAgent : CardDef :=
   legendaryCreature "Black Widow, Double Agent" (ManaCost.ofGenericAndColors 1 [.white, .black]) #["Human", "Hero", "Villain"] 3 2
@@ -2029,9 +2149,25 @@ def theKingpinOfCrime : CardDef :=
     (staticAbilities := #[.extort])
 
 def madameHydra : CardDef :=
-  legendaryCreature "Madame Hydra" (ManaCost.ofGenericAndColors 2 [.black, .red]) #["Human", "Villain"] 2 3
+  (TraditionalCardDefinition.card [
+    .name "Madame Hydra",
+    .manaCost [.generic 2, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .villain,
+    .power 2,
+    .toughness 3,
+    .ability (
+      .triggered
+        (.castSpell
+          (.intersection [
+            .spell,
+            .subtype .villain,
+            .controlled (.controller .this)]))
+        (.createTokens (.controller .this) 1 CardPart.villain21menaceToken))
+  ]).toCardDef
     (oracleText := "Whenever you cast a Villain spell, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
-    (triggeredAbilities := #[.onCasting Effect.castingVillainToken])
 
 def theMightyThorJaneFoster : CardDef :=
   (TraditionalCardDefinition.card [
