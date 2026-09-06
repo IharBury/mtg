@@ -1809,13 +1809,79 @@ def vivVisionTeenSynthezoid : CardDef :=
     (legendary := true)
 
 def aIMLabs : CardDef :=
-  gainLifeDualLand "A.I.M. Labs" .blue .black
+  (TraditionalCardDefinition.card [
+    .name "A.I.M. Labs",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .blue],
+            .addMana (.controller .this) [.mono .black]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}.")
+
+#guard aIMLabs.tapAddOneOf == #[.colored .blue, .colored .black]
+#guard aIMLabs.triggeredAbilities == #[.onEnterGainLife 1]
+#guard aIMLabs.oracleText ==
+  "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {B}."
+#guard aIMLabs.entersTapped
 
 def asgardianCitadel : CardDef :=
-  gainLifeDualLand "Asgardian Citadel" .red .white
+  (TraditionalCardDefinition.card [
+    .name "Asgardian Citadel",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .red],
+            .addMana (.controller .this) [.mono .white]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {W}.")
 
 def avengersHangar : CardDef :=
-  gainLifeDualLand "Avengers Hangar" .white .blue
+  (TraditionalCardDefinition.card [
+    .name "Avengers Hangar",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .white],
+            .addMana (.controller .this) [.mono .blue]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {U}.")
 
 def avengersTower : CardDef :=
   land "Avengers Tower"
@@ -1833,7 +1899,27 @@ def baxterBuilding : CardDef :=
         (onlyIfYouControlCreatureToughnessAtLeast := 4)])
 
 def birninZanaPlaza : CardDef :=
-  gainLifeDualLand "Birnin Zana Plaza" .green .white
+  (TraditionalCardDefinition.card [
+    .name "Birnin Zana Plaza",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .green],
+            .addMana (.controller .this) [.mono .white]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {W}.")
 
 def castleDoom : CardDef :=
   land "Castle Doom"
@@ -1847,7 +1933,27 @@ def darkFortress : CardDef :=
   conditionalDualLand "Dark Fortress" .black .red
 
 def fiskTower : CardDef :=
-  gainLifeDualLand "Fisk Tower" .white .black
+  (TraditionalCardDefinition.card [
+    .name "Fisk Tower",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .white],
+            .addMana (.controller .this) [.mono .black]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {W} or {B}.")
 
 def gatheringPlace : CardDef :=
   conditionalDualLand "Gathering Place" .green .white
@@ -1856,22 +1962,122 @@ def gleamingBastion : CardDef :=
   conditionalDualLand "Gleaming Bastion" .white .blue
 
 def hellSKitchen : CardDef :=
-  gainLifeDualLand "Hell's Kitchen" .black .red
+  (TraditionalCardDefinition.card [
+    .name "Hell's Kitchen",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .black],
+            .addMana (.controller .this) [.mono .red]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {R}.")
 
 def hiddenLair : CardDef :=
   conditionalDualLand "Hidden Lair" .blue .black
 
 def losDiablosMissileBase : CardDef :=
-  gainLifeDualLand "Los Diablos Missile Base" .red .green
+  (TraditionalCardDefinition.card [
+    .name "Los Diablos Missile Base",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .red],
+            .addMana (.controller .this) [.mono .green]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {R} or {G}.")
 
 def pymTechnologies : CardDef :=
-  gainLifeDualLand "Pym Technologies" .green .blue
+  (TraditionalCardDefinition.card [
+    .name "Pym Technologies",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .green],
+            .addMana (.controller .this) [.mono .blue]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {G} or {U}.")
 
 def starkIndustries : CardDef :=
-  gainLifeDualLand "Stark Industries" .blue .red
+  (TraditionalCardDefinition.card [
+    .name "Stark Industries",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .blue],
+            .addMana (.controller .this) [.mono .red]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {U} or {R}.")
 
 def subterraneanCavern : CardDef :=
-  gainLifeDualLand "Subterranean Cavern" .black .green
+  (TraditionalCardDefinition.card [
+    .name "Subterranean Cavern",
+    .type .land,
+    .ability (
+      .static
+        (.replace
+          (.enter .this)
+          [.putOntoBattlefieldInState .this .tapped])),
+    .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.playerSelectAction
+          (.controller .this)
+          (.range 1 1)
+          [
+            .addMana (.controller .this) [.mono .black],
+            .addMana (.controller .this) [.mono .green]]))
+  ]).toCardDef
+    (oracleText :=
+      "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}.")
 
 def surveillanceRoom : CardDef :=
   land "Surveillance Room"
