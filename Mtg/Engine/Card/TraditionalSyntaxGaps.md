@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 116 |
-| The Hobbit Eternal (HOC) | 84 |
+| The Hobbit (HOB) | 105 |
+| The Hobbit Eternal (HOC) | 83 |
 | Marvel Super Heroes (MSH) | 227 |
-| **Total remaining** | **427** |
+| **Total remaining** | **415** |
 
-All **427** remaining cards have at least one identified constructor gap.
+All **415** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -88,14 +88,16 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
-  `addManaAnyColorEqualToPower`, `addMana`.
+  `addManaAnyColorEqualToPower`, `addMana`, `keyword`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `power`, `toughness`,
   `ability`, `alternative` (Adventure face), `actions`.
 
 Converted catalog cards (Bofur, Lightning Bolt, Wood Elves, Rogue's Passage,
-Gundabad Opportunist, Elvish Mystic, Guttersnipe, Fisk Tower, …) already use
-that inventory. Remaining cards need the constructors below.
+Gundabad Opportunist, Elvish Mystic, Guttersnipe, Fisk Tower, Patient
+Instructor, Goblin-town Flunkies, …) already use that inventory. Remaining
+cards need the constructors below. `CardAction.keyword` compiles keyword
+actions such as recruit and amass.
 
 ## Missing constructors by type
 
@@ -194,6 +196,10 @@ complete.
   - Bard, King of Dale; Plunder the Trollshaws
 - **`whenYouDo`** (1 cards) — Nested delayed trigger after an optional action ('when you do')
   - Spider-Man, To the Rescue
+- **`leaveGraveyard`** (1 cards) — Whenever a matching card leaves a graveyard
+  - Along the Crooked Way
+- **`opponentDrawsExceptFirst`** (1 cards) — An opponent draws except the first card of their draw step
+  - Orcish Bowmasters
 
 ### `Cost`
 
@@ -357,8 +363,6 @@ complete.
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Iron Fist, Living Weapon; Last March of the Ents; … (12 more)
 - **`lookAt`** (21 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
   - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Falcon, Winged Wonder; Gandalf, Goblins' Bane; … (11 more)
-- **`amass`** (17 cards) — Amass <subtype> N
-  - Along the Crooked Way; Azog, Moria's Ruin; Bolg of the North; Bothersome Noisemaker; Down, Down to Goblin-town; Fearsome Goblin Pair; Gathering of Darkness; Goblin Plate Mail; Goblin-town Flunkies; Great Goblin, Foul-Hearted; … (7 more)
 - **`mill`** (13 cards) — Target player mills N cards
   - Cantankerous Keepers; Glamdring, Foe-hammer; HYDRA Troopers; Master's Councillors; Mole Man, Moloid Master; Most Decrepit Old Bird; Palantír of Orthanc; Pelargir Survivor; Rapid Rescue; Rick Jones, Destined Sidekick; … (3 more)
 - **`connive`** (11 cards) — Connive
@@ -369,8 +373,6 @@ complete.
   - Atlantis Attacks; Avengers Disassembled; Decoy Ploy; Epic Fight; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Pinecone Strike; Widow's Bite; The Vision
 - **`randomize`** (10 cards) — Put on bottom in random order / pick a random card among
   - Boughside Wanderers; Call Forth the Tempest; Cosmic Cube; Dáin's Company; Getaway Barrel; Gríma, Saruman's Footman; Nick Fury, Agent of S.H.I.E.L.D.; Part in Friendship; Tom Bombadil; Tony Stark
-- **`recruit`** (10 cards) — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
-  - Bard's Company; Celebrate the Mountain-king; Esgaroth Garrison; Great Gilded Boat; Lake-town Lookout; Long Lake Nuisance; Patient Instructor; Sound the Trumpets; The Mountain-king's Return; The Queen of Dale
 - **`copy`** (9 cards) — Copy a permanent, spell, or ability
   - Absorbing Man; Echo, Perceptive Prodigy; Multiversal Incursion; Photon Blast Barrage; Scientist Supreme of A.I.M.; Secret Invasion; Shuri, Wakandan Inventor; Taskmaster, Mercenary Mimic; Ultron, Artificial Malevolence
 - **`returnExiled`** (8 cards) — Return objects exiled by a linked action
@@ -626,7 +628,7 @@ These are not in the requested list but block a conversion of the listed types:
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
 | `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Noble, Scientist, Mutant, Gamma, Plan, Saga, Artificer, Berserker, Troll, Mercenary, Doctor, Skrull, Cat, and others listed per card as `TraditionalCardDefinition.CardSubtype.*` |
-| `Keyword` | `Ability.keyword` | Ward, Crew, Kicker, Flashback, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Daybound/Nightbound (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor) |
+| `Keyword` | `Ability.keyword`, `CardAction.keyword` | Ward, Crew, Kicker, Flashback, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Daybound/Nightbound (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Recruit and amass are keyword actions via `CardAction.keyword`. |
 | `CounterKind` | `CardAction.putCounter` | lore, shield, hope, hone, trample, quest, shadow, finality, indestructible, and other named counters |
 
 `CardPart` also has no `loyalty`, `colorIndicator`, `chapter`, or DFC-back
@@ -638,11 +640,12 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (117 cards)
+### The Hobbit (HOB) (106 cards)
 
 **Along the Crooked Way** (`alongTheCrookedWay`)
 
-- `CardAction.amass` — Amass <subtype> N
+- `Trigger.leaveGraveyard` — Whenever a matching card leaves a graveyard
+- `CardAction.grantKeywordsToSubtypes` — Goblins and Orcs you control gain menace (compiler leftover for mass keyword grants)
 
 **An Unexpected Party** (`anUnexpectedParty`)
 
@@ -656,10 +659,6 @@ Converted cards from the previous untagged set are omitted here.
 **Azog, Moria's Ruin** (`azogMoriaSRuin`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Balin, Loremaster** (`balinLoremaster`)
 
@@ -672,9 +671,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
 - `Condition.firstThisTurn` — The first matching event this turn
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
@@ -722,10 +718,6 @@ Converted cards from the previous untagged set are omitted here.
 **Bolg of the North** (`bolgOfTheNorth`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
@@ -735,13 +727,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
-
-**Bothersome Noisemaker** (`bothersomeNoisemaker`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Boughside Wanderers** (`boughsideWanderers`)
 
@@ -768,9 +753,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Chief Warg's Company** (`chiefWargsCompany`)
@@ -820,10 +802,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Dwalin, Weaponmaster** (`dwalinWeaponmaster`)
 
@@ -887,17 +865,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-
-**Fearsome Goblin Pair** (`fearsomeGoblinPair`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Fíli the Pathfinder** (`filiThePathfinder`)
 
@@ -917,13 +885,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
-
-**Gathering of Darkness** (`gatheringOfDarkness`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Getaway Barrel** (`getawayBarrel`)
 
@@ -954,20 +915,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 
-**Goblin Plate Mail** (`goblinPlateMail`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
-
-**Goblin-town Flunkies** (`goblinTownFlunkies`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
-
 **Gollum, Riddle Master** (`gollumRiddleMaster`)
 
 - `CardAction.chooseOddEven` — Choose odd or even
@@ -979,10 +926,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Cost.tapPowerTotal` — Tap creatures with total power N or more
 - `Ability.keywordCrew` — Crew N
-- `Selector.inHand` — A card in hand for Cost.discard
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
@@ -990,7 +933,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Selector.hasCounter` — Objects with / without a given counter kind
-- `CardAction.amass` — Amass <subtype> N
 
 **Head of the Hunt** (`headOfTheHunt`)
 
@@ -1024,12 +966,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-**Lake-town Lookout** (`laketownLookout`)
-
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
-
 **Lake-town Mariners** (`lakeTownMariners`)
 
 - `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
@@ -1044,12 +980,6 @@ Converted cards from the previous untagged set are omitted here.
 **Last Light of Durin's Day** (`lastLightOfDurinSDay`)
 
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-
-**Long Lake Nuisance** (`longLakeNuisance`)
-
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 
 **Long-Bodied Grey Dog** (`longBodiedGreyDog`)
 
@@ -1068,13 +998,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
-
-**Misty Mountains Raider** (`mistyMountainsRaider`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Moment of Glory** (`momentOfGlory`)
 
@@ -1129,12 +1052,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-**Patient Instructor** (`patientInstructor`)
-
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
-
 **Pinecone Strike** (`pineconeStrike`)
 
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
@@ -1152,20 +1069,9 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
 - `Condition.firstThisTurn` — The first matching event this turn
 
-**Rage into the Valley** (`rageIntoTheValley`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
-
 **Rhovanion Rampager** (`rhovanionRampager`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
@@ -1214,9 +1120,6 @@ Converted cards from the previous untagged set are omitted here.
 **Sound the Trumpets** (`soundTheTrumpets`)
 
 - `Selector.manaValue` — Mana-value comparisons
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 
 **Sting, Bilbo's Sword** (`stingBilboSSword`)
 
@@ -1294,22 +1197,12 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `Selector.manaValue` — Mana-value comparisons
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
 
 **The Notary Hobbits** (`theNotaryHobbits`)
 
 - `CardAction.createToken` — Create n tokens of a described kind
 - `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
 - `CardAction.addManaPer` — Add mana for each matching object
-
-**The Queen of Dale** (`theQueenOfDale`)
-
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.recruit` — Recruit (draw, discard; if nonland discarded, create a Human Soldier)
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **The Sackville-Bagginses** (`theSackvilleBagginses`)
 
@@ -1352,13 +1245,8 @@ Converted cards from the previous untagged set are omitted here.
 
 **Tidings of War** (`tidingsOfWar`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
 - `Ability.keywordFlashback` — Flashback with a cost
 - `Ability.activateFromZone` — Ability that functions from the graveyard
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
 
 **Tom, Bert, and William** (`tomBertAndWilliam`)
 
@@ -1394,7 +1282,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (84 cards)
+### The Hobbit Eternal (HOC) (83 cards)
 
 **Andúril, Flame of the West** (`andurilFlameOfTheWest`)
 
@@ -1615,14 +1503,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 
-**Great Goblin, Foul-Hearted** (`greatGoblinFoulHearted`)
-
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `CardAction.createToken` — Create n tokens of a described kind
-- `TraditionalCardDefinition.tokenDescription` — Inline token characteristics (or a TokenKind reference)
-- `CardAction.amass` — Amass <subtype> N
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
 **Gríma, Saruman's Footman** (`grimaSarumanSFootman`)
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
@@ -1714,7 +1594,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
-- `CardAction.amass` — Amass <subtype> N
+- `Trigger.opponentDrawsExceptFirst` — An opponent draws except the first card of their draw step
 
 **Orcish Siegemaster** (`orcishSiegemaster`)
 
@@ -1771,12 +1651,10 @@ Converted cards from the previous untagged set are omitted here.
 
 **Sauron, the Dark Lord** (`sauronTheDarkLord`)
 
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
 - `Trigger.theRingTemptsYou` — Whenever the Ring tempts you / you choose a Ring-bearer
 - `CardAction.theRingTemptsYou` — The Ring tempts you
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
-- `CardAction.amass` — Amass <subtype> N
 
 **Sauron, the Lidless Eye** (`sauronTheLidlessEye`)
 

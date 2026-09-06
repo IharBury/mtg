@@ -717,11 +717,29 @@ def reprieve : CardDef :=
     (oracleText := "Return target spell to its owner's hand.\nDraw a card.")
 
 def greatGoblinFoulHearted : CardDef :=
-  legendaryCreature "Great Goblin, Foul-Hearted"
-    (ManaCost.ofGenericAndColors 3 [.black, .red]) #["Goblin", "Noble"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "Great Goblin, Foul-Hearted",
+    .manaCost [.generic 3, .mono .black, .mono .red],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .goblin,
+    .subtype .noble,
+    .power 3,
+    .toughness 3,
+    .ability (
+      .triggered
+        (.or (.enter .this) (.attack .this .all))
+        (.keyword (.amass .goblin 3))),
+    .ability (
+      .static
+        (.gainAbility
+          (.intersection [
+            .permanent,
+            .subtype .army,
+            .controlled (.controller .this)])
+          (.keyword .trample)))
+  ]).toCardDef
     (oracleText := "Whenever Great Goblin enters or attacks, amass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nArmies you control have trample.")
-    (staticAbilities := #[.armiesYouControlHaveTrample])
-    (triggeredAbilities := #[.onEnterOrAttackAmassGoblins 3])
 
 def dwarvenWarriors : CardDef :=
   creature "Dwarven Warriors" (ManaCost.ofGenericAndColor 2 .red)

@@ -148,6 +148,13 @@ inductive Keyword where
   /-- Typecycling a supertype and card type (CR 702.29), e.g. Basic
   landcycling {2}. -/
   | supertypeAndTypeCycling : CardSupertype → CardType → Keyword
+  /-- Recruit (HOB keyword action): draw, then discard; if a nonland was
+  discarded, create a 1/1 white Human Soldier creature token. -/
+  | recruit
+  /-- Amass <subtype> N (CR 701.45): put N +1/+1 counters on an Army you
+  control. It's also the given subtype. If you don't control an Army,
+  create a 0/0 black Army creature token of that subtype first. -/
+  | amass : CardSubtype → Nat → Keyword
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -174,7 +181,8 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
-  | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _ =>
+  | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _
+  | .recruit | .amass _ _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -188,6 +196,8 @@ instance : ToString Keyword where
   toString
     | .subtypecycling st => s!"{st}cycling"
     | .supertypeAndTypeCycling st t => s!"{st} {t.englishName.toLower}cycling"
+    | .recruit => "recruit"
+    | .amass st n => s!"amass {st}s {n}"
     | k => toString k.toKeywords
 
 end Keyword

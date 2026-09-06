@@ -499,6 +499,10 @@ def includesNoncreature : Selector → Bool
 def youCastNoncreatureSpell (s : Selector) : Bool :=
   s.shape.sameController && includesSpell s && includesNoncreature s
 
+/-- True when this selector is a noncreature spell an opponent casts. -/
+def opponentCastsNoncreatureSpell (s : Selector) : Bool :=
+  s.shape.opponentControls && includesSpell s && includesNoncreature s
+
 /-- True when this selector is another Villain you control. -/
 def anotherVillainYouControl (s : Selector) : Bool :=
   s.shape.other && s.shape.sameController && s.shape.subtype == some "Villain"
@@ -808,6 +812,8 @@ inductive CardAction where
   `playerSelectAction`. To add any color, use
   `addManaAnyColor`. -/
   | addMana : Selector → List ManaSymbol → CardAction
+  /-- Perform a keyword action (CR 701), e.g. recruit or amass Goblins 1. -/
+  | keyword : Keyword → CardAction
 deriving Repr, Inhabited, BEq
 end
 
@@ -1187,6 +1193,26 @@ def leftoverTargetPlayerDrawLoseLife? : CardAction → Option (Nat × Nat)
 def leftoverDrawLoseLifeSelf? : CardAction → Option (Nat × Nat)
   | .sequence [.draw (.controller .this) cards, .loseLife (.controller .this) life] =>
     some (cards, life)
+  | _ => none
+
+/-- Draw a card, lose 1 life, then amass Goblins `n`. -/
+def leftoverDrawLoseLifeThenAmass? : CardAction → Option Nat
+  | .sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1,
+      .keyword (.amass .goblin n)
+    ] => some n
+  | _ => none
+
+/-- Return up to one creature card from your graveyard, then amass Goblins `n`. -/
+def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
+  | .sequence [.returnToHand sel, .keyword (.amass .goblin n)] =>
+    match sel with
+    | .targets _ (.range 0 1) among | .target _ among =>
+      if among.shape.types.eqTypes [.creature] && among.includesInGraveyard then
+        some n
+      else none
+    | _ => none
   | _ => none
 
 /-- Target creature gets +P/+T and gains keywords. -/
@@ -1715,44 +1741,59 @@ def leftoverSearchBasicOnTop? : CardAction → Bool
     ] => leftoverSearchBasicHoldOut? actions == some id
   | _ => false
 
+/-- Keyword actions that compile to a named `Effect`. -/
+def leftoverKeywordAction? : Keyword → Option Effect
+  | .recruit => some Effect.recruit
+  | .amass .goblin n => some (Effect.amassGoblins n)
+  | .amass .orc n => some (Effect.ofTrigger (.amassOrcs n))
+  | _ => none
+
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
-  match leftoverTapScryDraw? action with
-  | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
+  match leftoverDrawLoseLifeThenAmass? action with
+  | some n => some (Effect.drawLoseLifeThenAmass n)
   | none =>
-    if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
-    else if leftoverDestroyArtOrLandNonflyers? action then
-      some Effect.destroyArtifactOrLandNonflyersCantBlock
-    else if leftoverBecomeArtifactIndestructible? action then
-      some Effect.becomeArtifactGainIndestructible
-    else if leftoverPlusOneLifelinkIndestructible? action then
-      some Effect.plusOneLifelinkIndestructible
-    else if leftoverGrantVigilanceUnblockable? action then
-      some Effect.grantVigilanceUnblockable
-    else
-      match leftoverPumpThenExileTopPlay? action with
-      | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
+    match leftoverReturnCreatureFromGyThenAmass? action with
+    | some n => some (Effect.returnCreatureFromGyThenAmass n)
+    | none =>
+      match leftoverTapScryDraw? action with
+      | some (scryN, drawN) => some (Effect.tapScryDraw scryN drawN)
       | none =>
-        match leftoverDestroyArtEnchGainLife? action with
-        | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
-        | none =>
-          match leftoverMaySacArtifactOrDiscardDraw? action with
-          | some n => some (Effect.maySacArtifactOrDiscardDraw n)
+        if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
+        else if leftoverDestroyArtOrLandNonflyers? action then
+          some Effect.destroyArtifactOrLandNonflyersCantBlock
+        else if leftoverBecomeArtifactIndestructible? action then
+          some Effect.becomeArtifactGainIndestructible
+        else if leftoverPlusOneLifelinkIndestructible? action then
+          some Effect.plusOneLifelinkIndestructible
+        else if leftoverGrantVigilanceUnblockable? action then
+          some Effect.grantVigilanceUnblockable
+        else
+          match leftoverPumpThenExileTopPlay? action with
+          | some (p, t) => some (Effect.pumpThenExileTopPlay p t)
           | none =>
-            match leftoverDrawThreeDiscardUnlessArtifact? action with
-            | some _ => some Effect.drawThreeDiscardUnlessArtifact
+            match leftoverDestroyArtEnchGainLife? action with
+            | some n => some (Effect.destroyArtifactOrEnchantmentGainLife n)
             | none =>
-              match leftoverReturnUpToTwoGyModal? action with
-              | some _ => some Effect.returnUpToTwoGyModal
+              match leftoverMaySacArtifactOrDiscardDraw? action with
+              | some n => some (Effect.maySacArtifactOrDiscardDraw n)
               | none =>
-                match leftoverGainLifeSearchBasicPlusOne? action with
-                | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                match leftoverDrawThreeDiscardUnlessArtifact? action with
+                | some _ => some Effect.drawThreeDiscardUnlessArtifact
                 | none =>
-                  leftoverPlusOneOnEachOtherSubtype? action
+                  match leftoverReturnUpToTwoGyModal? action with
+                  | some _ => some Effect.returnUpToTwoGyModal
+                  | none =>
+                    match leftoverGainLifeSearchBasicPlusOne? action with
+                    | some n => some (Effect.gainLifeSearchBasicPlusOne n)
+                    | none =>
+                      leftoverPlusOneOnEachOtherSubtype? action
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
+  | .keyword .recruit => some TriggeredAbility.onEnterRecruit
+  | .keyword (.amass .goblin n) => some (TriggeredAbility.onEnterAmassGoblins n)
   | .sequence [
       .actionId id (.returnToHand sel),
       .if (.happened (.actionWithId id') _)
@@ -1792,6 +1833,11 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
         among.shape.other && among.includesTargetReference then
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
+  | .sequence [
+      .actionId id (.keyword (.amass .goblin n)),
+      .attach .this (.wasObjectOfAction id')
+    ] =>
+    if id == id' then some (TriggeredAbility.onEnterAmassThenAttach n) else none
   | _ => none
 
 /-- Enters-the-battlefield library searches. -/
@@ -1960,6 +2006,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match addedManaTypes? syms with
                     | some types => Effect.addMana types
                     | none => continuousEffect none [] asAbility
+                  | .keyword k =>
+                    match leftoverKeywordAction? k with
+                    | some e => e
+                    | none => continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -2039,6 +2089,31 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
     some { activatedAbility costs action true with onlyDuringYourTurn := true }
   | .abilityId _ inner => toActivatedAbility? inner
   | _ => none
+
+/-- Keyword actions on a trigger compile to a named `TriggeredAbility`. -/
+def leftoverKeywordTriggered? (w : Trigger) (k : Keyword) : Option TriggeredAbility :=
+  match w, k with
+  | .enter .this, .recruit => some TriggeredAbility.onEnterRecruit
+  | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
+  | .enter .this, .amass .goblin n => some (TriggeredAbility.onEnterAmassGoblins n)
+  | .die .this, .amass .goblin n => some (TriggeredAbility.onDiesAmassGoblins n)
+  | .or (.enter .this) (.attack .this .all), .recruit =>
+    some TriggeredAbility.onEnterOrAttackRecruit
+  | .or (.enter .this) (.attack .this .all), .amass .goblin n =>
+    some (TriggeredAbility.onEnterOrAttackAmassGoblins n)
+  | .attackSimultaneously among dest _, .amass .goblin n =>
+    if dest == .all && among.shape.sameController then
+      some (TriggeredAbility.onYouAttackAmassGoblins n)
+    else none
+  | .castSpell among, .amass .goblin n =>
+    if Selector.youCastNoncreatureSpell among then
+      some (TriggeredAbility.onCastNoncreatureAmassGoblins n)
+    else none
+  | .ordinal 1 .turnStart (.castSpell among), .recruit =>
+    if Selector.opponentCastsNoncreatureSpell among then
+      some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
+    else none
+  | _, _ => none
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
@@ -2386,6 +2461,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         (sel == .source .this || sel == .this) then
       some TriggeredAbility.onYourBeginCombatFerociousPlusOne
     else none
+  | .triggered w (.keyword k) => leftoverKeywordTriggered? w k
   | _ => none
 
 end Ability
@@ -2544,6 +2620,10 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
+  | .gainAbility sel (.keyword .trample) =>
+    if sel.includedSubtype? == some "Army" && sel.shape.sameController then
+      { b with staticAbilities := b.staticAbilities.push .armiesYouControlHaveTrample }
+    else b
   | .gainAbility _ _ => b
   | .addPowerToughness (.hostOf .this) p t =>
     pushHostBonus b p t Keywords.none
@@ -3390,6 +3470,11 @@ end TraditionalCardDefinition
 
 #guard Keyword.equip.toKeywords == Keywords.none
 #guard Keyword.enchant.toKeywords == Keywords.none
+#guard Keyword.recruit.toKeywords == Keywords.none
+#guard (Keyword.amass .goblin 1).toKeywords == Keywords.none
+#guard toString Keyword.recruit == "recruit"
+#guard toString (Keyword.amass .goblin 1) == "amass Goblins 1"
+#guard toString (Keyword.amass .orc 2) == "amass Orcs 2"
 #guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
 #guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
 #guard (Keyword.supertypeAndTypeCycling .basic .land).toKeywords == Keywords.none
@@ -5125,5 +5210,151 @@ end TraditionalCardDefinition
             .controlled (.owner (.wasCreatedByAction 1))]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterExileLandsThenReturnTapped
   | none => false
+
+#guard
+  match
+    (Ability.triggered (.enter .this) (.keyword .recruit)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterRecruit
+  | none => false
+
+#guard
+  match
+    (Ability.triggered (.die .this) (.keyword .recruit)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesRecruit
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.keyword (.amass .goblin 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterAmassGoblins 1
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.die .this)
+      (.keyword (.amass .goblin 4))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDiesAmassGoblins 4
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.castSpell
+        (.intersection [
+          .spell,
+          .not (.cardType .creature),
+          .controlled (.controller .this)]))
+      (.keyword (.amass .goblin 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCastNoncreatureAmassGoblins 1
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .all
+        [])
+      (.keyword (.amass .goblin 2))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onYouAttackAmassGoblins 2
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.ordinal 1 .turnStart
+        (.castSpell
+          (.intersection [
+            .spell,
+            .not (.cardType .creature),
+            .controlled (.opponent (.controller .this))])))
+      (.keyword .recruit)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.keyword (.amass .goblin 1)),
+        .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .keyword (.amass .goblin 1),
+      .attach
+        .this
+        (.intersection [
+          .permanent,
+          .subtype .army,
+          .controlled (.controller .this)])])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1 (.keyword (.amass .goblin 1)),
+      .attach .this (.wasObjectOfAction 2)])).toTriggeredAbility?.isNone
+
+#guard
+  CardAction.leftoverDrawLoseLifeThenAmass?
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1,
+      .keyword (.amass .goblin 2)]) == some 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1,
+      .keyword (.amass .goblin 2)]) == Effect.drawLoseLifeThenAmass 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .returnToHand
+        (.targets
+          1
+          (.range 0 1)
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)])),
+      .keyword (.amass .goblin 3)]) == Effect.returnCreatureFromGyThenAmass 3
+
+#guard CardAction.toEffect (.keyword .recruit) == Effect.recruit
+#guard CardAction.toEffect (.keyword (.amass .goblin 1)) == Effect.amassGoblins 1
+
+#guard
+  match
+    (Ability.triggered
+      (.or (.enter .this) (.attack .this .all))
+      (.keyword (.amass .goblin 3))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterOrAttackAmassGoblins 3
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .static
+        (.gainAbility
+          (.intersection [
+            .permanent,
+            .subtype .army,
+            .controlled (.controller .this)])
+          (.keyword .trample)))
+  ]).toCardDef.staticAbilities == #[.armiesYouControlHaveTrample]
 
 end Mtg.Engine
