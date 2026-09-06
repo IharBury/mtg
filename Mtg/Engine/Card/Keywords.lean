@@ -187,7 +187,7 @@ instance : Coe Keyword Keywords where
 instance : ToString Keyword where
   toString
     | .subtypecycling st => s!"{st}cycling"
-    | .supertypeAndTypeCycling st t => s!"{st} {t.toString.toLower}cycling"
+    | .supertypeAndTypeCycling st t => s!"{st} {t.englishName.toLower}cycling"
     | k => toString k.toKeywords
 
 end Keyword

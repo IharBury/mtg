@@ -1628,7 +1628,7 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
   | .keywordWithCost (.supertypeAndTypeCycling st t) costs =>
     some {
       cost := { mana := Cost.manaCost costs, discardSource := true }
-      effect := Effect.searchLandTypeToHand s!"{st} {t.toString.toLower}"
+      effect := Effect.searchLandTypeToHand s!"{st} {t.englishName.toLower}"
       activateFromHand := true }
   | .activated costs action => some (activatedAbility costs action)
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
