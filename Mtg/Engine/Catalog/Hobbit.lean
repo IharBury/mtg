@@ -1926,19 +1926,20 @@ def oldThrush : CardDef :=
         (.sequence [
           .gainLife (.controller .this) 2,
           .optional
-            (.searchLibraryThenShuffle
-              (.controller .this)
-              [
-                .defineVariable 1
-                  (.selected
-                    (.controller .this)
-                    (.range 1 1)
-                    (.intersection [
-                      .inDeck,
-                      .cardType .land,
-                      .supertype .basic])),
-                .reveal (.variable 1),
-                .putOnTopOfLibrary (.variable 1)])]))
+            (.sequence [
+              .searchLibraryThenShuffle
+                (.controller .this)
+                [
+                  .defineVariable 1
+                    (.selected
+                      (.controller .this)
+                      (.range 1 1)
+                      (.intersection [
+                        .inDeck,
+                        .cardType .land,
+                        .supertype .basic])),
+                  .reveal (.variable 1)],
+              .putOnTopOfLibrary (.variable 1)])]))
   ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top.")
 
@@ -2935,6 +2936,7 @@ def hobbitCards : Array CardDef := #[
 #guard snowslopeHunterCard.activatedAbilities[0]!.onceEachTurn
 #guard bolgsCompany.activatedAbilities[0]!.cost.tap
 #guard bolgsCompany.activatedAbilities[0]!.cost.sacrificeAnotherSubtype == some "Goblin"
+#guard oldThrush.triggeredAbilities == #[.onEnterGainLifeSearchBasicOnTop 2]
 #guard snowslopeHunterCard.power == some 2
 #guard snowslopeHunterCard.toughness == some 3
 #guard (snowslopeHunterCard.summary.splitOn "Exile the top card").length > 1
