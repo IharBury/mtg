@@ -991,7 +991,7 @@ def leftoverCounterExile? : CardAction → Bool
 
 /-- Duration “until the end of your next turn” (CR 611.2a). -/
 def leftoverUntilEndOfYourNextTurn? : Trigger → Bool
-  | .sequence [.endOfTurn, .endOfPlayerTurn who] =>
+  | .sequence [.turnStart, .endOfPlayerTurn who] =>
     who == .controller .this
   | _ => false
 
@@ -2757,7 +2757,7 @@ end TraditionalCardDefinition
       .actionId 1 (.exile (.topOfLibrary (.controller .this))),
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-        (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])]
+        (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]
   action.toAbilityEffect == Effect.exileTopPlayUntilEndOfNextTurn
 
 #guard
@@ -2784,7 +2784,7 @@ end TraditionalCardDefinition
           .actionId 1 (.exile (.topOfLibrary (.controller .this))),
           .continuous
             [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-            (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])]))).toActivatedAbility? with
+            (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       ab.onceEachTurn &&
@@ -3504,7 +3504,7 @@ end TraditionalCardDefinition
         .actionId 1 (.exile (.topOfLibrary (.controller .this))),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
-          (.sequence [.endOfTurn, .endOfPlayerTurn (.controller .this)])])).toTriggeredAbility? with
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterExileTop
   | none => false
 
