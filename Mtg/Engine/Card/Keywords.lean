@@ -145,6 +145,9 @@ inductive Keyword where
   | enchant
   /-- Typecycling (CR 702.29): printed with a cost, e.g. Halflingcycling {4}. -/
   | subtypecycling : CardSubtype → Keyword
+  /-- Typecycling a supertype and card type (CR 702.29), e.g. Basic
+  landcycling {2}. -/
+  | supertypeAndTypeCycling : CardSupertype → CardType → Keyword
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -171,7 +174,8 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
-  | .equip | .enchant | .subtypecycling _ => Keywords.none
+  | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _ =>
+    Keywords.none
 
 /-- Union of two single keywords. -/
 def merge (a b : Keyword) : Keywords :=
@@ -183,6 +187,7 @@ instance : Coe Keyword Keywords where
 instance : ToString Keyword where
   toString
     | .subtypecycling st => s!"{st}cycling"
+    | .supertypeAndTypeCycling st t => s!"{st} {t.toString.toLower}cycling"
     | k => toString k.toKeywords
 
 end Keyword

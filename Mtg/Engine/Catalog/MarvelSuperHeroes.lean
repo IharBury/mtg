@@ -1116,21 +1116,9 @@ def kreeSentinel : CardDef :=
     .toughness 5,
     .ability (.keyword .reach),
     .ability
-      (.activated
-        [.mana [.generic 2], .discard .this]
-        (.searchLibraryThenShuffle
-          (.controller .this)
-          [
-            .defineVariable 1
-              (.selected
-                (.controller .this)
-                (.range 1 1)
-                (.intersection [
-                  .inDeck,
-                  .cardType .land,
-                  .supertype .basic])),
-            .reveal (.variable 1),
-            .returnToHand (.variable 1)]))
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Reach\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
 
@@ -2531,6 +2519,12 @@ def mshCards : Array CardDef :=
 #guard kingpinSEnforcers.activatedAbilities.size == 1
 #guard kingpinSEnforcers.activatedAbilities[0]!.cost.sacrificeAnotherCreatureOrArtifact
 #guard kingpinSEnforcers.activatedAbilities[0]!.effect == Effect.abilityDraw 1
+#guard kreeSentinel.keywords.reach
+#guard kreeSentinel.activatedAbilities.size == 1
+#guard kreeSentinel.activatedAbilities[0]!.activateFromHand
+#guard kreeSentinel.activatedAbilities[0]!.cost.discardSource
+#guard kreeSentinel.activatedAbilities[0]!.effect ==
+  Effect.searchLandTypeToHand "Basic land"
 #guard mshCards.size >= 281
 #guard mshCards.all (fun c => c.name != "")
 #guard agentOfAtlas.keywords.prowess

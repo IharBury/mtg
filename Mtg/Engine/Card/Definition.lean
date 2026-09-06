@@ -1625,6 +1625,11 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       cost := { mana := Cost.manaCost costs, discardSource := true }
       effect := Effect.searchLandTypeToHand st.toString
       activateFromHand := true }
+  | .keywordWithCost (.supertypeAndTypeCycling st t) costs =>
+    some {
+      cost := { mana := Cost.manaCost costs, discardSource := true }
+      effect := Effect.searchLandTypeToHand s!"{st} {t.toString.toLower}"
+      activateFromHand := true }
   | .activated costs action => some (activatedAbility costs action)
   | .activatedIf (.didNotHappen (.abilityWithIdActivated _) .turnStart) costs action =>
     some (activatedAbility costs action true)
@@ -2708,6 +2713,9 @@ end TraditionalCardDefinition
 #guard Keyword.enchant.toKeywords == Keywords.none
 #guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
 #guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
+#guard (Keyword.supertypeAndTypeCycling .basic .land).toKeywords == Keywords.none
+#guard toString (Keyword.supertypeAndTypeCycling .basic .land) ==
+  "Basic landcycling"
 
 #guard
   let c :=
@@ -2786,6 +2794,31 @@ end TraditionalCardDefinition
     c.activatedAbilities[0]!.activateFromHand &&
     c.activatedAbilities[0]!.cost.discardSource &&
     c.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Halfling"
+
+#guard
+  match
+    (Ability.keywordWithCost
+      (.supertypeAndTypeCycling .basic .land)
+      [.mana [.generic 2]]).toActivatedAbility? with
+  | some ab =>
+    ab.activateFromHand &&
+      ab.cost.discardSource &&
+      ab.cost.mana == ManaCost.ofGeneric 2 &&
+      ab.effect == Effect.searchLandTypeToHand "Basic land"
+  | none => false
+
+#guard
+  let c :=
+    (TraditionalCardDefinition.card [
+      .ability
+        (.keywordWithCost
+          (.supertypeAndTypeCycling .basic .land)
+          [.mana [.generic 2]])
+    ]).toCardDef
+  c.activatedAbilities.size == 1 &&
+    c.activatedAbilities[0]!.activateFromHand &&
+    c.activatedAbilities[0]!.cost.discardSource &&
+    c.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Basic land"
 
 -- Gollum the Abandoned: can't block; ETB exile GY; return from GY.
 #guard
