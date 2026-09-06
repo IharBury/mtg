@@ -69,6 +69,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `discard`, `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
+- **CardState** — `tapped`, `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `activated`, `activatedIf`, `abilityId`, `triggered`,
   `static`.

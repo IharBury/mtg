@@ -623,6 +623,8 @@ deriving Repr, Inhabited, BEq
 inductive CardState where
   /-- The permanent enters tapped. -/
   | tapped
+  /-- The permanent enters under the selected player's control (CR 110.2). -/
+  | controlled : Selector → CardState
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -736,9 +738,9 @@ inductive CardAction where
   | returnToHand : Selector → CardAction
   /-- Put the selected object onto the battlefield. -/
   | putOntoBattlefield : Selector → CardAction
-  /-- Put the selected object onto the battlefield in the given state
+  /-- Put the selected object onto the battlefield in the given states
   (CR 110.5). -/
-  | putOntoBattlefieldInState : Selector → CardState → CardAction
+  | putOntoBattlefieldInState : Selector → List CardState → CardAction
   /-- Search the selected player's library. Nested actions may move or
   choose cards from that library while they are visible, then shuffle
   (CR 701.19). Nested `holdOutInLibrary` keeps selected cards in the
@@ -1414,7 +1416,7 @@ def leftoverAddAnyColor? : CardAction → Bool
 
 /-- Replacement “this enters tapped”. -/
 def leftoverEntersTapped? : List CardAction → Bool
-  | [.putOntoBattlefieldInState obj .tapped] =>
+  | [.putOntoBattlefieldInState obj [.tapped]] =>
     obj == .this || obj == .source .this
   | _ => false
 
@@ -1441,7 +1443,7 @@ def leftoverSetOtherBasePT? : List ContinuousEffect → Bool
 /-- Nested search actions: put a basic land onto the battlefield tapped,
 or reveal a found card and put it into hand. -/
 def leftoverSearchActions? : List CardAction → Option Effect
-  | [.putOntoBattlefieldInState sel .tapped] =>
+  | [.putOntoBattlefieldInState sel [.tapped]] =>
     match sel.selectedAmong? with
     | some among =>
       if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
@@ -1616,13 +1618,22 @@ def leftoverAttachTargetEquipment? : CardAction → Bool
     | _, _ => false
   | _ => false
 
-/-- Exile then return the same objects tapped. -/
+/-- Battlefield states that are exactly tapped under the selected object's
+owner's control (order-independent). -/
+def leftoverTappedUnderOwner (obj : Selector) : List CardState → Bool
+  | [.tapped, .controlled who] => who == .owner obj
+  | [.controlled who, .tapped] => who == .owner obj
+  | _ => false
+
+/-- Exile then return the same objects tapped under their owner's control. -/
 def leftoverExileThenReturnTapped? : CardAction → Option Selector
   | .sequence [
       .actionId id (.exile sel),
-      .putOntoBattlefieldInState (.wasCreatedByAction id') .tapped
+      .putOntoBattlefieldInState (.wasCreatedByAction id') states
     ] =>
-    if id == id' then some sel else none
+    if id == id' && leftoverTappedUnderOwner (.wasCreatedByAction id') states then
+      some sel
+    else none
   | _ => none
 
 /-- Find, reveal, and hold out a basic land while searching so shuffle
@@ -4003,7 +4014,7 @@ end TraditionalCardDefinition
             (.controller .this)
             (.range 1 1)
             (.intersection [.inDeck, .cardType .land, .supertype .basic]))
-          .tapped]
+          [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
 
 #guard
@@ -4143,7 +4154,7 @@ end TraditionalCardDefinition
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped]))
+          [.putOntoBattlefieldInState .this [.tapped]]))
   ]).toCardDef.entersTapped
 
 #guard
@@ -4707,5 +4718,73 @@ end TraditionalCardDefinition
       .continuous
         [.canPlay (.controller .this) (.wasCreatedByAction 1)]
         (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])]) == some (3, 1)
+
+-- Exile then return tapped under owner's control (Gandalf / Mighty Thor).
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.targets
+            1
+            (.range 0 3)
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))),
+      .putOntoBattlefieldInState
+        (.wasCreatedByAction 1)
+        [
+          .tapped,
+          .controlled (.owner (.wasCreatedByAction 1))]])
+  |>.isSome
+
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.targets
+            1
+            (.range 0 3)
+            (.intersection [
+              .permanent,
+              .cardType .land,
+              .controlled (.controller .this)]))),
+      .putOntoBattlefieldInState (.wasCreatedByAction 1) [.tapped]])
+  |>.isNone
+
+#guard
+  CardAction.leftoverExileThenReturnTapped?
+    (.sequence [
+      .actionId 1 (.exile (.targets 1 (.range 0 3) .permanent)),
+      .putOntoBattlefieldInState
+        (.wasCreatedByAction 1)
+        [
+          .tapped,
+          .controlled (.controller .this)]])
+  |>.isNone
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1
+          (.exile
+            (.targets
+              1
+              (.range 0 3)
+              (.intersection [
+                .permanent,
+                .cardType .land,
+                .controlled (.controller .this)]))),
+        .putOntoBattlefieldInState
+          (.wasCreatedByAction 1)
+          [
+            .tapped,
+            .controlled (.owner (.wasCreatedByAction 1))]])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterExileLandsThenReturnTapped
+  | none => false
 
 end Mtg.Engine

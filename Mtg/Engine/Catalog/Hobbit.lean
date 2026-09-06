@@ -1104,7 +1104,7 @@ def elvenkingsHalls : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1143,7 +1143,7 @@ def ironHills : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1182,7 +1182,7 @@ def lakeTown : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1221,7 +1221,7 @@ def goblinTown : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1260,7 +1260,7 @@ def mirkwood : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (
       .activated
         [.tapSymbol]
@@ -1309,7 +1309,7 @@ def hobbitHole : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              .tapped])),
+              [.tapped])),
     .ability (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
   ]).toCardDef
     (oracleText :=

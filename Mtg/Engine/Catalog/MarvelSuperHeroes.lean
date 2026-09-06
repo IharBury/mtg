@@ -1727,7 +1727,7 @@ def restorativeTechnique : CardDef :=
                 .inDeck,
                 .cardType .land,
                 .supertype .basic]))
-            .tapped],
+            [.tapped],
       .putCounter
         (.targets 1 (.range 0 1) (.intersection [.permanent, .cardType .creature]))
         .plusOnePlusOne
@@ -2051,7 +2051,11 @@ def theMightyThorJaneFoster : CardDef :=
                   .not .token,
                   .permanent,
                   .union [.cardType .artifact, .cardType .creature]]))),
-          .putOntoBattlefieldInState (.wasCreatedByAction 1) .tapped])),
+          .putOntoBattlefieldInState
+            (.wasCreatedByAction 1)
+            [
+              .tapped,
+              .controlled (.owner (.wasCreatedByAction 1))])),
     .ability (
       .triggered
         (.enter
@@ -2320,7 +2324,7 @@ def aIMLabs : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2349,7 +2353,7 @@ def asgardianCitadel : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2372,7 +2376,7 @@ def avengersHangar : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2410,7 +2414,7 @@ def birninZanaPlaza : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2444,7 +2448,7 @@ def fiskTower : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2473,7 +2477,7 @@ def hellSKitchen : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2499,7 +2503,7 @@ def losDiablosMissileBase : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2522,7 +2526,7 @@ def pymTechnologies : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2545,7 +2549,7 @@ def starkIndustries : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2568,7 +2572,7 @@ def subterraneanCavern : CardDef :=
       .static
         (.replace
           (.enter .this)
-          [.putOntoBattlefieldInState .this .tapped])),
+          [.putOntoBattlefieldInState .this [.tapped]])),
     .ability (.triggered (.enter .this) (.gainLife (.controller .this) 1)),
     .ability (
       .activated
@@ -2917,6 +2921,8 @@ def mshCards : Array CardDef :=
 #guard kreeCommandos.keywords.prowess
 #guard crimsonOperative.keywords.prowess
 #guard crimsonOperative.triggeredAbilities == #[.onEnterExileTop]
+#guard theMightyThorJaneFoster.triggeredAbilities ==
+  #[.onThisAttack Effect.thisAttackBlinkNontoken, .onEquipmentYouControlEntersDraw]
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
 #guard ghostSpectralSaboteur.keywords.flash

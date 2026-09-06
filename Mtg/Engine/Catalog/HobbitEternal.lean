@@ -405,7 +405,7 @@ def wayfarersBauble : CardDef :=
                   .inDeck,
                   .cardType .land,
                   .supertype .basic]))
-              .tapped]))
+              [.tapped]))
   ]).toCardDef
     (oracleText :=
       "{2}, {T}, Sacrifice this artifact: Search your library for a basic land card, put that card onto the battlefield tapped, then shuffle.")
@@ -1067,7 +1067,11 @@ def gandalfShadowSFoe : CardDef :=
                   .permanent,
                   .cardType .land,
                   .controlled (.controller .this)]))),
-          .putOntoBattlefieldInState (.wasCreatedByAction 1) .tapped])),
+          .putOntoBattlefieldInState
+            (.wasCreatedByAction 1)
+            [
+              .tapped,
+              .controlled (.owner (.wasCreatedByAction 1))])),
     .ability (
       .triggered
         (.enter
@@ -1457,6 +1461,8 @@ def hobbitEternalCards : Array CardDef := #[
 #guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
+#guard gandalfShadowSFoe.triggeredAbilities ==
+  #[.onEnterExileLandsThenReturnTapped, .onLandYouControlEntersDrawPlusOneSource]
 #guard arwenMortalQueen.entersWithIndestructibleCounter
 #guard arwenMortalQueen.activatedAbilities[0]!.effect == Effect.arwenShare
 #guard callForthTheTempest.spellEffect == some (Effect.damageOppCreaturesEqualOtherSpellsMv)
