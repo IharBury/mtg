@@ -70,7 +70,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `discard` (what to discard), `or`.
 - **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
-- **CardState** — `tapped`, `controlled` (who controls as the permanent enters).
+- **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
   `keywordWithTarget`, `activated`, `activatedIf`, `abilityId`, `triggered`,
   `static`.
@@ -80,7 +80,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `gainType`, `gainSubtype`, `setPowerToughnessEqualToCount`,
   `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
-  `draw`, `scry`, `sequence`, `if`, `optional`, `attach`, `chooseMode`,
+  `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `counter`, `preventable`, `discard`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
@@ -101,6 +101,8 @@ cards need the constructors below. `CardAction.keyword` compiles keyword
 actions such as recruit and amass. `CardAction.createTokens` compiles token
 creation from a selector, count, and `CardPart` characteristics.
 `CardAction.createTokensInState` is the same with an entering state (tapped).
+`CardAction.ifElse` compiles an “if … instead …” replacement (Andúril’s
+legendary Spirits).
 
 ## Missing constructors by type
 

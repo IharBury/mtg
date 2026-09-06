@@ -984,6 +984,9 @@ def bilboUnexpectedAdventurer : CardDef :=
     (triggeredAbilities := #[.onCombatDamagePutNonlandMvAtMost 3])
 
 def andurilFlameOfTheWest : CardDef :=
+  let spirits : List CardPart := [
+    .type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
+    .ability (.keyword .flying)]
   (TraditionalCardDefinition.card [
     .name "Andúril, Flame of the West",
     .manaCost [.generic 3],
@@ -994,10 +997,10 @@ def andurilFlameOfTheWest : CardDef :=
     .ability (
       .triggered
         (.attack (.hostOf .this) .all)
-        (.createTokensInState (.controller .this) 2
-          [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
-            .ability (.keyword .flying)]
-          [.tapped])),
+        (.ifElse
+          (.any (.intersection [.hostOf .this, .supertype .legendary]))
+          [.createTokensInState (.controller .this) 2 spirits [.tapped, .attacking]]
+          [.createTokensInState (.controller .this) 2 spirits [.tapped]])),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Equipped creature gets +3/+1.\nWhenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking.\nEquip {2}")

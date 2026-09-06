@@ -662,6 +662,8 @@ deriving Repr, Inhabited, BEq
 inductive CardState where
   /-- The permanent enters tapped. -/
   | tapped
+  /-- The permanent enters attacking (CR 508.4a). -/
+  | attacking
   /-- The permanent enters under the selected player's control (CR 110.2). -/
   | controlled : Selector → CardState
 deriving Repr, Inhabited, BEq
@@ -741,6 +743,9 @@ inductive CardAction where
   | sequence : List CardAction → CardAction
   /-- Perform the given actions only when the condition holds. -/
   | if : Condition → List CardAction → CardAction
+  /-- Perform the first actions when the condition holds, otherwise the
+  second (an “if … instead …” replacement). -/
+  | ifElse : Condition → List CardAction → List CardAction → CardAction
   | optional : CardAction → CardAction
   | attach : Selector → Selector → CardAction
   /-- Choose one of the given modes (CR 700.2). -/
@@ -1761,6 +1766,18 @@ def leftoverTappedOnly : List CardState → Bool
   | [.tapped] => true
   | _ => false
 
+/-- Battlefield states that are tapped and attacking (order-independent). -/
+def leftoverTappedAndAttacking : List CardState → Bool
+  | [.tapped, .attacking] => true
+  | [.attacking, .tapped] => true
+  | _ => false
+
+/-- True when the condition is that this object's host is legendary. -/
+def leftoverHostIsLegendary : Condition → Bool
+  | .any (.intersection fs) =>
+    fs.contains (.hostOf .this) && fs.contains (.supertype .legendary)
+  | _ => false
+
 /-- Battlefield states that are exactly tapped under the selected object's
 owner's control (order-independent). -/
 def leftoverTappedUnderOwner (obj : Selector) : List CardState → Bool
@@ -1902,6 +1919,23 @@ def leftoverCreateTokensKindN? : CardAction → Option (TokenKind × Nat)
     if leftoverYou who then leftoverTokenKind? parts |>.map (fun k => (k, n))
     else none
   | _ => none
+
+/-- Create `n` Spirit tokens, tapped, optionally also attacking. -/
+def leftoverCreateTappedSpirits (n : Nat) (attacking : Bool) : CardAction → Bool
+  | .createTokensInState who k parts states =>
+    leftoverYou who && k == n && leftoverTokenKind? parts == some .spirit &&
+      (if attacking then leftoverTappedAndAttacking states
+       else leftoverTappedOnly states)
+  | _ => false
+
+/-- If the equipped creature is legendary, create tapped-and-attacking
+Spirits; otherwise create tapped Spirits. -/
+def leftoverIfElseCreateSpiritsForEquipped? : CardAction → Bool
+  | .ifElse cond [th] [el] =>
+    leftoverHostIsLegendary cond &&
+      leftoverCreateTappedSpirits 2 true th &&
+      leftoverCreateTappedSpirits 2 false el
+  | _ => false
 
 /-- Create tokens, then creatures you control get +P/+T. -/
 def leftoverCreateThenTeamPump? : CardAction → Option Effect
@@ -2258,6 +2292,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .sequence [] => continuousEffect none [] asAbility
                   | .if _ (a :: _) => compile a asAbility
                   | .if _ [] => continuousEffect none [] asAbility
+                  | .ifElse _ (a :: _) _ => compile a asAbility
+                  | .ifElse _ [] (a :: _) => compile a asAbility
+                  | .ifElse _ [] [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
                   | .chooseMode (a :: _) => compile a asAbility
@@ -2811,11 +2848,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens st kind n)
       | _, _ => none
     else none
-  | .triggered (.attack (.hostOf .this) .all)
-      (.createTokensInState who n parts states) =>
-    if CardAction.leftoverYou who && n == 2 &&
-        CardAction.leftoverTappedOnly states &&
-        CardAction.leftoverTokenKind? parts == some .spirit then
+  | .triggered (.attack (.hostOf .this) .all) action =>
+    if CardAction.leftoverIfElseCreateSpiritsForEquipped? action then
       some TriggeredAbility.onEquippedAttacksCreateSpirits
     else none
   | .triggered (.ordinal 2 .turnStart (.castSpell among)) action =>
@@ -5756,10 +5790,16 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.attack (.hostOf .this) .all)
-      (.createTokensInState (.controller .this) 2
-        [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
-          .ability (.keyword .flying)]
-        [.tapped])).toTriggeredAbility? with
+      (.ifElse
+        (.any (.intersection [.hostOf .this, .supertype .legendary]))
+        [.createTokensInState (.controller .this) 2
+          [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
+            .ability (.keyword .flying)]
+          [.tapped, .attacking]]
+        [.createTokensInState (.controller .this) 2
+          [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
+            .ability (.keyword .flying)]
+          [.tapped]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEquippedAttacksCreateSpirits
   | none => false
 
