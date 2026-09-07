@@ -131,7 +131,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     controller := controller
     defaultController := if dest == .battlefield then controller else none
     zone := dest
-    status := {}
+    status :=
+      match dest with
+      | .graveyard _ => { putIntoGraveyardThisTurn := true }
+      | _ => {}
     timestamp := ts
   }
   let g : Game :=

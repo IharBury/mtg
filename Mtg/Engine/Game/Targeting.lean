@@ -227,6 +227,9 @@ def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTarge
       o.isOnBattlefield && !o.printed.isLand && !o.printed.isToken)
   | .permanentCardInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o => o.printed.isPermanentCard)
+  | .permanentCardInYourGraveyardThisTurn =>
+    g.legalGraveyardCardTargets caster (fun o =>
+      o.printed.isPermanentCard && o.status.putIntoGraveyardThisTurn)
   | .equipmentInstantOrSorceryInYourGraveyard =>
     g.legalGraveyardCardTargets caster (fun o =>
       o.printed.isEquipment || o.printed.isInstant || o.printed.isSorcery)

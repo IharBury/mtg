@@ -990,7 +990,7 @@ namespace CardDef
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
-  .permanentCardInYourGraveyard
+  .permanentCardInYourGraveyardThisTurn
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .tapCantUntapWhileControl
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==

@@ -1065,4 +1065,96 @@ def hawkeyeBowEquippedViaEquip : Game :=
     !g.canActivate ⟨0⟩ (namedPermanent g "Hawkeye's Bow")
       hawkeyeSBow.activatedAbilities[0]!
 
+/-- Night Nurse returns only a permanent card put into your graveyard this
+turn, from anywhere (battlefield, hand, or library). Cards already there,
+instants, and an opponent's graveyard are illegal. -/
+def nightNurseGySetup : Game :=
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  let g := addToHand g lightningBolt ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Lightning Bolt").id (.graveyard ⟨0⟩) none
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let (g, _) := g.move (g.player ⟨0⟩).library.back! (.graveyard ⟨0⟩) none
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none
+  g
+
+#guard nightNurseHealerOfHeroes.matchesOracleText
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
+  .permanentCardInYourGraveyardThisTurn
+#guard
+  let g := nightNurseGySetup
+  let old := namedGraveyardCard g ⟨0⟩ "Hill Giant"
+  let fromBf := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let fromLib := namedGraveyardCard g ⟨0⟩ "Mountain"
+  let fromHand := namedGraveyardCard g ⟨0⟩ "Forest"
+  let opp := namedGraveyardCard g ⟨1⟩ "Gray Ogre"
+  let thisTurn := g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyardThisTurn
+  let anyPerm := g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyard
+  !old.status.putIntoGraveyardThisTurn &&
+    fromBf.status.putIntoGraveyardThisTurn &&
+    bolt.status.putIntoGraveyardThisTurn &&
+    fromLib.status.putIntoGraveyardThisTurn &&
+    fromHand.status.putIntoGraveyardThisTurn &&
+    opp.status.putIntoGraveyardThisTurn &&
+    thisTurn.size == 3 &&
+    thisTurn.contains (Target.card fromBf.id) &&
+    thisTurn.contains (Target.card fromLib.id) &&
+    thisTurn.contains (Target.card fromHand.id) &&
+    !thisTurn.contains (Target.card old.id) &&
+    !thisTurn.contains (Target.card bolt.id) &&
+    !thisTurn.contains (Target.card opp.id) &&
+    anyPerm.contains (Target.card old.id) &&
+    anyPerm.contains (Target.card fromBf.id)
+
+#guard
+  let g := nightNurseGySetup.clearTurnActivations
+  let fromBf := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  !fromBf.status.putIntoGraveyardThisTurn &&
+    (g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyardThisTurn).isEmpty &&
+    (g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyard).contains
+      (Target.card fromBf.id)
+
+/-- No this-turn permanent in your graveyard: the ETB is removed (CR 603.3d). -/
+def nightNurseNoTargetEntered : Game :=
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  mshEnter g nightNurseHealerOfHeroes
+
+#guard nightNurseNoTargetEntered.stack.isEmpty
+#guard nightNurseNoTargetEntered.pending == .none
+#guard nightNurseNoTargetEntered.log.any (fun s =>
+  mentions s "enters trigger is removed from the stack (no legal target)")
+#guard (namedGraveyardCard nightNurseNoTargetEntered ⟨0⟩ "Hill Giant").zone ==
+  .graveyard ⟨0⟩
+
+/-- A this-turn battlefield-to-graveyard permanent is returned to hand. -/
+def nightNurseReturned : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  let g := mshEnter g nightNurseHealerOfHeroes
+  let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let g := mustApply g ⟨0⟩ (.target (Target.card gy.id))
+  passBoth g
+
+#guard nightNurseReturned.pending == .none
+#guard (nightNurseReturned.handObjects ⟨0⟩).any (fun o => o.name == "Grizzly Bears")
+#guard !nightNurseReturned.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨0⟩)
+
+/-- An older graveyard permanent is not a legal Night Nurse target. -/
+#guard
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  let g := addPermanent g nightNurseHealerOfHeroes ⟨0⟩ ⟨0⟩
+  let nurse := namedPermanent g "Night Nurse, Healer of Heroes"
+  let old := namedGraveyardCard g ⟨0⟩ "Hill Giant"
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterReturnGyPermanentThisTurn)
+    (some nurse.id) #[Target.card old.id]
+  g.log.any (fun s => mentions s "no longer legal") &&
+    (namedGraveyardCard g ⟨0⟩ "Hill Giant").zone == .graveyard ⟨0⟩
+
 end Mtg.Engine.Tests

@@ -92,6 +92,10 @@ def clearTurnActivations (g : Game) : Game :=
           boastUsedThisTurn := false
           becameTappedThisTurn := false
           gotPlusOneThisTurn := false } }
+    for o in g.objects do
+      if o.status.putIntoGraveyardThisTurn then
+        g := g.setObject { o with status := { o.status with
+          putIntoGraveyardThisTurn := false } }
     return g
 
 /-- Expire or decrement play-from-exile permissions as `endingPlayer`'s turn ends. -/
