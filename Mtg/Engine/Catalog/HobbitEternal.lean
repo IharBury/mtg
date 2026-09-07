@@ -189,11 +189,33 @@ def esquireOfTheKing : CardDef :=
     (oracleText := "{4}{W}, {T}: Creatures you control get +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
 
 def pelargirSurvivor : CardDef :=
-  creature "Pelargir Survivor" (ManaCost.ofGenericAndColor 1 .blue) #["Human", "Peasant"] 1 3
+  (TraditionalCardDefinition.card [
+    .name "Pelargir Survivor",
+    .manaCost [.generic 1, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .peasant,
+    .power 1,
+    .toughness 3,
+    .ability
+      (.activated
+        [.tapSymbol]
+        (.sequence [
+          .actionId 1
+            (.addManaAnyColor (.controller .this) (.controller .this) 1),
+          .continuous
+            [.forbid
+              (.spendManaCreatedByAction 1
+                (.not
+                  (.castSpell
+                    (.union [.cardType .instant, .cardType .sorcery]))))]
+            .endOfTurn])),
+    .ability
+      (.activated
+        [.mana [.generic 5, .mono .blue], .tapSymbol]
+        (.mill (.target 1 .player) 3))
+  ]).toCardDef
     (oracleText := "{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell.\n{5}{U}, {T}: Target player mills three cards. (They put the top three cards of their library into their graveyard.)")
-    (tapAddAnyColorForInstantOrSorcery := true)
-    (activatedAbilities := #[
-      activated (Effect.millPlayer 3) (ManaCost.ofGenericAndColor 5 .blue) (tap := true)])
 
 def lorienRevealed : CardDef :=
   (TraditionalCardDefinition.card [
@@ -1551,6 +1573,12 @@ def hobbitEternalCards : Array CardDef := #[
 #guard theOneRing.triggeredAbilities ==
   #[.onEnterIfCastProtectionEverything, .onYourUpkeepLoseLifePerBurden]
 #guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
+#guard pelargirSurvivor.tapAddAnyColorForInstantOrSorcery
+#guard pelargirSurvivor.activatedAbilities.size == 1
+#guard pelargirSurvivor.activatedAbilities[0]!.cost.tap
+#guard pelargirSurvivor.activatedAbilities[0]!.cost.mana ==
+  ManaCost.ofGenericAndColor 5 .blue
+#guard pelargirSurvivor.activatedAbilities[0]!.effect == Effect.millPlayer 3
 #guard grimaSarumanSFootman.keywords.cantBeBlocked
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
 #guard gandalfShadowSFoe.triggeredAbilities ==

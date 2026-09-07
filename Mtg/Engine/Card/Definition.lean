@@ -830,6 +830,8 @@ inductive CardAction where
   /-- The selected player creates that many tokens with the given
   characteristics, entering in the given states (CR 111, CR 110.5). -/
   | createTokensInState : Selector → Nat → List CardPart → List CardState → CardAction
+  /-- The selected player mills that many cards (CR 701.13). -/
+  | mill : Selector → Nat → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1481,6 +1483,15 @@ def leftoverElfRestrictedSpend? : Trigger → Bool
         (.activateAbility (.subtype .elf))) => true
   | _ => false
 
+/-- Spend this mana only to cast an instant or sorcery spell. -/
+def leftoverInstantOrSorcerySpend? : Trigger → Bool
+  | .not (.castSpell among) =>
+    among.shape.types.eqTypes [.instant, .sorcery]
+  | .not (.or (.castSpell a) (.castSpell b)) =>
+    (a == .cardType .instant && b == .cardType .sorcery) ||
+      (a == .cardType .sorcery && b == .cardType .instant)
+  | _ => false
+
 /-- Tap and add mana of any color equal to this object's power, spendable
 only on Elf spells and Elf sources. -/
 def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Bool
@@ -1494,6 +1505,20 @@ def leftoverTapAddAnyColorEqualToPower? (costs : List Cost) : CardAction → Boo
       chooser == .controller .this &&
       gainer == .controller .this &&
       (power == .this || power == .source .this)
+  | _ => false
+
+/-- `{T}: Add` one mana of any color, spendable only on instant and
+sorcery spells. -/
+def leftoverTapAddAnyColorForInstantOrSorcery? (costs : List Cost) : CardAction → Bool
+  | .sequence [
+      .actionId id (.addManaAnyColor chooser gainer 1),
+      .continuous [.forbid (.spendManaCreatedByAction spendId restriction)] _
+    ] =>
+    id == spendId &&
+      leftoverInstantOrSorcerySpend? restriction &&
+      costs == [.tapSymbol] &&
+      chooser == .controller .this &&
+      gainer == .controller .this
   | _ => false
 
 /-- Mana produced when this symbol is added to a pool (CR 106.4). -/
@@ -2086,6 +2111,153 @@ def leftoverTargetOpponent? : Selector → Bool
   | .target _ (.opponent _) => true
   | _ => false
 
+/-- Target player as a numbered target. -/
+def leftoverTargetPlayer? : Selector → Bool
+  | .target _ .player => true
+  | _ => false
+
+/-- Objects milled by the numbered action that also match `pred`. -/
+def leftoverMilledBy (id : Nat) (pred : Selector → Bool) : Selector → Bool
+  | .intersection fs =>
+    fs.any (fun s => s == .wasObjectOfAction id) && fs.any pred
+  | _ => false
+
+/-- Instant or sorcery cards. -/
+def leftoverInstantOrSorceryFilter : Selector → Bool
+  | s => s.shape.types.eqTypes [.instant, .sorcery]
+
+/-- Land cards. -/
+def leftoverLandFilter : Selector → Bool
+  | s => s == .cardType .land || s.shape.types.eqTypes [.land]
+
+/-- A permanent card (among milled cards). -/
+def leftoverPermanentCardFilter : Selector → Bool
+  | .permanent => true
+  | _ => false
+
+/-- A subtype card or an enchantment card. -/
+def leftoverSubtypeOrEnchantment? : Selector → Option String
+  | .union fs =>
+    if fs.any (fun s => s == .cardType .enchantment) then
+      fs.findSome? fun s =>
+        match s with
+        | .subtype st => some st.toString
+        | _ => none
+    else none
+  | _ => none
+
+/-- The printed subtype among milled cards, if that is the only filter. -/
+def leftoverMilledSubtype? (id : Nat) : Selector → Option String
+  | .intersection fs =>
+    if fs.any (fun s => s == .wasObjectOfAction id) then
+      fs.findSome? fun s =>
+        match s with
+        | .subtype st => some st.toString
+        | _ => none
+    else none
+  | _ => none
+
+/-- Chosen cards from among those milled by `id`. -/
+def leftoverSelectedMilled? (id : Nat) (pred : Selector → Bool) :
+    Selector → Option (Nat × Nat)
+  | .selected _ (.range lo hi) among =>
+    if leftoverMilledBy id pred among then some (lo, hi) else none
+  | .targets _ (.range lo hi) among =>
+    if leftoverMilledBy id pred among then some (lo, hi) else none
+  | _ => none
+
+/-- Mill n, then put an instant or sorcery card from among them into hand. -/
+def leftoverMillThenPutInstantOrSorcery? : CardAction → Option Nat
+  | .sequence [.actionId id (.mill who n), .returnToHand sel] =>
+    match leftoverSelectedMilled? id leftoverInstantOrSorceryFilter sel with
+    | some (lo, 1) =>
+      if leftoverYou who && lo ≤ 1 then some n else none
+    | _ => none
+  | _ => none
+
+/-- Mill n, then put up to `max` land cards from among them into hand. -/
+def leftoverMillThenPutLands? : CardAction → Option (Nat × Nat)
+  | .sequence [.actionId id (.mill who n), .returnToHand sel] =>
+    match leftoverSelectedMilled? id leftoverLandFilter sel with
+    | some (0, max) =>
+      if leftoverYou who then some (n, max) else none
+    | _ => none
+  | _ => none
+
+/-- Mill n, then put all instant and sorcery cards from among them into hand. -/
+def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
+  | .sequence [.actionId id (.mill who n), .returnToHand among] =>
+    if leftoverYou who && leftoverMilledBy id leftoverInstantOrSorceryFilter among then
+      some n
+    else none
+  | _ => none
+
+/-- Mill n, you may put a permanent card from among them into hand, gain life. -/
+def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
+  | .sequence [
+      .actionId id (.mill who n),
+      .optional (.returnToHand sel),
+      .gainLife gainer life
+    ] =>
+    match leftoverSelectedMilled? id leftoverPermanentCardFilter sel with
+    | some (lo, 1) =>
+      if leftoverYou who && leftoverYou gainer && lo ≤ 1 then some (n, life) else none
+    | _ => none
+  | _ => none
+
+/-- Mill n, you may put a subtype or enchantment card from among them into hand. -/
+def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × String)
+  | .sequence [
+      .actionId id (.mill who n),
+      .optional (.returnToHand (.selected _ (.range lo 1) among))
+    ] =>
+    if leftoverYou who && lo ≤ 1 then
+      match among with
+      | .intersection fs =>
+        if fs.any (fun s => s == .wasObjectOfAction id) then
+          fs.findSome? leftoverSubtypeOrEnchantment? |>.map (fun st => (n, st))
+        else none
+      | _ => none
+    else none
+  | .sequence [
+      .actionId id (.mill who n),
+      .optional (.returnToHand (.targets _ (.range lo 1) among))
+    ] =>
+    if leftoverYou who && lo ≤ 1 then
+      match among with
+      | .intersection fs =>
+        if fs.any (fun s => s == .wasObjectOfAction id) then
+          fs.findSome? leftoverSubtypeOrEnchantment? |>.map (fun st => (n, st))
+        else none
+      | _ => none
+    else none
+  | _ => none
+
+/-- Mill-then-put sequences that compile to a named `Effect`. -/
+def leftoverMillThenPutCompiled? (action : CardAction) : Option Effect :=
+  match leftoverMillThenPutPermanentGainLife? action with
+  | some (n, life) => some (Effect.millThenPutPermanentGainLife n life)
+  | none =>
+    match leftoverMillThenPutSubtypeOrEnchantment? action with
+    | some (n, st) => some (Effect.millThenPutSubtypeOrEnchantment n st)
+    | none =>
+      match leftoverMillThenPutLands? action with
+      | some (n, max) => some (Effect.millThenPutLands n max)
+      | none =>
+        match leftoverMillThenPutInstantOrSorcery? action with
+        | some n => some (Effect.millThenPutInstantOrSorcery n)
+        | none =>
+          leftoverMillThenPutAllInstantsOrSorceries? action |>.map
+            Effect.millThenPutAllInstantsOrSorceries
+
+/-- Mill n, then put all cards of a subtype from among them into hand. -/
+def leftoverMillThenSubtypeToHand? : CardAction → Option (Nat × String)
+  | .sequence [.actionId id (.mill who n), .returnToHand among] =>
+    if leftoverYou who then
+      leftoverMilledSubtype? id among |>.map (fun st => (n, st))
+    else none
+  | _ => none
+
 /-- Combat-damage destination is a player, or a player or battle. -/
 def leftoverPlayerOrBattle : Selector → Bool
   | .player => true
@@ -2134,6 +2306,7 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
   if leftoverOwnerPutsLibraryThenConnive? action then
     some Effect.ownerPutsLibraryThenConnive
   else
+  (leftoverMillThenPutCompiled? action).orElse fun _ =>
   (leftoverCreateThenTeamPump? action).orElse fun _ =>
   (leftoverContinuousCompiled? action).orElse fun _ =>
   match leftoverDrawLoseLifeThenAmass? action with
@@ -2249,9 +2422,12 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       some (TriggeredAbility.onEnterAmassThenAttach n)
     else none
   | action =>
-    if leftoverMaySacDrawTreasure? action then
-      some TriggeredAbility.onEnterMaySacDrawTreasure
-    else none
+    match leftoverMillThenSubtypeToHand? action with
+    | some (n, st) => some (TriggeredAbility.onEnterMillThenSubtypeToHand n st)
+    | none =>
+      if leftoverMaySacDrawTreasure? action then
+        some TriggeredAbility.onEnterMaySacDrawTreasure
+      else none
 
 /-- Enters-the-battlefield library searches. -/
 def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
@@ -2448,6 +2624,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                         Effect.createTappedTokens kind n
                       else continuousEffect none [] asAbility
                     | none => continuousEffect none [] asAbility
+                  | .mill who n =>
+                    if leftoverTargetPlayer? who then Effect.millPlayer n
+                    else continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -2738,7 +2917,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       | _ =>
         match CardAction.leftoverEachOpponentLoseLifeYouGain? action with
         | some 1 => some (TriggeredAbility.onResource Effect.resourceSecondDrawDrain)
-        | _ => none
+        | _ =>
+          match action with
+          | .mill who n =>
+            if CardAction.leftoverTargetPlayer? who then
+              some (TriggeredAbility.onDrawSecondMillPlayer n)
+            else none
+          | _ => none
   | .triggered (.draw (.controller .this) .all)
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawPlusOne
@@ -2897,6 +3082,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             (sel == .source .this || sel == .this) then
           some TriggeredAbility.onLandYouControlEntersDrawPlusOneSource
         else none
+      | .createTokens who n parts =>
+        if among.shape.landYouControl && CardAction.leftoverYou who then
+          CardAction.leftoverTokenKind? parts |>.map
+            (fun k => TriggeredAbility.onLandYouControlEntersCreateTokens k n)
+        else none
       | _ =>
         if Selector.anotherVillainYouControl among &&
             CardAction.leftoverAttachTargetEquipment? action then
@@ -3011,6 +3201,7 @@ structure CardFace where
   staticAbilities : Array StaticAbility := #[]
   tapAddMana : Array ManaType := #[]
   tapAddAnyColorEqualToPower : Bool := false
+  tapAddAnyColorForInstantOrSorcery : Bool := false
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
   colorIndicator : Option ColorSet := none
@@ -3237,6 +3428,8 @@ def applyAbility (b : CardFace) : Ability → CardFace
   | .activated costs action =>
     if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
+    else if CardAction.leftoverTapAddAnyColorForInstantOrSorcery? costs action then
+      { b with tapAddAnyColorForInstantOrSorcery := true }
     else
       match CardAction.leftoverTapAddMana? costs action with
       | some types => { b with tapAddMana := types }
@@ -3361,6 +3554,7 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       staticAbilities := b.staticAbilities
       tapAddMana := b.tapAddMana
       tapAddAnyColorEqualToPower := b.tapAddAnyColorEqualToPower
+      tapAddAnyColorForInstantOrSorcery := b.tapAddAnyColorForInstantOrSorcery
       tapAddOneOf := b.tapAddOneOf
       entersTapped := b.entersTapped
       colorIndicator := b.colorIndicator
@@ -6228,5 +6422,96 @@ end TraditionalCardDefinition
             .controlled (.controller .this)])
           (.keyword .trample)))
   ]).toCardDef.staticAbilities == #[.armiesYouControlHaveTrample]
+
+#guard CardAction.toAbilityEffect
+  (.mill (.target 1 .player) 3) == Effect.millPlayer 3
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (
+      .activated
+        [.tapSymbol]
+        (.sequence [
+          .actionId 1
+            (.addManaAnyColor (.controller .this) (.controller .this) 1),
+          .continuous
+            [.forbid
+              (.spendManaCreatedByAction 1
+                (.not
+                  (.castSpell
+                    (.union [.cardType .instant, .cardType .sorcery]))))]
+            .endOfTurn]))
+  ]).toCardDef.tapAddAnyColorForInstantOrSorcery
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .actionId 1 (.mill (.controller .this) 2),
+      .optional
+        (.returnToHand
+          (.selected
+            (.controller .this)
+            (.range 0 1)
+            (.intersection [.wasObjectOfAction 1, .permanent]))),
+      .gainLife (.controller .this) 2]) ==
+    Effect.millThenPutPermanentGainLife 2 2
+
+#guard
+  CardAction.toAbilityEffect
+    (.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .optional
+        (.returnToHand
+          (.selected
+            (.controller .this)
+            (.range 1 1)
+            (.intersection [
+              .wasObjectOfAction 1,
+              .union [.subtype .hero, .cardType .enchantment]])))]) ==
+    Effect.millThenPutSubtypeOrEnchantment 4 "Hero"
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .actionId 1 (.mill (.controller .this) 4),
+      .returnToHand
+        (.selected
+          (.controller .this)
+          (.range 0 2)
+          (.intersection [.wasObjectOfAction 1, .cardType .land]))]) ==
+    Effect.millThenPutLands 4 2
+
+#guard
+  match
+    (Ability.triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.mill (.target 1 .player) 3)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onDrawSecondMillPlayer 3
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter
+        (.intersection [
+          .permanent,
+          .cardType .land,
+          .controlled (.controller .this)]))
+      (.createTokens (.controller .this) 1 [
+        .type .creature, .subtype .elf, .colorIndicator [.green],
+        .power 1, .toughness 1])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onLandYouControlEntersCreateTokens .elf 1
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.sequence [
+        .actionId 1 (.mill (.controller .this) 4),
+        .returnToHand
+          (.intersection [.wasObjectOfAction 1, .subtype .elf])])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf"
+  | none => false
 
 end Mtg.Engine

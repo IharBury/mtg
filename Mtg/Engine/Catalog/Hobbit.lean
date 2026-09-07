@@ -2145,15 +2145,49 @@ def theLonelyMountain : CardDef :=
         (tap := true) (onlyAsSorcery := true) (costReductionPerEquipment := 1)])
 
 def thranduilSindarinLiege : CardDef :=
-  legendaryCreature "Thranduil, Sindarin Liege"
-    (ManaCost.ofGenericAndHybrids 2 .green .blue 2) #["Elf", "Noble"] 2 3
+  (TraditionalCardDefinition.card [
+    .name "Thranduil, Sindarin Liege",
+    .manaCost [.generic 2, .hybrid .green .blue, .hybrid .green .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .elf,
+    .subtype .noble,
+    .power 2,
+    .toughness 3,
+    .ability
+      (.static
+        (.addPowerToughness
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .elf,
+            .controlled (.controller .this)])
+          1 1)),
+    .ability
+      (.triggered
+        (.enter
+          (.intersection [
+            .permanent,
+            .cardType .land,
+            .controlled (.controller .this)]))
+        (.createTokens (.controller .this) 1 [
+          .type .creature, .subtype .elf, .colorIndicator [.green],
+          .power 1, .toughness 1])),
+    .alternative [
+      .name "Silvan Rally",
+      .manaCost [.generic 1, .hybrid .green .blue, .hybrid .green .blue],
+      .type .sorcery,
+      .subtype .adventure,
+      .actions [
+        .actionId 1 (.mill (.controller .this) 4),
+        .returnToHand
+          (.selected
+            (.controller .this)
+            (.range 0 2)
+            (.intersection [.wasObjectOfAction 1, .cardType .land]))]]
+  ]).toCardDef
     (oracleText := "Other Elves you control get +1/+1.\nLandfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\n//ADV//\nSilvan Rally {1}{G/U}{G/U}\nSorcery — Adventure\nMill four cards, then put up to two land cards from among them into your hand. (Then exile this card. You may cast the creature later from exile.)")
-    (staticAbilities := #[.otherCreaturesGet #["Elf"] 1 1])
-    (triggeredAbilities := #[.onLandYouControlEntersCreateTokens .elf 1])
-    (adventure := some (adventure "Silvan Rally"
-      (ManaCost.ofGenericAndHybrids 1 .green .blue 2)
-      "Mill four cards, then put up to two land cards from among them into your hand. (Then exile this card. You may cast the creature later from exile.)"
-      (Effect.millThenPutLands 4 2)))
 
 def gloinTheMighty : CardDef :=
   legendaryCreature "Glóin the Mighty" (ManaCost.ofGenericAndColor 3 .red)
@@ -3401,5 +3435,15 @@ def hobbitCards : Array CardDef := #[
 #guard littleBear.manaCost == ManaCost.ofGenericAndColor 2 .green
 #guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
 #guard ironHillsStalwart.triggeredAbilities == #[.onEnterAttachTargetEquipment]
+#guard thranduilSindarinLiege.hasSupertype .legendary
+#guard thranduilSindarinLiege.staticAbilities == #[.otherCreaturesGet #["Elf"] 1 1]
+#guard thranduilSindarinLiege.triggeredAbilities ==
+  #[.onLandYouControlEntersCreateTokens .elf 1]
+#guard
+  match thranduilSindarinLiege.adventure with
+  | some adv =>
+    adv.name == "Silvan Rally" &&
+      adv.spellEffect == some (Effect.millThenPutLands 4 2)
+  | none => false
 
 end Mtg.Engine.Catalog
