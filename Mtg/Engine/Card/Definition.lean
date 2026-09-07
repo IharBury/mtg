@@ -107,6 +107,8 @@ inductive Selector where
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/
   | inGraveyard
+  /-- An object put into a graveyard from anywhere this turn. -/
+  | putIntoGraveyardThisTurn
   /-- An object in a library (CR 401). -/
   | inDeck
   /-- Objects with the given supertype (CR 205.4). -/
@@ -146,6 +148,8 @@ inductive Trigger where
   | combatDamage : Selector → Selector → Trigger
   /-- The selected object would be put into a graveyard (CR 614). -/
   | putToGraveyard : Selector → Trigger
+  /-- Whenever the selected player discards a card (CR 701.8). -/
+  | discard : Selector → Trigger
   /-- The first selector blocks the second (CR 509). -/
   | block : Selector → Selector → Trigger
   /-- When the selected object or objects die (CR 700.4). -/
@@ -229,6 +233,7 @@ structure Shape where
   shareCardType : Bool := false
   powerAtLeast : Option Int := none
   diedThisTurn : Bool := false
+  putIntoGraveyardThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Shape
@@ -252,7 +257,9 @@ def meet (a b : Shape) : Shape :=
       match a.powerAtLeast, b.powerAtLeast with
       | some x, some y => some (max x y)
       | x, y => x.orElse fun _ => y
-    diedThisTurn := a.diedThisTurn || b.diedThisTurn }
+    diedThisTurn := a.diedThisTurn || b.diedThisTurn
+    putIntoGraveyardThisTurn :=
+      a.putIntoGraveyardThisTurn || b.putIntoGraveyardThisTurn }
 
 def join (a b : Shape) : Shape :=
   { sameController := a.sameController && b.sameController
@@ -276,7 +283,9 @@ def join (a b : Shape) : Shape :=
       match a.powerAtLeast, b.powerAtLeast with
       | some x, some y => if x == y then some x else none
       | _, _ => none
-    diedThisTurn := a.diedThisTurn && b.diedThisTurn }
+    diedThisTurn := a.diedThisTurn && b.diedThisTurn
+    putIntoGraveyardThisTurn :=
+      a.putIntoGraveyardThisTurn && b.putIntoGraveyardThisTurn }
 
 /-- True when this shape is a tapped creature (optional permanent conjunct). -/
 def tappedCreature (s : Shape) : Bool :=
@@ -368,7 +377,8 @@ def shape : Selector → Shape
   | .union (f :: fs) => fs.foldl (fun acc g => acc.join g.shape) f.shape
   | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
-  | .selected _ _ _ | .player
+  | .selected _ _ _ | .player => {}
+  | .putIntoGraveyardThisTurn => { putIntoGraveyardThisTurn := true }
   | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
   | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .variable _ | .topOfLibrary _ => {}
 
@@ -649,6 +659,8 @@ deriving Repr, Inhabited, BEq
 inductive Condition where
   /-- True when any object matching the selector exists. -/
   | any : Selector → Condition
+  /-- True when at least that many objects match the selector. -/
+  | countAtLeast : Selector → Nat → Condition
   /-- True when any target of the first selector matches the second
   (CR 115.1 / 601.2c). -/
   | targetsIncludeAny : Selector → Selector → Condition
@@ -956,7 +968,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .variable _ | .topOfLibrary _ => none
+    | .hostOf _ | .inGraveyard | .putIntoGraveyardThisTurn | .inDeck | .supertype _
+    | .variable _ | .topOfLibrary _ => none
     | s => some s
 
 end ContinuousEffect
@@ -2175,11 +2188,14 @@ def leftoverYourGyCreatures? : Selector → Bool
         | _ => false)
   | _ => false
 
-/-- Return a targeted permanent card from your graveyard. -/
+/-- Return a targeted permanent card from your graveyard that was put
+there this turn. -/
 def leftoverEnterReturnGyPermanentThisTurn? : CardAction → Bool
   | .returnToHand sel =>
     match sel.among? with
-    | some among => among.includesInGraveyard && among.shape.mustBePermanent
+    | some among =>
+      among.includesInGraveyard && among.shape.mustBePermanent &&
+        among.shape.putIntoGraveyardThisTurn
     | none => false
   | _ => false
 
@@ -2924,8 +2940,8 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       cost := { mana := Cost.manaCost costs, discardSource := true }
       effect := Effect.searchLandTypeToHand s!"{st} {t.englishName.toLower}"
       activateFromHand := true }
-  | .activatedIf (.any among) costs action =>
-    if CardAction.leftoverYourGyCreatures? among then
+  | .activatedIf (.countAtLeast among n) costs action =>
+    if CardAction.leftoverYourGyCreatures? among && n == 2 then
       some { activatedAbility costs action with onlyIfGyCreaturesAtLeast := 2 }
     else none
   | .activated costs action => some (activatedAbility costs action)
@@ -3447,8 +3463,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverCreatureOrLandTarget? sel then
       some (TriggeredAbility.onCasting Effect.castingTapCreatureOrLand)
     else none
-  | .triggered (.castSpell among) (.putCounter (.source .this) .plusOnePlusOne 2) =>
-    if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
+  | .triggered (.castSpell among)
+      (.if (.targetsIncludeAny _ dest) [.putCounter (.source .this) .plusOnePlusOne 2]) =>
+    if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController &&
+        dest.shape.types.eqTypes [.artifact, .land] then
       some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
     else none
   | .triggered (.castSpell among) (.continuous _effects _) =>
@@ -3462,11 +3480,14 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         creatureSel.shape.types.eqTypes [.creature] && kws.flying then
       some (TriggeredAbility.onCasting Effect.castingTargetsGainFlying)
     else none
-  | .triggered (.putToGraveyard among) action =>
-    if CardAction.leftoverExileGyPlayUntilNextTurn? action then
+  | .triggered (.discard who) action =>
+    if CardAction.leftoverYou who &&
+        CardAction.leftoverExileGyPlayUntilNextTurn? action then
       some (TriggeredAbility.onResource Effect.resourceDiscardExilePlay)
-    else if among.shape.other && among.shape.sameController &&
-        among.shape.nonland && among.shape.nontoken &&
+    else none
+  | .triggered (.putToGraveyard among) action =>
+    if among.shape.other && among.shape.sameController &&
+        among.shape.nonland && !among.shape.nontoken &&
         match action with
         | .putCounter (.source .this) .plusOnePlusOne 1 => true
         | _ => false then
@@ -3688,6 +3709,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.timeToCastSorcery _) _ => b
   | .if (.turn _) _ => b
   | .if (.and _ _) _ => b
+  | .if (.countAtLeast _ _) _ => b
   | .replace (.enter who) actions =>
     if (who == .this || who == .source .this) &&
         CardAction.leftoverEntersTapped? actions then
@@ -7005,9 +7027,21 @@ end TraditionalCardDefinition
           (.intersection [
             .inGraveyard,
             .permanent,
-            .owner (.controller .this)])))).toTriggeredAbility? with
+            .owner (.controller .this),
+            .putIntoGraveyardThisTurn])))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterReturnGyPermanentThisTurn
   | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.returnToHand
+      (.target
+        1
+        (.intersection [
+          .inGraveyard,
+          .permanent,
+          .owner (.controller .this)])))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -7203,5 +7237,123 @@ end TraditionalCardDefinition
         1,
       .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]
   (Ability.triggered (.enter among) (.chooseMode modes)).toTriggeredAbility?.isNone
+
+-- Night Nurse: only graveyard permanents put there this turn.
+-- Justice: bounce-watch includes tokens (nontoken conjunct is rejected).
+-- Arnim Zola: activate only if two or more creature cards in the graveyard.
+-- Moonstone: discard trigger, not any put-to-graveyard.
+-- Fin Fang Foom: the instant or sorcery must target an artifact or land.
+#guard
+  match
+    (Ability.triggered
+      (.putToGraveyard
+        (.intersection [
+          .not .this,
+          .permanent,
+          .not (.cardType .land),
+          .controlled (.controller .this)]))
+      (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onWatch Effect.watchJusticeBounce
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.putToGraveyard
+      (.intersection [
+        .not .this,
+        .permanent,
+        .not (.cardType .land),
+        .not .token,
+        .controlled (.controller .this)]))
+    (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility?.isNone
+
+#guard
+  match
+    (Ability.activatedIf
+      (.countAtLeast
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)])
+        2)
+      [.mana [.generic 3], .tapSymbol]
+      (.createTokensInState
+        (.controller .this)
+        1
+        [
+          .type .creature, .subtype .villain, .colorIndicator [.black],
+          .power 2, .toughness 1, .ability (.keyword .menace)]
+        [.tapped])).toActivatedAbility? with
+  | some ab => ab.onlyIfGyCreaturesAtLeast == 2
+  | none => false
+
+#guard
+  (Ability.activatedIf
+    (.any
+      (.intersection [
+        .inGraveyard,
+        .cardType .creature,
+        .owner (.controller .this)]))
+    [.mana [.generic 3], .tapSymbol]
+    (.createTokensInState
+      (.controller .this)
+      1
+      [
+        .type .creature, .subtype .villain, .colorIndicator [.black],
+        .power 2, .toughness 1, .ability (.keyword .menace)]
+      [.tapped])).toActivatedAbility?.isNone
+
+#guard
+  let action : CardAction :=
+    .optional
+      (.sequence [
+        .actionId 1
+          (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
+  match (Ability.triggered (.discard (.controller .this)) action).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onResource Effect.resourceDiscardExilePlay
+  | none => false
+
+#guard
+  let action : CardAction :=
+    .optional
+      (.sequence [
+        .actionId 1
+          (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
+  (Ability.triggered (.putToGraveyard (.owner (.controller .this))) action
+    ).toTriggeredAbility?.isNone
+
+#guard
+  match
+    (Ability.triggered
+      (.castSpell
+        (.intersection [
+          .spell,
+          .union [.cardType .instant, .cardType .sorcery],
+          .controlled (.controller .this)]))
+      (.if
+        (.targetsIncludeAny
+          (.intersection [
+            .spell,
+            .union [.cardType .instant, .cardType .sorcery],
+            .controlled (.controller .this)])
+          (.union [.cardType .artifact, .cardType .land]))
+        [.putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        .controlled (.controller .this)]))
+    (.putCounter (.source .this) .plusOnePlusOne 2)).toTriggeredAbility?.isNone
 
 end Mtg.Engine

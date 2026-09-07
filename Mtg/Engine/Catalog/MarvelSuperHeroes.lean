@@ -338,7 +338,8 @@ def nightNurseHealerOfHeroes : CardDef :=
             (.intersection [
               .inGraveyard,
               .permanent,
-              .owner (.controller .this)]))))
+              .owner (.controller .this),
+              .putIntoGraveyardThisTurn]))))
   ]).toCardDef
     (oracleText := "Flash\nLifelink\nWhen Night Nurse enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand.")
 
@@ -815,7 +816,6 @@ def justiceVanceAstrovik : CardDef :=
             .not .this,
             .permanent,
             .not (.cardType .land),
-            .not .token,
             .controlled (.controller .this)]))
         (.putCounter (.source .this) .plusOnePlusOne 1))
   ]).toCardDef
@@ -1075,11 +1075,12 @@ def arnimZolaBioFanatic : CardDef :=
     .toughness 3,
     .ability
       (.activatedIf
-        (.any
+        (.countAtLeast
           (.intersection [
             .inGraveyard,
             .cardType .creature,
-            .owner (.controller .this)]))
+            .owner (.controller .this)])
+          2)
         [.mana [.generic 3], .tapSymbol]
         (.createTokensInState
           (.controller .this)
@@ -1317,7 +1318,7 @@ def moonstoneHarshMistress : CardDef :=
     .ability (.keyword .flying),
     .ability
       (.triggered
-        (.putToGraveyard (.owner (.controller .this)))
+        (.discard (.controller .this))
         (.optional
           (.sequence [
             .actionId 1
@@ -1644,7 +1645,14 @@ def finFangFoom : CardDef :=
             .spell,
             .union [.cardType .instant, .cardType .sorcery],
             .controlled (.controller .this)]))
-        (.putCounter (.source .this) .plusOnePlusOne 2))
+        (.if
+          (.targetsIncludeAny
+            (.intersection [
+              .spell,
+              .union [.cardType .instant, .cardType .sorcery],
+              .controlled (.controller .this)])
+            (.union [.cardType .artifact, .cardType .land]))
+          [.putCounter (.source .this) .plusOnePlusOne 2]))
   ]).toCardDef
     (oracleText := "Flying\nWhenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom.")
 

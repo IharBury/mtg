@@ -56,12 +56,13 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
-  `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`, `inDeck`,
-  `supertype`, `variable`, `topOfLibrary`.
+  `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
+  `putIntoGraveyardThisTurn`,
+  `inDeck`, `supertype`, `variable`, `topOfLibrary`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `putToGraveyard`, `block`, `die`, `dieSimultaneously`,
+  `putToGraveyard`, `discard`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
@@ -69,7 +70,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
-- **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
+- **Condition** — `any`, `countAtLeast`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
@@ -116,6 +117,12 @@ each artifact token you control (Thorin).
 `CardAction.chooseModeUnchosenThisTurn` compiles “choose one that hasn’t
 been chosen this turn” (Galadriel’s Alliance); unrestricted `chooseMode`
 does not leftover to that triggered ability.
+`Selector.putIntoGraveyardThisTurn` is “put into a graveyard from anywhere
+this turn” (Night Nurse). `Condition.countAtLeast` is object-count
+(Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
+is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
+copy-if-targeting require `targetsIncludeAny` of an artifact or land
+(Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
@@ -258,7 +265,7 @@ complete.
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`controlCount`** (5 cards) — Controller controls N or more matching objects
   - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`countAtLeast`** (6 cards) — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- **`countAtLeast`** (6 cards) — At least N objects match a selector (lore, quest counters, …). Constructor exists; Arnim Zola leftovers `countAtLeast 2` graveyard creatures. Remaining cards need other leftovers.
   - HYDRA Troopers; Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
 - **`or`** (5 cards) — Activate only if this land entered this turn or you control a basic land
   - darkFortress; gatheringPlace; gleamingBastion; hiddenLair; trainingCompound
