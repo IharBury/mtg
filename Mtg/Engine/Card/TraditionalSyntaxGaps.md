@@ -84,7 +84,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeRestricted`,
-  `counter`, `preventable`, `optionalPayFor`, `discard`, `discardMatching`, `putCounter`, `exile`,
+  `counter`, `preventable`, `optionalPayFor`, `discard`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
@@ -125,8 +125,8 @@ is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land
 (Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
 `CardAction.optionalPayFor` is who may pay, what cost, and what happens if
-paid (Speed: you, {1}, haste-except-haste). `CardAction.discardMatching`
-is discard-a-nonland (Bullseye). `CardAction.fight` is Wolverine’s ETB.
+paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
+`Cost.discard` (ETB via `optionalPayFor`, activated via `Cost.or`). `CardAction.fight` is Wolverine’s ETB.
 `Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s flying restriction is

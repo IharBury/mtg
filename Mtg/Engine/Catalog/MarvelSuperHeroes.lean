@@ -2542,28 +2542,17 @@ def bullseyeDeathDealer : CardDef :=
     .ability
       (.triggered
         (.enter .this)
-        (.sequence [
-          .optional
-            (.actionId 1
-              (.playerSelectAction
-                (.controller .this)
-                (.range 1 1)
-                [
-                  .sacrifice
-                    (.selected
-                      (.controller .this)
-                      (.range 1 1)
-                      (.intersection [
-                        .permanent,
-                        .cardType .artifact,
-                        .controlled (.controller .this)])),
-                  .discardMatching
-                    (.controller .this)
-                    (.not (.cardType .land))
-                    1])),
-          .if
-            (.happened (.actionWithId 1) .gameStart)
-            [.dealDamage .this (.target 2 .all) 2]])),
+        (.optionalPayFor
+          (.controller .this)
+          [.or [
+            .sacrificeCount
+              (.intersection [
+                .permanent,
+                .cardType .artifact,
+                .controlled (.controller .this)])
+              1,
+            .discard (.not (.cardType .land))]]
+          [.dealDamage .this (.target 2 .all) 2])),
     .ability
       (.activated
         [

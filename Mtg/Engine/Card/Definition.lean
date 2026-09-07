@@ -809,9 +809,6 @@ inductive CardAction where
   | optionalPayFor : Selector → List Cost → List CardAction → CardAction
   /-- The selected player discards that many cards. -/
   | discard : Selector → Nat → CardAction
-  /-- The selected player discards that many cards matching the second
-  selector. -/
-  | discardMatching : Selector → Selector → Nat → CardAction
   /-- Put that many counters of the given kind on the selected object. -/
   | putCounter : Selector → CounterKind → Nat → CardAction
   /-- Exile the selected object. -/
@@ -2257,21 +2254,6 @@ def leftoverEnterMaySacAnotherThenDestroyOppNonland? : CardAction → Bool
       sel.targetingShape.nonland && sel.targetingShape.opponentControls
   | _ => false
 
-/-- You may sacrifice an artifact or discard a nonland card. When you do, deal 2
-damage to any target. -/
-def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
-  | .sequence [
-      .optional
-        (.actionId id
-          (.playerSelectAction _ (.range 1 1) [
-            .sacrifice sac,
-            .discardMatching _ among 1])),
-      .if (.happened (.actionWithId id') _) [.dealDamage _ dest 2]
-    ] =>
-    id == id' && leftoverSacrificeOneArtifact? sac &&
-      among.shape.nonland && Selector.leftoverAnyTarget? dest
-  | _ => false
-
 /-- +1/+1 on each other creature you control; you gain life. -/
 def leftoverPlusOneEachOtherGainLife? : CardAction → Bool
   | .sequence [.putCounter sel .plusOnePlusOne 1, .gainLife who _]
@@ -2345,6 +2327,15 @@ def leftoverSacrificeArtifactOrDiscardNonlandCost? : List Cost → Bool
         | _ => false
     (sacArt && discNonland) || leftoverSacrificeArtifactOrDiscardNonlandCost? rest
   | _ :: rest => leftoverSacrificeArtifactOrDiscardNonlandCost? rest
+
+/-- You may sacrifice an artifact or discard a nonland card. If you do,
+deal 2 damage to any target. -/
+def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
+  | .optionalPayFor who costs [.dealDamage _ dest 2] =>
+    leftoverYou who &&
+      leftoverSacrificeArtifactOrDiscardNonlandCost? costs &&
+      Selector.leftoverAnyTarget? dest
+  | _ => false
 
 /-- Other permanents you control of a subtype get +P/+T per matching object. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
@@ -2848,7 +2839,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .preventable _ _ inner => compile inner asAbility
                   | .optionalPayFor _ _ (a :: _) => compile a asAbility
                   | .optionalPayFor _ _ [] => continuousEffect none [] asAbility
-                  | .discard _ n | .discardMatching _ _ n => Effect.drawThenDiscard n
+                  | .discard _ n => Effect.drawThenDiscard n
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
@@ -7813,56 +7804,37 @@ end TraditionalCardDefinition
 
 -- Bullseye: discard a nonland card, not any card.
 #guard
-  let sac : CardAction :=
-    .sacrifice
-      (.selected
+  let sacArt : Cost :=
+    .sacrificeCount
+      (.intersection [
+        .permanent,
+        .cardType .artifact,
+        .controlled (.controller .this)])
+      1
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.optionalPayFor
         (.controller .this)
-        (.range 1 1)
-        (.intersection [
-          .permanent,
-          .cardType .artifact,
-          .controlled (.controller .this)]))
-  let action : CardAction :=
-    .sequence [
-      .optional
-        (.actionId 1
-          (.playerSelectAction
-            (.controller .this)
-            (.range 1 1)
-            [sac,
-              .discardMatching
-                (.controller .this)
-                (.not (.cardType .land))
-                1])),
-      .if
-        (.happened (.actionWithId 1) .gameStart)
-        [.dealDamage .this (.target 2 .all) 2]]
-  match (Ability.triggered (.enter .this) action).toTriggeredAbility? with
+        [.or [sacArt, .discard (.not (.cardType .land))]]
+        [.dealDamage .this (.target 2 .all) 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage
   | none => false
 
 #guard
-  let sac : CardAction :=
-    .sacrifice
-      (.selected
-        (.controller .this)
-        (.range 1 1)
-        (.intersection [
-          .permanent,
-          .cardType .artifact,
-          .controlled (.controller .this)]))
-  let action : CardAction :=
-    .sequence [
-      .optional
-        (.actionId 1
-          (.playerSelectAction
-            (.controller .this)
-            (.range 1 1)
-            [sac, .discard (.controller .this) 1])),
-      .if
-        (.happened (.actionWithId 1) .gameStart)
-        [.dealDamage .this (.target 2 .all) 2]]
-  (Ability.triggered (.enter .this) action).toTriggeredAbility?.isNone
+  let sacArt : Cost :=
+    .sacrificeCount
+      (.intersection [
+        .permanent,
+        .cardType .artifact,
+        .controlled (.controller .this)])
+      1
+  (Ability.triggered
+    (.enter .this)
+    (.optionalPayFor
+      (.controller .this)
+      [.or [sacArt, .discard .all]]
+      [.dealDamage .this (.target 2 .all) 2])).toTriggeredAbility?.isNone
 
 #guard
   let sacArt : Cost :=
