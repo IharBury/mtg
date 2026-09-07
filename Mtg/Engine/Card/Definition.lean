@@ -7296,6 +7296,16 @@ end TraditionalCardDefinition
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[]
 
+-- Dying (being put into a graveyard from the battlefield) is not enough.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.happened (.die .this) .turnStart)
+          [.gainAbility .this (.keyword .flying)]))
+  ]).toCardDef.staticAbilities == #[]
+
 -- Galadriel, Light of Valinor: Alliance modes that haven't been chosen
 -- this turn. Unrestricted `chooseMode` does not compile to Alliance.
 #guard

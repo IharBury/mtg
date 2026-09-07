@@ -1388,4 +1388,49 @@ def skrullObj (g : Game) : GameObject :=
     g.hasSubtype o "Shapeshifter" && g.hasSubtype o "Villain" &&
     (g.currentKeywords o).changeling
 
+-- Beast: flying if +1/+1 counters were put on him this turn, not if a card
+-- was put into a graveyard.
+#guard beastEruditeAerialist.matchesOracleText
+#guard beastEruditeAerialist.staticAbilities == #[.flyingIfPlusOneThisTurn]
+
+def beastOnField : Game := addPermanent afterDraw beastEruditeAerialist ⟨0⟩ ⟨0⟩
+
+def beastObj (g : Game) : GameObject :=
+  namedPermanent g "Beast, Erudite Aerialist"
+
+-- No +1/+1 counters this turn: no flying.
+#guard
+  let g := beastOnField
+  let o := beastObj g
+  o.status.plusOnePlusOne == 0 && !o.status.gotPlusOneThisTurn && !g.hasFlying o
+
+-- A creature card in the graveyard does not grant flying.
+#guard
+  let g := addToGraveyard beastOnField grizzlyBears ⟨0⟩
+  !g.hasFlying (beastObj g)
+
+-- Destroying another creature (put into the graveyard from play) does not.
+#guard
+  let g := addPermanent beastOnField grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.destroyPermanent (namedPermanent g "Grizzly Bears")
+  let o := beastObj g
+  (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").status.putIntoGraveyardThisTurn &&
+    !o.status.gotPlusOneThisTurn && !g.hasFlying o
+
+-- +1/+1 counters on another creature this turn do not grant Beast flying.
+#guard
+  let g := addPermanent beastOnField grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
+  let bears := namedPermanent g "Grizzly Bears"
+  bears.status.gotPlusOneThisTurn && bears.status.plusOnePlusOne == 1 &&
+    !g.hasFlying (beastObj g)
+
+-- Putting a +1/+1 counter on Beast this turn grants flying.
+#guard
+  let g := beastOnField
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.putPlusOnePlusOneOnSource 1) #[]
+    (some (beastObj g).id)
+  let o := beastObj g
+  o.status.plusOnePlusOne == 1 && o.status.gotPlusOneThisTurn && g.hasFlying o
+
 end Mtg.Engine.Tests
