@@ -1650,7 +1650,7 @@ def stormVsFlyerAttack : Game :=
 #guard wolverineFierceFighter.staticAbilities ==
   #[.healOtherDamageWhenDealt]
 
-/-- Wolverine fights a 2/2: both deal, even though 3 damage is lethal. -/
+-- Wolverine fights a 2/2: both deal, even though 3 damage is lethal.
 #guard
   let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩

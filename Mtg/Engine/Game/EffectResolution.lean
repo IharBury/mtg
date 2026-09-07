@@ -61,7 +61,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       let destOk := (g.legalOppCreatureTargets controller).contains
         (Target.permanent destId)
       if srcOk && destOk then
-        g.fightCreatures (g.object! srcId) (g.object! destId)
+        g.dealFightDamage (g.object! srcId) (g.object! destId)
       else
         let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
