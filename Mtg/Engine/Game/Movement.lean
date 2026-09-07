@@ -238,11 +238,27 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => (#[] : Array WaitingTrigger)
       else (#[] : Array WaitingTrigger)
     | _ => (#[] : Array WaitingTrigger)
+  -- Moonstone: “whenever you discard a card” is hand → graveyard only, not
+  -- mill or dying (MSH). `lastKnownPower` carries the new graveyard object's
+  -- id so resolution can exile that card.
+  let discarded :=
+    match old.zone, dest with
+    | .hand p, .graveyard owner =>
+      if owner == old.owner then
+        g.battlefield.foldl (fun acc o =>
+          match o.controller with
+          | some q =>
+            if q == p then
+              acc ++ o.waitingTriggersFor q .youDiscard (some (Int.ofNat newId.raw))
+            else acc
+          | none => acc) (#[] : Array WaitingTrigger)
+      else (#[] : Array WaitingTrigger)
+    | _, _ => (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
         nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
-        returnedToHand
+        returnedToHand ++ discarded
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then

@@ -1065,6 +1065,56 @@ def hawkeyeBowEquippedViaEquip : Game :=
     !g.canActivate ⟨0⟩ (namedPermanent g "Hawkeye's Bow")
       hawkeyeSBow.activatedAbilities[0]!
 
+/-- True when Moonstone's discard trigger is waiting. -/
+def moonstoneDiscardWaiting (g : Game) : Bool :=
+  g.waitingTriggers.any (fun t =>
+    t.ability == TriggeredAbility.onResource Effect.resourceDiscardExilePlay)
+
+/-- Discarding a card from hand fires Moonstone. -/
+def moonstoneAfterDiscard : Game :=
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Lightning Bolt").id (.graveyard ⟨0⟩) none
+  g
+
+#guard moonstoneHarshMistress.matchesOracleText
+#guard moonstoneDiscardWaiting moonstoneAfterDiscard
+#guard moonstoneAfterDiscard.log.any (fun s => mentions s "Lightning Bolt")
+
+def moonstoneDiscardResolved : Game :=
+  passBoth (moonstoneAfterDiscard.receivePriority ⟨0⟩)
+
+#guard moonstoneDiscardResolved.log.any (fun s => mentions s "discard trigger")
+#guard moonstoneDiscardResolved.objects.any (fun o =>
+  o.name == "Lightning Bolt" && o.zone == .exile)
+#guard
+  match moonstoneDiscardResolved.objects.find? (fun o => o.name == "Lightning Bolt") with
+  | some o => o.playPermission.isSome
+  | none => false
+
+-- Milling from the library is not a discard.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let (g, _) := g.move (g.player ⟨0⟩).library.back! (.graveyard ⟨0⟩) none
+  !moonstoneDiscardWaiting g &&
+    (namedGraveyardCard g ⟨0⟩ "Lightning Bolt").zone == .graveyard ⟨0⟩
+
+-- Dying from the battlefield is not a discard.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  !moonstoneDiscardWaiting g &&
+    (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").zone == .graveyard ⟨0⟩
+
+-- An opponent discarding is not “you discard”.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g lightningBolt ⟨1⟩
+  let (g, _) := g.move (handCardNamed g ⟨1⟩ "Lightning Bolt").id (.graveyard ⟨1⟩) none
+  !moonstoneDiscardWaiting g
+
 /-- Night Nurse returns only a permanent card put into your graveyard this
 turn, from anywhere (battlefield, hand, or library). Cards already there,
 instants, and an opponent's graveyard are illegal. -/
