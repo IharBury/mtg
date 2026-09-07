@@ -1533,7 +1533,7 @@ def patientInstructor : CardDef :=
     .power 2,
     .toughness 2,
     .ability (.keyword .vigilance),
-    .ability (.triggered (.enter .this) (.keyword .recruit))
+    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
   ]).toCardDef
     (oracleText := "Vigilance\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
 
@@ -1546,7 +1546,7 @@ def longLakeNuisance : CardDef :=
     .power 3,
     .toughness 1,
     .ability (.keyword .flying),
-    .ability (.triggered (.enter .this) (.keyword .recruit))
+    .ability (.triggered (.enter .this) (.keyword (.controller .this) .recruit))
   ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
 
@@ -1559,7 +1559,7 @@ def laketownLookout : CardDef :=
     .subtype .scout,
     .power 1,
     .toughness 1,
-    .ability (.triggered (.die .this) (.keyword .recruit))
+    .ability (.triggered (.die .this) (.keyword (.controller .this) .recruit))
   ]).toCardDef
     (oracleText := "When this creature dies, recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
 
@@ -1670,7 +1670,7 @@ def bothersomeNoisemaker : CardDef :=
             .spell,
             .not (.cardType .creature),
             .controlled (.controller .this)]))
-        (.keyword (.amass .goblin 1)))
+        (.keyword (.controller .this) (.amass .goblin 1)))
   ]).toCardDef
     (oracleText := "Whenever you cast a noncreature spell, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1683,7 +1683,7 @@ def fearsomeGoblinPair : CardDef :=
     .subtype .soldier,
     .power 1,
     .toughness 1,
-    .ability (.triggered (.die .this) (.keyword (.amass .goblin 4)))
+    .ability (.triggered (.die .this) (.keyword (.controller .this) (.amass .goblin 4)))
   ]).toCardDef
     (oracleText := "When this creature dies, amass Goblins 4. (Put four +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1697,7 +1697,7 @@ def goblinTownFlunkies : CardDef :=
     .power 1,
     .toughness 1,
     .ability (.keyword .haste),
-    .ability (.triggered (.enter .this) (.keyword (.amass .goblin 1)))
+    .ability (.triggered (.enter .this) (.keyword (.controller .this) (.amass .goblin 1)))
   ]).toCardDef
     (oracleText := "Haste\nWhen this creature enters, amass Goblins 1. (Put a +1/+1 counter on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1719,7 +1719,7 @@ def mistyMountainsRaider : CardDef :=
             .controlled (.controller .this)])
           .all
           [])
-        (.keyword (.amass .goblin 2)))
+        (.keyword (.controller .this) (.amass .goblin 2)))
   ]).toCardDef
     (oracleText := "Whenever you attack, amass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1739,7 +1739,7 @@ def rageIntoTheValley : CardDef :=
     .actions [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.amass .goblin 2)]
+      .keyword (.controller .this) (.amass .goblin 2)]
   ]).toCardDef
     (oracleText := "You draw a card and lose 1 life.\nAmass Goblins 2. (Put two +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1757,7 +1757,7 @@ def gatheringOfDarkness : CardDef :=
             .inGraveyard,
             .cardType .creature,
             .owner (.controller .this)])),
-      .keyword (.amass .goblin 3)]
+      .keyword (.controller .this) (.amass .goblin 3)]
   ]).toCardDef
     (oracleText := "Return up to one target creature card from your graveyard to your hand.\nAmass Goblins 3. (Put three +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)")
 
@@ -1819,7 +1819,7 @@ def goblinPlateMail : CardDef :=
       .triggered
         (.enter .this)
         (.sequence [
-          .actionId 1 (.keyword (.amass .goblin 1)),
+          .actionId 1 (.keyword (.controller .this) (.amass .goblin 1)),
           .attach .this (.wasObjectOfAction 1)])),
     .ability (.static (.addPowerToughness (.hostOf .this) 1 0)),
     .ability (.static (.gainAbility (.hostOf .this) (.keyword .menace))),
@@ -2027,7 +2027,7 @@ def theQueenOfDale : CardDef :=
               .spell,
               .not (.cardType .creature),
               .controlled (.opponent (.controller .this))])))
-        (.keyword .recruit))
+        (.keyword (.controller .this) .recruit))
   ]).toCardDef
     (oracleText := "Whenever an opponent casts their first noncreature spell each turn, you recruit. (Draw a card, then discard a card. If you discarded a nonland card, create a 1/1 white Human Soldier creature token.)")
 

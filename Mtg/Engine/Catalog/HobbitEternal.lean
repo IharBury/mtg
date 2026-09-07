@@ -729,7 +729,7 @@ def greatGoblinFoulHearted : CardDef :=
     .ability (
       .triggered
         (.or (.enter .this) (.attack .this .all))
-        (.keyword (.amass .goblin 3))),
+        (.keyword (.controller .this) (.amass .goblin 3))),
     .ability (
       .static
         (.gainAbility

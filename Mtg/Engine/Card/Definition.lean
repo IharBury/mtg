@@ -817,8 +817,9 @@ inductive CardAction where
   `playerSelectAction`. To add any color, use
   `addManaAnyColor`. -/
   | addMana : Selector → List ManaSymbol → CardAction
-  /-- Perform a keyword action (CR 701), e.g. recruit or amass Goblins 1. -/
-  | keyword : Keyword → CardAction
+  /-- The selected object or player performs a keyword action (CR 701),
+  e.g. recruit or amass Goblins 1. -/
+  | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
   characteristics (CR 111). -/
   | createTokens : Selector → Nat → List CardPart → CardAction
@@ -1257,13 +1258,13 @@ def leftoverDrawLoseLifeThenAmass? : CardAction → Option Nat
   | .sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.amass .goblin n)
+      .keyword (.controller .this) (.amass .goblin n)
     ] => some n
   | _ => none
 
 /-- Return up to one creature card from your graveyard, then amass Goblins `n`. -/
 def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
-  | .sequence [.returnToHand sel, .keyword (.amass .goblin n)] =>
+  | .sequence [.returnToHand sel, .keyword (.controller .this) (.amass .goblin n)] =>
     match sel with
     | .targets _ (.range 0 1) among | .target _ among =>
       if among.shape.types.eqTypes [.creature] && among.includesInGraveyard then
@@ -2134,8 +2135,10 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     if leftoverYou who && leftoverCreateFoodOrTreasure? actions then
       some TriggeredAbility.onEnterCreateFoodOrTreasure
     else none
-  | .keyword .recruit => some TriggeredAbility.onEnterRecruit
-  | .keyword (.amass .goblin n) => some (TriggeredAbility.onEnterAmassGoblins n)
+  | .keyword who .recruit =>
+    if leftoverYou who then some TriggeredAbility.onEnterRecruit else none
+  | .keyword who (.amass .goblin n) =>
+    if leftoverYou who then some (TriggeredAbility.onEnterAmassGoblins n) else none
   | .sequence [
       .actionId id (.returnToHand sel),
       .if (.happened (.actionWithId id') _)
@@ -2176,10 +2179,12 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
   | .sequence [
-      .actionId id (.keyword (.amass .goblin n)),
+      .actionId id (.keyword who (.amass .goblin n)),
       .attach .this (.wasObjectOfAction id')
     ] =>
-    if id == id' then some (TriggeredAbility.onEnterAmassThenAttach n) else none
+    if id == id' && leftoverYou who then
+      some (TriggeredAbility.onEnterAmassThenAttach n)
+    else none
   | action =>
     if leftoverMaySacDrawTreasure? action then
       some TriggeredAbility.onEnterMaySacDrawTreasure
@@ -2354,7 +2359,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match addedManaTypes? syms with
                     | some types => Effect.addMana types
                     | none => continuousEffect none [] asAbility
-                  | .keyword k =>
+                  | .keyword _ k =>
                     match leftoverKeywordAction? k with
                     | some e => e
                     | none => continuousEffect none [] asAbility
@@ -2824,7 +2829,8 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         (sel == .source .this || sel == .this) then
       some TriggeredAbility.onYourBeginCombatFerociousPlusOne
     else none
-  | .triggered w (.keyword k) => leftoverKeywordTriggered? w k
+  | .triggered w (.keyword who k) =>
+    if CardAction.leftoverYou who then leftoverKeywordTriggered? w k else none
   | .triggered (.die .this) (.createTokens who n parts) =>
     if CardAction.leftoverYou who then
       CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
@@ -5605,13 +5611,16 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered (.enter .this) (.keyword .recruit)).toTriggeredAbility? with
+    (Ability.triggered (.enter .this) (.keyword (.controller .this) .recruit)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterRecruit
   | none => false
 
 #guard
+  (Ability.triggered (.enter .this) (.keyword .all .recruit)).toTriggeredAbility?.isNone
+
+#guard
   match
-    (Ability.triggered (.die .this) (.keyword .recruit)).toTriggeredAbility? with
+    (Ability.triggered (.die .this) (.keyword (.controller .this) .recruit)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesRecruit
   | none => false
 
@@ -5619,7 +5628,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.keyword (.amass .goblin 1))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassGoblins 1
   | none => false
 
@@ -5627,7 +5636,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.die .this)
-      (.keyword (.amass .goblin 4))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin 4))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesAmassGoblins 4
   | none => false
 
@@ -5639,7 +5648,7 @@ end TraditionalCardDefinition
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.keyword (.amass .goblin 1))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastNoncreatureAmassGoblins 1
   | none => false
 
@@ -5653,7 +5662,7 @@ end TraditionalCardDefinition
           .controlled (.controller .this)])
         .all
         [])
-      (.keyword (.amass .goblin 2))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin 2))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackAmassGoblins 2
   | none => false
 
@@ -5666,7 +5675,7 @@ end TraditionalCardDefinition
             .spell,
             .not (.cardType .creature),
             .controlled (.opponent (.controller .this))])))
-      (.keyword .recruit)).toTriggeredAbility? with
+      (.keyword (.controller .this) .recruit)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
   | none => false
 
@@ -5675,7 +5684,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.keyword (.amass .goblin 1)),
+        .actionId 1 (.keyword (.controller .this) (.amass .goblin 1)),
         .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
   | none => false
@@ -5684,7 +5693,7 @@ end TraditionalCardDefinition
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .keyword (.amass .goblin 1),
+      .keyword (.controller .this) (.amass .goblin 1),
       .attach
         .this
         (.intersection [
@@ -5696,7 +5705,7 @@ end TraditionalCardDefinition
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .actionId 1 (.keyword (.amass .goblin 1)),
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin 1)),
       .attach .this (.wasObjectOfAction 2)])).toTriggeredAbility?.isNone
 
 #guard
@@ -5704,14 +5713,14 @@ end TraditionalCardDefinition
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.amass .goblin 2)]) == some 2
+      .keyword (.controller .this) (.amass .goblin 2)]) == some 2
 
 #guard
   CardAction.toEffect
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.amass .goblin 2)]) == Effect.drawLoseLifeThenAmass 2
+      .keyword (.controller .this) (.amass .goblin 2)]) == Effect.drawLoseLifeThenAmass 2
 
 #guard
   CardAction.toEffect
@@ -5724,10 +5733,10 @@ end TraditionalCardDefinition
             .inGraveyard,
             .cardType .creature,
             .owner (.controller .this)])),
-      .keyword (.amass .goblin 3)]) == Effect.returnCreatureFromGyThenAmass 3
+      .keyword (.controller .this) (.amass .goblin 3)]) == Effect.returnCreatureFromGyThenAmass 3
 
-#guard CardAction.toEffect (.keyword .recruit) == Effect.recruit
-#guard CardAction.toEffect (.keyword (.amass .goblin 1)) == Effect.amassGoblins 1
+#guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
+#guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin 1)) == Effect.amassGoblins 1
 
 #guard CardAction.leftoverTokenKind? PredefinedToken.treasureToken == some TokenKind.treasure
 #guard CardAction.leftoverTokenKind? PredefinedToken.foodToken == some TokenKind.food
@@ -5864,7 +5873,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.or (.enter .this) (.attack .this .all))
-      (.keyword (.amass .goblin 3))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin 3))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterOrAttackAmassGoblins 3
   | none => false
 
