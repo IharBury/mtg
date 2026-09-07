@@ -946,6 +946,54 @@ def justiceWatchLandOk : Bool :=
   (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
     !g.log.any (fun s => mentions s "return trigger")
 
+/-- Arnim Zola's activated ability. -/
+def arnimAbility (g : Game) : ActivatedAbility :=
+  (namedPermanent g "Arnim Zola, Bio-Fanatic").printed.activatedAbilities[0]!
+
+#guard arnimZolaBioFanatic.activatedAbilities[0]!.onlyIfGyCreaturesAtLeast == 2
+
+/-- Empty graveyard: the ability cannot be activated. -/
+def arnimNoGyCreatureOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimNoGyCreatureOk
+
+/-- One creature card in your graveyard is not enough. -/
+def arnimOneGyCreatureOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOneGyCreatureOk
+
+/-- A creature card plus a noncreature still has only one creature card. -/
+def arnimOneCreatureAndInstantOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOneCreatureAndInstantOk
+
+/-- Creature cards in an opponent's graveyard do not count. -/
+def arnimOppGyCreaturesOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOppGyCreaturesOk
+
+/-- Two creature cards in your graveyard make the ability legal. -/
+def arnimTwoGyCreaturesOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimTwoGyCreaturesOk
+
 /-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
 def flyingCarFlickerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩

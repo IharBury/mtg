@@ -7393,6 +7393,37 @@ end TraditionalCardDefinition
       [.tapped])).toActivatedAbility?.isNone
 
 #guard
+  (Ability.activatedIf
+    (.countAtLeast
+      (.intersection [
+        .inGraveyard,
+        .cardType .creature,
+        .owner (.controller .this)])
+      1)
+    [.mana [.generic 3], .tapSymbol]
+    (.createTokensInState
+      (.controller .this)
+      1
+      [
+        .type .creature, .subtype .villain, .colorIndicator [.black],
+        .power 2, .toughness 1, .ability (.keyword .menace)]
+      [.tapped])).toActivatedAbility?.isNone
+
+#guard
+  match
+    (Ability.activated
+      [.mana [.generic 3], .tapSymbol]
+      (.createTokensInState
+        (.controller .this)
+        1
+        [
+          .type .creature, .subtype .villain, .colorIndicator [.black],
+          .power 2, .toughness 1, .ability (.keyword .menace)]
+        [.tapped])).toActivatedAbility? with
+  | some ab => ab.onlyIfGyCreaturesAtLeast == 0
+  | none => false
+
+#guard
   let action : CardAction :=
     .optional
       (.sequence [
