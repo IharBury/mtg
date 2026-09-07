@@ -1340,4 +1340,52 @@ def speedUnblockable : Game :=
   g.stack.size == 1 &&
     (g.object! g.stack.back!.objectId).name == "Gray Ogre"
 
+-- Undercover Skrull: +2/+2 and all creature types only with two or more
+-- creature cards in your graveyard.
+#guard undercoverSkrull.matchesOracleText
+#guard undercoverSkrull.staticAbilities ==
+  #[.getsAndAllTypesIfGyCreatureCards 2 2 2]
+
+def skrullOnField : Game := addPermanent afterDraw undercoverSkrull ⟨0⟩ ⟨0⟩
+
+def skrullObj (g : Game) : GameObject :=
+  namedPermanent g "Undercover Skrull"
+
+-- Empty graveyard: 1/1 and not all creature types.
+#guard
+  let g := skrullOnField
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 &&
+    g.hasSubtype o "Skrull" && !g.hasSubtype o "Elf"
+
+-- One creature card in your graveyard is not enough.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- A creature card plus a noncreature still has only one creature card.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- Creature cards in an opponent's graveyard do not count.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- Two creature cards in your graveyard: +2/+2 and all creature types.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let o := skrullObj g
+  g.power o == 3 && g.toughness o == 3 &&
+    g.hasSubtype o "Elf" && g.hasSubtype o "Skrull" &&
+    g.hasSubtype o "Shapeshifter" && g.hasSubtype o "Villain" &&
+    (g.currentKeywords o).changeling
+
 end Mtg.Engine.Tests

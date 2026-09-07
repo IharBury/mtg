@@ -119,6 +119,8 @@ def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
       | .flyingIfPlusOneThisTurn =>
         if o.status.gotPlusOneThisTurn then Keywords.merge acc Keyword.flying else acc
       | _ => acc) Keywords.none
+  let self :=
+    if g.leftoverAllCreatureTypes o then Keywords.merge self Keyword.changeling else self
   let fromTeam :=
     match o.controller with
     | none => Keywords.none
