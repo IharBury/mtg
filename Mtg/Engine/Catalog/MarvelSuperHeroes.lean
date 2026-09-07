@@ -909,13 +909,14 @@ def tricksterSStratagem : CardDef :=
     .type .sorcery,
     .actions [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
-        [.putOnTopOfLibrary
+        [.putIntoLibraryFromTop
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])),
+              .controlled (.opponent (.controller .this))]))
+          2,
           .putOnBottomOfLibrary (.targetReference 1)],
       .keyword
         (.targets

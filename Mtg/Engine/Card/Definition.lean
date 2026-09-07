@@ -772,6 +772,10 @@ inductive CardAction where
   | putOnTopOfLibrary : Selector → CardAction
   /-- Put the selected object on the bottom of its owner's library. -/
   | putOnBottomOfLibrary : Selector → CardAction
+  /-- Put the selected objects into their owner's library at the given
+  ordinal position from the top (CR 401.4). `1` is the top card;
+  `2` is second from the top. -/
+  | putIntoLibraryFromTop : Selector → Nat → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
@@ -1611,12 +1615,13 @@ def leftoverEachOpponentLoseLifeYouGain? : CardAction → Option Nat
     else none
   | _ => none
 
-/-- Owner puts the targeted opponent creature into their library, then up
-to one target creature you control connives. -/
+/-- Owner puts the targeted opponent creature into their library second
+from the top or on the bottom, then up to one target creature you control
+connives. -/
 def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
   | .sequence [
       .playerSelectAction chooser (.range 1 1)
-        [.putOnTopOfLibrary t1, .putOnBottomOfLibrary t2],
+        [.putIntoLibraryFromTop t1 2, .putOnBottomOfLibrary t2],
       .keyword who (.connive 1)
     ] =>
     match t1 with
@@ -2387,6 +2392,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     | [] => continuousEffect none [] asAbility
                   | .putOnTopOfLibrary _ => Effect.putOnTopOrBottom
                   | .putOnBottomOfLibrary _ => Effect.putOnTopOrBottom
+                  | .putIntoLibraryFromTop _ 1 => Effect.putOnTopOrBottom
+                  | .putIntoLibraryFromTop _ _ =>
+                    continuousEffect none [] asAbility
                   | .actionId _ inner => compile inner asAbility
                   | .loseLife _ _ => continuousEffect none [] asAbility
                   | .sacrifice _ => continuousEffect none [] asAbility
@@ -5848,8 +5856,10 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onWatch Effect.watchVillainAttachEquipment
   | none => false
 
+#guard CardAction.toEffect (.putIntoLibraryFromTop .this 1) == Effect.putOnTopOrBottom
+
 #guard
-  CardAction.leftoverOwnerPutsLibraryThenConnive?
+  !CardAction.leftoverOwnerPutsLibraryThenConnive?
     (.sequence [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
         [.putOnTopOfLibrary
@@ -5871,16 +5881,40 @@ end TraditionalCardDefinition
         (.connive 1)])
 
 #guard
-  CardAction.toEffect
+  CardAction.leftoverOwnerPutsLibraryThenConnive?
     (.sequence [
       .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
-        [.putOnTopOfLibrary
+        [.putIntoLibraryFromTop
           (.target
             1
             (.intersection [
               .permanent,
               .cardType .creature,
-              .controlled (.opponent (.controller .this))])),
+              .controlled (.opponent (.controller .this))]))
+          2,
+          .putOnBottomOfLibrary (.targetReference 1)],
+      .keyword
+        (.targets
+          2
+          (.range 0 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        (.connive 1)])
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putIntoLibraryFromTop
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))]))
+          2,
           .putOnBottomOfLibrary (.targetReference 1)],
       .keyword
         (.targets
