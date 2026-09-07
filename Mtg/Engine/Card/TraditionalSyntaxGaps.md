@@ -21,10 +21,10 @@ without a new constructor.
 | --- | ---: |
 | The Hobbit (HOB) | 99 |
 | The Hobbit Eternal (HOC) | 78 |
-| Marvel Super Heroes (MSH) | 216 |
-| **Total remaining** | **393** |
+| Marvel Super Heroes (MSH) | 212 |
+| **Total remaining** | **389** |
 
-All **393** remaining cards have at least one identified constructor gap.
+All **389** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -89,7 +89,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`, `mill`.
+  `createTokensInState`, `mill`, `surveil`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -104,6 +104,9 @@ creation from a selector, count, and `CardPart` characteristics.
 `CardAction.ifElse` compiles an “if … instead …” replacement (Andúril’s
 legendary Spirits). `CardAction.mill` compiles milling a selected player
 that many cards (and mill-then-put sequences through leftovers).
+`CardAction.surveil` compiles the selected player surveilling that many
+cards (enter triggers, destroy-then-surveil, and Redwing token creation
+through leftovers).
 
 ## Missing constructors by type
 
@@ -127,8 +130,8 @@ complete.
 
 ### `Selector`
 
-- **`topNOfLibrary`** (30 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
-  - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (19 more)
+- **`topNOfLibrary`** (26 cards) — The top N cards of a library (only topOfLibrary for N=1 exists)
+  - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Doom Reigns Supreme; Dáin's Company; Earth's Mightiest Heroes; Elven Chorus; Black Widow, Super Spy; … (16 more)
 - **`countOf`** (27 cards) — Numeric value derived from a count or characteristic
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
 - **`inHand`** (26 cards) — An object in a hand
@@ -365,8 +368,8 @@ complete.
 
 - **`repeatN`** (22 cards) — Repeat an action / deal damage / draw / put counters X times where X is computed
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Iron Fist, Living Weapon; Last March of the Ents; … (12 more)
-- **`lookAt`** (21 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-  - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Falcon, Winged Wonder; Gandalf, Goblins' Bane; … (11 more)
+- **`lookAt`** (17 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
+  - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Gandalf, Goblins' Bane; … (9 more)
 - **`connive`** (11 cards) — Connive
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Kang, Temporal Tyrant; Leader, Super-Genius; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem; … (1 more)
 - **`addManaPer`** (10 cards) — Add mana for each matching object
@@ -391,8 +394,6 @@ complete.
   - Mentor of the Meek; Silvan Reveler; The Black Gate; The Kingpin of Crime; Ultron, Artificial Malevolence
 - **`gainControl`** (4 cards) — Gain control of selected objects
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
-- **`surveil`** (4 cards) — Surveil N
-  - A.I.M. Synthoids; Falcon, Winged Wonder; Hour of Defeat; Surveillance Room
 - **`addManaCombination`** (3 cards) — Add N mana in any combination of listed types / any color
   - Baxter Building; Desolation of Smaug; Relic of Sauron
 - **`chooseCreatureType`** (3 cards) — Choose a creature type (as-enters or on resolution)
@@ -1664,19 +1665,13 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (216 cards)
+### Marvel Super Heroes (MSH) (212 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
 - `Selector.inHand` — A card in hand for Cost.discard
 - `CardAction.connive` — Connive
 - `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
-
-**A.I.M. Synthoids** (`aIMSynthoids`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.surveil` — Surveil N
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Abomination, Terrifying Titan** (`abominationTerrifyingTitan`)
 
@@ -2021,12 +2016,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 
-**Falcon, Winged Wonder** (`falconWingedWonder`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.surveil` — Surveil N
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-
 **Fin Fang Foom** (`finFangFoom`)
 
 - `TraditionalCardDefinition.CardSubtype.Alien` — CardPart.subtype uses CardSubtype; Alien has no constructor
@@ -2123,12 +2112,6 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.CardSubtype.Arcane` — CardPart.subtype uses CardSubtype; Arcane has no constructor
 
 
-
-**Hour of Defeat** (`hourOfDefeat`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.surveil` — Surveil N
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Hulk, Gamma Goliath** (`hulkGammaGoliath`)
 
@@ -2626,12 +2609,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
 - `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
 
-
-**Surveillance Room** (`surveillanceRoom`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.surveil` — Surveil N
-- `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 
 **Swordsman, Sharp Scoundrel** (`swordsmanSharpScoundrel`)
 

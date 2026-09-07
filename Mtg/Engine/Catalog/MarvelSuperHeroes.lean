@@ -634,10 +634,35 @@ def echoPerceptiveProdigy : CardDef :=
     (activatedAbilities := #[activated (Effect.copyControlledAbility true) (ManaCost.ofGeneric 1) (tap := true)])
 
 def falconWingedWonder : CardDef :=
-  legendaryCreature "Falcon, Winged Wonder" (ManaCost.ofGenericAndColor 4 .blue) #["Human", "Hero"] 3 4
+  (TraditionalCardDefinition.card [
+    .name "Falcon, Winged Wonder",
+    .manaCost [.generic 4, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .power 3,
+    .toughness 4,
+    .ability (.keyword .flying),
+    .ability (
+      .triggered
+        (.enter .this)
+        (.createTokens (.controller .this) 1 [
+          .name "Redwing",
+          .type .creature,
+          .supertype .legendary,
+          .subtype .bird,
+          .subtype .scout,
+          .colorIndicator [.blue],
+          .power 1,
+          .toughness 1,
+          .ability (.keyword .flying),
+          .ability
+            (.triggered
+              (.attack .this .all)
+              (.surveil (.controller .this) 1))]))
+  ]).toCardDef
     (oracleText := "Flying\nAvian Telepathy — When Falcon enters, create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\" (Look at the top card of your library. You may put it into your graveyard.)")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onEnter Effect.enterCreateRedwing])
 
 def falconSWingHarness : CardDef :=
   artifact "Falcon's Wing Harness" (ManaCost.ofGenericAndColor 1 .blue)
@@ -1055,9 +1080,16 @@ def grimReaperLethalLegionnaire : CardDef :=
     (triggeredAbilities := #[.onThisAttack Effect.thisAttackPayReturnAttacking])
 
 def hourOfDefeat : CardDef :=
-  instant "Hour of Defeat" (ManaCost.ofGenericAndColor 3 .black)
-    "Destroy target creature. Surveil 1. (Look at the top card of your library. You may put it into your graveyard.)"
-    (spellEffect := some (Effect.destroyCreatureSurveil))
+  (TraditionalCardDefinition.card [
+    .name "Hour of Defeat",
+    .manaCost [.generic 3, .mono .black],
+    .type .instant,
+    .actions [
+      .destroy
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+      .surveil (.controller .this) 1]
+  ]).toCardDef
+    (oracleText := "Destroy target creature. Surveil 1. (Look at the top card of your library. You may put it into your graveyard.)")
 
 def hYDRAInfiltration : CardDef :=
   enchantment "HYDRA Infiltration" (ManaCost.ofGenericAndColor 3 .black)
@@ -2532,10 +2564,19 @@ def worldsWithinWorlds : CardDef :=
     (spellEffect := some (Effect.worldsWithinWorlds))
 
 def aIMSynthoids : CardDef :=
-  artifactCreature "A.I.M. Synthoids" (ManaCost.ofGeneric 2)
-    #["Robot", "Villain"] 1 3
-    "When this creature enters, surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)"
-    (triggeredAbilities := #[.onEnterSurveil 2])
+  (TraditionalCardDefinition.card [
+    .name "A.I.M. Synthoids",
+    .manaCost [.generic 2],
+    .type .artifact,
+    .type .creature,
+    .subtype .robot,
+    .subtype .villain,
+    .power 1,
+    .toughness 3,
+    .ability (.triggered (.enter .this) (.surveil (.controller .this) 2))
+  ]).toCardDef
+    (oracleText :=
+      "When this creature enters, surveil 2. (Look at the top two cards of your library, then put any number of them into your graveyard and the rest on top of your library in any order.)")
 
 def arcReactor : CardDef :=
   artifact "Arc Reactor" (ManaCost.ofGeneric 5)
@@ -2919,11 +2960,18 @@ def subterraneanCavern : CardDef :=
       "This land enters tapped.\nWhen this land enters, you gain 1 life.\n{T}: Add {B} or {G}.")
 
 def surveillanceRoom : CardDef :=
-  land "Surveillance Room"
-    "When this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color."
-    (tapAddMana := #[.colorless])
-    (triggeredAbilities := #[.onEnterSurveil 1])
-    (activatedAbilities := #[activated (Effect.addAnyColor) (ManaCost.ofGeneric 1) (tap := true)])
+  (TraditionalCardDefinition.card [
+    .name "Surveillance Room",
+    .type .land,
+    .ability (.triggered (.enter .this) (.surveil (.controller .this) 1)),
+    .ability
+      (.activated [.tapSymbol] (.addMana (.controller .this) [.colorless])),
+    .ability
+      (.activated
+        [.mana [.generic 1], .tapSymbol]
+        (.addManaAnyColor (.controller .this) (.controller .this) 1))
+  ]).toCardDef
+    (oracleText := "When this land enters, surveil 1. (Look at the top card of your library. You may put it into your graveyard.)\n{T}: Add {C}.\n{1}, {T}: Add one mana of any color.")
 
 def trainingCompound : CardDef :=
   conditionalDualLand "Training Compound" .red .green
@@ -3296,6 +3344,19 @@ def mshCards : Array CardDef :=
 #guard rickJonesDestinedSidekick.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 3
 #guard rickJonesDestinedSidekick.activatedAbilities[0]!.effect ==
   Effect.millThenPutSubtypeOrEnchantment 4 "Hero"
+#guard falconWingedWonder.hasSupertype .legendary
+#guard falconWingedWonder.keywords.flying
+#guard falconWingedWonder.triggeredAbilities ==
+  #[.onEnter Effect.enterCreateRedwing]
+#guard hourOfDefeat.spellEffect == some (Effect.destroyCreatureSurveil)
+#guard aIMSynthoids.types == #[.artifact, .creature]
+#guard aIMSynthoids.triggeredAbilities == #[.onEnterSurveil 2]
+#guard surveillanceRoom.tapAddMana == #[.colorless]
+#guard surveillanceRoom.triggeredAbilities == #[.onEnterSurveil 1]
+#guard surveillanceRoom.activatedAbilities.size == 1
+#guard surveillanceRoom.activatedAbilities[0]!.cost.tap
+#guard surveillanceRoom.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 1
+#guard surveillanceRoom.activatedAbilities[0]!.effect == Effect.addAnyColor
 #guard ghostSpectralSaboteur.keywords.flash
 #guard ghostSpectralSaboteur.keywords.cantBeBlocked
 #guard ghostSpectralSaboteur.hasSupertype .legendary
