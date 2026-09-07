@@ -62,7 +62,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `putToGraveyard`, `discard`, `block`, `die`, `dieSimultaneously`,
+  `damage`, `putToGraveyard`, `discard`, `putPlusOnePlusOne`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
@@ -84,13 +84,13 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeUnchosenThisTurn`,
-  `counter`, `preventable`, `discard`, `putCounter`, `exile`,
+  `counter`, `preventable`, `pay`, `discard`, `discardMatching`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
+  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
   `createTokensInState`, `mill`, `surveil`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
@@ -123,6 +123,11 @@ this turn” (Night Nurse). `Condition.countAtLeast` is object-count
 is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land
 (Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
+`CardAction.pay` is the optional {1} on Speed. `CardAction.discardMatching`
+is discard-a-nonland (Bullseye). `CardAction.fight` is Wolverine’s ETB.
+`Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putPlusOnePlusOne` is
+Beast’s flying-if-you-put-+1/+1-this-turn. Storm’s flying restriction is
+`forbid` of attack-or-block, not attack alone.
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other

@@ -1907,18 +1907,23 @@ def speedYoungAvenger : CardDef :=
             .spell,
             .not (.cardType .creature),
             .controlled (.controller .this)]))
-        (.continuous
-          [
-            .forbid
-              (.block
-                (.not (.keyword .haste))
-                (.target
-                  1
-                  (.intersection [
-                    .permanent,
-                    .cardType .creature,
-                    .keyword .haste])))]
-          .endOfTurn))
+        (.sequence [
+          .optional (.actionId 1 (.pay [.mana [.generic 1]])),
+          .if
+            (.happened (.actionWithId 1) .gameStart)
+            [
+              .continuous
+                [
+                  .forbid
+                    (.block
+                      (.not (.keyword .haste))
+                      (.target
+                        1
+                        (.intersection [
+                          .permanent,
+                          .cardType .creature,
+                          .keyword .haste])))]
+                .endOfTurn]]))
   ]).toCardDef
     (oracleText := "Haste\nWhenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste.")
 
@@ -2360,11 +2365,12 @@ def undercoverSkrull : CardDef :=
     .ability
       (.static
         (.if
-          (.any
+          (.countAtLeast
             (.intersection [
               .inGraveyard,
               .cardType .creature,
-              .owner (.controller .this)]))
+              .owner (.controller .this)])
+            2)
           [.addPowerToughness .this 2 2])),
     .ability
       (.activated
@@ -2472,7 +2478,7 @@ def beastEruditeAerialist : CardDef :=
     .ability
       (.static
         (.if
-          (.happened (.putToGraveyard .this) .turnStart)
+          (.happened (.putPlusOnePlusOne .this) .turnStart)
           [.gainAbility .this (.keyword .flying)])),
     .ability
       (.triggered
@@ -2552,7 +2558,10 @@ def bullseyeDeathDealer : CardDef :=
                         .permanent,
                         .cardType .artifact,
                         .controlled (.controller .this)])),
-                  .discard (.controller .this) 1])),
+                  .discardMatching
+                    (.controller .this)
+                    (.not (.cardType .land))
+                    1])),
           .if
             (.happened (.actionWithId 1) .gameStart)
             [.dealDamage .this (.target 2 .all) 2]])),
@@ -2692,11 +2701,12 @@ def killmongerScourgeOfWakanda : CardDef :=
     .ability
       (.static
         (.if
-          (.any
+          (.countAtLeast
             (.intersection [
               .inGraveyard,
               .cardType .creature,
-              .owner (.controller .this)]))
+              .owner (.controller .this)])
+            2)
           [.addPowerToughness .this 2 1]))
   ]).toCardDef
     (oracleText := "When Killmonger enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls.\nAs long as there are two or more creature cards in your graveyard, Killmonger gets +2/+1.")
@@ -2834,9 +2844,16 @@ def stormWindrider : CardDef :=
     .ability
       (.static
         (.forbid
-          (.attack
-            (.intersection [.permanent, .cardType .creature, .keyword .flying])
-            (.controller .this)))),
+          (.or
+            (.attack
+              (.intersection [.permanent, .cardType .creature, .keyword .flying])
+              (.controller .this))
+            (.block
+              (.intersection [.permanent, .cardType .creature, .keyword .flying])
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled (.controller .this)]))))),
     .ability
       (.triggered
         (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
@@ -2942,7 +2959,7 @@ def wolverineFierceFighter : CardDef :=
     .ability
       (.triggered
         (.enter .this)
-        (.dealDamageEqualToPower
+        (.fight
           .this
           (.targets
             1
@@ -2952,7 +2969,7 @@ def wolverineFierceFighter : CardDef :=
               .permanent,
               .cardType .creature])))),
     .ability
-      (.static (.replace (.combatDamage .all .this) []))
+      (.static (.replace (.damage .all .this) []))
   ]).toCardDef
     (oracleText := "Haste\nWhen Wolverine enters, he fights up to one other target creature.\nIf damage would be dealt to Wolverine, instead that damage is dealt, but all other damage already dealt to him is healed.")
 
