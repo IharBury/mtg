@@ -384,6 +384,13 @@ def targetingShape : Selector → Shape
   | .targetSet _ _ among preds => applySetPredicates among.shape preds
   | s => s.shape
 
+/-- True when this selector includes “noncreature” (`.not` of creature). -/
+def includesNoncreature : Selector → Bool
+  | .not (.cardType .creature) => true
+  | .intersection (f :: fs) =>
+    includesNoncreature f || includesNoncreature (.intersection fs)
+  | _ => false
+
 /-- Compile a selector to a targeting shape the engine already understands. -/
 def toTargetKind (f : Selector) : EffectTargetKind :=
   let s := f.targetingShape
@@ -493,13 +500,6 @@ def includesInGraveyard : Selector → Bool
 def includesSpell : Selector → Bool
   | .spell | .permanentSpell => true
   | .intersection (f :: fs) => includesSpell f || includesSpell (.intersection fs)
-  | _ => false
-
-/-- True when this selector includes “noncreature” (`.not` of creature). -/
-def includesNoncreature : Selector → Bool
-  | .not (.cardType .creature) => true
-  | .intersection (f :: fs) =>
-    includesNoncreature f || includesNoncreature (.intersection fs)
   | _ => false
 
 /-- True when this selector is a noncreature spell you cast. -/
@@ -2237,7 +2237,7 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
 scry 2, then draw. -/
 def leftoverAllianceModes? : List CardAction → Bool
   | [
-      .addMana who [.green, .green, .green],
+      .addMana who [.mono .green, .mono .green, .mono .green],
       .putCounter sel .plusOnePlusOne 1,
       .sequence [.scry _ 2, .draw _ 1]
     ] =>
@@ -3436,7 +3436,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
       some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
     else none
-  | .triggered (.castSpell among) (.continuous effects _) =>
+  | .triggered (.castSpell among) (.continuous _effects _) =>
     if Selector.youCastNoncreatureSpell among then
       some (TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable)
     else none
