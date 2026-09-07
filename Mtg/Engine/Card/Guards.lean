@@ -223,10 +223,14 @@ namespace CardDef
 #guard TriggerEvent.label .landYouControlEnters == "landfall trigger"
 #guard TriggerEvent.label .becomesBlocked == "becomes-blocked trigger"
 #guard TriggerEvent.label .youCastInstantOrSorcery == "cast trigger"
+#guard TriggerEvent.clause .youCastInstantOrSorceryTargetingArtifactOrLand ==
+  "you cast an instant or sorcery spell that targets an artifact or land"
+#guard TriggerEvent.label .youCastInstantOrSorceryTargetingArtifactOrLand == "cast trigger"
 #guard TriggerEvent.label .anotherElfYouControlEnters == "Elf-enters trigger"
 #guard TriggerEvent.label .attacking == "attack trigger"
 #guard TriggerEvent.label .youAttackWithElves == "attack trigger"
 #guard !TriggerEvent.checkTargets .youCastInstantOrSorcery
+#guard !TriggerEvent.checkTargets .youCastInstantOrSorceryTargetingArtifactOrLand
 #guard !TriggerEvent.checkTargets .youAttackWithElves
 #guard !TriggerEvent.checkTargets .anotherElfYouControlEnters
 #guard TriggerEvent.checkTargets .entering
@@ -852,6 +856,12 @@ namespace CardDef
 #guard TriggeredAbility.firesOn
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2) .youCastInstantOrSorcery
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .youCastInstantOrSorcery
+#guard TriggeredAbility.firesOn
+  (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
+  .youCastInstantOrSorceryTargetingArtifactOrLand
+#guard !TriggeredAbility.firesOn
+  (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
+  .youCastInstantOrSorcery
 #guard
   let ab : ActivatedAbility := {
     cost := { mana := ManaCost.ofGeneric 3 }

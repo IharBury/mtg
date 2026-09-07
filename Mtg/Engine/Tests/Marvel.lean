@@ -1205,4 +1205,86 @@ def nightNurseReturned : Game :=
   g.log.any (fun s => mentions s "no longer legal") &&
     (namedGraveyardCard g ⟨0⟩ "Hill Giant").zone == .graveyard ⟨0⟩
 
+/-- Fin Fang Foom: copy and +1/+1s only when the instant or sorcery targets
+an artifact or land. -/
+#guard finFangFoom.matchesOracleText
+#guard finFangFoom.triggeredAbilities ==
+  #[TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand]
+
+def foomCopyOnStack (g : Game) : Bool :=
+  g.stack.any (fun e =>
+    (g.object! e.objectId).triggeredAbility ==
+      some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand))
+
+/-- Fire of Orthanc targeting a land queues the trigger. -/
+def paidFoomFireOfOrthanc : Game :=
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Forest").id))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidFoomFireOfOrthanc.stack.size == 2
+#guard foomCopyOnStack paidFoomFireOfOrthanc
+#guard (paidFoomFireOfOrthanc.object! paidFoomFireOfOrthanc.stack[0]!.objectId).name ==
+  "Fire of Orthanc"
+#guard paidFoomFireOfOrthanc.log.any (fun s => mentions s "cast trigger is put on the stack")
+
+def foomFireResolved : Game := passBoth paidFoomFireOfOrthanc
+
+#guard (namedPermanent foomFireResolved "Fin Fang Foom").status.plusOnePlusOne == 2
+#guard foomFireResolved.log.any (fun s => mentions s "A copy of Fire of Orthanc is created")
+#guard foomFireResolved.stack.any (fun e =>
+  let o := foomFireResolved.object! e.objectId
+  o.name == "Fire of Orthanc" && o.isCopy)
+
+/-- Lightning Bolt targeting a player does not queue Fin Fang Foom. -/
+def paidFoomBoltPlayer : Game :=
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidFoomBoltPlayer.stack.size == 1
+#guard (paidFoomBoltPlayer.object! paidFoomBoltPlayer.stack.back!.objectId).name ==
+  "Lightning Bolt"
+#guard !foomCopyOnStack paidFoomBoltPlayer
+#guard !paidFoomBoltPlayer.log.any (fun s => mentions s "cast trigger")
+
+/-- An instant that does target a land still queues the trigger. -/
+#guard
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Forest").id))
+  let g := mustApply g ⟨0⟩ .pay
+  foomCopyOnStack g && g.stack.size == 2
+
+/-- Targeting a creature that is neither an artifact nor a land does not. -/
+#guard
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g shock ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  let g := mustApply g ⟨0⟩ .pay
+  !foomCopyOnStack g && g.stack.size == 1
+
+/-- Targeting an artifact also queues the trigger. -/
+#guard
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g dwarvenMattock ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Dwarven Mattock").id))
+  let g := mustApply g ⟨0⟩ .pay
+  foomCopyOnStack g
+
 end Mtg.Engine.Tests

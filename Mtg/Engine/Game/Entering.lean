@@ -102,20 +102,26 @@ def putCastTriggersOnStack (g : Game) (caster : PlayerId) (spell : GameObject) :
     if spell.printed.hasSubtype "Villain" then
       g.putControlledTriggers caster .youCastVillain
     else g
-  let targetsCreatureYouControl : Bool :=
+  let announced : Array Target :=
     match g.stack.find? (fun e => e.objectId == spell.id) with
-    | some e =>
-      e.targets.any (fun t =>
-        match t with
-        | Target.permanent id =>
-          match g.findObject? id with
-          | some o => o.isCreature && o.controlledBy caster
-          | none => false
-        | _ => false)
-    | none => false
+    | some e => e.targets
+    | none => #[]
+  let targetsPermanent (pred : GameObject → Bool) : Bool :=
+    announced.any (fun t =>
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o => pred o
+        | none => false
+      | _ => false)
   let g :=
-    if targetsCreatureYouControl then
+    if targetsPermanent (fun o => o.isCreature && o.controlledBy caster) then
       g.putControlledTriggers caster .youCastTargetingCreatureYouControl
+    else g
+  let g :=
+    if spell.printed.isInstantOrSorcery &&
+        targetsPermanent (fun o => o.isArtifactOrLand) then
+      g.putControlledTriggers caster .youCastInstantOrSorceryTargetingArtifactOrLand
     else g
   let g :=
     if !spell.printed.isCreature && nonc == 1 then
