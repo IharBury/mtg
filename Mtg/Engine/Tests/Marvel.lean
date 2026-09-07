@@ -1205,8 +1205,8 @@ def nightNurseReturned : Game :=
   g.log.any (fun s => mentions s "no longer legal") &&
     (namedGraveyardCard g ⟨0⟩ "Hill Giant").zone == .graveyard ⟨0⟩
 
-/-- Fin Fang Foom: copy and +1/+1s only when the instant or sorcery targets
-an artifact or land. -/
+-- Fin Fang Foom: copy and +1/+1s only when the instant or sorcery targets
+-- an artifact or land.
 #guard finFangFoom.matchesOracleText
 #guard finFangFoom.triggeredAbilities ==
   #[TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand]
@@ -1254,7 +1254,7 @@ def paidFoomBoltPlayer : Game :=
 #guard !foomCopyOnStack paidFoomBoltPlayer
 #guard !paidFoomBoltPlayer.log.any (fun s => mentions s "cast trigger")
 
-/-- An instant that does target a land still queues the trigger. -/
+-- An instant that does target a land still queues the trigger.
 #guard
   let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
@@ -1265,7 +1265,7 @@ def paidFoomBoltPlayer : Game :=
   let g := mustApply g ⟨0⟩ .pay
   foomCopyOnStack g && g.stack.size == 2
 
-/-- Targeting a creature that is neither an artifact nor a land does not. -/
+-- Targeting a creature that is neither an artifact nor a land does not.
 #guard
   let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
@@ -1276,7 +1276,7 @@ def paidFoomBoltPlayer : Game :=
   let g := mustApply g ⟨0⟩ .pay
   !foomCopyOnStack g && g.stack.size == 1
 
-/-- Targeting an artifact also queues the trigger. -/
+-- Targeting an artifact also queues the trigger.
 #guard
   let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
   let g := addPermanent g dwarvenMattock ⟨0⟩ ⟨0⟩
