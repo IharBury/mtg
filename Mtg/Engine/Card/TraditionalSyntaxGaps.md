@@ -79,7 +79,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
   `gainType`, `gainSubtype`, `setPowerToughnessEqualToCount`,
-  `increaseLandPlayLimit`.
+  `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `counter`, `preventable`, `discard`, `putCounter`, `exile`,
@@ -110,6 +110,8 @@ cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
 `SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
 (Landroval’s two or more creatures attacking a player).
+`ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
+each artifact token you control (Thorin).
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
@@ -314,7 +316,7 @@ complete.
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
   - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
-- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover and other-subtype +1/+0 per artifact token
   - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
 - **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
   - Call Forth the Tempest; Cavern-Hoard Dragon; Cosmic Cube; Glamdring; Loki Laufeyson; Part in Friendship; Punishing Punch; The Lord of the Eagles

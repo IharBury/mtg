@@ -733,6 +733,9 @@ inductive ContinuousEffect where
   /-- The selected object's power and toughness are each equal to the
   number of objects matching the second selector. -/
   | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
+  /-- The selected objects get the given power and toughness for each
+  object matching the second selector. -/
+  | addPowerToughnessPer : Selector → Selector → Int → Int → ContinuousEffect
   /-- The selected player may play that many additional lands on each of
   their turns (CR 305.2b). -/
   | increaseLandPlayLimit : Selector → Nat → ContinuousEffect
@@ -910,6 +913,7 @@ def selector : ContinuousEffect → Selector
   | .gainType who _ => who
   | .gainSubtype who _ => who
   | .setPowerToughnessEqualToCount who _ => who
+  | .addPowerToughnessPer who _ _ _ => who
   | .increaseLandPlayLimit who _ => who
 
 /-- Combined +P/+T if every effect is `addPowerToughness`. -/
@@ -931,6 +935,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
   | .setPowerToughnessEqualToCount _ _ :: _ => none
+  | .addPowerToughnessPer _ _ _ _ :: _ => none
   | .increaseLandPlayLimit _ _ :: _ => none
 
 /-- First declared `target` or `targets`, if any. -/
@@ -2280,14 +2285,12 @@ def leftoverSacrificeArtifactOrDiscardNonlandCost? : List Cost → Bool
     (sacArt && discNonland) || leftoverSacrificeArtifactOrDiscardNonlandCost? rest
   | _ :: rest => leftoverSacrificeArtifactOrDiscardNonlandCost? rest
 
-/-- Other permanents you control of a subtype get +1/+0 per artifact token. -/
+/-- Other permanents you control of a subtype get +P/+T per matching object. -/
 def leftoverOtherSubtypeGetPowerPerArtifactToken?
-    (among : Selector) (inners : List ContinuousEffect) : Option String :=
-  if among.shape.token && among.shape.sameController &&
+    (who among : Selector) (p t : Int) : Option String :=
+  if p == 1 && t == 0 && among.shape.token && among.shape.sameController &&
       among.shape.types.eqTypes [.artifact] then
-    match inners with
-    | [.addPowerToughness sel 1 0] => sel.shape.anotherSubtypeYouControl
-    | _ => none
+    who.shape.anotherSubtypeYouControl
   else none
 
 /-- +P/+T on this as long as your graveyard has creature cards. -/
@@ -3635,28 +3638,22 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           staticAbilities :=
             b.staticAbilities.push (.hasteIfYouControlOtherSubtype t) }
       | none =>
-        match CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? among inners with
-        | some st =>
-          { b with
-            staticAbilities :=
-              b.staticAbilities.push (.otherSubtypeGetPowerPerArtifactToken st) }
+        match CardAction.leftoverGetsIfGyCreatureCards? among inners with
+        | some ab =>
+          { b with staticAbilities := b.staticAbilities.push ab }
         | none =>
-          match CardAction.leftoverGetsIfGyCreatureCards? among inners with
-          | some ab =>
-            { b with staticAbilities := b.staticAbilities.push ab }
-          | none =>
-            if Selector.includesLegendary among && among.shape.sameController &&
-                among.shape.types.eqTypes [.creature] then
-              inners.foldl
-                (applyReduceCost fun b n =>
-                  { b with
-                    activatedAbilities :=
-                      b.activatedAbilities.map fun ab =>
-                        { ab with
-                          costReductionIfYouControlLegendary :=
-                            ab.costReductionIfYouControlLegendary + n } })
-                b
-            else applyIfShape b among.shape inners
+          if Selector.includesLegendary among && among.shape.sameController &&
+              among.shape.types.eqTypes [.creature] then
+            inners.foldl
+              (applyReduceCost fun b n =>
+                { b with
+                  activatedAbilities :=
+                    b.activatedAbilities.map fun ab =>
+                      { ab with
+                        costReductionIfYouControlLegendary :=
+                          ab.costReductionIfYouControlLegendary + n } })
+              b
+          else applyIfShape b among.shape inners
   | .if (.targetsIncludeAny _ among) inners => applyIfShape b among.shape inners
   | .if (.anySubtype among st) inners =>
     match inners with
@@ -3718,6 +3715,13 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         staticAbilities :=
           b.staticAbilities.push .powerToughnessEqualLandsYouControl }
     else b
+  | .addPowerToughnessPer who among p t =>
+    match CardAction.leftoverOtherSubtypeGetPowerPerArtifactToken? who among p t with
+    | some st =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push (.otherSubtypeGetPowerPerArtifactToken st) }
+    | none => b
   | .increaseLandPlayLimit _ _ => b
   | .additionalCost _ cs =>
     { b with
@@ -7069,6 +7073,47 @@ end TraditionalCardDefinition
             .controlled (.controller .this)])
           2 1))
   ]).toCardDef.staticAbilities == #[.otherCreaturesGet #["Villain"] 2 1]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.addPowerToughnessPer
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .dwarf,
+            .controlled (.controller .this)])
+          (.intersection [
+            .permanent,
+            .token,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          1 0))
+  ]).toCardDef.staticAbilities == #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.any
+            (.intersection [
+              .permanent,
+              .token,
+              .cardType .artifact,
+              .controlled (.controller .this)]))
+          [
+            .addPowerToughness
+              (.intersection [
+                .not .this,
+                .permanent,
+                .cardType .creature,
+                .subtype .dwarf,
+                .controlled (.controller .this)])
+              1 0]))
+  ]).toCardDef.staticAbilities != #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"]
 
 #guard
   (TraditionalCardDefinition.card [

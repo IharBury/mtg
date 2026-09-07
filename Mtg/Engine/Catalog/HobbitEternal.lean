@@ -1065,22 +1065,19 @@ def thorinKingOfDurinsFolk : CardDef :=
         (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)),
     .ability
       (.static
-        (.if
-          (.any
-            (.intersection [
-              .permanent,
-              .token,
-              .cardType .artifact,
-              .controlled (.controller .this)]))
-          [
-            .addPowerToughness
-              (.intersection [
-                .not .this,
-                .permanent,
-                .cardType .creature,
-                .subtype .dwarf,
-                .controlled (.controller .this)])
-              1 0]))
+        (.addPowerToughnessPer
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .dwarf,
+            .controlled (.controller .this)])
+          (.intersection [
+            .permanent,
+            .token,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          1 0))
   ]).toCardDef
     (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
 
