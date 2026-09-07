@@ -84,7 +84,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeUnchosenThisTurn`,
-  `counter`, `preventable`, `pay`, `discard`, `discardMatching`, `putCounter`, `exile`,
+  `counter`, `preventable`, `optionalPayFor`, `discard`, `discardMatching`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
@@ -123,7 +123,8 @@ does not leftover to that triggered ability.
 is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land
 (Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
-`CardAction.pay` is the optional {1} on Speed. `CardAction.discardMatching`
+`CardAction.optionalPayFor` is who may pay, what cost, and what happens if
+paid (Speed: you, {1}, haste-except-haste). `CardAction.discardMatching`
 is discard-a-nonland (Bullseye). `CardAction.fight` is Wolverine’s ETB.
 `Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
@@ -419,7 +420,7 @@ complete.
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
 - **`exileThenReturn`** (5 cards) — Exile then return at a later trigger (end step / leaves)
   - Elrond, Moon-Reader; Roll-Roll-Roll-Roll; S.H.I.E.L.D. Flying Car; The Mind Stone; Wiccan, Rising Magician
-- **`payThen`** (5 cards) — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- **`optionalPayFor` leftover besides Speed** (5 cards) — Constructor exists; leftover only compiles you / {1} / haste-except-haste
   - Mentor of the Meek; Silvan Reveler; The Black Gate; The Kingpin of Crime; Ultron, Artificial Malevolence
 - **`gainControl`** (4 cards) — Gain control of selected objects
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
@@ -1001,7 +1002,7 @@ Converted cards from the previous untagged set are omitted here.
 **Silvan Reveler** (`silvanReveler`)
 
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **Smaug the Magnificent** (`smaugTheMagnificent`)
 
@@ -1357,7 +1358,7 @@ Converted cards from the previous untagged set are omitted here.
 **Mentor of the Meek** (`mentorOfTheMeek`)
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **Minas Morgul, Dark Fortress** (`minasMorgulDarkFortress`)
 
@@ -1486,7 +1487,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **The Gaffer** (`theGaffer`)
 
@@ -2418,7 +2419,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
 - `Ability.keywordExtort` — Extort
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
@@ -2542,7 +2543,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 - `CardAction.copy` — Copy a permanent, spell, or ability
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them

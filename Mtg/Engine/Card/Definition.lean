@@ -801,8 +801,9 @@ inductive CardAction where
   | counter : Selector → CardAction
   /-- The given player may pay the cost to prevent the action. -/
   | preventable : Selector → List Cost → CardAction → CardAction
-  /-- The selected player pays the given cost. -/
-  | pay : List Cost → CardAction
+  /-- The selected player may pay the given cost. If they do, perform the
+  given actions (CR 118.1 / 608.2d). -/
+  | optionalPayFor : Selector → List Cost → List CardAction → CardAction
   /-- The selected player discards that many cards. -/
   | discard : Selector → Nat → CardAction
   /-- The selected player discards that many cards matching the second
@@ -2338,19 +2339,17 @@ def leftoverOtherSubtypeGetPowerPerArtifactToken?
     who.shape.anotherSubtypeYouControl
   else none
 
-/-- You may pay {1}. When you do, target creature with haste can't be
+/-- You may pay {1}. If you do, target creature with haste can't be
 blocked this turn except by creatures with haste. -/
 def leftoverMayPayHasteUnblockable? : CardAction → Bool
-  | .sequence [
-      .optional (.actionId id (.pay [.mana [.generic 1]])),
-      .if (.happened (.actionWithId id') _) [.continuous effects _]
-    ] =>
-    id == id' &&
+  | .optionalPayFor who [.mana [.generic 1]] [.continuous effects _] =>
+    leftoverYou who &&
       match effects with
       | [.forbid (.block (.not (.keyword .haste)) dest)] =>
         dest.targetingShape.types.eqTypes [.creature]
       | _ => false
   | _ => false
+
 /-- +P/+T on this as long as your graveyard has creature cards. -/
 def leftoverGetsIfGyCreatureCards?
     (among : Selector) (inners : List ContinuousEffect) : Option StaticAbility :=
@@ -2830,7 +2829,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .preventable _ costs (.counter _) =>
                     Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
                   | .preventable _ _ inner => compile inner asAbility
-                  | .pay _ => continuousEffect none [] asAbility
+                  | .optionalPayFor _ _ (a :: _) => compile a asAbility
+                  | .optionalPayFor _ _ [] => continuousEffect none [] asAbility
                   | .discard _ n | .discardMatching _ _ n => Effect.drawThenDiscard n
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
@@ -7589,6 +7589,7 @@ end TraditionalCardDefinition
         .controlled (.controller .this)]))
     (.putCounter (.source .this) .plusOnePlusOne 2)).toTriggeredAbility?.isNone
 
+-- Speed: you may pay {1}; if you do, haste-except-haste.
 #guard
   match
     (Ability.triggered
@@ -7597,26 +7598,26 @@ end TraditionalCardDefinition
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.sequence [
-        .optional (.actionId 1 (.pay [.mana [.generic 1]])),
-        .if
-          (.happened (.actionWithId 1) .gameStart)
-          [
-            .continuous
-              [
-                .forbid
-                  (.block
-                    (.not (.keyword .haste))
-                    (.target
-                      1
-                      (.intersection [
-                        .permanent,
-                        .cardType .creature,
-                        .keyword .haste])))]
-              .endOfTurn]])).toTriggeredAbility? with
+      (.optionalPayFor
+        (.controller .this)
+        [.mana [.generic 1]]
+        [
+          .continuous
+            [
+              .forbid
+                (.block
+                  (.not (.keyword .haste))
+                  (.target
+                    1
+                    (.intersection [
+                      .permanent,
+                      .cardType .creature,
+                      .keyword .haste])))]
+            .endOfTurn])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable
   | none => false
 
+-- Paying is required (the restrict alone is not Speed).
 #guard
   (Ability.triggered
     (.castSpell
@@ -7636,6 +7637,69 @@ end TraditionalCardDefinition
                 .cardType .creature,
                 .keyword .haste])))]
       .endOfTurn)).toTriggeredAbility?.isNone
+
+-- An opponent paying is not you.
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .not (.cardType .creature),
+        .controlled (.controller .this)]))
+    (.optionalPayFor
+      (.opponent (.controller .this))
+      [.mana [.generic 1]]
+      [
+        .continuous
+          [
+            .forbid
+              (.block
+                (.not (.keyword .haste))
+                (.target
+                  1
+                  (.intersection [
+                    .permanent,
+                    .cardType .creature,
+                    .keyword .haste])))]
+          .endOfTurn])).toTriggeredAbility?.isNone
+
+-- {2} is not {1}.
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .not (.cardType .creature),
+        .controlled (.controller .this)]))
+    (.optionalPayFor
+      (.controller .this)
+      [.mana [.generic 2]]
+      [
+        .continuous
+          [
+            .forbid
+              (.block
+                (.not (.keyword .haste))
+                (.target
+                  1
+                  (.intersection [
+                    .permanent,
+                    .cardType .creature,
+                    .keyword .haste])))]
+          .endOfTurn])).toTriggeredAbility?.isNone
+
+-- Drawing if paid is not the haste restrict.
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .not (.cardType .creature),
+        .controlled (.controller .this)]))
+    (.optionalPayFor
+      (.controller .this)
+      [.mana [.generic 1]]
+      [.draw (.controller .this) 1])).toTriggeredAbility?.isNone
 
 -- Bullseye: discard a nonland card, not any card.
 #guard

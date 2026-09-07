@@ -1907,23 +1907,22 @@ def speedYoungAvenger : CardDef :=
             .spell,
             .not (.cardType .creature),
             .controlled (.controller .this)]))
-        (.sequence [
-          .optional (.actionId 1 (.pay [.mana [.generic 1]])),
-          .if
-            (.happened (.actionWithId 1) .gameStart)
-            [
-              .continuous
-                [
-                  .forbid
-                    (.block
-                      (.not (.keyword .haste))
-                      (.target
-                        1
-                        (.intersection [
-                          .permanent,
-                          .cardType .creature,
-                          .keyword .haste])))]
-                .endOfTurn]]))
+        (.optionalPayFor
+          (.controller .this)
+          [.mana [.generic 1]]
+          [
+            .continuous
+              [
+                .forbid
+                  (.block
+                    (.not (.keyword .haste))
+                    (.target
+                      1
+                      (.intersection [
+                        .permanent,
+                        .cardType .creature,
+                        .keyword .haste])))]
+              .endOfTurn]))
   ]).toCardDef
     (oracleText := "Haste\nWhenever you cast a noncreature spell, you may pay {1}. When you do, target creature with haste can't be blocked this turn except by creatures with haste.")
 
