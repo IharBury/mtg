@@ -32,7 +32,10 @@ def apply (g : Game) (p : PlayerId) : Action → Except String Game
   | .divideDamage as => g.announceDividedDamage p as
   | .activate id idx => g.activateAbility p id idx
   | .pay => g.pay p
-  | .sacrifice id => g.sacrificeForActivation p id
+  | .sacrifice id =>
+    match g.pending with
+    | .maySacArtifactOrDiscardNonland .. => g.sacrificeForBullseye p id
+    | _ => g.sacrificeForActivation p id
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each => g.declareAttackers p ids defender each
   | .declareBlockers as => g.declareBlockers p as
@@ -105,6 +108,7 @@ def actor (g : Game) : Option PlayerId :=
     | .chooseFoodOrTreasure p => who p
     | .chooseTapOrUntap p _ => who p
     | .maySacArtifactOrDiscard p => who p
+    | .maySacArtifactOrDiscardNonland p _ _ => who p
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
     | .resolveRandom req =>

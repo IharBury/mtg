@@ -7549,6 +7549,89 @@ end TraditionalCardDefinition
                 .keyword .haste])))]
       .endOfTurn)).toTriggeredAbility?.isNone
 
+-- Bullseye: discard a nonland card, not any card.
+#guard
+  let sac : CardAction :=
+    .sacrifice
+      (.selected
+        (.controller .this)
+        (.range 1 1)
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)]))
+  let action : CardAction :=
+    .sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [sac,
+              .discardMatching
+                (.controller .this)
+                (.not (.cardType .land))
+                1])),
+      .if
+        (.happened (.actionWithId 1) .gameStart)
+        [.dealDamage .this (.target 2 .all) 2]]
+  match (Ability.triggered (.enter .this) action).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage
+  | none => false
+
+#guard
+  let sac : CardAction :=
+    .sacrifice
+      (.selected
+        (.controller .this)
+        (.range 1 1)
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)]))
+  let action : CardAction :=
+    .sequence [
+      .optional
+        (.actionId 1
+          (.playerSelectAction
+            (.controller .this)
+            (.range 1 1)
+            [sac, .discard (.controller .this) 1])),
+      .if
+        (.happened (.actionWithId 1) .gameStart)
+        [.dealDamage .this (.target 2 .all) 2]]
+  (Ability.triggered (.enter .this) action).toTriggeredAbility?.isNone
+
+#guard
+  let sacArt : Cost :=
+    .sacrificeCount
+      (.intersection [
+        .permanent,
+        .cardType .artifact,
+        .controlled (.controller .this)])
+      1
+  match
+    (Ability.activated
+      [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard (.not (.cardType .land))]]
+      (.dealDamage .this (.target 1 .all) 2)).toActivatedAbility? with
+  | some ab => ab.cost.sacrificeArtifactOrDiscardNonland
+  | none => false
+
+#guard
+  let sacArt : Cost :=
+    .sacrificeCount
+      (.intersection [
+        .permanent,
+        .cardType .artifact,
+        .controlled (.controller .this)])
+      1
+  match
+    (Ability.activated
+      [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard .all]]
+      (.dealDamage .this (.target 1 .all) 2)).toActivatedAbility? with
+  | some ab => !ab.cost.sacrificeArtifactOrDiscardNonland
+  | none => false
+
 #guard
   (TraditionalCardDefinition.card [
     .ability

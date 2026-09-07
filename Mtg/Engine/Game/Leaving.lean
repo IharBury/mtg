@@ -153,7 +153,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
-  | .maySacArtifactOrDiscard q | .mayPutArtifactFromHand q _
+  | .maySacArtifactOrDiscard q | .maySacArtifactOrDiscardNonland q _ _
+  | .mayPutArtifactFromHand q _
   | .mayHaveVillainConnive q _ _ | .declareMulligan q =>
     if q == p then { g with pending := .none } else g
   | .resolveRandom _ => g

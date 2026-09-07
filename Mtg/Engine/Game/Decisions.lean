@@ -79,6 +79,34 @@ def discardPendingCard (g : Game) (p q : PlayerId) (id : ObjectId)
     else g
   return (g, card)
 
+/-- Finish Bullseye's artifact-or-nonland-discard: queue the ETB reflexive,
+or complete a required activation cost. -/
+def finishSacArtifactOrDiscardNonland (g : Game) (p : PlayerId)
+    (sourceId : Option ObjectId) (required : Bool) : Game :=
+  if required then
+    match g.proposedSpell with
+    | some prop =>
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      g.becomeActivated p prop.original.name prop.sourceId
+    | none => { g with pending := .none }
+  else
+    let g := { g with pending := .none }
+    g.queueModeledReflexive p sourceId 1 |>.receivePriority g.activePlayer
+
+/-- Sacrifice an artifact to pay Bullseye's optional ETB or activation cost. -/
+def sacrificeForBullseye (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
+  match g.pending with
+  | .maySacArtifactOrDiscardNonland q sourceId required =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may sacrifice"
+    let some sac := g.findObject? id | throw "no such object"
+    if !sac.isOnBattlefield || !sac.printed.isArtifact || !sac.controlledBy p then
+      throw s!"Can't sacrifice {sac.name}"
+    let g := g.sacrificeToGraveyard sac
+      s!"{(g.player p).name} sacrifices {sac.name}"
+    return g.finishSacArtifactOrDiscardNonland p sourceId required
+  | _ => throw "Not time to sacrifice an artifact"
+
 /-- Discard `id` from hand; if this finishes a pending “may discard, then draw”,
 draw that many cards (CR 701.9). -/
 def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -91,6 +119,12 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
   | .maySacArtifactOrDiscard q =>
     let (g, _) ← g.discardPendingCard p q id
     return g.finishSacArtifactOrDiscardDraw p
+  | .maySacArtifactOrDiscardNonland q sourceId required =>
+    let some card := g.findObject? id | throw "no such object"
+    if card.printed.isLand then
+      throw "Can't discard a land card"
+    let (g, _) ← g.discardPendingCard p q id
+    return g.finishSacArtifactOrDiscardNonland p sourceId required
   | .chooseDiscardCard q remaining =>
     let (g, card) ← g.discardPendingCard p q id
     let g := g.finishConniveDiscard card
@@ -350,6 +384,15 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline"
     let g := g.logMsg
       s!"{(g.player p).name} declines to sacrifice an artifact or discard a card"
+    let g := { g with pending := .none }
+    return g.receivePriority g.activePlayer
+  | .maySacArtifactOrDiscardNonland q _ required =>
+    if p != q then
+      throw s!"Only {(g.player q).name} may decline"
+    if required then
+      throw "Must sacrifice an artifact or discard a nonland card"
+    let g := g.logMsg
+      s!"{(g.player p).name} declines to sacrifice an artifact or discard a nonland card"
     let g := { g with pending := .none }
     return g.receivePriority g.activePlayer
   | .mayPutArtifactFromHand q _ =>

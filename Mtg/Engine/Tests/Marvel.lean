@@ -1433,4 +1433,91 @@ def beastObj (g : Game) : GameObject :=
   let o := beastObj g
   o.status.plusOnePlusOne == 1 && o.status.gotPlusOneThisTurn && g.hasFlying o
 
+-- Bullseye: discard a nonland card, not a land.
+#guard bullseyeDeathDealer.matchesOracleText
+#guard
+  bullseyeDeathDealer.triggeredAbilities ==
+    #[TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage]
+#guard
+  bullseyeDeathDealer.activatedAbilities[0]!.cost.sacrificeArtifactOrDiscardNonland
+
+def bullseyeAbility (g : Game) : ActivatedAbility :=
+  (namedPermanent g "Bullseye, Death Dealer").printed.activatedAbilities[0]!
+
+def bullseyeOnField : Game :=
+  addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
+
+-- ETB: discarding a land does not queue the reflexive.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent g "Bullseye, Death Dealer").id)
+  match g.pending, g.apply ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id) with
+  | .maySacArtifactOrDiscardNonland ⟨0⟩ _ false, .error msg =>
+    mentions msg "land" && !g.pendingMshReflexive.isSome
+  | _, _ => false
+
+-- ETB: discarding a nonland queues the reflexive.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent g "Bullseye, Death Dealer").id)
+  let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  g.pendingMshReflexive.isSome &&
+    (let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyModeledReflexive #[Target.permanent bears.id]
+     (namedPermanent g "Grizzly Bears").status.damage == 2)
+
+-- ETB: declining does not queue the reflexive.
+#guard
+  let g := bullseyeOnField.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent bullseyeOnField "Bullseye, Death Dealer").id)
+  !(mustApply g ⟨0⟩ .decline).pendingMshReflexive.isSome
+
+-- Activated: only a land in hand and no artifact is not enough.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Bullseye, Death Dealer") (bullseyeAbility g)
+
+-- Activated: a nonland in hand makes the ability legal.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  g.canActivate ⟨0⟩ (namedPermanent g "Bullseye, Death Dealer") (bullseyeAbility g)
+
+-- Activated: paying by discarding a land is illegal.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Bullseye, Death Dealer").id 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  match g.pending, g.apply ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id) with
+  | .maySacArtifactOrDiscardNonland ⟨0⟩ _ true, .error msg => mentions msg "land"
+  | _, _ => false
+
+-- Activated: discarding a nonland pays the cost.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Bullseye, Death Dealer").id 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  g.stack.size == 1 &&
+    (g.object! g.stack.back!.objectId).name == "Bullseye, Death Dealer's ability" &&
+    (g.player ⟨0⟩).hand.isEmpty
+
 end Mtg.Engine.Tests

@@ -716,6 +716,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose tap or untap ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
+    | .maySacArtifactOrDiscardNonland p _ required =>
+      if required then
+        s!" [sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
+      else
+        s!" [may sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>

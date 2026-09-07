@@ -9413,16 +9413,22 @@ def whiplashLastKnownEquipmentOk : Bool :=
 
 /-- Rulings 359 / 367: first reflexive ability has no targets; the second does. -/
 def mshReflexiveNoTargetFirstOk : Bool :=
-  let g := addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
+  let g := emptyHand (addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩) ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Bullseye, Death Dealer"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage) (some b.id)
   (namedPermanent g "Grizzly Bears").status.damage == 0 &&
-    g.pendingMshReflexive.isSome &&
-    logContains g "reflexive" &&
-    (let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyModeledReflexive #[Target.permanent bears.id]
-     (namedPermanent g "Grizzly Bears").status.damage == 2) &&
+    !g.pendingMshReflexive.isSome &&
+    (match g.pending with
+     | .maySacArtifactOrDiscardNonland ⟨0⟩ _ false => true
+     | _ => false) &&
+    (let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+     g.pendingMshReflexive.isSome &&
+       logContains g "reflexive" &&
+       (let bears := namedPermanent g "Grizzly Bears"
+        let g := g.applyModeledReflexive #[Target.permanent bears.id]
+        (namedPermanent g "Grizzly Bears").status.damage == 2)) &&
     (let g := addPermanent afterDraw spiderManToTheRescue ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let sm := namedPermanent g "Spider-Man, To the Rescue"

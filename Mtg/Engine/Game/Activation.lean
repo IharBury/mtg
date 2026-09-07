@@ -58,6 +58,13 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{o.name}'s ability requires sacrificing another creature or artifact"
+  if ab.cost.sacrificeArtifactOrDiscardNonland &&
+      !(g.permanentsOf p).any (·.printed.isArtifact) &&
+      !(g.player p).hand.any (fun id =>
+        match g.findObject? id with
+        | some c => !c.printed.isLand
+        | none => false) then
+    throw s!"{o.name}'s ability requires sacrificing an artifact or discarding a nonland card"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
   if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
@@ -101,7 +108,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   let g := g.logMsg s!"{pl.name} begins activating {o.name}"
   if !ab.isModal && !ab.effect.requiresTarget &&
       !ab.cost.mana.includesManaPayment && !ab.cost.mana.containsX &&
-      !ab.cost.sacrificeAnotherCreatureOrArtifact then
+      !ab.cost.sacrificeAnotherCreatureOrArtifact &&
+      !ab.cost.sacrificeArtifactOrDiscardNonland then
     let g ← g.payActivationExtraCosts p id ab.cost.tap ab.cost.sacrificeSource
       ab.cost.payLife ab.cost.discardSource (some ab)
     return g.becomeActivated p o.name (some id)

@@ -164,6 +164,16 @@ def finishProposedSpell (g : Game) : Except String Game := do
       consecutivePasses := 0 }
     return g.logMsg
       s!"{(g.player prop.caster).name} must sacrifice another creature or artifact"
+  | .activatedAbility, _, _, some sid =>
+    if prop.activation.any (·.cost.sacrificeArtifactOrDiscardNonland) then
+      let g := { g with
+        pending := .maySacArtifactOrDiscardNonland prop.caster (some sid) true
+        consecutivePasses := 0 }
+      return g.logMsg
+        s!"{(g.player prop.caster).name} must sacrifice an artifact or discard a nonland card"
+    else
+      let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
+      return g.becomeActivated prop.caster prop.original.name prop.sourceId
   | .activatedAbility, _, _, _ =>
     let g := { g with pending := .none, proposedSpell := none, consecutivePasses := 0 }
     return g.becomeActivated prop.caster prop.original.name prop.sourceId

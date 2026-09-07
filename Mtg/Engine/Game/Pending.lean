@@ -162,6 +162,10 @@ inductive Pending where
   | chooseTapOrUntap (player : PlayerId) (targetId : ObjectId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscard (player : PlayerId)
+  /-- Sacrifice an artifact or discard a nonland card (Bullseye). `required`
+  is true when paying an activation cost (cannot decline). -/
+  | maySacArtifactOrDiscardNonland
+      (player : PlayerId) (sourceId : Option ObjectId) (required : Bool)
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)
