@@ -522,7 +522,9 @@ def includesInGraveyard : Selector → Bool
 since the start of the turn”. -/
 def wasObjectOfPutToGraveyardThisTurn? : Selector → Bool
   | .wasObjectSince (.putToGraveyard _) .turnStart => true
-  | .intersection fs => fs.any wasObjectOfPutToGraveyardThisTurn?
+  | .intersection (f :: fs) =>
+    wasObjectOfPutToGraveyardThisTurn? f ||
+      wasObjectOfPutToGraveyardThisTurn? (.intersection fs)
   | _ => false
 
 /-- True when this selector includes `.spell`. -/
