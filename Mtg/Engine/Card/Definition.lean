@@ -832,6 +832,8 @@ inductive CardAction where
   | createTokensInState : Selector → Nat → List CardPart → List CardState → CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
   | mill : Selector → Nat → CardAction
+  /-- The selected player surveils that many cards (CR 701.53). -/
+  | surveil : Selector → Nat → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1920,6 +1922,30 @@ def leftoverYou : Selector → Bool
   | .controller .this => true
   | _ => false
 
+/-- Destroy target creature, then surveil 1. -/
+def leftoverDestroyCreatureSurveil? : CardAction → Bool
+  | .sequence [.destroy sel, .surveil who 1] =>
+    sel.toTargetKind == .creature && leftoverYou who
+  | _ => false
+
+/-- Printed Redwing token: legendary 1/1 blue Bird Scout with flying and
+“Whenever Redwing attacks, surveil 1.” -/
+def leftoverRedwingToken? (parts : List CardPart) : Bool :=
+  let p := collectTokenParts parts
+  let legendary :=
+    parts.any fun
+      | .supertype .legendary => true
+      | _ => false
+  let attackSurveil :=
+    parts.any fun
+      | .ability (.triggered (.attack .this .all) (.surveil who 1)) =>
+        leftoverYou who
+      | _ => false
+  p.name == "Redwing" && legendary && p.types.contains .creature &&
+    p.subtypes.contains "Bird" && p.subtypes.contains "Scout" &&
+    leftoverIsColor p .blue && p.power == some 1 && p.toughness == some 1 &&
+    p.keywords.flying && attackSurveil
+
 /-- This object or its source, for spell-shaped keyword compile. -/
 def leftoverThis : Selector → Bool
   | .this | .source .this => true
@@ -2321,6 +2347,8 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
         if leftoverReturnSpellDraw? action then some Effect.returnSpellDraw
         else if leftoverDestroyArtOrLandNonflyers? action then
           some Effect.destroyArtifactOrLandNonflyersCantBlock
+        else if leftoverDestroyCreatureSurveil? action then
+          some Effect.destroyCreatureSurveil
         else if leftoverBecomeArtifactIndestructible? action then
           some Effect.becomeArtifactGainIndestructible
         else if leftoverPlusOneLifelinkIndestructible? action then
@@ -2352,7 +2380,10 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .createTokens who n parts =>
     if leftoverYou who then
-      leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
+      if n == 1 && leftoverRedwingToken? parts then
+        some (TriggeredAbility.onEnter Effect.enterCreateRedwing)
+      else
+        leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
     else none
   | .createTokensInState who n parts states =>
     if leftoverYou who && leftoverTappedOnly states then
@@ -2627,6 +2658,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .mill who n =>
                     if leftoverTargetPlayer? who then Effect.millPlayer n
                     else continuousEffect none [] asAbility
+                  | .surveil who n =>
+                    if leftoverYou who then Effect.scry n
+                    else continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -2803,6 +2837,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     else none
   | .triggered (.attack .this .all) (.scry _ n) =>
     some (TriggeredAbility.onAttackScry n)
+  | .triggered (.attack .this .all) (.surveil who n) =>
+    if CardAction.leftoverYou who then
+      some (TriggeredAbility.onAttackScry n)
+    else none
   | .triggered (.block _ src) (.dealDamage dealer dest 1) =>
     if src == .this && dealer == .this && dest == .blocking .this then
       some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
@@ -2829,6 +2867,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     some (TriggeredAbility.onEnterDraw n)
   | .triggered (.enter .this) (.scry _ n) =>
     some (TriggeredAbility.onEnterScry n)
+  | .triggered (.enter .this) (.surveil who n) =>
+    if CardAction.leftoverYou who then
+      some (TriggeredAbility.onEnterSurveil n)
+    else none
   | .triggered (.enter .this) (.gainLife _ n) =>
     some (TriggeredAbility.onEnterGainLife n)
   | .triggered (.enter .this)
@@ -6512,6 +6554,46 @@ end TraditionalCardDefinition
         .returnToHand
           (.intersection [.wasObjectOfAction 1, .subtype .elf])])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf"
+  | none => false
+
+#guard CardAction.toEffect
+  (.surveil (.controller .this) 2) == Effect.scry 2
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .destroy
+        (.target 1 (.intersection [.permanent, .cardType .creature])),
+      .surveil (.controller .this) 1]) ==
+    Effect.destroyCreatureSurveil
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.surveil (.controller .this) 2)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterSurveil 2
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.createTokens (.controller .this) 1 [
+        .name "Redwing",
+        .type .creature,
+        .supertype .legendary,
+        .subtype .bird,
+        .subtype .scout,
+        .colorIndicator [.blue],
+        .power 1,
+        .toughness 1,
+        .ability (.keyword .flying),
+        .ability
+          (.triggered
+            (.attack .this .all)
+            (.surveil (.controller .this) 1))])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnter Effect.enterCreateRedwing
   | none => false
 
 end Mtg.Engine
