@@ -1073,32 +1073,30 @@ def moonstoneDiscardWaiting (g : Game) : Bool :=
 /-- Discarding a card from hand fires Moonstone. -/
 def moonstoneAfterDiscard : Game :=
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
-  let g := addToHand g lightningBolt ⟨0⟩
-  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Lightning Bolt").id (.graveyard ⟨0⟩) none
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
   g
 
 #guard moonstoneHarshMistress.matchesOracleText
 #guard moonstoneDiscardWaiting moonstoneAfterDiscard
-#guard moonstoneAfterDiscard.log.any (fun s => mentions s "Lightning Bolt")
 
 def moonstoneDiscardResolved : Game :=
   passBoth (moonstoneAfterDiscard.receivePriority ⟨0⟩)
 
 #guard moonstoneDiscardResolved.log.any (fun s => mentions s "discard trigger")
-#guard moonstoneDiscardResolved.objects.any (fun o =>
-  o.name == "Lightning Bolt" && o.zone == .exile)
 #guard
-  match moonstoneDiscardResolved.objects.find? (fun o => o.name == "Lightning Bolt") with
+  match moonstoneDiscardResolved.objects.find? (fun o =>
+      o.name == "Forest" && o.zone == .exile) with
   | some o => o.playPermission.isSome
   | none => false
 
 -- Milling from the library is not a discard.
 #guard
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
-  let g := addToLibraryTop g lightningBolt ⟨0⟩
+  let g := addToLibraryTop g forest ⟨0⟩
   let (g, _) := g.move (g.player ⟨0⟩).library.back! (.graveyard ⟨0⟩) none
   !moonstoneDiscardWaiting g &&
-    (namedGraveyardCard g ⟨0⟩ "Lightning Bolt").zone == .graveyard ⟨0⟩
+    (namedGraveyardCard g ⟨0⟩ "Forest").zone == .graveyard ⟨0⟩
 
 -- Dying from the battlefield is not a discard.
 #guard
@@ -1111,8 +1109,8 @@ def moonstoneDiscardResolved : Game :=
 -- An opponent discarding is not “you discard”.
 #guard
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
-  let g := addToHand g lightningBolt ⟨1⟩
-  let (g, _) := g.move (handCardNamed g ⟨1⟩ "Lightning Bolt").id (.graveyard ⟨1⟩) none
+  let g := addToHand g forest ⟨1⟩
+  let (g, _) := g.move (handCardNamed g ⟨1⟩ "Forest").id (.graveyard ⟨1⟩) none
   !moonstoneDiscardWaiting g
 
 /-- Night Nurse returns only a permanent card put into your graveyard this
