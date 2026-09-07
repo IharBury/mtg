@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 100 |
-| The Hobbit Eternal (HOC) | 79 |
-| Marvel Super Heroes (MSH) | 218 |
-| **Total remaining** | **397** |
+| The Hobbit (HOB) | 99 |
+| The Hobbit Eternal (HOC) | 78 |
+| Marvel Super Heroes (MSH) | 216 |
+| **Total remaining** | **393** |
 
-All **397** remaining cards have at least one identified constructor gap.
+All **393** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -89,7 +89,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`.
+  `createTokensInState`, `mill`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -102,7 +102,8 @@ actions such as recruit and amass. `CardAction.createTokens` compiles token
 creation from a selector, count, and `CardPart` characteristics.
 `CardAction.createTokensInState` is the same with an entering state (tapped).
 `CardAction.ifElse` compiles an “if … instead …” replacement (Andúril’s
-legendary Spirits).
+legendary Spirits). `CardAction.mill` compiles milling a selected player
+that many cards (and mill-then-put sequences through leftovers).
 
 ## Missing constructors by type
 
@@ -239,8 +240,8 @@ complete.
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`controlCount`** (5 cards) — Controller controls N or more matching objects
   - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`countAtLeast`** (5 cards) — At least N objects match a selector (graveyard size, lore, quest counters, …)
-  - Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
+- **`countAtLeast`** (6 cards) — At least N objects match a selector (graveyard size, lore, quest counters, …)
+  - HYDRA Troopers; Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
 - **`or`** (5 cards) — Activate only if this land entered this turn or you control a basic land
   - darkFortress; gatheringPlace; gleamingBastion; hiddenLair; trainingCompound
 - **`any`** (2 cards) — any with a legendary-you-control selector is already expressible; listed only if other gaps remain
@@ -299,8 +300,8 @@ complete.
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`setTypes`** (14 cards) — Set types/subtypes rather than only gain them
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
-- **`restrictManaSpend`** (12 cards) — Mana from an action may be spent only on matching events (current leftover is Elf-only)
-  - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Pelargir Survivor; Ronin, Shadow Stalker; … (2 more)
+- **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
+  - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
 - **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
   - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
 - **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
@@ -366,8 +367,6 @@ complete.
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Iron Fist, Living Weapon; Last March of the Ents; … (12 more)
 - **`lookAt`** (21 cards) — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
   - A.I.M. Synthoids; Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Falcon, Winged Wonder; Gandalf, Goblins' Bane; … (11 more)
-- **`mill`** (13 cards) — Target player mills N cards
-  - Cantankerous Keepers; Glamdring, Foe-hammer; HYDRA Troopers; Master's Councillors; Mole Man, Moloid Master; Most Decrepit Old Bird; Palantír of Orthanc; Pelargir Survivor; Rapid Rescue; Rick Jones, Destined Sidekick; … (3 more)
 - **`connive`** (11 cards) — Connive
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Kang, Temporal Tyrant; Leader, Super-Genius; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem; … (1 more)
 - **`addManaPer`** (10 cards) — Add mana for each matching object
@@ -469,8 +468,8 @@ complete.
   - Ms. Marvel, Kamala Khan; Quake, Agent of S.H.I.E.L.D.
 - **`CardSubtype.Ninja`** (2 cards) — CardPart.subtype uses CardSubtype; Ninja has no constructor
   - Elektra, Daughter of the Hand; Ninja of the Hand
-- **`CardSubtype.Peasant`** (2 cards) — CardPart.subtype uses CardSubtype; Peasant has no constructor
-  - Pelargir Survivor; The Gaffer
+- **`CardSubtype.Peasant`** (1 cards) — CardPart.subtype uses CardSubtype; Peasant has no constructor
+  - The Gaffer
 - **`CardSubtype.Snake`** (2 cards) — CardPart.subtype uses CardSubtype; Snake has no constructor
   - Serpent Specialist; The Serpent Society
 - **`CardSubtype.Sorcerer`** (2 cards) — CardPart.subtype uses CardSubtype; Sorcerer has no constructor
@@ -641,7 +640,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (101 cards)
+### The Hobbit (HOB) (99 cards)
 
 **Along the Crooked Way** (`alongTheCrookedWay`)
 
@@ -742,7 +741,6 @@ Converted cards from the previous untagged set are omitted here.
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Ability.keywordAffinity` — Affinity for a type/subtype
 - `ContinuousEffect.reduceCostPer` — Reduce cost by {1} per matching object
-- `CardAction.mill` — Target player mills N cards
 
 **Celebrate the Mountain-king** (`celebrateTheMountainKing`)
 
@@ -775,8 +773,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
 - `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
-
-
 
 **Down in the Valley** (`downInTheValley`)
 
@@ -882,7 +878,6 @@ Converted cards from the previous untagged set are omitted here.
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-- `CardAction.mill` — Target player mills N cards
 
 **Gleaming Splendor** (`gleamingSplendor`)
 
@@ -957,9 +952,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Master's Councillors** (`masterSCouncillors`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-- `CardAction.mill` — Target player mills N cards
 
 **Mirkwood Meditator** (`mirkwoodMeditator`)
 
@@ -976,7 +969,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-- `CardAction.mill` — Target player mills N cards
 
 **My Precious** (`myPrecious`)
 
@@ -1139,7 +1131,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
-- `CardAction.mill` — Target player mills N cards
 
 **The Misty Mountains Cold** (`theMistyMountainsCold`)
 
@@ -1172,13 +1163,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
-**Thranduil, Sindarin Liege** (`thranduilSindarinLiege`)
-
-- `SetPredicate.distinctNames` — Set-wide name constraints
-- `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
-- `CardAction.mill` — Target player mills N cards
 - `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Thranduil, the Elvenking** (`thranduilTheElvenking`)
@@ -1231,9 +1215,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (79 cards)
-
-
+### The Hobbit Eternal (HOC) (78 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
@@ -1546,16 +1528,8 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `CardAction.mill` — Target player mills N cards
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-
-**Pelargir Survivor** (`pelargirSurvivor`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.mill` — Target player mills N cards
-- `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
-- `TraditionalCardDefinition.CardSubtype.Peasant` — CardPart.subtype uses CardSubtype; Peasant has no constructor
 
 **Raise the Palisade** (`raiseThePalisade`)
 
@@ -1580,7 +1554,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
-- `CardAction.mill` — Target player mills N cards
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Sauron, the Dark Lord** (`sauronTheDarkLord`)
@@ -1691,7 +1664,7 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (218 cards)
+### Marvel Super Heroes (MSH) (216 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
@@ -2101,8 +2074,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **HYDRA Troopers** (`hYDRATroopers`)
 
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.mill` — Target player mills N cards
+- `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **Hawkeye's Bow** (`hawkeyeSBow`)
 
@@ -2341,7 +2313,6 @@ Converted cards from the previous untagged set are omitted here.
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
 - `Selector.named` — Objects with a given name
-- `CardAction.mill` — Target player mills N cards
 
 **Monica Rambeau** (`monicaRambeau`)
 
@@ -2475,11 +2446,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
 
-**Rapid Rescue** (`rapidRescue`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.mill` — Target player mills N cards
-
 **Red Guardian, Super-Soldier** (`redGuardianSuperSoldier`)
 
 - `Selector.damagedThisTurn` — Objects dealt damage this turn
@@ -2514,11 +2480,6 @@ Converted cards from the previous untagged set are omitted here.
 **Rewrite History** (`rewriteHistory`)
 
 - `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
-
-**Rick Jones, Destined Sidekick** (`rickJonesDestinedSidekick`)
-
-- `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
-- `CardAction.mill` — Target player mills N cards
 
 **Robot Domination** (`robotDomination`)
 

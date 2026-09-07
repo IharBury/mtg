@@ -1931,9 +1931,21 @@ def punishingPunch : CardDef :=
     (spellEffect := some (Effect.creatureYouControlDealsTwicePower))
 
 def rapidRescue : CardDef :=
-  instant "Rapid Rescue" (ManaCost.ofColor .green)
-    "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life. (To mill two cards, put the top two cards of your library into your graveyard.)"
-    (spellEffect := some (Effect.millThenPutPermanentGainLife 2 2))
+  (TraditionalCardDefinition.card [
+    .name "Rapid Rescue",
+    .manaCost [.mono .green],
+    .type .instant,
+    .actions [
+      .actionId 1 (.mill (.controller .this) 2),
+      .optional
+        (.returnToHand
+          (.selected
+            (.controller .this)
+            (.range 0 1)
+            (.intersection [.wasObjectOfAction 1, .permanent]))),
+      .gainLife (.controller .this) 2]
+  ]).toCardDef
+    (oracleText := "Mill two cards. You may put a permanent card from among the milled cards into your hand. You gain 2 life. (To mill two cards, put the top two cards of your library into your graveyard.)")
 
 def reptilDinomorpher : CardDef :=
   legendaryCreature "Reptil, Dinomorpher" (ManaCost.ofColor .green) #["Human", "Hero"] 1 2
@@ -1968,9 +1980,30 @@ def restorativeTechnique : CardDef :=
     (oracleText := "Target player gains 2 life, then searches their library for a basic land card, puts it onto the battlefield tapped, then shuffles. Put a +1/+1 counter on up to one target creature.")
 
 def rickJonesDestinedSidekick : CardDef :=
-  legendaryCreature "Rick Jones, Destined Sidekick" (ManaCost.ofColor .green) #["Human", "Advisor"] 0 3
+  (TraditionalCardDefinition.card [
+    .name "Rick Jones, Destined Sidekick",
+    .manaCost [.mono .green],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .advisor,
+    .power 0,
+    .toughness 3,
+    .ability
+      (.activated
+        [.mana [.generic 3], .tapSymbol]
+        (.sequence [
+          .actionId 1 (.mill (.controller .this) 4),
+          .optional
+            (.returnToHand
+              (.selected
+                (.controller .this)
+                (.range 1 1)
+                (.intersection [
+                  .wasObjectOfAction 1,
+                  .union [.subtype .hero, .cardType .enchantment]])))]))
+  ]).toCardDef
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
-    (activatedAbilities := #[activated (Effect.millThenPutSubtypeOrEnchantment 4 "Hero") (ManaCost.ofGeneric 3) (tap := true)])
 
 def savageLandDinosaur : CardDef :=
   (TraditionalCardDefinition.card [
@@ -3256,6 +3289,13 @@ def mshCards : Array CardDef :=
 #guard kangTemporalTyrant.triggeredAbilities ==
   #[.onAttackConnive, .onResource Effect.resourceSecondDrawDrain]
 #guard tricksterSStratagem.spellEffect == some Effect.ownerPutsLibraryThenConnive
+#guard rapidRescue.spellEffect == some (Effect.millThenPutPermanentGainLife 2 2)
+#guard rickJonesDestinedSidekick.hasSupertype .legendary
+#guard rickJonesDestinedSidekick.activatedAbilities.size == 1
+#guard rickJonesDestinedSidekick.activatedAbilities[0]!.cost.tap
+#guard rickJonesDestinedSidekick.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 3
+#guard rickJonesDestinedSidekick.activatedAbilities[0]!.effect ==
+  Effect.millThenPutSubtypeOrEnchantment 4 "Hero"
 #guard ghostSpectralSaboteur.keywords.flash
 #guard ghostSpectralSaboteur.keywords.cantBeBlocked
 #guard ghostSpectralSaboteur.hasSupertype .legendary
