@@ -49,7 +49,7 @@ def landrovalHorizonWitness : CardDef :=
             .cardType .creature,
             .controlled (.controller .this)])
           .player
-          [])
+          [.countAtLeast 2])
         (.continuous
           [
             .gainAbility

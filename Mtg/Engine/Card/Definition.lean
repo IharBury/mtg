@@ -28,6 +28,8 @@ deriving Repr, Inhabited, BEq
 inductive SetPredicate where
   /-- The objects share a card type with each other. -/
   | shareCardType
+  /-- The set contains at least this many objects. -/
+  | countAtLeast : Nat → SetPredicate
 deriving Repr, Inhabited, BEq
 
 -- Selectors may ask who was the subject of a trigger, and triggers name
@@ -375,6 +377,7 @@ def applySetPredicates (s : Shape) : List SetPredicate → Shape
   | [] => s
   | .shareCardType :: rest =>
     applySetPredicates { s with shareCardType := true } rest
+  | .countAtLeast _ :: rest => applySetPredicates s rest
 
 /-- Shape used for targeting: unwrap `target` / `targets` / `targetSet`
 and fold in set predicates. -/
@@ -3414,9 +3417,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if CardAction.leftoverPlusOneEachOtherGainLife? action then
       some TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
     else none
-  | .triggered (.attackSimultaneously among dest _) action =>
+  | .triggered (.attackSimultaneously among dest preds) action =>
     if dest == .player && among.shape.sameController &&
         among.shape.types.eqTypes [.creature] &&
+        preds == [.countAtLeast 2] &&
         CardAction.leftoverGrantFlyingToAttacking? action then
       some TriggeredAbility.onAttackWithTwoOrMoreGrantFlying
     else none
@@ -6057,6 +6061,53 @@ end TraditionalCardDefinition
       .player
       [])
     (.draw (.controller .this) 1)).toTriggeredAbility?.isNone
+
+#guard
+  match
+    (Ability.triggered
+      (.attackSimultaneously
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .player
+        [.countAtLeast 2])
+      (.continuous
+        [
+          .gainAbility
+            (.target
+              1
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .attacking .all,
+                .not (.keyword .flying)]))
+            (.keyword .flying)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackWithTwoOrMoreGrantFlying
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.attackSimultaneously
+      (.intersection [
+        .permanent,
+        .cardType .creature,
+        .controlled (.controller .this)])
+      .player
+      [])
+    (.continuous
+      [
+        .gainAbility
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .attacking .all,
+              .not (.keyword .flying)]))
+          (.keyword .flying)]
+      .endOfTurn)).toTriggeredAbility?.isNone
 
 #guard
   match

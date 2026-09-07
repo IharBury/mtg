@@ -51,7 +51,7 @@ every remaining catalog subtype; Plan enchantments stay blocked by
 From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
 - **Range** — `range lo hi` (literal `Nat` bounds).
-- **SetPredicate** — `shareCardType`.
+- **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
@@ -108,6 +108,8 @@ that many cards (and mill-then-put sequences through leftovers).
 `CardAction.surveil` compiles the selected player surveilling that many
 cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
+`SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
+(Landroval’s two or more creatures attacking a player).
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
