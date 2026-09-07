@@ -2293,7 +2293,7 @@ def troopOfPonies : CardDef :=
                   .supertype .basic])),
             .reveal (.variable 1),
             .putOntoBattlefieldInState
-              (.selected (.controller .this) (.range 0 1) (.variable 1))
+              (.selected (.controller .this) (.range 1 1) (.variable 1))
               [.tapped],
             .returnToHand (.variable 1)]))
   ]).toCardDef

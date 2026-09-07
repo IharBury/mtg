@@ -1625,7 +1625,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
       .defineVariable id sel,
       .reveal (.variable id'),
       .putOntoBattlefieldInState
-        (.selected _ (.range 0 1) (.variable id'')) [.tapped],
+        (.selected _ (.range 1 1) (.variable id'')) [.tapped],
       .returnToHand (.variable id''')
     ] =>
     if id == id' && id == id'' && id == id''' then
@@ -6882,10 +6882,30 @@ end TraditionalCardDefinition
               .supertype .basic])),
         .reveal (.variable 1),
         .putOntoBattlefieldInState
-          (.selected (.controller .this) (.range 0 1) (.variable 1))
+          (.selected (.controller .this) (.range 1 1) (.variable 1))
           [.tapped],
         .returnToHand (.variable 1)]
   action.toAbilityEffect == Effect.searchTwoBasicsSplit
+
+#guard
+  let action : CardAction :=
+    .searchLibraryThenShuffle
+      (.controller .this)
+      [
+        .defineVariable 1
+          (.selected
+            (.controller .this)
+            (.range 0 2)
+            (.intersection [
+              .inDeck,
+              .cardType .land,
+              .supertype .basic])),
+        .reveal (.variable 1),
+        .putOntoBattlefieldInState
+          (.selected (.controller .this) (.range 0 1) (.variable 1))
+          [.tapped],
+        .returnToHand (.variable 1)]
+  action.toAbilityEffect != Effect.searchTwoBasicsSplit
 
 #guard
   let action : CardAction :=
