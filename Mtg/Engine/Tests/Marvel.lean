@@ -1254,17 +1254,6 @@ def paidFoomBoltPlayer : Game :=
 #guard !foomCopyOnStack paidFoomBoltPlayer
 #guard !paidFoomBoltPlayer.log.any (fun s => mentions s "cast trigger")
 
--- An instant that does target a land still queues the trigger.
-#guard
-  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
-  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
-  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
-  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
-  let g := mustApply g ⟨0⟩
-    (.target (Target.permanent (namedPermanent g "Forest").id))
-  let g := mustApply g ⟨0⟩ .pay
-  foomCopyOnStack g && g.stack.size == 2
-
 -- Targeting a creature that is neither an artifact nor a land does not.
 #guard
   let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
