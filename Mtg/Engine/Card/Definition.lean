@@ -32,6 +32,13 @@ inductive SetPredicate where
   | countAtLeast : Nat → SetPredicate
 deriving Repr, Inhabited, BEq
 
+/-- Kind of counter (CR 122.1). Used by `CardAction.putCounter` and
+`Trigger.putCountersSimultaneously`. -/
+inductive CounterKind where
+  /-- A +1/+1 counter. -/
+  | plusOnePlusOne
+deriving Repr, Inhabited, BEq
+
 -- Selectors may ask who was the subject of a trigger, and triggers name
 -- selectors, so the two inductives are mutual.
 mutual
@@ -154,9 +161,9 @@ inductive Trigger where
   | putToGraveyard : Selector → Trigger
   /-- Whenever the selected player discards a card (CR 701.8). -/
   | discard : Selector → Trigger
-  /-- When one or more +1/+1 counters are put on the selected object
-  (CR 122). -/
-  | putPlusOnePlusOne : Selector → Trigger
+  /-- When one or more counters of the given kind are put on the selected
+  objects at the same time (CR 122). -/
+  | putCountersSimultaneously : Selector → CounterKind → Trigger
   /-- The first selector blocks the second (CR 509). -/
   | block : Selector → Selector → Trigger
   /-- When the selected object or objects die (CR 700.4). -/
@@ -666,12 +673,6 @@ def discardsThis : List Cost → Bool
   | _ :: rest => discardsThis rest
 
 end Cost
-
-/-- Kind of counter placed by `putCounter` (CR 122.1). -/
-inductive CounterKind where
-  /-- A +1/+1 counter. -/
-  | plusOnePlusOne
-deriving Repr, Inhabited, BEq
 
 /-- A boolean check used by a conditional effect or action. -/
 inductive Condition where
@@ -3737,7 +3738,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .if (.didNotHappen _ _) _ => b
   | .if (.happened (.die who) .turnStart) inners =>
     applyIfShape b { who.shape with diedThisTurn := true } inners
-  | .if (.happened (.putPlusOnePlusOne who) .turnStart)
+  | .if (.happened (.putCountersSimultaneously who .plusOnePlusOne) .turnStart)
       [.gainAbility flyingWho (.keyword .flying)] =>
     if (who == .this || who == .source .this) &&
         (flyingWho == .this || flyingWho == .source .this) then
@@ -7350,9 +7351,29 @@ end TraditionalCardDefinition
     .ability
       (.static
         (.if
-          (.happened (.putPlusOnePlusOne .this) .turnStart)
+          (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .turnStart)
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[.flyingIfPlusOneThisTurn]
+
+-- Putting counters on any object is not enough (Beast is this creature).
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.happened (.putCountersSimultaneously .all .plusOnePlusOne) .turnStart)
+          [.gainAbility .this (.keyword .flying)]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Since the start of the game is not this turn.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .gameStart)
+          [.gainAbility .this (.keyword .flying)]))
+  ]).toCardDef.staticAbilities == #[]
 
 #guard
   (TraditionalCardDefinition.card [

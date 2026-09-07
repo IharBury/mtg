@@ -2478,7 +2478,7 @@ def beastEruditeAerialist : CardDef :=
     .ability
       (.static
         (.if
-          (.happened (.putPlusOnePlusOne .this) .turnStart)
+          (.happened (.putCountersSimultaneously .this .plusOnePlusOne) .turnStart)
           [.gainAbility .this (.keyword .flying)])),
     .ability
       (.triggered

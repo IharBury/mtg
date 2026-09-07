@@ -62,7 +62,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `damage`, `putToGraveyard`, `discard`, `putPlusOnePlusOne`, `block`, `die`, `dieSimultaneously`,
+  `damage`, `putToGraveyard`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
@@ -125,8 +125,9 @@ copy-if-targeting require `targetsIncludeAny` of an artifact or land
 (Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
 `CardAction.pay` is the optional {1} on Speed. `CardAction.discardMatching`
 is discard-a-nonland (Bullseye). `CardAction.fight` is Wolverine’s ETB.
-`Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putPlusOnePlusOne` is
-Beast’s flying-if-you-put-+1/+1-this-turn. Storm’s flying restriction is
+`Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putCountersSimultaneously` is
+one or more counters of a kind on the selected objects at the same time
+(Beast: +1/+1 this turn). Storm’s flying restriction is
 `forbid` of attack-or-block, not attack alone.
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
@@ -462,7 +463,8 @@ complete.
 
 ### `CounterKind`
 
-`CounterKind` is used by `CardAction.putCounter`. It currently has only `plusOnePlusOne`.
+`CounterKind` is used by `CardAction.putCounter` and
+`Trigger.putCountersSimultaneously`. It currently has only `plusOnePlusOne`.
 
 - **`lore`** (14 cards) — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
   - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
