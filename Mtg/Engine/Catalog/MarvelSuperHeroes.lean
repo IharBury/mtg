@@ -2001,7 +2001,7 @@ def rickJonesDestinedSidekick : CardDef :=
                 (.range 1 1)
                 (.intersection [
                   .wasObjectOfAction 1,
-                  .union [.subtype .hero, .cardType .enchantment]])))])))
+                  .union [.subtype .hero, .cardType .enchantment]])))]))
   ]).toCardDef
     (oracleText := "{3}, {T}: Mill four cards. You may put a Hero or enchantment card from among those cards into your hand. (To mill four cards, put the top four cards of your library into your graveyard.)")
 
