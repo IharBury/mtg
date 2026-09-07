@@ -1895,7 +1895,7 @@ def leftoverYou : Selector → Bool
   | .controller .this => true
   | _ => false
 
-/-- The selected object is this permanent (“it connives”). -/
+/-- This object or its source, for spell-shaped keyword compile. -/
 def leftoverThis : Selector → Bool
   | .this | .source .this => true
   | _ => false
@@ -2201,7 +2201,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
   | .keyword who (.amass .goblin n) =>
     if leftoverYou who then some (TriggeredAbility.onEnterAmassGoblins n) else none
   | .keyword who (.connive 1) =>
-    if leftoverThis who then some TriggeredAbility.onEnterConnive else none
+    if leftoverSourceThis who then some TriggeredAbility.onEnterConnive else none
   | .sequence [
       .actionId id (.returnToHand sel),
       .if (.happened (.actionWithId id') _)
@@ -2537,10 +2537,10 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
   | .connive 1 =>
     match w with
     | .enter .this =>
-      if CardAction.leftoverThis who then some TriggeredAbility.onEnterConnive
+      if CardAction.leftoverSourceThis who then some TriggeredAbility.onEnterConnive
       else none
     | .attack .this .all =>
-      if CardAction.leftoverThis who then some TriggeredAbility.onAttackConnive
+      if CardAction.leftoverSourceThis who then some TriggeredAbility.onAttackConnive
       else none
     | .combatStart p =>
       if CardAction.leftoverYou p &&
@@ -5770,18 +5770,24 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered (.enter .this) (.keyword .this (.connive 1))).toTriggeredAbility? with
+    (Ability.triggered (.enter .this) (.keyword (.source .this) (.connive 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterConnive
   | none => false
+
+#guard
+  (Ability.triggered (.enter .this) (.keyword .this (.connive 1))).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive 1))).toTriggeredAbility?.isNone
 
 #guard
   match
-    (Ability.triggered (.attack .this .all) (.keyword .this (.connive 1))).toTriggeredAbility? with
+    (Ability.triggered (.attack .this .all) (.keyword (.source .this) (.connive 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackConnive
   | none => false
+
+#guard
+  (Ability.triggered (.attack .this .all) (.keyword .this (.connive 1))).toTriggeredAbility?.isNone
 
 #guard
   match

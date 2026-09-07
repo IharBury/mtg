@@ -524,7 +524,7 @@ def aIMScientists : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 3,
-    .ability (.triggered (.enter .this) (.keyword .this (.connive 1))),
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
     .ability
       (.keywordWithCost
         (.supertypeAndTypeCycling .basic .land)
@@ -1106,7 +1106,7 @@ def madameMasque : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 2,
-    .ability (.triggered (.enter .this) (.keyword .this (.connive 1))),
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
     .ability
       (.triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))
@@ -1190,7 +1190,7 @@ def redRoomRecruit : CardDef :=
     .subtype .villain,
     .power 1,
     .toughness 2,
-    .ability (.triggered (.enter .this) (.keyword .this (.connive 1)))
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1)))
   ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)")
 
@@ -2271,7 +2271,7 @@ def kangTemporalTyrant : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 4,
-    .ability (.triggered (.attack .this .all) (.keyword .this (.connive 1))),
+    .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive 1))),
     .ability
       (.triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))
