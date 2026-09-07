@@ -7112,6 +7112,20 @@ end TraditionalCardDefinition
           .cardType .creature])))).toTriggeredAbility?.isNone
 
 #guard
+  (Ability.triggered
+    (.enter .this)
+    (.dealDamage
+      .this
+      (.targets
+        1
+        (.range 0 1)
+        (.intersection [
+          .not .this,
+          .permanent,
+          .cardType .creature]))
+      3)).toTriggeredAbility?.isNone
+
+#guard
   match
     (Ability.triggered
       (.or (.enter .this) (.attack .this .all))

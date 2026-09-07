@@ -1641,4 +1641,58 @@ def stormVsFlyerAttack : Game :=
     (.declareAttackers #[(namedPermanent stormVsFlyerAttack "Grizzly Bears").id])
   (namedPermanent g "Grizzly Bears").status.attacking
 
+-- Wolverine: fights up to one other creature; any damage heals other
+-- damage already on him, not only combat damage.
+#guard wolverineFierceFighter.matchesOracleText
+#guard wolverineFierceFighter.keywords.haste
+#guard wolverineFierceFighter.triggeredAbilities ==
+  #[.onEnter Effect.enterFightUpToOne]
+#guard wolverineFierceFighter.staticAbilities ==
+  #[.healOtherDamageWhenDealt]
+
+/-- Wolverine fights a 2/2: both deal, even though 3 damage is lethal. -/
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
+    (some w.id) #[Target.permanent bears.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2 &&
+    (namedPermanent g "Grizzly Bears").status.damage == 3 &&
+    (let g := g.checkSBA
+     g.battlefield.any (fun o => o.name == "Wolverine, Fierce Fighter") &&
+       !g.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+-- Prior noncombat damage is healed when more damage is dealt.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.markDamageOn o 3 "Wolverine is dealt 3 damage"
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3
+
+-- Combat damage heals other damage the same way.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.markDamageOn o 2 "Wolverine is dealt 2 combat damage" (combat := true)
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2
+
+-- Fighting also heals damage already marked on him.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
+    (some w.id) #[Target.permanent giant.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3 &&
+    (namedPermanent g "Hill Giant").status.damage == 3
+
 end Mtg.Engine.Tests

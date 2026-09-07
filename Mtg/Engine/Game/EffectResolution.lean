@@ -61,7 +61,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       let destOk := (g.legalOppCreatureTargets controller).contains
         (Target.permanent destId)
       if srcOk && destOk then
-        g.dealFightDamage (g.object! srcId) (g.object! destId)
+        g.fightCreatures (g.object! srcId) (g.object! destId)
       else
         let logIllegal (g : Game) (ok : Bool) (id : ObjectId) : Game :=
           if ok then g else g.illegalAbilityTarget (Target.permanent id)
@@ -591,7 +591,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .fightUpToOne =>
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent destId) =>
-      g.dealFightDamage (g.object! srcId) (g.object! destId)
+      g.fightCreatures (g.object! srcId) (g.object! destId)
     | some (Target.permanent srcId), none =>
       g.logMsg s!"{(g.object! srcId).name} has nothing to fight"
     | _, _ => g.logMsg "The target is no longer legal"

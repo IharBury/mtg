@@ -875,17 +875,17 @@ def thorExilePlayOk : Bool :=
 
 #guard thorExilePlayOk
 
-/-- Wolverine fights another creature. Use a 4/4 so both sides survive
-sequential damage (a 3/3 would die before dealing damage back). -/
+/-- Wolverine fights another creature. A 3/3 still deals damage back
+even though 3 damage is lethal (CR 701.12b). -/
 def wolverineFightOk : Bool :=
   let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
-  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let w := namedPermanent g "Wolverine, Fierce Fighter"
-  let baloth := namedPermanent g "Rumbling Baloth"
+  let giant := namedPermanent g "Hill Giant"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
-    (some w.id) #[Target.permanent baloth.id]
-  (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
-    (namedPermanent g "Rumbling Baloth").status.damage > 0
+    (some w.id) #[Target.permanent giant.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3 &&
+    (namedPermanent g "Hill Giant").status.damage == 3
 
 #guard wolverineFightOk
 

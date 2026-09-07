@@ -802,7 +802,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
-      g.dealFightDamage (g.object! a) (g.object! b)
+      g.fightCreatures (g.object! a) (g.object! b)
     | _, _ => g
   else if text.contains "draw" && text.contains "lose" then
     g.drawThenLoseLife controller 2 2
