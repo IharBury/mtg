@@ -1203,6 +1203,9 @@ def galadrielSDismissal : CardDef :=
     (kicker := some (ManaCost.ofGenericAndColor 2 .white))
 
 def galadrielLightOfValinor : CardDef :=
+  let you : Selector := .controller .this
+  let unchosen (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen you id) .turnStart
   (TraditionalCardDefinition.card [
     .name "Galadriel, Light of Valinor",
     .manaCost [.generic 2, .mono .green, .mono .white, .mono .blue],
@@ -1219,17 +1222,20 @@ def galadrielLightOfValinor : CardDef :=
             .not .this,
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)]))
-        (.chooseModeUnchosenThisTurn [
-          .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
-          .putCounter
-            (.intersection [
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)])
-            .plusOnePlusOne
-            1,
-          .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]))
+            .controlled you]))
+        (.chooseModeRestricted you [
+          (1, unchosen 1,
+            [.addMana you [.mono .green, .mono .green, .mono .green]]),
+          (2, unchosen 2,
+            [.putCounter
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled you])
+              .plusOnePlusOne
+              1]),
+          (3, unchosen 3,
+            [.sequence [.scry you 2, .draw you 1]])]))
   ]).toCardDef
     (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
 

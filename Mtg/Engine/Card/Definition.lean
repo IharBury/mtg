@@ -179,6 +179,8 @@ inductive Trigger where
   | abilityWithIdActivated : Nat → Trigger
   /-- The numbered action occurred. -/
   | actionWithId : Nat → Trigger
+  /-- The selected player chose the numbered mode (CR 700.2). -/
+  | modeWithIdChosen : Selector → Nat → Trigger
   /-- Mana created by the numbered action is spent to pay for the given
   event (CR 106.10). -/
   | spendManaCreatedByAction : Nat → Trigger → Trigger
@@ -794,9 +796,10 @@ inductive CardAction where
   | attach : Selector → Selector → CardAction
   /-- Choose one of the given modes (CR 700.2). -/
   | chooseMode : List CardAction → CardAction
-  /-- Choose one of the given modes that hasn't been chosen this turn
-  (CR 700.2e). -/
-  | chooseModeUnchosenThisTurn : List CardAction → CardAction
+  /-- The selected player chooses one of the given modes. Each mode has an
+  ID, a condition under which it may be chosen, and the actions it
+  performs (CR 700.2 / 700.2e). -/
+  | chooseModeRestricted : Selector → List (Nat × Condition × List CardAction) → CardAction
   /-- Counter the selected spell (CR 701.5). -/
   | counter : Selector → CardAction
   /-- The given player may pay the cost to prevent the action. -/
@@ -2287,15 +2290,27 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
       | none => false
   | _ => false
 
+/-- This mode has not been chosen this turn by the selected player. -/
+def leftoverModeUnchosenThisTurn? (who : Selector) (id : Nat) : Condition → Bool
+  | .didNotHappen (.modeWithIdChosen chooser id') .turnStart =>
+    leftoverYou who && leftoverYou chooser && id == id'
+  | _ => false
+
 /-- Alliance modes: add {G}{G}{G}; +1/+1 on each creature you control;
-scry 2, then draw. Must be wrapped in `chooseModeUnchosenThisTurn`. -/
-def leftoverAllianceModes? : List CardAction → Bool
+scry 2, then draw. Each mode must be unchosen this turn. -/
+def leftoverAllianceModes? (who : Selector) :
+    List (Nat × Condition × List CardAction) → Bool
   | [
-      .addMana who [.mono .green, .mono .green, .mono .green],
-      .putCounter sel .plusOnePlusOne 1,
-      .sequence [.scry _ 2, .draw _ 1]
+      (id1, c1, [.addMana gainer [.mono .green, .mono .green, .mono .green]]),
+      (id2, c2, [.putCounter sel .plusOnePlusOne 1]),
+      (id3, c3, [.sequence [.scry _ 2, .draw _ 1]])
     ] =>
-    leftoverYou who && sel.shape.sameController &&
+    leftoverYou who && leftoverYou gainer &&
+      id1 != id2 && id2 != id3 && id1 != id3 &&
+      leftoverModeUnchosenThisTurn? who id1 c1 &&
+      leftoverModeUnchosenThisTurn? who id2 c2 &&
+      leftoverModeUnchosenThisTurn? who id3 c3 &&
+      sel.shape.sameController &&
       sel.shape.types.eqTypes [.creature]
   | _ => false
 
@@ -2821,9 +2836,11 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .ifElse _ [] [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
-                  | .chooseMode (a :: _) | .chooseModeUnchosenThisTurn (a :: _) =>
+                  | .chooseMode (a :: _) => compile a asAbility
+                  | .chooseMode [] => continuousEffect none [] asAbility
+                  | .chooseModeRestricted _ ((_, _, a :: _) :: _) =>
                     compile a asAbility
-                  | .chooseMode [] | .chooseModeUnchosenThisTurn [] =>
+                  | .chooseModeRestricted _ _ =>
                     continuousEffect none [] asAbility
                   | .counter _ => Effect.counterSpell
                   | .preventable _ costs (.counter _) =>
@@ -2919,8 +2936,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
-  | .chooseMode as | .chooseModeUnchosenThisTurn as =>
+  | .chooseMode as =>
     some ((as.map fun a => compile a false).toArray)
+  | .chooseModeRestricted _ modes =>
+    some ((modes.map fun (_, _, as) => compile (.sequence as) false).toArray)
   | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -3355,9 +3374,9 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | some 1 => some TriggeredAbility.onEnterMaySacArtifactOrDiscardDraw
         | _ =>
           CardAction.leftoverEnterThisAction? action
-  | .triggered (.enter among) (.chooseModeUnchosenThisTurn modes) =>
+  | .triggered (.enter among) (.chooseModeRestricted who modes) =>
     if among.shape.anotherCreatureYouControl &&
-        CardAction.leftoverAllianceModes? modes then
+        CardAction.leftoverAllianceModes? who modes then
       some TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
     else none
   | .triggered (.enter among) (.chooseMode modes) =>
@@ -7394,51 +7413,142 @@ end TraditionalCardDefinition
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[]
 
--- Galadriel, Light of Valinor: Alliance modes that haven't been chosen
--- this turn. Unrestricted `chooseMode` does not compile to Alliance.
+-- Galadriel, Light of Valinor: you choose modes unchosen this turn.
+-- Unrestricted `chooseMode` does not compile to Alliance.
 #guard
+  let you : Selector := .controller .this
   let among : Selector :=
     .intersection [
       .not .this,
       .permanent,
       .cardType .creature,
-      .controlled (.controller .this)]
-  let modes : List CardAction :=
+      .controlled you]
+  let unchosen (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen you id) .turnStart
+  let modes : List (Nat × Condition × List CardAction) :=
     [
-      .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
-      .putCounter
-        (.intersection [
-          .permanent,
-          .cardType .creature,
-          .controlled (.controller .this)])
-        .plusOnePlusOne
-        1,
-      .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]
+      (1, unchosen 1,
+        [.addMana you [.mono .green, .mono .green, .mono .green]]),
+      (2, unchosen 2,
+        [.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled you])
+          .plusOnePlusOne
+          1]),
+      (3, unchosen 3,
+        [.sequence [.scry you 2, .draw you 1]])]
   match
-    (Ability.triggered (.enter among) (.chooseModeUnchosenThisTurn modes)
+    (Ability.triggered (.enter among) (.chooseModeRestricted you modes)
       ).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
   | none => false
 
 #guard
+  let you : Selector := .controller .this
   let among : Selector :=
     .intersection [
       .not .this,
       .permanent,
       .cardType .creature,
-      .controlled (.controller .this)]
+      .controlled you]
   let modes : List CardAction :=
     [
-      .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
+      .addMana you [.mono .green, .mono .green, .mono .green],
       .putCounter
         (.intersection [
           .permanent,
           .cardType .creature,
-          .controlled (.controller .this)])
+          .controlled you])
         .plusOnePlusOne
         1,
-      .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]
+      .sequence [.scry you 2, .draw you 1]]
   (Ability.triggered (.enter among) (.chooseMode modes)).toTriggeredAbility?.isNone
+
+-- An opponent choosing is not you.
+#guard
+  let you : Selector := .controller .this
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled you]
+  let unchosen (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen you id) .turnStart
+  let modes : List (Nat × Condition × List CardAction) :=
+    [
+      (1, unchosen 1,
+        [.addMana you [.mono .green, .mono .green, .mono .green]]),
+      (2, unchosen 2,
+        [.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled you])
+          .plusOnePlusOne
+          1]),
+      (3, unchosen 3,
+        [.sequence [.scry you 2, .draw you 1]])]
+  (Ability.triggered (.enter among)
+    (.chooseModeRestricted (.opponent you) modes)).toTriggeredAbility?.isNone
+
+-- Since the start of the game is not this turn.
+#guard
+  let you : Selector := .controller .this
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled you]
+  let unchosenGame (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen you id) .gameStart
+  let modes : List (Nat × Condition × List CardAction) :=
+    [
+      (1, unchosenGame 1,
+        [.addMana you [.mono .green, .mono .green, .mono .green]]),
+      (2, unchosenGame 2,
+        [.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled you])
+          .plusOnePlusOne
+          1]),
+      (3, unchosenGame 3,
+        [.sequence [.scry you 2, .draw you 1]])]
+  (Ability.triggered (.enter among)
+    (.chooseModeRestricted you modes)).toTriggeredAbility?.isNone
+
+-- The same mode ID on every choice is not three Alliance modes.
+#guard
+  let you : Selector := .controller .this
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled you]
+  let unchosen1 : Condition :=
+    .didNotHappen (.modeWithIdChosen you 1) .turnStart
+  let modes : List (Nat × Condition × List CardAction) :=
+    [
+      (1, unchosen1,
+        [.addMana you [.mono .green, .mono .green, .mono .green]]),
+      (1, unchosen1,
+        [.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled you])
+          .plusOnePlusOne
+          1]),
+      (1, unchosen1,
+        [.sequence [.scry you 2, .draw you 1]])]
+  (Ability.triggered (.enter among)
+    (.chooseModeRestricted you modes)).toTriggeredAbility?.isNone
 
 -- Night Nurse: only graveyard permanents put there this turn.
 -- Justice: bounce-watch includes tokens (nontoken conjunct is rejected).

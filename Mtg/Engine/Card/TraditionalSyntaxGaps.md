@@ -64,7 +64,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
   `damage`, `putToGraveyard`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
-  `abilityWithIdActivated`, `actionWithId`,
+  `abilityWithIdActivated`, `actionWithId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
   `not`, `or`.
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
@@ -83,7 +83,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
-  `chooseModeUnchosenThisTurn`,
+  `chooseModeRestricted`,
   `counter`, `preventable`, `optionalPayFor`, `discard`, `discardMatching`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
@@ -114,9 +114,10 @@ through leftovers).
 (Landroval’s two or more creatures attacking a player).
 `ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
 each artifact token you control (Thorin).
-`CardAction.chooseModeUnchosenThisTurn` compiles “choose one that hasn’t
-been chosen this turn” (Galadriel’s Alliance); unrestricted `chooseMode`
-does not leftover to that triggered ability.
+`CardAction.chooseModeRestricted` is who chooses and, for each mode, an ID,
+when it is allowed, and its actions (Galadriel: you, unchosen this turn).
+Unrestricted `chooseMode` does not leftover to that triggered ability.
+`Trigger.modeWithIdChosen` is who chose a numbered mode.
 `Selector.wasObjectSince` is “the object of this event since that event”
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
@@ -291,7 +292,8 @@ complete.
 - **`resolvedThisTurnCount`** (1 cards) — This ability has resolved N times this turn
   - Belladonna Took
 - **`modeNotChosenThisTurn`** — Constructor is now
-  `CardAction.chooseModeUnchosenThisTurn` (Galadriel). The Vision still
+  `CardAction.chooseModeRestricted` plus `Trigger.modeWithIdChosen`
+  (Galadriel). The Vision still
   needs a leftover for its noncreature-spell modes.
 
 ### `Ability`
@@ -575,7 +577,7 @@ inductives (not a missing leftover for an expressible spelling).
   control. No `ContinuousEffect.gainSupertype`; `Range.anyNumber` is missing
   (only finite `range lo hi`).
 - **The Vision** — Choose one *that hasn't been chosen this turn*.
-  `CardAction.chooseModeUnchosenThisTurn` now exists (Galadriel’s Alliance).
+  `CardAction.chooseModeRestricted` now exists (Galadriel’s Alliance).
   The Vision still needs a leftover for “whenever you cast a noncreature
   spell” plus its three named modes (`Effect.castingVisionModes`).
 
@@ -2476,7 +2478,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Vision** (`theVision`)
 
-- `CardAction.chooseModeUnchosenThisTurn` now exists (Galadriel). Vision still needs a leftover from that constructor plus “you cast a noncreature spell” onto `Effect.castingVisionModes`.
+- `CardAction.chooseModeRestricted` now exists (Galadriel). Vision still needs a leftover from that constructor plus “you cast a noncreature spell” onto `Effect.castingVisionModes`.
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
