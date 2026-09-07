@@ -515,10 +515,22 @@ def aerialDoombot : CardDef :=
     (activatedAbilities := #[powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 5 .blue)])
 
 def aIMScientists : CardDef :=
-  creature "A.I.M. Scientists" (ManaCost.ofGenericAndColor 3 .blue) #["Human", "Scientist", "Villain"] 3 3
+  (TraditionalCardDefinition.card [
+    .name "A.I.M. Scientists",
+    .manaCost [.generic 3, .mono .blue],
+    .type .creature,
+    .subtype .human,
+    .subtype .scientist,
+    .subtype .villain,
+    .power 3,
+    .toughness 3,
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
+    .ability
+      (.keywordWithCost
+        (.supertypeAndTypeCycling .basic .land)
+        [.mana [.generic 2]])
+  ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
-    (triggeredAbilities := #[.onEnterConnive])
-    (activatedAbilities := #[typecyclingAbility "Basic land" (ManaCost.ofGeneric 2)])
 
 def atlanteanCavalry : CardDef :=
   (TraditionalCardDefinition.card [
@@ -891,9 +903,32 @@ def tonyStark : CardDef :=
     (otherFace := some theInvincibleIronMan)
 
 def tricksterSStratagem : CardDef :=
-  sorcery "Trickster's Stratagem" (ManaCost.ofGenericAndColor 3 .blue)
-    "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)"
-    (spellEffect := some (Effect.ownerPutsLibraryThenConnive))
+  (TraditionalCardDefinition.card [
+    .name "Trickster's Stratagem",
+    .manaCost [.generic 3, .mono .blue],
+    .type .sorcery,
+    .actions [
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putIntoLibraryFromTop
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))]))
+          2,
+          .putOnBottomOfLibrary (.targetReference 1)],
+      .keyword
+        (.targets
+          2
+          (.range 0 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        (.connive 1)]
+  ]).toCardDef
+    (oracleText := "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
 
 def weSayTheeNay : CardDef :=
   card "We Say Thee Nay!" #[.instant] (ManaCost.ofGenericAndColor 1 .blue)
@@ -1062,9 +1097,24 @@ def klawSonicSubjugator : CardDef :=
     (triggeredAbilities := #[.onEnter Effect.enterRevealDiscardFromHand])
 
 def madameMasque : CardDef :=
-  legendaryCreature "Madame Masque" (ManaCost.ofGenericAndColor 4 .black) #["Human", "Villain"] 3 2
+  (TraditionalCardDefinition.card [
+    .name "Madame Masque",
+    .manaCost [.generic 4, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .villain,
+    .power 3,
+    .toughness 2,
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
+    .ability
+      (.triggered
+        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+        (.createTokens (.controller .this) 1 [
+          .type .creature, .subtype .villain, .colorIndicator [.black],
+          .power 2, .toughness 1, .ability (.keyword .menace)]))
+  ]).toCardDef
     (oracleText := "When Madame Masque enters, she connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nWhenever you draw your second card each turn, create a 2/1 black Villain creature token with menace. (It can't be blocked except by two or more creatures.)")
-    (triggeredAbilities := #[.onEnterConnive, .onYouDrawSecondCreateTokens .villain21menace])
 
 def theMastersOfEvil : CardDef :=
   legendaryCreature "The Masters of Evil" (ManaCost.ofGenericAndColor 5 .black) #["Human", "Villain"] 5 6
@@ -1074,12 +1124,32 @@ def theMastersOfEvil : CardDef :=
       (discardSource := true) (activateFromHand := true)])
 
 def mODOK : CardDef :=
-  artifactCreature "M.O.D.O.K." (ManaCost.ofGenericAndColors 3 [.black, .black]) #["Villain"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "M.O.D.O.K.",
+    .manaCost [.generic 3, .mono .black, .mono .black],
+    .type .artifact,
+    .type .creature,
+    .supertype .legendary,
+    .subtype .villain,
+    .power 2,
+    .toughness 2,
+    .ability (.keyword .flying),
+    .ability (.keyword .lifelink),
+    .ability
+      (.activatedIf
+        (.turn (.controller .this))
+        [.life 3]
+        (.keyword (.source .this) (.connive 1))),
+    .ability
+      (.static
+        (.addPowerToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))])
+          (-1) (-1)))
+  ]).toCardDef
     (oracleText := "Flying, lifelink\nMental Organism — Pay 3 life: M.O.D.O.K. connives. Activate only during your turn. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nDesigned Only for Killing — Creatures your opponents control get -1/-1.")
-    (keywords := (Keyword.flying).merge Keyword.lifelink)
-    (staticAbilities := #[StaticAbility.opponentsCreaturesGet (-1) (-1)])
-    (activatedAbilities := #[activated (Effect.connive) (payLife := 3) (onlyDuringYourTurn := true)])
-    (legendary := true)
 
 def moonstoneHarshMistress : CardDef :=
   legendaryCreature "Moonstone, Harsh Mistress" (ManaCost.ofGenericAndColor 3 .black) #["Human", "Doctor", "Villain"] 2 4
@@ -1111,9 +1181,18 @@ def projectDeathlokSoldier : CardDef :=
     (oracleText := "{2}{B}: Return this card from your graveyard to your hand.")
 
 def redRoomRecruit : CardDef :=
-  creature "Red Room Recruit" (ManaCost.ofGenericAndColor 1 .black) #["Human", "Spy", "Villain"] 1 2
+  (TraditionalCardDefinition.card [
+    .name "Red Room Recruit",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .subtype .human,
+    .subtype .spy,
+    .subtype .villain,
+    .power 1,
+    .toughness 2,
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1)))
+  ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)")
-    (triggeredAbilities := #[.onEnterConnive])
 
 def robotDomination : CardDef :=
   enchantment "Robot Domination" (ManaCost.ofGenericAndColor 3 .black)
@@ -1169,9 +1248,56 @@ def superSkrull : CardDef :=
     (activatedAbilities := #[activated (Effect.abilityCreateTokens .wall04defender 1) (ManaCost.ofGenericAndColor 2 .white), activated (Effect.sourceGets 4 4) (ManaCost.ofGenericAndColor 3 .green), activated (Effect.dealDamageToTargetCreature 4) (ManaCost.ofGenericAndColor 4 .red), activated (Effect.abilityTargetPlayerDraw 4) (ManaCost.ofGenericAndColor 5 .blue)])
 
 def swordsmanSharpScoundrel : CardDef :=
-  legendaryCreature "Swordsman, Sharp Scoundrel" (ManaCost.ofGenericAndColor 1 .black) #["Human", "Hero", "Villain"] 2 2
+  (TraditionalCardDefinition.card [
+    .name "Swordsman, Sharp Scoundrel",
+    .manaCost [.generic 1, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .hero,
+    .subtype .villain,
+    .power 2,
+    .toughness 2,
+    .ability
+      (.triggered
+        (.enter
+          (.intersection [
+            .not .this,
+            .permanent,
+            .subtype .villain,
+            .controlled (.controller .this)]))
+        (.attach
+          (.targets
+            1
+            (.range 0 1)
+            (.intersection [
+              .permanent,
+              .subtype .equipment,
+              .controlled (.controller .this)]))
+          (.target
+            2
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)])))),
+    .ability
+      (.triggered
+        (.attack
+          (.hostOf
+            (.intersection [
+              .permanent,
+              .subtype .equipment,
+              .controlled (.controller .this)]))
+          .all)
+        (.keyword
+          (.hostOf
+            (.intersection [
+              .permanent,
+              .subtype .equipment,
+              .controlled (.controller .this)]))
+          (.connive 1)))
+  ]).toCardDef
     (oracleText := "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control.\nWhenever an equipped creature you control attacks, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
-    (triggeredAbilities := #[.onWatch Effect.watchVillainAttachEquipment, .onEquippedCreatureYouControlAttacksConnive])
 
 def thunderboltsConspiracy : CardDef :=
   enchantment "Thunderbolts Conspiracy" (ManaCost.ofGenericAndColor 3 .black)
@@ -2136,9 +2262,24 @@ def ironManMasterOfMachines : CardDef :=
     (legendary := true)
 
 def kangTemporalTyrant : CardDef :=
-  legendaryCreature "Kang, Temporal Tyrant" (ManaCost.ofGenericAndColors 2 [.blue, .black]) #["Human", "Villain"] 3 4
+  (TraditionalCardDefinition.card [
+    .name "Kang, Temporal Tyrant",
+    .manaCost [.generic 2, .mono .blue, .mono .black],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .villain,
+    .power 3,
+    .toughness 4,
+    .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive 1))),
+    .ability
+      (.triggered
+        (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+        (.sequence [
+          .loseLife (.opponent (.controller .this)) 1,
+          .gainLife (.controller .this) 1]))
+  ]).toCardDef
     (oracleText := "Whenever Kang attacks, he connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nWhenever you draw your second card each turn, each opponent loses 1 life and you gain 1 life.")
-    (triggeredAbilities := #[.onAttackConnive, .onResource Effect.resourceSecondDrawDrain])
 
 def killmongerScourgeOfWakanda : CardDef :=
   legendaryCreature "Killmonger, Scourge of Wakanda" (ManaCost.ofGenericAndColors 2 [.black, .green]) #["Human", "Mercenary", "Villain"] 3 3
@@ -3091,6 +3232,30 @@ def mshCards : Array CardDef :=
 #guard restorativeTechnique.spellEffect == some (Effect.gainLifeSearchBasicPlusOne 2)
 #guard atlanteanCavalry.keywords.vigilance
 #guard atlanteanCavalry.triggeredAbilities == #[.onDrawSecondPlusOne]
+#guard aIMScientists.triggeredAbilities == #[.onEnterConnive]
+#guard aIMScientists.activatedAbilities.size == 1
+#guard aIMScientists.activatedAbilities[0]!.activateFromHand
+#guard aIMScientists.activatedAbilities[0]!.cost.discardSource
+#guard aIMScientists.activatedAbilities[0]!.effect ==
+  Effect.searchLandTypeToHand "Basic land"
+#guard redRoomRecruit.triggeredAbilities == #[.onEnterConnive]
+#guard madameMasque.hasSupertype .legendary
+#guard madameMasque.triggeredAbilities ==
+  #[.onEnterConnive, .onYouDrawSecondCreateTokens .villain21menace]
+#guard mODOK.keywords.flying
+#guard mODOK.keywords.lifelink
+#guard mODOK.hasSupertype .legendary
+#guard mODOK.staticAbilities == #[.opponentsCreaturesGet (-1) (-1)]
+#guard mODOK.activatedAbilities.size == 1
+#guard mODOK.activatedAbilities[0]!.cost.payLife == 3
+#guard mODOK.activatedAbilities[0]!.onlyDuringYourTurn
+#guard mODOK.activatedAbilities[0]!.effect == Effect.connive
+#guard swordsmanSharpScoundrel.triggeredAbilities ==
+  #[.onWatch Effect.watchVillainAttachEquipment,
+    .onEquippedCreatureYouControlAttacksConnive]
+#guard kangTemporalTyrant.triggeredAbilities ==
+  #[.onAttackConnive, .onResource Effect.resourceSecondDrawDrain]
+#guard tricksterSStratagem.spellEffect == some Effect.ownerPutsLibraryThenConnive
 #guard ghostSpectralSaboteur.keywords.flash
 #guard ghostSpectralSaboteur.keywords.cantBeBlocked
 #guard ghostSpectralSaboteur.hasSupertype .legendary

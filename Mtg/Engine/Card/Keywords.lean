@@ -155,6 +155,10 @@ inductive Keyword where
   control. It's also the given subtype. If you don't control an Army,
   create a 0/0 black Army creature token of that subtype first. -/
   | amass : CardSubtype → Nat → Keyword
+  /-- Connive N (CR 701.48): draw N cards, then discard N cards. For each
+  nonland card discarded this way, put a +1/+1 counter on the conniving
+  creature. Printed “connives” is connive 1. -/
+  | connive : Nat → Keyword
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -182,7 +186,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _
-  | .recruit | .amass _ _ =>
+  | .recruit | .amass _ _ | .connive _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -198,6 +202,7 @@ instance : ToString Keyword where
     | .supertypeAndTypeCycling st t => s!"{st} {t.englishName.toLower}cycling"
     | .recruit => "recruit"
     | .amass st n => s!"amass {st}s {n}"
+    | .connive n => s!"connive {n}"
     | k => toString k.toKeywords
 
 end Keyword
