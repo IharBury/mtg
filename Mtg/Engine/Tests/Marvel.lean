@@ -1520,4 +1520,48 @@ def bullseyeOnField : Game :=
     (g.object! g.stack.back!.objectId).name == "Bullseye, Death Dealer's ability" &&
     (g.player ⟨0⟩).hand.isEmpty
 
+-- Killmonger: +2/+1 only with two or more creature cards in your graveyard.
+#guard killmongerScourgeOfWakanda.matchesOracleText
+#guard killmongerScourgeOfWakanda.staticAbilities ==
+  #[.getsIfGyCreatureCards 2 2 1]
+
+def killmongerOnField : Game :=
+  addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
+
+def killmongerObj (g : Game) : GameObject :=
+  namedPermanent g "Killmonger, Scourge of Wakanda"
+
+-- Empty graveyard: 3/3.
+#guard
+  let g := killmongerOnField
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- One creature card in your graveyard is not enough.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- A creature card plus a noncreature still has only one creature card.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- Creature cards in an opponent's graveyard do not count.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- Two creature cards in your graveyard: +2/+1.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 5 && g.toughness o == 4
+
 end Mtg.Engine.Tests

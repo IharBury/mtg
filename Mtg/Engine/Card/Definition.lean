@@ -7236,6 +7236,21 @@ end TraditionalCardDefinition
           [.addPowerToughness .this 2 1]))
   ]).toCardDef.staticAbilities == #[]
 
+-- One creature card is not enough (Killmonger needs two or more).
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.countAtLeast
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])
+            1)
+          [.addPowerToughness .this 2 1]))
+  ]).toCardDef.staticAbilities == #[]
+
 #guard
   (TraditionalCardDefinition.card [
     .ability
