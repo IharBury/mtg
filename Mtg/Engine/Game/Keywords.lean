@@ -114,7 +114,7 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
 
 /-- True when leftover “has flying if you've put a +1/+1 counter on this
 this turn” currently applies. Cards entering a graveyard do not count. -/
-def leftoverFlyingIfPlusOneThisTurn (g : Game) (o : GameObject) : Bool :=
+def leftoverFlyingIfPlusOneThisTurn (_g : Game) (o : GameObject) : Bool :=
   o.isOnBattlefield &&
     o.staticAbilities.any (fun
       | .flyingIfPlusOneThisTurn => o.status.gotPlusOneThisTurn
@@ -122,7 +122,8 @@ def leftoverFlyingIfPlusOneThisTurn (g : Game) (o : GameObject) : Bool :=
 
 def leftoverGrantedKeywords (g : Game) (o : GameObject) : Keywords :=
   let self :=
-    if g.leftoverFlyingIfPlusOneThisTurn o then Keyword.flying else Keywords.none
+    if g.leftoverFlyingIfPlusOneThisTurn o then Keyword.flying.toKeywords
+    else Keywords.none
   let self :=
     if g.leftoverAllCreatureTypes o then Keywords.merge self Keyword.changeling else self
   let fromTeam :=
