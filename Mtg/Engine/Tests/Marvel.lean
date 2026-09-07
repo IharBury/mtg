@@ -1145,7 +1145,7 @@ def nightNurseReturned : Game :=
 #guard !nightNurseReturned.objects.any (fun o =>
   o.name == "Grizzly Bears" && o.zone == .graveyard ⟨0⟩)
 
-/-- An older graveyard permanent is not a legal Night Nurse target. -/
+-- An older graveyard permanent is not a legal Night Nurse target.
 #guard
   let g := addToGraveyard afterDraw hillGiant ⟨0⟩
   let g := addPermanent g nightNurseHealerOfHeroes ⟨0⟩ ⟨0⟩
