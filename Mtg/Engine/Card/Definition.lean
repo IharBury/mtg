@@ -107,8 +107,9 @@ inductive Selector where
   | hostOf : Selector → Selector
   /-- An object in a graveyard (CR 404). -/
   | inGraveyard
-  /-- An object put into a graveyard from anywhere this turn. -/
-  | putIntoGraveyardThisTurn
+  /-- An object that was the object of the first event since the second
+  event. -/
+  | wasObjectSince : Trigger → Trigger → Selector
   /-- An object in a library (CR 401). -/
   | inDeck
   /-- Objects with the given supertype (CR 205.4). -/
@@ -384,9 +385,11 @@ def shape : Selector → Shape
   | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _
   | .targets _ _ _ | .targetSet _ _ _ _ | .targetReference _
   | .selected _ _ _ | .player => {}
-  | .putIntoGraveyardThisTurn => { putIntoGraveyardThisTurn := true }
-  | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-  | .hostOf _ | .inGraveyard | .inDeck | .supertype _ | .variable _ | .topOfLibrary _ => {}
+  | .wasObjectSince (.putToGraveyard _) .turnStart =>
+    { putIntoGraveyardThisTurn := true }
+  | .wasObjectSince _ _ | .wasObjectOfAction _ | .replacingObject _
+  | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inDeck | .supertype _
+  | .variable _ | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -513,6 +516,13 @@ def includesInGraveyard : Selector → Bool
   | .intersection (f :: fs) =>
     includesInGraveyard f || includesInGraveyard (.intersection fs)
   | .target _ among | .targets _ _ among => includesInGraveyard among
+  | _ => false
+
+/-- True when this selector is “the object of a put-to-graveyard event
+since the start of the turn”. -/
+def wasObjectOfPutToGraveyardThisTurn? : Selector → Bool
+  | .wasObjectSince (.putToGraveyard _) .turnStart => true
+  | .intersection fs => fs.any wasObjectOfPutToGraveyardThisTurn?
   | _ => false
 
 /-- True when this selector includes `.spell`. -/
@@ -981,7 +991,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
     | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard | .putIntoGraveyardThisTurn | .inDeck | .supertype _
+    | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
     | s => some s
 
@@ -2208,7 +2218,7 @@ def leftoverEnterReturnGyPermanentThisTurn? : CardAction → Bool
     match sel.among? with
     | some among =>
       among.includesInGraveyard && among.shape.mustBePermanent &&
-        among.shape.putIntoGraveyardThisTurn
+        among.wasObjectOfPutToGraveyardThisTurn?
     | none => false
   | _ => false
 
@@ -7067,7 +7077,7 @@ end TraditionalCardDefinition
             .inGraveyard,
             .permanent,
             .owner (.controller .this),
-            .putIntoGraveyardThisTurn])))).toTriggeredAbility? with
+            .wasObjectSince (.putToGraveyard .all) .turnStart])))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterReturnGyPermanentThisTurn
   | none => false
 
@@ -7081,6 +7091,32 @@ end TraditionalCardDefinition
           .inGraveyard,
           .permanent,
           .owner (.controller .this)])))).toTriggeredAbility?.isNone
+
+-- Dying this turn is not “put into a graveyard from anywhere this turn”.
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.returnToHand
+      (.target
+        1
+        (.intersection [
+          .inGraveyard,
+          .permanent,
+          .owner (.controller .this),
+          .wasObjectSince (.die .all) .turnStart])))).toTriggeredAbility?.isNone
+
+-- Since the start of the game is not this turn.
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.returnToHand
+      (.target
+        1
+        (.intersection [
+          .inGraveyard,
+          .permanent,
+          .owner (.controller .this),
+          .wasObjectSince (.putToGraveyard .all) .gameStart])))).toTriggeredAbility?.isNone
 
 #guard
   match

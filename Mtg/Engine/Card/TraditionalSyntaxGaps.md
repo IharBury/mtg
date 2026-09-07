@@ -57,7 +57,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
-  `putIntoGraveyardThisTurn`,
+  `wasObjectSince`,
   `inDeck`, `supertype`, `variable`, `topOfLibrary`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
@@ -117,8 +117,8 @@ each artifact token you control (Thorin).
 `CardAction.chooseModeUnchosenThisTurn` compiles “choose one that hasn’t
 been chosen this turn” (Galadriel’s Alliance); unrestricted `chooseMode`
 does not leftover to that triggered ability.
-`Selector.putIntoGraveyardThisTurn` is “put into a graveyard from anywhere
-this turn” (Night Nurse). `Condition.countAtLeast` is object-count
+`Selector.wasObjectSince` is “the object of this event since that event”
+(Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
 is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land

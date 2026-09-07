@@ -339,7 +339,7 @@ def nightNurseHealerOfHeroes : CardDef :=
               .inGraveyard,
               .permanent,
               .owner (.controller .this),
-              .putIntoGraveyardThisTurn]))))
+              .wasObjectSince (.putToGraveyard .all) .turnStart]))))
   ]).toCardDef
     (oracleText := "Flash\nLifelink\nWhen Night Nurse enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand.")
 
