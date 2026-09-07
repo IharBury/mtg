@@ -1220,7 +1220,7 @@ def galadrielLightOfValinor : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.chooseMode [
+        (.chooseModeUnchosenThisTurn [
           .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
           .putCounter
             (.intersection [

@@ -763,6 +763,9 @@ inductive CardAction where
   | attach : Selector → Selector → CardAction
   /-- Choose one of the given modes (CR 700.2). -/
   | chooseMode : List CardAction → CardAction
+  /-- Choose one of the given modes that hasn't been chosen this turn
+  (CR 700.2e). -/
+  | chooseModeUnchosenThisTurn : List CardAction → CardAction
   /-- Counter the selected spell (CR 701.5). -/
   | counter : Selector → CardAction
   /-- The given player may pay the cost to prevent the action. -/
@@ -2242,7 +2245,7 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
   | _ => false
 
 /-- Alliance modes: add {G}{G}{G}; +1/+1 on each creature you control;
-scry 2, then draw. -/
+scry 2, then draw. Must be wrapped in `chooseModeUnchosenThisTurn`. -/
 def leftoverAllianceModes? : List CardAction → Bool
   | [
       .addMana who [.mono .green, .mono .green, .mono .green],
@@ -2764,8 +2767,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .ifElse _ [] [] => continuousEffect none [] asAbility
                   | .optional inner => compile inner asAbility
                   | .attach _ _ => Effect.untapPumpMaybeAttach 0 0
-                  | .chooseMode (a :: _) => compile a asAbility
-                  | .chooseMode [] => continuousEffect none [] asAbility
+                  | .chooseMode (a :: _) | .chooseModeUnchosenThisTurn (a :: _) =>
+                    compile a asAbility
+                  | .chooseMode [] | .chooseModeUnchosenThisTurn [] =>
+                    continuousEffect none [] asAbility
                   | .counter _ => Effect.counterSpell
                   | .preventable _ costs (.counter _) =>
                     Effect.counterUnlessPays (ManaCost.manaValue (Cost.manaCost costs))
@@ -2858,7 +2863,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
-  | .chooseMode as => some ((as.map fun a => compile a false).toArray)
+  | .chooseMode as | .chooseModeUnchosenThisTurn as =>
+    some ((as.map fun a => compile a false).toArray)
   | _ => none
 
 /-- Compile to a spell-shaped `Effect`. -/
@@ -3293,14 +3299,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | some 1 => some TriggeredAbility.onEnterMaySacArtifactOrDiscardDraw
         | _ =>
           CardAction.leftoverEnterThisAction? action
+  | .triggered (.enter among) (.chooseModeUnchosenThisTurn modes) =>
+    if among.shape.anotherCreatureYouControl &&
+        CardAction.leftoverAllianceModes? modes then
+      some TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
+    else none
   | .triggered (.enter among) (.chooseMode modes) =>
     if among.shape.landYouControl && CardAction.leftoverTapOppOrUntapYours? modes then
       some TriggeredAbility.onLandYouControlEntersTapOrUntap
     else if CardAction.leftoverNontokenHeroModal? among modes then
       some (TriggeredAbility.onWatch Effect.watchNontokenHeroModal)
-    else if among.shape.anotherCreatureYouControl &&
-        CardAction.leftoverAllianceModes? modes then
-      some TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
     else none
   | .triggered (.enter among) action =>
     match CardAction.leftoverPlusOneVigilance? action with
@@ -7149,5 +7157,51 @@ end TraditionalCardDefinition
           (.happened (.putToGraveyard .this) .turnStart)
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[.flyingIfPlusOneThisTurn]
+
+-- Galadriel, Light of Valinor: Alliance modes that haven't been chosen
+-- this turn. Unrestricted `chooseMode` does not compile to Alliance.
+#guard
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  let modes : List CardAction :=
+    [
+      .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
+      .putCounter
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .plusOnePlusOne
+        1,
+      .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]
+  match
+    (Ability.triggered (.enter among) (.chooseModeUnchosenThisTurn modes)
+      ).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAnotherCreatureYouControlEntersAlliance
+  | none => false
+
+#guard
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  let modes : List CardAction :=
+    [
+      .addMana (.controller .this) [.mono .green, .mono .green, .mono .green],
+      .putCounter
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .plusOnePlusOne
+        1,
+      .sequence [.scry (.controller .this) 2, .draw (.controller .this) 1]]
+  (Ability.triggered (.enter among) (.chooseMode modes)).toTriggeredAbility?.isNone
 
 end Mtg.Engine

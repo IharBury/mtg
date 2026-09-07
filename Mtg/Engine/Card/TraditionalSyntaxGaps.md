@@ -82,6 +82,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
+  `chooseModeUnchosenThisTurn`,
   `counter`, `preventable`, `discard`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
@@ -112,6 +113,9 @@ through leftovers).
 (Landroval’s two or more creatures attacking a player).
 `ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
 each artifact token you control (Thorin).
+`CardAction.chooseModeUnchosenThisTurn` compiles “choose one that hasn’t
+been chosen this turn” (Galadriel’s Alliance); unrestricted `chooseMode`
+does not leftover to that triggered ability.
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
@@ -272,8 +276,9 @@ complete.
   - Andúril, Narsil Reforged
 - **`resolvedThisTurnCount`** (1 cards) — This ability has resolved N times this turn
   - Belladonna Took
-- **`modeNotChosenThisTurn`** (1 cards) — Choose a mode that hasn't been chosen this turn
-  - The Vision
+- **`modeNotChosenThisTurn`** — Constructor is now
+  `CardAction.chooseModeUnchosenThisTurn` (Galadriel). The Vision still
+  needs a leftover for its noncreature-spell modes.
 
 ### `Ability`
 
@@ -555,8 +560,9 @@ inductives (not a missing leftover for an expressible spelling).
   control. No `ContinuousEffect.gainSupertype`; `Range.anyNumber` is missing
   (only finite `range lo hi`).
 - **The Vision** — Choose one *that hasn't been chosen this turn*.
-  `Condition.firstThisTurn` / “mode not chosen this turn” is missing.
-  `CardAction.chooseMode` has no per-mode-this-turn exclusion.
+  `CardAction.chooseModeUnchosenThisTurn` now exists (Galadriel’s Alliance).
+  The Vision still needs a leftover for “whenever you cast a noncreature
+  spell” plus its three named modes (`Effect.castingVisionModes`).
 
 ## Adjacent inductives
 
@@ -2455,8 +2461,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Vision** (`theVision`)
 
-- `Condition.modeNotChosenThisTurn` — Choose a mode that hasn't been chosen this turn
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
+- `CardAction.chooseModeUnchosenThisTurn` now exists (Galadriel). Vision still needs a leftover from that constructor plus “you cast a noncreature spell” onto `Effect.castingVisionModes`.
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
