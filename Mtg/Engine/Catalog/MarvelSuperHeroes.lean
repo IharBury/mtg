@@ -1139,7 +1139,7 @@ def mODOK : CardDef :=
       (.activatedIf
         (.turn (.controller .this))
         [.life 3]
-        (.keyword .this (.connive 1))),
+        (.keyword (.source .this) (.connive 1))),
     .ability
       (.static
         (.addPowerToughness

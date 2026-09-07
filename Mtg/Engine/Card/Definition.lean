@@ -1900,6 +1900,11 @@ def leftoverThis : Selector → Bool
   | .this | .source .this => true
   | _ => false
 
+/-- The source of this ability on the stack (CR 113.7), not the ability itself. -/
+def leftoverSourceThis : Selector → Bool
+  | .source .this => true
+  | _ => false
+
 /-- A numbered target that is a creature you control. -/
 def leftoverCreatureYouControlTarget? : Selector → Bool
   | .target _ among =>
@@ -2420,9 +2425,15 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match addedManaTypes? syms with
                     | some types => Effect.addMana types
                     | none => continuousEffect none [] asAbility
-                  | .keyword _ k =>
+                  | .keyword who k =>
                     match leftoverKeywordAction? k with
-                    | some e => e
+                    | some e =>
+                      match k with
+                      | .connive 1 =>
+                        let ok :=
+                          if asAbility then leftoverSourceThis who else leftoverThis who
+                        if ok then e else continuousEffect none [] asAbility
+                      | _ => e
                     | none => continuousEffect none [] asAbility
                   | .createTokens _ n parts =>
                     match leftoverTokenKind? parts with
@@ -4281,13 +4292,22 @@ end TraditionalCardDefinition
     (Ability.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword .this (.connive 1))).toActivatedAbility? with
+      (.keyword (.source .this) (.connive 1))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       !ab.onceEachTurn &&
       ab.cost.payLife == 3 &&
       ab.effect == Effect.connive
   | none => false
+
+#guard
+  match
+    (Ability.activatedIf
+      (.turn (.controller .this))
+      [.life 3]
+      (.keyword .this (.connive 1))).toActivatedAbility? with
+  | some ab => ab.effect != Effect.connive
+  | none => true
 
 #guard
   (TraditionalCardDefinition.card [
@@ -6046,7 +6066,11 @@ end TraditionalCardDefinition
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin 1)) == Effect.amassGoblins 1
 #guard CardAction.toEffect (.keyword .this (.connive 1)) == Effect.connive
-#guard CardAction.toAbilityEffect (.keyword .this (.connive 1)) == Effect.connive
+#guard CardAction.toEffect (.keyword (.source .this) (.connive 1)) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword (.source .this) (.connive 1)) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword .this (.connive 1)) != Effect.connive
+#guard CardAction.leftoverSourceThis (.source .this)
+#guard !CardAction.leftoverSourceThis .this
 
 #guard CardAction.leftoverTokenKind? PredefinedToken.treasureToken == some TokenKind.treasure
 #guard CardAction.leftoverTokenKind? PredefinedToken.foodToken == some TokenKind.food
