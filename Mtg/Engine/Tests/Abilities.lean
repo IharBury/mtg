@@ -938,7 +938,7 @@ def justiceWatchLandOk : Bool :=
 
 #guard justiceWatchLandOk
 
-/-- An opponent's bounced permanent does not fire the bounce-watch. -/
+-- An opponent's bounced permanent does not fire the bounce-watch.
 #guard
   let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
