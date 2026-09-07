@@ -1564,4 +1564,81 @@ def killmongerObj (g : Game) : GameObject :=
   let o := killmongerObj g
   g.power o == 5 && g.toughness o == 4
 
+-- Storm: creatures with flying can't attack you or block creatures you control.
+#guard stormWindrider.matchesOracleText
+#guard stormWindrider.keywords.flying
+#guard stormWindrider.staticAbilities ==
+  #[.flyingCantAttackYouOrBlockYours]
+
+/-- Storm's Bears attack; Smaug (flying) and Gray Ogre are available to block. -/
+def stormReadyToBlockFlyer : Game :=
+  let g := addPermanent afterDraw stormWindrider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  passBoth g
+
+#guard stormReadyToBlockFlyer.pending == .declareBlockers
+#guard !stormReadyToBlockFlyer.canBlock
+  (namedPermanent stormReadyToBlockFlyer "Smaug, the Great Calamity")
+  (namedPermanent stormReadyToBlockFlyer "Grizzly Bears")
+#guard stormReadyToBlockFlyer.canBlock
+  (namedPermanent stormReadyToBlockFlyer "Gray Ogre")
+  (namedPermanent stormReadyToBlockFlyer "Grizzly Bears")
+#guard
+  match stormReadyToBlockFlyer.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent stormReadyToBlockFlyer "Smaug, the Great Calamity").id,
+    (namedPermanent stormReadyToBlockFlyer "Grizzly Bears").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+-- Without Storm, a flying creature can block.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  g.canBlock
+    (namedPermanent g "Smaug, the Great Calamity")
+    (namedPermanent g "Grizzly Bears")
+
+-- Storm on the defending player does not stop their flyer from blocking yours.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g stormWindrider ⟨1⟩ ⟨1⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  g.canBlock
+    (namedPermanent g "Smaug, the Great Calamity")
+    (namedPermanent g "Grizzly Bears")
+
+/-- Nissa's Smaug and Bears vs Chandra's Storm; Nissa is about to attack. -/
+def stormVsFlyerAttack : Game :=
+  let g := addPermanent started stormWindrider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .end 80)
+  skipToPending g .declareAttackers 80
+
+#guard stormVsFlyerAttack.pending == .declareAttackers
+#guard stormVsFlyerAttack.activePlayer == ⟨1⟩
+#guard
+  match stormVsFlyerAttack.apply ⟨1⟩
+      (.declareAttackers #[(namedPermanent stormVsFlyerAttack
+        "Smaug, the Great Calamity").id]) with
+  | .error msg => mentions msg "can't attack"
+  | .ok _ => false
+#guard
+  let g := mustApply stormVsFlyerAttack ⟨1⟩
+    (.declareAttackers #[(namedPermanent stormVsFlyerAttack "Grizzly Bears").id])
+  (namedPermanent g "Grizzly Bears").status.attacking
+
 end Mtg.Engine.Tests

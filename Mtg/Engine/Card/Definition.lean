@@ -7664,6 +7664,7 @@ end TraditionalCardDefinition
                 .controlled (.controller .this)])))))
   ]).toCardDef.staticAbilities == #[.flyingCantAttackYouOrBlockYours]
 
+-- Attack-only is not enough (Storm also forbids blocking).
 #guard
   (TraditionalCardDefinition.card [
     .ability
@@ -7672,6 +7673,20 @@ end TraditionalCardDefinition
           (.attack
             (.intersection [.permanent, .cardType .creature, .keyword .flying])
             (.controller .this))))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Blocking-only is not enough (Storm also forbids attacking).
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.forbid
+          (.block
+            (.intersection [.permanent, .cardType .creature, .keyword .flying])
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[]
 
 #guard
