@@ -818,7 +818,7 @@ inductive CardAction where
   `addManaAnyColor`. -/
   | addMana : Selector → List ManaSymbol → CardAction
   /-- The selected object or player performs a keyword action (CR 701),
-  e.g. recruit or amass Goblins 1. -/
+  e.g. recruit, amass Goblins 1, or connive 1. -/
   | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
   characteristics (CR 111). -/
@@ -1601,6 +1601,36 @@ def leftoverEachPlayerSacrificesCreature? : CardAction → Bool
       sacAmong.shape.types.eqTypes [.creature]
   | _ => false
 
+/-- Each opponent loses N life and you gain N life. -/
+def leftoverEachOpponentLoseLifeYouGain? : CardAction → Option Nat
+  | .sequence [.loseLife dest n, .gainLife who m] =>
+    if who == .controller .this && n == m then
+      match dest with
+      | .opponent (.controller .this) => some n
+      | _ => none
+    else none
+  | _ => none
+
+/-- Owner puts the targeted opponent creature into their library, then up
+to one target creature you control connives. -/
+def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
+  | .sequence [
+      .playerSelectAction chooser (.range 1 1)
+        [.putOnTopOfLibrary t1, .putOnBottomOfLibrary t2],
+      .keyword who (.connive 1)
+    ] =>
+    match t1 with
+    | .target n among =>
+      t2 == .targetReference n &&
+        among.toTargetKind == .oppCreature &&
+        chooser == .owner (.targetReference n) &&
+        match who with
+        | .targets _ (.range 0 1) dest =>
+          dest.shape.sameController && dest.shape.types.eqTypes [.creature]
+        | _ => false
+    | _ => false
+  | _ => false
+
 /-- Put +1/+1 counters on each other permanent you control of a subtype. -/
 def leftoverPlusOneOnEachOtherSubtype? : CardAction → Option Effect
   | .putCounter sel .plusOnePlusOne n =>
@@ -1821,6 +1851,7 @@ def leftoverKeywordAction? : Keyword → Option Effect
   | .recruit => some Effect.recruit
   | .amass .goblin n => some (Effect.amassGoblins n)
   | .amass .orc n => some (Effect.ofTrigger (.amassOrcs n))
+  | .connive 1 => some Effect.connive
   | _ => none
 
 /-- Flattened token characteristics used to recover a `TokenKind`. -/
@@ -1857,6 +1888,23 @@ def leftoverIsColor (p : TokenParts) (c : Color) : Bool :=
 /-- The selected player is this object's controller (“you create”). -/
 def leftoverYou : Selector → Bool
   | .controller .this => true
+  | _ => false
+
+/-- The selected object is this permanent (“it connives”). -/
+def leftoverThis : Selector → Bool
+  | .this | .source .this => true
+  | _ => false
+
+/-- A numbered target that is a creature you control. -/
+def leftoverCreatureYouControlTarget? : Selector → Bool
+  | .target _ among =>
+    among.shape.sameController && among.shape.types.eqTypes [.creature]
+  | _ => false
+
+/-- The host of Equipment you control (an equipped creature you control). -/
+def leftoverEquippedCreatureYouControl : Selector → Bool
+  | .hostOf among =>
+    among.shape.sameController && among.includedSubtype? == some "Equipment"
   | _ => false
 
 /-- Match printed token characteristics to a modeled `TokenKind`. -/
@@ -2073,6 +2121,9 @@ def leftoverContinuousCompiled? : CardAction → Option Effect
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  if leftoverOwnerPutsLibraryThenConnive? action then
+    some Effect.ownerPutsLibraryThenConnive
+  else
   (leftoverCreateThenTeamPump? action).orElse fun _ =>
   (leftoverContinuousCompiled? action).orElse fun _ =>
   match leftoverDrawLoseLifeThenAmass? action with
@@ -2139,6 +2190,8 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     if leftoverYou who then some TriggeredAbility.onEnterRecruit else none
   | .keyword who (.amass .goblin n) =>
     if leftoverYou who then some (TriggeredAbility.onEnterAmassGoblins n) else none
+  | .keyword who (.connive 1) =>
+    if leftoverThis who then some TriggeredAbility.onEnterConnive else none
   | .sequence [
       .actionId id (.returnToHand sel),
       .if (.happened (.actionWithId id') _)
@@ -2453,33 +2506,59 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       (.and (.turn _) (.didNotHappen (.abilityWithIdActivated _) .turnStart))
       costs action =>
     some { activatedAbility costs action true with onlyDuringYourTurn := true }
+  | .activatedIf (.turn _) costs action =>
+    some { activatedAbility costs action with onlyDuringYourTurn := true }
   | .abilityId _ inner => toActivatedAbility? inner
   | _ => none
 
 /-- Keyword actions on a trigger compile to a named `TriggeredAbility`. -/
-def leftoverKeywordTriggered? (w : Trigger) (k : Keyword) : Option TriggeredAbility :=
-  match w, k with
-  | .enter .this, .recruit => some TriggeredAbility.onEnterRecruit
-  | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
-  | .enter .this, .amass .goblin n => some (TriggeredAbility.onEnterAmassGoblins n)
-  | .die .this, .amass .goblin n => some (TriggeredAbility.onDiesAmassGoblins n)
-  | .or (.enter .this) (.attack .this .all), .recruit =>
-    some TriggeredAbility.onEnterOrAttackRecruit
-  | .or (.enter .this) (.attack .this .all), .amass .goblin n =>
-    some (TriggeredAbility.onEnterOrAttackAmassGoblins n)
-  | .attackSimultaneously among dest _, .amass .goblin n =>
-    if dest == .all && among.shape.sameController then
-      some (TriggeredAbility.onYouAttackAmassGoblins n)
-    else none
-  | .castSpell among, .amass .goblin n =>
-    if Selector.youCastNoncreatureSpell among then
-      some (TriggeredAbility.onCastNoncreatureAmassGoblins n)
-    else none
-  | .ordinal 1 .turnStart (.castSpell among), .recruit =>
-    if Selector.opponentCastsNoncreatureSpell among then
-      some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
-    else none
-  | _, _ => none
+def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
+    Option TriggeredAbility :=
+  match k with
+  | .connive 1 =>
+    match w with
+    | .enter .this =>
+      if CardAction.leftoverThis who then some TriggeredAbility.onEnterConnive
+      else none
+    | .attack .this .all =>
+      if CardAction.leftoverThis who then some TriggeredAbility.onAttackConnive
+      else none
+    | .combatStart p =>
+      if CardAction.leftoverYou p &&
+          CardAction.leftoverCreatureYouControlTarget? who then
+        some TriggeredAbility.onCombatTargetYouControlConnives
+      else none
+    | .attack among .all =>
+      if CardAction.leftoverEquippedCreatureYouControl among &&
+          CardAction.leftoverEquippedCreatureYouControl who then
+        some TriggeredAbility.onEquippedCreatureYouControlAttacksConnive
+      else none
+    | _ => none
+  | _ =>
+    if !CardAction.leftoverYou who then none
+    else
+      match w, k with
+      | .enter .this, .recruit => some TriggeredAbility.onEnterRecruit
+      | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
+      | .enter .this, .amass .goblin n => some (TriggeredAbility.onEnterAmassGoblins n)
+      | .die .this, .amass .goblin n => some (TriggeredAbility.onDiesAmassGoblins n)
+      | .or (.enter .this) (.attack .this .all), .recruit =>
+        some TriggeredAbility.onEnterOrAttackRecruit
+      | .or (.enter .this) (.attack .this .all), .amass .goblin n =>
+        some (TriggeredAbility.onEnterOrAttackAmassGoblins n)
+      | .attackSimultaneously among dest _, .amass .goblin n =>
+        if dest == .all && among.shape.sameController then
+          some (TriggeredAbility.onYouAttackAmassGoblins n)
+        else none
+      | .castSpell among, .amass .goblin n =>
+        if Selector.youCastNoncreatureSpell among then
+          some (TriggeredAbility.onCastNoncreatureAmassGoblins n)
+        else none
+      | .ordinal 1 .turnStart (.castSpell among), .recruit =>
+        if Selector.opponentCastsNoncreatureSpell among then
+          some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
+        else none
+      | _, _ => none
 
 /-- Compile a `.triggered` ability. -/
 def toTriggeredAbility? : Ability → Option TriggeredAbility
@@ -2634,7 +2713,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       action =>
     if CardAction.leftoverPlusOneAndLifelinkTarget? action then
       some TriggeredAbility.onDrawSecondPlusOneLifelink
-    else none
+    else
+      match CardAction.leftoverCreateTokensKindN? action with
+      | some (kind, 1) => some (TriggeredAbility.onYouDrawSecondCreateTokens kind)
+      | _ =>
+        match CardAction.leftoverEachOpponentLoseLifeYouGain? action with
+        | some 1 => some (TriggeredAbility.onResource Effect.resourceSecondDrawDrain)
+        | _ => none
   | .triggered (.draw (.controller .this) .all)
       (.putCounter (.source .this) .plusOnePlusOne 1) =>
     some TriggeredAbility.onDrawPlusOne
@@ -2793,7 +2878,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             (sel == .source .this || sel == .this) then
           some TriggeredAbility.onLandYouControlEntersDrawPlusOneSource
         else none
-      | _ => none
+      | _ =>
+        if Selector.anotherVillainYouControl among &&
+            CardAction.leftoverAttachTargetEquipment? action then
+          some (TriggeredAbility.onWatch Effect.watchVillainAttachEquipment)
+        else none
   | .triggered (.attack .this .all) action =>
     match CardAction.leftoverExileThenReturnTapped? action with
     | some sel =>
@@ -2806,7 +2895,10 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           some (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken)
         else none
       | _ => none
-    | none => none
+    | none =>
+      match action with
+      | .keyword who k => leftoverKeywordTriggered? (.attack .this .all) who k
+      | _ => none
   | .triggered (.attackSimultaneously among dest _)
       (.if (.any ferociousSel) [action]) =>
     if dest == .all && among.shape.sameController && ferociousSel.shape.ferocious then
@@ -2829,8 +2921,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         (sel == .source .this || sel == .this) then
       some TriggeredAbility.onYourBeginCombatFerociousPlusOne
     else none
-  | .triggered w (.keyword who k) =>
-    if CardAction.leftoverYou who then leftoverKeywordTriggered? w k else none
+  | .triggered w (.keyword who k) => leftoverKeywordTriggered? w who k
   | .triggered (.die .this) (.createTokens who n parts) =>
     if CardAction.leftoverYou who then
       CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
@@ -3026,6 +3117,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         staticAbilities :=
           b.staticAbilities.push
             (.otherCreaturesGet sel.includedSubtypes.toArray p t) }
+    else if s.opponentControls && s.types.eqTypes [.creature] then
+      { b with
+        staticAbilities := b.staticAbilities.push (.opponentsCreaturesGet p t) }
     else b
   | .if (.any among) inners =>
     match extraLandIfOtherSubtype? among inners with
@@ -3870,9 +3964,12 @@ end TraditionalCardDefinition
 #guard Keyword.enchant.toKeywords == Keywords.none
 #guard Keyword.recruit.toKeywords == Keywords.none
 #guard (Keyword.amass .goblin 1).toKeywords == Keywords.none
+#guard (Keyword.connive 1).toKeywords == Keywords.none
 #guard toString Keyword.recruit == "recruit"
 #guard toString (Keyword.amass .goblin 1) == "amass Goblins 1"
 #guard toString (Keyword.amass .orc 2) == "amass Orcs 2"
+#guard toString (Keyword.connive 1) == "connive 1"
+#guard toString (Keyword.connive 2) == "connive 2"
 #guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
 #guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
 #guard (Keyword.supertypeAndTypeCycling .basic .land).toKeywords == Keywords.none
@@ -4170,6 +4267,31 @@ end TraditionalCardDefinition
       ab.cost.sacrificeAnotherCreatureOrArtifact &&
       ab.effect == Effect.exileTopPlayUntilEndOfNextTurn
   | none => false
+
+#guard
+  match
+    (Ability.activatedIf
+      (.turn (.controller .this))
+      [.life 3]
+      (.keyword .this (.connive 1))).toActivatedAbility? with
+  | some ab =>
+    ab.onlyDuringYourTurn &&
+      !ab.onceEachTurn &&
+      ab.cost.payLife == 3 &&
+      ab.effect == Effect.connive
+  | none => false
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.addPowerToughness
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.opponent (.controller .this))])
+          (-1) (-1)))
+  ]).toCardDef.staticAbilities == #[.opponentsCreaturesGet (-1) (-1)]
 
 -- Guardian of the Halls: put three +1/+1 counters on this creature.
 #guard
@@ -5620,6 +5742,158 @@ end TraditionalCardDefinition
 
 #guard
   match
+    (Ability.triggered (.enter .this) (.keyword .this (.connive 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterConnive
+  | none => false
+
+#guard
+  (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive 1))).toTriggeredAbility?.isNone
+
+#guard
+  match
+    (Ability.triggered (.attack .this .all) (.keyword .this (.connive 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onAttackConnive
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.combatStart (.controller .this))
+      (.keyword
+        (.target
+          1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        (.connive 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCombatTargetYouControlConnives
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.combatStart (.opponent (.controller .this)))
+    (.keyword
+      (.target
+        1
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+      (.connive 1))).toTriggeredAbility?.isNone
+
+#guard
+  match
+    (Ability.triggered
+      (.attack
+        (.hostOf
+          (.intersection [
+            .permanent,
+            .subtype .equipment,
+            .controlled (.controller .this)]))
+        .all)
+      (.keyword
+        (.hostOf
+          (.intersection [
+            .permanent,
+            .subtype .equipment,
+            .controlled (.controller .this)]))
+        (.connive 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEquippedCreatureYouControlAttacksConnive
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.createTokens (.controller .this) 1 [
+        .type .creature, .subtype .villain, .colorIndicator [.black],
+        .power 2, .toughness 1, .ability (.keyword .menace)])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onYouDrawSecondCreateTokens .villain21menace
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.ordinal 2 .turnStart (.draw (.controller .this) .all))
+      (.sequence [
+        .loseLife (.opponent (.controller .this)) 1,
+        .gainLife (.controller .this) 1])).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onResource Effect.resourceSecondDrawDrain
+  | none => false
+
+#guard
+  match
+    (Ability.triggered
+      (.enter
+        (.intersection [
+          .not .this,
+          .permanent,
+          .subtype .villain,
+          .controlled (.controller .this)]))
+      (.attach
+        (.targets
+          1
+          (.range 0 1)
+          (.intersection [
+            .permanent,
+            .subtype .equipment,
+            .controlled (.controller .this)]))
+        (.target
+          2
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onWatch Effect.watchVillainAttachEquipment
+  | none => false
+
+#guard
+  CardAction.leftoverOwnerPutsLibraryThenConnive?
+    (.sequence [
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putOnTopOfLibrary
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])),
+          .putOnBottomOfLibrary (.targetReference 1)],
+      .keyword
+        (.targets
+          2
+          (.range 0 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        (.connive 1)])
+
+#guard
+  CardAction.toEffect
+    (.sequence [
+      .playerSelectAction (.owner (.targetReference 1)) (.range 1 1)
+        [.putOnTopOfLibrary
+          (.target
+            1
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .controlled (.opponent (.controller .this))])),
+          .putOnBottomOfLibrary (.targetReference 1)],
+      .keyword
+        (.targets
+          2
+          (.range 0 1)
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)]))
+        (.connive 1)]) == Effect.ownerPutsLibraryThenConnive
+
+#guard
+  match
     (Ability.triggered (.die .this) (.keyword (.controller .this) .recruit)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesRecruit
   | none => false
@@ -5737,6 +6011,8 @@ end TraditionalCardDefinition
 
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
 #guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin 1)) == Effect.amassGoblins 1
+#guard CardAction.toEffect (.keyword .this (.connive 1)) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword .this (.connive 1)) == Effect.connive
 
 #guard CardAction.leftoverTokenKind? PredefinedToken.treasureToken == some TokenKind.treasure
 #guard CardAction.leftoverTokenKind? PredefinedToken.foodToken == some TokenKind.food
