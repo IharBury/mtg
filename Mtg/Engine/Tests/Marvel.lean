@@ -1276,4 +1276,68 @@ def paidFoomBoltPlayer : Game :=
   let g := mustApply g ⟨0⟩ .pay
   foomCopyOnStack g
 
+-- Speed: you may pay {1}; the reflexive does not fire unless that mana is paid.
+#guard speedYoungAvenger.matchesOracleText
+#guard speedYoungAvenger.triggeredAbilities ==
+  #[TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable]
+
+/-- Lightning Bolt with leftover `{1}` after the spell is paid. -/
+def paidSpeedBolt : Game :=
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidSpeedBolt.stack.size == 2
+#guard (paidSpeedBolt.object! paidSpeedBolt.stack.back!.objectId).triggeredAbility ==
+  some (TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable)
+
+def speedMayPay : Game := passBoth paidSpeedBolt
+
+#guard
+  match speedMayPay.pending with
+  | .mayPayGeneric ⟨0⟩ 1 (.mshReflexive _ 9) => true
+  | _ => false
+#guard (speedMayPay.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1)
+#guard !speedMayPay.pendingMshReflexive.isSome
+
+def speedPaid : Game := mustApply speedMayPay ⟨0⟩ .payGeneric
+
+#guard speedPaid.pendingMshReflexive.isSome
+#guard !(speedPaid.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1)
+#guard speedPaid.log.any (fun s => mentions s "pays {1}")
+#guard speedPaid.log.any (fun s => mentions s "reflexive")
+
+def speedUnblockable : Game :=
+  let speed := namedPermanent speedPaid "Speed, Young Avenger"
+  speedPaid.applyModeledReflexive #[Target.permanent speed.id]
+
+#guard
+  (namedPermanent speedUnblockable "Speed, Young Avenger").status.cantBeBlockedExceptByHasteUntilEot
+
+-- Declining `{1}` does not queue the reflexive.
+#guard !(mustApply speedMayPay ⟨0⟩ .decline).pendingMshReflexive.isSome
+
+-- `{1}` cannot be paid from an empty pool.
+#guard
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  match g.apply ⟨0⟩ .payGeneric with
+  | .error msg => mentions msg "cannot pay"
+  | .ok _ => false
+
+-- A creature spell does not ask for `{1}`.
+#guard
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g grayOgre ⟨0⟩) ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gray Ogre").id)
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 1 &&
+    (g.object! g.stack.back!.objectId).name == "Gray Ogre"
+
 end Mtg.Engine.Tests

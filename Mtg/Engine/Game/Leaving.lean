@@ -109,7 +109,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
         g.logMsg s!"{o.name} is countered"
     else g
-  | .mayPayGeneric q _ =>
+  | .mayPayGeneric q _ _ =>
     if q == p then
       { g with pending := .none }
         |>.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"

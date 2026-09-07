@@ -399,7 +399,7 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
   | .chooseTriggerToStack p, some _ =>
     mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
-  | .mayPayGeneric _ _, some p =>
+  | .mayPayGeneric _ _ _, some p =>
     mustApply g p .decline
   | .chooseLibraryPlacement _ _, some p =>
     mustApply g p .chooseBottom

@@ -146,7 +146,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
 /-- Pay a pending generic-mana “you may pay” or “unless pays” cost. -/
 def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
-  | .mayPayGeneric q n =>
+  | .mayPayGeneric q n after =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
@@ -154,7 +154,11 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let g ← g.payCost p (ManaCost.ofGeneric n)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := { g with pending := .none }
-    let g := g.draw p 1
+    let g :=
+      match after with
+      | .draw => g.draw p 1
+      | .mshReflexive sourceId kind =>
+        g.queueModeledReflexive p sourceId kind 1
     return g.receivePriority g.activePlayer
   | .payOrLetCounter q n _spellId =>
     if p != q then
@@ -292,7 +296,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
           return g.afterTargetsChosen
         return g.afterTriggerTargetsChosen
       throw "That spell requires a target (CR 601.2c)"
-  | .mayPayGeneric q _ =>
+  | .mayPayGeneric q _ _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay"
     let g := g.logMsg s!"{(g.player p).name} declines to pay"

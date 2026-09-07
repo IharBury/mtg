@@ -150,7 +150,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyOnPermanent controller ab.targetKind targets
       (.grantKeywords Keyword.flying) sourceId (some "The target is no longer legal")
   | .mayPayGenericDraw n =>
-    { g with pending := .mayPayGeneric controller n }.logMsg
+    { g with pending := .mayPayGeneric controller n .draw }.logMsg
       s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
   | .drawThenBottomIfNoLegendary =>
     let g := g.draw controller 1

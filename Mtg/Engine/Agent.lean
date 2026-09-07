@@ -114,7 +114,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.keepLegend (defaultLegendToKeep g ids))
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
-    | .mayPayGeneric _ n =>
+    | .mayPayGeneric _ n _ =>
       payGenericOrTapFirstSource g p n
     | .chooseLibraryPlacement _ _ =>
       some .chooseBottom

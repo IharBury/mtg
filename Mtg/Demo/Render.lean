@@ -669,7 +669,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
     | .chooseTriggerToStack p =>
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
-    | .mayPayGeneric p n =>
+    | .mayPayGeneric p n _ =>
       s!" [may pay \{{n}} ({g.player p |>.name})]"
     | .chooseLibraryPlacement p _ =>
       s!" [choose top or bottom ({g.player p |>.name})]"

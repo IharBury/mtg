@@ -88,7 +88,7 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
   else
     match g.pending with
     | .activateManaAbilities caster => caster == p
-    | .mayPayGeneric q _ => q == p
+    | .mayPayGeneric q _ _ => q == p
     | .payOrLetCounter q _ _ => q == p
     | .payWard q _ cost =>
       q == p &&
