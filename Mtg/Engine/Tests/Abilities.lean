@@ -902,6 +902,50 @@ def justiceBounceOk : Bool :=
 
 #guard justiceBounceOk
 
+/-- Resolve Justice's bounce-watch after `id` is returned to its owner's hand. -/
+def justiceAfterBounce (g : Game) (id : ObjectId) : Game :=
+  let o := g.object! id
+  passBoth ((g.returnToHand id o.owner).receivePriority ⟨0⟩)
+
+/-- The second trigger fires for another nontoken nonland you control. -/
+def justiceWatchNontokenOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Grizzly Bears") &&
+    g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchNontokenOk
+
+/-- The second trigger also fires for a token (Oracle does not say nontoken). -/
+def justiceWatchTokenOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ humanSoldierToken
+  let g := justiceAfterBounce g tok.id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
+    g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchTokenOk
+
+/-- A land returning to hand does not fire the bounce-watch. -/
+def justiceWatchLandOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let g := justiceAfterBounce g (namedPermanent g "Mountain").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
+    !g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchLandOk
+
+/-- An opponent's bounced permanent does not fire the bounce-watch. -/
+#guard
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
+    !g.log.any (fun s => mentions s "return trigger")
+
 /-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
 def flyingCarFlickerOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
