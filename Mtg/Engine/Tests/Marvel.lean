@@ -468,6 +468,46 @@ def thorinWithMauler : Game :=
 #guard thorinWithMauler.power
   (namedPermanent thorinWithMauler "Thorin, King of Durin's Folk") == 4
 
+-- Aragorn and Arwen: +1/+1 on each other creature; 1 life per those creatures.
+#guard aragornAndArwenWed.matchesOracleText
+#guard aragornAndArwenWed.triggeredAbilities ==
+  #[TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife]
+
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Llanowar Elves").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0 &&
+    (g.player ⟨0⟩).life == life0 + 2
+
+#guard
+  let g := addPermanent afterDraw aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (g.player ⟨0⟩).life == life0 &&
+    (namedPermanent g "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0
+
+#guard
+  let g := addPermanent afterDraw aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (g.player ⟨0⟩).life == life0 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0
+
 /-- Bilbo can't be blocked by power 3 or greater. -/
 def bilboReadyToBlock : Game :=
   let g := addPermanent afterDraw bilboUnexpectedAdventurer ⟨0⟩ ⟨0⟩

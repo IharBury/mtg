@@ -2254,12 +2254,20 @@ def leftoverEnterMaySacAnotherThenDestroyOppNonland? : CardAction → Bool
       sel.targetingShape.nonland && sel.targetingShape.opponentControls
   | _ => false
 
-/-- +1/+1 on each other creature you control; you gain life. -/
+/-- +1/+1 on each other creature you control; you gain 1 life for each of
+those creatures. -/
 def leftoverPlusOneEachOtherGainLife? : CardAction → Bool
-  | .sequence [.putCounter sel .plusOnePlusOne 1, .gainLife who _]
-  | .sequence [.gainLife who _, .putCounter sel .plusOnePlusOne 1] =>
-    leftoverYou who && sel.shape.other && sel.shape.sameController &&
-      sel.shape.types.eqTypes [.creature]
+  | .sequence [
+      .putCounter sel .plusOnePlusOne 1,
+      .forEachVariable _ among [.gainLife who 1]
+    ]
+  | .sequence [
+      .forEachVariable _ among [.gainLife who 1],
+      .putCounter sel .plusOnePlusOne 1
+    ] =>
+    leftoverYou who &&
+      sel.shape.anotherCreatureYouControl &&
+      among.shape.anotherCreatureYouControl
   | _ => false
 
 /-- Target attacking creature gains flying. -/
@@ -7175,21 +7183,62 @@ end TraditionalCardDefinition
       3)).toTriggeredAbility?.isNone
 
 #guard
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
   match
     (Ability.triggered
       (.or (.enter .this) (.attack .this .all))
       (.sequence [
-        .putCounter
-          (.intersection [
-            .not .this,
-            .permanent,
-            .cardType .creature,
-            .controlled (.controller .this)])
-          .plusOnePlusOne
-          1,
-        .gainLife (.controller .this) 1])).toTriggeredAbility? with
+        .putCounter others .plusOnePlusOne 1,
+        .forEachVariable 1 others [.gainLife (.controller .this) 1]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
   | none => false
+
+-- A flat 1 life is not 1 life for each other creature.
+#guard
+  (Ability.triggered
+    (.or (.enter .this) (.attack .this .all))
+    (.sequence [
+      .putCounter
+        (.intersection [
+          .not .this,
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        .plusOnePlusOne
+        1,
+      .gainLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
+-- 2 life for each is not 1 life for each.
+#guard
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  (Ability.triggered
+    (.or (.enter .this) (.attack .this .all))
+    (.sequence [
+      .putCounter others .plusOnePlusOne 1,
+      .forEachVariable 1 others [.gainLife (.controller .this) 2]])).toTriggeredAbility?.isNone
+
+-- Including this creature is not each other creature.
+#guard
+  let yours : Selector :=
+    .intersection [
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  (Ability.triggered
+    (.or (.enter .this) (.attack .this .all))
+    (.sequence [
+      .putCounter yours .plusOnePlusOne 1,
+      .forEachVariable 1 yours [.gainLife (.controller .this) 1]])).toTriggeredAbility?.isNone
 
 #guard
   match

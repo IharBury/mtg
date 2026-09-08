@@ -933,6 +933,12 @@ def treasureVault : CardDef :=
         (tap := true) (sacrificeSource := true)])
 
 def aragornAndArwenWed : CardDef :=
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
   (TraditionalCardDefinition.card [
     .name "Aragorn and Arwen, Wed",
     .manaCost [.generic 4, .mono .green, .mono .white],
@@ -948,15 +954,8 @@ def aragornAndArwenWed : CardDef :=
       (.triggered
         (.or (.enter .this) (.attack .this .all))
         (.sequence [
-          .putCounter
-            (.intersection [
-              .not .this,
-              .permanent,
-              .cardType .creature,
-              .controlled (.controller .this)])
-            .plusOnePlusOne
-            1,
-          .gainLife (.controller .this) 1]))
+          .putCounter others .plusOnePlusOne 1,
+          .forEachVariable 1 others [.gainLife (.controller .this) 1]]))
   ]).toCardDef
     (oracleText := "Vigilance\nWhenever Aragorn and Arwen enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control.")
 

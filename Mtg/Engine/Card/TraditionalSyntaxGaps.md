@@ -114,6 +114,8 @@ through leftovers).
 (Landroval’s two or more creatures attacking a player).
 `ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
 each artifact token you control (Thorin).
+Aragorn and Arwen’s leftover is +1/+1 on each other creature you control and
+1 life per those creatures (`forEachVariable`), not a flat 1 life.
 `CardAction.chooseModeRestricted` is who chooses and, for each mode, an ID,
 when it is allowed, and its actions (Galadriel: you, unchosen this turn).
 Unrestricted `chooseMode` does not leftover to that triggered ability.
