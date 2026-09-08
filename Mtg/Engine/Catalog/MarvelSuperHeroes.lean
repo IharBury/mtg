@@ -1647,15 +1647,11 @@ def finFangFoom : CardDef :=
           (.intersection [
             .spell,
             .union [.cardType .instant, .cardType .sorcery],
-            .controlled (.controller .this)]))
-        (.if
-          (.targetsIncludeAny
-            (.intersection [
-              .spell,
-              .union [.cardType .instant, .cardType .sorcery],
-              .controlled (.controller .this)])
-            (.union [.cardType .artifact, .cardType .land]))
-          [.putCounter (.source .this) .plusOnePlusOne 2]))
+            .controlled (.controller .this),
+            .hasTarget (.union [.cardType .artifact, .cardType .land])]))
+        (.sequence [
+          .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+          .putCounter (.source .this) .plusOnePlusOne 2]))
   ]).toCardDef
     (oracleText := "Flying\nWhenever you cast an instant or sorcery spell that targets an artifact or land, copy that spell. You may choose new targets for the copy. Put two +1/+1 counters on Fin Fang Foom.")
 

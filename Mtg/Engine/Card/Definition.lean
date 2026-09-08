@@ -92,6 +92,8 @@ inductive Selector where
   | spell
   /-- A permanent spell (CR 110.4 / 112.1). -/
   | permanentSpell
+  /-- An object that has a target matching the given selector (CR 115.1). -/
+  | hasTarget : Selector → Selector
   /-- A player (CR 102). -/
   | player
   /-- Opponents of the given player (CR 102.2). -/
@@ -390,6 +392,7 @@ def shape : Selector → Shape
   | .cardType t => { types := .oneOf [t] }
   | .spell => { isSpell := true }
   | .permanentSpell => { isSpell := true }
+  | .hasTarget _ => {}
   | .not .this => { other := true }
   | .not s => s.shape.negate
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
@@ -537,6 +540,15 @@ def includesWasObjectOfThisTrigger : Selector → Bool
   | .intersection (f :: fs) =>
     includesWasObjectOfThisTrigger f || includesWasObjectOfThisTrigger (.intersection fs)
   | _ => false
+
+/-- The target constraint of a `hasTarget` conjunct, if any. -/
+def leftoverHasTarget? : Selector → Option Selector
+  | .hasTarget dest => some dest
+  | .intersection (f :: fs) =>
+    match leftoverHasTarget? f with
+    | some dest => some dest
+    | none => leftoverHasTarget? (.intersection fs)
+  | _ => none
 
 /-- True when this selector is “the object of a put-to-graveyard event
 since the start of the turn”. -/
@@ -900,6 +912,9 @@ inductive CardAction where
   | mill : Selector → Nat → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/
   | surveil : Selector → Nat → CardAction
+  /-- The selected player copies the selected spell or ability and may
+  choose new targets for the copy (CR 707). -/
+  | copyWithNewTargets : Selector → Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1004,7 +1019,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
-    | .spell | .permanentSpell | .player
+    | .spell | .permanentSpell | .hasTarget _ | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
@@ -2332,6 +2347,12 @@ def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
       leftoverUntilEndOfYourNextTurn? duration
   | _ => false
 
+/-- Copy that spell or ability; you may choose new targets. -/
+def leftoverCopyWithNewTargets? : CardAction → Bool
+  | .copyWithNewTargets who what =>
+    leftoverYou who && what.includesWasObjectOfThisTrigger
+  | _ => false
+
 /-- Sacrifice an artifact or discard a nonland card. -/
 def leftoverSacrificeArtifactOrDiscardNonlandCost? : List Cost → Bool
   | [] => false
@@ -2944,6 +2965,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .surveil who n =>
                     if leftoverYou who then Effect.scry n
                     else continuousEffect none [] asAbility
+                  | .copyWithNewTargets _ _ =>
+                    continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -3534,9 +3557,15 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some (TriggeredAbility.onCasting Effect.castingTapCreatureOrLand)
     else none
   | .triggered (.castSpell among)
-      (.if (.targetsIncludeAny _ dest) [.putCounter (.source .this) .plusOnePlusOne 2]) =>
-    if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController &&
-        dest.shape.types.eqTypes [.artifact, .land] then
+      (.sequence [
+        copy,
+        .putCounter (.source .this) .plusOnePlusOne 2]) =>
+    if CardAction.leftoverCopyWithNewTargets? copy &&
+        among.shape.types.eqTypes [.instant, .sorcery] &&
+        among.shape.sameController &&
+        match Selector.leftoverHasTarget? among with
+        | some dest => dest.shape.types.eqTypes [.artifact, .land]
+        | none => false then
       some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
     else none
   | .triggered (.castSpell among)
@@ -7634,7 +7663,7 @@ end TraditionalCardDefinition
 -- Justice: bounce-watch is return-to-hand, includes tokens.
 -- Arnim Zola: activate only if two or more creature cards in the graveyard.
 -- Moonstone: discard trigger, that discarded card, not any put-to-graveyard.
--- Fin Fang Foom: the instant or sorcery must target an artifact or land.
+-- Fin Fang Foom: copy that spell with new targets if it targets an artifact or land.
 #guard
   match
     (Ability.triggered
@@ -7799,15 +7828,11 @@ end TraditionalCardDefinition
         (.intersection [
           .spell,
           .union [.cardType .instant, .cardType .sorcery],
-          .controlled (.controller .this)]))
-      (.if
-        (.targetsIncludeAny
-          (.intersection [
-            .spell,
-            .union [.cardType .instant, .cardType .sorcery],
-            .controlled (.controller .this)])
-          (.union [.cardType .artifact, .cardType .land]))
-        [.putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility? with
+          .controlled (.controller .this),
+          .hasTarget (.union [.cardType .artifact, .cardType .land])]))
+      (.sequence [
+        .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+        .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand
   | none => false
 
@@ -7818,6 +7843,58 @@ end TraditionalCardDefinition
         .spell,
         .union [.cardType .instant, .cardType .sorcery],
         .controlled (.controller .this)]))
+    (.if
+      (.targetsIncludeAny
+        (.intersection [
+          .spell,
+          .union [.cardType .instant, .cardType .sorcery],
+          .controlled (.controller .this)])
+        (.union [.cardType .artifact, .cardType .land]))
+      [.putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        .controlled (.controller .this)]))
+    (.sequence [
+      .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+      .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        .controlled (.controller .this),
+        .hasTarget (.union [.cardType .artifact, .cardType .land])]))
+    (.sequence [
+      .copyWithNewTargets (.controller .this) .all,
+      .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        .controlled (.controller .this),
+        .hasTarget (.cardType .creature)]))
+    (.sequence [
+      .copyWithNewTargets (.controller .this) .wasObjectOfThisTrigger,
+      .putCounter (.source .this) .plusOnePlusOne 2])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .union [.cardType .instant, .cardType .sorcery],
+        .controlled (.controller .this),
+        .hasTarget (.union [.cardType .artifact, .cardType .land])]))
     (.putCounter (.source .this) .plusOnePlusOne 2)).toTriggeredAbility?.isNone
 
 -- Speed: you may pay {1}; if you do, haste-except-haste.

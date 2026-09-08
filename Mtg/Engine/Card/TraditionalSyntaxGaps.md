@@ -54,7 +54,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
-  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
+  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
@@ -92,7 +92,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`, `mill`, `surveil`.
+  `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -124,9 +124,11 @@ ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
 is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObjectOfThisTrigger`
-from the graveyard (that discarded card); any graveyard card stays uncompiled. Instant-or-sorcery leftovers that
-copy-if-targeting require `targetsIncludeAny` of an artifact or land
-(Fin Fang Foom). Justice’s bounce-watch leftover is `Trigger.returnToHand` of
+from the graveyard (that discarded card); any graveyard card stays uncompiled.
+`Selector.hasTarget` is “has a target matching …” (Fin Fang Foom: artifact or
+land). `CardAction.copyWithNewTargets` is who copies and what is copied (you,
+that spell). Intervening `targetsIncludeAny` without copy stays uncompiled.
+Justice’s bounce-watch leftover is `Trigger.returnToHand` of
 another nonland you control (tokens included). Put-to-graveyard leftovers stay
 uncompiled.
 `CardAction.optionalPayFor` is who may pay, what cost, and what happens if
