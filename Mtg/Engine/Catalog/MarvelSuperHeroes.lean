@@ -1322,7 +1322,10 @@ def moonstoneHarshMistress : CardDef :=
         (.optional
           (.sequence [
             .actionId 1
-              (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
+              (.exile (.intersection [
+                .inGraveyard,
+                .wasObject,
+                .owner (.controller .this)])),
             .continuous
               [.canPlay (.controller .this) (.wasCreatedByAction 1)]
               (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])))

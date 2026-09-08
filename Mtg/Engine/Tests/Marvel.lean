@@ -1130,6 +1130,19 @@ def moonstoneDiscardResolved : Game :=
   | some o => o.playPermission.isSome
   | none => false
 
+-- Only the discarded card is exiled, not another card already in the graveyard.
+#guard
+  let g := addToGraveyard afterDraw grizzlyBears ⟨0⟩
+  let g := addPermanent g moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
+  let g := passBoth (g.receivePriority ⟨0⟩)
+  match g.objects.find? (fun o => o.name == "Forest" && o.zone == .exile) with
+  | some o =>
+    o.playPermission.isSome &&
+      (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").zone == .graveyard ⟨0⟩
+  | none => false
+
 -- Milling from the library is not a discard.
 #guard
   let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩

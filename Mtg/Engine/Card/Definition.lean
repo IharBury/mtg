@@ -106,6 +106,8 @@ inductive Selector where
   | token
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
+  /-- The object of this event. -/
+  | wasObject
   /-- The object a replacement effect is replacing. -/
   | replacingObject : Nat → Selector
   /-- An object created by the numbered action. -/
@@ -398,7 +400,7 @@ def shape : Selector → Shape
   | .selected _ _ _ | .player => {}
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
-  | .wasObjectSince _ _ | .wasObjectOfAction _ | .replacingObject _
+  | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObject | .replacingObject _
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inDeck | .supertype _
   | .variable _ | .topOfLibrary _ => {}
 
@@ -527,6 +529,13 @@ def includesInGraveyard : Selector → Bool
   | .intersection (f :: fs) =>
     includesInGraveyard f || includesInGraveyard (.intersection fs)
   | .target _ among | .targets _ _ among => includesInGraveyard among
+  | _ => false
+
+/-- True when this selector is the object of this event. -/
+def includesWasObject : Selector → Bool
+  | .wasObject => true
+  | .intersection (f :: fs) =>
+    includesWasObject f || includesWasObject (.intersection fs)
   | _ => false
 
 /-- True when this selector is “the object of a put-to-graveyard event
@@ -996,7 +1005,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
-    | .wasObjectOfAction _ | .replacingObject _ | .wasCreatedByAction _
+    | .wasObjectOfAction _ | .wasObject | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
     | s => some s
@@ -2310,8 +2319,8 @@ def leftoverAllianceModes? (who : Selector) :
 def leftoverCreatureOrLandTarget? (s : Selector) : Bool :=
   s.targetingShape.types.eqTypes [.creature, .land]
 
-/-- Exile a card from a graveyard, then you may play it until the end of
-your next turn. -/
+/-- Exile the object of this event from a graveyard, then you may play it
+until the end of your next turn. -/
 def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
   | .optional
       (.sequence [
@@ -2319,7 +2328,8 @@ def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
         .continuous [.canPlay permit (.wasCreatedByAction created)] duration
       ]) =>
     id == created && leftoverYou permit &&
-      among.includesInGraveyard && leftoverUntilEndOfYourNextTurn? duration
+      among.includesInGraveyard && among.includesWasObject &&
+      leftoverUntilEndOfYourNextTurn? duration
   | _ => false
 
 /-- Sacrifice an artifact or discard a nonland card. -/
@@ -7623,7 +7633,7 @@ end TraditionalCardDefinition
 -- Night Nurse: only graveyard permanents put there this turn.
 -- Justice: bounce-watch is return-to-hand, includes tokens.
 -- Arnim Zola: activate only if two or more creature cards in the graveyard.
--- Moonstone: discard trigger, not any put-to-graveyard.
+-- Moonstone: discard trigger, that discarded card, not any put-to-graveyard.
 -- Fin Fang Foom: the instant or sorcery must target an artifact or land.
 #guard
   match
@@ -7731,7 +7741,10 @@ end TraditionalCardDefinition
     .optional
       (.sequence [
         .actionId 1
-          (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
+          (.exile (.intersection [
+            .inGraveyard,
+            .wasObject,
+            .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
@@ -7745,6 +7758,34 @@ end TraditionalCardDefinition
       (.sequence [
         .actionId 1
           (.exile (.intersection [.inGraveyard, .owner (.controller .this)])),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
+  (Ability.triggered (.discard (.controller .this)) action).toTriggeredAbility?.isNone
+
+#guard
+  let action : CardAction :=
+    .optional
+      (.sequence [
+        .actionId 1
+          (.exile (.intersection [
+            .inGraveyard,
+            .wasObjectSince (.discard (.controller .this)) .turnStart,
+            .owner (.controller .this)])),
+        .continuous
+          [.canPlay (.controller .this) (.wasCreatedByAction 1)]
+          (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
+  (Ability.triggered (.discard (.controller .this)) action).toTriggeredAbility?.isNone
+
+#guard
+  let action : CardAction :=
+    .optional
+      (.sequence [
+        .actionId 1
+          (.exile (.intersection [
+            .inGraveyard,
+            .wasObject,
+            .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
           (.sequence [.turnStart, .endOfPlayerTurn (.controller .this)])])
