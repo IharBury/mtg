@@ -4,7 +4,9 @@ import Mtg.Engine.TypeLine
 # Keyword abilities (CR 702)
 
 The keyword flags a card can carry, the merge/print helpers, and the
-single-keyword `Keyword.*` values.
+single-keyword `Keyword.*` values. `Keyword.amass` and `Keyword.connive`
+take a `Value`, so `Keyword`, `Value`, `Selector`, and `Trigger` are
+mutual.
 -/
 
 namespace Mtg.Engine
@@ -116,6 +118,31 @@ instance : ToString Keywords where
 
 end Keywords
 
+/-- How many objects a `.targets` selector may choose. -/
+inductive Range where
+  | range : Nat → Nat → Range
+deriving Repr, Inhabited, BEq
+
+/-- A constraint on a set of selected objects, not on each object alone. -/
+inductive SetPredicate where
+  /-- The objects share a card type with each other. -/
+  | shareCardType
+  /-- The set contains at least this many objects. -/
+  | countAtLeast : Nat → SetPredicate
+deriving Repr, Inhabited, BEq
+
+/-- Kind of counter (CR 122.1). Used by `CardAction.putCounter` and
+`Trigger.putCountersSimultaneously`. -/
+inductive CounterKind where
+  /-- A +1/+1 counter. -/
+  | plusOnePlusOne
+deriving Repr, Inhabited, BEq
+
+-- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
+-- `Selector`, and a `Selector` may name a `Keyword`, so these four
+-- inductives are mutual. Triggers name selectors, and selectors may ask
+-- who was the subject of a trigger.
+mutual
 /-- One modeled keyword ability (CR 702). Coerces to a `Keywords` singleton
 so existing `keywords := Keyword.lifelink` call sites keep working. -/
 inductive Keyword where
@@ -143,28 +170,221 @@ inductive Keyword where
   | equip
   /-- Enchant (CR 702.5): printed with a target, e.g. Enchant creature. -/
   | enchant
-  /-- Typecycling (CR 702.29): printed with a cost, e.g. Halflingcycling {4}. -/
-  | subtypecycling : CardSubtype → Keyword
-  /-- Typecycling a supertype and card type (CR 702.29), e.g. Basic
-  landcycling {2}. -/
-  | supertypeAndTypeCycling : CardSupertype → CardType → Keyword
+  /-- Typecycling (CR 702.29): printed with a cost, e.g. Halflingcycling {4}
+  or Basic landcycling {2}. -/
+  | typecycling : List CardSupertype → List CardType → List CardSubtype → Keyword
   /-- Recruit (HOB keyword action): draw, then discard; if a nonland was
   discarded, create a 1/1 white Human Soldier creature token. -/
   | recruit
   /-- Amass <subtype> N (CR 701.45): put N +1/+1 counters on an Army you
   control. It's also the given subtype. If you don't control an Army,
   create a 0/0 black Army creature token of that subtype first. -/
-  | amass : CardSubtype → Nat → Keyword
+  | amass : CardSubtype → Value → Keyword
   /-- Connive N (CR 701.48): draw N cards, then discard N cards. For each
   nonland card discarded this way, put a +1/+1 counter on the conniving
   creature. Printed “connives” is connive 1. -/
-  | connive : Nat → Keyword
+  | connive : Value → Keyword
   /-- A Saga chapter ability (CR 714.2), numbered from I. Printed with
   `Ability.keywordWithEffect`. -/
   | chapter : Nat → Keyword
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
+
+/-- A number that is either a printed constant or computed from game
+state. -/
+inductive Value where
+  /-- A printed natural-number amount. -/
+  | nat : Nat → Value
+  /-- The greatest mana value among selected objects (CR 202.3). -/
+  | greatestManaValue : Selector → Value
+deriving Repr, Inhabited, BEq
+
+/-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
+inductive Selector where
+  /-- This spell or ability (CR 113.7). -/
+  | this
+  /-- The source of the given object (CR 113.7). -/
+  | source : Selector → Selector
+  /-- The controller of the given object (CR 109.5). -/
+  | controller : Selector → Selector
+  /-- A numbered target matching the given selector (CR 115.1). Later
+  effects may refer to it with `targetReference`. The number is unique
+  within a `TraditionalCardDefinition`, including `targets` /
+  `targetSet`. -/
+  | target : Nat → Selector → Selector
+  /-- Numbered targets matching the given selector, with a count range.
+  The number is unique within a `TraditionalCardDefinition`, including
+  `target` / `targetSet`. -/
+  | targets : Nat → Range → Selector → Selector
+  /-- Numbered targets matching the given selector, with a count range
+  and extra constraints that apply to the set as a whole. The number is
+  unique within a `TraditionalCardDefinition`, including `target` /
+  `targets`. -/
+  | targetSet : Nat → Range → Selector → List SetPredicate → Selector
+  /-- Objects that do not match the given selector. -/
+  | not : Selector → Selector
+  /-- The target previously declared with `target`, `targets`, or
+  `targetSet` of this number. -/
+  | targetReference : Nat → Selector
+  /-- The given player chooses objects matching the given selector at
+  resolution, with a count range (not targeting; CR 608.2d). -/
+  | selected : Selector → Range → Selector → Selector
+  | intersection : List Selector → Selector
+  | all
+  | cardType : CardType → Selector
+  | union : List Selector → Selector
+  /-- A permanent (CR 110.1). -/
+  | permanent
+  /-- Objects whose controller is the given player. -/
+  | controlled : Selector → Selector
+  /-- A tapped permanent (CR 110.5). -/
+  | tapped
+  /-- An object with the given keyword (CR 702). -/
+  | keyword : Keyword → Selector
+  /-- A keyword ability of the given keyword (CR 702). -/
+  | keywordAbility : Keyword → Selector
+  /-- Objects with power at least this value (CR 208). -/
+  | powerAtLeast : Int → Selector
+  /-- Printed subtype (CR 205.3). -/
+  | subtype : CardSubtype → Selector
+  /-- A spell on the stack (CR 112.1). -/
+  | spell
+  /-- A permanent spell (CR 110.4 / 112.1). -/
+  | permanentSpell
+  /-- An object that has a target matching the given selector (CR 115.1). -/
+  | hasTarget : Selector → Selector
+  /-- An object that is a target of the given object (CR 115.1). -/
+  | isTargetOf : Selector → Selector
+  /-- A player (CR 102). -/
+  | player
+  /-- Opponents of the given player (CR 102.2). -/
+  | opponent : Selector → Selector
+  /-- The owner of the given object (CR 108.3). -/
+  | owner : Selector → Selector
+  /-- A permanent attacking objects matching the given selector (CR 508). -/
+  | attacking : Selector → Selector
+  /-- Permanents blocking the given permanents (CR 509). -/
+  | blocking : Selector → Selector
+  /-- A token (CR 111.1). -/
+  | token
+  /-- The object of the numbered action. -/
+  | wasObjectOfAction : Nat → Selector
+  /-- The object of this triggered ability. -/
+  | wasObjectOfThisTrigger
+  /-- The object a replacement effect is replacing. -/
+  | replacingObject : Nat → Selector
+  /-- An object created by the numbered action. -/
+  | wasCreatedByAction : Nat → Selector
+  /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
+  | hostOf : Selector → Selector
+  /-- An object in a graveyard (CR 404). -/
+  | inGraveyard
+  /-- An object that was the object of the first event since the second
+  event. -/
+  | wasObjectSince : Trigger → Trigger → Selector
+  /-- An object in a library (CR 401). -/
+  | inDeck
+  /-- Objects with the given supertype (CR 205.4). -/
+  | supertype : CardSupertype → Selector
+  /-- Objects bound to this numbered variable. -/
+  | variable : Nat → Selector
+  /-- The top card of the selected player's library (CR 401). -/
+  | topOfLibrary : Selector → Selector
+deriving Repr, Inhabited, BEq
+
+/-- When a continuous effect ends, when a triggered ability fires, or
+what a replacement effect intercepts. -/
+inductive Trigger where
+  | endOfGame
+  | endOfTurn
+  /-- At the end of the selected player's turn (CR 514.3). -/
+  | endOfPlayerTurn : Selector → Trigger
+  /-- At the beginning of combat on the selected player's turn (CR 507.1). -/
+  | combatStart : Selector → Trigger
+  /-- From the start of the turn (a window bound for `happened`). -/
+  | turnStart
+  /-- From the start of the game (a window bound for `happened`). -/
+  | gameStart
+  /-- Whenever the selected object attacks, restricted by the given
+  selector. -/
+  | attack : Selector → Selector → Trigger
+  /-- When the selected object enters. -/
+  | enter : Selector → Trigger
+  /-- Whenever the selected player draws a card matching the given
+  selector. -/
+  | draw : Selector → Selector → Trigger
+  /-- The nth occurrence of the inner trigger, counted from the given
+  window. -/
+  | ordinal : Nat → Trigger → Trigger → Trigger
+  /-- Whenever the selected object deals combat damage to objects matching
+  the given selector. -/
+  | combatDamage : Selector → Selector → Trigger
+  /-- Whenever the selected object would deal damage to objects matching
+  the given selector (CR 120). -/
+  | damage : Selector → Selector → Trigger
+  /-- The selected object would be put into a graveyard (CR 614). -/
+  | putToGraveyard : Selector → Trigger
+  /-- Whenever a matching card leaves a graveyard (CR 404). -/
+  | leaveGraveyard : Selector → Trigger
+  /-- Whenever the selected object is returned to its owner's hand. -/
+  | returnToHand : Selector → Trigger
+  /-- Whenever the selected player discards a card (CR 701.8). -/
+  | discard : Selector → Trigger
+  /-- When one or more counters of the given kind are put on the selected
+  objects at the same time (CR 122). -/
+  | putCountersSimultaneously : Selector → CounterKind → Trigger
+  /-- The first selector blocks the second (CR 509). -/
+  | block : Selector → Selector → Trigger
+  /-- When the selected object or objects die (CR 700.4). -/
+  | die : Selector → Trigger
+  /-- When objects matching the selector die at the same time, with
+  set-wide predicates (CR 700.4 / 603.2d). -/
+  | dieSimultaneously : Selector → List SetPredicate → Trigger
+  /-- Whenever objects matching the first selector attack objects matching
+  the second at the same time, with set-wide predicates
+  (CR 508.3 / 603.2d). -/
+  | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
+  /-- The numbered ability was activated (CR 602.2). -/
+  | abilityWithIdActivated : Nat → Trigger
+  /-- The numbered action occurred. -/
+  | actionWithId : Nat → Trigger
+  /-- The selected player chose the numbered mode (CR 700.2). -/
+  | modeWithIdChosen : Selector → Nat → Trigger
+  /-- Mana created by the numbered action is spent to pay for the given
+  event (CR 106.10). -/
+  | spendManaCreatedByAction : Nat → Trigger → Trigger
+  /-- A spell matching the selector is cast (CR 601). -/
+  | castSpell : Selector → Trigger
+  /-- An activated ability of a source matching the selector is activated
+  (CR 602). -/
+  | activateAbility : Selector → Trigger
+  /-- After the listed triggers have occurred in order. -/
+  | sequence : List Trigger → Trigger
+  /-- The given trigger does not occur. -/
+  | not : Trigger → Trigger
+  /-- Either trigger occurs. -/
+  | or : Trigger → Trigger → Trigger
+deriving Repr, Inhabited, BEq
+end
+
+namespace Value
+
+instance : ToString Value where
+  toString
+    | .nat n => toString n
+    | .greatestManaValue _ => "X"
+
+end Value
 
 namespace Keyword
+
+/-- The type-line phrase a typecycling ability searches for, e.g. `Halfling`
+or `Basic land`. -/
+def typecyclingPhrase (supertypes : List CardSupertype) (types : List CardType)
+    (subtypes : List CardSubtype) : String :=
+  String.intercalate " "
+    (supertypes.map toString ++
+      types.map (fun t => t.englishName.toLower) ++
+      subtypes.map toString)
 
 /-- Singleton `Keywords` value for this keyword. -/
 def toKeywords : Keyword → Keywords
@@ -188,8 +408,8 @@ def toKeywords : Keyword → Keywords
   | .ascend => { Keywords.none with ascend := true }
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
-  | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _
-  | .recruit | .amass _ _ | .connive _ | .chapter _ =>
+  | .equip | .enchant | .typecycling _ _ _ | .recruit | .amass _ _
+  | .connive _ | .chapter _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -201,8 +421,8 @@ instance : Coe Keyword Keywords where
 
 instance : ToString Keyword where
   toString
-    | .subtypecycling st => s!"{st}cycling"
-    | .supertypeAndTypeCycling st t => s!"{st} {t.englishName.toLower}cycling"
+    | .typecycling supertypes types subtypes =>
+      s!"{typecyclingPhrase supertypes types subtypes}cycling"
     | .recruit => "recruit"
     | .amass st n => s!"amass {st}s {n}"
     | .connive n => s!"connive {n}"
