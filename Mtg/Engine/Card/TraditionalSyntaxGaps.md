@@ -6,7 +6,7 @@ supported catalog card** that is not yet written as a
 `TraditionalCardDefinition`.
 
 Thirty cards that previously had no tagged constructor gap are now spelled
-as `TraditionalCardDefinition`. Thirteen others still cannot be spelled;
+as `TraditionalCardDefinition`. Twelve others still cannot be spelled;
 see [Cards that still cannot convert](#cards-that-still-cannot-convert).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
@@ -19,16 +19,16 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 98 |
+| The Hobbit (HOB) | 97 |
 | The Hobbit Eternal (HOC) | 74 |
 | Marvel Super Heroes (MSH) | 196 |
-| **Total remaining** | **368** |
+| **Total remaining** | **367** |
 
-All **368** remaining cards have at least one identified constructor gap.
+All **367** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
-holds). The other **13 cannot be spelled** with the current types; closer
+holds). The other **12 cannot be spelled** with the current types; closer
 reading found constructor gaps the first pass missed (see [Cards that still
 cannot convert](#cards-that-still-cannot-convert)).
 
@@ -54,6 +54,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
+  `keywordAbility`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
@@ -147,6 +148,9 @@ Treating the spell as those creatures stays uncompiled. Intervening
 `targetsIncludeAny` or flying on all creatures stays uncompiled. Storm’s
 flying restriction is
 `forbid` of attack-or-block, not attack alone.
+`Selector.keywordAbility` is a keyword ability of that keyword (Dwarven
+Mauler: Equip abilities you activate that `hasTarget` this). Using
+`keyword`, omitting the target, or omitting you-activate stays uncompiled.
 `ContinuousEffect.gainAllSubtypes` is who gains all subtypes of that type
 (Undercover Skrull: this, creature). Pump-only leftovers compile to
 `getsIfGyCreatureCards`, not all creature types. `gainSubtype` of one subtype
@@ -409,8 +413,6 @@ complete.
   - Arwen, Weaver of Hope
 - **`setSubtypes`** (1 cards) — Overwrite subtypes (gainSubtype only adds)
   - fogOnTheBarrowDowns
-- **`reduceCostIfTargeting`** (1 cards) — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
-  - Dwarven Mauler
 - **`gainSupertype`** (1 cards) — Gain a supertype in addition to other types (legendary)
   - Super-Soldier Serum
 - **`forbidUntapWhileYouControl`** (1 cards) — Can't become untapped for as long as you control this
@@ -544,14 +546,10 @@ spell leftovers those printings need.
 
 ### Cards that still cannot convert
 
-Closer reading of the remaining 13 found constructor gaps. They stay in the
+Closer reading of the remaining 12 found constructor gaps. They stay in the
 catalog as `CardDef` helpers. Evidence is the printed ability vs the current
 inductives (not a missing leftover for an expressible spelling).
 
-- **Dwarven Mauler** — Equip abilities you activate that target this creature
-  cost {2} less. `ContinuousEffect.reduceCost` only reduces *this object's*
-  costs. There is no selector for “equip abilities you activate that target
-  this.”
 - **Supper for Spiders** — Put onto the battlefield all creature cards in
   opponents' graveyards that were put there *from the battlefield this turn*;
   they become Food artifacts with an activated ability. `Shape.diedThisTurn`
@@ -770,10 +768,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
-
-**Dwarven Mauler** (`dwarvenMauler`)
-
-- `ContinuousEffect.reduceCostIfTargeting` — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
 
 **Dáin Ironfoot** (`dainIronfoot`)
 

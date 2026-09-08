@@ -84,6 +84,8 @@ inductive Selector where
   | tapped
   /-- An object with the given keyword (CR 702). -/
   | keyword : Keyword → Selector
+  /-- A keyword ability of the given keyword (CR 702). -/
+  | keywordAbility : Keyword → Selector
   /-- Objects with power at least this value (CR 208). -/
   | powerAtLeast : Int → Selector
   /-- Printed subtype (CR 205.3). -/
@@ -386,6 +388,7 @@ def shape : Selector → Shape
   | .tapped => { tapped := true }
   | .keyword .flying => { flying := true }
   | .keyword _ => {}
+  | .keywordAbility _ => {}
   | .powerAtLeast n => { powerAtLeast := some n }
   | .attacking _ => { attacking := true }
   | .blocking _ => {}
@@ -551,6 +554,15 @@ def leftoverHasTarget? : Selector → Option Selector
     match leftoverHasTarget? f with
     | some dest => some dest
     | none => leftoverHasTarget? (.intersection fs)
+  | _ => none
+
+/-- The keyword of a `keywordAbility` conjunct, if any. -/
+def leftoverKeywordAbility? : Selector → Option Keyword
+  | .keywordAbility k => some k
+  | .intersection (f :: fs) =>
+    match leftoverKeywordAbility? f with
+    | some k => some k
+    | none => leftoverKeywordAbility? (.intersection fs)
   | _ => none
 
 /-- True when this selector is a target of this trigger's object. -/
@@ -1038,7 +1050,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
-    | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .player
+    | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
+    | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
@@ -3768,6 +3781,17 @@ def leftoverHasteIfOtherSubtype? (among : Selector) (inners : List ContinuousEff
     else none
   | _ => none
 
+/-- Equip abilities you activate that target this, reduced by that much. -/
+def leftoverEquipAbilitiesTargetingThisCostLess? (who : Selector) (costs : List Cost)
+    : Option Nat :=
+  let n := ManaCost.manaValue (Cost.manaCost costs)
+  if n != 0 &&
+      Selector.leftoverKeywordAbility? who == some .equip &&
+      Selector.leftoverHasTarget? who == some .this &&
+      who.shape.sameController then
+    some n
+  else none
+
 def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .gainAbility (.hostOf .this) (.keyword k) =>
     pushHostBonus b 0 0 k.toKeywords
@@ -3908,10 +3932,16 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
           Cost.sacrificesArtifactOrCreature cs
       additionalCostOrPayGeneric :=
         b.additionalCostOrPayGeneric.orElse (fun _ => Cost.orPayGeneric? cs) }
-  | .reduceCost _ costs =>
-    { b with
-      costReductionIfTargetTapped :=
-        b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
+  | .reduceCost who costs =>
+    match leftoverEquipAbilitiesTargetingThisCostLess? who costs with
+    | some n =>
+      { b with
+        staticAbilities :=
+          b.staticAbilities.push (.equipAbilitiesTargetingThisCostLess n) }
+    | none =>
+      { b with
+        costReductionIfTargetTapped :=
+          b.costReductionIfTargetTapped + ManaCost.manaValue (Cost.manaCost costs) }
 
 def applyAbility (b : CardFace) : Ability → CardFace
   | .keyword k => { b with keywords := b.keywords.merge k.toKeywords }
@@ -8394,6 +8424,91 @@ end TraditionalCardDefinition
         (.replace
           (.combatDamage .all .this)
           [.healAllDamage .this, .keepReplacedAction]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Dwarven Mauler: Equip abilities you activate that target this cost {2} less.
+#guard Selector.leftoverKeywordAbility?
+  (Selector.keywordAbility .equip) == some .equip
+
+#guard Selector.leftoverKeywordAbility? (.keyword .equip) |>.isNone
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .hasTarget .this,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[.equipAbilitiesTargetingThisCostLess 2]
+
+-- Objects with Equip are not Equip abilities.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            .keyword .equip,
+            .hasTarget .this,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Missing hasTarget is not enough (must target this).
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .hasTarget .player,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Missing you-activate is not enough.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .hasTarget .this])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .flying,
+            .hasTarget .this,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef.staticAbilities == #[]
+
+-- Reducing this object's costs is not Equip-targeting-this.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability (.static (.reduceCost .this [.mana [.generic 2]]))
   ]).toCardDef.staticAbilities == #[]
 
 end Mtg.Engine
