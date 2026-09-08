@@ -82,7 +82,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPowerToughnessEqualToCount`,
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
-- **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `dealComputedDamage`, `divideDamage`,
+- **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeRestricted`,
   `counter`, `preventable`, `optionalPayFor`, `discard`, `putCounter`, `exile`,
@@ -95,7 +95,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
   `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
-- **ComputedValue** — `greatestManaValue`.
+- **Value** — `nat`, `greatestManaValue`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -157,12 +157,12 @@ that keyword printed with resolution actions. Armor Wars leftovers are
 `optional` draw-for-each-artifact then each opponent draws
 (`mayDrawPerArtifactOppsDraw`); `reduceCost` of artifact spells you cast
 until end of turn (`artifactSpellsCostLessThisTurn`); and
-`CardAction.dealComputedDamage` of this to a target opponent for
-`ComputedValue.greatestManaValue` of artifacts you control
+`CardAction.dealDamage` of this to a target opponent for
+`Value.greatestManaValue` of artifacts you control
 (`chapterDealXDamageToTargetOpponentGreatestArtifactMv`). Non-optional draw,
 creature-not-artifact, missing opponent draw, each-player draw, lasting
 (not this-turn) reduction, creature spells, artifact permanents, target
-player, greatest mana value among creatures, or literal `dealDamage` stay
+player, greatest mana value among creatures, or literal `Value.nat` stay
 uncompiled. Uncompiled chapter actions produce no `SagaDef`.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass

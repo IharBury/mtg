@@ -118,7 +118,7 @@ def magnificentEnd : TraditionalCardDefinition := .card [
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
-      5]]
+      (.nat 5)]]
 
 def magnificentEndCard : CardDef :=
   magnificentEnd.toCardDef
@@ -638,7 +638,7 @@ def smaugTheGreatCalamity : TraditionalCardDefinition := .card [
       .dealDamage
         .this
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        5]]
+        (.nat 5)]]
 ]
 
 def smaugTheGreatCalamityCard : CardDef :=
