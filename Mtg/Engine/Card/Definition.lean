@@ -928,6 +928,10 @@ inductive CardAction where
   /-- The selected player copies the selected spell or ability and may
   choose new targets for the copy (CR 707). -/
   | copyWithNewTargets : Selector → Selector → CardAction
+  /-- Perform the action this replacement effect is replacing (CR 614). -/
+  | keepReplacedAction
+  /-- Heal all damage marked on the selected object. -/
+  | healAllDamage : Selector → CardAction
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
@@ -1671,6 +1675,12 @@ def leftoverAddAnyColor? : CardAction → Bool
 def leftoverEntersTapped? : List CardAction → Bool
   | [.putOntoBattlefieldInState obj [.tapped]] =>
     obj == .this || obj == .source .this
+  | _ => false
+
+/-- Heal all marked damage on this, then perform the replaced action. -/
+def leftoverHealThenKeepReplaced? : List CardAction → Bool
+  | [.healAllDamage who, .keepReplacedAction] =>
+    who == .this || who == .source .this
   | _ => false
 
 /-- Put +1/+1 counters on a targeted creature you control, optionally of
@@ -2987,6 +2997,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     else continuousEffect none [] asAbility
                   | .copyWithNewTargets _ _ =>
                     continuousEffect none [] asAbility
+                  | .keepReplacedAction | .healAllDamage _ =>
+                    continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
 def leftoverModes? : CardAction → Option (Array Effect)
@@ -3841,8 +3853,9 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
         CardAction.leftoverEntersTapped? actions then
       { b with entersTapped := true }
     else b
-  | .replace (.damage _ who) _ =>
-    if who == .this || who == .source .this then
+  | .replace (.damage src who) actions =>
+    if (who == .this || who == .source .this) && src == .all &&
+        CardAction.leftoverHealThenKeepReplaced? actions then
       { b with staticAbilities := b.staticAbilities.push .healOtherDamageWhenDealt }
     else b
   | .replace (.combatDamage _ _) _ => b
@@ -8331,14 +8344,56 @@ end TraditionalCardDefinition
               .controlled (.controller .this)]))))
   ]).toCardDef.staticAbilities == #[]
 
+-- Wolverine: heal all damage on this, then keep the replaced damage event.
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.replace
+          (.damage .all .this)
+          [.healAllDamage .this, .keepReplacedAction]))
+  ]).toCardDef.staticAbilities == #[.healOtherDamageWhenDealt]
+
+-- Empty replacement is not enough (must heal then keep the damage).
 #guard
   (TraditionalCardDefinition.card [
     .ability (.static (.replace (.damage .all .this) []))
-  ]).toCardDef.staticAbilities == #[.healOtherDamageWhenDealt]
+  ]).toCardDef.staticAbilities == #[]
 
 #guard
   (TraditionalCardDefinition.card [
-    .ability (.static (.replace (.combatDamage .all .this) []))
+    .ability
+      (.static
+        (.replace
+          (.damage .all .this)
+          [.keepReplacedAction]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.replace
+          (.damage .all .this)
+          [.healAllDamage .this]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.replace
+          (.damage .all .this)
+          [.keepReplacedAction, .healAllDamage .this]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.replace
+          (.combatDamage .all .this)
+          [.healAllDamage .this, .keepReplacedAction]))
   ]).toCardDef.staticAbilities == #[]
 
 end Mtg.Engine

@@ -92,7 +92,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`.
+  `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
+  `keepReplacedAction`, `healAllDamage`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -134,7 +135,11 @@ uncompiled.
 `CardAction.optionalPayFor` is who may pay, what cost, and what happens if
 paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
 `Cost.discard` (ETB via `optionalPayFor`, activated via `Cost.or`). `CardAction.fight` is Wolverine’s ETB.
-`Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putCountersSimultaneously` is
+`CardAction.healAllDamage` heals all marked damage on the selected object.
+`CardAction.keepReplacedAction` performs the action being replaced. Wolverine’s leftover
+is `replace` of any damage to this with `healAllDamage` of this then `keepReplacedAction`.
+Empty replacement, combat-only, keep without heal, heal without keep, or keep then
+heal stay uncompiled. `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s leftover is `hasTarget` of a creature on the spell you cast, then
 flying on creatures that are `isTargetOf` this spell (`wasObjectOfThisTrigger`).

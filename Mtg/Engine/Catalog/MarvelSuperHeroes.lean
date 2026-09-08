@@ -2963,7 +2963,10 @@ def wolverineFierceFighter : CardDef :=
               .permanent,
               .cardType .creature])))),
     .ability
-      (.static (.replace (.damage .all .this) []))
+      (.static
+        (.replace
+          (.damage .all .this)
+          [.healAllDamage .this, .keepReplacedAction]))
   ]).toCardDef
     (oracleText := "Haste\nWhen Wolverine enters, he fights up to one other target creature.\nIf damage would be dealt to Wolverine, instead that damage is dealt, but all other damage already dealt to him is healed.")
 
