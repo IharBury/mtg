@@ -2369,7 +2369,9 @@ def undercoverSkrull : CardDef :=
               .cardType .creature,
               .owner (.controller .this)])
             2)
-          [.addPowerToughness .this 2 2])),
+          [
+            .addPowerToughness .this 2 2,
+            .gainAllSubtypes .this .creature])),
     .ability
       (.activated
         [.tapSymbol]

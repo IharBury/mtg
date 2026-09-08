@@ -786,6 +786,9 @@ inductive ContinuousEffect where
   /-- The selected object gains the given subtype in addition to its other
   types (CR 205.3 / 613.1). -/
   | gainSubtype : Selector → CardSubtype → ContinuousEffect
+  /-- The selected object has all subtypes of the given card type
+  (CR 205.3 / 702.72). -/
+  | gainAllSubtypes : Selector → CardType → ContinuousEffect
   /-- The selected object's power and toughness are each equal to the
   number of objects matching the second selector. -/
   | setPowerToughnessEqualToCount : Selector → Selector → ContinuousEffect
@@ -980,6 +983,7 @@ def selector : ContinuousEffect → Selector
   | .setBasePowerToughnessFrom who _ => who
   | .gainType who _ => who
   | .gainSubtype who _ => who
+  | .gainAllSubtypes who _ => who
   | .setPowerToughnessEqualToCount who _ => who
   | .addPowerToughnessPer who _ _ _ => who
   | .increaseLandPlayLimit who _ => who
@@ -1002,6 +1006,7 @@ def addedPT? : List ContinuousEffect → Option (Int × Int)
   | .setBasePowerToughnessFrom _ _ :: _ => none
   | .gainType _ _ :: _ => none
   | .gainSubtype _ _ :: _ => none
+  | .gainAllSubtypes _ _ :: _ => none
   | .setPowerToughnessEqualToCount _ _ :: _ => none
   | .addPowerToughnessPer _ _ _ _ :: _ => none
   | .increaseLandPlayLimit _ _ :: _ => none
@@ -2397,22 +2402,19 @@ def leftoverMayPayHasteUnblockable? : CardAction → Bool
       | _ => false
   | _ => false
 
-/-- +P/+T on this as long as your graveyard has creature cards. -/
+/-- +P/+T on this as long as your graveyard has creature cards. With
+`gainAllSubtypes` of creature, also all creature types. -/
 def leftoverGetsIfGyCreatureCards?
     (among : Selector) (inners : List ContinuousEffect) : Option StaticAbility :=
   if leftoverYourGyCreatures? among then
     match inners with
     | [.addPowerToughness who p t] =>
-      if who == .this || who == .source .this then
-        -- Undercover Skrull's modeled static is +2/+2 and all creature types;
-        -- the leftover recovers that CardDef from the pump alone.
-        if p == 2 && t == 2 then
-          some (.getsAndAllTypesIfGyCreatureCards 2 2 2)
-        else some (.getsIfGyCreatureCards 2 p t)
+      if leftoverThis who then
+        some (.getsIfGyCreatureCards 2 p t)
       else none
-    | [.addPowerToughness who p t, .gainSubtype _ _]
-    | [.gainSubtype _ _, .addPowerToughness who p t] =>
-      if who == .this || who == .source .this then
+    | [.addPowerToughness who p t, .gainAllSubtypes typesWho .creature]
+    | [.gainAllSubtypes typesWho .creature, .addPowerToughness who p t] =>
+      if leftoverThis who && leftoverThis typesWho then
         some (.getsAndAllTypesIfGyCreatureCards 2 p t)
       else none
     | _ => none
@@ -3850,6 +3852,7 @@ def applyContinuousEffect (b : CardFace) : ContinuousEffect → CardFace
   | .setBasePowerToughnessFrom _ _ => b
   | .gainType _ _ => b
   | .gainSubtype _ _ => b
+  | .gainAllSubtypes _ _ => b
   | .setPowerToughnessEqualToCount who among =>
     if (who == .this || who == .source .this) && among.shape.landYouControl then
       { b with
@@ -7415,8 +7418,71 @@ end TraditionalCardDefinition
               .cardType .creature,
               .owner (.controller .this)])
             2)
-          [.addPowerToughness .this 2 2]))
+          [
+            .addPowerToughness .this 2 2,
+            .gainAllSubtypes .this .creature]))
   ]).toCardDef.staticAbilities == #[.getsAndAllTypesIfGyCreatureCards 2 2 2]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.countAtLeast
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])
+            2)
+          [.addPowerToughness .this 2 2]))
+  ]).toCardDef.staticAbilities == #[.getsIfGyCreatureCards 2 2 2]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.countAtLeast
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])
+            2)
+          [
+            .addPowerToughness .this 2 2,
+            .gainSubtype .this .elf]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.countAtLeast
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])
+            2)
+          [
+            .addPowerToughness .this 2 2,
+            .gainAllSubtypes .this .artifact]))
+  ]).toCardDef.staticAbilities == #[]
+
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.any
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)]))
+          [
+            .addPowerToughness .this 2 2,
+            .gainAllSubtypes .this .creature]))
+  ]).toCardDef.staticAbilities == #[]
 
 #guard
   (TraditionalCardDefinition.card [
@@ -7432,6 +7498,22 @@ end TraditionalCardDefinition
   ]).toCardDef.staticAbilities == #[]
 
 -- One creature card is not enough (Undercover Skrull needs two or more).
+#guard
+  (TraditionalCardDefinition.card [
+    .ability
+      (.static
+        (.if
+          (.countAtLeast
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])
+            1)
+          [
+            .addPowerToughness .this 2 2,
+            .gainAllSubtypes .this .creature]))
+  ]).toCardDef.staticAbilities == #[]
+
 #guard
   (TraditionalCardDefinition.card [
     .ability

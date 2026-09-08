@@ -79,7 +79,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
-  `gainType`, `gainSubtype`, `setPowerToughnessEqualToCount`,
+  `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPowerToughnessEqualToCount`,
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
@@ -138,6 +138,10 @@ paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s flying restriction is
 `forbid` of attack-or-block, not attack alone.
+`ContinuousEffect.gainAllSubtypes` is who gains all subtypes of that type
+(Undercover Skrull: this, creature). Pump-only leftovers compile to
+`getsIfGyCreatureCards`, not all creature types. `gainSubtype` of one subtype
+stays uncompiled as all-types.
 `CardSubtype` constructors from the previous change, plus leftovers in
 `toCardDef`, compile search-two-basics, Plan-card search, gy-creature
 statics, Alliance modes, second-draw +1/+1 on a target, and the other
