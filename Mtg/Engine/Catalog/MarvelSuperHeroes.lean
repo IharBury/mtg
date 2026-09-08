@@ -2488,7 +2488,7 @@ def armorWars : CardDef :=
           .dealComputedDamage
             .this
             (.target 1 (.opponent (.controller .this)))
-            (.greatestManaCost
+            (.greatestManaValue
               (.intersection [
                 .permanent,
                 .cardType .artifact,

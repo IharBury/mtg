@@ -761,9 +761,8 @@ deriving Repr, Inhabited, BEq
 /-- A number computed from game state, used where a printed ability
 refers to a characteristic rather than a literal. -/
 inductive ComputedValue where
-  /-- The greatest mana cost (mana value) among selected objects
-  (CR 202.3). -/
-  | greatestManaCost : Selector → ComputedValue
+  /-- The greatest mana value among selected objects (CR 202.3). -/
+  | greatestManaValue : Selector → ComputedValue
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -2712,7 +2711,7 @@ def leftoverArtifactSpellsCostLessThisTurn? : CardAction → Option Nat
 value among artifacts you control. -/
 def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
     CardAction → Bool
-  | .dealComputedDamage src dest (.greatestManaCost among) =>
+  | .dealComputedDamage src dest (.greatestManaValue among) =>
     leftoverThis src && leftoverTargetOpponent? dest && among.shape.artifactYouControl
   | _ => false
 
@@ -8873,7 +8872,7 @@ end TraditionalCardDefinition
     (.dealComputedDamage
       .this
       (.target 1 (.opponent (.controller .this)))
-      (.greatestManaCost
+      (.greatestManaValue
         (.intersection [
           .permanent,
           .cardType .artifact,
@@ -8885,25 +8884,25 @@ end TraditionalCardDefinition
     (.dealComputedDamage
       .this
       (.target 1 .player)
-      (.greatestManaCost
+      (.greatestManaValue
         (.intersection [
           .permanent,
           .cardType .artifact,
           .controlled (.controller .this)])))
 
--- Greatest mana cost among creatures is not artifacts.
+-- Greatest mana value among creatures is not artifacts.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
     (.dealComputedDamage
       .this
       (.target 1 (.opponent (.controller .this)))
-      (.greatestManaCost
+      (.greatestManaValue
         (.intersection [
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)])))
 
--- Literal damage is not computed greatest-mana-cost damage.
+-- Literal damage is not computed greatest-mana-value damage.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
     (.dealDamage .this (.target 1 (.opponent (.controller .this))) 3)
@@ -8944,7 +8943,7 @@ end TraditionalCardDefinition
       .dealComputedDamage
         .this
         (.target 1 (.opponent (.controller .this)))
-        (.greatestManaCost
+        (.greatestManaValue
           (.intersection [
             .permanent,
             .cardType .artifact,
@@ -8993,7 +8992,7 @@ end TraditionalCardDefinition
             .dealComputedDamage
               .this
               (.target 1 (.opponent (.controller .this)))
-              (.greatestManaCost
+              (.greatestManaValue
                 (.intersection [
                   .permanent,
                   .cardType .artifact,

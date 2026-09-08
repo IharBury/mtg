@@ -95,7 +95,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
   `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
-- **ComputedValue** — `greatestManaCost`.
+- **ComputedValue** — `greatestManaValue`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -158,11 +158,11 @@ that keyword printed with resolution actions. Armor Wars leftovers are
 (`mayDrawPerArtifactOppsDraw`); `reduceCost` of artifact spells you cast
 until end of turn (`artifactSpellsCostLessThisTurn`); and
 `CardAction.dealComputedDamage` of this to a target opponent for
-`ComputedValue.greatestManaCost` of artifacts you control
+`ComputedValue.greatestManaValue` of artifacts you control
 (`chapterDealXDamageToTargetOpponentGreatestArtifactMv`). Non-optional draw,
 creature-not-artifact, missing opponent draw, each-player draw, lasting
 (not this-turn) reduction, creature spells, artifact permanents, target
-player, greatest mana cost among creatures, or literal `dealDamage` stay
+player, greatest mana value among creatures, or literal `dealDamage` stay
 uncompiled. Uncompiled chapter actions produce no `SagaDef`.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
