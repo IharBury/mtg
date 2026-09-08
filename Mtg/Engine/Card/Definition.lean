@@ -94,6 +94,8 @@ inductive Selector where
   | permanentSpell
   /-- An object that has a target matching the given selector (CR 115.1). -/
   | hasTarget : Selector → Selector
+  /-- An object that is a target of the given object (CR 115.1). -/
+  | isTargetOf : Selector → Selector
   /-- A player (CR 102). -/
   | player
   /-- Opponents of the given player (CR 102.2). -/
@@ -393,6 +395,7 @@ def shape : Selector → Shape
   | .spell => { isSpell := true }
   | .permanentSpell => { isSpell := true }
   | .hasTarget _ => {}
+  | .isTargetOf _ => {}
   | .not .this => { other := true }
   | .not s => s.shape.negate
   | .intersection fs => fs.foldl (fun acc f => acc.meet f.shape) {}
@@ -549,6 +552,13 @@ def leftoverHasTarget? : Selector → Option Selector
     | some dest => some dest
     | none => leftoverHasTarget? (.intersection fs)
   | _ => none
+
+/-- True when this selector is a target of this trigger's object. -/
+def leftoverIsTargetOfThisSpell? : Selector → Bool
+  | .isTargetOf .wasObjectOfThisTrigger => true
+  | .intersection (f :: fs) =>
+    leftoverIsTargetOfThisSpell? f || leftoverIsTargetOfThisSpell? (.intersection fs)
+  | _ => false
 
 /-- True when this selector is “the object of a put-to-graveyard event
 since the start of the turn”. -/
@@ -1024,7 +1034,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     match e.selector with
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
-    | .spell | .permanentSpell | .hasTarget _ | .player
+    | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
@@ -2311,10 +2321,10 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
       | none => false
   | _ => false
 
-/-- Those creatures (the objects of this trigger) gain flying. -/
+/-- Those creatures (targets of this spell) gain flying. -/
 def leftoverGrantFlyingToThose? : List ContinuousEffect → Bool
   | [.gainAbility who (.keyword .flying)] =>
-    who.includesWasObjectOfThisTrigger &&
+    who.leftoverIsTargetOfThisSpell? &&
       who.shape.mustBePermanent &&
       who.shape.types.eqTypes [.creature]
   | _ => false
@@ -8183,7 +8193,8 @@ end TraditionalCardDefinition
                 .controlled (.controller .this)])))))
   ]).toCardDef.staticAbilities == #[.flyingCantAttackYouOrBlockYours]
 
--- Storm: a spell that hasTarget a creature; those creatures gain flying.
+-- Storm: a spell that hasTarget a creature; those creatures (targets of
+-- this spell) gain flying.
 #guard
   match
     (Ability.triggered
@@ -8201,7 +8212,7 @@ end TraditionalCardDefinition
             (.intersection [
               .permanent,
               .cardType .creature,
-              .wasObjectOfThisTrigger])
+              .isTargetOf .wasObjectOfThisTrigger])
             (.keyword .flying)]
         .endOfTurn)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCasting Effect.castingTargetsGainFlying
@@ -8235,6 +8246,26 @@ end TraditionalCardDefinition
     (.continuous
       [
         .gainAbility
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .wasObjectOfThisTrigger])
+          (.keyword .flying)]
+      .endOfTurn)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .hasTarget
+          (.intersection [
+            .permanent,
+            .cardType .creature])]))
+    (.continuous
+      [
+        .gainAbility
           (.intersection [.permanent, .cardType .creature])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
@@ -8251,7 +8282,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .wasObjectOfThisTrigger])
+            .isTargetOf .wasObjectOfThisTrigger])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 
@@ -8271,7 +8302,7 @@ end TraditionalCardDefinition
           (.intersection [
             .permanent,
             .cardType .creature,
-            .wasObjectOfThisTrigger])
+            .isTargetOf .wasObjectOfThisTrigger])
           (.keyword .flying)]
       .endOfTurn)).toTriggeredAbility?.isNone
 

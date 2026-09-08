@@ -54,7 +54,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
-  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `player`, `opponent`,
+  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
@@ -137,7 +137,8 @@ paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
 `Trigger.damage` is any damage (Wolverine’s heal). `Trigger.putCountersSimultaneously` is
 one or more counters of a kind on the selected objects at the same time
 (Beast: +1/+1 this turn). Storm’s leftover is `hasTarget` of a creature on the spell you cast, then
-flying on those creatures (`wasObjectOfThisTrigger`). Intervening
+flying on creatures that are `isTargetOf` this spell (`wasObjectOfThisTrigger`).
+Treating the spell as those creatures stays uncompiled. Intervening
 `targetsIncludeAny` or flying on all creatures stays uncompiled. Storm’s
 flying restriction is
 `forbid` of attack-or-block, not attack alone.

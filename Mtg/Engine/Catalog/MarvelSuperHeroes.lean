@@ -2859,7 +2859,7 @@ def stormWindrider : CardDef :=
               (.intersection [
                 .permanent,
                 .cardType .creature,
-                .wasObjectOfThisTrigger])
+                .isTargetOf .wasObjectOfThisTrigger])
               (.keyword .flying)]
           .endOfTurn))
   ]).toCardDef
