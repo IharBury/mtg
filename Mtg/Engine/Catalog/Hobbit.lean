@@ -2447,11 +2447,41 @@ def anUnexpectedParty : CardDef :=
       (Effect.createTokensX .dwarf)))
 
 def alongTheCrookedWay : CardDef :=
-  enchantment "Along the Crooked Way" (ManaCost.ofGenericAndColor 2 .black) "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn."
-    (activatedAbilities := #[
-      activated (Effect.subtypesGainMenace #["Goblin", "Orc"]) (ManaCost.ofGenericAndColor 1 .black)])
-    (triggeredAbilities := #[.onEnterReturnCreatureFromGyToHand,
-      .onCreatureCardLeavesYourGyAmassGoblins 1])
+  (TraditionalCardDefinition.card [
+    .name "Along the Crooked Way",
+    .manaCost [.generic 2, .mono .black],
+    .type .enchantment,
+    .ability (
+      .triggered
+        (.enter .this)
+        (.returnToHand
+          (.target
+            1
+            (.intersection [
+              .inGraveyard,
+              .cardType .creature,
+              .owner (.controller .this)])))),
+    .ability (
+      .triggered
+        (.leaveGraveyard
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)]))
+        (.keyword (.controller .this) (.amass .goblin 1))),
+    .ability (
+      .activated
+        [.mana [.generic 1, .mono .black]]
+        (.continuous
+          [.gainAbility
+            (.intersection [
+              .permanent,
+              .union [.subtype .goblin, .subtype .orc],
+              .controlled (.controller .this)])
+            (.keyword .menace)]
+          .endOfTurn))
+  ]).toCardDef
+    (oracleText := "When this enchantment enters, return target creature card from your graveyard to your hand.\nWhenever a creature card leaves your graveyard, amass Goblins 1.\n{1}{B}: Goblins and Orcs you control gain menace until end of turn.")
 
 def azogMoriaSRuin : CardDef :=
   legendaryCreature "Azog, Moria's Ruin" (ManaCost.ofGenericAndColor 2 .black) #["Goblin", "Soldier"] 1 3 (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")

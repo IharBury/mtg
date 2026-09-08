@@ -167,6 +167,8 @@ inductive Trigger where
   | damage : Selector → Selector → Trigger
   /-- The selected object would be put into a graveyard (CR 614). -/
   | putToGraveyard : Selector → Trigger
+  /-- Whenever a matching card leaves a graveyard (CR 404). -/
+  | leaveGraveyard : Selector → Trigger
   /-- Whenever the selected object is returned to its owner's hand. -/
   | returnToHand : Selector → Trigger
   /-- Whenever the selected player discards a card (CR 701.8). -/
@@ -2214,6 +2216,19 @@ def leftoverTeamGain? (effects : List ContinuousEffect) : Option Keywords :=
     else none
   | none => none
 
+/-- Matching subtypes you control gain menace until end of turn. -/
+def leftoverSubtypesGainMenace? (effects : List ContinuousEffect) :
+    Option (Array String) :=
+  match ContinuousEffect.massSelector? effects with
+  | some among =>
+    let kws := grantedKeywords effects
+    let sts := among.includedSubtypes
+    if among.shape.sameController && kws.menace &&
+        kws == Keyword.menace.toKeywords && !sts.isEmpty then
+      some sts.toArray
+    else none
+  | none => none
+
 /-- Choose: +1/+1 on a Wolf you control, or create a Treasure. -/
 def leftoverWolfPlusOneOrTreasure? : List CardAction → Bool
   | [a, b] =>
@@ -2288,6 +2303,11 @@ def leftoverEnterReturnGyPermanentThisTurn? : CardAction → Bool
       among.includesInGraveyard && among.shape.mustBePermanent &&
         among.wasObjectOfPutToGraveyardThisTurn?
     | none => false
+  | _ => false
+
+/-- Return target creature card from your graveyard to your hand. -/
+def leftoverEnterReturnCreatureFromGyToHand? : CardAction → Bool
+  | .returnToHand (.target _ among) => leftoverYourGyCreatures? among
   | _ => false
 
 /-- Return up to one targeted nonland, nontoken permanent. -/
@@ -2652,7 +2672,10 @@ def leftoverContinuousCompiled? : CardAction → Option Effect
   | .continuous effects _ =>
     if leftoverGrantCombatDamageCreateTreasure? effects then
       some Effect.grantCombatDamageCreateTreasure
-    else leftoverTeamGain? effects |>.map Effect.teamGain
+    else
+      match leftoverSubtypesGainMenace? effects with
+      | some sts => some (Effect.subtypesGainMenace sts)
+      | none => leftoverTeamGain? effects |>.map Effect.teamGain
   | _ => none
 
 /-- Sequence leftovers that compile to a named `Effect` without taking
@@ -2789,6 +2812,8 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
         some TriggeredAbility.onEnterMaySacDrawTreasure
       else if leftoverEnterReturnGyPermanentThisTurn? action then
         some (TriggeredAbility.onEnter Effect.enterReturnGyPermanentThisTurn)
+      else if leftoverEnterReturnCreatureFromGyToHand? action then
+        some TriggeredAbility.onEnterReturnCreatureFromGyToHand
       else if leftoverEnterReturnNonlandNontoken? action then
         some (TriggeredAbility.onEnter Effect.enterReturnNonlandNontoken)
       else if leftoverEnterFightUpToOne? action then
@@ -3149,6 +3174,10 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       | .ordinal 1 .turnStart (.castSpell among), .recruit =>
         if Selector.opponentCastsNoncreatureSpell among then
           some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
+        else none
+      | .leaveGraveyard among, .amass .goblin n =>
+        if CardAction.leftoverYourGyCreatures? among then
+          some (TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins n)
         else none
       | _, _ => none
 
@@ -8510,5 +8539,118 @@ end TraditionalCardDefinition
   (TraditionalCardDefinition.card [
     .ability (.static (.reduceCost .this [.mana [.generic 2]]))
   ]).toCardDef.staticAbilities == #[]
+
+-- Along the Crooked Way: creature card leaves your graveyard, amass Goblins.
+#guard
+  match
+    (Ability.triggered
+      (.leaveGraveyard
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)]))
+      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins 1
+  | none => false
+
+-- Opponent's graveyard is not yours.
+#guard
+  (Ability.triggered
+    (.leaveGraveyard
+      (.intersection [
+        .inGraveyard,
+        .cardType .creature,
+        .owner (.opponent (.controller .this))]))
+    (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility?.isNone
+
+-- Instant cards leaving the graveyard are not creature cards.
+#guard
+  (Ability.triggered
+    (.leaveGraveyard
+      (.intersection [
+        .inGraveyard,
+        .cardType .instant,
+        .owner (.controller .this)]))
+    (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility?.isNone
+
+-- Enter: return target creature card from your graveyard.
+#guard
+  match
+    (Ability.triggered
+      (.enter .this)
+      (.returnToHand
+        (.target
+          1
+          (.intersection [
+            .inGraveyard,
+            .cardType .creature,
+            .owner (.controller .this)])))).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onEnterReturnCreatureFromGyToHand
+  | none => false
+
+-- Up-to-one is not a required target creature card.
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.returnToHand
+      (.targets
+        1
+        (.range 0 1)
+        (.intersection [
+          .inGraveyard,
+          .cardType .creature,
+          .owner (.controller .this)])))).toTriggeredAbility?.isNone
+
+-- Goblins and Orcs you control gain menace.
+#guard
+  CardAction.toAbilityEffect
+    (.continuous
+      [.gainAbility
+        (.intersection [
+          .permanent,
+          .union [.subtype .goblin, .subtype .orc],
+          .controlled (.controller .this)])
+        (.keyword .menace)]
+      .endOfTurn) ==
+  Effect.subtypesGainMenace #["Goblin", "Orc"]
+
+-- Flying instead of menace is not subtypesGainMenace.
+#guard
+  CardAction.toAbilityEffect
+    (.continuous
+      [.gainAbility
+        (.intersection [
+          .permanent,
+          .union [.subtype .goblin, .subtype .orc],
+          .controlled (.controller .this)])
+        (.keyword .flying)]
+      .endOfTurn) !=
+  Effect.subtypesGainMenace #["Goblin", "Orc"]
+
+-- Opponent's Goblins and Orcs are not yours.
+#guard
+  CardAction.toAbilityEffect
+    (.continuous
+      [.gainAbility
+        (.intersection [
+          .permanent,
+          .union [.subtype .goblin, .subtype .orc],
+          .controlled (.opponent (.controller .this))])
+        (.keyword .menace)]
+      .endOfTurn) !=
+  Effect.subtypesGainMenace #["Goblin", "Orc"]
+
+-- Creatures you control (no subtype) still leftover to teamGain.
+#guard
+  CardAction.toAbilityEffect
+    (.continuous
+      [.gainAbility
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])
+        (.keyword .menace)]
+      .endOfTurn) ==
+  Effect.teamGain Keyword.menace.toKeywords
 
 end Mtg.Engine
