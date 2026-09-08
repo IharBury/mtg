@@ -2251,9 +2251,24 @@ def desolationOfSmaug : CardDef :=
     (some (Effect.dealDamageToEachNonDragonThenAddDragonMana 3))
 
 def dwarvenMauler : CardDef :=
-  creature "Dwarven Mauler" (ManaCost.ofColor .red) #["Dwarf", "Warrior"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Dwarven Mauler",
+    .manaCost [.mono .red],
+    .type .creature,
+    .subtype .dwarf,
+    .subtype .warrior,
+    .power 2,
+    .toughness 1,
+    .ability
+      (.static
+        (.reduceCost
+          (.intersection [
+            Selector.keywordAbility .equip,
+            .hasTarget .this,
+            .controlled (.controller .this)])
+          [.mana [.generic 2]]))
+  ]).toCardDef
     (oracleText := "Equip abilities you activate that target this creature cost {2} less to activate.")
-    (staticAbilities := #[.equipAbilitiesTargetingThisCostLess 2])
 
 def myPrecious : CardDef :=
   artifact "My Precious" (ManaCost.ofGeneric 3)
