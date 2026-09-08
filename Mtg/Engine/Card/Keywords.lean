@@ -194,6 +194,8 @@ state. -/
 inductive Value where
   /-- A printed natural-number amount. -/
   | nat : Nat → Value
+  /-- A printed integer amount. -/
+  | int : Int → Value
   /-- The greatest mana value among selected objects (CR 202.3). -/
   | greatestManaValue : Selector → Value
 deriving Repr, Inhabited, BEq
@@ -243,7 +245,7 @@ inductive Selector where
   /-- A keyword ability of the given keyword (CR 702). -/
   | keywordAbility : Keyword → Selector
   /-- Objects with power at least this value (CR 208). -/
-  | powerAtLeast : Int → Selector
+  | powerAtLeast : Value → Selector
   /-- Printed subtype (CR 205.3). -/
   | subtype : CardSubtype → Selector
   /-- A spell on the stack (CR 112.1). -/
@@ -271,7 +273,7 @@ inductive Selector where
   /-- The object of this triggered ability. -/
   | wasObjectOfThisTrigger
   /-- The object a replacement effect is replacing. -/
-  | replacingObject : Nat → Selector
+  | replacingObject : Selector
   /-- An object created by the numbered action. -/
   | wasCreatedByAction : Nat → Selector
   /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
@@ -371,6 +373,7 @@ namespace Value
 instance : ToString Value where
   toString
     | .nat n => toString n
+    | .int n => toString n
     | .greatestManaValue _ => "X"
 
 end Value

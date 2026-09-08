@@ -875,8 +875,7 @@ def giantGrowth : CardDef :=
     .actions [
       .continuous
         [.addPowerToughness
-          (.target 1 (.intersection [.permanent, .cardType .creature]))
-          3 3]
+          (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 3) (Value.int 3)]
         .endOfTurn]
   ]).toCardDef
     (oracleText := "Target creature gets +3/+3 until end of turn.")
