@@ -473,7 +473,7 @@ def battleScarredGoblin : CardDef :=
     .ability (
       .triggered
         (.block .all .this)
-        (.dealDamage .this (.blocking .this) 1))
+        (.dealDamage .this (.blocking .this) (.nat 1)))
   ]).toCardDef
     (oracleText := "Whenever this creature becomes blocked, it deals 1 damage to each creature blocking it.")
 
@@ -490,7 +490,7 @@ def improvisedClub : CardDef :=
               .permanent,
               .union [.cardType .artifact, .cardType .creature]])
             1])),
-    .actions [.dealDamage .this (.target 1 .all) 4]
+    .actions [.dealDamage .this (.target 1 .all) (.nat 4)]
   ]).toCardDef
     (oracleText := "As an additional cost to cast this spell, sacrifice an artifact or creature.\nImprovised Club deals 4 damage to any target.")
 
@@ -607,7 +607,7 @@ def guttersnipe : CardDef :=
           (.intersection [
             .union [.cardType .instant, .cardType .sorcery],
             .controlled (.controller .this)]))
-        (.dealDamage .this (.opponent (.controller .this)) 2))
+        (.dealDamage .this (.opponent (.controller .this)) (.nat 2)))
   ]).toCardDef
     (oracleText := "Whenever you cast an instant or sorcery spell, this creature deals 2 damage to each opponent.")
 

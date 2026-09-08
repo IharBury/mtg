@@ -854,7 +854,7 @@ def lightningBolt : CardDef :=
     .name "Lightning Bolt",
     .manaCost [.mono .red],
     .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) 3]
+    .actions [.dealDamage .this (.target 1 .all) (.nat 3)]
   ]).toCardDef
     (oracleText := "Lightning Bolt deals 3 damage to any target.")
 
@@ -863,7 +863,7 @@ def shock : CardDef :=
     .name "Shock",
     .manaCost [.mono .red],
     .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) 2]
+    .actions [.dealDamage .this (.target 1 .all) (.nat 2)]
   ]).toCardDef
     (oracleText := "Shock deals 2 damage to any target.")
 

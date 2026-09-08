@@ -758,11 +758,13 @@ inductive CardState where
   | controlled : Selector → CardState
 deriving Repr, Inhabited, BEq
 
-/-- A number computed from game state, used where a printed ability
-refers to a characteristic rather than a literal. -/
-inductive ComputedValue where
+/-- A number that is either a printed constant or computed from game
+state. -/
+inductive Value where
+  /-- A printed natural-number amount. -/
+  | nat : Nat → Value
   /-- The greatest mana value among selected objects (CR 202.3). -/
-  | greatestManaValue : Selector → ComputedValue
+  | greatestManaValue : Selector → Value
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -840,10 +842,9 @@ inductive CardAction where
   | continuous : List ContinuousEffect → Trigger → CardAction
   | tap : Selector → CardAction
   | untap : Selector → CardAction
-  | dealDamage : Selector → Selector → Nat → CardAction
-  /-- The selected source deals damage equal to the computed value to the
-  selected objects. -/
-  | dealComputedDamage : Selector → Selector → ComputedValue → CardAction
+  /-- The selected source deals the given amount of damage to the selected
+  objects. The amount may be a printed number or a computed value. -/
+  | dealDamage : Selector → Selector → Value → CardAction
   /-- The selected player divides that much damage from the source among
   the selected objects (CR 601.2d). -/
   | divideDamage : Selector → Selector → Selector → Nat → CardAction
@@ -2456,7 +2457,7 @@ def leftoverSacrificeArtifactOrDiscardNonlandCost? : List Cost → Bool
 /-- You may sacrifice an artifact or discard a nonland card. If you do,
 deal 2 damage to any target. -/
 def leftoverEnterMaySacOrDiscardNonlandThenDamage? : CardAction → Bool
-  | .optionalPayFor who costs [.dealDamage _ dest 2] =>
+  | .optionalPayFor who costs [.dealDamage _ dest (.nat 2)] =>
     leftoverYou who &&
       leftoverSacrificeArtifactOrDiscardNonlandCost? costs &&
       Selector.leftoverAnyTarget? dest
@@ -2711,7 +2712,7 @@ def leftoverArtifactSpellsCostLessThisTurn? : CardAction → Option Nat
 value among artifacts you control. -/
 def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
     CardAction → Bool
-  | .dealComputedDamage src dest (.greatestManaValue among) =>
+  | .dealDamage src dest (.greatestManaValue among) =>
     leftoverThis src && leftoverTargetOpponent? dest && among.shape.artifactYouControl
   | _ => false
 
@@ -2990,7 +2991,9 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .continuous effects _duration => compileContinuous effects asAbility
                   | .tap s => compileTap s asAbility
                   | .untap s => compileUntap s asAbility
-                  | .dealDamage _source victim n => compileDamage victim n asAbility
+                  | .dealDamage _source victim (.nat n) => compileDamage victim n asAbility
+                  | .dealDamage _ _ (.greatestManaValue _) =>
+                    continuousEffect none [] asAbility
                   | .divideDamage _who _source victim n => compileDamage victim n asAbility
                   | .draw _who n =>
                     if asAbility then Effect.abilityDraw n else Effect.draw n
@@ -3104,8 +3107,6 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .copyWithNewTargets _ _ =>
                     continuousEffect none [] asAbility
                   | .keepReplacedAction | .healAllDamage _ =>
-                    continuousEffect none [] asAbility
-                  | .dealComputedDamage _ _ _ =>
                     continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -3300,11 +3301,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onAttackScry n)
     else none
-  | .triggered (.block _ src) (.dealDamage dealer dest 1) =>
+  | .triggered (.block _ src) (.dealDamage dealer dest (.nat 1)) =>
     if src == .this && dealer == .this && dest == .blocking .this then
       some TriggeredAbility.onBecomesBlockedDeal1ToBlockers
     else none
-  | .triggered (.castSpell among) (.dealDamage _ (.opponent _) n) =>
+  | .triggered (.castSpell among) (.dealDamage _ (.opponent _) (.nat n)) =>
     if among.shape.types.eqTypes [.instant, .sorcery] && among.shape.sameController then
       some (TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent n)
     else none
@@ -3571,7 +3572,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       else none
     | _ =>
       match action with
-      | .dealDamage _ dest 1 =>
+      | .dealDamage _ dest (.nat 1) =>
         let opp :=
           dest == .opponent (.controller .this) ||
             match dest with
@@ -4287,7 +4288,7 @@ end TraditionalCardDefinition
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
-      5
+      (.nat 5)
   action.toEffect == Effect.dealDamageToCreature 5
 
 #guard Selector.shape
@@ -4312,7 +4313,7 @@ end TraditionalCardDefinition
       .dealDamage
         .this
         (.target 1 (.intersection [.permanent, .cardType .creature]))
-        5]
+        (.nat 5)]
   ]).toCardDef.costReductionIfTargetTapped == 3
 
 -- Eagle of the Great Shelf: whenever this attacks, +1/+1 (per other creature leftover).
@@ -5054,7 +5055,7 @@ end TraditionalCardDefinition
     .dealDamage
       .this
       (.target 1 (.intersection [.permanent, .cardType .creature]))
-      5
+      (.nat 5)
   action.toEffect == Effect.dealDamageToCreature 5
 
 -- Gandalf, Spark Starter: enters, 3 damage divided among one to three targets.
@@ -5965,7 +5966,7 @@ end TraditionalCardDefinition
   ]).toCardDef.tapAddMana == #[.colored .green]
 
 #guard
-  let action : CardAction := .dealDamage .this (.target 1 .all) 3
+  let action : CardAction := .dealDamage .this (.target 1 .all) (.nat 3)
   action.toEffect == Effect.dealDamage 3
 
 #guard
@@ -6175,7 +6176,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.block .all .this)
-      (.dealDamage .this (.blocking .this) 1)).toTriggeredAbility? with
+      (.dealDamage .this (.blocking .this) (.nat 1)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onBecomesBlockedDeal1ToBlockers
   | none => false
 
@@ -6186,14 +6187,14 @@ end TraditionalCardDefinition
         (.intersection [
           .union [.cardType .instant, .cardType .sorcery],
           .controlled (.controller .this)]))
-      (.dealDamage .this (.opponent (.controller .this)) 2)).toTriggeredAbility? with
+      (.dealDamage .this (.opponent (.controller .this)) (.nat 2)).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2
   | none => false
 
 #guard
   (Ability.triggered
     (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
-    (.dealDamage .this (.opponent (.controller .this)) 2)).toTriggeredAbility?.isNone
+    (.dealDamage .this (.opponent (.controller .this)) (.nat 2)).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -7408,7 +7409,7 @@ end TraditionalCardDefinition
           .not .this,
           .permanent,
           .cardType .creature]))
-      3)).toTriggeredAbility?.isNone
+      (.nat 3)).toTriggeredAbility?.isNone
 
 #guard
   let others : Selector :=
@@ -8290,7 +8291,7 @@ end TraditionalCardDefinition
       (.optionalPayFor
         (.controller .this)
         [.or [sacArt, .discard (.not (.cardType .land))]]
-        [.dealDamage .this (.target 2 .all) 2])).toTriggeredAbility? with
+        [.dealDamage .this (.target 2 .all) (.nat 2])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage
   | none => false
 
@@ -8307,7 +8308,7 @@ end TraditionalCardDefinition
     (.optionalPayFor
       (.controller .this)
       [.or [sacArt, .discard .all]]
-      [.dealDamage .this (.target 2 .all) 2])).toTriggeredAbility?.isNone
+      [.dealDamage .this (.target 2 .all) (.nat 2])).toTriggeredAbility?.isNone
 
 #guard
   let sacArt : Cost :=
@@ -8320,7 +8321,7 @@ end TraditionalCardDefinition
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard (.not (.cardType .land))]]
-      (.dealDamage .this (.target 1 .all) 2)).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.nat 2)).toActivatedAbility? with
   | some ab => ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 
@@ -8335,7 +8336,7 @@ end TraditionalCardDefinition
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard .all]]
-      (.dealDamage .this (.target 1 .all) 2)).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.nat 2)).toActivatedAbility? with
   | some ab => !ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 
@@ -8869,7 +8870,7 @@ end TraditionalCardDefinition
 -- Armor Wars III: this deals X to target opponent, X = greatest artifact MV.
 #guard
   CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
-    (.dealComputedDamage
+    (.dealDamage
       .this
       (.target 1 (.opponent (.controller .this)))
       (.greatestManaValue
@@ -8881,7 +8882,7 @@ end TraditionalCardDefinition
 -- Target player is not target opponent.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
-    (.dealComputedDamage
+    (.dealDamage
       .this
       (.target 1 .player)
       (.greatestManaValue
@@ -8893,7 +8894,7 @@ end TraditionalCardDefinition
 -- Greatest mana value among creatures is not artifacts.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
-    (.dealComputedDamage
+    (.dealDamage
       .this
       (.target 1 (.opponent (.controller .this)))
       (.greatestManaValue
@@ -8905,7 +8906,7 @@ end TraditionalCardDefinition
 -- Literal damage is not computed greatest-mana-value damage.
 #guard
   !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
-    (.dealDamage .this (.target 1 (.opponent (.controller .this))) 3)
+    (.dealDamage .this (.target 1 (.opponent (.controller .this))) (.nat 3))
 
 #guard
   CardAction.leftoverChapterEffect?
@@ -8940,7 +8941,7 @@ end TraditionalCardDefinition
 #guard
   CardAction.leftoverChapterEffect?
     [
-      .dealComputedDamage
+      .dealDamage
         .this
         (.target 1 (.opponent (.controller .this)))
         (.greatestManaValue
@@ -8989,7 +8990,7 @@ end TraditionalCardDefinition
         (.keywordWithEffect
           (.chapter 3)
           [
-            .dealComputedDamage
+            .dealDamage
               .this
               (.target 1 (.opponent (.controller .this)))
               (.greatestManaValue

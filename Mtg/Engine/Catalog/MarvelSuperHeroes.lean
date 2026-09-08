@@ -1739,7 +1739,7 @@ def hYDRAAssaultRobot : CardDef :=
               .permanent,
               .cardType .artifact,
               .controlled (.controller .this)]]))
-        (.dealDamage .this (.opponent (.controller .this)) 1))
+        (.dealDamage .this (.opponent (.controller .this)) (.nat 1)))
   ]).toCardDef
     (oracleText := "Whenever another Villain and/or artifact you control enters, this creature deals 1 damage to target opponent.")
 
@@ -1810,7 +1810,7 @@ def lightningStrike : CardDef :=
     .name "Lightning Strike",
     .manaCost [.generic 1, .mono .red],
     .type .instant,
-    .actions [.dealDamage .this (.target 1 .all) 3]
+    .actions [.dealDamage .this (.target 1 .all) (.nat 3)]
   ]).toCardDef
     (oracleText := "Lightning Strike deals 3 damage to any target.")
 
@@ -1986,7 +1986,7 @@ def truckToss : CardDef :=
         (.if
           (.anySubtype (.controlled (.controller .this)) .vehicle)
           [.reduceCost .this [.mana [.generic 2]]])),
-    .actions [.dealDamage .this (.target 1 .all) 4]
+    .actions [.dealDamage .this (.target 1 .all) (.nat 4)]
   ]).toCardDef
     (oracleText := "This spell costs {2} less to cast if you control a Vehicle.\nTruck Toss deals 4 damage to any target.")
 
@@ -2485,7 +2485,7 @@ def armorWars : CardDef :=
       (.keywordWithEffect
         (.chapter 3)
         [
-          .dealComputedDamage
+          .dealDamage
             .this
             (.target 1 (.opponent (.controller .this)))
             (.greatestManaValue
@@ -2599,7 +2599,7 @@ def bullseyeDeathDealer : CardDef :=
                 .controlled (.controller .this)])
               1,
             .discard (.not (.cardType .land))]]
-          [.dealDamage .this (.target 2 .all) 2])),
+          [.dealDamage .this (.target 2 .all) (.nat 2])),
     .ability
       (.activated
         [
@@ -2613,7 +2613,7 @@ def bullseyeDeathDealer : CardDef :=
                 .controlled (.controller .this)])
               1,
             .discard (.not (.cardType .land))]]
-        (.dealDamage .this (.target 1 .all) 2))
+        (.dealDamage .this (.target 1 .all) (.nat 2)))
   ]).toCardDef
     (oracleText := "When Bullseye enters, you may sacrifice an artifact or discard a nonland card. When you do, Bullseye deals 2 damage to any target.\n{3}, {T}, Sacrifice an artifact or discard a nonland card: Bullseye deals 2 damage to any target.")
 
