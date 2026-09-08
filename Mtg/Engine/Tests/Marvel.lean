@@ -468,6 +468,46 @@ def thorinWithMauler : Game :=
 #guard thorinWithMauler.power
   (namedPermanent thorinWithMauler "Thorin, King of Durin's Folk") == 4
 
+-- Aragorn and Arwen: +1/+1 on each other creature; 1 life per those creatures.
+#guard aragornAndArwenWed.matchesOracleText
+#guard aragornAndArwenWed.triggeredAbilities ==
+  #[TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife]
+
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g llanowarElves ⟨0⟩ ⟨0⟩
+  let g := addPermanent g aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Llanowar Elves").status.plusOnePlusOne == 1 &&
+    (namedPermanent g "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0 &&
+    (g.player ⟨0⟩).life == life0 + 2
+
+#guard
+  let g := addPermanent afterDraw aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (g.player ⟨0⟩).life == life0 &&
+    (namedPermanent g "Aragorn and Arwen, Wed").status.plusOnePlusOne == 0
+
+#guard
+  let g := addPermanent afterDraw aragornAndArwenWed ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let aragorn := namedPermanent g "Aragorn and Arwen, Wed"
+  let life0 := (g.player ⟨0⟩).life
+  let g := g.applyTriggeredAbility ⟨0⟩
+    TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife
+    (some aragorn.id)
+  (g.player ⟨0⟩).life == life0 &&
+    (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 0
+
 /-- Bilbo can't be blocked by power 3 or greater. -/
 def bilboReadyToBlock : Game :=
   let g := addPermanent afterDraw bilboUnexpectedAdventurer ⟨0⟩ ⟨0⟩
@@ -1064,5 +1104,648 @@ def hawkeyeBowEquippedViaEquip : Game :=
   !g.asSorcery? ⟨0⟩ &&
     !g.canActivate ⟨0⟩ (namedPermanent g "Hawkeye's Bow")
       hawkeyeSBow.activatedAbilities[0]!
+
+/-- True when Moonstone's discard trigger is waiting. -/
+def moonstoneDiscardWaiting (g : Game) : Bool :=
+  g.waitingTriggers.any (fun t =>
+    t.ability == TriggeredAbility.onResource Effect.resourceDiscardExilePlay)
+
+/-- Discarding a card from hand fires Moonstone. -/
+def moonstoneAfterDiscard : Game :=
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
+  g
+
+#guard moonstoneHarshMistress.matchesOracleText
+#guard moonstoneDiscardWaiting moonstoneAfterDiscard
+
+def moonstoneDiscardResolved : Game :=
+  passBoth (moonstoneAfterDiscard.receivePriority ⟨0⟩)
+
+#guard moonstoneDiscardResolved.log.any (fun s => mentions s "discard trigger")
+#guard
+  match moonstoneDiscardResolved.objects.find? (fun o =>
+      o.name == "Forest" && o.zone == .exile) with
+  | some o => o.playPermission.isSome
+  | none => false
+
+-- Only the discarded card is exiled, not another card already in the graveyard.
+#guard
+  let g := addToGraveyard afterDraw grizzlyBears ⟨0⟩
+  let g := addPermanent g moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
+  let g := passBoth (g.receivePriority ⟨0⟩)
+  match g.objects.find? (fun o => o.name == "Forest" && o.zone == .exile) with
+  | some o =>
+    o.playPermission.isSome &&
+      (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").zone == .graveyard ⟨0⟩
+  | none => false
+
+-- Milling from the library is not a discard.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToLibraryTop g forest ⟨0⟩
+  let (g, _) := g.move (g.player ⟨0⟩).library.back! (.graveyard ⟨0⟩) none
+  !moonstoneDiscardWaiting g &&
+    (namedGraveyardCard g ⟨0⟩ "Forest").zone == .graveyard ⟨0⟩
+
+-- Dying from the battlefield is not a discard.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  !moonstoneDiscardWaiting g &&
+    (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").zone == .graveyard ⟨0⟩
+
+-- An opponent discarding is not “you discard”.
+#guard
+  let g := addPermanent afterDraw moonstoneHarshMistress ⟨0⟩ ⟨0⟩
+  let g := addToHand g forest ⟨1⟩
+  let (g, _) := g.move (handCardNamed g ⟨1⟩ "Forest").id (.graveyard ⟨1⟩) none
+  !moonstoneDiscardWaiting g
+
+/-- Night Nurse returns only a permanent card put into your graveyard this
+turn, from anywhere (battlefield, hand, or library). Cards already there,
+instants, and an opponent's graveyard are illegal. -/
+def nightNurseGySetup : Game :=
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  let g := addToHand g lightningBolt ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Lightning Bolt").id (.graveyard ⟨0⟩) none
+  let g := addToLibraryTop g mountain ⟨0⟩
+  let (g, _) := g.move (g.player ⟨0⟩).library.back! (.graveyard ⟨0⟩) none
+  let g := addToHand g forest ⟨0⟩
+  let (g, _) := g.move (handCardNamed g ⟨0⟩ "Forest").id (.graveyard ⟨0⟩) none
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let (g, _) := g.move (namedPermanent g "Gray Ogre").id (.graveyard ⟨1⟩) none
+  g
+
+#guard nightNurseHealerOfHeroes.matchesOracleText
+#guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
+  .permanentCardInYourGraveyardThisTurn
+#guard
+  let g := nightNurseGySetup
+  let old := namedGraveyardCard g ⟨0⟩ "Hill Giant"
+  let fromBf := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let bolt := namedGraveyardCard g ⟨0⟩ "Lightning Bolt"
+  let fromLib := namedGraveyardCard g ⟨0⟩ "Mountain"
+  let fromHand := namedGraveyardCard g ⟨0⟩ "Forest"
+  let opp := namedGraveyardCard g ⟨1⟩ "Gray Ogre"
+  let thisTurn := g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyardThisTurn
+  let anyPerm := g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyard
+  !old.status.putIntoGraveyardThisTurn &&
+    fromBf.status.putIntoGraveyardThisTurn &&
+    bolt.status.putIntoGraveyardThisTurn &&
+    fromLib.status.putIntoGraveyardThisTurn &&
+    fromHand.status.putIntoGraveyardThisTurn &&
+    opp.status.putIntoGraveyardThisTurn &&
+    thisTurn.size == 3 &&
+    thisTurn.contains (Target.card fromBf.id) &&
+    thisTurn.contains (Target.card fromLib.id) &&
+    thisTurn.contains (Target.card fromHand.id) &&
+    !thisTurn.contains (Target.card old.id) &&
+    !thisTurn.contains (Target.card bolt.id) &&
+    !thisTurn.contains (Target.card opp.id) &&
+    anyPerm.contains (Target.card old.id) &&
+    anyPerm.contains (Target.card fromBf.id)
+
+#guard
+  let g := nightNurseGySetup.clearTurnActivations
+  let fromBf := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  !fromBf.status.putIntoGraveyardThisTurn &&
+    (g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyardThisTurn).isEmpty &&
+    (g.legalTargetsForKind ⟨0⟩ .permanentCardInYourGraveyard).contains
+      (Target.card fromBf.id)
+
+/-- No this-turn permanent in your graveyard: the ETB is removed (CR 603.3d). -/
+def nightNurseNoTargetEntered : Game :=
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  mshEnter g nightNurseHealerOfHeroes
+
+#guard nightNurseNoTargetEntered.stack.isEmpty
+#guard nightNurseNoTargetEntered.pending == .none
+#guard nightNurseNoTargetEntered.log.any (fun s =>
+  mentions s "enters trigger is removed from the stack (no legal target)")
+#guard (namedGraveyardCard nightNurseNoTargetEntered ⟨0⟩ "Hill Giant").zone ==
+  .graveyard ⟨0⟩
+
+/-- A this-turn battlefield-to-graveyard permanent is returned to hand. -/
+def nightNurseReturned : Game :=
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
+  let g := mshEnter g nightNurseHealerOfHeroes
+  let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
+  let g := mustApply g ⟨0⟩ (.target (Target.card gy.id))
+  passBoth g
+
+#guard nightNurseReturned.pending == .none
+#guard (nightNurseReturned.handObjects ⟨0⟩).any (fun o => o.name == "Grizzly Bears")
+#guard !nightNurseReturned.objects.any (fun o =>
+  o.name == "Grizzly Bears" && o.zone == .graveyard ⟨0⟩)
+
+-- An older graveyard permanent is not a legal Night Nurse target.
+#guard
+  let g := addToGraveyard afterDraw hillGiant ⟨0⟩
+  let g := addPermanent g nightNurseHealerOfHeroes ⟨0⟩ ⟨0⟩
+  let nurse := namedPermanent g "Night Nurse, Healer of Heroes"
+  let old := namedGraveyardCard g ⟨0⟩ "Hill Giant"
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterReturnGyPermanentThisTurn)
+    (some nurse.id) #[Target.card old.id]
+  g.log.any (fun s => mentions s "no longer legal") &&
+    (namedGraveyardCard g ⟨0⟩ "Hill Giant").zone == .graveyard ⟨0⟩
+
+-- Fin Fang Foom: copy and +1/+1s only when the instant or sorcery targets
+-- an artifact or land.
+#guard finFangFoom.matchesOracleText
+#guard finFangFoom.triggeredAbilities ==
+  #[TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand]
+
+def foomCopyOnStack (g : Game) : Bool :=
+  g.stack.any (fun e =>
+    (g.object! e.objectId).triggeredAbility ==
+      some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand))
+
+/-- Fire of Orthanc targeting a land queues the trigger. -/
+def paidFoomFireOfOrthanc : Game :=
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g forest ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Forest").id))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidFoomFireOfOrthanc.stack.size == 2
+#guard foomCopyOnStack paidFoomFireOfOrthanc
+#guard (paidFoomFireOfOrthanc.object! paidFoomFireOfOrthanc.stack[0]!.objectId).name ==
+  "Fire of Orthanc"
+#guard paidFoomFireOfOrthanc.log.any (fun s => mentions s "cast trigger is put on the stack")
+
+def foomFireResolved : Game := passBoth paidFoomFireOfOrthanc
+
+#guard (namedPermanent foomFireResolved "Fin Fang Foom").status.plusOnePlusOne == 2
+#guard foomFireResolved.log.any (fun s => mentions s "A copy of Fire of Orthanc is created")
+#guard foomFireResolved.stack.any (fun e =>
+  let o := foomFireResolved.object! e.objectId
+  o.name == "Fire of Orthanc" && o.isCopy)
+
+/-- Lightning Bolt targeting a player does not queue Fin Fang Foom. -/
+def paidFoomBoltPlayer : Game :=
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidFoomBoltPlayer.stack.size == 1
+#guard (paidFoomBoltPlayer.object! paidFoomBoltPlayer.stack.back!.objectId).name ==
+  "Lightning Bolt"
+#guard !foomCopyOnStack paidFoomBoltPlayer
+#guard !paidFoomBoltPlayer.log.any (fun s => mentions s "cast trigger")
+
+-- Targeting a creature that is neither an artifact nor a land does not.
+#guard
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := withRedMana (addToHand g shock ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Grizzly Bears").id))
+  let g := mustApply g ⟨0⟩ .pay
+  !foomCopyOnStack g && g.stack.size == 1
+
+-- Targeting an artifact also queues the trigger.
+#guard
+  let g := addPermanent afterDraw finFangFoom ⟨0⟩ ⟨0⟩
+  let g := addPermanent g dwarvenMattock ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Fire of Orthanc").id)
+  let g := mustApply g ⟨0⟩
+    (.target (Target.permanent (namedPermanent g "Dwarven Mattock").id))
+  let g := mustApply g ⟨0⟩ .pay
+  foomCopyOnStack g
+
+-- Speed: you may pay {1}; the reflexive does not fire unless that mana is paid.
+#guard speedYoungAvenger.matchesOracleText
+#guard speedYoungAvenger.triggeredAbilities ==
+  #[TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable]
+
+/-- Lightning Bolt with leftover `{1}` after the spell is paid. -/
+def paidSpeedBolt : Game :=
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 2
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  mustApply g ⟨0⟩ .pay
+
+#guard paidSpeedBolt.stack.size == 2
+#guard (paidSpeedBolt.object! paidSpeedBolt.stack.back!.objectId).triggeredAbility ==
+  some (TriggeredAbility.onCasting Effect.castingMayPayHasteUnblockable)
+
+def speedMayPay : Game := passBoth paidSpeedBolt
+
+#guard
+  match speedMayPay.pending with
+  | .mayPayGeneric ⟨0⟩ 1 (.mshReflexive _ 9) => true
+  | _ => false
+#guard (speedMayPay.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1)
+#guard !speedMayPay.pendingMshReflexive.isSome
+
+def speedPaid : Game := mustApply speedMayPay ⟨0⟩ .payGeneric
+
+#guard speedPaid.pendingMshReflexive.isSome
+#guard !(speedPaid.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1)
+#guard speedPaid.log.any (fun s => mentions s "pays {1}")
+#guard speedPaid.log.any (fun s => mentions s "reflexive")
+
+def speedUnblockable : Game :=
+  let speed := namedPermanent speedPaid "Speed, Young Avenger"
+  speedPaid.applyModeledReflexive #[Target.permanent speed.id]
+
+#guard
+  (namedPermanent speedUnblockable "Speed, Young Avenger").status.cantBeBlockedExceptByHasteUntilEot
+
+-- Declining `{1}` does not queue the reflexive.
+#guard !(mustApply speedMayPay ⟨0⟩ .decline).pendingMshReflexive.isSome
+
+-- `{1}` cannot be paid from an empty pool.
+#guard
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g lightningBolt ⟨0⟩) ⟨0⟩ 1
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := passBoth g
+  match g.apply ⟨0⟩ .payGeneric with
+  | .error msg => mentions msg "cannot pay"
+  | .ok _ => false
+
+-- A creature spell does not ask for `{1}`.
+#guard
+  let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
+  let g := withRedMana (addToHand g grayOgre ⟨0⟩) ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Gray Ogre").id)
+  let g := mustApply g ⟨0⟩ .pay
+  g.stack.size == 1 &&
+    (g.object! g.stack.back!.objectId).name == "Gray Ogre"
+
+-- Undercover Skrull: +2/+2 and all creature types only with two or more
+-- creature cards in your graveyard.
+#guard undercoverSkrull.matchesOracleText
+#guard undercoverSkrull.staticAbilities ==
+  #[.getsAndAllTypesIfGyCreatureCards 2 2 2]
+
+def skrullOnField : Game := addPermanent afterDraw undercoverSkrull ⟨0⟩ ⟨0⟩
+
+def skrullObj (g : Game) : GameObject :=
+  namedPermanent g "Undercover Skrull"
+
+-- Empty graveyard: 1/1 and not all creature types.
+#guard
+  let g := skrullOnField
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 &&
+    g.hasSubtype o "Skrull" && !g.hasSubtype o "Elf"
+
+-- One creature card in your graveyard is not enough.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- A creature card plus a noncreature still has only one creature card.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- Creature cards in an opponent's graveyard do not count.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  let o := skrullObj g
+  g.power o == 1 && g.toughness o == 1 && !g.hasSubtype o "Elf"
+
+-- Two creature cards in your graveyard: +2/+2 and all creature types.
+#guard
+  let g := addToGraveyard skrullOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let o := skrullObj g
+  g.power o == 3 && g.toughness o == 3 &&
+    g.hasSubtype o "Elf" && g.hasSubtype o "Skrull" &&
+    g.hasSubtype o "Shapeshifter" && g.hasSubtype o "Villain" &&
+    (g.currentKeywords o).changeling
+
+-- Beast: flying if +1/+1 counters were put on him this turn, not if a card
+-- was put into a graveyard.
+#guard beastEruditeAerialist.matchesOracleText
+#guard beastEruditeAerialist.staticAbilities == #[.flyingIfPlusOneThisTurn]
+
+def beastOnField : Game := addPermanent afterDraw beastEruditeAerialist ⟨0⟩ ⟨0⟩
+
+def beastObj (g : Game) : GameObject :=
+  namedPermanent g "Beast, Erudite Aerialist"
+
+-- No +1/+1 counters this turn: no flying.
+#guard
+  let g := beastOnField
+  let o := beastObj g
+  o.status.plusOnePlusOne == 0 && !o.status.gotPlusOneThisTurn && !g.hasFlying o
+
+-- A creature card in the graveyard does not grant flying.
+#guard
+  let g := addToGraveyard beastOnField grizzlyBears ⟨0⟩
+  !g.hasFlying (beastObj g)
+
+-- Destroying another creature (put into the graveyard from play) does not.
+#guard
+  let g := addPermanent beastOnField grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.destroyPermanent (namedPermanent g "Grizzly Bears")
+  let o := beastObj g
+  (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").status.putIntoGraveyardThisTurn &&
+    !o.status.gotPlusOneThisTurn && !g.hasFlying o
+
+-- +1/+1 counters on another creature this turn do not grant Beast flying.
+#guard
+  let g := addPermanent beastOnField grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
+  let bears := namedPermanent g "Grizzly Bears"
+  bears.status.gotPlusOneThisTurn && bears.status.plusOnePlusOne == 1 &&
+    !g.hasFlying (beastObj g)
+
+-- Putting a +1/+1 counter on Beast this turn grants flying.
+#guard
+  let g := beastOnField
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.putPlusOnePlusOneOnSource 1) #[]
+    (some (beastObj g).id)
+  let o := beastObj g
+  o.status.plusOnePlusOne == 1 && o.status.gotPlusOneThisTurn && g.hasFlying o
+
+-- Bullseye: discard a nonland card, not a land.
+#guard bullseyeDeathDealer.matchesOracleText
+#guard
+  bullseyeDeathDealer.triggeredAbilities ==
+    #[TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage]
+#guard
+  bullseyeDeathDealer.activatedAbilities[0]!.cost.sacrificeArtifactOrDiscardNonland
+
+def bullseyeAbility (g : Game) : ActivatedAbility :=
+  (namedPermanent g "Bullseye, Death Dealer").printed.activatedAbilities[0]!
+
+def bullseyeOnField : Game :=
+  addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
+
+-- ETB: discarding a land does not queue the reflexive.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent g "Bullseye, Death Dealer").id)
+  match g.pending, g.apply ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id) with
+  | .maySacArtifactOrDiscardNonland ⟨0⟩ _ false, .error msg =>
+    mentions msg "land" && !g.pendingMshReflexive.isSome
+  | _, _ => false
+
+-- ETB: discarding a nonland queues the reflexive.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := g.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent g "Bullseye, Death Dealer").id)
+  let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  g.pendingMshReflexive.isSome &&
+    (let bears := namedPermanent g "Grizzly Bears"
+     let g := g.applyModeledReflexive #[Target.permanent bears.id]
+     (namedPermanent g "Grizzly Bears").status.damage == 2)
+
+-- ETB: declining does not queue the reflexive.
+#guard
+  let g := bullseyeOnField.applyTriggeredAbility ⟨0⟩
+    (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage)
+    (some (namedPermanent bullseyeOnField "Bullseye, Death Dealer").id)
+  !(mustApply g ⟨0⟩ .decline).pendingMshReflexive.isSome
+
+-- Activated: only a land in hand and no artifact is not enough.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Bullseye, Death Dealer") (bullseyeAbility g)
+
+-- Activated: a nonland in hand makes the ability legal.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  g.canActivate ⟨0⟩ (namedPermanent g "Bullseye, Death Dealer") (bullseyeAbility g)
+
+-- Activated: paying by discarding a land is illegal.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g forest ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Bullseye, Death Dealer").id 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  match g.pending, g.apply ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Forest").id) with
+  | .maySacArtifactOrDiscardNonland ⟨0⟩ _ true, .error msg => mentions msg "land"
+  | _, _ => false
+
+-- Activated: discarding a nonland pays the cost.
+#guard
+  let g := emptyHand bullseyeOnField ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
+  let g := withRedMana g ⟨0⟩ 3
+  let g := mustApply g ⟨0⟩
+    (.activate (namedPermanent g "Bullseye, Death Dealer").id 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.player ⟨1⟩))
+  let g := mustApply g ⟨0⟩ .pay
+  let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+  g.stack.size == 1 &&
+    (g.object! g.stack.back!.objectId).name == "Bullseye, Death Dealer's ability" &&
+    (g.player ⟨0⟩).hand.isEmpty
+
+-- Killmonger: +2/+1 only with two or more creature cards in your graveyard.
+#guard killmongerScourgeOfWakanda.matchesOracleText
+#guard killmongerScourgeOfWakanda.staticAbilities ==
+  #[.getsIfGyCreatureCards 2 2 1]
+
+def killmongerOnField : Game :=
+  addPermanent afterDraw killmongerScourgeOfWakanda ⟨0⟩ ⟨0⟩
+
+def killmongerObj (g : Game) : GameObject :=
+  namedPermanent g "Killmonger, Scourge of Wakanda"
+
+-- Empty graveyard: 3/3.
+#guard
+  let g := killmongerOnField
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- One creature card in your graveyard is not enough.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- A creature card plus a noncreature still has only one creature card.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- Creature cards in an opponent's graveyard do not count.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  let o := killmongerObj g
+  g.power o == 3 && g.toughness o == 3
+
+-- Two creature cards in your graveyard: +2/+1.
+#guard
+  let g := addToGraveyard killmongerOnField grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  let o := killmongerObj g
+  g.power o == 5 && g.toughness o == 4
+
+-- Storm: creatures with flying can't attack you or block creatures you control.
+#guard stormWindrider.matchesOracleText
+#guard stormWindrider.keywords.flying
+#guard stormWindrider.staticAbilities ==
+  #[.flyingCantAttackYouOrBlockYours]
+
+/-- Storm's Bears attack; Smaug (flying) and Gray Ogre are available to block. -/
+def stormReadyToBlockFlyer : Game :=
+  let g := addPermanent afterDraw stormWindrider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grayOgre ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  passBoth g
+
+#guard stormReadyToBlockFlyer.pending == .declareBlockers
+#guard !stormReadyToBlockFlyer.canBlock
+  (namedPermanent stormReadyToBlockFlyer "Smaug, the Great Calamity")
+  (namedPermanent stormReadyToBlockFlyer "Grizzly Bears")
+#guard stormReadyToBlockFlyer.canBlock
+  (namedPermanent stormReadyToBlockFlyer "Gray Ogre")
+  (namedPermanent stormReadyToBlockFlyer "Grizzly Bears")
+#guard
+  match stormReadyToBlockFlyer.apply ⟨1⟩ (.declareBlockers #[(
+    (namedPermanent stormReadyToBlockFlyer "Smaug, the Great Calamity").id,
+    (namedPermanent stormReadyToBlockFlyer "Grizzly Bears").id)]) with
+  | .error msg => mentions msg "cannot block"
+  | .ok _ => false
+
+-- Without Storm, a flying creature can block.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  g.canBlock
+    (namedPermanent g "Smaug, the Great Calamity")
+    (namedPermanent g "Grizzly Bears")
+
+-- Storm on the defending player does not stop their flyer from blocking yours.
+#guard
+  let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := addPermanent g stormWindrider ⟨1⟩ ⟨1⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .beginningOfCombat 80)
+  let g := mustApply g ⟨0⟩
+    (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
+  let g := passBoth g
+  g.canBlock
+    (namedPermanent g "Smaug, the Great Calamity")
+    (namedPermanent g "Grizzly Bears")
+
+/-- Nissa's Smaug and Bears vs Chandra's Storm; Nissa is about to attack. -/
+def stormVsFlyerAttack : Game :=
+  let g := addPermanent started stormWindrider ⟨0⟩ ⟨0⟩
+  let g := addPermanent g smaugTheGreatCalamityCard ⟨1⟩ ⟨1⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := passBoth (skipTo g .end 80)
+  skipToPending g .declareAttackers 80
+
+#guard stormVsFlyerAttack.pending == .declareAttackers
+#guard stormVsFlyerAttack.activePlayer == ⟨1⟩
+#guard
+  match stormVsFlyerAttack.apply ⟨1⟩
+      (.declareAttackers #[(namedPermanent stormVsFlyerAttack
+        "Smaug, the Great Calamity").id]) with
+  | .error msg => mentions msg "can't attack"
+  | .ok _ => false
+#guard
+  let g := mustApply stormVsFlyerAttack ⟨1⟩
+    (.declareAttackers #[(namedPermanent stormVsFlyerAttack "Grizzly Bears").id])
+  (namedPermanent g "Grizzly Bears").status.attacking
+
+-- Wolverine: fights up to one other creature; any damage heals other
+-- damage already on him, not only combat damage.
+#guard wolverineFierceFighter.matchesOracleText
+#guard wolverineFierceFighter.keywords.haste
+#guard wolverineFierceFighter.triggeredAbilities ==
+  #[.onEnter Effect.enterFightUpToOne]
+#guard wolverineFierceFighter.staticAbilities ==
+  #[.healOtherDamageWhenDealt]
+
+-- Wolverine fights a 2/2: both deal, even though 3 damage is lethal.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let bears := namedPermanent g "Grizzly Bears"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
+    (some w.id) #[Target.permanent bears.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2 &&
+    (namedPermanent g "Grizzly Bears").status.damage == 3 &&
+    (let g := g.checkSBA
+     g.battlefield.any (fun o => o.name == "Wolverine, Fierce Fighter") &&
+       !g.battlefield.any (fun o => o.name == "Grizzly Bears"))
+
+-- Prior noncombat damage is healed when more damage is dealt.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.markDamageOn o 3 "Wolverine is dealt 3 damage"
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3
+
+-- Combat damage heals other damage the same way.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.markDamageOn o 2 "Wolverine is dealt 2 combat damage" (combat := true)
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 2
+
+-- Fighting also heals damage already marked on him.
+#guard
+  let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
+  let o := namedPermanent g "Wolverine, Fierce Fighter"
+  let g := g.mapObjectStatus o (fun s => { s with damage := 4 })
+  let w := namedPermanent g "Wolverine, Fierce Fighter"
+  let giant := namedPermanent g "Hill Giant"
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
+    (some w.id) #[Target.permanent giant.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3 &&
+    (namedPermanent g "Hill Giant").status.damage == 3
 
 end Mtg.Engine.Tests

@@ -669,7 +669,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [legend rule: {g.player p |>.name} keeps one {name} (CR 704.5j)]"
     | .chooseTriggerToStack p =>
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
-    | .mayPayGeneric p n =>
+    | .mayPayGeneric p n _ =>
       s!" [may pay \{{n}} ({g.player p |>.name})]"
     | .chooseLibraryPlacement p _ =>
       s!" [choose top or bottom ({g.player p |>.name})]"
@@ -716,6 +716,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose tap or untap ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
+    | .maySacArtifactOrDiscardNonland p _ required =>
+      if required then
+        s!" [sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
+      else
+        s!" [may sacrifice an artifact or discard a nonland card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
       s!" [may put an artifact from hand onto the battlefield ({g.player p |>.name})]"
     | .mayHaveVillainConnive p _ villainId =>

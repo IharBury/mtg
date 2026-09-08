@@ -170,15 +170,27 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
 /-- Deal this creature's power as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject) : Game :=
   g.dealDamageFrom src.name dest (g.power src).toNat
-    (deathtouch := g.hasDeathtouch src)
+    (deathtouch := g.hasDeathtouch src) (source := some src)
 
-/-- Both sides of a fight deal damage simultaneously-looking: `src` first,
-then `dest` if both are still in play. -/
+/-- Both sides of a fight deal damage at the same time (CR 701.12b).
+Snapshot power and deathtouch, then mark each recipient so lethal on the
+first does not cancel the second creature's damage. -/
 def fightCreatures (g : Game) (src dest : GameObject) : Game :=
-  let g := g.dealFightDamage src dest
-  match g.findObject? dest.id, g.findObject? src.id with
-  | some dest, some src => g.dealFightDamage dest src
-  | _, _ => g
+  if !(src.isOnBattlefield && dest.isOnBattlefield) then g
+  else
+    let srcPower := (g.power src).toNat
+    let destPower := (g.power dest).toNat
+    let srcDt := g.hasDeathtouch src
+    let destDt := g.hasDeathtouch dest
+    let g := g.dealDamageFrom src.name dest srcPower
+      (deathtouch := srcDt) (source := some src)
+    match g.findObject? src.id, g.findObject? dest.id with
+    | some srcNow, some destNow =>
+      g.dealDamageFrom destNow.name srcNow destPower
+        (deathtouch := destDt) (source := some destNow)
+    | some srcNow, none =>
+      g.dealDamageFrom dest.name srcNow destPower (deathtouch := destDt)
+    | none, _ => g
 
 /-- Decrease `p`'s life total (CR 118.3a). Losing 0 life does nothing
 (CR 118.9). Loss of life is not damage (CR 120.3). -/

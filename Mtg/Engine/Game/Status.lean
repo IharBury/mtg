@@ -174,6 +174,10 @@ structure Status where
   controlUntilEot : Bool := false
   /-- Instances of Iron Fist's granted tap ability this turn (MSH 106). -/
   ironFistTapGrants : Nat := 0
+  /-- This card was put into a graveyard from anywhere this turn
+  (Night Nurse; MSH). Cleared as the turn ends. Not a battlefield-only
+  flag: graveyard objects keep it until then. -/
+  putIntoGraveyardThisTurn : Bool := false
 deriving Repr, Inhabited, BEq
 
 namespace Status

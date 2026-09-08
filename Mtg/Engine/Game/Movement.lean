@@ -131,7 +131,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     controller := controller
     defaultController := if dest == .battlefield then controller else none
     zone := dest
-    status := {}
+    status :=
+      match dest with
+      | .graveyard _ => { putIntoGraveyardThisTurn := true }
+      | _ => {}
     timestamp := ts
   }
   let g : Game :=
@@ -216,10 +219,46 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             | none => acc) (#[] : Array WaitingTrigger)
         else (#[] : Array WaitingTrigger)
       | _ => (#[] : Array WaitingTrigger)
+  -- Justice: another nonland you control returned to its owner's hand,
+  -- including tokens (MSH). Computed after the zone change so the bounced
+  -- object is no longer a source (“another”).
+  let returnedToHand :=
+    match dest with
+    | .hand p =>
+      if old.zone == .battlefield && p == old.owner && !old.printed.isLand then
+        match old.controller with
+        | some ctrl =>
+          g.battlefield.foldl (fun acc o =>
+            match o.controller with
+            | some q =>
+              if q == ctrl then
+                acc ++ o.waitingTriggersFor q .anotherNonlandReturned
+              else acc
+            | none => acc) (#[] : Array WaitingTrigger)
+        | none => (#[] : Array WaitingTrigger)
+      else (#[] : Array WaitingTrigger)
+    | _ => (#[] : Array WaitingTrigger)
+  -- Moonstone: “whenever you discard a card” is hand → graveyard only, not
+  -- mill or dying (MSH). `lastKnownPower` carries the new graveyard object's
+  -- id so resolution can exile that card.
+  let discarded :=
+    match old.zone, dest with
+    | .hand p, .graveyard owner =>
+      if owner == old.owner then
+        g.battlefield.foldl (fun acc o =>
+          match o.controller with
+          | some q =>
+            if q == p then
+              acc ++ o.waitingTriggersFor q .youDiscard (some (Int.ofNat newId.raw))
+            else acc
+          | none => acc) (#[] : Array WaitingTrigger)
+      else (#[] : Array WaitingTrigger)
+    | _, _ => (#[] : Array WaitingTrigger)
   let g := { g with
     waitingTriggers :=
       g.waitingTriggers ++ dying ++ othersDie ++ leaving ++ gyLeave ++
-        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy
+        nontokenDie ++ goblinOrcArmyDie ++ attackingDie ++ creatureCardToGy ++
+        returnedToHand ++ discarded
     creatureDiedThisTurn := g.creatureDiedThisTurn || died }
   let g :=
     if died then

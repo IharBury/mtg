@@ -150,7 +150,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyOnPermanent controller ab.targetKind targets
       (.grantKeywords Keyword.flying) sourceId (some "The target is no longer legal")
   | .mayPayGenericDraw n =>
-    { g with pending := .mayPayGeneric controller n }.logMsg
+    { g with pending := .mayPayGeneric controller n .draw }.logMsg
       s!"{(g.player controller).name} may pay \{{n}}. If they do, they draw a card"
   | .drawThenBottomIfNoLegendary =>
     let g := g.draw controller 1
@@ -1201,7 +1201,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       let g := g.sacrificeToGraveyard victim "Killmonger"
       g.queueModeledReflexive controller sourceId 7
   | .maySacOrDiscardNonlandThenDamage =>
-    g.queueModeledReflexive controller sourceId 1
+    { g with pending := .maySacArtifactOrDiscardNonland controller sourceId false }.logMsg
+      s!"{(g.player controller).name} may sacrifice an artifact or discard a nonland card"
   | .revealHandExileUntilLeaves =>
     let opp? :=
       match targets[0]? with

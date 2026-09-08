@@ -36,6 +36,20 @@ def currentSubtypes (g : Game) (o : GameObject) : Array Subtype :=
     | some s => #[s]
     | none => o.subtypes
 
+/-- Creature cards currently in `p`'s graveyard. -/
+def graveyardCreatureCards (g : Game) (p : PlayerId) : Nat :=
+  (g.player p).graveyard.filter (fun id =>
+    (g.object! id).printed.isCreature) |>.size
+
+/-- True when leftover “gets +P/+T and is all creature types if you have
+at least N creature cards in your graveyard” currently applies. -/
+def leftoverAllCreatureTypes (g : Game) (o : GameObject) : Bool :=
+  o.isOnBattlefield &&
+  o.staticAbilities.any (fun
+    | .getsAndAllTypesIfGyCreatureCards min _ _ =>
+      g.graveyardCreatureCards o.you >= min
+    | _ => false)
+
 /-- Whether `o` currently has subtype `s`, including Fog-style overwrites.
 Changeling grants every creature type (CR 702.72 / MSH 72–73) unless a
 type-setting Aura overwrites the subtypes. -/
@@ -45,7 +59,8 @@ def hasSubtype (g : Game) (o : GameObject) (s : String) : Bool :=
       a.attachedTo == some o.id &&
         a.staticAbilities.any (fun ab => ab.enchantedOnlySubtype?.isSome))
   (g.currentSubtypes o).any (· == s) ||
-    (!fogged && o.printedOrUntilEot.changeling && !isNoncreatureSubtype s)
+    (!fogged && (o.printedOrUntilEot.changeling || g.leftoverAllCreatureTypes o) &&
+      !isNoncreatureSubtype s)
 
 /-- Continuous +P/+T `src` currently grants `target` as a lord (CR 604.2 / 613.3c). -/
 def grantsStatBonusTo (g : Game) (src target : GameObject) : Int × Int :=
@@ -216,10 +231,9 @@ def leftoverSelfBonus (g : Game) (o : GameObject) : Int × Int :=
         addStats acc (p * n, 0)
       | .getsIfGyCreatureCards min pw tw
       | .getsAndAllTypesIfGyCreatureCards min pw tw =>
-        let gy :=
-          (g.player o.you).graveyard.filter (fun id =>
-            (g.object! id).printed.isCreature) |>.size
-        if gy >= min then addStats acc (pw, tw) else acc
+        if g.graveyardCreatureCards o.you >= min then
+          addStats acc (pw, tw)
+        else acc
       | _ => acc) (0, 0)
 
 /-- +1/+1 for each artifact you control (Iron Man Armor until EOT). -/

@@ -5833,7 +5833,7 @@ def mentorPayOnceOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩
     (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1)
     (some (namedPermanent g "Mentor of the Meek").id)
-  g.pending == .mayPayGeneric ⟨0⟩ 1 &&
+  g.pending == .mayPayGeneric ⟨0⟩ 1 .draw &&
     (ruling 326).comment.contains "can't pay {1} multiple times"
 
 #guard mentorPayOnceOk
@@ -9413,16 +9413,22 @@ def whiplashLastKnownEquipmentOk : Bool :=
 
 /-- Rulings 359 / 367: first reflexive ability has no targets; the second does. -/
 def mshReflexiveNoTargetFirstOk : Bool :=
-  let g := addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩
+  let g := emptyHand (addPermanent afterDraw bullseyeDeathDealer ⟨0⟩ ⟨0⟩) ⟨0⟩
+  let g := addToHand g lightningBolt ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let b := namedPermanent g "Bullseye, Death Dealer"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage) (some b.id)
   (namedPermanent g "Grizzly Bears").status.damage == 0 &&
-    g.pendingMshReflexive.isSome &&
-    logContains g "reflexive" &&
-    (let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyModeledReflexive #[Target.permanent bears.id]
-     (namedPermanent g "Grizzly Bears").status.damage == 2) &&
+    !g.pendingMshReflexive.isSome &&
+    (match g.pending with
+     | .maySacArtifactOrDiscardNonland ⟨0⟩ _ false => true
+     | _ => false) &&
+    (let g := mustApply g ⟨0⟩ (.discard (handCardNamed g ⟨0⟩ "Lightning Bolt").id)
+     g.pendingMshReflexive.isSome &&
+       logContains g "reflexive" &&
+       (let bears := namedPermanent g "Grizzly Bears"
+        let g := g.applyModeledReflexive #[Target.permanent bears.id]
+        (namedPermanent g "Grizzly Bears").status.damage == 2)) &&
     (let g := addPermanent afterDraw spiderManToTheRescue ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
      let sm := namedPermanent g "Spider-Man, To the Rescue"
@@ -9576,30 +9582,40 @@ def redHulkReflexiveOk : Bool :=
 
 #guard redHulkReflexiveOk
 
-/-- Ruling 718: Speed's pay queues a haste-only blocker restriction. -/
+/-- Ruling 718: Speed's `{1}` must actually be paid before the reflexive. -/
 def speedYoungAvengerReflexiveOk : Bool :=
   let g := addPermanent afterDraw speedYoungAvenger ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let speed := namedPermanent g "Speed, Young Avenger"
-  let unpaid :=
-    g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
-  !unpaid.pendingMshReflexive.isSome &&
-    (let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
-       (some speed.id) #[] "Speed" (some (1 : Int))
-     g.pendingMshReflexive.isSome &&
-       (let speed := namedPermanent g "Speed, Young Avenger"
-        let g := g.applyModeledReflexive #[Target.permanent speed.id]
-        let speed := namedPermanent g "Speed, Young Avenger"
-        let g := g.setObject { speed with status := { speed.status with
-          attacking := true, attackingWhom := some ⟨1⟩ } }
-        let speed := namedPermanent g "Speed, Young Avenger"
-        let bears := namedPermanent g "Grizzly Bears"
-        speed.status.cantBeBlockedExceptByHasteUntilEot &&
-          !g.canBlock bears speed &&
-          (let g := g.mapObjectStatus bears (·.grantUntilEot Keyword.haste)
-           g.canBlock (namedPermanent g "Grizzly Bears")
-             (namedPermanent g "Speed, Young Avenger")))) &&
-    (mshRuling 718).comment.contains "reflexive"
+  let asked :=
+    g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
+      (some speed.id)
+  match asked.pending with
+  | .mayPayGeneric ⟨0⟩ 1 (.mshReflexive src 9) =>
+    src == some speed.id &&
+      !asked.pendingMshReflexive.isSome &&
+      (match asked.apply ⟨0⟩ .payGeneric with
+       | .error msg => mentions msg "cannot pay"
+       | .ok _ => false) &&
+      !((mustApply asked ⟨0⟩ .decline).pendingMshReflexive.isSome) &&
+      (let g := withRedMana asked ⟨0⟩ 1
+       let g := mustApply g ⟨0⟩ .payGeneric
+       g.pendingMshReflexive.isSome &&
+         !(g.player ⟨0⟩).manaPool.canPay (ManaCost.ofGeneric 1) &&
+         (let speed := namedPermanent g "Speed, Young Avenger"
+          let g := g.applyModeledReflexive #[Target.permanent speed.id]
+          let speed := namedPermanent g "Speed, Young Avenger"
+          let g := g.setObject { speed with status := { speed.status with
+            attacking := true, attackingWhom := some ⟨1⟩ } }
+          let speed := namedPermanent g "Speed, Young Avenger"
+          let bears := namedPermanent g "Grizzly Bears"
+          speed.status.cantBeBlockedExceptByHasteUntilEot &&
+            !g.canBlock bears speed &&
+            (let g := g.mapObjectStatus bears (·.grantUntilEot Keyword.haste)
+             g.canBlock (namedPermanent g "Grizzly Bears")
+               (namedPermanent g "Speed, Young Avenger")))) &&
+      (mshRuling 718).comment.contains "reflexive"
+  | _ => false
 
 #guard speedYoungAvengerReflexiveOk
 

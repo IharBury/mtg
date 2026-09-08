@@ -875,17 +875,17 @@ def thorExilePlayOk : Bool :=
 
 #guard thorExilePlayOk
 
-/-- Wolverine fights another creature. Use a 4/4 so both sides survive
-sequential damage (a 3/3 would die before dealing damage back). -/
+/-- Wolverine fights another creature. A 3/3 still deals damage back
+even though 3 damage is lethal (CR 701.12b). -/
 def wolverineFightOk : Bool :=
   let g := addPermanent afterDraw wolverineFierceFighter ⟨0⟩ ⟨0⟩
-  let g := addPermanent g rumblingBaloth ⟨1⟩ ⟨1⟩
+  let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let w := namedPermanent g "Wolverine, Fierce Fighter"
-  let baloth := namedPermanent g "Rumbling Baloth"
+  let giant := namedPermanent g "Hill Giant"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onEnter Effect.enterFightUpToOne)
-    (some w.id) #[Target.permanent baloth.id]
-  (namedPermanent g "Wolverine, Fierce Fighter").status.damage > 0 &&
-    (namedPermanent g "Rumbling Baloth").status.damage > 0
+    (some w.id) #[Target.permanent giant.id]
+  (namedPermanent g "Wolverine, Fierce Fighter").status.damage == 3 &&
+    (namedPermanent g "Hill Giant").status.damage == 3
 
 #guard wolverineFightOk
 
@@ -901,6 +901,98 @@ def justiceBounceOk : Bool :=
     (g.handObjects ⟨1⟩).any (fun o => o.name == "Grizzly Bears")
 
 #guard justiceBounceOk
+
+/-- Resolve Justice's bounce-watch after `id` is returned to its owner's hand. -/
+def justiceAfterBounce (g : Game) (id : ObjectId) : Game :=
+  let o := g.object! id
+  passBoth ((g.returnToHand id o.owner).receivePriority ⟨0⟩)
+
+/-- The second trigger fires for another nontoken nonland you control. -/
+def justiceWatchNontokenOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
+  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
+    (g.handObjects ⟨0⟩).any (fun o => o.name == "Grizzly Bears") &&
+    g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchNontokenOk
+
+/-- The second trigger also fires for a token (Oracle does not say nontoken). -/
+def justiceWatchTokenOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let (g, tok) := g.createToken ⟨0⟩ humanSoldierToken
+  let g := justiceAfterBounce g tok.id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 1 &&
+    g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchTokenOk
+
+/-- A land returning to hand does not fire the bounce-watch. -/
+def justiceWatchLandOk : Bool :=
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g mountain ⟨0⟩ ⟨0⟩
+  let g := justiceAfterBounce g (namedPermanent g "Mountain").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
+    !g.log.any (fun s => mentions s "return trigger")
+
+#guard justiceWatchLandOk
+
+-- An opponent's bounced permanent does not fire the bounce-watch.
+#guard
+  let g := addPermanent afterDraw justiceVanceAstrovik ⟨0⟩ ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := justiceAfterBounce g (namedPermanent g "Grizzly Bears").id
+  (namedPermanent g "Justice, Vance Astrovik").status.plusOnePlusOne == 0 &&
+    !g.log.any (fun s => mentions s "return trigger")
+
+/-- Arnim Zola's activated ability. -/
+def arnimAbility (g : Game) : ActivatedAbility :=
+  (namedPermanent g "Arnim Zola, Bio-Fanatic").printed.activatedAbilities[0]!
+
+#guard arnimZolaBioFanatic.activatedAbilities[0]!.onlyIfGyCreaturesAtLeast == 2
+
+/-- Empty graveyard: the ability cannot be activated. -/
+def arnimNoGyCreatureOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimNoGyCreatureOk
+
+/-- One creature card in your graveyard is not enough. -/
+def arnimOneGyCreatureOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOneGyCreatureOk
+
+/-- A creature card plus a noncreature still has only one creature card. -/
+def arnimOneCreatureAndInstantOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g lightningBolt ⟨0⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOneCreatureAndInstantOk
+
+/-- Creature cards in an opponent's graveyard do not count. -/
+def arnimOppGyCreaturesOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨1⟩
+  let g := addToGraveyard g hillGiant ⟨1⟩
+  !g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimOppGyCreaturesOk
+
+/-- Two creature cards in your graveyard make the ability legal. -/
+def arnimTwoGyCreaturesOk : Bool :=
+  let g := addPermanent afterDraw arnimZolaBioFanatic ⟨0⟩ ⟨0⟩
+  let g := addToGraveyard g grizzlyBears ⟨0⟩
+  let g := addToGraveyard g hillGiant ⟨0⟩
+  g.canActivate ⟨0⟩ (namedPermanent g "Arnim Zola, Bio-Fanatic") (arnimAbility g)
+
+#guard arnimTwoGyCreaturesOk
 
 /-- S.H.I.E.L.D. Flying Car: exile until the next end step. -/
 def flyingCarFlickerOk : Bool :=

@@ -67,6 +67,14 @@ structure WardObligation where
   cost : WardCost
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- What happens after `{n}` is paid for `Pending.mayPayGeneric`. -/
+inductive MayPayThen where
+  /-- Draw a card (Mentor of the Meek). -/
+  | draw
+  /-- Queue an MSH reflexive trigger (Speed, Young Avenger). -/
+  | mshReflexive (sourceId : Option ObjectId) (kind : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
   | none
@@ -115,8 +123,8 @@ inductive Pending where
   /-- This player chooses the order of their waiting triggered abilities
   for the current CR 603.3b part. -/
   | chooseTriggerToStack (player : PlayerId)
-  /-- You may pay `{n}` generic mana; if you do, draw a card. -/
-  | mayPayGeneric (player : PlayerId) (n : Nat)
+  /-- You may pay `{n}` generic mana; `after` runs if you do. -/
+  | mayPayGeneric (player : PlayerId) (n : Nat) (after : MayPayThen)
   /-- Choose top or bottom of library for this card. -/
   | chooseLibraryPlacement (player : PlayerId) (id : ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
@@ -154,6 +162,10 @@ inductive Pending where
   | chooseTapOrUntap (player : PlayerId) (targetId : ObjectId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscard (player : PlayerId)
+  /-- Sacrifice an artifact or discard a nonland card (Bullseye). `required`
+  is true when paying an activation cost (cannot decline). -/
+  | maySacArtifactOrDiscardNonland
+      (player : PlayerId) (sourceId : Option ObjectId) (required : Bool)
   /-- You may put an artifact card from your hand onto the battlefield.
   If it is Equipment, attach it to `hostId`. -/
   | mayPutArtifactFromHand (player : PlayerId) (hostId : ObjectId)

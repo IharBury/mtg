@@ -2270,11 +2270,34 @@ def myPrecious : CardDef :=
       (Effect.draw 2) (cardType := .instant) (additionalCostSacrificeCreature := true)))
 
 def troopOfPonies : CardDef :=
-  creature "Troop of Ponies" (ManaCost.ofGeneric 2) #["Horse"] 2 1
+  (TraditionalCardDefinition.card [
+    .name "Troop of Ponies",
+    .manaCost [.generic 2],
+    .type .creature,
+    .subtype .horse,
+    .power 2,
+    .toughness 1,
+    .ability
+      (.activated
+        [.mana [.generic 2], .tapSymbol, .sacrifice .this]
+        (.searchLibraryThenShuffle
+          (.controller .this)
+          [
+            .defineVariable 1
+              (.selected
+                (.controller .this)
+                (.range 0 2)
+                (.intersection [
+                  .inDeck,
+                  .cardType .land,
+                  .supertype .basic])),
+            .reveal (.variable 1),
+            .putOntoBattlefieldInState
+              (.selected (.controller .this) (.range 1 1) (.variable 1))
+              [.tapped],
+            .returnToHand (.variable 1)]))
+  ]).toCardDef
     (oracleText := "{2}, {T}, Sacrifice this creature: Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle.")
-    (activatedAbilities := #[
-      activated (Effect.searchTwoBasicsSplit) (ManaCost.ofGeneric 2)
-        (tap := true) (sacrificeSource := true)])
 
 def elvenRaftSteerer : CardDef :=
   (TraditionalCardDefinition.card [

@@ -399,7 +399,7 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.keepLegend (g.defaultLegendToKeep ids))
   | .chooseTriggerToStack p, some _ =>
     mustApply g p (.stackTriggers (g.defaultTriggerSourceIds p))
-  | .mayPayGeneric _ _, some p =>
+  | .mayPayGeneric _ _ _, some p =>
     mustApply g p .decline
   | .chooseLibraryPlacement _ _, some p =>
     mustApply g p .chooseBottom
@@ -427,6 +427,15 @@ def applyIdle (g : Game) : Game :=
     mustApply g p (.chooseMode 0)
   | .maySacArtifactOrDiscard _, some p =>
     mustApply g p .decline
+  | .maySacArtifactOrDiscardNonland _ _ false, some p =>
+    mustApply g p .decline
+  | .maySacArtifactOrDiscardNonland _ _ true, some p =>
+    match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
+    | some o => mustApply g p (.sacrifice o.id)
+    | none =>
+      match (g.handObjects p).find? (fun o => !o.printed.isLand) with
+      | some o => mustApply g p (.discard o.id)
+      | none => panic! "no artifact or nonland to pay"
   | .mayPutArtifactFromHand _ _, some p =>
     mustApply g p .decline
   | .mayHaveVillainConnive _ _ _, some p =>

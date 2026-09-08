@@ -987,7 +987,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .exileGyPlayUntilNextTurn =>
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .returnGyPermanentThisTurn =>
-    s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
+    s!"choose {noun}. Return it to your hand"
   | .tapCantUntapWhileControl =>
     s!"tap {noun}. That creature can't become untapped for as long as you control this creature"
   | .maySacAnotherThenDestroyOppNonland =>

@@ -130,6 +130,9 @@ inductive EffectTargetKind where
   | nonlandNontoken
   /-- Target permanent card in your graveyard. -/
   | permanentCardInYourGraveyard
+  /-- Target permanent card in your graveyard that was put there from
+  anywhere this turn (Night Nurse). -/
+  | permanentCardInYourGraveyardThisTurn
   /-- Target Equipment, instant, or sorcery card in your graveyard. -/
   | equipmentInstantOrSorceryInYourGraveyard
   /-- Target artifact or enchantment card in your graveyard. -/
@@ -328,6 +331,10 @@ def spec : EffectTargetKind → Spec
     { noun := "target nonland, nontoken permanent", prefer := .ownThenOpponent }
   | .permanentCardInYourGraveyard =>
     { noun := "target permanent card in your graveyard", prefer := .last }
+  | .permanentCardInYourGraveyardThisTurn =>
+    { noun :=
+        "target permanent card in your graveyard that was put there from anywhere this turn"
+      prefer := .last }
   | .equipmentInstantOrSorceryInYourGraveyard =>
     { noun := "target Equipment, instant, or sorcery card from your graveyard",
       prefer := .last }

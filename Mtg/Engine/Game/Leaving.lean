@@ -109,7 +109,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
         let g := g.removeFromZoneList o.id .stack |>.ceaseToExist o.id
         g.logMsg s!"{o.name} is countered"
     else g
-  | .mayPayGeneric q _ =>
+  | .mayPayGeneric q _ _ =>
     if q == p then
       { g with pending := .none }
         |>.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
@@ -153,7 +153,8 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId) : Game :=
   | .recruitDiscard q | .chooseRingBearer q | .chooseLibraryPlacement q _
   | .maySacrificeAnotherBolg q _ | .mayCastFromLooked q _ _ | .putOnBottom q _
   | .mayPutLandFromHand q | .chooseFoodOrTreasure q | .chooseTapOrUntap q _
-  | .maySacArtifactOrDiscard q | .mayPutArtifactFromHand q _
+  | .maySacArtifactOrDiscard q | .maySacArtifactOrDiscardNonland q _ _
+  | .mayPutArtifactFromHand q _
   | .mayHaveVillainConnive q _ _ | .declareMulligan q =>
     if q == p then { g with pending := .none } else g
   | .resolveRandom _ => g

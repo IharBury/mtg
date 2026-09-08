@@ -114,7 +114,7 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       some (.keepLegend (defaultLegendToKeep g ids))
     | .chooseTriggerToStack q =>
       some (.stackTriggers (defaultTriggerSourceIds g q))
-    | .mayPayGeneric _ n =>
+    | .mayPayGeneric _ n _ =>
       payGenericOrTapFirstSource g p n
     | .chooseLibraryPlacement _ _ =>
       some .chooseBottom
@@ -189,6 +189,13 @@ def choose (g : Game) (p : PlayerId) : Option Action :=
       match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.sacrifice o.id)
       | none => discardBackOrDecline g p
+    | .maySacArtifactOrDiscardNonland _ _ required =>
+      match (g.permanentsOf p).find? (fun o => o.printed.isArtifact) with
+      | some o => some (.sacrifice o.id)
+      | none =>
+        match (g.handObjects p).find? (fun o => !o.printed.isLand) with
+        | some o => some (.discard o.id)
+        | none => if required then none else some .decline
     | .mayPutArtifactFromHand _ _ =>
       match (g.handObjects p).find? (fun o => o.printed.isArtifact) with
       | some o => some (.cast o.id)

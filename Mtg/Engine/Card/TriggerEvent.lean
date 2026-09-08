@@ -25,6 +25,8 @@ inductive TriggerEvent where
   | dying
   /-- You cast an instant or sorcery (CR 601.2i). -/
   | youCastInstantOrSorcery
+  /-- You cast an instant or sorcery that targets an artifact or land. -/
+  | youCastInstantOrSorceryTargetingArtifactOrLand
   /-- You attack with one or more Elves (CR 508.2 / 603.2a). -/
   | youAttackWithElves
   /-- You scry (CR 701.20 / 603.2). -/
@@ -251,6 +253,9 @@ def spec : TriggerEvent → Spec
   | .youCastInstantOrSorcery =>
     { clause := "you cast an instant or sorcery spell", label := "cast trigger",
       checkTargets := false }
+  | .youCastInstantOrSorceryTargetingArtifactOrLand =>
+    { clause := "you cast an instant or sorcery spell that targets an artifact or land",
+      label := "cast trigger", checkTargets := false }
   | .youAttackWithElves =>
     { clause := "you attack with one or more Elves", label := "attack trigger",
       checkTargets := false }

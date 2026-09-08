@@ -177,9 +177,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       (lastKnownPower.getD (0 : Int)).toNat
       "Grim Reaper's cost wasn't paid. The reflexive ability doesn't trigger."
   | (.casting .mayPayHasteUnblockable) =>
-    g.queueModeledReflexiveIfPaid controller sourceId 9
-      (lastKnownPower.getD (0 : Int)).toNat
-      "Speed's cost wasn't paid. The reflexive ability doesn't trigger."
+    { g with pending := .mayPayGeneric controller 1 (.mshReflexive sourceId 9) }
+      |>.logMsg
+        s!"{(g.player controller).name} may pay \{{1}}. When they do, a reflexive triggered ability triggers"
   | (.watch .speedballTargeted) =>
     g.withSourceOnBattlefield sourceId (fun g o => g.pumpPermanent o 2 2)
       "Speedball is no longer on the battlefield"
@@ -802,7 +802,7 @@ def applyLeftoverTextEffect (g : Game) (controller : PlayerId) (text : String)
   else if text.contains "fights" then
     match targets[0]?, targets[1]? with
     | some (Target.permanent a), some (Target.permanent b) =>
-      g.dealFightDamage (g.object! a) (g.object! b)
+      g.fightCreatures (g.object! a) (g.object! b)
     | _, _ => g
   else if text.contains "draw" && text.contains "lose" then
     g.drawThenLoseLife controller 2 2

@@ -504,7 +504,7 @@ def mentorMayPay : Game := passBoth mentorSmallEnters
 
 #guard
   match mentorMayPay.pending with
-  | .mayPayGeneric ⟨0⟩ 1 => true
+  | .mayPayGeneric ⟨0⟩ 1 .draw => true
   | _ => false
 
 #guard

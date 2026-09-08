@@ -6,7 +6,7 @@ supported catalog card** that is not yet written as a
 `TraditionalCardDefinition`.
 
 Thirty cards that previously had no tagged constructor gap are now spelled
-as `TraditionalCardDefinition`. Fourteen others still cannot be spelled;
+as `TraditionalCardDefinition`. Thirteen others still cannot be spelled;
 see [Cards that still cannot convert](#cards-that-still-cannot-convert).
 Compiler leftovers in `toCardDef` / `CardAction.compile` are mentioned
 when a constructor already exists but cannot express the printed ability
@@ -19,16 +19,16 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 99 |
-| The Hobbit Eternal (HOC) | 78 |
-| Marvel Super Heroes (MSH) | 212 |
-| **Total remaining** | **389** |
+| The Hobbit (HOB) | 98 |
+| The Hobbit Eternal (HOC) | 74 |
+| Marvel Super Heroes (MSH) | 196 |
+| **Total remaining** | **368** |
 
-All **389** remaining cards have at least one identified constructor gap.
+All **368** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
-holds). The other **14 cannot be spelled** with the current types; closer
+holds). The other **13 cannot be spelled** with the current types; closer
 reading found constructor gaps the first pass missed (see [Cards that still
 cannot convert](#cards-that-still-cannot-convert)).
 
@@ -39,36 +39,38 @@ modeled `CardDef` fields, triggered/static/activated constructors, and
 `ContinuousEffect`, `CardAction`, and `TraditionalCardDefinition` (including
 `CardPart`).
 
-`CardSubtype`, `Keyword`, and `CounterKind` are not in the requested list.
-They are still blocking because `CardPart.subtype`, `Ability.keyword`, and
-`CardAction.putCounter` are indexed by those inductives. Missing constructors
-there are listed under `TraditionalCardDefinition`, `Ability`, and
-`CardAction` respectively.
+`Keyword` and `CounterKind` are not in the requested list. They still block
+because `Ability.keyword` and `CardAction.putCounter` are indexed by those
+inductives. Missing constructors there are listed under `Ability` /
+`CardAction` and `CounterKind`. `CardSubtype` constructors now exist for
+every remaining catalog subtype; Plan enchantments stay blocked by
+`CounterKind` / put-counter triggers, not missing subtypes.
 
 ## Current constructors (inventory)
 
 From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
 - **Range** — `range lo hi` (literal `Nat` bounds).
-- **SetPredicate** — `shareCardType`.
+- **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
-  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
+  `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `hasTarget`, `isTargetOf`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
-  `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`, `inDeck`,
-  `supertype`, `variable`, `topOfLibrary`.
+  `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
+  `wasObjectSince`,
+  `inDeck`, `supertype`, `variable`, `topOfLibrary`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `putToGraveyard`, `block`, `die`, `dieSimultaneously`,
+  `damage`, `putToGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
-  `abilityWithIdActivated`, `actionWithId`,
+  `abilityWithIdActivated`, `actionWithId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
   `not`, `or`.
 - **Cost** — `mana`, `life`, `sacrifice` (every selected permanent),
   `sacrificeCount` (that many matching permanents), `tapSymbol`,
   `discard` (what to discard), `or`.
-- **Condition** — `any`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
+- **Condition** — `any`, `countAtLeast`, `targetsIncludeAny`, `anySubtype`, `didNotHappen`,
   `happened`, `timeToCastSorcery`, `turn`, `and`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
@@ -77,19 +79,21 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
-  `gainType`, `gainSubtype`, `setPowerToughnessEqualToCount`,
-  `increaseLandPlayLimit`.
+  `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPowerToughnessEqualToCount`,
+  `addPowerToughnessPer`, `increaseLandPlayLimit`.
 - **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
-  `counter`, `preventable`, `discard`, `putCounter`, `exile`,
+  `chooseModeRestricted`,
+  `counter`, `preventable`, `optionalPayFor`, `discard`, `putCounter`, `exile`,
   `exchangeControl`, `destroy`, `gainLife`, `playerSelectAction`,
   `putOnTopOfLibrary`, `putOnBottomOfLibrary`, `actionId`, `loseLife`,
   `sacrifice`, `returnToHand`, `putOntoBattlefield`,
   `putOntoBattlefieldInState`, `searchLibraryThenShuffle`,
   `holdOutInLibrary`, `defineVariable`,
-  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `addManaAnyColor`,
+  `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`, `mill`, `surveil`.
+  `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
+  `keepReplacedAction`, `healAllDamage`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -107,6 +111,50 @@ that many cards (and mill-then-put sequences through leftovers).
 `CardAction.surveil` compiles the selected player surveilling that many
 cards (enter triggers, destroy-then-surveil, and Redwing token creation
 through leftovers).
+`SetPredicate.countAtLeast` is the set-wide size of a simultaneous event
+(Landroval’s two or more creatures attacking a player).
+`ContinuousEffect.addPowerToughnessPer` compiles other-subtype +1/+0 for
+each artifact token you control (Thorin).
+Aragorn and Arwen’s leftover is +1/+1 on each other creature you control and
+1 life per those creatures (`forEachVariable`), not a flat 1 life.
+`CardAction.chooseModeRestricted` is who chooses and, for each mode, an ID,
+when it is allowed, and its actions (Galadriel: you, unchosen this turn by
+any player). Unrestricted `chooseMode` does not leftover to that triggered
+ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
+`Selector.wasObjectSince` is “the object of this event since that event”
+(Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
+(Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
+is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObjectOfThisTrigger`
+from the graveyard (that discarded card); any graveyard card stays uncompiled.
+`Selector.hasTarget` is “has a target matching …” (Fin Fang Foom: artifact or
+land). `CardAction.copyWithNewTargets` is who copies and what is copied (you,
+that spell). Intervening `targetsIncludeAny` without copy stays uncompiled.
+Justice’s bounce-watch leftover is `Trigger.returnToHand` of
+another nonland you control (tokens included). Put-to-graveyard leftovers stay
+uncompiled.
+`CardAction.optionalPayFor` is who may pay, what cost, and what happens if
+paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
+`Cost.discard` (ETB via `optionalPayFor`, activated via `Cost.or`). `CardAction.fight` is Wolverine’s ETB.
+`CardAction.healAllDamage` heals all marked damage on the selected object.
+`CardAction.keepReplacedAction` performs the action being replaced. Wolverine’s leftover
+is `replace` of any damage to this with `healAllDamage` of this then `keepReplacedAction`.
+Empty replacement, combat-only, keep without heal, heal without keep, or keep then
+heal stay uncompiled. `Trigger.putCountersSimultaneously` is
+one or more counters of a kind on the selected objects at the same time
+(Beast: +1/+1 this turn). Storm’s leftover is `hasTarget` of a creature on the spell you cast, then
+flying on creatures that are `isTargetOf` this spell (`wasObjectOfThisTrigger`).
+Treating the spell as those creatures stays uncompiled. Intervening
+`targetsIncludeAny` or flying on all creatures stays uncompiled. Storm’s
+flying restriction is
+`forbid` of attack-or-block, not attack alone.
+`ContinuousEffect.gainAllSubtypes` is who gains all subtypes of that type
+(Undercover Skrull: this, creature). Pump-only leftovers compile to
+`getsIfGyCreatureCards`, not all creature types. `gainSubtype` of one subtype
+stays uncompiled as all-types.
+`CardSubtype` constructors from the previous change, plus leftovers in
+`toCardDef`, compile search-two-basics, Plan-card search, gy-creature
+statics, Alliance modes, second-draw +1/+1 on a target, and the other
+printed abilities of the 21 subtype-unlocked catalog cards.
 
 ## Missing constructors by type
 
@@ -140,8 +188,6 @@ complete.
   - Armor Wars; Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Dancing from Dark to Dawn; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; … (15 more)
 - **`eachPlayer`** (23 cards) — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
   - Armor Wars; Avengers: Under Siege; Balin, Loremaster; Bilbo's Burglaring; Celebrate the Mountain-king; Crossbones, Malicious Mercenary; Doom Reigns Supreme; Dáin of the Ancient Halls; Gandalf, Goblins' Bane; Gollum, Riddle Master; … (13 more)
-- **`army`** (15 cards) — Army (CardSubtype.army is also missing; used via Selector.subtype)
-  - Azog, Moria's Ruin; Bolg of the North; Bothersome Noisemaker; Down, Down to Goblin-town; Fearsome Goblin Pair; Gathering of Darkness; Goblin Plate Mail; Goblin-town Flunkies; Great Goblin, Foul-Hearted; Misty Mountains Raider; … (5 more)
 - **`color`** (14 cards) — Objects of a color / colorless
   - Aragorn, the Uniter; Baron Helmut Zemo; Castle Doom; Doctor Doom; Dáin Ironfoot; Goblin Cratermaker; Invisible Woman, Sue Storm; Iron Hills Blacksmith; Necklace of Girion; Robot Domination; … (4 more)
 - **`inExile`** (15 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
@@ -203,6 +249,10 @@ complete.
   - Sauron, the Dark Lord; Witch-king of Angmar
 - **`wouldDraw`** (2 cards) — Would-draw replacement window (Trigger.draw is the actual event)
   - Bard, King of Dale; Plunder the Trollshaws
+- **`nthCounter`** (7 cards) — When the Nth counter of a kind is put on the selected object
+  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination
+- **`putCounter`** (1 cards) — Whenever counters are put on matching objects
+  - The Great Goblin
 - **`whenYouDo`** (1 cards) — Nested delayed trigger after an optional action ('when you do')
   - Spider-Man, To the Rescue
 - **`leaveGraveyard`** (1 cards) — Whenever a matching card leaves a graveyard
@@ -243,7 +293,7 @@ complete.
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`controlCount`** (5 cards) — Controller controls N or more matching objects
   - Alien Invasion; Ares, God of War; Chief Warg's Company; The Sentry, Golden Guardian; fogOnTheBarrowDowns
-- **`countAtLeast`** (6 cards) — At least N objects match a selector (graveyard size, lore, quest counters, …)
+- **`countAtLeast`** (6 cards) — At least N objects match a selector (lore, quest counters, …). Constructor exists; Arnim Zola leftovers `countAtLeast 2` graveyard creatures. Remaining cards need other leftovers.
   - HYDRA Troopers; Master's Councillors; Most Decrepit Old Bird; Punishing Punch; The Master of Lake-town; Tom Bombadil
 - **`or`** (5 cards) — Activate only if this land entered this turn or you control a basic land
   - darkFortress; gatheringPlace; gleamingBastion; hiddenLair; trainingCompound
@@ -261,8 +311,10 @@ complete.
   - Andúril, Narsil Reforged
 - **`resolvedThisTurnCount`** (1 cards) — This ability has resolved N times this turn
   - Belladonna Took
-- **`modeNotChosenThisTurn`** (1 cards) — Choose a mode that hasn't been chosen this turn
-  - The Vision
+- **`modeNotChosenThisTurn`** — Constructor is now
+  `CardAction.chooseModeRestricted` plus `Trigger.modeWithIdChosen`
+  (Galadriel). The Vision still
+  needs a leftover for its noncreature-spell modes.
 
 ### `Ability`
 
@@ -305,7 +357,7 @@ complete.
   - Absorbing Man; Beorn the Fierce; Dependable Quinjet; Great Gilded Boat; I Am Iron Man; Iron Man Armor; Mirkwood Meditator; Moon Girl and Devil Dinosaur; Reptil, Dinomorpher; S.H.I.E.L.D. Helicarrier; … (4 more)
 - **`restrictManaSpend`** (11 cards) — Mana from an action may be spent only on matching events (current leftovers cover Elf sources and instant/sorcery spells)
   - Arcane Signet; Avengers Tower; Castle Doom; Delighted Halfling; Desolation of Smaug; Fíli and Kíli, Joyous; Hydraulic Helper; Mox Amber; Ronin, Shadow Stalker; … (2 more)
-- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
+- **`addPowerToughnessPer`** (8 cards) — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover and other-subtype +1/+0 per artifact token
   - Desert Were-Worm; Esgaroth Garrison; Iron Man, Master of Machines; Minas Tirith Garrison; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Super-Adaptoid; Winter Soldier, Icy Assassin
 - **`reduceCostByValue`** (8 cards) — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
   - Call Forth the Tempest; Cavern-Hoard Dragon; Cosmic Cube; Glamdring; Loki Laufeyson; Part in Friendship; Punishing Punch; The Lord of the Eagles
@@ -390,7 +442,7 @@ complete.
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
 - **`exileThenReturn`** (5 cards) — Exile then return at a later trigger (end step / leaves)
   - Elrond, Moon-Reader; Roll-Roll-Roll-Roll; S.H.I.E.L.D. Flying Car; The Mind Stone; Wiccan, Rising Magician
-- **`payThen`** (5 cards) — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- **`optionalPayFor` leftover besides Speed** (5 cards) — Constructor exists; leftover only compiles you / {1} / haste-except-haste
   - Mentor of the Meek; Silvan Reveler; The Black Gate; The Kingpin of Crime; Ultron, Artificial Malevolence
 - **`gainControl`** (4 cards) — Gain control of selected objects
   - Bilbo's Burglaring; Evil's Thrall; Sauron, the Lidless Eye; The Super Hero Civil War
@@ -421,107 +473,26 @@ complete.
 
 ### `TraditionalCardDefinition`
 
-- **`CardSubtype.Noble`** (25 cards) — CardPart.subtype uses CardSubtype; Noble has no constructor
-  - Aragorn and Arwen, Wed; Aragorn, the Uniter; Arwen, Mortal Queen; Arwen, Weaver of Hope; Bard, King of Dale; Baron Helmut Zemo; Celeborn the Wise; Dáin of the Ancient Halls; Dáin, Lord of the Iron Hills; Elrond, Moon-Reader; … (15 more)
 - **`sagaChapters`** (14 cards) — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
   - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
-- **`CardSubtype.Mutant`** (10 cards) — CardPart.subtype uses CardSubtype; Mutant has no constructor
-  - Beast, Erudite Aerialist; Justice, Vance Astrovik; Ms. Marvel, Kamala Khan; Namor the Sub-Mariner; Quicksilver, Brash Blur; Speed, Young Avenger; Storm, Windrider; The Scarlet Witch; Wiccan, Rising Magician; Wolverine, Fierce Fighter
-- **`CardSubtype.Scientist`** (10 cards) — CardPart.subtype uses CardSubtype; Scientist has no constructor
-  - A.I.M. Scientists; Arnim Zola, Bio-Fanatic; Beast, Erudite Aerialist; Bold Biochemist; Bruce Banner; Doctor Doom; Leader, Super-Genius; Mister Fantastic, Reed Richards; Scientist Supreme of A.I.M.; The Astonishing Ant-Man
-- **`CardSubtype.Gamma`** (8 cards) — CardPart.subtype uses CardSubtype; Gamma has no constructor
-  - Abomination, Terrifying Titan; Doc Samson, Super Psychiatrist; Hulk, Gamma Goliath; Leader, Super-Genius; Red Hulk; She-Hulk, Jade Defender; The Incredible Hulk; The Sensational She-Hulk
-- **`CardSubtype.Plan`** (8 cards) — CardPart.subtype uses CardSubtype; Plan has no constructor
-  - Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Political Triumph; Rewrite History; Robot Domination; The Masters of Evil
 - **`entersTappedUnless`** (7 cards) — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
-- **`CardSubtype.Saga`** (6 cards) — CardPart.subtype uses CardSubtype; Saga has no constructor
-  - Armor Wars; Avengers: Under Siege; Origin of the Avengers; The Coming of Galactus; The Super Hero Civil War; World War Hulk
 - **`otherFace`** (6 cards) — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
   - Bruce Banner; Jennifer Walters; King T'Challa; Monica Rambeau; Nick Fury, Agent of S.H.I.E.L.D.; Tony Stark
-- **`CardSubtype.Artificer`** (5 cards) — CardPart.subtype uses CardSubtype; Artificer has no constructor
-  - Iron Hills Blacksmith; Lake-town Toymaker; Shuri, Wakandan Inventor; Tony Stark; Whiplash, Vengeful Engineer
-- **`CardSubtype.Berserker`** (5 cards) — CardPart.subtype uses CardSubtype; Berserker has no constructor
-  - Hulk, Gamma Goliath; Red Hulk; Roxxon Brutes; The Incredible Hulk; Wolverine, Fierce Fighter
-- **`CardSubtype.Cat`** (3 cards) — CardPart.subtype uses CardSubtype; Cat has no constructor
-  - Knight of Wundagore; Pet Avengers; Tigra, Feline Fury
-- **`CardSubtype.Doctor`** (3 cards) — CardPart.subtype uses CardSubtype; Doctor has no constructor
-  - Doc Samson, Super Psychiatrist; Moonstone, Harsh Mistress; Night Nurse, Healer of Heroes
-- **`CardSubtype.Mercenary`** (3 cards) — CardPart.subtype uses CardSubtype; Mercenary has no constructor
-  - Crossbones, Malicious Mercenary; Killmonger, Scourge of Wakanda; Taskmaster, Mercenary Mimic
-- **`CardSubtype.Skrull`** (3 cards) — CardPart.subtype uses CardSubtype; Skrull has no constructor
-  - Hulkling, Burgeoning Bruiser; Super-Skrull; Undercover Skrull
-- **`CardSubtype.Troll`** (3 cards) — CardPart.subtype uses CardSubtype; Troll has no constructor
-  - Olog-hai Crusher; Tom, Bert, and William; Troll of Khazad-dûm
 - **`asEntersChoice`** (3 cards) — As-this-enters replacement/choice on the face
   - An Unexpected Party; Orcrist, Goblin-cleaver; Raise the Palisade
 - **`entersWithCounters`** (3 cards) — Enters with shield counters
   - Arwen, Mortal Queen; Captain America, Super-Soldier; Dawn of a New Age
-- **`CardSubtype.Arcane`** (2 cards) — CardPart.subtype uses CardSubtype; Arcane has no constructor
-  - Hex Magic; We Say Thee Nay!
-- **`CardSubtype.Assassin`** (2 cards) — CardPart.subtype uses CardSubtype; Assassin has no constructor
-  - Bullseye, Death Dealer; Winter Soldier, Icy Assassin
-- **`CardSubtype.Detective`** (2 cards) — CardPart.subtype uses CardSubtype; Detective has no constructor
-  - Jessica Jones, Private Eye; Misty Knight, Hero for Hire
-- **`CardSubtype.Dog`** (1 cards) — CardPart.subtype uses CardSubtype; Dog has no constructor
-  - Pet Avengers
-- **`CardSubtype.Inhuman`** (2 cards) — CardPart.subtype uses CardSubtype; Inhuman has no constructor
-  - Ms. Marvel, Kamala Khan; Quake, Agent of S.H.I.E.L.D.
-- **`CardSubtype.Ninja`** (2 cards) — CardPart.subtype uses CardSubtype; Ninja has no constructor
-  - Elektra, Daughter of the Hand; Ninja of the Hand
-- **`CardSubtype.Peasant`** (1 cards) — CardPart.subtype uses CardSubtype; Peasant has no constructor
-  - The Gaffer
-- **`CardSubtype.Snake`** (2 cards) — CardPart.subtype uses CardSubtype; Snake has no constructor
-  - Serpent Specialist; The Serpent Society
-- **`CardSubtype.Sorcerer`** (2 cards) — CardPart.subtype uses CardSubtype; Sorcerer has no constructor
-  - Loki Laufeyson; Loki, God of Mischief
-- **`CardSubtype.Warlock`** (2 cards) — CardPart.subtype uses CardSubtype; Warlock has no constructor
-  - The Scarlet Witch; Wiccan, Rising Magician
-- **`CardSubtype.Wraith`** (2 cards) — CardPart.subtype uses CardSubtype; Wraith has no constructor
-  - Witch-king of Angmar; Witch-king, Bringer of Ruin
-- **`CardSubtype.Alien`** (1 cards) — CardPart.subtype uses CardSubtype; Alien has no constructor
-  - Fin Fang Foom
-- **`CardSubtype.Ape`** (1 cards) — CardPart.subtype uses CardSubtype; Ape has no constructor
-  - Guerrilla Gorilla
-- **`CardSubtype.Barbarian`** (1 cards) — CardPart.subtype uses CardSubtype; Barbarian has no constructor
-  - Ka-Zar of the Savage Land
-- **`CardSubtype.Demigod`** (1 cards) — CardPart.subtype uses CardSubtype; Demigod has no constructor
-  - Hercules, Prince of Power
-- **`CardSubtype.Elk`** (1 cards) — CardPart.subtype uses CardSubtype; Elk has no constructor
-  - Mirkwood Elk
-- **`CardSubtype.Eternal`** (1 cards) — CardPart.subtype uses CardSubtype; Eternal has no constructor
-  - Thanos, the Mad Titan
-- **`CardSubtype.Frog`** (1 cards) — CardPart.subtype uses CardSubtype; Frog has no constructor
-  - Pet Avengers
-- **`CardSubtype.Gate`** (1 cards) — CardPart.subtype uses CardSubtype; Gate has no constructor
-  - The Black Gate
-- **`CardSubtype.Horse`** (1 cards) — CardPart.subtype uses CardSubtype; Horse has no constructor
-  - Troop of Ponies
-- **`CardSubtype.Infinity`** (1 cards) — CardPart.subtype uses CardSubtype; Infinity has no constructor
-  - The Mind Stone
-- **`CardSubtype.Nightmare`** (1 cards) — CardPart.subtype uses CardSubtype; Nightmare has no constructor
-  - Haunt of the Dead Marshes
-- **`CardSubtype.Performer`** (1 cards) — CardPart.subtype uses CardSubtype; Performer has no constructor
-  - Wonder Man, Hollywood Hero
-- **`CardSubtype.Samurai`** (1 cards) — CardPart.subtype uses CardSubtype; Samurai has no constructor
-  - Colleen Wing, Street Samurai
-- **`CardSubtype.Squirrel`** (1 cards) — CardPart.subtype uses CardSubtype; Squirrel has no constructor
-  - The Unbeatable Squirrel Girl
-- **`CardSubtype.Stone`** (1 cards) — CardPart.subtype uses CardSubtype; Stone has no constructor
-  - The Mind Stone
-- **`CardSubtype.Vampire`** (1 cards) — CardPart.subtype uses CardSubtype; Vampire has no constructor
-  - Unliving Legionnaire
-- **`CardSubtype.Whale`** (1 cards) — CardPart.subtype uses CardSubtype; Whale has no constructor
-  - Colossal Whale
 
 ### `CounterKind`
 
-`CounterKind` is used by `CardAction.putCounter`. It currently has only `plusOnePlusOne`.
+`CounterKind` is used by `CardAction.putCounter` and
+`Trigger.putCountersSimultaneously`. It currently has only `plusOnePlusOne`.
 
 - **`lore`** (14 cards) — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
   - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
-- **`named`** (10 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-  - Beorn the Fierce; Dwalin, Weaponmaster; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Last Light of Durin's Day; Minas Morgul, Dark Fortress; Quicksilver, Brash Blur; Sting, Bilbo's Sword; Thunderbolts Conspiracy; Winter Soldier, Icy Assassin
+- **`named`** (17 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, …)
+  - Beorn the Fierce; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dwalin, Weaponmaster; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Last Light of Durin's Day; Minas Morgul, Dark Fortress; … (7 more)
 - **`Hope`** (1 cards) — Named counter kind beyond +1/+1
   - Dawn of a New Age
 - **`IndestructibleCounter`** (1 cards) — Named counter kind beyond +1/+1
@@ -537,7 +508,17 @@ pattern. Conversion against `toCardDef` split them:
 ### Converted to `TraditionalCardDefinition`
 
 These 30 cards now compile through leftovers onto the same modeled `CardDef`
-(Oracle still matches). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
+(Oracle still matches). A later pass converted **21 more** that were blocked
+only by missing `CardSubtype` constructors (now present): Troop of Ponies;
+Landroval, Horizon Witness; Aragorn and Arwen, Wed; Thorin, King of Durin's
+Folk; Galadriel, Light of Valinor; Night Nurse, Healer of Heroes; Quake,
+Agent of S.H.I.E.L.D.; Justice, Vance Astrovik; Arnim Zola, Bio-Fanatic;
+The Masters of Evil; Moonstone, Harsh Mistress; Roxxon Brutes; Fin Fang Foom;
+Speed, Young Avenger; Guerrilla Gorilla; Undercover Skrull; Beast, Erudite
+Aerialist; Bullseye, Death Dealer; Killmonger, Scourge of Wakanda; Storm,
+Windrider; Wolverine, Fierce Fighter. Five Plan enchantments and The Great
+Goblin stay in the catalog as `CardDef` helpers (`CounterKind` / put-counter
+triggers). Catalog files: `Hobbit.lean`, `HobbitEternal.lean`,
 `MarvelSuperHeroes.lean`.
 
 **Hobbit (9):** Bard the Bowman, Bolg's Company, Elven Raft-Steerer, Iron Hills
@@ -563,7 +544,7 @@ spell leftovers those printings need.
 
 ### Cards that still cannot convert
 
-Closer reading of the remaining 14 found constructor gaps. They stay in the
+Closer reading of the remaining 13 found constructor gaps. They stay in the
 catalog as `CardDef` helpers. Evidence is the printed ability vs the current
 inductives (not a missing leftover for an expressible spelling).
 
@@ -615,12 +596,10 @@ inductives (not a missing leftover for an expressible spelling).
   addition to its other types, and attach *any number* of Equipment you
   control. No `ContinuousEffect.gainSupertype`; `Range.anyNumber` is missing
   (only finite `range lo hi`).
-- **The Masters of Evil** — Search your library for a *Plan* card.
-  `CardSubtype.plan` does not exist (`CardPart.subtype` / `Selector.subtype`
-  can't name it). Other Villains +2/+1 is already expressible.
 - **The Vision** — Choose one *that hasn't been chosen this turn*.
-  `Condition.firstThisTurn` / “mode not chosen this turn” is missing.
-  `CardAction.chooseMode` has no per-mode-this-turn exclusion.
+  `CardAction.chooseModeRestricted` now exists (Galadriel’s Alliance).
+  The Vision still needs a leftover for “whenever you cast a noncreature
+  spell” plus its three named modes (`Effect.castingVisionModes`).
 
 ## Adjacent inductives
 
@@ -628,9 +607,9 @@ These are not in the requested list but block a conversion of the listed types:
 
 | Inductive | Used by | Missing constructors that remaining cards need |
 | --- | --- | --- |
-| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Noble, Scientist, Mutant, Gamma, Plan, Saga, Artificer, Berserker, Troll, Mercenary, Doctor, Skrull, Cat, and others listed per card as `TraditionalCardDefinition.CardSubtype.*` |
+| `CardSubtype` | `CardPart.subtype`, `Selector.subtype` | Constructors now exist for every remaining catalog subtype, including Army (`Selector.subtype .army`). Five Plan enchantments and The Great Goblin stay blocked by put-counter triggers / `CounterKind`, not missing subtypes. |
 | `Keyword` | `Ability.keyword`, `CardAction.keyword` | Ward, Crew, Kicker, Flashback, Cascade, Affinity, Teamwork, Improvise, Extort, Sneak, Boast, Daybound/Nightbound (some of these may instead be spelled as `Ability`/`ContinuousEffect` without a `Keyword` constructor). Recruit and amass are keyword actions via `CardAction.keyword`. |
-| `CounterKind` | `CardAction.putCounter` | lore, shield, hope, hone, trample, quest, shadow, finality, indestructible, and other named counters |
+| `CounterKind` | `CardAction.putCounter` | lore, shield, hope, hone, trample, quest, shadow, finality, indestructible, plan, and other named counters |
 
 `CardPart` also has no `loyalty`, `chapter`, or DFC-back
 face (`alternative` is the Adventure face). Those are listed under
@@ -641,7 +620,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (99 cards)
+### The Hobbit (HOB) (98 cards)
 
 **Along the Crooked Way** (`alongTheCrookedWay`)
 
@@ -667,7 +646,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
-
 **Bard's Company** (`bardsCompany`)
 
 - `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
@@ -679,9 +657,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.replaceDraw` — If you would draw (except the first in each draw step), draw N instead
 - `Trigger.wouldDraw` — Would-draw replacement window (Trigger.draw is the actual event)
 - `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create twice as many instead
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
-
 
 **Belladonna Took** (`belladonnaTook`)
 
@@ -717,7 +692,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-
 
 **Bombur, Gentle Dreamer** (`bomburGentleDreamer`)
 
@@ -801,9 +775,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.reduceCostIfTargeting` — Reduce costs of abilities you activate that target this object (reduceCost only this object's costs)
 
-
-
-
 **Dáin Ironfoot** (`dainIronfoot`)
 
 - `Selector.color` — Objects of a color / colorless
@@ -819,7 +790,6 @@ Converted cards from the previous untagged set are omitted here.
 **Dáin, Lord of the Iron Hills** (`dainLordOfTheIronHills`)
 
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Eagle's Rescue** (`eaglesRescue`)
 
@@ -831,13 +801,11 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Elven Passage** (`elvenPassage`)
 
 - `Selector.inHand` — An object in a hand
 - `CardAction.behold` — Behold a subtype
-
 
 **Esgaroth Garrison** (`esgarothGarrison`)
 
@@ -924,8 +892,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.color` — Objects of a color / colorless
 - `Selector.named` — Objects with a given name
-- `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
-
 
 **Key to the Side-Door** (`keyToTheSideDoor`)
 
@@ -945,7 +911,6 @@ Converted cards from the previous untagged set are omitted here.
 **Lake-town Toymaker** (`lakeTownToymaker`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
 
 **Last Light of Durin's Day** (`lastLightOfDurinSDay`)
 
@@ -959,7 +924,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-
 
 **Moment of Glory** (`momentOfGlory`)
 
@@ -987,7 +951,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
-
 
 **Orcrist, Goblin-cleaver** (`orcristGoblinCleaver`)
 
@@ -1061,7 +1024,7 @@ Converted cards from the previous untagged set are omitted here.
 **Silvan Reveler** (`silvanReveler`)
 
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **Smaug the Magnificent** (`smaugTheMagnificent`)
 
@@ -1091,7 +1054,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.putFromBattlefieldThisTurn` — Cards put into a graveyard from the battlefield this turn (Shape.diedThisTurn is Condition-only)
 - `CardAction.becomeWithAbility` — Lose other types, become Food artifacts, and gain a stated activated ability
 
-
 **The Arkenstone** (`theArkenstone`)
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
@@ -1102,7 +1064,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 
-
 **The Eagles Are Coming!** (`theEaglesAreComing`)
 
 - `Cost.optionalAdditional` — Optional additional cost (Kicker)
@@ -1112,8 +1073,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Great Goblin** (`theGreatGoblin`)
 
-- `Selector.army` — Army (CardSubtype.army is also missing; used via Selector.subtype)
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
+- `Trigger.putCounter` — Whenever counters are put on matching objects
 
 **The Lonely Mountain** (`theLonelyMountain`)
 
@@ -1126,7 +1086,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **The Master of Lake-town** (`theMasterOfLakeTown`)
 
@@ -1150,26 +1109,21 @@ Converted cards from the previous untagged set are omitted here.
 
 - `CardAction.addManaPer` — Add mana for each matching object
 
-
-
 **Thorin Oakenshield** (`thorinOakenshield`)
 
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Thorin, Mountain-king** (`thorinMountainKing`)
 
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Thranduil, the Elvenking** (`thranduilTheElvenking`)
 
 - `ContinuousEffect.copyActivatedAbilities` — Gains the activated abilities of matching objects
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Through the Forest Gate** (`throughTheForestGate`)
 
@@ -1185,21 +1139,15 @@ Converted cards from the previous untagged set are omitted here.
 **Tom, Bert, and William** (`tomBertAndWilliam`)
 
 - `Selector.inHand` — A card in hand for Cost.discard
-- `TraditionalCardDefinition.CardSubtype.Troll` — CardPart.subtype uses CardSubtype; Troll has no constructor
 
 **Troll Negotiations** (`trollNegotiations`)
 
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-**Troop of Ponies** (`troopOfPonies`)
-
-- `TraditionalCardDefinition.CardSubtype.Horse` — CardPart.subtype uses CardSubtype; Horse has no constructor
-
 **Uncover the Moon-Letters** (`uncoverTheMoonLetters`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-
 
 **Wizard's Staff** (`wizardSStaff`)
 
@@ -1216,20 +1164,15 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 
-### The Hobbit Eternal (HOC) (78 cards)
+### The Hobbit Eternal (HOC) (74 cards)
 
 **Andúril, Narsil Reforged** (`andurilNarsilReforged`)
 
 - `Condition.citysBlessing` — You have the city's blessing
 
-**Aragorn and Arwen, Wed** (`aragornAndArwenWed`)
-
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
 **Aragorn, the Uniter** (`aragornTheUniter`)
 
 - `Selector.color` — Objects of a color / colorless
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Arcane Signet** (`arcaneSignet`)
 
@@ -1241,13 +1184,11 @@ Converted cards from the previous untagged set are omitted here.
 - `TraditionalCardDefinition.entersWithCounters` — Enters with an indestructible counter
 - `CounterKind.IndestructibleCounter` — Named counter kind beyond +1/+1
 - `CardAction.removeCounter` — Remove counters from the selected object
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Arwen, Weaver of Hope** (`arwenWeaverOfHope`)
 
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
 - `ContinuousEffect.replaceEnterCounters` — As matching objects enter, they enter with extra counters
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Bag End Banquet** (`bagEndBanquet`)
 
@@ -1310,7 +1251,6 @@ Converted cards from the previous untagged set are omitted here.
 **Celeborn the Wise** (`celebornTheWise`)
 
 - `Trigger.scry` — Whenever the selected player scries
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Chief of the Wilds** (`chiefOfTheWilds`)
 
@@ -1322,7 +1262,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.leaveBattlefield` — When the selected object leaves the battlefield
 - `Ability.linkedExile` — Paired exile-until-leaves (enter trigger + leave trigger sharing exiled objects)
 - `CardAction.returnExiled` — Return objects exiled by a linked action
-- `TraditionalCardDefinition.CardSubtype.Whale` — CardPart.subtype uses CardSubtype; Whale has no constructor
 
 **Dawn of a New Age** (`dawnOfANewAge`)
 
@@ -1342,8 +1281,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.addManaPer` — Add mana for each matching object
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
-
-
 **Dwarven Warriors** (`dwarvenWarriors`)
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
@@ -1354,7 +1291,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Elven Chorus** (`elvenChorus`)
 
@@ -1371,7 +1307,6 @@ Converted cards from the previous untagged set are omitted here.
 **Errand-Rider of Gondor** (`errandRiderOfGondor`)
 
 - `Selector.inHand` — An object in a hand
-
 
 **Fiend Hunter** (`fiendHunter`)
 
@@ -1399,17 +1334,12 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordKicker` — Kicker
 - `Condition.kicked` — This spell was kicked
 
-**Galadriel, Light of Valinor** (`galadrielLightOfValinor`)
-
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
 **Gandalf, Party Guest** (`gandalfPartyGuest`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.inHand` — An object in a hand
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-
 
 **Glamdring** (`glamdring`)
 
@@ -1432,11 +1362,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.any` — any with a legendary-you-control selector is already expressible; listed only if other gaps remain
 - `Ability.activateFromZone` — Activated ability that functions in the graveyard (or another non-battlefield zone)
-- `TraditionalCardDefinition.CardSubtype.Nightmare` — CardPart.subtype uses CardSubtype; Nightmare has no constructor
-
-**Landroval, Horizon Witness** (`landrovalHorizonWitness`)
-
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Last March of the Ents** (`lastMarchOfTheEnts`)
 
@@ -1452,13 +1377,10 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 
-
-
-
 **Mentor of the Meek** (`mentorOfTheMeek`)
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **Minas Morgul, Dark Fortress** (`minasMorgulDarkFortress`)
 
@@ -1483,7 +1405,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.gainLife` — Whenever the selected player gains life
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `TraditionalCardDefinition.CardSubtype.Elk` — CardPart.subtype uses CardSubtype; Elk has no constructor
 
 **Mount Doom** (`mountDoom`)
 
@@ -1507,7 +1428,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `TraditionalCardDefinition.CardSubtype.Troll` — CardPart.subtype uses CardSubtype; Troll has no constructor
 
 **Orcish Bowmasters** (`orcishBowmasters`)
 
@@ -1522,7 +1442,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-
 
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
@@ -1590,13 +1509,11 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
-- `TraditionalCardDefinition.CardSubtype.Gate` — CardPart.subtype uses CardSubtype; Gate has no constructor
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 
 **The Gaffer** (`theGaffer`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `TraditionalCardDefinition.CardSubtype.Peasant` — CardPart.subtype uses CardSubtype; Peasant has no constructor
 
 **The One Ring** (`theOneRing`)
 
@@ -1612,16 +1529,9 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.not` — Negation / unless (Condition has and, not or/not)
 - `TraditionalCardDefinition.entersTappedUnless` — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
 
-
-
-**Thorin, King of Durin's Folk** (`thorinKingOfDurinsFolk`)
-
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
-
 **Thranduil the Strategist** (`thranduilTheStrategist`)
 
 - `ContinuousEffect.gainAbility` — gainAbility exists; granting a tap-add-mana activated ability to others needs Ability.activated as the granted ability (already in Ability) — compiler may not emit it
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Tom Bombadil** (`tomBombadil`)
 
@@ -1639,7 +1549,6 @@ Converted cards from the previous untagged set are omitted here.
 **Troll of Khazad-dûm** (`trollOfKhazadDum`)
 
 - `ContinuousEffect.cantBeBlockedExceptBy` — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
-- `TraditionalCardDefinition.CardSubtype.Troll` — CardPart.subtype uses CardSubtype; Troll has no constructor
 
 **Witch-king of Angmar** (`witchKingOfAngmar`)
 
@@ -1650,14 +1559,10 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `ContinuousEffect.cantBeBlockedExceptBy` — Can't be blocked except by N or more creatures (menace is Keyword for N=2)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Wraith` — CardPart.subtype uses CardSubtype; Wraith has no constructor
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Witch-king, Bringer of Ruin** (`witchKingBringerOfRuin`)
 
 - `Selector.defendingPlayer` — The defending player relative to an attacker
-- `TraditionalCardDefinition.CardSubtype.Wraith` — CardPart.subtype uses CardSubtype; Wraith has no constructor
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **fogOnTheBarrowDowns** (`fogOnTheBarrowDowns`)
 
@@ -1665,20 +1570,18 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.controlCount` — Controller controls N or more matching objects
 - `ContinuousEffect.setSubtypes` — Overwrite subtypes (gainSubtype only adds)
 
-### Marvel Super Heroes (MSH) (212 cards)
+### Marvel Super Heroes (MSH) (196 cards)
 
 **A.I.M. Scientists** (`aIMScientists`)
 
 - `Selector.inHand` — A card in hand for Cost.discard
 - `CardAction.connive` — Connive
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Abomination, Terrifying Titan** (`abominationTerrifyingTitan`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
 
 **Absorbing Man** (`absorbingMan`)
 
@@ -1703,9 +1606,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
 
-
-
-
 **Agents of S.H.I.E.L.D.** (`agentsOfSHIELD`)
 
 - `Selector.attackingAlone` — A creature attacking alone
@@ -1716,8 +1616,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
 - `Condition.controlCount` — Controller controls N or more matching objects
-
-
 
 **Ant-Man, Colony Commander** (`antManColonyCommander`)
 
@@ -1742,11 +1640,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.manaValue` — Mana-value comparisons
 - `CardAction.addManaPer` — Add mana for each matching object
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
-
-**Arnim Zola, Bio-Fanatic** (`arnimZolaBioFanatic`)
-
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Atlantis Attacks** (`atlantisAttacks`)
 
@@ -1754,7 +1647,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 - `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-
 
 **Avengers Assemble!** (`avengersAssemble`)
 
@@ -1778,7 +1670,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `CardAction.addManaPer` — Add mana for each matching object
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
 
 **Baron Helmut Zemo** (`baronHelmutZemo`)
 
@@ -1788,7 +1679,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `Ability.keywordBoast` — Boast
 - `CardAction.connive` — Connive
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Baron Strucker, HYDRA Overlord** (`baronStruckerHYDRAOverlord`)
 
@@ -1801,16 +1691,9 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
 - `CardAction.addManaCombination` — Add N mana in any combination of listed types / any color
 
-**Beast, Erudite Aerialist** (`beastEruditeAerialist`)
-
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
-
 **Black Panther, Hope Enduring** (`blackPantherHopeEnduring`)
 
 - `ContinuousEffect.preventDamage` — Prevent (all) damage that would be dealt to/by a selector
-
-
 
 **Black Widow, Double Agent** (`blackWidowDoubleAgent`)
 
@@ -1823,15 +1706,11 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `CardAction.exileUntil` — Exile from the top until a matching card (nonland leftover)
 
-
 **Bold Biochemist** (`boldBiochemist`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
-
-
 
 **Brave Brawler** (`braveBrawler`)
 
@@ -1845,12 +1724,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `CardAction.transform` — Transform this permanent
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
-
-**Bullseye, Death Dealer** (`bullseyeDeathDealer`)
-
-- `TraditionalCardDefinition.CardSubtype.Assassin` — CardPart.subtype uses CardSubtype; Assassin has no constructor
-
 
 **Captain America's Shield** (`captainAmericaSShield`)
 
@@ -1877,7 +1750,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.gainAbilityIf` — Matching spells have flash / cost less with a 'first this turn' condition
 
-
 **Captain Marvel, Earth's Protector** (`captainMarvelEarthSProtector`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
@@ -1892,7 +1764,8 @@ Converted cards from the previous untagged set are omitted here.
 
 **Claim the Kingdom** (`claimTheKingdom`)
 
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Cloak and Dagger, Entwined** (`cloakAndDaggerEntwined`)
 
@@ -1905,11 +1778,11 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `TraditionalCardDefinition.CardSubtype.Samurai` — CardPart.subtype uses CardSubtype; Samurai has no constructor
 
 **Construct a Cosmic Cube** (`constructACosmicCube`)
 
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Cosmic Cube** (`cosmicCube`)
 
@@ -1929,7 +1802,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Mercenary` — CardPart.subtype uses CardSubtype; Mercenary has no constructor
 
 **Crowd of True Believers** (`crowdOfTrueBelievers`)
 
@@ -1951,7 +1823,8 @@ Converted cards from the previous untagged set are omitted here.
 
 **Death to Our Enemies** (`deathToOurEnemies`)
 
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Decoy Ploy** (`decoyPloy`)
 
@@ -1967,21 +1840,19 @@ Converted cards from the previous untagged set are omitted here.
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
-- `TraditionalCardDefinition.CardSubtype.Doctor` — CardPart.subtype uses CardSubtype; Doctor has no constructor
 
 **Doctor Doom** (`doctorDoom`)
 
 - `Selector.color` — Objects of a color / colorless
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Doom Reigns Supreme** (`doomReignsSupreme`)
 
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Earth's Mightiest Heroes** (`earthSMightiestHeroes`)
 
@@ -1999,7 +1870,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
 - `Ability.keywordSneak` — Sneak
-- `TraditionalCardDefinition.CardSubtype.Ninja` — CardPart.subtype uses CardSubtype; Ninja has no constructor
 
 **Epic Fight** (`epicFight`)
 
@@ -2016,15 +1886,10 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 
-**Fin Fang Foom** (`finFangFoom`)
-
-- `TraditionalCardDefinition.CardSubtype.Alien` — CardPart.subtype uses CardSubtype; Alien has no constructor
-
 **Frozen in Ice** (`frozenInIce`)
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities
 - `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
-
 
 **Go Nuts!** (`goNuts`)
 
@@ -2038,10 +1903,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.replace` — replace already exists; need a would-die / would-go-to-gy trigger which putToGraveyard covers — exile-instead is expressible if replace actions can exile (compiler may not)
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 
-**Guerrilla Gorilla** (`guerrillaGorilla`)
-
-- `TraditionalCardDefinition.CardSubtype.Ape` — CardPart.subtype uses CardSubtype; Ape has no constructor
-
 **H.E.R.B.I.E. Scout Unit** (`hERBIEScoutUnit`)
 
 - `Selector.inHand` — An object in a hand
@@ -2054,7 +1915,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-
 
 **HYDRA Infiltration** (`hYDRAInfiltration`)
 
@@ -2097,8 +1957,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Demigod` — CardPart.subtype uses CardSubtype; Demigod has no constructor
-
 
 **Heroic Feast** (`heroicFeast`)
 
@@ -2109,22 +1967,16 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.inHand` — An object in a hand
-- `TraditionalCardDefinition.CardSubtype.Arcane` — CardPart.subtype uses CardSubtype; Arcane has no constructor
-
-
 
 **Hulk, Gamma Goliath** (`hulkGammaGoliath`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
-- `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
 
 **Hulkling, Burgeoning Bruiser** (`hulklingBurgeoningBruiser`)
 
 - `Selector.powerAtMost` — Power at most N (only powerAtLeast exists)
-- `TraditionalCardDefinition.CardSubtype.Skrull` — CardPart.subtype uses CardSubtype; Skrull has no constructor
 
 **Human Torch, Johnny Storm** (`humanTorchJohnnyStorm`)
 
@@ -2183,12 +2035,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-- `TraditionalCardDefinition.CardSubtype.Detective` — CardPart.subtype uses CardSubtype; Detective has no constructor
-
-**Justice, Vance Astrovik** (`justiceVanceAstrovik`)
-
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-
 
 **Ka-Zar of the Savage Land** (`kaZarOfTheSavageLand`)
 
@@ -2196,7 +2042,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.mayLookAtTop` — May look at the top card of the selected library any time
 - `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
 - `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
-- `TraditionalCardDefinition.CardSubtype.Barbarian` — CardPart.subtype uses CardSubtype; Barbarian has no constructor
 
 **Kang the Conqueror** (`kangTheConqueror`)
 
@@ -2214,16 +2059,10 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.hasCounter` — Objects with / without a given counter kind
 - `Selector.receivedCounterThisTurn` — Objects you put +1/+1 counters on this turn
 
-
-**Killmonger, Scourge of Wakanda** (`killmongerScourgeOfWakanda`)
-
-- `TraditionalCardDefinition.CardSubtype.Mercenary` — CardPart.subtype uses CardSubtype; Mercenary has no constructor
-
 **King T'Challa** (`kingTChalla`)
 
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
 - `CardAction.transform` — Transform this permanent
-- `TraditionalCardDefinition.CardSubtype.Noble` — CardPart.subtype uses CardSubtype; Noble has no constructor
 
 **Klaw, Sonic Subjugator** (`klawSonicSubjugator`)
 
@@ -2232,14 +2071,11 @@ Converted cards from the previous untagged set are omitted here.
 **Knight of Wundagore** (`knightOfWundagore`)
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `TraditionalCardDefinition.CardSubtype.Cat` — CardPart.subtype uses CardSubtype; Cat has no constructor
 
 **Leader, Super-Genius** (`leaderSuperGenius`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.connive` — Connive
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Loki Laufeyson** (`lokiLaufeyson`)
 
@@ -2248,13 +2084,11 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-- `TraditionalCardDefinition.CardSubtype.Sorcerer` — CardPart.subtype uses CardSubtype; Sorcerer has no constructor
 
 **Loki, God of Mischief** (`lokiGodOfMischief`)
 
 - `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
-- `TraditionalCardDefinition.CardSubtype.Sorcerer` — CardPart.subtype uses CardSubtype; Sorcerer has no constructor
 
 **Luke Cage, Power Man** (`lukeCagePowerMan`)
 
@@ -2266,8 +2100,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Selector.inHand` — A card in hand for Cost.discard
 - `CardAction.connive` — Connive
 
-
-
 **Madame Masque** (`madameMasque`)
 
 - `CardAction.connive` — Connive
@@ -2275,7 +2107,6 @@ Converted cards from the previous untagged set are omitted here.
 **Mister Fantastic, Reed Richards** (`misterFantasticReedRichards`)
 
 - `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Mister Hyde, Monster Within** (`misterHydeMonsterWithin`)
 
@@ -2285,13 +2116,11 @@ Converted cards from the previous untagged set are omitted here.
 **Misty Knight, Hero for Hire** (`mistyKnightHeroForHire`)
 
 - `Selector.inHand` — A card in hand for Cost.discard
-- `TraditionalCardDefinition.CardSubtype.Detective` — CardPart.subtype uses CardSubtype; Detective has no constructor
 
 **Mjölnir, Hammer of Thor** (`mjLnirHammerOfThor`)
 
 - `Selector.worthy` — Worthy (Marvel)
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
-
 
 **Mole Man, Moloid Master** (`moleManMoloidMaster`)
 
@@ -2308,10 +2137,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
 
-**Moonstone, Harsh Mistress** (`moonstoneHarshMistress`)
-
-- `TraditionalCardDefinition.CardSubtype.Doctor` — CardPart.subtype uses CardSubtype; Doctor has no constructor
-
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
@@ -2320,8 +2145,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-- `TraditionalCardDefinition.CardSubtype.Inhuman` — CardPart.subtype uses CardSubtype; Inhuman has no constructor
 
 **Multiversal Incursion** (`multiversalIncursion`)
 
@@ -2342,7 +2165,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
 **Nick Fury, Agent of S.H.I.E.L.D.** (`nickFuryAgentOfSHIELD`)
 
@@ -2356,19 +2178,12 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.randomize` — Put on bottom in random order / pick a random card among
 - `CardAction.transform` — Transform this permanent
 
-**Night Nurse, Healer of Heroes** (`nightNurseHealerOfHeroes`)
-
-- `TraditionalCardDefinition.CardSubtype.Doctor` — CardPart.subtype uses CardSubtype; Doctor has no constructor
-
 **Ninja of the Hand** (`ninjaOfTheHand`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Ninja` — CardPart.subtype uses CardSubtype; Ninja has no constructor
-
-
 
 **Origin of the Avengers** (`originOfTheAvengers`)
 
@@ -2377,7 +2192,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.inHand` — An object in a hand
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
 
 **Panther Pounce** (`pantherPounce`)
 
@@ -2388,34 +2202,25 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Cat` — CardPart.subtype uses CardSubtype; Cat has no constructor
-- `TraditionalCardDefinition.CardSubtype.Dog` — CardPart.subtype uses CardSubtype; Dog has no constructor
-- `TraditionalCardDefinition.CardSubtype.Frog` — CardPart.subtype uses CardSubtype; Frog has no constructor
 
 **Photon Blast Barrage** (`photonBlastBarrage`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.copy` — Copy a permanent, spell, or ability
 
-
 **Political Triumph** (`politicalTriumph`)
 
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Powerful Broker** (`powerfulBroker`)
 
 - `CardAction.forEachCounterKind` — For each kind of counter on a selected object, give another of that kind
 
-
 **Punishing Punch** (`punishingPunch`)
 
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
-
-
-**Quake, Agent of S.H.I.E.L.D.** (`quakeAgentOfSHIELD`)
-
-- `TraditionalCardDefinition.CardSubtype.Inhuman` — CardPart.subtype uses CardSubtype; Inhuman has no constructor
 
 **Quicksilver, Brash Blur** (`quicksilverBrashBlur`)
 
@@ -2423,7 +2228,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
 **Raft Security Officer** (`raftSecurityOfficer`)
 
@@ -2440,8 +2244,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
-- `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
 
 **Red Room Recruit** (`redRoomRecruit`)
 
@@ -2459,27 +2261,22 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
 
-
 **Rewrite History** (`rewriteHistory`)
 
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Robot Domination** (`robotDomination`)
 
 - `Selector.color` — Objects of a color / colorless
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
+- `CounterKind.named` — Named counters other than +1/+1 (plan)
+- `Trigger.nthCounter` — When the Nth counter of a kind is put on the selected object
 
 **Ronin, Shadow Stalker** (`roninShadowStalker`)
 
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `ContinuousEffect.restrictManaSpend` — Mana from an action may be spent only on matching events (current leftover is Elf-only)
-
-**Roxxon Brutes** (`roxxonBrutes`)
-
-- `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
-
-
 
 **S.H.I.E.L.D. Flying Car** (`sHIELDFlyingCar`)
 
@@ -2505,7 +2302,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `CardAction.copy` — Copy a permanent, spell, or ability
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **Secret Invasion** (`secretInvasion`)
 
@@ -2521,7 +2317,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Snake` — CardPart.subtype uses CardSubtype; Snake has no constructor
 
 **Shang-Chi, Master of Kung Fu** (`shangChiMasterOfKungFu`)
 
@@ -2532,37 +2327,26 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
 
 **Shuri, Wakandan Inventor** (`shuriWakandanInventor`)
 
 - `CardAction.copy` — Copy a permanent, spell, or ability
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-- `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
-
-**Speed, Young Avenger** (`speedYoungAvenger`)
-
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
 **Speedball, New Warrior** (`speedballNewWarrior`)
 
 - `Trigger.becomeTarget` — When the selected object becomes the target of a spell or ability
 - `CardAction.changeTargets` — Choose new targets for another spell or ability
 
-
 **Spider-Man, To the Rescue** (`spiderManToTheRescue`)
 
 - `Trigger.whenYouDo` — Nested delayed trigger after an optional action ('when you do')
-
 
 **Spider-Woman, Secret Agent** (`spiderWomanSecretAgent`)
 
 - `ContinuousEffect.skipsUntap` — Selected permanents don't untap during the untap step
 - `ContinuousEffect.forbidUntapWhileYouControl` — Can't become untapped for as long as you control this
-
-
-
 
 **Stature, Size Shifter** (`statureSizeShifter`)
 
@@ -2571,10 +2355,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-
-**Storm, Windrider** (`stormWindrider`)
-
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
 
 **Super Intelligence** (`superIntelligence`)
 
@@ -2602,13 +2382,11 @@ Converted cards from the previous untagged set are omitted here.
 **Super-Skrull** (`superSkrull`)
 
 - `Selector.color` — Objects of a color / colorless
-- `TraditionalCardDefinition.CardSubtype.Skrull` — CardPart.subtype uses CardSubtype; Skrull has no constructor
 
 **Super-Soldier Serum** (`superSoldierSerum`)
 
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
 - `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
-
 
 **Swordsman, Sharp Scoundrel** (`swordsmanSharpScoundrel`)
 
@@ -2620,7 +2398,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.copy` — Copy a permanent, spell, or ability
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-- `TraditionalCardDefinition.CardSubtype.Mercenary` — CardPart.subtype uses CardSubtype; Mercenary has no constructor
 
 **Team Tactics** (`teamTactics`)
 
@@ -2636,13 +2413,11 @@ Converted cards from the previous untagged set are omitted here.
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Eternal` — CardPart.subtype uses CardSubtype; Eternal has no constructor
 
 **The Astonishing Ant-Man** (`theAstonishingAntMan`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.removeCounter` — Remove counters from the selected object
-- `TraditionalCardDefinition.CardSubtype.Scientist` — CardPart.subtype uses CardSubtype; Scientist has no constructor
 
 **The Coming of Galactus** (`theComingOfGalactus`)
 
@@ -2650,15 +2425,12 @@ Converted cards from the previous untagged set are omitted here.
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
 
 **The Incredible Hulk** (`theIncredibleHulk`)
 
 - `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `CardAction.extraCombat` — An additional combat phase; typically with untap attackers
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
-- `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
 
 **The Invincible Iron Man** (`theInvincibleIronMan`)
 
@@ -2669,21 +2441,14 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
 - `Ability.keywordExtort` — Extort
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-
-**The Masters of Evil** (`theMastersOfEvil`)
-
-- `TraditionalCardDefinition.CardSubtype.Plan` — CardPart.subtype uses CardSubtype; Plan has no constructor
-
 
 **The Mind Stone** (`theMindStone`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
-- `TraditionalCardDefinition.CardSubtype.Infinity` — CardPart.subtype uses CardSubtype; Infinity has no constructor
-- `TraditionalCardDefinition.CardSubtype.Stone` — CardPart.subtype uses CardSubtype; Stone has no constructor
 
 **The Ruinous Wrecking Crew** (`theRuinousWreckingCrew`)
 
@@ -2695,8 +2460,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-- `TraditionalCardDefinition.CardSubtype.Warlock` — CardPart.subtype uses CardSubtype; Warlock has no constructor
 
 **The Sensational She-Hulk** (`theSensationalSheHulk`)
 
@@ -2704,7 +2467,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `ContinuousEffect.forbidCast` — Players matching a selector can't cast spells matching a selector
-- `TraditionalCardDefinition.CardSubtype.Gamma` — CardPart.subtype uses CardSubtype; Gamma has no constructor
 
 **The Sentry, Golden Guardian** (`theSentryGoldenGuardian`)
 
@@ -2716,7 +2478,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Snake` — CardPart.subtype uses CardSubtype; Snake has no constructor
 
 **The Super Hero Civil War** (`theSuperHeroCivilWar`)
 
@@ -2725,29 +2486,23 @@ Converted cards from the previous untagged set are omitted here.
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
 - `Selector.manaValue` — Mana-value comparisons
 - `CardAction.gainControl` — Gain control of selected objects
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
 
 **The Ten Rings** (`theTenRings`)
 
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
 
-
 **The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `TraditionalCardDefinition.CardSubtype.Squirrel` — CardPart.subtype uses CardSubtype; Squirrel has no constructor
 
 **The Vision** (`theVision`)
 
-- `Condition.modeNotChosenThisTurn` — Choose a mode that hasn't been chosen this turn
-- `CardAction.chooseModes` — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
-
+- `CardAction.chooseModeRestricted` now exists (Galadriel). Vision still needs a leftover from that constructor plus “you cast a noncreature spell” onto `Effect.castingVisionModes`.
 
 **The Wondrous Wasp** (`theWondrousWasp`)
 
 - `ContinuousEffect.loseAbilities` — Selected object loses all abilities
-
 
 **Thor, God of Thunder** (`thorGodOfThunder`)
 
@@ -2763,7 +2518,6 @@ Converted cards from the previous untagged set are omitted here.
 **Tigra, Feline Fury** (`tigraFelineFury`)
 
 - `Trigger.gainLife` — Whenever the selected player gains life
-- `TraditionalCardDefinition.CardSubtype.Cat` — CardPart.subtype uses CardSubtype; Cat has no constructor
 
 **Titania, Rugged Rumbler** (`titaniaRuggedRumbler`)
 
@@ -2781,7 +2535,6 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.lookAt` — Look at / reveal the top N cards (reveal exists for selected objects, not a library slice)
 - `CardAction.randomize` — Put on bottom in random order / pick a random card among
 - `CardAction.transform` — Transform this permanent
-- `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
 
 **Too Evil to Stay Dead** (`tooEvilToStayDead`)
 
@@ -2812,21 +2565,16 @@ Converted cards from the previous untagged set are omitted here.
 
 **Ultron, Artificial Malevolence** (`ultronArtificialMalevolence`)
 
-- `CardAction.payThen` — You may pay a cost. If you do, perform actions (resolution-time optional payment, not an activated cost)
+- `CardAction.optionalPayFor` leftover besides Speed — leftover is you / {1} / haste-except-haste
 - `CardAction.copy` — Copy a permanent, spell, or ability
 - `ContinuousEffect.setPowerToughness` — Set base P/T to literal values (only from another object or a count exists)
 - `ContinuousEffect.setTypes` — Set types/subtypes rather than only gain them
-
-**Undercover Skrull** (`undercoverSkrull`)
-
-- `TraditionalCardDefinition.CardSubtype.Skrull` — CardPart.subtype uses CardSubtype; Skrull has no constructor
 
 **Unliving Legionnaire** (`unlivingLegionnaire`)
 
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
-- `TraditionalCardDefinition.CardSubtype.Vampire` — CardPart.subtype uses CardSubtype; Vampire has no constructor
 
 **Villainous Hideout** (`villainousHideout`)
 
@@ -2838,7 +2586,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
-
 
 **Viv Vision, Teen Synthezoid** (`vivVisionTeenSynthezoid`)
 
@@ -2852,7 +2599,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 
-
 **War Machine, Legacy of Iron** (`warMachineLegacyOfIron`)
 
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
@@ -2863,7 +2609,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Cost.tapPowerTotal` — Tap creatures you control with total power N or more (Teamwork / Crew)
 - `Ability.keywordTeamwork` — Teamwork N as an optional additional cost
 - `Condition.castWithTeamwork` — This spell was cast using teamwork
-- `TraditionalCardDefinition.CardSubtype.Arcane` — CardPart.subtype uses CardSubtype; Arcane has no constructor
 
 **Web Up** (`webUp`)
 
@@ -2876,7 +2621,6 @@ Converted cards from the previous untagged set are omitted here.
 - `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `TraditionalCardDefinition.CardSubtype.Artificer` — CardPart.subtype uses CardSubtype; Artificer has no constructor
 
 **White Tiger, Ava Ayala** (`whiteTigerAvaAyala`)
 
@@ -2884,12 +2628,9 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 
-
 **Wiccan, Rising Magician** (`wiccanRisingMagician`)
 
 - `CardAction.exileThenReturn` — Exile then return at a later trigger (end step / leaves)
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-- `TraditionalCardDefinition.CardSubtype.Warlock` — CardPart.subtype uses CardSubtype; Warlock has no constructor
 
 **Widow's Bite** (`widowSBite`)
 
@@ -2906,12 +2647,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
-- `TraditionalCardDefinition.CardSubtype.Assassin` — CardPart.subtype uses CardSubtype; Assassin has no constructor
-
-**Wolverine, Fierce Fighter** (`wolverineFierceFighter`)
-
-- `TraditionalCardDefinition.CardSubtype.Mutant` — CardPart.subtype uses CardSubtype; Mutant has no constructor
-- `TraditionalCardDefinition.CardSubtype.Berserker` — CardPart.subtype uses CardSubtype; Berserker has no constructor
 
 **Wonder Man, Hollywood Hero** (`wonderManHollywoodHero`)
 
@@ -2919,21 +2654,18 @@ Converted cards from the previous untagged set are omitted here.
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
 - `Condition.sourceEnteredThisTurn` — The source entered this turn
 - `ContinuousEffect.extraTrigger` — Matching triggered abilities trigger an additional time
-- `TraditionalCardDefinition.CardSubtype.Performer` — CardPart.subtype uses CardSubtype; Performer has no constructor
 
 **World War Hulk** (`worldWarHulk`)
 
 - `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
 - `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
 - `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `TraditionalCardDefinition.CardSubtype.Saga` — CardPart.subtype uses CardSubtype; Saga has no constructor
 
 **Worlds Within Worlds** (`worldsWithinWorlds`)
 
 - `Selector.inHand` — An object in a hand
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 - `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
-
 
 **Dark Fortress** (`darkFortress`)
 

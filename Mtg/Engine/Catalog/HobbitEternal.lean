@@ -31,10 +31,39 @@ def errandRiderOfGondor : CardDef :=
     (triggeredAbilities := #[.onEnterDrawThenBottomIfNoLegendary])
 
 def landrovalHorizonWitness : CardDef :=
-  legendaryCreature "Landroval, Horizon Witness" (ManaCost.ofGenericAndColor 4 .white) #["Bird", "Noble"] 3 4
+  (TraditionalCardDefinition.card [
+    .name "Landroval, Horizon Witness",
+    .manaCost [.generic 4, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .bird,
+    .subtype .noble,
+    .power 3,
+    .toughness 4,
+    .ability (.keyword .flying),
+    .ability
+      (.triggered
+        (.attackSimultaneously
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          .player
+          [.countAtLeast 2])
+        (.continuous
+          [
+            .gainAbility
+              (.target
+                1
+                (.intersection [
+                  .permanent,
+                  .cardType .creature,
+                  .attacking .all,
+                  .not (.keyword .flying)]))
+              (.keyword .flying)]
+          .endOfTurn))
+  ]).toCardDef
     (oracleText := "Flying\nWhenever two or more creatures you control attack a player, target attacking creature without flying gains flying until end of turn.")
-    (keywords := Keyword.flying)
-    (triggeredAbilities := #[.onAttackWithTwoOrMoreGrantFlying])
 
 def roguesPassage : CardDef :=
   (TraditionalCardDefinition.card [
@@ -904,11 +933,31 @@ def treasureVault : CardDef :=
         (tap := true) (sacrificeSource := true)])
 
 def aragornAndArwenWed : CardDef :=
-  legendaryCreature "Aragorn and Arwen, Wed" (ManaCost.ofGenericAndColors 4 [.green, .white])
-    #["Human", "Elf", "Noble"] 3 6
+  let others : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled (.controller .this)]
+  (TraditionalCardDefinition.card [
+    .name "Aragorn and Arwen, Wed",
+    .manaCost [.generic 4, .mono .green, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .human,
+    .subtype .elf,
+    .subtype .noble,
+    .power 3,
+    .toughness 6,
+    .ability (.keyword .vigilance),
+    .ability
+      (.triggered
+        (.or (.enter .this) (.attack .this .all))
+        (.sequence [
+          .putCounter others .plusOnePlusOne 1,
+          .forEachVariable 1 others [.gainLife (.controller .this) 1]]))
+  ]).toCardDef
     (oracleText := "Vigilance\nWhenever Aragorn and Arwen enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control.")
-    (keywords := Keyword.vigilance)
-    (triggeredAbilities := #[.onEnterOrAttackPlusOneEachOtherGainLife])
 
 def minasTirith : CardDef :=
   legendaryLand "Minas Tirith"
@@ -992,11 +1041,44 @@ def bolgEreborsReckoning : CardDef :=
     (triggeredAbilities := #[.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)])
 
 def thorinKingOfDurinsFolk : CardDef :=
-  legendaryCreature "Thorin, King of Durin's Folk" (ManaCost.ofGenericAndColors 3 [.red, .white])
-    #["Dwarf", "Noble"] 4 4
+  (TraditionalCardDefinition.card [
+    .name "Thorin, King of Durin's Folk",
+    .manaCost [.generic 3, .mono .red, .mono .white],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .dwarf,
+    .subtype .noble,
+    .power 4,
+    .toughness 4,
+    .ability
+      (.triggered
+        (.or
+          (.enter .this)
+          (.enter
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature,
+              .subtype .dwarf,
+              .controlled (.controller .this)])))
+        (.createTokens (.controller .this) 1 PredefinedToken.treasureToken)),
+    .ability
+      (.static
+        (.addPowerToughnessPer
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .subtype .dwarf,
+            .controlled (.controller .this)])
+          (.intersection [
+            .permanent,
+            .token,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          1 0))
+  ]).toCardDef
     (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
-    (staticAbilities := #[.otherSubtypeGetPowerPerArtifactToken "Dwarf"])
-    (triggeredAbilities := #[.onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1])
 
 def bilboUnexpectedAdventurer : CardDef :=
   legendaryCreature "Bilbo, Unexpected Adventurer" (ManaCost.ofGenericAndColor 3 .white)
@@ -1120,8 +1202,41 @@ def galadrielSDismissal : CardDef :=
     (kicker := some (ManaCost.ofGenericAndColor 2 .white))
 
 def galadrielLightOfValinor : CardDef :=
-  legendaryCreature "Galadriel, Light of Valinor" (ManaCost.ofGenericAndColors 2 [.green, .white, .blue]) #["Elf", "Noble"] 3 3 (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
-    (triggeredAbilities := #[.onAnotherCreatureYouControlEntersAlliance])
+  let you : Selector := .controller .this
+  let unchosen (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen .player id) .turnStart
+  (TraditionalCardDefinition.card [
+    .name "Galadriel, Light of Valinor",
+    .manaCost [.generic 2, .mono .green, .mono .white, .mono .blue],
+    .type .creature,
+    .supertype .legendary,
+    .subtype .elf,
+    .subtype .noble,
+    .power 3,
+    .toughness 3,
+    .ability
+      (.triggered
+        (.enter
+          (.intersection [
+            .not .this,
+            .permanent,
+            .cardType .creature,
+            .controlled you]))
+        (.chooseModeRestricted you [
+          (1, unchosen 1,
+            [.addMana you [.mono .green, .mono .green, .mono .green]]),
+          (2, unchosen 2,
+            [.putCounter
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .controlled you])
+              .plusOnePlusOne
+              1]),
+          (3, unchosen 3,
+            [.sequence [.scry you 2, .draw you 1]])]))
+  ]).toCardDef
+    (oracleText := "Alliance — Whenever another creature you control enters, choose one that hasn't been chosen this turn —\n• Add {G}{G}{G}.\n• Put a +1/+1 counter on each creature you control.\n• Scry 2, then draw a card.")
 
 def gandalfPartyGuest : CardDef :=
   legendaryCreature "Gandalf, Party Guest" (ManaCost.ofGenericAndColors 1 [.blue, .red, .white]) #["Avatar", "Wizard"] 3 4 (oracleText := "At the beginning of combat on your turn, you may cast an instant or sorcery spell with mana value X or less from your hand without paying its mana cost, where X is twice the number of legendary Wizards you control.")
