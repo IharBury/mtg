@@ -19,12 +19,12 @@ without a new constructor.
 
 | Set | Remaining non-TCD cards |
 | --- | ---: |
-| The Hobbit (HOB) | 97 |
+| The Hobbit (HOB) | 96 |
 | The Hobbit Eternal (HOC) | 74 |
 | Marvel Super Heroes (MSH) | 196 |
-| **Total remaining** | **367** |
+| **Total remaining** | **366** |
 
-All **367** remaining cards have at least one identified constructor gap.
+All **366** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -63,7 +63,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `damage`, `putToGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
+  `damage`, `putToGraveyard`, `leaveGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
@@ -151,6 +151,14 @@ flying restriction is
 `Selector.keywordAbility` is a keyword ability of that keyword (Dwarven
 Mauler: Equip abilities you activate that `hasTarget` this). Using
 `keyword`, omitting the target, or omitting you-activate stays uncompiled.
+`Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
+(Along the Crooked Way: creature cards in your graveyard, then amass
+Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of
+target creature card from your graveyard leftover to
+`onEnterReturnCreatureFromGyToHand`. Goblins and Orcs you control gaining
+menace leftover to `Effect.subtypesGainMenace`; creatures you control
+without a subtype still leftover to `teamGain`. Flying, opponent-controlled,
+or up-to-one graveyard return stay uncompiled as those leftovers.
 `ContinuousEffect.gainAllSubtypes` is who gains all subtypes of that type
 (Undercover Skrull: this, creature). Pump-only leftovers compile to
 `getsIfGyCreatureCards`, not all creature types. `gainSubtype` of one subtype
@@ -259,8 +267,6 @@ complete.
   - The Great Goblin
 - **`whenYouDo`** (1 cards) — Nested delayed trigger after an optional action ('when you do')
   - Spider-Man, To the Rescue
-- **`leaveGraveyard`** (1 cards) — Whenever a matching card leaves a graveyard
-  - Along the Crooked Way
 - **`opponentDrawsExceptFirst`** (1 cards) — An opponent draws except the first card of their draw step
   - Orcish Bowmasters
 
@@ -618,12 +624,7 @@ face (`alternative` is the Adventure face). Those are listed under
 Every remaining supported catalog card. Constructors are `Type.ctor`.
 Converted cards from the previous untagged set are omitted here.
 
-### The Hobbit (HOB) (98 cards)
-
-**Along the Crooked Way** (`alongTheCrookedWay`)
-
-- `Trigger.leaveGraveyard` — Whenever a matching card leaves a graveyard
-- `CardAction.grantKeywordsToSubtypes` — Goblins and Orcs you control gain menace (compiler leftover for mass keyword grants)
+### The Hobbit (HOB) (96 cards)
 
 **An Unexpected Party** (`anUnexpectedParty`)
 
