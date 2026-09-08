@@ -6176,7 +6176,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.block .all .this)
-      (.dealDamage .this (.blocking .this) (.nat 1)).toTriggeredAbility? with
+      (.dealDamage .this (.blocking .this) (.nat 1))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onBecomesBlockedDeal1ToBlockers
   | none => false
 
@@ -6187,14 +6187,14 @@ end TraditionalCardDefinition
         (.intersection [
           .union [.cardType .instant, .cardType .sorcery],
           .controlled (.controller .this)]))
-      (.dealDamage .this (.opponent (.controller .this)) (.nat 2)).toTriggeredAbility? with
+      (.dealDamage .this (.opponent (.controller .this)) (.nat 2))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2
   | none => false
 
 #guard
   (Ability.triggered
     (.castSpell (.union [.cardType .instant, .cardType .sorcery]))
-    (.dealDamage .this (.opponent (.controller .this)) (.nat 2)).toTriggeredAbility?.isNone
+    (.dealDamage .this (.opponent (.controller .this)) (.nat 2))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -7409,7 +7409,7 @@ end TraditionalCardDefinition
           .not .this,
           .permanent,
           .cardType .creature]))
-      (.nat 3)).toTriggeredAbility?.isNone
+      (.nat 3))).toTriggeredAbility?.isNone
 
 #guard
   let others : Selector :=
@@ -8291,7 +8291,7 @@ end TraditionalCardDefinition
       (.optionalPayFor
         (.controller .this)
         [.or [sacArt, .discard (.not (.cardType .land))]]
-        [.dealDamage .this (.target 2 .all) (.nat 2])).toTriggeredAbility? with
+        [.dealDamage .this (.target 2 .all) (.nat 2)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnter Effect.enterMaySacOrDiscardNonlandThenDamage
   | none => false
 
@@ -8308,7 +8308,7 @@ end TraditionalCardDefinition
     (.optionalPayFor
       (.controller .this)
       [.or [sacArt, .discard .all]]
-      [.dealDamage .this (.target 2 .all) (.nat 2])).toTriggeredAbility?.isNone
+      [.dealDamage .this (.target 2 .all) (.nat 2)])).toTriggeredAbility?.isNone
 
 #guard
   let sacArt : Cost :=
@@ -8321,7 +8321,7 @@ end TraditionalCardDefinition
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard (.not (.cardType .land))]]
-      (.dealDamage .this (.target 1 .all) (.nat 2)).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.nat 2))).toActivatedAbility? with
   | some ab => ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 
@@ -8336,7 +8336,7 @@ end TraditionalCardDefinition
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol, .or [sacArt, .discard .all]]
-      (.dealDamage .this (.target 1 .all) (.nat 2)).toActivatedAbility? with
+      (.dealDamage .this (.target 1 .all) (.nat 2))).toActivatedAbility? with
   | some ab => !ab.cost.sacrificeArtifactOrDiscardNonland
   | none => false
 

@@ -2599,7 +2599,7 @@ def bullseyeDeathDealer : CardDef :=
                 .controlled (.controller .this)])
               1,
             .discard (.not (.cardType .land))]]
-          [.dealDamage .this (.target 2 .all) (.nat 2])),
+          [.dealDamage .this (.target 2 .all) (.nat 2)])),
     .ability
       (.activated
         [
