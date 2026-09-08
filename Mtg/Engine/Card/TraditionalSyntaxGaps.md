@@ -21,10 +21,10 @@ without a new constructor.
 | --- | ---: |
 | The Hobbit (HOB) | 96 |
 | The Hobbit Eternal (HOC) | 74 |
-| Marvel Super Heroes (MSH) | 196 |
-| **Total remaining** | **366** |
+| Marvel Super Heroes (MSH) | 195 |
+| **Total remaining** | **365** |
 
-All **366** remaining cards have at least one identified constructor gap.
+All **365** remaining cards have at least one identified constructor gap.
 Of the 44 that previously had no tagged gap, **30 are now written as
 `TraditionalCardDefinition`** (compiler leftovers in `toCardDef` map them
 onto existing engine constructors; `#guard supportedCardsMatchOracle`
@@ -75,14 +75,14 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `happened`, `timeToCastSorcery`, `turn`, `and`.
 - **CardState** — `tapped`, `attacking` (enters attacking), `controlled` (who controls as the permanent enters).
 - **Ability** — `keyword`, `keywordWithCost`, `keywordWithSubtypeAndCost`,
-  `keywordWithTarget`, `activated`, `activatedIf`, `abilityId`, `triggered`,
+  `keywordWithTarget`, `keywordWithEffect`, `activated`, `activatedIf`, `abilityId`, `triggered`,
   `static`.
 - **ContinuousEffect** — `gainAbility`, `addPowerToughness`, `if`,
   `reduceCost`, `additionalCost`, `replace`, `forbid`,
   `canCastWithoutPayingManaCost`, `canPlay`, `setBasePowerToughnessFrom`,
   `gainType`, `gainSubtype`, `gainAllSubtypes`, `setPowerToughnessEqualToCount`,
   `addPowerToughnessPer`, `increaseLandPlayLimit`.
-- **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `divideDamage`,
+- **CardAction** — `continuous`, `tap`, `untap`, `dealDamage`, `dealComputedDamage`, `divideDamage`,
   `draw`, `scry`, `sequence`, `if`, `ifElse`, `optional`, `attach`, `chooseMode`,
   `chooseModeRestricted`,
   `counter`, `preventable`, `optionalPayFor`, `discard`, `putCounter`, `exile`,
@@ -95,6 +95,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
   `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
+- **ComputedValue** — `greatestManaCost`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -151,6 +152,18 @@ flying restriction is
 `Selector.keywordAbility` is a keyword ability of that keyword (Dwarven
 Mauler: Equip abilities you activate that `hasTarget` this). Using
 `keyword`, omitting the target, or omitting you-activate stays uncompiled.
+`Keyword.chapter` is a Saga chapter number. `Ability.keywordWithEffect` is
+that keyword printed with resolution actions. Armor Wars leftovers are
+`optional` draw-for-each-artifact then each opponent draws
+(`mayDrawPerArtifactOppsDraw`); `reduceCost` of artifact spells you cast
+until end of turn (`artifactSpellsCostLessThisTurn`); and
+`CardAction.dealComputedDamage` of this to a target opponent for
+`ComputedValue.greatestManaCost` of artifacts you control
+(`chapterDealXDamageToTargetOpponentGreatestArtifactMv`). Non-optional draw,
+creature-not-artifact, missing opponent draw, each-player draw, lasting
+(not this-turn) reduction, creature spells, artifact permanents, target
+player, greatest mana cost among creatures, or literal `dealDamage` stay
+uncompiled. Uncompiled chapter actions produce no `SagaDef`.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
 Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of
@@ -176,8 +189,8 @@ complete.
 
 ### `Range`
 
-- **`computed`** (53 cards) — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-  - An Unexpected Party; Armor Wars; Azog, Moria's Ruin; Balin, Loremaster; Bard, King of Dale; Bolg of the North; Bruce Banner; Call Forth the Tempest; Captain America, Wings of Freedom; Cavern-Hoard Dragon; Ori, Plate Stacker; … (42 more)
+- **`computed`** (52 cards) — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+  - An Unexpected Party; Azog, Moria's Ruin; Balin, Loremaster; Bard, King of Dale; Bolg of the North; Bruce Banner; Call Forth the Tempest; Captain America, Wings of Freedom; Cavern-Hoard Dragon; Ori, Plate Stacker; … (42 more)
 - **`anyNumber`** (3 cards) — Any number (range 0 ∞); Range.range needs a finite Nat hi
   - Last March of the Ents; Worlds Within Worlds; Super-Soldier Serum
 
@@ -196,10 +209,10 @@ complete.
   - Bolg of the North; Call Forth the Tempest; Cosmic Cube; Desert Were-Worm; Dragon's Desire; Dáin of the Ancient Halls; Esgaroth Garrison; Glamdring; HULK SMASH!; Inside Information; Ori, Plate Stacker; … (16 more)
 - **`inHand`** (26 cards) — An object in a hand
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Cloak and Dagger, Entwined; Elven Passage; Errand-Rider of Gondor; Gandalf, Party Guest; Glamdring; Great Gilded Boat; H.E.R.B.I.E. Scout Unit; … (16 more)
-- **`manaValue`** (25 cards) — Mana-value comparisons
-  - Armor Wars; Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Dancing from Dark to Dawn; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; … (15 more)
-- **`eachPlayer`** (23 cards) — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-  - Armor Wars; Avengers: Under Siege; Balin, Loremaster; Bilbo's Burglaring; Celebrate the Mountain-king; Crossbones, Malicious Mercenary; Doom Reigns Supreme; Dáin of the Ancient Halls; Gandalf, Goblins' Bane; Gollum, Riddle Master; … (13 more)
+- **`manaValue`** (24 cards) — Mana-value comparisons
+  - Bilbo, Unexpected Adventurer; Call Forth the Tempest; Cosmic Cube; Cruel Alliance; Dancing from Dark to Dawn; Evil's Thrall; Gandalf, Party Guest; Glamdring; Gollum, Riddle Master; … (15 more)
+- **`eachPlayer`** (22 cards) — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
+  - Avengers: Under Siege; Balin, Loremaster; Bilbo's Burglaring; Celebrate the Mountain-king; Crossbones, Malicious Mercenary; Doom Reigns Supreme; Dáin of the Ancient Halls; Gandalf, Goblins' Bane; Gollum, Riddle Master; … (13 more)
 - **`color`** (14 cards) — Objects of a color / colorless
   - Aragorn, the Uniter; Baron Helmut Zemo; Castle Doom; Doctor Doom; Dáin Ironfoot; Goblin Cratermaker; Invisible Woman, Sue Storm; Iron Hills Blacksmith; Necklace of Girion; Robot Domination; … (4 more)
 - **`inExile`** (15 cards) — An object in exile (wasCreatedByAction only covers this action's exile)
@@ -239,8 +252,8 @@ complete.
   - Absorbing Man; Alien Invasion; Avengers Assemble!; Beorn the Fierce; Bolg, Erebor's Reckoning; Chief Warg's Company; Dawn of a New Age; Doctor Doom; Gandalf, Party Guest; Glóin the Mighty; … (16 more)
 - **`onceEachTurn`** (15 cards) — Limit a trigger to once each turn
   - Ant-Man, Colony Commander; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Crossbones, Malicious Mercenary; Elrond, Moon-Reader; Knight of Wundagore; Kíli the Resourceful; Loki, God of Mischief; Moon Girl and Devil Dinosaur; Nimrodel Watcher; … (5 more)
-- **`sagaChapter`** (14 cards) — When a lore counter is put / a (final) chapter ability resolves
-  - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
+- **`sagaChapter`** (13 cards) — When a lore counter is put / a (final) chapter ability resolves
+  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
 - **`leaveBattlefield`** (9 cards) — When the selected object leaves the battlefield
   - Banishing Light; Celebrate the Mountain-king; Cloak and Dagger, Entwined; Colossal Whale; Fiend Hunter; Roads Go Ever, Ever On; Secret Invasion; Super Villain Lockup; Web Up
 - **`attackAlone`** (8 cards) — When the selected object attacks alone
@@ -432,8 +445,8 @@ complete.
   - Avengers Tower; Boughside Wanderers; Colleen Wing, Street Samurai; Cosmic Cube; Daredevil, Man Without Fear; Dáin's Company; Elven Chorus; Gandalf, Goblins' Bane; … (9 more)
 - **`connive`** (11 cards) — Connive
   - A.I.M. Scientists; Baron Helmut Zemo; Baron Strucker, HYDRA Overlord; Kang, Temporal Tyrant; Leader, Super-Genius; M.O.D.O.K.; Madame Masque; Red Room Recruit; Swordsman, Sharp Scoundrel; Trickster's Stratagem; … (1 more)
-- **`addManaPer`** (10 cards) — Add mana for each matching object
-  - Armor Wars; Avengers: Under Siege; Bag End Banquet; Desert Were-Worm; Dragon's Desire; Elvish Archdruid; Roads Go Ever, Ever On; The Eagles Are Coming!; The Lonely Mountain; The Notary Hobbits
+- **`addManaPer`** (9 cards) — Add mana for each matching object
+  - Avengers: Under Siege; Bag End Banquet; Desert Were-Worm; Dragon's Desire; Elvish Archdruid; Roads Go Ever, Ever On; The Eagles Are Coming!; The Lonely Mountain; The Notary Hobbits
 - **`chooseModes`** (11 cards) — Modal selection beyond exclusive chooseMode (one-or-both, choose-two-if, choose-both-if-teamwork)
   - Atlantis Attacks; Avengers Disassembled; Decoy Ploy; Epic Fight; Flame of Anor; Go Nuts!; HULK SMASH!; Murdock's Crusade; Pinecone Strike; Widow's Bite; The Vision
 - **`randomize`** (10 cards) — Put on bottom in random order / pick a random card among
@@ -481,8 +494,8 @@ complete.
 
 ### `TraditionalCardDefinition`
 
-- **`sagaChapters`** (14 cards) — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-  - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
+- **`sagaChapters`** (13 cards) — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
+  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
 - **`entersTappedUnless`** (7 cards) — Enters tapped unless a condition (replace-enter is only compiled for always-tapped)
   - Chief Warg's Company; Minas Tirith; Olog-hai Crusher; Rivendell; The Black Gate; The Lonely Mountain; The Shire
 - **`otherFace`** (6 cards) — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
@@ -497,8 +510,8 @@ complete.
 `CounterKind` is used by `CardAction.putCounter` and
 `Trigger.putCountersSimultaneously`. It currently has only `plusOnePlusOne`.
 
-- **`lore`** (14 cards) — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-  - Armor Wars; Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
+- **`lore`** (13 cards) — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
+  - Avengers: Under Siege; Burn, Burn, Tree and Fern; Down in the Valley; Down, Down to Goblin-town; Old Fat Spider Can't See Me; Origin of the Avengers; Roads Go Ever, Ever On; Roll-Roll-Roll-Roll; The Coming of Galactus; … (4 more)
 - **`named`** (17 cards) — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, plan, …)
   - Beorn the Fierce; Claim the Kingdom; Construct a Cosmic Cube; Death to Our Enemies; Doom Reigns Supreme; Dwalin, Weaponmaster; Grim Reaper, Lethal Legionnaire; Jessica Jones, Private Eye; Last Light of Durin's Day; Minas Morgul, Dark Fortress; … (7 more)
 - **`Hope`** (1 cards) — Named counter kind beyond +1/+1
@@ -1625,16 +1638,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `ContinuousEffect.forbidAttack` — Can't attack / attacks-if-able (forbid exists for Trigger; need an attack event plus a restriction combinator)
 - `Condition.controlCount` — Controller controls N or more matching objects
-
-**Armor Wars** (`armorWars`)
-
-- `TraditionalCardDefinition.sagaChapters` — Printed Saga chapters (roman numeral + actions); CardPart has no chapter
-- `Trigger.sagaChapter` — When a lore counter is put / a (final) chapter ability resolves
-- `CounterKind.lore` — Lore counters (putCounter only has plusOnePlusOne; CounterKind is used by CardAction)
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-- `Selector.manaValue` — Mana-value comparisons
-- `CardAction.addManaPer` — Add mana for each matching object
-- `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **Atlantis Attacks** (`atlantisAttacks`)
 

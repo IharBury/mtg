@@ -2446,10 +2446,56 @@ def aresGodOfWar : CardDef :=
     (staticAbilities := #[StaticAbility.attacksEachCombatIfAble])
 
 def armorWars : CardDef :=
-  enchantment "Armor Wars" (ManaCost.ofGenericAndColors 2 [.blue, .red])
-    "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — You may draw a card for each artifact you control. If you do, each opponent draws a card.\nII — Artifact spells you cast this turn cost {1} less to cast.\nIII — This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control."
-    (subtypes := #["Saga"])
-    (saga := some { sacrificeAfter := "III", chapters := #[chapter "I" "You may draw a card for each artifact you control. If you do, each opponent draws a card." (Effect.mayDrawPerArtifactOppsDraw), chapter "II" "Artifact spells you cast this turn cost {1} less to cast." (Effect.artifactSpellsCostLessThisTurn 1), chapter "III" "This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control." (Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv)] })
+  (TraditionalCardDefinition.card [
+    .name "Armor Wars",
+    .manaCost [.generic 2, .mono .blue, .mono .red],
+    .type .enchantment,
+    .subtype .saga,
+    .ability
+      (.keywordWithEffect
+        (.chapter 1)
+        [
+          .optional
+            (.sequence [
+              .forEachVariable 1
+                (.intersection [
+                  .permanent,
+                  .cardType .artifact,
+                  .controlled (.controller .this)])
+                [.draw (.controller .this) 1],
+              .draw (.opponent (.controller .this)) 1
+            ])
+        ]),
+    .ability
+      (.keywordWithEffect
+        (.chapter 2)
+        [
+          .continuous
+            [
+              .reduceCost
+                (.intersection [
+                  .spell,
+                  .cardType .artifact,
+                  .controlled (.controller .this)])
+                [.mana [.generic 1]]
+            ]
+            .endOfTurn
+        ]),
+    .ability
+      (.keywordWithEffect
+        (.chapter 3)
+        [
+          .dealComputedDamage
+            .this
+            (.target 1 (.opponent (.controller .this)))
+            (.greatestManaCost
+              (.intersection [
+                .permanent,
+                .cardType .artifact,
+                .controlled (.controller .this)]))
+        ])
+  ]).toCardDef
+    (oracleText := "(As this Saga enters and after your draw step, add a lore counter. Sacrifice after III.)\nI — You may draw a card for each artifact you control. If you do, each opponent draws a card.\nII — Artifact spells you cast this turn cost {1} less to cast.\nIII — This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control.")
 
 def theAstonishingAntMan : CardDef :=
   legendaryCreature "The Astonishing Ant-Man" (ManaCost.ofColors [.green, .blue]) #["Human", "Scientist", "Hero"] 1 1

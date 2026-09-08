@@ -758,6 +758,14 @@ inductive CardState where
   | controlled : Selector → CardState
 deriving Repr, Inhabited, BEq
 
+/-- A number computed from game state, used where a printed ability
+refers to a characteristic rather than a literal. -/
+inductive ComputedValue where
+  /-- The greatest mana cost (mana value) among selected objects
+  (CR 202.3). -/
+  | greatestManaCost : Selector → ComputedValue
+deriving Repr, Inhabited, BEq
+
 -- Printed abilities, continuous effects, and actions are mutually inductive:
 -- an activated ability has an action, and a continuous effect may grant an
 -- ability.
@@ -774,6 +782,9 @@ inductive Ability where
   creature (CR 702.5). The `Nat` numbers the target so later clauses can
   refer to it. -/
   | keywordWithTarget : Keyword → Nat → Selector → Ability
+  /-- A keyword ability printed with a resolution, e.g. a Saga chapter
+  (CR 714.2). -/
+  | keywordWithEffect : Keyword → List CardAction → Ability
   | activated : List Cost → CardAction → Ability
   /-- An activated ability that may be used only when the condition holds. -/
   | activatedIf : Condition → List Cost → CardAction → Ability
@@ -831,6 +842,9 @@ inductive CardAction where
   | tap : Selector → CardAction
   | untap : Selector → CardAction
   | dealDamage : Selector → Selector → Nat → CardAction
+  /-- The selected source deals damage equal to the computed value to the
+  selected objects. -/
+  | dealComputedDamage : Selector → Selector → ComputedValue → CardAction
   /-- The selected player divides that much damage from the source among
   the selected objects (CR 601.2d). -/
   | divideDamage : Selector → Selector → Selector → Nat → CardAction
@@ -2093,6 +2107,11 @@ def leftoverSourceThis : Selector → Bool
   | .source .this => true
   | _ => false
 
+/-- Opponents of this object's controller. -/
+def leftoverOpponents : Selector → Bool
+  | .opponent who => leftoverYou who
+  | _ => false
+
 /-- A numbered target that is a creature you control. -/
 def leftoverCreatureYouControlTarget? : Selector → Bool
   | .target _ among =>
@@ -2667,6 +2686,55 @@ def leftoverLoseLifeCreateTreasure? : CardAction → Bool
     leftoverYou who && leftoverYou c && leftoverTokenKind? parts == some .treasure
   | _ => false
 
+/-- You may draw a card for each artifact you control. If you do, each
+opponent draws a card. -/
+def leftoverMayDrawPerArtifactOppsDraw? : CardAction → Bool
+  | .optional
+      (.sequence [
+        .forEachVariable _ among [.draw who 1],
+        .draw dest 1
+      ]) =>
+    leftoverYou who && among.shape.artifactYouControl && leftoverOpponents dest
+  | _ => false
+
+/-- Artifact spells you cast. -/
+def leftoverArtifactSpellsYouCast? : Selector → Bool
+  | s => s.shape.isSpell && s.shape.types.eqTypes [.artifact] && s.shape.sameController
+
+/-- Artifact spells you cast this turn cost that much less. -/
+def leftoverArtifactSpellsCostLessThisTurn? : CardAction → Option Nat
+  | .continuous [.reduceCost who costs] .endOfTurn =>
+    let n := ManaCost.manaValue (Cost.manaCost costs)
+    if n != 0 && leftoverArtifactSpellsYouCast? who then some n else none
+  | _ => none
+
+/-- This deals X damage to target opponent, where X is the greatest mana
+value among artifacts you control. -/
+def leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? :
+    CardAction → Bool
+  | .dealComputedDamage src dest (.greatestManaCost among) =>
+    leftoverThis src && leftoverTargetOpponent? dest && among.shape.artifactYouControl
+  | _ => false
+
+/-- Saga-chapter leftovers that compile to a named `Effect`. -/
+def leftoverChapterCompiled? (action : CardAction) : Option Effect :=
+  if leftoverMayDrawPerArtifactOppsDraw? action then
+    some Effect.mayDrawPerArtifactOppsDraw
+  else
+    match leftoverArtifactSpellsCostLessThisTurn? action with
+    | some n => some (Effect.artifactSpellsCostLessThisTurn n)
+    | none =>
+      if leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv? action then
+        some Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv
+      else none
+
+/-- Compile printed Saga-chapter actions. -/
+def leftoverChapterEffect? (actions : List CardAction) : Option Effect :=
+  leftoverChapterCompiled?
+    (match actions with
+      | [a] => a
+      | as => .sequence as)
+
 /-- Continuous leftovers that compile to a named `Effect`. -/
 def leftoverContinuousCompiled? : CardAction → Option Effect
   | .continuous effects _ =>
@@ -2681,6 +2749,7 @@ def leftoverContinuousCompiled? : CardAction → Option Effect
 /-- Sequence leftovers that compile to a named `Effect` without taking
 only the first action. -/
 def leftoverCompiled? (action : CardAction) : Option Effect :=
+  leftoverChapterCompiled? action |>.orElse fun _ =>
   if leftoverOwnerPutsLibraryThenConnive? action then
     some Effect.ownerPutsLibraryThenConnive
   else
@@ -3036,6 +3105,8 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .copyWithNewTargets _ _ =>
                     continuousEffect none [] asAbility
                   | .keepReplacedAction | .healAllDamage _ =>
+                    continuousEffect none [] asAbility
+                  | .dealComputedDamage _ _ _ =>
                     continuousEffect none [] asAbility
 
 /-- Modes of a “Choose one” action. -/
@@ -3708,6 +3779,7 @@ structure CardFace where
   tapAddOneOf : Array ManaType := #[]
   entersTapped : Bool := false
   colorIndicator : Option ColorSet := none
+  sagaChapters : Array SagaChapter := #[]
 deriving Inhabited
 
 namespace CardFace
@@ -3983,6 +4055,16 @@ def applyAbility (b : CardFace) : Ability → CardFace
     | some ab => { b with activatedAbilities := b.activatedAbilities.push ab }
     | none => b
   | .keywordWithTarget _ _ _ => b
+  | .keywordWithEffect k actions =>
+    match k with
+    | .chapter n =>
+      match CardAction.leftoverChapterEffect? actions with
+      | some e =>
+        { b with
+          sagaChapters :=
+            b.sagaChapters.push (SagaChapter.of (toRomanNumeral n) e.phrase e) }
+      | none => b
+    | _ => b
   | .activated costs action =>
     if CardAction.leftoverTapAddAnyColorEqualToPower? costs action then
       { b with tapAddAnyColorEqualToPower := true }
@@ -4117,6 +4199,13 @@ def toCardDef (d : TraditionalCardDefinition) (oracleText : String := "") : Card
       entersTapped := b.entersTapped
       colorIndicator := b.colorIndicator
       adventure := adventure
+      saga :=
+        if b.sagaChapters.isEmpty then none
+        else
+          let final :=
+            b.sagaChapters.foldl (fun acc ch =>
+              ch.chapterNumbers.foldl (fun acc n => max acc n) acc) 0
+          some { sacrificeAfter := toRomanNumeral final, chapters := b.sagaChapters }
       oracleText := if oracleText.isEmpty then generated else oracleText
     }
 
@@ -4736,11 +4825,14 @@ end TraditionalCardDefinition
 #guard Keyword.recruit.toKeywords == Keywords.none
 #guard (Keyword.amass .goblin 1).toKeywords == Keywords.none
 #guard (Keyword.connive 1).toKeywords == Keywords.none
+#guard (Keyword.chapter 1).toKeywords == Keywords.none
 #guard toString Keyword.recruit == "recruit"
 #guard toString (Keyword.amass .goblin 1) == "amass Goblins 1"
 #guard toString (Keyword.amass .orc 2) == "amass Orcs 2"
 #guard toString (Keyword.connive 1) == "connive 1"
 #guard toString (Keyword.connive 2) == "connive 2"
+#guard toString (Keyword.chapter 1) == "chapter I"
+#guard toString (Keyword.chapter 3) == "chapter III"
 #guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
 #guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
 #guard (Keyword.supertypeAndTypeCycling .basic .land).toKeywords == Keywords.none
@@ -8652,5 +8744,276 @@ end TraditionalCardDefinition
         (.keyword .menace)]
       .endOfTurn) ==
   Effect.teamGain Keyword.menace.toKeywords
+
+-- Armor Wars I: you may draw per artifact; if you do, each opponent draws.
+#guard
+  CardAction.leftoverMayDrawPerArtifactOppsDraw?
+    (.optional
+      (.sequence [
+        .forEachVariable 1
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          [.draw (.controller .this) 1],
+        .draw (.opponent (.controller .this)) 1
+      ]))
+
+-- Not optional is not enough.
+#guard
+  !CardAction.leftoverMayDrawPerArtifactOppsDraw?
+    (.sequence [
+      .forEachVariable 1
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)])
+        [.draw (.controller .this) 1],
+      .draw (.opponent (.controller .this)) 1
+    ])
+
+-- Creatures you control are not artifacts.
+#guard
+  !CardAction.leftoverMayDrawPerArtifactOppsDraw?
+    (.optional
+      (.sequence [
+        .forEachVariable 1
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          [.draw (.controller .this) 1],
+        .draw (.opponent (.controller .this)) 1
+      ]))
+
+-- Missing opponent draw is not enough.
+#guard
+  !CardAction.leftoverMayDrawPerArtifactOppsDraw?
+    (.optional
+      (.forEachVariable 1
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)])
+        [.draw (.controller .this) 1]))
+
+-- Each player drawing is not each opponent.
+#guard
+  !CardAction.leftoverMayDrawPerArtifactOppsDraw?
+    (.optional
+      (.sequence [
+        .forEachVariable 1
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          [.draw (.controller .this) 1],
+        .draw .player 1
+      ]))
+
+-- Armor Wars II: artifact spells you cast this turn cost {1} less.
+#guard
+  CardAction.leftoverArtifactSpellsCostLessThisTurn?
+    (.continuous
+      [
+        .reduceCost
+          (.intersection [
+            .spell,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          [.mana [.generic 1]]
+      ]
+      .endOfTurn) == some 1
+
+-- Lasting cost reduction is not this turn.
+#guard
+  CardAction.leftoverArtifactSpellsCostLessThisTurn?
+    (.continuous
+      [
+        .reduceCost
+          (.intersection [
+            .spell,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          [.mana [.generic 1]]
+      ]
+      .endOfGame) |>.isNone
+
+-- Creature spells are not artifact spells.
+#guard
+  CardAction.leftoverArtifactSpellsCostLessThisTurn?
+    (.continuous
+      [
+        .reduceCost
+          (.intersection [
+            .spell,
+            .cardType .creature,
+            .controlled (.controller .this)])
+          [.mana [.generic 1]]
+      ]
+      .endOfTurn) |>.isNone
+
+-- Artifact permanents are not artifact spells.
+#guard
+  CardAction.leftoverArtifactSpellsCostLessThisTurn?
+    (.continuous
+      [
+        .reduceCost
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)])
+          [.mana [.generic 1]]
+      ]
+      .endOfTurn) |>.isNone
+
+-- Armor Wars III: this deals X to target opponent, X = greatest artifact MV.
+#guard
+  CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
+    (.dealComputedDamage
+      .this
+      (.target 1 (.opponent (.controller .this)))
+      (.greatestManaCost
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)])))
+
+-- Target player is not target opponent.
+#guard
+  !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
+    (.dealComputedDamage
+      .this
+      (.target 1 .player)
+      (.greatestManaCost
+        (.intersection [
+          .permanent,
+          .cardType .artifact,
+          .controlled (.controller .this)])))
+
+-- Greatest mana cost among creatures is not artifacts.
+#guard
+  !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
+    (.dealComputedDamage
+      .this
+      (.target 1 (.opponent (.controller .this)))
+      (.greatestManaCost
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)])))
+
+-- Literal damage is not computed greatest-mana-cost damage.
+#guard
+  !CardAction.leftoverChapterDealXDamageToTargetOpponentGreatestArtifactMv?
+    (.dealDamage .this (.target 1 (.opponent (.controller .this))) 3)
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [
+      .optional
+        (.sequence [
+          .forEachVariable 1
+            (.intersection [
+              .permanent,
+              .cardType .artifact,
+              .controlled (.controller .this)])
+            [.draw (.controller .this) 1],
+          .draw (.opponent (.controller .this)) 1
+        ])
+    ] == some Effect.mayDrawPerArtifactOppsDraw
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [
+      .continuous
+        [
+          .reduceCost
+            (.intersection [
+              .spell,
+              .cardType .artifact,
+              .controlled (.controller .this)])
+            [.mana [.generic 1]]
+        ]
+        .endOfTurn
+    ] == some (Effect.artifactSpellsCostLessThisTurn 1)
+
+#guard
+  CardAction.leftoverChapterEffect?
+    [
+      .dealComputedDamage
+        .this
+        (.target 1 (.opponent (.controller .this)))
+        (.greatestManaCost
+          (.intersection [
+            .permanent,
+            .cardType .artifact,
+            .controlled (.controller .this)]))
+    ] == some Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv
+
+-- Armor Wars chapters compile to a three-chapter Saga sacrificed after III.
+#guard
+  match
+    (TraditionalCardDefinition.card [
+      .subtype .saga,
+      .ability
+        (.keywordWithEffect
+          (.chapter 1)
+          [
+            .optional
+              (.sequence [
+                .forEachVariable 1
+                  (.intersection [
+                    .permanent,
+                    .cardType .artifact,
+                    .controlled (.controller .this)])
+                  [.draw (.controller .this) 1],
+                .draw (.opponent (.controller .this)) 1
+              ])
+          ]),
+      .ability
+        (.keywordWithEffect
+          (.chapter 2)
+          [
+            .continuous
+              [
+                .reduceCost
+                  (.intersection [
+                    .spell,
+                    .cardType .artifact,
+                    .controlled (.controller .this)])
+                  [.mana [.generic 1]]
+              ]
+              .endOfTurn
+          ]),
+      .ability
+        (.keywordWithEffect
+          (.chapter 3)
+          [
+            .dealComputedDamage
+              .this
+              (.target 1 (.opponent (.controller .this)))
+              (.greatestManaCost
+                (.intersection [
+                  .permanent,
+                  .cardType .artifact,
+                  .controlled (.controller .this)]))
+          ])
+    ]).toCardDef.saga with
+  | some s =>
+    s.sacrificeAfter == "III" && s.chapters.size == 3 &&
+      s.chapters[0]!.roman == "I" &&
+      s.chapters[1]!.roman == "II" &&
+      s.chapters[2]!.roman == "III" &&
+      s.chapters[2]!.chapterEffect ==
+        some Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv
+  | none => false
+
+-- Uncompiled chapter actions do not produce a Saga.
+#guard
+  (TraditionalCardDefinition.card [
+    .subtype .saga,
+    .ability (.keywordWithEffect (.chapter 1) [.draw (.controller .this) 1])
+  ]).toCardDef.saga.isNone
 
 end Mtg.Engine

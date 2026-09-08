@@ -159,6 +159,9 @@ inductive Keyword where
   nonland card discarded this way, put a +1/+1 counter on the conniving
   creature. Printed “connives” is connive 1. -/
   | connive : Nat → Keyword
+  /-- A Saga chapter ability (CR 714.2), numbered from I. Printed with
+  `Ability.keywordWithEffect`. -/
+  | chapter : Nat → Keyword
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace Keyword
@@ -186,7 +189,7 @@ def toKeywords : Keyword → Keywords
   | .shadow => { Keywords.none with shadow := true }
   | .changeling => { Keywords.none with changeling := true }
   | .equip | .enchant | .subtypecycling _ | .supertypeAndTypeCycling _ _
-  | .recruit | .amass _ _ | .connive _ =>
+  | .recruit | .amass _ _ | .connive _ | .chapter _ =>
     Keywords.none
 
 /-- Union of two single keywords. -/
@@ -203,6 +206,17 @@ instance : ToString Keyword where
     | .recruit => "recruit"
     | .amass st n => s!"amass {st}s {n}"
     | .connive n => s!"connive {n}"
+    | .chapter n =>
+      let roman :=
+        match n with
+        | 1 => "I"
+        | 2 => "II"
+        | 3 => "III"
+        | 4 => "IV"
+        | 5 => "V"
+        | 6 => "VI"
+        | n => toString n
+      s!"chapter {roman}"
     | k => toString k.toKeywords
 
 end Keyword
