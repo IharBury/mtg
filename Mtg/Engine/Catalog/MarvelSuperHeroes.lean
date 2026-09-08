@@ -148,7 +148,7 @@ def boroughBackup : CardDef :=
         .ability (.keyword .vigilance)]],
     .ability
       (.keywordWithCost
-        (.supertypeAndTypeCycling .basic .land)
+        (.typecycling [.basic] [.land] [])
         [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Create two 3/2 white Hero creature tokens with vigilance.\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
@@ -565,10 +565,10 @@ def aIMScientists : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 3,
-    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))),
     .ability
       (.keywordWithCost
-        (.supertypeAndTypeCycling .basic .land)
+        (.typecycling [.basic] [.land] [])
         [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
@@ -1020,7 +1020,7 @@ def tricksterSStratagem : CardDef :=
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive 1)]
+        (.connive (.nat 1))]
   ]).toCardDef
     (oracleText := "The owner of target creature an opponent controls puts it into their library second from the top or on the bottom. Then up to one target creature you control connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
 
@@ -1230,7 +1230,7 @@ def madameMasque : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 2,
-    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1))),
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))),
     .ability
       (.triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))
@@ -1292,7 +1292,7 @@ def mODOK : CardDef :=
       (.activatedIf
         (.turn (.controller .this))
         [.life 3]
-        (.keyword (.source .this) (.connive 1))),
+        (.keyword (.source .this) (.connive (.nat 1)))),
     .ability
       (.static
         (.addPowerToughness
@@ -1365,7 +1365,7 @@ def redRoomRecruit : CardDef :=
     .subtype .villain,
     .power 1,
     .toughness 2,
-    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive 1)))
+    .ability (.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1))))
   ]).toCardDef
     (oracleText := "When this creature enters, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on this creature.)")
 
@@ -1402,7 +1402,7 @@ def roxxonBrutes : CardDef :=
           1)),
     .ability
       (.keywordWithCost
-        (.supertypeAndTypeCycling .basic .land)
+        (.typecycling [.basic] [.land] [])
         [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)\nWhenever you draw your second card each turn, put a +1/+1 counter on target creature.\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.")
@@ -1488,7 +1488,7 @@ def swordsmanSharpScoundrel : CardDef :=
               .permanent,
               .subtype .equipment,
               .controlled (.controller .this)]))
-          (.connive 1)))
+          (.connive (.nat 1))))
   ]).toCardDef
     (oracleText := "Whenever another Villain you control enters, attach up to one target Equipment you control to target creature you control.\nWhenever an equipped creature you control attacks, it connives. (Draw a card, then discard a card. If you discarded a nonland card, put a +1/+1 counter on that creature.)")
 
@@ -1800,7 +1800,7 @@ def kreeSentinel : CardDef :=
     .ability (.keyword .reach),
     .ability
       (.keywordWithCost
-        (.supertypeAndTypeCycling .basic .land)
+        (.typecycling [.basic] [.land] [])
         [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Reach\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
@@ -2278,7 +2278,7 @@ def savageLandDinosaur : CardDef :=
     .ability (.keyword .trample),
     .ability
       (.keywordWithCost
-        (.supertypeAndTypeCycling .basic .land)
+        (.typecycling [.basic] [.land] [])
         [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Trample\nBasic landcycling {2} ({2}, Discard this card: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.)")
@@ -2687,7 +2687,7 @@ def kangTemporalTyrant : CardDef :=
     .subtype .villain,
     .power 3,
     .toughness 4,
-    .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive 1))),
+    .ability (.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.nat 1)))),
     .ability
       (.triggered
         (.ordinal 2 .turnStart (.draw (.controller .this) .all))

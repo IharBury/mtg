@@ -19,197 +19,6 @@ the constructors they need, are listed in `TraditionalSyntaxGaps.md`.
 
 namespace Mtg.Engine
 
-/-- How many objects a `.targets` selector may choose. -/
-inductive Range where
-  | range : Nat → Nat → Range
-deriving Repr, Inhabited, BEq
-
-/-- A constraint on a set of selected objects, not on each object alone. -/
-inductive SetPredicate where
-  /-- The objects share a card type with each other. -/
-  | shareCardType
-  /-- The set contains at least this many objects. -/
-  | countAtLeast : Nat → SetPredicate
-deriving Repr, Inhabited, BEq
-
-/-- Kind of counter (CR 122.1). Used by `CardAction.putCounter` and
-`Trigger.putCountersSimultaneously`. -/
-inductive CounterKind where
-  /-- A +1/+1 counter. -/
-  | plusOnePlusOne
-deriving Repr, Inhabited, BEq
-
--- Selectors may ask who was the subject of a trigger, and triggers name
--- selectors, so the two inductives are mutual.
-mutual
-/-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
-inductive Selector where
-  /-- This spell or ability (CR 113.7). -/
-  | this
-  /-- The source of the given object (CR 113.7). -/
-  | source : Selector → Selector
-  /-- The controller of the given object (CR 109.5). -/
-  | controller : Selector → Selector
-  /-- A numbered target matching the given selector (CR 115.1). Later
-  effects may refer to it with `targetReference`. The number is unique
-  within a `TraditionalCardDefinition`, including `targets` /
-  `targetSet`. -/
-  | target : Nat → Selector → Selector
-  /-- Numbered targets matching the given selector, with a count range.
-  The number is unique within a `TraditionalCardDefinition`, including
-  `target` / `targetSet`. -/
-  | targets : Nat → Range → Selector → Selector
-  /-- Numbered targets matching the given selector, with a count range
-  and extra constraints that apply to the set as a whole. The number is
-  unique within a `TraditionalCardDefinition`, including `target` /
-  `targets`. -/
-  | targetSet : Nat → Range → Selector → List SetPredicate → Selector
-  /-- Objects that do not match the given selector. -/
-  | not : Selector → Selector
-  /-- The target previously declared with `target`, `targets`, or
-  `targetSet` of this number. -/
-  | targetReference : Nat → Selector
-  /-- The given player chooses objects matching the given selector at
-  resolution, with a count range (not targeting; CR 608.2d). -/
-  | selected : Selector → Range → Selector → Selector
-  | intersection : List Selector → Selector
-  | all
-  | cardType : CardType → Selector
-  | union : List Selector → Selector
-  /-- A permanent (CR 110.1). -/
-  | permanent
-  /-- Objects whose controller is the given player. -/
-  | controlled : Selector → Selector
-  /-- A tapped permanent (CR 110.5). -/
-  | tapped
-  /-- An object with the given keyword (CR 702). -/
-  | keyword : Keyword → Selector
-  /-- A keyword ability of the given keyword (CR 702). -/
-  | keywordAbility : Keyword → Selector
-  /-- Objects with power at least this value (CR 208). -/
-  | powerAtLeast : Int → Selector
-  /-- Printed subtype (CR 205.3). -/
-  | subtype : CardSubtype → Selector
-  /-- A spell on the stack (CR 112.1). -/
-  | spell
-  /-- A permanent spell (CR 110.4 / 112.1). -/
-  | permanentSpell
-  /-- An object that has a target matching the given selector (CR 115.1). -/
-  | hasTarget : Selector → Selector
-  /-- An object that is a target of the given object (CR 115.1). -/
-  | isTargetOf : Selector → Selector
-  /-- A player (CR 102). -/
-  | player
-  /-- Opponents of the given player (CR 102.2). -/
-  | opponent : Selector → Selector
-  /-- The owner of the given object (CR 108.3). -/
-  | owner : Selector → Selector
-  /-- A permanent attacking objects matching the given selector (CR 508). -/
-  | attacking : Selector → Selector
-  /-- Permanents blocking the given permanents (CR 509). -/
-  | blocking : Selector → Selector
-  /-- A token (CR 111.1). -/
-  | token
-  /-- The object of the numbered action. -/
-  | wasObjectOfAction : Nat → Selector
-  /-- The object of this triggered ability. -/
-  | wasObjectOfThisTrigger
-  /-- The object a replacement effect is replacing. -/
-  | replacingObject : Nat → Selector
-  /-- An object created by the numbered action. -/
-  | wasCreatedByAction : Nat → Selector
-  /-- The permanent the given object is attached to (CR 301.5 / 303.4). -/
-  | hostOf : Selector → Selector
-  /-- An object in a graveyard (CR 404). -/
-  | inGraveyard
-  /-- An object that was the object of the first event since the second
-  event. -/
-  | wasObjectSince : Trigger → Trigger → Selector
-  /-- An object in a library (CR 401). -/
-  | inDeck
-  /-- Objects with the given supertype (CR 205.4). -/
-  | supertype : CardSupertype → Selector
-  /-- Objects bound to this numbered variable. -/
-  | variable : Nat → Selector
-  /-- The top card of the selected player's library (CR 401). -/
-  | topOfLibrary : Selector → Selector
-deriving Repr, Inhabited, BEq
-
-/-- When a continuous effect ends, when a triggered ability fires, or
-what a replacement effect intercepts. -/
-inductive Trigger where
-  | endOfGame
-  | endOfTurn
-  /-- At the end of the selected player's turn (CR 514.3). -/
-  | endOfPlayerTurn : Selector → Trigger
-  /-- At the beginning of combat on the selected player's turn (CR 507.1). -/
-  | combatStart : Selector → Trigger
-  /-- From the start of the turn (a window bound for `happened`). -/
-  | turnStart
-  /-- From the start of the game (a window bound for `happened`). -/
-  | gameStart
-  /-- Whenever the selected object attacks, restricted by the given
-  selector. -/
-  | attack : Selector → Selector → Trigger
-  /-- When the selected object enters. -/
-  | enter : Selector → Trigger
-  /-- Whenever the selected player draws a card matching the given
-  selector. -/
-  | draw : Selector → Selector → Trigger
-  /-- The nth occurrence of the inner trigger, counted from the given
-  window. -/
-  | ordinal : Nat → Trigger → Trigger → Trigger
-  /-- Whenever the selected object deals combat damage to objects matching
-  the given selector. -/
-  | combatDamage : Selector → Selector → Trigger
-  /-- Whenever the selected object would deal damage to objects matching
-  the given selector (CR 120). -/
-  | damage : Selector → Selector → Trigger
-  /-- The selected object would be put into a graveyard (CR 614). -/
-  | putToGraveyard : Selector → Trigger
-  /-- Whenever a matching card leaves a graveyard (CR 404). -/
-  | leaveGraveyard : Selector → Trigger
-  /-- Whenever the selected object is returned to its owner's hand. -/
-  | returnToHand : Selector → Trigger
-  /-- Whenever the selected player discards a card (CR 701.8). -/
-  | discard : Selector → Trigger
-  /-- When one or more counters of the given kind are put on the selected
-  objects at the same time (CR 122). -/
-  | putCountersSimultaneously : Selector → CounterKind → Trigger
-  /-- The first selector blocks the second (CR 509). -/
-  | block : Selector → Selector → Trigger
-  /-- When the selected object or objects die (CR 700.4). -/
-  | die : Selector → Trigger
-  /-- When objects matching the selector die at the same time, with
-  set-wide predicates (CR 700.4 / 603.2d). -/
-  | dieSimultaneously : Selector → List SetPredicate → Trigger
-  /-- Whenever objects matching the first selector attack objects matching
-  the second at the same time, with set-wide predicates
-  (CR 508.3 / 603.2d). -/
-  | attackSimultaneously : Selector → Selector → List SetPredicate → Trigger
-  /-- The numbered ability was activated (CR 602.2). -/
-  | abilityWithIdActivated : Nat → Trigger
-  /-- The numbered action occurred. -/
-  | actionWithId : Nat → Trigger
-  /-- The selected player chose the numbered mode (CR 700.2). -/
-  | modeWithIdChosen : Selector → Nat → Trigger
-  /-- Mana created by the numbered action is spent to pay for the given
-  event (CR 106.10). -/
-  | spendManaCreatedByAction : Nat → Trigger → Trigger
-  /-- A spell matching the selector is cast (CR 601). -/
-  | castSpell : Selector → Trigger
-  /-- An activated ability of a source matching the selector is activated
-  (CR 602). -/
-  | activateAbility : Selector → Trigger
-  /-- After the listed triggers have occurred in order. -/
-  | sequence : List Trigger → Trigger
-  /-- The given trigger does not occur. -/
-  | not : Trigger → Trigger
-  /-- Either trigger occurs. -/
-  | or : Trigger → Trigger → Trigger
-deriving Repr, Inhabited, BEq
-end
-
 namespace Selector
 
 /-- Card types a selector allows. `any` means the selector does not mention type. -/
@@ -756,15 +565,6 @@ inductive CardState where
   | attacking
   /-- The permanent enters under the selected player's control (CR 110.2). -/
   | controlled : Selector → CardState
-deriving Repr, Inhabited, BEq
-
-/-- A number that is either a printed constant or computed from game
-state. -/
-inductive Value where
-  /-- A printed natural-number amount. -/
-  | nat : Nat → Value
-  /-- The greatest mana value among selected objects (CR 202.3). -/
-  | greatestManaValue : Selector → Value
 deriving Repr, Inhabited, BEq
 
 -- Printed abilities, continuous effects, and actions are mutually inductive:
@@ -1398,13 +1198,13 @@ def leftoverDrawLoseLifeThenAmass? : CardAction → Option Nat
   | .sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin n)
+      .keyword (.controller .this) (.amass .goblin (.nat n))
     ] => some n
   | _ => none
 
 /-- Return up to one creature card from your graveyard, then amass Goblins `n`. -/
 def leftoverReturnCreatureFromGyThenAmass? : CardAction → Option Nat
-  | .sequence [.returnToHand sel, .keyword (.controller .this) (.amass .goblin n)] =>
+  | .sequence [.returnToHand sel, .keyword (.controller .this) (.amass .goblin (.nat n))] =>
     match sel with
     | .targets _ (.range 0 1) among | .target _ among =>
       if among.shape.types.eqTypes [.creature] && among.includesInGraveyard then
@@ -1800,7 +1600,7 @@ def leftoverOwnerPutsLibraryThenConnive? : CardAction → Bool
   | .sequence [
       .playerSelectAction chooser (.range 1 1)
         [.putIntoLibraryFromTop t1 2, .putOnBottomOfLibrary t2],
-      .keyword who (.connive 1)
+      .keyword who (.connive (.nat 1))
     ] =>
     match t1 with
     | .target n among =>
@@ -2032,9 +1832,9 @@ def leftoverSearchBasicOnTop? : CardAction → Bool
 /-- Keyword actions that compile to a named `Effect`. -/
 def leftoverKeywordAction? : Keyword → Option Effect
   | .recruit => some Effect.recruit
-  | .amass .goblin n => some (Effect.amassGoblins n)
-  | .amass .orc n => some (Effect.ofTrigger (.amassOrcs n))
-  | .connive 1 => some Effect.connive
+  | .amass .goblin (.nat n) => some (Effect.amassGoblins n)
+  | .amass .orc (.nat n) => some (Effect.ofTrigger (.amassOrcs n))
+  | .connive (.nat 1) => some Effect.connive
   | _ => none
 
 /-- Flattened token characteristics used to recover a `TokenKind`. -/
@@ -2823,9 +2623,9 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
     else none
   | .keyword who .recruit =>
     if leftoverYou who then some TriggeredAbility.onEnterRecruit else none
-  | .keyword who (.amass .goblin n) =>
+  | .keyword who (.amass .goblin (.nat n)) =>
     if leftoverYou who then some (TriggeredAbility.onEnterAmassGoblins n) else none
-  | .keyword who (.connive 1) =>
+  | .keyword who (.connive (.nat 1)) =>
     if leftoverSourceThis who then some TriggeredAbility.onEnterConnive else none
   | .sequence [
       .actionId id (.returnToHand sel),
@@ -2867,7 +2667,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       some TriggeredAbility.onEnterPlusOneOrTwoIfAnotherHero
     else none
   | .sequence [
-      .actionId id (.keyword who (.amass .goblin n)),
+      .actionId id (.keyword who (.amass .goblin (.nat n))),
       .attach .this (.wasObjectOfAction id')
     ] =>
     if id == id' && leftoverYou who then
@@ -3079,7 +2879,7 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                     match leftoverKeywordAction? k with
                     | some e =>
                       match k with
-                      | .connive 1 =>
+                      | .connive (.nat 1) =>
                         let ok :=
                           if asAbility then leftoverSourceThis who else leftoverThis who
                         if ok then e else continuousEffect none [] asAbility
@@ -3164,15 +2964,10 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true
       equipSubtype := some st.toString }
-  | .keywordWithCost (.subtypecycling st) costs =>
+  | .keywordWithCost (.typecycling supertypes types subtypes) costs =>
     some {
       cost := { mana := Cost.manaCost costs, discardSource := true }
-      effect := Effect.searchLandTypeToHand st.toString
-      activateFromHand := true }
-  | .keywordWithCost (.supertypeAndTypeCycling st t) costs =>
-    some {
-      cost := { mana := Cost.manaCost costs, discardSource := true }
-      effect := Effect.searchLandTypeToHand s!"{st} {t.englishName.toLower}"
+      effect := Effect.searchLandTypeToHand (Keyword.typecyclingPhrase supertypes types subtypes)
       activateFromHand := true }
   | .activatedIf (.countAtLeast among n) costs action =>
     if CardAction.leftoverYourGyCreatures? among && n == 2 then
@@ -3203,7 +2998,7 @@ def toActivatedAbility? : Ability → Option ActivatedAbility
 def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
     Option TriggeredAbility :=
   match k with
-  | .connive 1 =>
+  | .connive (.nat 1) =>
     match w with
     | .enter .this =>
       if CardAction.leftoverSourceThis who then some TriggeredAbility.onEnterConnive
@@ -3228,17 +3023,17 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
       match w, k with
       | .enter .this, .recruit => some TriggeredAbility.onEnterRecruit
       | .die .this, .recruit => some TriggeredAbility.onDiesRecruit
-      | .enter .this, .amass .goblin n => some (TriggeredAbility.onEnterAmassGoblins n)
-      | .die .this, .amass .goblin n => some (TriggeredAbility.onDiesAmassGoblins n)
+      | .enter .this, .amass .goblin (.nat n) => some (TriggeredAbility.onEnterAmassGoblins n)
+      | .die .this, .amass .goblin (.nat n) => some (TriggeredAbility.onDiesAmassGoblins n)
       | .or (.enter .this) (.attack .this .all), .recruit =>
         some TriggeredAbility.onEnterOrAttackRecruit
-      | .or (.enter .this) (.attack .this .all), .amass .goblin n =>
+      | .or (.enter .this) (.attack .this .all), .amass .goblin (.nat n) =>
         some (TriggeredAbility.onEnterOrAttackAmassGoblins n)
-      | .attackSimultaneously among dest _, .amass .goblin n =>
+      | .attackSimultaneously among dest _, .amass .goblin (.nat n) =>
         if dest == .all && among.shape.sameController then
           some (TriggeredAbility.onYouAttackAmassGoblins n)
         else none
-      | .castSpell among, .amass .goblin n =>
+      | .castSpell among, .amass .goblin (.nat n) =>
         if Selector.youCastNoncreatureSpell among then
           some (TriggeredAbility.onCastNoncreatureAmassGoblins n)
         else none
@@ -3246,7 +3041,7 @@ def leftoverKeywordTriggered? (w : Trigger) (who : Selector) (k : Keyword) :
         if Selector.opponentCastsNoncreatureSpell among then
           some TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit
         else none
-      | .leaveGraveyard among, .amass .goblin n =>
+      | .leaveGraveyard among, .amass .goblin (.nat n) =>
         if CardAction.leftoverYourGyCreatures? among then
           some (TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins n)
         else none
@@ -4823,21 +4618,24 @@ end TraditionalCardDefinition
 #guard Keyword.equip.toKeywords == Keywords.none
 #guard Keyword.enchant.toKeywords == Keywords.none
 #guard Keyword.recruit.toKeywords == Keywords.none
-#guard (Keyword.amass .goblin 1).toKeywords == Keywords.none
-#guard (Keyword.connive 1).toKeywords == Keywords.none
+#guard (Keyword.amass .goblin (.nat 1)).toKeywords == Keywords.none
+#guard (Keyword.connive (.nat 1)).toKeywords == Keywords.none
 #guard (Keyword.chapter 1).toKeywords == Keywords.none
 #guard toString Keyword.recruit == "recruit"
-#guard toString (Keyword.amass .goblin 1) == "amass Goblins 1"
-#guard toString (Keyword.amass .orc 2) == "amass Orcs 2"
-#guard toString (Keyword.connive 1) == "connive 1"
-#guard toString (Keyword.connive 2) == "connive 2"
+#guard toString (Keyword.amass .goblin (.nat 1)) == "amass Goblins 1"
+#guard toString (Keyword.amass .orc (.nat 2)) == "amass Orcs 2"
+#guard toString (Keyword.connive (.nat 1)) == "connive 1"
+#guard toString (Keyword.connive (.nat 2)) == "connive 2"
 #guard toString (Keyword.chapter 1) == "chapter I"
 #guard toString (Keyword.chapter 3) == "chapter III"
-#guard (Keyword.subtypecycling .halfling).toKeywords == Keywords.none
-#guard toString (Keyword.subtypecycling .halfling) == "Halflingcycling"
-#guard (Keyword.supertypeAndTypeCycling .basic .land).toKeywords == Keywords.none
-#guard toString (Keyword.supertypeAndTypeCycling .basic .land) ==
+#guard (Keyword.typecycling [] [] [.halfling]).toKeywords == Keywords.none
+#guard toString (Keyword.typecycling [] [] [.halfling]) == "Halflingcycling"
+#guard (Keyword.typecycling [.basic] [.land] []).toKeywords == Keywords.none
+#guard toString (Keyword.typecycling [.basic] [.land] []) ==
   "Basic landcycling"
+#guard toString (Keyword.typecycling [] [.land] []) == "landcycling"
+#guard Keyword.typecyclingPhrase [] [] [.halfling] == "Halfling"
+#guard Keyword.typecyclingPhrase [.basic] [.land] [] == "Basic land"
 
 #guard
   let c :=
@@ -4897,7 +4695,7 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.keywordWithCost
-      (.subtypecycling .halfling)
+      (.typecycling [] [] [.halfling])
       [.mana [.generic 4]]).toActivatedAbility? with
   | some ab =>
     ab.activateFromHand &&
@@ -4910,7 +4708,7 @@ end TraditionalCardDefinition
   let c :=
     (TraditionalCardDefinition.card [
       .ability
-        (.keywordWithCost (.subtypecycling .halfling) [.mana [.generic 4]])
+        (.keywordWithCost (.typecycling [] [] [.halfling]) [.mana [.generic 4]])
     ]).toCardDef
   c.activatedAbilities.size == 1 &&
     c.activatedAbilities[0]!.activateFromHand &&
@@ -4920,7 +4718,7 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.keywordWithCost
-      (.supertypeAndTypeCycling .basic .land)
+      (.typecycling [.basic] [.land] [])
       [.mana [.generic 2]]).toActivatedAbility? with
   | some ab =>
     ab.activateFromHand &&
@@ -4934,7 +4732,7 @@ end TraditionalCardDefinition
     (TraditionalCardDefinition.card [
       .ability
         (.keywordWithCost
-          (.supertypeAndTypeCycling .basic .land)
+          (.typecycling [.basic] [.land] [])
           [.mana [.generic 2]])
     ]).toCardDef
   c.activatedAbilities.size == 1 &&
@@ -5136,7 +4934,7 @@ end TraditionalCardDefinition
     (Ability.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword (.source .this) (.connive 1))).toActivatedAbility? with
+      (.keyword (.source .this) (.connive (.nat 1)))).toActivatedAbility? with
   | some ab =>
     ab.onlyDuringYourTurn &&
       !ab.onceEachTurn &&
@@ -5149,7 +4947,7 @@ end TraditionalCardDefinition
     (Ability.activatedIf
       (.turn (.controller .this))
       [.life 3]
-      (.keyword .this (.connive 1))).toActivatedAbility? with
+      (.keyword .this (.connive (.nat 1)))).toActivatedAbility? with
   | some ab => ab.effect != Effect.connive
   | none => true
 
@@ -6228,7 +6026,7 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.keywordWithCost (.subtypecycling .mountain) [.mana [.generic 1]]).toActivatedAbility? with
+    (Ability.keywordWithCost (.typecycling [] [] [.mountain]) [.mana [.generic 1]]).toActivatedAbility? with
   | some ab =>
     ab.activateFromHand &&
       ab.cost.discardSource &&
@@ -6661,24 +6459,24 @@ end TraditionalCardDefinition
 
 #guard
   match
-    (Ability.triggered (.enter .this) (.keyword (.source .this) (.connive 1))).toTriggeredAbility? with
+    (Ability.triggered (.enter .this) (.keyword (.source .this) (.connive (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterConnive
   | none => false
 
 #guard
-  (Ability.triggered (.enter .this) (.keyword .this (.connive 1))).toTriggeredAbility?.isNone
+  (Ability.triggered (.enter .this) (.keyword .this (.connive (.nat 1)))).toTriggeredAbility?.isNone
 
 #guard
-  (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive 1))).toTriggeredAbility?.isNone
+  (Ability.triggered (.enter .this) (.keyword (.controller .this) (.connive (.nat 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
-    (Ability.triggered (.attack .this .all) (.keyword (.source .this) (.connive 1))).toTriggeredAbility? with
+    (Ability.triggered (.attack .this .all) (.keyword (.source .this) (.connive (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onAttackConnive
   | none => false
 
 #guard
-  (Ability.triggered (.attack .this .all) (.keyword .this (.connive 1))).toTriggeredAbility?.isNone
+  (Ability.triggered (.attack .this .all) (.keyword .this (.connive (.nat 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -6691,7 +6489,7 @@ end TraditionalCardDefinition
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive 1))).toTriggeredAbility? with
+        (.connive (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCombatTargetYouControlConnives
   | none => false
 
@@ -6705,7 +6503,7 @@ end TraditionalCardDefinition
           .permanent,
           .cardType .creature,
           .controlled (.controller .this)]))
-      (.connive 1))).toTriggeredAbility?.isNone
+      (.connive (.nat 1)))).toTriggeredAbility?.isNone
 
 #guard
   match
@@ -6723,7 +6521,7 @@ end TraditionalCardDefinition
             .permanent,
             .subtype .equipment,
             .controlled (.controller .this)]))
-        (.connive 1))).toTriggeredAbility? with
+        (.connive (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEquippedCreatureYouControlAttacksConnive
   | none => false
 
@@ -6795,7 +6593,7 @@ end TraditionalCardDefinition
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive 1)])
+        (.connive (.nat 1))])
 
 #guard
   CardAction.leftoverOwnerPutsLibraryThenConnive?
@@ -6818,7 +6616,7 @@ end TraditionalCardDefinition
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive 1)])
+        (.connive (.nat 1))])
 
 #guard
   CardAction.toEffect
@@ -6841,7 +6639,7 @@ end TraditionalCardDefinition
             .permanent,
             .cardType .creature,
             .controlled (.controller .this)]))
-        (.connive 1)]) == Effect.ownerPutsLibraryThenConnive
+        (.connive (.nat 1))]) == Effect.ownerPutsLibraryThenConnive
 
 #guard
   match
@@ -6853,7 +6651,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.enter .this)
-      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassGoblins 1
   | none => false
 
@@ -6861,7 +6659,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.die .this)
-      (.keyword (.controller .this) (.amass .goblin 4))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 4)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onDiesAmassGoblins 4
   | none => false
 
@@ -6873,7 +6671,7 @@ end TraditionalCardDefinition
           .spell,
           .not (.cardType .creature),
           .controlled (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastNoncreatureAmassGoblins 1
   | none => false
 
@@ -6887,7 +6685,7 @@ end TraditionalCardDefinition
           .controlled (.controller .this)])
         .all
         [])
-      (.keyword (.controller .this) (.amass .goblin 2))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 2)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onYouAttackAmassGoblins 2
   | none => false
 
@@ -6909,7 +6707,7 @@ end TraditionalCardDefinition
     (Ability.triggered
       (.enter .this)
       (.sequence [
-        .actionId 1 (.keyword (.controller .this) (.amass .goblin 1)),
+        .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
         .attach .this (.wasObjectOfAction 1)])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterAmassThenAttach 1
   | none => false
@@ -6918,7 +6716,7 @@ end TraditionalCardDefinition
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .keyword (.controller .this) (.amass .goblin 1),
+      .keyword (.controller .this) (.amass .goblin (.nat 1)),
       .attach
         .this
         (.intersection [
@@ -6930,7 +6728,7 @@ end TraditionalCardDefinition
   (Ability.triggered
     (.enter .this)
     (.sequence [
-      .actionId 1 (.keyword (.controller .this) (.amass .goblin 1)),
+      .actionId 1 (.keyword (.controller .this) (.amass .goblin (.nat 1))),
       .attach .this (.wasObjectOfAction 2)])).toTriggeredAbility?.isNone
 
 #guard
@@ -6938,14 +6736,14 @@ end TraditionalCardDefinition
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin 2)]) == some 2
+      .keyword (.controller .this) (.amass .goblin (.nat 2))]) == some 2
 
 #guard
   CardAction.toEffect
     (.sequence [
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1,
-      .keyword (.controller .this) (.amass .goblin 2)]) == Effect.drawLoseLifeThenAmass 2
+      .keyword (.controller .this) (.amass .goblin (.nat 2))]) == Effect.drawLoseLifeThenAmass 2
 
 #guard
   CardAction.toEffect
@@ -6958,14 +6756,14 @@ end TraditionalCardDefinition
             .inGraveyard,
             .cardType .creature,
             .owner (.controller .this)])),
-      .keyword (.controller .this) (.amass .goblin 3)]) == Effect.returnCreatureFromGyThenAmass 3
+      .keyword (.controller .this) (.amass .goblin (.nat 3))]) == Effect.returnCreatureFromGyThenAmass 3
 
 #guard CardAction.toEffect (.keyword (.controller .this) .recruit) == Effect.recruit
-#guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin 1)) == Effect.amassGoblins 1
-#guard CardAction.toEffect (.keyword .this (.connive 1)) == Effect.connive
-#guard CardAction.toEffect (.keyword (.source .this) (.connive 1)) == Effect.connive
-#guard CardAction.toAbilityEffect (.keyword (.source .this) (.connive 1)) == Effect.connive
-#guard CardAction.toAbilityEffect (.keyword .this (.connive 1)) != Effect.connive
+#guard CardAction.toEffect (.keyword (.controller .this) (.amass .goblin (.nat 1))) == Effect.amassGoblins 1
+#guard CardAction.toEffect (.keyword .this (.connive (.nat 1))) == Effect.connive
+#guard CardAction.toEffect (.keyword (.source .this) (.connive (.nat 1))) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword (.source .this) (.connive (.nat 1))) == Effect.connive
+#guard CardAction.toAbilityEffect (.keyword .this (.connive (.nat 1))) != Effect.connive
 #guard CardAction.leftoverSourceThis (.source .this)
 #guard !CardAction.leftoverSourceThis .this
 
@@ -7104,7 +6902,7 @@ end TraditionalCardDefinition
   match
     (Ability.triggered
       (.or (.enter .this) (.attack .this .all))
-      (.keyword (.controller .this) (.amass .goblin 3))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 3)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterOrAttackAmassGoblins 3
   | none => false
 
@@ -8641,7 +8439,7 @@ end TraditionalCardDefinition
           .inGraveyard,
           .cardType .creature,
           .owner (.controller .this)]))
-      (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility? with
+      (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCreatureCardLeavesYourGyAmassGoblins 1
   | none => false
 
@@ -8653,7 +8451,7 @@ end TraditionalCardDefinition
         .inGraveyard,
         .cardType .creature,
         .owner (.opponent (.controller .this))]))
-    (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility?.isNone
+    (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility?.isNone
 
 -- Instant cards leaving the graveyard are not creature cards.
 #guard
@@ -8663,7 +8461,7 @@ end TraditionalCardDefinition
         .inGraveyard,
         .cardType .instant,
         .owner (.controller .this)]))
-    (.keyword (.controller .this) (.amass .goblin 1))).toTriggeredAbility?.isNone
+    (.keyword (.controller .this) (.amass .goblin (.nat 1)))).toTriggeredAbility?.isNone
 
 -- Enter: return target creature card from your graveyard.
 #guard

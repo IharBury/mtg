@@ -133,7 +133,7 @@ def eaglesOfTheNorth : CardDef :=
                 .controlled (.controller .this)])
               (.keyword .firstStrike)]
           .endOfTurn)),
-    .ability (.keywordWithCost (.subtypecycling .plains) [.mana [.generic 1]])
+    .ability (.keywordWithCost (.typecycling [] [] [.plains]) [.mana [.generic 1]])
   ]).toCardDef
     (oracleText := "Flying\nWhen this creature enters, creatures you control get +1/+0 and gain first strike until end of turn.\nPlainscycling {1} ({1}, Discard this card: Search your library for a Plains card, reveal it, put it into your hand, then shuffle.)")
 
@@ -252,7 +252,7 @@ def lorienRevealed : CardDef :=
     .manaCost [.generic 3, .mono .blue, .mono .blue],
     .type .sorcery,
     .actions [.draw (.controller .this) 3],
-    .ability (.keywordWithCost (.subtypecycling .island) [.mana [.generic 1]])
+    .ability (.keywordWithCost (.typecycling [] [] [.island]) [.mana [.generic 1]])
   ]).toCardDef
     (oracleText := "Draw three cards.\nIslandcycling {1} ({1}, Discard this card: Search your library for an Island card, reveal it, put it into your hand, then shuffle.)")
 
@@ -557,7 +557,7 @@ def oliphaunt : CardDef :=
               2 0,
             .gainAbility (.targetReference 1) (.keyword .trample)]
           .endOfTurn)),
-    .ability (.keywordWithCost (.subtypecycling .mountain) [.mana [.generic 1]])
+    .ability (.keywordWithCost (.typecycling [] [] [.mountain]) [.mana [.generic 1]])
   ]).toCardDef
     (oracleText := "Trample\nWhenever this creature attacks, another target creature you control gets +2/+0 and gains trample until end of turn.\nMountaincycling {1} ({1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle.)")
 
@@ -780,7 +780,7 @@ def greatGoblinFoulHearted : CardDef :=
     .ability (
       .triggered
         (.or (.enter .this) (.attack .this .all))
-        (.keyword (.controller .this) (.amass .goblin 3))),
+        (.keyword (.controller .this) (.amass .goblin (.nat 3)))),
     .ability (
       .static
         (.gainAbility
