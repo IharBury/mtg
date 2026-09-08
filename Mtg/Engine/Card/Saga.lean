@@ -20,6 +20,16 @@ def parseRomanNumeral (s : String) : Nat :=
   | "VI" => 6
   | _ => 0
 
+/-- Print a chapter number as a Roman numeral (`I`–`VI`). -/
+def toRomanNumeral : Nat → String
+  | 1 => "I"
+  | 2 => "II"
+  | 3 => "III"
+  | 4 => "IV"
+  | 5 => "V"
+  | 6 => "VI"
+  | n => toString n
+
 /-- Chapter numbers on a printed line (`I`, `III, IV`, `I, II, III, IV`). -/
 def parseChapterNumbers (roman : String) : Array Nat :=
   (roman.splitOn ",").toArray |>.map parseRomanNumeral |>.filter (· != 0)
@@ -74,6 +84,9 @@ end SagaDef
 #guard parseChapterNumbers "I" == #[1]
 #guard parseChapterNumbers "III, IV" == #[3, 4]
 #guard parseChapterNumbers "I, II, III, IV" == #[1, 2, 3, 4]
+#guard toRomanNumeral 1 == "I"
+#guard toRomanNumeral 3 == "III"
+#guard toRomanNumeral 4 == "IV"
 #guard (SagaChapter.of "III, IV" "Add {R}." (Effect.chapterAddMana (.colored .red))).chapterNumbers ==
   #[3, 4]
 
