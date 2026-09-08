@@ -62,7 +62,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
-  `damage`, `putToGraveyard`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
+  `damage`, `putToGraveyard`, `returnToHand`, `discard`, `putCountersSimultaneously`, `block`, `die`, `dieSimultaneously`,
   `attackSimultaneously` (who attacks, who is attacked),
   `abilityWithIdActivated`, `actionWithId`, `modeWithIdChosen`,
   `spendManaCreatedByAction`, `castSpell`, `activateAbility`, `sequence`,
@@ -125,7 +125,9 @@ ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
 is “whenever you discard” (Moonstone). Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land
-(Fin Fang Foom). Justice’s bounce-watch leftover includes tokens.
+(Fin Fang Foom). Justice’s bounce-watch leftover is `Trigger.returnToHand` of
+another nonland you control (tokens included). Put-to-graveyard leftovers stay
+uncompiled.
 `CardAction.optionalPayFor` is who may pay, what cost, and what happens if
 paid (Speed: you, {1}, haste-except-haste). Bullseye’s nonland discard is
 `Cost.discard` (ETB via `optionalPayFor`, activated via `Cost.or`). `CardAction.fight` is Wolverine’s ETB.

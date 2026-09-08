@@ -159,6 +159,8 @@ inductive Trigger where
   | damage : Selector → Selector → Trigger
   /-- The selected object would be put into a graveyard (CR 614). -/
   | putToGraveyard : Selector → Trigger
+  /-- Whenever the selected object is returned to its owner's hand. -/
+  | returnToHand : Selector → Trigger
   /-- Whenever the selected player discards a card (CR 701.8). -/
   | discard : Selector → Trigger
   /-- When one or more counters of the given kind are put on the selected
@@ -3544,7 +3546,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverExileGyPlayUntilNextTurn? action then
       some (TriggeredAbility.onResource Effect.resourceDiscardExilePlay)
     else none
-  | .triggered (.putToGraveyard among) action =>
+  | .triggered (.returnToHand among) action =>
     if among.shape.other && among.shape.sameController &&
         among.shape.nonland && !among.shape.nontoken &&
         match action with
@@ -7619,14 +7621,14 @@ end TraditionalCardDefinition
     (.chooseModeRestricted you modes)).toTriggeredAbility?.isNone
 
 -- Night Nurse: only graveyard permanents put there this turn.
--- Justice: bounce-watch includes tokens (nontoken conjunct is rejected).
+-- Justice: bounce-watch is return-to-hand, includes tokens.
 -- Arnim Zola: activate only if two or more creature cards in the graveyard.
 -- Moonstone: discard trigger, not any put-to-graveyard.
 -- Fin Fang Foom: the instant or sorcery must target an artifact or land.
 #guard
   match
     (Ability.triggered
-      (.putToGraveyard
+      (.returnToHand
         (.intersection [
           .not .this,
           .permanent,
@@ -7639,6 +7641,16 @@ end TraditionalCardDefinition
 #guard
   (Ability.triggered
     (.putToGraveyard
+      (.intersection [
+        .not .this,
+        .permanent,
+        .not (.cardType .land),
+        .controlled (.controller .this)]))
+    (.putCounter (.source .this) .plusOnePlusOne 1)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.returnToHand
       (.intersection [
         .not .this,
         .permanent,

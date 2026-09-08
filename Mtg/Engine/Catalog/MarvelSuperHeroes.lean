@@ -811,7 +811,7 @@ def justiceVanceAstrovik : CardDef :=
               .not .token])))),
     .ability
       (.triggered
-        (.putToGraveyard
+        (.returnToHand
           (.intersection [
             .not .this,
             .permanent,
