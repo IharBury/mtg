@@ -2845,18 +2845,23 @@ def stormWindrider : CardDef :=
                 .controlled (.controller .this)]))))),
     .ability
       (.triggered
-        (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
-        (.if
-          (.targetsIncludeAny
-            .this
-            (.intersection [.permanent, .cardType .creature]))
+        (.castSpell
+          (.intersection [
+            .spell,
+            .controlled (.controller .this),
+            .hasTarget
+              (.intersection [
+                .permanent,
+                .cardType .creature])]))
+        (.continuous
           [
-            .continuous
-              [
-                .gainAbility
-                  (.intersection [.permanent, .cardType .creature])
-                  (.keyword .flying)]
-              .endOfTurn]))
+            .gainAbility
+              (.intersection [
+                .permanent,
+                .cardType .creature,
+                .wasObjectOfThisTrigger])
+              (.keyword .flying)]
+          .endOfTurn))
   ]).toCardDef
     (oracleText := "Flying\nCreatures with flying can't attack you or block creatures you control.\nWhenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn.")
 

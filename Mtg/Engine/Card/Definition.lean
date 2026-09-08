@@ -2311,6 +2311,14 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
       | none => false
   | _ => false
 
+/-- Those creatures (the objects of this trigger) gain flying. -/
+def leftoverGrantFlyingToThose? : List ContinuousEffect → Bool
+  | [.gainAbility who (.keyword .flying)] =>
+    who.includesWasObjectOfThisTrigger &&
+      who.shape.mustBePermanent &&
+      who.shape.types.eqTypes [.creature]
+  | _ => false
+
 /-- This mode has not been chosen this turn by any player. -/
 def leftoverModeUnchosenThisTurn? (id : Nat) : Condition → Bool
   | .didNotHappen (.modeWithIdChosen chooser id') .turnStart =>
@@ -3570,13 +3578,16 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | none => false then
       some (TriggeredAbility.onCasting Effect.castingCopyIfArtifactOrLand)
     else none
-  | .triggered (.castSpell among)
-      (.if (.targetsIncludeAny _ creatureSel) [.continuous effects _]) =>
-    let kws := CardAction.grantedKeywords effects
-    if among.shape.sameController && Selector.includesSpell among &&
-        creatureSel.shape.types.eqTypes [.creature] && kws.flying then
-      some (TriggeredAbility.onCasting Effect.castingTargetsGainFlying)
-    else none
+  | .triggered (.castSpell among) (.continuous effects _) =>
+    match Selector.leftoverHasTarget? among with
+    | some dest =>
+      if among.shape.sameController && Selector.includesSpell among &&
+          dest.shape.mustBePermanent &&
+          dest.shape.types.eqTypes [.creature] &&
+          CardAction.leftoverGrantFlyingToThose? effects then
+        some (TriggeredAbility.onCasting Effect.castingTargetsGainFlying)
+      else none
+    | none => none
   | .triggered (.castSpell among) action =>
     if Selector.youCastNoncreatureSpell among &&
         CardAction.leftoverMayPayHasteUnblockable? action then
@@ -8171,6 +8182,98 @@ end TraditionalCardDefinition
                 .cardType .creature,
                 .controlled (.controller .this)])))))
   ]).toCardDef.staticAbilities == #[.flyingCantAttackYouOrBlockYours]
+
+-- Storm: a spell that hasTarget a creature; those creatures gain flying.
+#guard
+  match
+    (Ability.triggered
+      (.castSpell
+        (.intersection [
+          .spell,
+          .controlled (.controller .this),
+          .hasTarget
+            (.intersection [
+              .permanent,
+              .cardType .creature])]))
+      (.continuous
+        [
+          .gainAbility
+            (.intersection [
+              .permanent,
+              .cardType .creature,
+              .wasObjectOfThisTrigger])
+            (.keyword .flying)]
+        .endOfTurn)).toTriggeredAbility? with
+  | some ab => ab == TriggeredAbility.onCasting Effect.castingTargetsGainFlying
+  | none => false
+
+#guard
+  (Ability.triggered
+    (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+    (.if
+      (.targetsIncludeAny
+        .this
+        (.intersection [.permanent, .cardType .creature]))
+      [
+        .continuous
+          [
+            .gainAbility
+              (.intersection [.permanent, .cardType .creature])
+              (.keyword .flying)]
+          .endOfTurn])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .hasTarget
+          (.intersection [
+            .permanent,
+            .cardType .creature])]))
+    (.continuous
+      [
+        .gainAbility
+          (.intersection [.permanent, .cardType .creature])
+          (.keyword .flying)]
+      .endOfTurn)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .controlled (.controller .this)]))
+    (.continuous
+      [
+        .gainAbility
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .wasObjectOfThisTrigger])
+          (.keyword .flying)]
+      .endOfTurn)).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .hasTarget
+          (.intersection [
+            .permanent,
+            .cardType .artifact])]))
+    (.continuous
+      [
+        .gainAbility
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .wasObjectOfThisTrigger])
+          (.keyword .flying)]
+      .endOfTurn)).toTriggeredAbility?.isNone
 
 -- Attack-only is not enough (Storm also forbids blocking).
 #guard
