@@ -99,8 +99,7 @@ def soldierOfTheGreyHost : CardDef :=
         (.enter .this)
         (.continuous
           [.addPowerToughness
-            (.target 1 (.intersection [.permanent, .cardType .creature]))
-            2 0]
+            (.target 1 (.intersection [.permanent, .cardType .creature])) (Value.int 2) (Value.int 0)]
           .endOfTurn))
   ]).toCardDef
     (oracleText := "Flash\nFlying\nWhen this creature enters, target creature gets +2/+0 until end of turn.")
@@ -124,8 +123,7 @@ def eaglesOfTheNorth : CardDef :=
               (.intersection [
                 .permanent,
                 .cardType .creature,
-                .controlled (.controller .this)])
-              1 0,
+                .controlled (.controller .this)]) (Value.int 1) (Value.int 0),
             .gainAbility
               (.intersection [
                 .permanent,
@@ -143,7 +141,7 @@ def dunedainBlade : CardDef :=
     .manaCost [.generic 1, .mono .white],
     .type .artifact,
     .subtype .equipment,
-    .ability (.static (.addPowerToughness (.hostOf .this) 2 1)),
+    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 2) (Value.int 1))),
     .ability (.keywordWithSubtypeAndCost .equip .human (.mana [.generic 1])),
     .ability (.keywordWithCost .equip [.mana [.generic 3]])
   ]).toCardDef
@@ -201,8 +199,7 @@ def esquireOfTheKing : CardDef :=
               (.intersection [
                 .permanent,
                 .cardType .creature,
-                .controlled (.controller .this)])
-              1 1]
+                .controlled (.controller .this)]) (Value.int 1) (Value.int 1)]
           .endOfTurn)),
     .ability (
       .static
@@ -379,8 +376,7 @@ def languish : CardDef :=
     .actions [
       .continuous
         [.addPowerToughness
-          (.intersection [.permanent, .cardType .creature])
-          (-4) (-4)]
+          (.intersection [.permanent, .cardType .creature]) (Value.int (-4)) (Value.int (-4))]
         .endOfTurn]
   ]).toCardDef
     (oracleText := "All creatures get -4/-4 until end of turn.")
@@ -517,7 +513,7 @@ def goblinFireleaper : CardDef :=
     .ability (
       .activated
         [.mana [.generic 1, .mono .red]]
-        (.continuous [.addPowerToughness (.source .this) 1 0] .endOfTurn)),
+        (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 0)] .endOfTurn)),
     .ability (
       .triggered
         (.die .this)
@@ -553,8 +549,7 @@ def oliphaunt : CardDef :=
                   .not .this,
                   .permanent,
                   .cardType .creature,
-                  .controlled (.controller .this)]))
-              2 0,
+                  .controlled (.controller .this)])) (Value.int 2) (Value.int 0),
             .gainAbility (.targetReference 1) (.keyword .trample)]
           .endOfTurn)),
     .ability (.keywordWithCost (.typecycling [] [] [.mountain]) [.mana [.generic 1]])
@@ -580,7 +575,7 @@ def infernoTitan : CardDef :=
     .ability (
       .activated
         [.mana [.mono .red]]
-        (.continuous [.addPowerToughness (.source .this) 1 0] .endOfTurn)),
+        (.continuous [.addPowerToughness (.source .this) (Value.int 1) (Value.int 0)] .endOfTurn)),
     .ability (
       .triggered
         (.or (.enter .this) (.attack .this .all))
@@ -686,7 +681,7 @@ def giftOfStrands : CardDef :=
         1
         (.intersection [.permanent, .cardType .creature])),
     .ability (.triggered (.enter .this) (.scry (.controller .this) 2)),
-    .ability (.static (.addPowerToughness (.hostOf .this) 3 3))
+    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 3) (Value.int 3)))
   ]).toCardDef
     (oracleText := "Flash\nEnchant creature\nWhen this Aura enters, scry 2.\nEnchanted creature gets +3/+3.")
 
@@ -741,8 +736,7 @@ def bardHeirOfGirion : CardDef :=
             .not .this,
             .permanent,
             .cardType .creature,
-            .controlled (.controller .this)])
-          1 1)),
+            .controlled (.controller .this)]) (Value.int 1) (Value.int 1))),
     .ability
       (.triggered
         (.attackSimultaneously
@@ -1075,8 +1069,7 @@ def thorinKingOfDurinsFolk : CardDef :=
             .permanent,
             .token,
             .cardType .artifact,
-            .controlled (.controller .this)])
-          1 0))
+            .controlled (.controller .this)]) (Value.int 1) (Value.int 0)))
   ]).toCardDef
     (oracleText := "Whenever Thorin or another Dwarf you control enters, create a Treasure token.\nOther Dwarves you control get +1/+0 for each artifact token you control.")
 
@@ -1097,7 +1090,7 @@ def andurilFlameOfTheWest : CardDef :=
     .type .artifact,
     .supertype .legendary,
     .subtype .equipment,
-    .ability (.static (.addPowerToughness (.hostOf .this) 3 1)),
+    .ability (.static (.addPowerToughness (.hostOf .this) (Value.int 3) (Value.int 1))),
     .ability (
       .triggered
         (.attack (.hostOf .this) .all)
