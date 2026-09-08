@@ -56,7 +56,7 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
   `powerAtLeast`, `subtype`, `spell`, `permanentSpell`, `player`, `opponent`,
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
-  `wasObject`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
+  `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
   `inDeck`, `supertype`, `variable`, `topOfLibrary`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
@@ -123,7 +123,7 @@ ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 `Selector.wasObjectSince` is “the object of this event since that event”
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`
-is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObject`
+is “whenever you discard” (Moonstone). The leftover exiles `Selector.wasObjectOfThisTrigger`
 from the graveyard (that discarded card); any graveyard card stays uncompiled. Instant-or-sorcery leftovers that
 copy-if-targeting require `targetsIncludeAny` of an artifact or land
 (Fin Fang Foom). Justice’s bounce-watch leftover is `Trigger.returnToHand` of

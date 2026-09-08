@@ -106,8 +106,8 @@ inductive Selector where
   | token
   /-- The object of the numbered action. -/
   | wasObjectOfAction : Nat → Selector
-  /-- The object of this event. -/
-  | wasObject
+  /-- The object of this triggered ability. -/
+  | wasObjectOfThisTrigger
   /-- The object a replacement effect is replacing. -/
   | replacingObject : Nat → Selector
   /-- An object created by the numbered action. -/
@@ -400,7 +400,7 @@ def shape : Selector → Shape
   | .selected _ _ _ | .player => {}
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
-  | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObject | .replacingObject _
+  | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject _
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inDeck | .supertype _
   | .variable _ | .topOfLibrary _ => {}
 
@@ -531,11 +531,11 @@ def includesInGraveyard : Selector → Bool
   | .target _ among | .targets _ _ among => includesInGraveyard among
   | _ => false
 
-/-- True when this selector is the object of this event. -/
-def includesWasObject : Selector → Bool
-  | .wasObject => true
+/-- True when this selector is the object of this triggered ability. -/
+def includesWasObjectOfThisTrigger : Selector → Bool
+  | .wasObjectOfThisTrigger => true
   | .intersection (f :: fs) =>
-    includesWasObject f || includesWasObject (.intersection fs)
+    includesWasObjectOfThisTrigger f || includesWasObjectOfThisTrigger (.intersection fs)
   | _ => false
 
 /-- True when this selector is “the object of a put-to-graveyard event
@@ -1005,7 +1005,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .this | .source _ | .controller _ | .opponent _ | .owner _ | .target _ _ | .targets _ _ _
     | .targetSet _ _ _ _ | .targetReference _ | .selected _ _ _
     | .spell | .permanentSpell | .player
-    | .wasObjectOfAction _ | .wasObject | .replacingObject _ | .wasCreatedByAction _
+    | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject _ | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
     | .variable _ | .topOfLibrary _ => none
     | s => some s
@@ -2319,8 +2319,8 @@ def leftoverAllianceModes? (who : Selector) :
 def leftoverCreatureOrLandTarget? (s : Selector) : Bool :=
   s.targetingShape.types.eqTypes [.creature, .land]
 
-/-- Exile the object of this event from a graveyard, then you may play it
-until the end of your next turn. -/
+/-- Exile the object of this triggered ability from a graveyard, then you
+may play it until the end of your next turn. -/
 def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
   | .optional
       (.sequence [
@@ -2328,7 +2328,7 @@ def leftoverExileGyPlayUntilNextTurn? : CardAction → Bool
         .continuous [.canPlay permit (.wasCreatedByAction created)] duration
       ]) =>
     id == created && leftoverYou permit &&
-      among.includesInGraveyard && among.includesWasObject &&
+      among.includesInGraveyard && among.includesWasObjectOfThisTrigger &&
       leftoverUntilEndOfYourNextTurn? duration
   | _ => false
 
@@ -7743,7 +7743,7 @@ end TraditionalCardDefinition
         .actionId 1
           (.exile (.intersection [
             .inGraveyard,
-            .wasObject,
+            .wasObjectOfThisTrigger,
             .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]
@@ -7784,7 +7784,7 @@ end TraditionalCardDefinition
         .actionId 1
           (.exile (.intersection [
             .inGraveyard,
-            .wasObject,
+            .wasObjectOfThisTrigger,
             .owner (.controller .this)])),
         .continuous
           [.canPlay (.controller .this) (.wasCreatedByAction 1)]

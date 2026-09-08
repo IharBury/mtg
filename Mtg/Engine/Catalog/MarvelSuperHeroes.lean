@@ -1324,7 +1324,7 @@ def moonstoneHarshMistress : CardDef :=
             .actionId 1
               (.exile (.intersection [
                 .inGraveyard,
-                .wasObject,
+                .wasObjectOfThisTrigger,
                 .owner (.controller .this)])),
             .continuous
               [.canPlay (.controller .this) (.wasCreatedByAction 1)]
