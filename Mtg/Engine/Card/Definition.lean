@@ -2280,10 +2280,10 @@ def leftoverGrantFlyingToAttacking? : CardAction → Bool
       | none => false
   | _ => false
 
-/-- This mode has not been chosen this turn by the selected player. -/
-def leftoverModeUnchosenThisTurn? (who : Selector) (id : Nat) : Condition → Bool
+/-- This mode has not been chosen this turn by any player. -/
+def leftoverModeUnchosenThisTurn? (id : Nat) : Condition → Bool
   | .didNotHappen (.modeWithIdChosen chooser id') .turnStart =>
-    leftoverYou who && leftoverYou chooser && id == id'
+    chooser == .player && id == id'
   | _ => false
 
 /-- Alliance modes: add {G}{G}{G}; +1/+1 on each creature you control;
@@ -2297,9 +2297,9 @@ def leftoverAllianceModes? (who : Selector) :
     ] =>
     leftoverYou who && leftoverYou gainer &&
       id1 != id2 && id2 != id3 && id1 != id3 &&
-      leftoverModeUnchosenThisTurn? who id1 c1 &&
-      leftoverModeUnchosenThisTurn? who id2 c2 &&
-      leftoverModeUnchosenThisTurn? who id3 c3 &&
+      leftoverModeUnchosenThisTurn? id1 c1 &&
+      leftoverModeUnchosenThisTurn? id2 c2 &&
+      leftoverModeUnchosenThisTurn? id3 c3 &&
       sel.shape.sameController &&
       sel.shape.types.eqTypes [.creature]
   | _ => false
@@ -7453,8 +7453,8 @@ end TraditionalCardDefinition
           [.gainAbility .this (.keyword .flying)]))
   ]).toCardDef.staticAbilities == #[]
 
--- Galadriel, Light of Valinor: you choose modes unchosen this turn.
--- Unrestricted `chooseMode` does not compile to Alliance.
+-- Galadriel, Light of Valinor: you choose modes unchosen this turn by
+-- any player. Unrestricted `chooseMode` does not compile to Alliance.
 #guard
   let you : Selector := .controller .this
   let among : Selector :=
@@ -7464,7 +7464,7 @@ end TraditionalCardDefinition
       .cardType .creature,
       .controlled you]
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen you id) .turnStart
+    .didNotHappen (.modeWithIdChosen .player id) .turnStart
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen 1,
@@ -7516,7 +7516,7 @@ end TraditionalCardDefinition
       .cardType .creature,
       .controlled you]
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen you id) .turnStart
+    .didNotHappen (.modeWithIdChosen .player id) .turnStart
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen 1,
@@ -7534,6 +7534,34 @@ end TraditionalCardDefinition
   (Ability.triggered (.enter among)
     (.chooseModeRestricted (.opponent you) modes)).toTriggeredAbility?.isNone
 
+-- Only you having chosen the mode is not any player.
+#guard
+  let you : Selector := .controller .this
+  let among : Selector :=
+    .intersection [
+      .not .this,
+      .permanent,
+      .cardType .creature,
+      .controlled you]
+  let unchosenYou (id : Nat) : Condition :=
+    .didNotHappen (.modeWithIdChosen you id) .turnStart
+  let modes : List (Nat × Condition × List CardAction) :=
+    [
+      (1, unchosenYou 1,
+        [.addMana you [.mono .green, .mono .green, .mono .green]]),
+      (2, unchosenYou 2,
+        [.putCounter
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .controlled you])
+          .plusOnePlusOne
+          1]),
+      (3, unchosenYou 3,
+        [.sequence [.scry you 2, .draw you 1]])]
+  (Ability.triggered (.enter among)
+    (.chooseModeRestricted you modes)).toTriggeredAbility?.isNone
+
 -- Since the start of the game is not this turn.
 #guard
   let you : Selector := .controller .this
@@ -7544,7 +7572,7 @@ end TraditionalCardDefinition
       .cardType .creature,
       .controlled you]
   let unchosenGame (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen you id) .gameStart
+    .didNotHappen (.modeWithIdChosen .player id) .gameStart
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosenGame 1,
@@ -7572,7 +7600,7 @@ end TraditionalCardDefinition
       .cardType .creature,
       .controlled you]
   let unchosen1 : Condition :=
-    .didNotHappen (.modeWithIdChosen you 1) .turnStart
+    .didNotHappen (.modeWithIdChosen .player 1) .turnStart
   let modes : List (Nat × Condition × List CardAction) :=
     [
       (1, unchosen1,

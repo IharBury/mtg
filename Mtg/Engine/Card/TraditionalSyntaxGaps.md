@@ -117,9 +117,9 @@ each artifact token you control (Thorin).
 Aragorn and Arwen’s leftover is +1/+1 on each other creature you control and
 1 life per those creatures (`forEachVariable`), not a flat 1 life.
 `CardAction.chooseModeRestricted` is who chooses and, for each mode, an ID,
-when it is allowed, and its actions (Galadriel: you, unchosen this turn).
-Unrestricted `chooseMode` does not leftover to that triggered ability.
-`Trigger.modeWithIdChosen` is who chose a numbered mode.
+when it is allowed, and its actions (Galadriel: you, unchosen this turn by
+any player). Unrestricted `chooseMode` does not leftover to that triggered
+ability. `Trigger.modeWithIdChosen` of only you stays uncompiled.
 `Selector.wasObjectSince` is “the object of this event since that event”
 (Night Nurse: `putToGraveyard` since `turnStart`). `Condition.countAtLeast` is object-count
 (Arnim Zola’s two or more creature cards in the graveyard). `Trigger.discard`

@@ -1204,7 +1204,7 @@ def galadrielSDismissal : CardDef :=
 def galadrielLightOfValinor : CardDef :=
   let you : Selector := .controller .this
   let unchosen (id : Nat) : Condition :=
-    .didNotHappen (.modeWithIdChosen you id) .turnStart
+    .didNotHappen (.modeWithIdChosen .player id) .turnStart
   (TraditionalCardDefinition.card [
     .name "Galadriel, Light of Valinor",
     .manaCost [.generic 2, .mono .green, .mono .white, .mono .blue],
