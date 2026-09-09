@@ -222,7 +222,8 @@ def shape : Selector → Shape
   | .wasObjectSince (.putToGraveyard _) .turnStart =>
     { putIntoGraveyardThisTurn := true }
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject
-  | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inDeck | .supertype _
+  | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
+  | .inExile | .supertype _
   | .variable _ | .topOfLibrary _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
@@ -308,10 +309,11 @@ def any : Selector := .all
 /-- A land (CR 305). -/
 def land : Selector := .cardType .land
 
-/-- True when this selector includes `inDeck`. -/
-def includesInDeck : Selector → Bool
-  | .inDeck => true
-  | .intersection (f :: fs) => includesInDeck f || includesInDeck (.intersection fs)
+/-- True when this selector includes `inLibrary`. -/
+def includesInLibrary : Selector → Bool
+  | .inLibrary => true
+  | .intersection (f :: fs) =>
+    includesInLibrary f || includesInLibrary (.intersection fs)
   | _ => false
 
 /-- True when this selector names a numbered target so a later clause can
@@ -435,8 +437,8 @@ def includedSubtypes : Selector → List String
   | _ => []
 
 /-- A basic land card in a library. -/
-def basicLandInDeck (s : Selector) : Bool :=
-  includesInDeck s && includesLand s && includesBasic s
+def basicLandInLibrary (s : Selector) : Bool :=
+  includesInLibrary s && includesLand s && includesBasic s
 
 /-- The constraint a `selected` choice matches. -/
 def selectedAmong? : Selector → Option Selector
@@ -881,7 +883,8 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .spell | .permanentSpell | .hasTarget _ | .isTargetOf _ | .keywordAbility _
     | .player
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
-    | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inDeck | .supertype _
+    | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
+    | .inExile | .supertype _
     | .variable _ | .topOfLibrary _ => none
     | s => some s
 
@@ -1571,17 +1574,17 @@ def leftoverSearchActions? : List CardAction → Option Effect
   | [.putOntoBattlefieldInState sel [.tapped]] =>
     match sel.selectedAmong? with
     | some among =>
-      if among.basicLandInDeck then some Effect.searchBasicLandTapped else none
+      if among.basicLandInLibrary then some Effect.searchBasicLandTapped else none
     | none => none
   | [.defineVariable id sel, .reveal (.variable id'), .returnToHand (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
-        if among.basicLandInDeck then some Effect.searchBasicLandToHand
+        if among.basicLandInLibrary then some Effect.searchBasicLandToHand
         else
           match among.includedSubtype? with
           | some t =>
-            if among.includesInDeck then some (Effect.searchLandTypeToHand t) else none
+            if among.includesInLibrary then some (Effect.searchLandTypeToHand t) else none
           | none => none
       | none => none
     else none
@@ -1595,7 +1598,7 @@ def leftoverSearchActions? : List CardAction → Option Effect
     if id == id' && id == id'' && id == id''' then
       match sel.selectedAmong? with
       | some among =>
-        if among.basicLandInDeck then some Effect.searchTwoBasicsSplit else none
+        if among.basicLandInLibrary then some Effect.searchTwoBasicsSplit else none
       | none => none
     else none
   | _ => none
@@ -1851,7 +1854,7 @@ def leftoverSearchBasicHoldOut? : List CardAction → Option Nat
   | [.defineVariable id sel, .reveal (.variable id'), .holdOutInLibrary (.variable id'')] =>
     if id == id' && id == id'' then
       match sel.selectedAmong? with
-      | some among => if among.basicLandInDeck then some id else none
+      | some among => if among.basicLandInLibrary then some id else none
       | none => none
     else none
   | _ => none
@@ -2748,7 +2751,7 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
   | [.putOntoBattlefield sel] =>
     match sel.selectedAmong? with
     | some among =>
-      if among.includesInDeck && among.includedSubtype? == some "Forest" then
+      if among.includesInLibrary && among.includedSubtype? == some "Forest" then
         some TriggeredAbility.onEnterSearchForest
       else none
     | none => none
@@ -2756,7 +2759,7 @@ def leftoverEnterSearch? : List CardAction → Option TriggeredAbility
     if id == id' && id == id'' then
       match sel.selectedAmong? with
       | some among =>
-        if among.basicLandInDeck then
+        if among.basicLandInLibrary then
           some TriggeredAbility.onEnterSearchBasicToHand
         else none
       | none => none
@@ -5523,8 +5526,15 @@ end TraditionalCardDefinition
     .ability (.activated [.sacrifice .this] (.draw (.controller .this) 2))
   ]).toCardDef.activatedAbilities[0]!.cost.sacrificeSource
 
-#guard Selector.basicLandInDeck
-  (.intersection [.inDeck, .cardType .land, .supertype .basic])
+#guard Selector.basicLandInLibrary
+  (.intersection [.inLibrary, .cardType .land, .supertype .basic])
+
+#guard Selector.includesInLibrary .inLibrary
+#guard !Selector.includesInLibrary .inHand
+#guard !Selector.includesInLibrary .inExile
+#guard Selector.inHand != .inExile
+#guard (Selector.shape .inHand) == {}
+#guard (Selector.shape .inExile) == {}
 
 #guard
   let action : CardAction :=
@@ -5536,7 +5546,7 @@ end TraditionalCardDefinition
             (.controller .this)
             (.range 1 1)
             (.intersection [
-              .inDeck,
+              .inLibrary,
               .cardType .land,
               .supertype .basic])),
         .reveal (.variable 1),
@@ -5552,7 +5562,7 @@ end TraditionalCardDefinition
           (.selected
             (.controller .this)
             (.range 1 1)
-            (.intersection [.inDeck, .cardType .land, .supertype .basic]))
+            (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
           [.tapped]]
   action.toAbilityEffect == Effect.searchBasicLandTapped
 
@@ -5567,7 +5577,7 @@ end TraditionalCardDefinition
             (.selected
               (.controller .this)
               (.range 1 1)
-              (.intersection [.inDeck, .subtype .forest]))])).toTriggeredAbility? with
+              (.intersection [.inLibrary, .subtype .forest]))])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterSearchForest
   | none => false
 
@@ -5583,7 +5593,7 @@ end TraditionalCardDefinition
               (.controller .this)
               (.range 1 1)
               (.intersection [
-                .inDeck,
+                .inLibrary,
                 .cardType .land,
                 .supertype .basic])),
           .reveal (.variable 1),
@@ -5608,7 +5618,7 @@ end TraditionalCardDefinition
                     (.controller .this)
                     (.range 1 1)
                     (.intersection [
-                      .inDeck,
+                      .inLibrary,
                       .cardType .land,
                       .supertype .basic])),
                 .reveal (.variable 1),
@@ -5631,7 +5641,7 @@ end TraditionalCardDefinition
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .inDeck,
+                  .inLibrary,
                   .cardType .land,
                   .supertype .basic])),
             .reveal (.variable 1),
@@ -5652,7 +5662,7 @@ end TraditionalCardDefinition
                   (.controller .this)
                   (.range 1 1)
                   (.intersection [
-                    .inDeck,
+                    .inLibrary,
                     .cardType .land,
                     .supertype .basic])),
               .reveal (.variable 1)],
@@ -5838,7 +5848,7 @@ end TraditionalCardDefinition
             (.selected
               (.controller .this)
               (.range 1 1)
-              (.intersection [.inDeck, .subtype .halfling])),
+              (.intersection [.inLibrary, .subtype .halfling])),
           .reveal (.variable 1),
           .returnToHand (.variable 1)])).toActivatedAbility? with
   | some ab =>
@@ -6401,7 +6411,7 @@ end TraditionalCardDefinition
               (.controller .this)
               (.range 1 1)
               (.intersection [
-                .inDeck,
+                .inLibrary,
                 .cardType .land,
                 .supertype .basic])),
           .reveal (.variable 1),
@@ -7143,7 +7153,7 @@ end TraditionalCardDefinition
             (.controller .this)
             (.range 0 2)
             (.intersection [
-              .inDeck,
+              .inLibrary,
               .cardType .land,
               .supertype .basic])),
         .reveal (.variable 1),
@@ -7163,7 +7173,7 @@ end TraditionalCardDefinition
             (.controller .this)
             (.range 0 2)
             (.intersection [
-              .inDeck,
+              .inLibrary,
               .cardType .land,
               .supertype .basic])),
         .reveal (.variable 1),
@@ -7182,7 +7192,7 @@ end TraditionalCardDefinition
           (.selected
             (.controller .this)
             (.range 1 1)
-            (.intersection [.inDeck, .subtype .plan])),
+            (.intersection [.inLibrary, .subtype .plan])),
         .reveal (.variable 1),
         .returnToHand (.variable 1)]
   action.toAbilityEffect == Effect.searchLandTypeToHand "Plan"

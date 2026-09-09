@@ -962,7 +962,7 @@ def woodElves : CardDef :=
               (.selected
                 (.controller .this)
                 (.range 1 1)
-                (.intersection [.inDeck, .subtype .forest]))]))
+                (.intersection [.inLibrary, .subtype .forest]))]))
   ]).toCardDef
     (oracleText := "When this creature enters, search your library for a Forest card, put that card onto the battlefield, then shuffle.")
 
@@ -1300,7 +1300,7 @@ def hobbitHole : CardDef :=
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .inDeck,
+                  .inLibrary,
                   .cardType .land,
                   .supertype .basic]))
               [.tapped]])),
@@ -1971,7 +1971,7 @@ def throrsMap : CardDef :=
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .inDeck,
+                  .inLibrary,
                   .cardType .land,
                   .supertype .basic])),
             .reveal (.variable 1),
@@ -2094,7 +2094,7 @@ def oldThrush : CardDef :=
                       (.controller .this)
                       (.range 1 1)
                       (.intersection [
-                        .inDeck,
+                        .inLibrary,
                         .cardType .land,
                         .supertype .basic])),
                   .reveal (.variable 1),
@@ -2295,7 +2295,7 @@ def troopOfPonies : CardDef :=
                 (.controller .this)
                 (.range 0 2)
                 (.intersection [
-                  .inDeck,
+                  .inLibrary,
                   .cardType .land,
                   .supertype .basic])),
             .reveal (.variable 1),
