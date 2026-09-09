@@ -4255,6 +4255,9 @@ end TraditionalCardDefinition
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard Range.range Value.x 1 != Range.range 0 1
+#guard Range.any != Range.range 0 0
+#guard Range.from Value.x != Range.from 1
+#guard Range.from 1 != Range.range 1 1
 #guard
   let drawX : CardAction := .draw (.controller .this) .x
   let millPower : CardAction :=

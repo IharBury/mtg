@@ -50,7 +50,7 @@ every remaining catalog subtype; Plan enchantments stay blocked by
 
 From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
-- **Range** — `range lo hi` (`Value` bounds).
+- **Range** — `range lo hi` (`Value` bounds), `any` (0 unbounded), `from n` (`Value` lower bound, unbounded high).
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
@@ -187,11 +187,6 @@ printed abilities of the 21 subtype-unlocked catalog cards.
 Each subsection lists constructors that at least one remaining supported card
 needs. Card names are examples; the [per-card index](#per-card-index) is
 complete.
-
-### `Range`
-
-- **`anyNumber`** (3 cards) — Any number (range 0 ∞); `Range.range` has no unbounded high bound
-  - Last March of the Ents; Worlds Within Worlds; Super-Soldier Serum
 
 ### `SetPredicate`
 
@@ -609,8 +604,8 @@ inductives (not a missing leftover for an expressible spelling).
   this” is missing.
 - **Super-Soldier Serum** — Enchanted creature is a *legendary Soldier* in
   addition to its other types, and attach *any number* of Equipment you
-  control. No `ContinuousEffect.gainSupertype`; `Range.anyNumber` is missing
-  (only finite `range lo hi`).
+  control. No `ContinuousEffect.gainSupertype`; `Range.any` now covers the
+  unbounded count.
 - **The Vision** — Choose one *that hasn't been chosen this turn*.
   `CardAction.chooseModeRestricted` now exists (Galadriel’s Alliance).
   The Vision still needs a leftover for “whenever you cast a noncreature
@@ -1360,7 +1355,6 @@ Converted cards from the previous untagged set are omitted here.
 - `ContinuousEffect.cantBeCountered` — Selected spells can't be countered
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Long-Lost Lances** (`longLostLances`)
 
@@ -2346,7 +2340,6 @@ Converted cards from the previous untagged set are omitted here.
 **Super-Soldier Serum** (`superSoldierSerum`)
 
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
-- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Swordsman, Sharp Scoundrel** (`swordsmanSharpScoundrel`)
 
@@ -2619,7 +2612,6 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.inHand` — An object in a hand
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Dark Fortress** (`darkFortress`)
 
