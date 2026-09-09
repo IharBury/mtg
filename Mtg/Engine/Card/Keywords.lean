@@ -310,6 +310,10 @@ inductive Selector where
   | variable : Nat → Selector
   /-- The top card of the selected player's library (CR 401). -/
   | topOfLibrary : Selector → Selector
+  /-- A spell or activated ability that was paid with mana from the selected
+  source. The source is an ability if it was on the stack, or a card if it
+  was a mana ability or a spell action. -/
+  | wasPaidWithManaFrom : Selector → Selector
 deriving Repr, Inhabited, BEq
 
 /-- When a continuous effect ends, when a triggered ability fires, or

@@ -224,7 +224,7 @@ def shape : Selector → Shape
   | .wasObjectSince _ _ | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject
   | .wasCreatedByAction _ | .hostOf _ | .inGraveyard | .inLibrary | .inHand
   | .inExile | .supertype _
-  | .variable _ | .topOfLibrary _ => {}
+  | .variable _ | .topOfLibrary _ | .wasPaidWithManaFrom _ => {}
 
 /-- Apply set-wide predicates onto an object-level shape. -/
 def applySetPredicates (s : Shape) : List SetPredicate → Shape
@@ -395,6 +395,15 @@ def leftoverKeywordAbility? : Selector → Option Keyword
     match leftoverKeywordAbility? f with
     | some k => some k
     | none => leftoverKeywordAbility? (.intersection fs)
+  | _ => none
+
+/-- The mana source of a `wasPaidWithManaFrom` conjunct, if any. -/
+def leftoverWasPaidWithManaFrom? : Selector → Option Selector
+  | .wasPaidWithManaFrom src => some src
+  | .intersection (f :: fs) =>
+    match leftoverWasPaidWithManaFrom? f with
+    | some src => some src
+    | none => leftoverWasPaidWithManaFrom? (.intersection fs)
   | _ => none
 
 /-- True when this selector is a target of this trigger's object. -/
@@ -924,7 +933,7 @@ def massSelector? (effects : List ContinuousEffect) : Option Selector :=
     | .wasObjectOfAction _ | .wasObjectOfThisTrigger | .replacingObject | .wasCreatedByAction _
     | .hostOf _ | .inGraveyard | .wasObjectSince _ _ | .inLibrary | .inHand
     | .inExile | .supertype _
-    | .variable _ | .topOfLibrary _ => none
+    | .variable _ | .topOfLibrary _ | .wasPaidWithManaFrom _ => none
     | s => some s
 
 end ContinuousEffect
@@ -2367,11 +2376,14 @@ def leftoverMayDrawXDiscard2? : CardAction → Bool
     leftoverYou who && leftoverYou who' && (valToNat? n).isNone
   | _ => false
 
-/-- You cast a spell (not only a noncreature spell); draw and lose 1. -/
+/-- You cast a spell paid with mana from a Treasure; draw and lose 1. -/
 def leftoverCastWithTreasureDrawLoseLife? (among : Selector) : CardAction → Bool
   | .sequence [.draw who 1, .loseLife who' 1] =>
     leftoverYou who && leftoverYou who' && among.shape.sameController &&
-      Selector.includesSpell among && !Selector.includesNoncreature among
+      Selector.includesSpell among && !Selector.includesNoncreature among &&
+      match Selector.leftoverWasPaidWithManaFrom? among with
+      | some src => src.includedSubtype? == some "Treasure"
+      | none => false
   | _ => false
 
 /-- This gets +X/+0, where X is the greatest power among creatures you
@@ -5891,6 +5903,16 @@ end TraditionalCardDefinition
   (.intersection [.inHand, .cardType .land])
 #guard !Selector.includesInHand .inExile
 #guard !Selector.includesInExile .inHand
+#guard (Selector.shape (.wasPaidWithManaFrom (.subtype .treasure))) == {}
+#guard Selector.leftoverWasPaidWithManaFrom?
+  (.wasPaidWithManaFrom (.subtype .treasure)) == some (.subtype .treasure)
+#guard Selector.leftoverWasPaidWithManaFrom?
+  (.intersection [
+    .spell,
+    .controlled (.controller .this),
+    .wasPaidWithManaFrom (.subtype .treasure)]) == some (.subtype .treasure)
+#guard Selector.leftoverWasPaidWithManaFrom? .spell |>.isNone
+#guard Selector.leftoverWasPaidWithManaFrom? (.keywordAbility .equip) |>.isNone
 
 #guard
   let action : CardAction :=
@@ -9738,12 +9760,34 @@ end TraditionalCardDefinition
 #guard
   match
     (Ability.triggered
-      (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+      (.castSpell
+        (.intersection [
+          .spell,
+          .controlled (.controller .this),
+          .wasPaidWithManaFrom (.subtype .treasure)]))
       (.sequence [
         .draw (.controller .this) 1,
         .loseLife (.controller .this) 1])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onCastWithTreasureDrawLoseLife
   | none => false
+
+#guard
+  (Ability.triggered
+    (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.castSpell
+      (.intersection [
+        .spell,
+        .controlled (.controller .this),
+        .wasPaidWithManaFrom (.subtype .food)]))
+    (.sequence [
+      .draw (.controller .this) 1,
+      .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered

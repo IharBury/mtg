@@ -2412,7 +2412,11 @@ def smaugWickedWorm : CardDef :=
           [.tapped])),
     .ability
       (.triggered
-        (.castSpell (.intersection [.spell, .controlled (.controller .this)]))
+        (.castSpell
+          (.intersection [
+            .spell,
+            .controlled (.controller .this),
+            .wasPaidWithManaFrom (.subtype .treasure)]))
         (.sequence [
           .draw (.controller .this) 1,
           .loseLife (.controller .this) 1]))

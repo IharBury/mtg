@@ -59,7 +59,8 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `owner`, `attacking`, `blocking`, `token`, `wasObjectOfAction`,
   `wasObjectOfThisTrigger`, `replacingObject`, `wasCreatedByAction`, `hostOf`, `inGraveyard`,
   `wasObjectSince`,
-  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`.
+  `inLibrary`, `inHand`, `inExile`, `supertype`, `variable`, `topOfLibrary`,
+  `wasPaidWithManaFrom`.
 - **Trigger** — `endOfGame`, `endOfTurn`, `endOfPlayerTurn`,
   `combatStart` (player whose turn it is), `turnStart`,
   `gameStart`, `attack`, `enter`, `draw`, `ordinal`, `combatDamage`,
@@ -180,6 +181,10 @@ permanents you control, mana equal to this creature's power, equipped combat
 Treasures, and related). Literal Nat bounds, Army-only trample, this-only
 extra counters, pump without trample, or `forEachVariable` Treasure-per-
 artifact stay uncompiled.
+`Selector.wasPaidWithManaFrom` is a spell or activated ability paid with mana
+from the selected source (Smaug: Treasure; the source is an ability if it
+was on the stack, or a card if it was a mana ability or a spell action).
+Omitting it, or Food not Treasure, stays uncompiled.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
 Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of
