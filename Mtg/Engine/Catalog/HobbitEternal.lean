@@ -1096,8 +1096,8 @@ def andurilFlameOfTheWest : CardDef :=
         (.attack (.hostOf .this) .all)
         (.ifElse
           (.any (.intersection [.hostOf .this, .supertype .legendary]))
-          [.createTokensInState (.controller .this) 2 spirits [.tapped, .attacking]]
-          [.createTokensInState (.controller .this) 2 spirits [.tapped]])),
+          [.createTokens (.controller .this) 2 spirits [.tapped, .attacking]]
+          [.createTokens (.controller .this) 2 spirits [.tapped]])),
     .ability (.keywordWithCost .equip [.mana [.generic 2]])
   ]).toCardDef
     (oracleText := "Equipped creature gets +3/+1.\nWhenever equipped creature attacks, create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking.\nEquip {2}")

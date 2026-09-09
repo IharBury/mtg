@@ -648,9 +648,9 @@ inductive CardAction where
   | dealDamage : Selector → Selector → Value → CardAction
   /-- The selected player divides that much damage from the source among
   the selected objects (CR 601.2d). -/
-  | divideDamage : Selector → Selector → Selector → Nat → CardAction
-  | draw : Selector → Nat → CardAction
-  | scry : Selector → Nat → CardAction
+  | divideDamage : Selector → Selector → Selector → Value → CardAction
+  | draw : Selector → Value → CardAction
+  | scry : Selector → Value → CardAction
   | sequence : List CardAction → CardAction
   /-- Perform the given actions only when the condition holds. -/
   | if : Condition → List CardAction → CardAction
@@ -673,7 +673,7 @@ inductive CardAction where
   given actions (CR 118.1 / 608.2d). -/
   | optionalPayFor : Selector → List Cost → List CardAction → CardAction
   /-- The selected player discards that many cards. -/
-  | discard : Selector → Nat → CardAction
+  | discard : Selector → Value → CardAction
   /-- Put that many counters of the given kind on the selected object. -/
   | putCounter : Selector → CounterKind → Nat → CardAction
   /-- Exile the selected object. -/
@@ -683,7 +683,7 @@ inductive CardAction where
   /-- Destroy the selected permanent (CR 701.7). -/
   | destroy : Selector → CardAction
   /-- The selected player gains that much life (CR 118.3). -/
-  | gainLife : Selector → Nat → CardAction
+  | gainLife : Selector → Value → CardAction
   /-- The selected player chooses one or more of the listed actions. -/
   | playerSelectAction : Selector → Range → List CardAction → CardAction
   /-- Put the selected object on top of its owner's library. -/
@@ -693,11 +693,11 @@ inductive CardAction where
   /-- Put the selected objects into their owner's library at the given
   ordinal position from the top (CR 401.4). `1` is the top card;
   `2` is second from the top. -/
-  | putIntoLibraryFromTop : Selector → Nat → CardAction
+  | putIntoLibraryFromTop : Selector → Value → CardAction
   /-- Number this action so later clauses can refer to it. -/
   | actionId : Nat → CardAction → CardAction
   /-- The selected player loses that much life (CR 118.3). -/
-  | loseLife : Selector → Nat → CardAction
+  | loseLife : Selector → Value → CardAction
   /-- The controller sacrifices the selected object (CR 701.17). -/
   | sacrifice : Selector → CardAction
   /-- Return the selected object to its owner's hand. -/
@@ -731,7 +731,7 @@ inductive CardAction where
   | fight : Selector → Selector → CardAction
   /-- The first selected player chooses a color. The second selected
   player adds X mana of that color. -/
-  | addManaAnyColor : Selector → Selector → Nat → CardAction
+  | addManaAnyColor : Selector → Selector → Value → CardAction
   /-- The first selected player chooses a color. The second selected
   player adds X mana of that color, where X is the third selected
   object's power. -/
@@ -745,15 +745,14 @@ inductive CardAction where
   e.g. recruit, amass Goblins 1, or connive 1. -/
   | keyword : Selector → Keyword → CardAction
   /-- The selected player creates that many tokens with the given
-  characteristics (CR 111). -/
-  | createTokens : Selector → Nat → List CardPart → CardAction
-  /-- The selected player creates that many tokens with the given
-  characteristics, entering in the given states (CR 111, CR 110.5). -/
-  | createTokensInState : Selector → Nat → List CardPart → List CardState → CardAction
+  characteristics, entering in the given states (CR 111, CR 110.5).
+  An empty state list is the usual “enters as a new object” case. -/
+  | createTokens (who : Selector) (n : Value) (parts : List CardPart)
+      (states : List CardState := []) : CardAction
   /-- The selected player mills that many cards (CR 701.13). -/
-  | mill : Selector → Nat → CardAction
+  | mill : Selector → Value → CardAction
   /-- The selected player surveils that many cards (CR 701.53). -/
-  | surveil : Selector → Nat → CardAction
+  | surveil : Selector → Value → CardAction
   /-- The selected player copies the selected spell or ability and may
   choose new targets for the copy (CR 707). -/
   | copyWithNewTargets : Selector → Selector → CardAction
@@ -764,7 +763,7 @@ inductive CardAction where
 deriving Repr, Inhabited, BEq
 
 /-- One printed characteristic or ability of a card face, or of a token
-created by `CardAction.createTokens` or `CardAction.createTokensInState`. -/
+created by `CardAction.createTokens`. -/
 inductive CardPart where
   | name : String → CardPart
   /-- Printed symbols; `ManaCost` is the engine structure, this list is the
@@ -814,7 +813,13 @@ end PredefinedToken
 def valToInt? : Value → Option Int
   | .int p => some p
   | .nat p => some (Int.ofNat p)
-  | .greatestManaValue _ => none
+  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
+
+/-- Convert a Value to a Nat if it is a non-negative constant. -/
+def valToNat? : Value → Option Nat
+  | .nat n => some n
+  | .int n => if n ≥ 0 then some n.toNat else none
+  | .x | .greatestManaValue _ | .greatestToughness _ | .greatestPower _ => none
 
 namespace ContinuousEffect
 
@@ -1075,7 +1080,7 @@ def leftoverUntapPlusOneIfSubtype? : CardAction → Option String
 
 /-- Draw, then discard a card. -/
 def leftoverDrawDiscard? : CardAction → Option Nat
-  | .sequence [.draw _who n, .discard _p 1] => some n
+  | .sequence [.draw _who (.nat n), .discard _p 1] => some n
   | _ => none
 
 /-- Put a +1/+1 counter on up to one target creature; a target player gains
@@ -1083,7 +1088,7 @@ that much life. -/
 def leftoverPlusOneAndGainLife? : CardAction → Option Nat
   | .sequence [
       .putCounter sel .plusOnePlusOne 1,
-      .gainLife who n
+      .gainLife who (.nat n)
     ] =>
     let upToOneCreature :=
       match sel with
@@ -1204,12 +1209,16 @@ def leftoverCreaturesTargetPlayerGet? : CardAction → Option (Int × Int)
 
 /-- Target player draws cards and loses life. -/
 def leftoverTargetPlayerDrawLoseLife? : CardAction → Option (Nat × Nat)
-  | .sequence [.draw (.target _ .player) cards, .loseLife _ life] => some (cards, life)
+  | .sequence [.draw (.target _ .player) (.nat cards), .loseLife _ (.nat life)] =>
+    some (cards, life)
   | _ => none
 
 /-- You draw cards and lose life. -/
 def leftoverDrawLoseLifeSelf? : CardAction → Option (Nat × Nat)
-  | .sequence [.draw (.controller .this) cards, .loseLife (.controller .this) life] =>
+  | .sequence [
+      .draw (.controller .this) (.nat cards),
+      .loseLife (.controller .this) (.nat life)
+    ] =>
     some (cards, life)
   | _ => none
 
@@ -1330,7 +1339,7 @@ def leftoverTargetCantBeBlocked? : CardAction → Bool
 
 /-- Tap target creature, then scry and draw. -/
 def leftoverTapScryDraw? : CardAction → Option (Nat × Nat)
-  | .sequence [.tap sel, .scry _ scryN, .draw _ drawN] =>
+  | .sequence [.tap sel, .scry _ (.nat scryN), .draw _ (.nat drawN)] =>
     if sel.toTargetKind == .creature then some (scryN, drawN) else none
   | _ => none
 
@@ -1341,7 +1350,7 @@ def leftoverReturnSpellDraw? : CardAction → Bool
 
 /-- Destroy target artifact or enchantment; you gain life. -/
 def leftoverDestroyArtEnchGainLife? : CardAction → Option Nat
-  | .sequence [.destroy sel, .gainLife _ n] =>
+  | .sequence [.destroy sel, .gainLife _ (.nat n)] =>
     if sel.toTargetKind == .artifactOrEnchantment then some n else none
   | _ => none
 
@@ -1609,7 +1618,7 @@ def leftoverEachPlayerSacrificesCreature? : CardAction → Bool
 
 /-- Each opponent loses N life and you gain N life. -/
 def leftoverEachOpponentLoseLifeYouGain? : CardAction → Option Nat
-  | .sequence [.loseLife dest n, .gainLife who m] =>
+  | .sequence [.loseLife dest (.nat n), .gainLife who (.nat m)] =>
     if who == .controller .this && n == m then
       match dest with
       | .opponent (.controller .this) => some n
@@ -1661,7 +1670,7 @@ def leftoverMaySacArtifactOrDiscardDraw? : CardAction → Option Nat
           (.playerSelectAction _ (.range 1 1) [
             .sacrifice sac,
             .discard _ 1])),
-      .if (.happened (.actionWithId id') _) [.draw _ n]
+      .if (.happened (.actionWithId id') _) [.draw _ (.nat n)]
     ] =>
     if id == id' && leftoverSacrificeOneArtifact? sac then some n else none
   | _ => none
@@ -1692,7 +1701,7 @@ def leftoverReturnUpToTwoGyModal? : CardAction → Option Bool
 tapped, and you put a +1/+1 counter on up to one creature. -/
 def leftoverGainLifeSearchBasicPlusOne? : CardAction → Option Nat
   | .sequence [
-      .gainLife who n,
+      .gainLife who (.nat n),
       .searchLibraryThenShuffle _ actions,
       .putCounter sel .plusOnePlusOne 1
     ] =>
@@ -2007,15 +2016,18 @@ def leftoverTokenKind? (parts : List CardPart) : Option TokenKind :=
 
 /-- `createTokens` for this controller, with a known token kind. -/
 def leftoverCreateTokensKindN? : CardAction → Option (TokenKind × Nat)
-  | .createTokens who n parts =>
-    if leftoverYou who then leftoverTokenKind? parts |>.map (fun k => (k, n))
+  | .createTokens who n parts [] =>
+    if leftoverYou who then
+      match leftoverTokenKind? parts, valToNat? n with
+      | some k, some n => some (k, n)
+      | _, _ => none
     else none
   | _ => none
 
 /-- Create `n` Spirit tokens, tapped, optionally also attacking. -/
 def leftoverCreateTappedSpirits (n : Nat) (attacking : Bool) : CardAction → Bool
-  | .createTokensInState who k parts states =>
-    leftoverYou who && k == n && leftoverTokenKind? parts == some .spirit &&
+  | .createTokens who k parts states =>
+    leftoverYou who && valToNat? k == some n && leftoverTokenKind? parts == some .spirit &&
       (if attacking then leftoverTappedAndAttacking states
        else leftoverTappedOnly states)
   | _ => false
@@ -2031,15 +2043,15 @@ def leftoverIfElseCreateSpiritsForEquipped? : CardAction → Bool
 
 /-- Create tokens, then creatures you control get +P/+T. -/
 def leftoverCreateThenTeamPump? : CardAction → Option Effect
-  | .sequence [.createTokens who n parts, .continuous effects _] =>
-    match leftoverTokenKind? parts, ContinuousEffect.addedPT? effects,
+  | .sequence [.createTokens who n parts [], .continuous effects _] =>
+    match leftoverTokenKind? parts, valToNat? n, ContinuousEffect.addedPT? effects,
         ContinuousEffect.massSelector? effects with
-    | some kind, some (p, t), some among =>
+    | some kind, some n, some (p, t), some among =>
       if leftoverYou who && among.shape.sameController &&
           among.shape.types.eqTypes [.creature] then
         some (Effect.createTokensThenTeamPump kind n p t)
       else none
-    | _, _, _ => none
+    | _, _, _, _ => none
   | _ => none
 
 /-- Grant “whenever this deals combat damage to a player, create a Treasure”. -/
@@ -2114,14 +2126,14 @@ def leftoverMaySacDrawTreasure? : CardAction → Bool
   | .sequence [
       .optional (.actionId id (.sacrifice sel)),
       .if (.happened (.actionWithId id') _)
-        [.draw _ 1, .createTokens who 1 parts]
+        [.draw _ 1, .createTokens who 1 parts []]
     ] =>
     id == id' && leftoverSacrificeAnotherCreatureOrArtifact? sel &&
       leftoverYou who && leftoverTokenKind? parts == some .treasure
   | .sequence [
       .optional (.actionId id (.sacrifice sel)),
       .if (.happened (.actionWithId id') _)
-        [.createTokens who 1 parts, .draw _ 1]
+        [.createTokens who 1 parts [], .draw _ 1]
     ] =>
     id == id' && leftoverSacrificeAnotherCreatureOrArtifact? sel &&
       leftoverYou who && leftoverTokenKind? parts == some .treasure
@@ -2397,7 +2409,7 @@ def leftoverSelectedMilled? (id : Nat) (pred : Selector → Bool) :
 
 /-- Mill n, then put an instant or sorcery card from among them into hand. -/
 def leftoverMillThenPutInstantOrSorcery? : CardAction → Option Nat
-  | .sequence [.actionId id (.mill who n), .returnToHand sel] =>
+  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand sel] =>
     match leftoverSelectedMilled? id leftoverInstantOrSorceryFilter sel with
     | some (lo, 1) =>
       if leftoverYou who && lo ≤ 1 then some n else none
@@ -2406,7 +2418,7 @@ def leftoverMillThenPutInstantOrSorcery? : CardAction → Option Nat
 
 /-- Mill n, then put up to `max` land cards from among them into hand. -/
 def leftoverMillThenPutLands? : CardAction → Option (Nat × Nat)
-  | .sequence [.actionId id (.mill who n), .returnToHand sel] =>
+  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand sel] =>
     match leftoverSelectedMilled? id leftoverLandFilter sel with
     | some (0, max) =>
       if leftoverYou who then some (n, max) else none
@@ -2415,7 +2427,7 @@ def leftoverMillThenPutLands? : CardAction → Option (Nat × Nat)
 
 /-- Mill n, then put all instant and sorcery cards from among them into hand. -/
 def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
-  | .sequence [.actionId id (.mill who n), .returnToHand among] =>
+  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand among] =>
     if leftoverYou who && leftoverMilledBy id leftoverInstantOrSorceryFilter among then
       some n
     else none
@@ -2424,9 +2436,9 @@ def leftoverMillThenPutAllInstantsOrSorceries? : CardAction → Option Nat
 /-- Mill n, you may put a permanent card from among them into hand, gain life. -/
 def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
   | .sequence [
-      .actionId id (.mill who n),
+      .actionId id (.mill who (.nat n)),
       .optional (.returnToHand sel),
-      .gainLife gainer life
+      .gainLife gainer (.nat life)
     ] =>
     match leftoverSelectedMilled? id leftoverPermanentCardFilter sel with
     | some (lo, 1) =>
@@ -2437,7 +2449,7 @@ def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
 /-- Mill n, you may put a subtype or enchantment card from among them into hand. -/
 def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × String)
   | .sequence [
-      .actionId id (.mill who n),
+      .actionId id (.mill who (.nat n)),
       .optional (.returnToHand (.selected _ (.range lo 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
@@ -2449,7 +2461,7 @@ def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × Str
       | _ => none
     else none
   | .sequence [
-      .actionId id (.mill who n),
+      .actionId id (.mill who (.nat n)),
       .optional (.returnToHand (.targets _ (.range lo 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
@@ -2481,7 +2493,7 @@ def leftoverMillThenPutCompiled? (action : CardAction) : Option Effect :=
 
 /-- Mill n, then put all cards of a subtype from among them into hand. -/
 def leftoverMillThenSubtypeToHand? : CardAction → Option (Nat × String)
-  | .sequence [.actionId id (.mill who n), .returnToHand among] =>
+  | .sequence [.actionId id (.mill who (.nat n)), .returnToHand among] =>
     if leftoverYou who then
       leftoverMilledSubtype? id among |>.map (fun st => (n, st))
     else none
@@ -2515,9 +2527,9 @@ def leftoverNontokenHeroModal? (among : Selector) : List CardAction → Bool
 
 /-- Lose 1 life and create a Treasure (second spell each turn). -/
 def leftoverLoseLifeCreateTreasure? : CardAction → Bool
-  | .sequence [.loseLife who 1, .createTokens c 1 parts] =>
+  | .sequence [.loseLife who 1, .createTokens c 1 parts []] =>
     leftoverYou who && leftoverYou c && leftoverTokenKind? parts == some .treasure
-  | .sequence [.createTokens c 1 parts, .loseLife who 1] =>
+  | .sequence [.createTokens c 1 parts [], .loseLife who 1] =>
     leftoverYou who && leftoverYou c && leftoverTokenKind? parts == some .treasure
   | _ => false
 
@@ -2634,19 +2646,22 @@ def leftoverCompiled? (action : CardAction) : Option Effect :=
 
 /-- Enters-the-battlefield actions that compile to a named trigger. -/
 def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
-  | .createTokens who n parts =>
-    if leftoverYou who then
-      if n == 1 && leftoverRedwingToken? parts then
-        some (TriggeredAbility.onEnter Effect.enterCreateRedwing)
-      else
-        leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
-    else none
-  | .createTokensInState who n parts states =>
-    if leftoverYou who && leftoverTappedOnly states then
-      leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n true)
-    else none
+  | .createTokens who n parts states =>
+    match valToNat? n with
+    | some n =>
+      if leftoverYou who then
+        if states == [] then
+          if n == 1 && leftoverRedwingToken? parts then
+            some (TriggeredAbility.onEnter Effect.enterCreateRedwing)
+          else
+            leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n)
+        else if leftoverTappedOnly states then
+          leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onEnterCreateTokens k n true)
+        else none
+      else none
+    | none => none
   | .sequence [
-      .actionId id (.createTokens who n parts),
+      .actionId id (.createTokens who n parts []),
       .attach .this (.wasCreatedByAction id')
     ] =>
     if id == id' && n == 1 && leftoverYou who then
@@ -2676,7 +2691,7 @@ def leftoverEnterThisAction? : CardAction → Option TriggeredAbility
       | _ => none
     else none
   | .sequence [
-      .gainLife _ n,
+      .gainLife _ (.nat n),
       .optional search
     ] =>
     if leftoverSearchBasicOnTop? search then
@@ -2830,12 +2845,21 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .dealDamage _source victim (.int n) =>
                     if n >= 0 then compileDamage victim n.toNat asAbility
                     else continuousEffect none [] asAbility
-                  | .dealDamage _ _ (.greatestManaValue _) =>
+                  | .dealDamage _ _ _ =>
                     continuousEffect none [] asAbility
-                  | .divideDamage _who _source victim n => compileDamage victim n asAbility
+                  | .divideDamage _who _source victim n =>
+                    match valToNat? n with
+                    | some n => compileDamage victim n asAbility
+                    | none => continuousEffect none [] asAbility
                   | .draw _who n =>
-                    if asAbility then Effect.abilityDraw n else Effect.draw n
-                  | .scry _who n => Effect.scry n
+                    match valToNat? n with
+                    | some n =>
+                      if asAbility then Effect.abilityDraw n else Effect.draw n
+                    | none => continuousEffect none [] asAbility
+                  | .scry _who n =>
+                    match valToNat? n with
+                    | some n => Effect.scry n
+                    | none => continuousEffect none [] asAbility
                   | .sequence (a :: _) => compile a asAbility
                   | .sequence [] => continuousEffect none [] asAbility
                   | .if _ (a :: _) => compile a asAbility
@@ -2857,7 +2881,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                   | .preventable _ _ inner => compile inner asAbility
                   | .optionalPayFor _ _ (a :: _) => compile a asAbility
                   | .optionalPayFor _ _ [] => continuousEffect none [] asAbility
-                  | .discard _ n => Effect.drawThenDiscard n
+                  | .discard _ n =>
+                    match valToNat? n with
+                    | some n => Effect.drawThenDiscard n
+                    | none => continuousEffect none [] asAbility
                   | .putCounter (.source .this) .plusOnePlusOne n =>
                     Effect.putPlusOnePlusOneOnSource n
                   | .putCounter _ _ _ => continuousEffect none [] asAbility
@@ -2876,7 +2903,10 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                       match s.toTargetKind with
                       | .creaturePowerAtLeast n => Effect.destroyCreaturePowerAtLeast n
                       | _ => Effect.destroyCreature
-                  | .gainLife _ n => Effect.gainLife n
+                  | .gainLife _ n =>
+                    match valToNat? n with
+                    | some n => Effect.gainLife n
+                    | none => continuousEffect none [] asAbility
                   | .playerSelectAction _ _ actions =>
                     match actions with
                     | [.putOnTopOfLibrary _, .putOnBottomOfLibrary _] =>
@@ -2923,25 +2953,28 @@ def compile (action : CardAction) (asAbility : Bool) : Effect :=
                         if ok then e else continuousEffect none [] asAbility
                       | _ => e
                     | none => continuousEffect none [] asAbility
-                  | .createTokens _ n parts =>
-                    match leftoverTokenKind? parts with
-                    | some kind =>
-                      if asAbility then Effect.abilityCreateTokens kind n
-                      else Effect.createTokens kind n
-                    | none => continuousEffect none [] asAbility
-                  | .createTokensInState _ n parts states =>
-                    match leftoverTokenKind? parts with
-                    | some kind =>
-                      if leftoverTappedOnly states then
+                  | .createTokens _ n parts states =>
+                    match leftoverTokenKind? parts, valToNat? n with
+                    | some kind, some n =>
+                      if states == [] then
+                        if asAbility then Effect.abilityCreateTokens kind n
+                        else Effect.createTokens kind n
+                      else if leftoverTappedOnly states then
                         Effect.createTappedTokens kind n
                       else continuousEffect none [] asAbility
-                    | none => continuousEffect none [] asAbility
+                    | _, _ => continuousEffect none [] asAbility
                   | .mill who n =>
-                    if leftoverTargetPlayer? who then Effect.millPlayer n
-                    else continuousEffect none [] asAbility
+                    match valToNat? n with
+                    | some n =>
+                      if leftoverTargetPlayer? who then Effect.millPlayer n
+                      else continuousEffect none [] asAbility
+                    | none => continuousEffect none [] asAbility
                   | .surveil who n =>
-                    if leftoverYou who then Effect.scry n
-                    else continuousEffect none [] asAbility
+                    match valToNat? n with
+                    | some n =>
+                      if leftoverYou who then Effect.scry n
+                      else continuousEffect none [] asAbility
+                    | none => continuousEffect none [] asAbility
                   | .copyWithNewTargets _ _ =>
                     continuousEffect none [] asAbility
                   | .keepReplacedAction | .healAllDamage _ =>
@@ -3110,7 +3143,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
               some (TriggeredAbility.onAttackTargetGainsKeywords kws)
             else none
           | none => none
-  | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ n]) =>
+  | .triggered (.attack .this .all) (.if (.any among) [.gainLife _ (.nat n)]) =>
     if among.shape.ferocious then
       some (TriggeredAbility.onAttackFerociousGainLife n)
     else none
@@ -3128,9 +3161,9 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         sel.shape.sameController && sel.shape.types.eqTypes [.creature] then
       some TriggeredAbility.onAttackFerociousPlusOneEach
     else none
-  | .triggered (.attack .this .all) (.scry _ n) =>
+  | .triggered (.attack .this .all) (.scry _ (.nat n)) =>
     some (TriggeredAbility.onAttackScry n)
-  | .triggered (.attack .this .all) (.surveil who n) =>
+  | .triggered (.attack .this .all) (.surveil who (.nat n)) =>
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onAttackScry n)
     else none
@@ -3156,15 +3189,15 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         creatureSel.shape.types.eqTypes [.creature] then
       some (TriggeredAbility.onCasting Effect.castingPlusOneThis)
     else none
-  | .triggered (.enter .this) (.draw (.controller .this) n) =>
+  | .triggered (.enter .this) (.draw (.controller .this) (.nat n)) =>
     some (TriggeredAbility.onEnterDraw n)
-  | .triggered (.enter .this) (.scry _ n) =>
+  | .triggered (.enter .this) (.scry _ (.nat n)) =>
     some (TriggeredAbility.onEnterScry n)
-  | .triggered (.enter .this) (.surveil who n) =>
+  | .triggered (.enter .this) (.surveil who (.nat n)) =>
     if CardAction.leftoverYou who then
       some (TriggeredAbility.onEnterSurveil n)
     else none
-  | .triggered (.enter .this) (.gainLife _ n) =>
+  | .triggered (.enter .this) (.gainLife _ (.nat n)) =>
     some (TriggeredAbility.onEnterGainLife n)
   | .triggered (.enter .this)
       (.sequence [
@@ -3254,7 +3287,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         | some 1 => some (TriggeredAbility.onResource Effect.resourceSecondDrawDrain)
         | _ =>
           match action with
-          | .mill who n =>
+          | .mill who (.nat n) =>
             if CardAction.leftoverTargetPlayer? who then
               some (TriggeredAbility.onDrawSecondMillPlayer n)
             else none
@@ -3269,7 +3302,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.combatDamage .this .player)
       (.sequence [.draw (.controller .this) 1, .discard (.controller .this) 1]) =>
     some TriggeredAbility.onCombatDamageToPlayerLoot
-  | .triggered (.combatDamage .this .player) (.draw _ n) =>
+  | .triggered (.combatDamage .this .player) (.draw _ (.nat n)) =>
     some (TriggeredAbility.onCombatDamageDraw n)
   | .triggered (.combatDamage among .player)
       (.putCounter (.source .this) .plusOnePlusOne 2) =>
@@ -3283,13 +3316,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         some (TriggeredAbility.onDiesOppCreatureGets p t)
       else none
     | _, _ => none
-  | .triggered (.die .this) (.draw _ n) =>
+  | .triggered (.die .this) (.draw _ (.nat n)) =>
     some (TriggeredAbility.onDiesDraw n)
   | .triggered (.die .this) (.dealDamageEqualToPower _ dest) =>
     if dest.toTargetKind == .oppCreature then
       some TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature
     else none
-  | .triggered (.dieSimultaneously among _) (.scry _ n) =>
+  | .triggered (.dieSimultaneously among _) (.scry _ (.nat n)) =>
     if among.shape.otherCreatures then
       some (TriggeredAbility.onOneOrMoreOtherCreaturesDieScry n)
     else none
@@ -3312,21 +3345,21 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
           (.targets _
             (.range 0 1)
             (.intersection [.inGraveyard, .owner (.opponent _)])),
-        .loseLife (.opponent _) n]) =>
+        .loseLife (.opponent _) (.nat n)]) =>
     some (TriggeredAbility.onEnterExileOppGyCardOppsLoseLife n)
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
     some TriggeredAbility.onEnterEachOpponentDiscards
   | .triggered (.enter .this)
-      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
+      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) (.nat amount)) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
   | .triggered
       (.or (.enter .this) (.attack .this .all))
-      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) amount) =>
+      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) (.nat amount)) =>
     some (TriggeredAbility.onEnterOrAttackDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.sequence [
         .optional (.actionId id (.discard _ 1)),
-        .if (.happened (.actionWithId id') _) [.draw _ n]]) =>
+        .if (.happened (.actionWithId id') _) [.draw _ (.nat n)]]) =>
     if id == id' then some (TriggeredAbility.onEnterMayDiscardDraw n) else none
   | .triggered (.enter among) (.putCounter sel .plusOnePlusOne 1) =>
     if among.shape.landYouControl && sel.toTargetKind == .creatureYouControl then
@@ -3426,10 +3459,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
             (sel == .source .this || sel == .this) then
           some TriggeredAbility.onLandYouControlEntersDrawPlusOneSource
         else none
-      | .createTokens who n parts =>
+      | .createTokens who n parts [] =>
         if among.shape.landYouControl && CardAction.leftoverYou who then
-          CardAction.leftoverTokenKind? parts |>.map
-            (fun k => TriggeredAbility.onLandYouControlEntersCreateTokens k n)
+          match valToNat? n with
+          | some n =>
+            CardAction.leftoverTokenKind? parts |>.map
+              (fun k => TriggeredAbility.onLandYouControlEntersCreateTokens k n)
+          | none => none
         else none
       | _ =>
         if Selector.anotherVillainYouControl among &&
@@ -3475,9 +3511,12 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
       some TriggeredAbility.onYourBeginCombatFerociousPlusOne
     else none
   | .triggered w (.keyword who k) => leftoverKeywordTriggered? w who k
-  | .triggered (.die .this) (.createTokens who n parts) =>
+  | .triggered (.die .this) (.createTokens who n parts []) =>
     if CardAction.leftoverYou who then
-      CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
+      match valToNat? n with
+      | some n =>
+        CardAction.leftoverTokenKind? parts |>.map (fun k => TriggeredAbility.onDiesCreateTokens k n)
+      | none => none
     else none
   | .triggered (.die among) (.loseLife sel 1) =>
     if among.shape.token && among.shape.sameController &&
@@ -3488,13 +3527,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
     if CardAction.leftoverWolfPlusOneOrTreasure? modes then
       some TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure
     else none
-  | .triggered (.combatDamage among dest) (.createTokens who n parts) =>
+  | .triggered (.combatDamage among dest) (.createTokens who n parts []) =>
     if CardAction.leftoverYou who && CardAction.leftoverPlayerOrBattle dest &&
         among.shape.sameController then
-      match CardAction.leftoverTokenKind? parts, among.includedSubtype? with
-      | some kind, some st =>
+      match CardAction.leftoverTokenKind? parts, among.includedSubtype?, valToNat? n with
+      | some kind, some st, some n =>
         some (TriggeredAbility.onSubtypeYouControlCombatDamageCreateTokens st kind n)
-      | _, _ => none
+      | _, _, _ => none
     else none
   | .triggered (.attack (.hostOf .this) .all) action =>
     if CardAction.leftoverIfElseCreateSpiritsForEquipped? action then
@@ -3505,7 +3544,7 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverLoseLifeCreateTreasure? action then
       some TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure
     else none
-  | .triggered (.castSpell among) (.createTokens who n parts) =>
+  | .triggered (.castSpell among) (.createTokens who n parts []) =>
     if among.shape.sameController && among.shape.subtype == some "Villain" &&
         n == 1 && CardAction.leftoverYou who &&
         CardAction.leftoverTokenKind? parts == some .villain21menace then
@@ -3522,12 +3561,13 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
         CardAction.leftoverGrantFlyingToAttacking? action then
       some TriggeredAbility.onAttackWithTwoOrMoreGrantFlying
     else none
-  | .triggered (.or (.enter .this) (.enter among)) (.createTokens who n parts) =>
+  | .triggered (.or (.enter .this) (.enter among)) (.createTokens who n parts []) =>
     if CardAction.leftoverYou who then
-      match among.shape.anotherSubtypeYouControl, CardAction.leftoverTokenKind? parts with
-      | some st, some kind =>
+      match among.shape.anotherSubtypeYouControl, CardAction.leftoverTokenKind? parts,
+          valToNat? n with
+      | some st, some kind, some n =>
         some (TriggeredAbility.onThisOrAnotherSubtypeEntersCreateTokens st kind n)
-      | _, _ => none
+      | _, _, _ => none
     else none
   | .triggered (.castSpell among) (.tap sel) =>
     if Selector.youCastNoncreatureSpell among &&
@@ -4208,9 +4248,27 @@ end TraditionalCardDefinition
   | some ab => ab == TriggeredAbility.onEnterDraw 1
   | none => false
 
+#guard CardAction.toEffect (.scry (.controller .this) 2) == Effect.scry 2
+
+#guard valToNat? (3 : Value) == some 3
+#guard (valToNat? Value.x).isNone
+#guard (valToNat? (Value.greatestPower .this)).isNone
+#guard (valToNat? (Value.greatestToughness .this)).isNone
 #guard
-  let action : CardAction := .scry (.controller .this) 2
-  action.toEffect == Effect.scry 2
+  let drawX : CardAction := .draw (.controller .this) .x
+  let millPower : CardAction :=
+    .mill (.controller .this)
+      (.greatestPower
+        (.intersection [
+          .permanent,
+          .cardType .creature,
+          .controlled (.controller .this)]))
+  let tokens : CardAction :=
+    .createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]
+  drawX != .draw (.controller .this) 1 &&
+    millPower != .mill (.controller .this) 1 &&
+    tokens ==
+      .createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]
 
 -- Lakeshore Apothecary: draw your second card, +1/+1 counter.
 #guard
@@ -6836,14 +6894,14 @@ end TraditionalCardDefinition
 
 #guard
   CardAction.toAbilityEffect
-    (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken [.tapped]) ==
+    (.createTokens (.controller .this) 1 PredefinedToken.treasureToken [.tapped]) ==
     Effect.createTappedTokens .treasure 1
 
 #guard
   match
     (Ability.triggered
       (.enter .this)
-      (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken
+      (.createTokens (.controller .this) 1 PredefinedToken.treasureToken
         [.tapped])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterCreateTokens .treasure 1 true
   | none => false
@@ -6875,11 +6933,11 @@ end TraditionalCardDefinition
       (.attack (.hostOf .this) .all)
       (.ifElse
         (.any (.intersection [.hostOf .this, .supertype .legendary]))
-        [.createTokensInState (.controller .this) 2
+        [.createTokens (.controller .this) 2
           [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
             .ability (.keyword .flying)]
           [.tapped, .attacking]]
-        [.createTokensInState (.controller .this) 2
+        [.createTokens (.controller .this) 2
           [.type .creature, .subtype .spirit, .colorIndicator [.white], .power 1, .toughness 1,
             .ability (.keyword .flying)]
           [.tapped]])).toTriggeredAbility? with
@@ -7795,7 +7853,7 @@ end TraditionalCardDefinition
           .owner (.controller .this)])
         2)
       [.mana [.generic 3], .tapSymbol]
-      (.createTokensInState
+      (.createTokens
         (.controller .this)
         1
         [
@@ -7813,7 +7871,7 @@ end TraditionalCardDefinition
         .cardType .creature,
         .owner (.controller .this)]))
     [.mana [.generic 3], .tapSymbol]
-    (.createTokensInState
+    (.createTokens
       (.controller .this)
       1
       [
@@ -7830,7 +7888,7 @@ end TraditionalCardDefinition
         .owner (.controller .this)])
       1)
     [.mana [.generic 3], .tapSymbol]
-    (.createTokensInState
+    (.createTokens
       (.controller .this)
       1
       [
@@ -7842,7 +7900,7 @@ end TraditionalCardDefinition
   match
     (Ability.activated
       [.mana [.generic 3], .tapSymbol]
-      (.createTokensInState
+      (.createTokens
         (.controller .this)
         1
         [

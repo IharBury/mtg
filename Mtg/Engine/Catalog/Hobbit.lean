@@ -1589,7 +1589,7 @@ def longBodiedGreyDog : CardDef :=
     .ability (
       .triggered
         (.enter .this)
-        (.createTokensInState (.controller .this) 1 PredefinedToken.treasureToken
+        (.createTokens (.controller .this) 1 PredefinedToken.treasureToken
           [.tapped]))
   ]).toCardDef
     (oracleText := "Flash\nReach\nWhen this creature enters, create a tapped Treasure token. (It's an artifact with \"{T}, Sacrifice this token: Add one mana of any color.\")")

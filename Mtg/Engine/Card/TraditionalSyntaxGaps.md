@@ -93,9 +93,10 @@ From `Mtg/Engine/Card/Definition.lean` as of this analysis:
   `holdOutInLibrary`, `defineVariable`,
   `forEachVariable`, `reveal`, `dealDamageEqualToPower`, `fight`, `addManaAnyColor`,
   `addManaAnyColorEqualToPower`, `addMana`, `keyword`, `createTokens`,
-  `createTokensInState`, `mill`, `surveil`, `copyWithNewTargets`,
+  `mill`, `surveil`, `copyWithNewTargets`,
   `keepReplacedAction`, `healAllDamage`.
-- **Value** — `nat`, `greatestManaValue`.
+- **Value** — `nat`, `int`, `x`, `greatestManaValue`, `greatestToughness`,
+  `greatestPower`.
 - **TraditionalCardDefinition** — `card : List CardPart`, with `CardPart`
   `name`, `manaCost`, `type`, `supertype`, `subtype`, `colorIndicator`,
   `power`, `toughness`, `ability`, `alternative` (Adventure face), `actions`.
@@ -105,8 +106,8 @@ Gundabad Opportunist, Elvish Mystic, Guttersnipe, Fisk Tower, Patient
 Instructor, Goblin-town Flunkies, …) already use that inventory. Remaining
 cards need the constructors below. `CardAction.keyword` compiles keyword
 actions such as recruit and amass. `CardAction.createTokens` compiles token
-creation from a selector, count, and `CardPart` characteristics.
-`CardAction.createTokensInState` is the same with an entering state (tapped).
+creation from a selector, count, `CardPart` characteristics, and optional
+entering states (tapped, attacking).
 `CardAction.ifElse` compiles an “if … instead …” replacement (Andúril’s
 legendary Spirits). `CardAction.mill` compiles milling a selected player
 that many cards (and mill-then-put sequences through leftovers).

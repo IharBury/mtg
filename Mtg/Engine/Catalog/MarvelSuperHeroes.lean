@@ -1079,7 +1079,7 @@ def arnimZolaBioFanatic : CardDef :=
             .owner (.controller .this)])
           2)
         [.mana [.generic 3], .tapSymbol]
-        (.createTokensInState
+        (.createTokens
           (.controller .this)
           1
           [
