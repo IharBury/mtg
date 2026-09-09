@@ -181,6 +181,10 @@ permanents you control, mana equal to this creature's power, equipped combat
 Treasures, and related). Literal Nat bounds, Army-only trample, this-only
 extra counters, pump without trample, or `forEachVariable` Treasure-per-
 artifact stay uncompiled.
+Azog leftover binds the up-to-one other target creature, then its controller,
+then destroys that creature; the captured player amasses Goblins equal to
+its power, and if that player is you, draw. Determining the controller after
+destroy (when the object is no longer controlled) stays uncompiled.
 `Selector.wasPaidWithManaFrom` is a spell or activated ability paid with mana
 from the selected source (Smaug: Treasure; the source is an ability if it
 was on the stack, or a card if it was a mana ability or a spell action).

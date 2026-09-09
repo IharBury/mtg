@@ -2537,20 +2537,23 @@ def azogMoriaSRuin : CardDef :=
         (.enter .this)
         (.sequence [
           .actionId 1
-            (.destroy
+            (.defineVariable 1
               (.targets 1 (.range 0 1)
                 (.intersection [
                   .not .this,
                   .permanent,
                   .cardType .creature]))),
+          .actionId 2
+            (.defineVariable 2 (.controller (.wasObjectOfAction 1))),
+          .destroy (.wasObjectOfAction 1),
           .keyword
-            (.controller (.wasObjectOfAction 1))
+            (.wasObjectOfAction 2)
             (.amass .goblin (Value.greatestPower (.wasObjectOfAction 1))),
           .if
             (.any
               (.intersection [
-                .wasObjectOfAction 1,
-                .controlled (.controller .this)]))
+                .wasObjectOfAction 2,
+                .controller .this]))
             [.draw (.controller .this) 1]]))
   ]).toCardDef
     (oracleText := "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card. (To amass Goblins X, that player puts X +1/+1 counters on an Army they control. It's also a Goblin. If they don't control an Army, they create a 0/0 black Goblin Army creature token first.)")

@@ -2298,27 +2298,40 @@ def leftoverPowerOfActionObject? (id : Nat) : Value → Bool
   | .greatestPower s => leftoverWasObjectOfAction? s id
   | _ => false
 
-/-- That destroyed creature is one you control. -/
-def leftoverWasObjectYouControl? (s : Selector) (id : Nat) : Bool :=
+/-- The controller of the numbered action's object. -/
+def leftoverControllerOfAction? (s : Selector) (id : Nat) : Bool :=
+  match s with
+  | .controller obj => leftoverWasObjectOfAction? obj id
+  | _ => false
+
+/-- The numbered action's object (the captured controller) is you. -/
+def leftoverCapturedControllerIsYou? (s : Selector) (id : Nat) : Bool :=
   match s with
   | .intersection fs =>
     leftoverWasObjectOfAction? s id &&
       fs.any (fun
-        | .controlled (.controller .this) => true
+        | .controller .this => true
         | _ => false)
   | _ => false
 
-/-- Destroy up to one other target creature; its controller amasses Goblins
-equal to its power; if you controlled it, draw. -/
+/-- Bind up to one other target creature, then its controller; destroy that
+creature; the captured player amasses Goblins equal to its power; if that
+player is you, draw. The controller is determined before destroy. -/
 def leftoverEnterDestroyOtherAmassControllerPower? : CardAction → Bool
   | .sequence [
-      .actionId id (.destroy sel),
-      .keyword (.controller obj) (.amass .goblin n),
-      .if (.any controlled) [.draw who 1]
+      .actionId creatureId (.defineVariable _ sel),
+      .actionId controllerId (.defineVariable _ controllerSel),
+      .destroy destroyed,
+      .keyword who (.amass .goblin n),
+      .if (.any capturedYou) [.draw drawer 1]
     ] =>
-    leftoverYou who && leftoverDestroyOtherUpToOneCreature? sel &&
-      leftoverWasObjectOfAction? obj id && leftoverPowerOfActionObject? id n &&
-      leftoverWasObjectYouControl? controlled id
+    creatureId != controllerId && leftoverYou drawer &&
+      leftoverDestroyOtherUpToOneCreature? sel &&
+      leftoverControllerOfAction? controllerSel creatureId &&
+      leftoverWasObjectOfAction? destroyed creatureId &&
+      leftoverWasObjectOfAction? who controllerId &&
+      leftoverPowerOfActionObject? creatureId n &&
+      leftoverCapturedControllerIsYou? capturedYou controllerId
   | _ => false
 
 /-- Opponent-controlled artifacts. -/
@@ -9617,30 +9630,58 @@ end TraditionalCardDefinition
           []))
   ]).toCardDef.staticAbilities == #[]
 
--- Azog: destroy up to one other, amass that creature's power, maybe draw.
+-- Azog: bind the target, then its controller, then destroy; amass that
+-- creature's power; maybe draw. Controller after destroy stays uncompiled.
 #guard
   match
     (Ability.triggered
       (.enter .this)
       (.sequence [
         .actionId 1
-          (.destroy
+          (.defineVariable 1
             (.targets 1 (.range 0 1)
               (.intersection [
                 .not .this,
                 .permanent,
                 .cardType .creature]))),
+        .actionId 2
+          (.defineVariable 2 (.controller (.wasObjectOfAction 1))),
+        .destroy (.wasObjectOfAction 1),
         .keyword
-          (.controller (.wasObjectOfAction 1))
+          (.wasObjectOfAction 2)
           (.amass .goblin (Value.greatestPower (.wasObjectOfAction 1))),
         .if
           (.any
             (.intersection [
-              .wasObjectOfAction 1,
-              .controlled (.controller .this)]))
+              .wasObjectOfAction 2,
+              .controller .this]))
           [.draw (.controller .this) 1]])).toTriggeredAbility? with
   | some ab => ab == TriggeredAbility.onEnterDestroyOtherAmassControllerPower
   | none => false
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1
+        (.defineVariable 1
+          (.targets 1 (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature]))),
+      .actionId 2
+        (.defineVariable 2 (.controller (.wasObjectOfAction 1))),
+      .destroy (.wasObjectOfAction 1),
+      .keyword
+        (.wasObjectOfAction 2)
+        (.amass .goblin (.nat 1)),
+      .if
+        (.any
+          (.intersection [
+            .wasObjectOfAction 2,
+            .controller .this]))
+        [.draw (.controller .this) 1]])).toTriggeredAbility?.isNone
 
 #guard
   (Ability.triggered
@@ -9655,12 +9696,36 @@ end TraditionalCardDefinition
               .cardType .creature]))),
       .keyword
         (.controller (.wasObjectOfAction 1))
-        (.amass .goblin (.nat 1)),
+        (.amass .goblin (Value.greatestPower (.wasObjectOfAction 1))),
       .if
         (.any
           (.intersection [
             .wasObjectOfAction 1,
             .controlled (.controller .this)]))
+        [.draw (.controller .this) 1]])).toTriggeredAbility?.isNone
+
+#guard
+  (Ability.triggered
+    (.enter .this)
+    (.sequence [
+      .actionId 1
+        (.defineVariable 1
+          (.targets 1 (.range 0 1)
+            (.intersection [
+              .not .this,
+              .permanent,
+              .cardType .creature]))),
+      .destroy (.wasObjectOfAction 1),
+      .actionId 2
+        (.defineVariable 2 (.controller (.wasObjectOfAction 1))),
+      .keyword
+        (.wasObjectOfAction 2)
+        (.amass .goblin (Value.greatestPower (.wasObjectOfAction 1))),
+      .if
+        (.any
+          (.intersection [
+            .wasObjectOfAction 2,
+            .controller .this]))
         [.draw (.controller .this) 1]])).toTriggeredAbility?.isNone
 
 -- Squirrel Girl: enter or attack create a Squirrel; create one per Squirrel.
