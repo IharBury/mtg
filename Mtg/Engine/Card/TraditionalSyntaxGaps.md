@@ -185,6 +185,11 @@ artifact stay uncompiled.
 from the selected source (Smaug: Treasure; the source is an ability if it
 was on the stack, or a card if it was a mana ability or a spell action).
 Omitting it, or Food not Treasure, stays uncompiled.
+Settle the Wreckage leftover is exile attacking creatures a target player
+controls, then that player may (`playerSelectAction` 0–1) search up to
+`Value.count` of those exiled objects of basic lands onto the battlefield
+tapped. A non-optional search, a must-search `range 1 1`, or a land count
+that is not 0 through the exiled objects stays uncompiled.
 `Trigger.leaveGraveyard` is whenever a matching card leaves a graveyard
 (Along the Crooked Way: creature cards in your graveyard, then amass
 Goblins). Other leave-graveyard selectors stay uncompiled. Enter return of

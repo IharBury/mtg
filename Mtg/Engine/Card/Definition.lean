@@ -2345,18 +2345,52 @@ def leftoverExileHandDrawPlayUntilNext? : CardAction → Bool
       (valToNat? n).isNone
   | _ => false
 
-/-- Exile attacking creatures a target player controls; they search that
-many basics onto the battlefield tapped. -/
+/-- Inclusive `Range.range` of zero through the number of objects of the
+numbered action. -/
+def leftoverRangeUpToActionCount? (r : Range) (id : Nat) : Bool :=
+  match r with
+  | .range lo (.count s) =>
+    valToNat? lo == some 0 && leftoverWasObjectOfAction? s id
+  | _ => false
+
+/-- Put basic lands onto the battlefield tapped, up to the number of
+objects of the numbered action, chosen by `who`. -/
+def leftoverSearchBasicsUpToExiled? (actions : List CardAction) (id : Nat)
+    (who : Selector) : Bool :=
+  match actions with
+  | [.putOntoBattlefieldInState (.selected chooser r among) [.tapped]] =>
+    chooser == who && leftoverRangeUpToActionCount? r id &&
+      among.basicLandInLibrary
+  | _ => false
+
+/-- Inclusive `Range.range` of zero to one (optional). -/
+def leftoverRangeUpToOne? : Range → Bool
+  | .range lo hi => valToNat? lo == some 0 && valToNat? hi == some 1
+  | _ => false
+
+/-- The selected objects are controlled by `who`. -/
+def leftoverControlledBy? (s : Selector) (who : Selector) : Bool :=
+  match s with
+  | .controlled w => w == who
+  | .intersection (f :: fs) =>
+    leftoverControlledBy? f who || leftoverControlledBy? (.intersection fs) who
+  | _ => false
+
+/-- Exile attacking creatures a target player controls; that player may
+search up to that many basics onto the battlefield tapped. -/
 def leftoverExileAttackersSearchBasics? : CardAction → Bool
   | .sequence [
-      .actionId _ (.exile among),
-      .searchLibraryThenShuffle who actions
+      .actionId id (.exile among),
+      .playerSelectAction chooser r [
+        .searchLibraryThenShuffle who actions
+      ]
     ] =>
-    among.shape.attacking && among.shape.types.eqTypes [.creature] &&
-      (match who with
-        | .target _ .player => true
-        | _ => false) &&
-      leftoverSearchActions? actions == some Effect.searchBasicLandTapped
+    (match who with
+      | .target _ .player => chooser == who
+      | _ => false) &&
+      leftoverRangeUpToOne? r && leftoverControlledBy? among who &&
+      among.shape.attacking && among.shape.types.eqTypes [.creature] &&
+      leftoverSearchBasicsUpToExiled? actions id who
   | _ => false
 
 /-- Draw a computed number of cards, then discard a card. -/
@@ -9800,9 +9834,31 @@ end TraditionalCardDefinition
       .draw (.controller .this) 1,
       .loseLife (.controller .this) 1])).toTriggeredAbility?.isNone
 
--- Settle the Wreckage: exile attackers, search that many basics tapped.
+-- Settle the Wreckage: exile attackers; that player may search up to
+-- that many basics tapped.
 #guard
   CardAction.toEffect
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .controlled (.target 1 .player)])),
+      .playerSelectAction (.target 1 .player) (.range 0 1) [
+        .searchLibraryThenShuffle
+          (.target 1 .player)
+          [.putOntoBattlefieldInState
+            (.selected
+              (.target 1 .player)
+              (.range 0 (Value.count (.wasObjectOfAction 1)))
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+            [.tapped]]]]) ==
+    Effect.exileAttackersSearchBasics
+
+#guard
+  CardAction.leftoverExileAttackersSearchBasics?
     (.sequence [
       .actionId 1
         (.exile
@@ -9819,7 +9875,28 @@ end TraditionalCardDefinition
             (.range 1 1)
             (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
           [.tapped]]]) ==
-    Effect.exileAttackersSearchBasics
+    false
+
+#guard
+  CardAction.leftoverExileAttackersSearchBasics?
+    (.sequence [
+      .actionId 1
+        (.exile
+          (.intersection [
+            .permanent,
+            .cardType .creature,
+            .attacking .all,
+            .controlled (.target 1 .player)])),
+      .playerSelectAction (.target 1 .player) (.range 0 1) [
+        .searchLibraryThenShuffle
+          (.target 1 .player)
+          [.putOntoBattlefieldInState
+            (.selected
+              (.target 1 .player)
+              (.range 1 1)
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+            [.tapped]]]]) ==
+    false
 
 -- The Reaver Cleaver: equipped +1/+1, trample, combat Treasures.
 #guard

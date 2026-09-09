@@ -2446,14 +2446,16 @@ def settleTheWreckage : CardDef :=
             .cardType .creature,
             .attacking .all,
             .controlled (.target 1 .player)])),
-      .searchLibraryThenShuffle
-        (.target 1 .player)
-        [.putOntoBattlefieldInState
-          (.selected
-            (.target 1 .player)
-            (.range 1 1)
-            (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
-          [.tapped]]]
+      .playerSelectAction (.target 1 .player) (.range 0 1) [
+        .searchLibraryThenShuffle
+          (.target 1 .player)
+          [.putOntoBattlefieldInState
+            (.selected
+              (.target 1 .player)
+              (.range 0 (Value.count (.wasObjectOfAction 1)))
+              (.intersection [.inLibrary, .cardType .land, .supertype .basic]))
+            [.tapped]]]
+    ]
   ]).toCardDef
     (oracleText := "Exile all attacking creatures target player controls. That player may search their library for that many basic land cards, put those cards onto the battlefield tapped, then shuffle.")
 
