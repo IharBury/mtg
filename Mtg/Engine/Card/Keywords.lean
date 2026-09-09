@@ -5,7 +5,8 @@ import Mtg.Engine.TypeLine
 
 The keyword flags a card can carry, the merge/print helpers, and the
 single-keyword `Keyword.*` values. `Keyword.amass` and `Keyword.connive`
-take a `Value`, so `Keyword`, `Value`, `Selector`, and `Trigger` are
+take a `Value`, `Range.range` takes `Value` bounds, and `Selector` names
+both, so `Keyword`, `Value`, `Range`, `Selector`, and `Trigger` are
 mutual.
 -/
 
@@ -118,11 +119,6 @@ instance : ToString Keywords where
 
 end Keywords
 
-/-- How many objects a `.targets` selector may choose. -/
-inductive Range where
-  | range : Nat → Nat → Range
-deriving Repr, Inhabited, BEq
-
 /-- A constraint on a set of selected objects, not on each object alone. -/
 inductive SetPredicate where
   /-- The objects share a card type with each other. -/
@@ -139,9 +135,10 @@ inductive CounterKind where
 deriving Repr, Inhabited, BEq
 
 -- `Keyword.amass` / `Keyword.connive` take a `Value`, `Value` names a
--- `Selector`, and a `Selector` may name a `Keyword`, so these four
--- inductives are mutual. Triggers name selectors, and selectors may ask
--- who was the subject of a trigger.
+-- `Selector`, a `Selector` may name a `Keyword` or a `Range`, and
+-- `Range.range` takes `Value` bounds, so these five inductives are
+-- mutual. Triggers name selectors, and selectors may ask who was the
+-- subject of a trigger.
 mutual
 /-- One modeled keyword ability (CR 702). Coerces to a `Keywords` singleton
 so existing `keywords := Keyword.lifelink` call sites keep working. -/
@@ -204,6 +201,11 @@ inductive Value where
   | greatestToughness : Selector → Value
   /-- The greatest power among selected objects (CR 208). -/
   | greatestPower : Selector → Value
+deriving Repr, Inhabited, BEq
+
+/-- How many objects a `.targets` selector may choose. -/
+inductive Range where
+  | range : Value → Value → Range
 deriving Repr, Inhabited, BEq
 
 /-- Whom or what a spell or ability refers to (CR 109.5 / 113.7 / 115.1). -/
@@ -396,6 +398,13 @@ instance (n : Nat) : OfNat Value n where
 #guard Value.x != Value.nat 1
 
 end Value
+
+namespace Range
+
+#guard Range.range 0 1 == .range (Value.nat 0) (Value.nat 1)
+#guard Range.range Value.x 1 != Range.range 0 1
+
+end Range
 
 namespace Keyword
 
