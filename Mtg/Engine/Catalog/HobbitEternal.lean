@@ -449,7 +449,7 @@ def wayfarersBauble : CardDef :=
                 (.controller .this)
                 (.range 1 1)
                 (.intersection [
-                  .inDeck,
+                  .inLibrary,
                   .cardType .land,
                   .supertype .basic]))
               [.tapped]]))

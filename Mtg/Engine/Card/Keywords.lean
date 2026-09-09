@@ -297,7 +297,11 @@ inductive Selector where
   event. -/
   | wasObjectSince : Trigger → Trigger → Selector
   /-- An object in a library (CR 401). -/
-  | inDeck
+  | inLibrary
+  /-- An object in a hand (CR 402). -/
+  | inHand
+  /-- An object in exile (CR 406). -/
+  | inExile
   /-- Objects with the given supertype (CR 205.4). -/
   | supertype : CardSupertype → Selector
   /-- Objects bound to this numbered variable. -/

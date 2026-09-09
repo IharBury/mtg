@@ -1265,7 +1265,7 @@ def theMastersOfEvil : CardDef :=
               (.selected
                 (.controller .this)
                 (.range 1 1)
-                (.intersection [.inDeck, .subtype .plan])),
+                (.intersection [.inLibrary, .subtype .plan])),
             .reveal (.variable 1),
             .returnToHand (.variable 1)]))
   ]).toCardDef
@@ -2222,7 +2222,7 @@ def restorativeTechnique : CardDef :=
               (.targetReference 1)
               (.range 1 1)
               (.intersection [
-                .inDeck,
+                .inLibrary,
                 .cardType .land,
                 .supertype .basic]))
             [.tapped]],
