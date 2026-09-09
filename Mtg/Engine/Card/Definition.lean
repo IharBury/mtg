@@ -944,8 +944,8 @@ def massEffect (among : Selector) (effects : List ContinuousEffect) (asAbility :
 /-- Apply `maxTargets` / `allowsZeroTargets` from a selector onto a compiled effect. -/
 def withTargetCounts (e : Effect) (sel : Selector) (asAbility : Bool) : Effect :=
   match sel with
-  | .targets _ (.range lo hi) _
-  | .targetSet _ (.range lo hi) _ _ =>
+  | .targets _ (.range (.nat lo) (.nat hi)) _
+  | .targetSet _ (.range (.nat lo) (.nat hi)) _ _ =>
     if asAbility then e
     else
       { e with
@@ -2401,9 +2401,9 @@ def leftoverMilledSubtype? (id : Nat) : Selector → Option String
 /-- Chosen cards from among those milled by `id`. -/
 def leftoverSelectedMilled? (id : Nat) (pred : Selector → Bool) :
     Selector → Option (Nat × Nat)
-  | .selected _ (.range lo hi) among =>
+  | .selected _ (.range (.nat lo) (.nat hi)) among =>
     if leftoverMilledBy id pred among then some (lo, hi) else none
-  | .targets _ (.range lo hi) among =>
+  | .targets _ (.range (.nat lo) (.nat hi)) among =>
     if leftoverMilledBy id pred among then some (lo, hi) else none
   | _ => none
 
@@ -2450,7 +2450,7 @@ def leftoverMillThenPutPermanentGainLife? : CardAction → Option (Nat × Nat)
 def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × String)
   | .sequence [
       .actionId id (.mill who (.nat n)),
-      .optional (.returnToHand (.selected _ (.range lo 1) among))
+      .optional (.returnToHand (.selected _ (.range (.nat lo) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with
@@ -2462,7 +2462,7 @@ def leftoverMillThenPutSubtypeOrEnchantment? : CardAction → Option (Nat × Str
     else none
   | .sequence [
       .actionId id (.mill who (.nat n)),
-      .optional (.returnToHand (.targets _ (.range lo 1) among))
+      .optional (.returnToHand (.targets _ (.range (.nat lo) 1) among))
     ] =>
     if leftoverYou who && lo ≤ 1 then
       match among with
@@ -3350,11 +3350,11 @@ def toTriggeredAbility? : Ability → Option TriggeredAbility
   | .triggered (.enter .this) (.discard (.opponent _) 1) =>
     some TriggeredAbility.onEnterEachOpponentDiscards
   | .triggered (.enter .this)
-      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) (.nat amount)) =>
+      (.divideDamage _ _ (.targets _ (.range 1 (.nat maxTargets)) _) (.nat amount)) =>
     some (TriggeredAbility.onEnterDealDividedDamage amount maxTargets)
   | .triggered
       (.or (.enter .this) (.attack .this .all))
-      (.divideDamage _ _ (.targets _ (.range 1 maxTargets) _) (.nat amount)) =>
+      (.divideDamage _ _ (.targets _ (.range 1 (.nat maxTargets)) _) (.nat amount)) =>
     some (TriggeredAbility.onEnterOrAttackDealDividedDamage amount maxTargets)
   | .triggered (.enter .this)
       (.sequence [
@@ -4254,6 +4254,7 @@ end TraditionalCardDefinition
 #guard (valToNat? Value.x).isNone
 #guard (valToNat? (Value.greatestPower .this)).isNone
 #guard (valToNat? (Value.greatestToughness .this)).isNone
+#guard Range.range Value.x 1 != Range.range 0 1
 #guard
   let drawX : CardAction := .draw (.controller .this) .x
   let millPower : CardAction :=

@@ -50,7 +50,7 @@ every remaining catalog subtype; Plan enchantments stay blocked by
 
 From `Mtg/Engine/Card/Definition.lean` as of this analysis:
 
-- **Range** — `range lo hi` (literal `Nat` bounds).
+- **Range** — `range lo hi` (`Value` bounds).
 - **SetPredicate** — `shareCardType`, `countAtLeast`.
 - **Selector** — `this`, `source`, `controller`,   `target` / `targets` / `targetSet` (unique numbers per card), `not`, `targetReference`, `selected`, `intersection`, `all`,
   `cardType`, `union`, `permanent`, `controlled`, `tapped`, `keyword`,
@@ -190,9 +190,7 @@ complete.
 
 ### `Range`
 
-- **`computed`** (52 cards) — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-  - An Unexpected Party; Azog, Moria's Ruin; Balin, Loremaster; Bard, King of Dale; Bolg of the North; Bruce Banner; Call Forth the Tempest; Captain America, Wings of Freedom; Cavern-Hoard Dragon; Ori, Plate Stacker; … (42 more)
-- **`anyNumber`** (3 cards) — Any number (range 0 ∞); Range.range needs a finite Nat hi
+- **`anyNumber`** (3 cards) — Any number (range 0 ∞); `Range.range` has no unbounded high bound
   - Last March of the Ents; Worlds Within Worlds; Super-Soldier Serum
 
 ### `SetPredicate`
@@ -581,8 +579,7 @@ inductives (not a missing leftover for an expressible spelling).
   static is the other direction.
 - **Ori, Plate Stacker** — Destroy all artifacts and enchantments opponents
   control; gain 1 life *for each permanent destroyed this way*.
-  `CardAction.gainLife` takes a literal `Nat`; `CardAction.eventAmount` /
-  `Selector.countOf` / `Range.computed` are missing.
+  `CardAction.eventAmount` / `Selector.countOf` are missing.
 - **Black Widow, Super Spy** — Combat-damage exile from the top until a
   nonland, then an optional +1/+1 or cast-the-exiled-card. Needs
   `Selector.topNOfLibrary` / exile-until and `Selector.inExile` for the
@@ -645,17 +642,15 @@ Converted cards from the previous untagged set are omitted here.
 - `CardAction.chooseCreatureType` — Choose a creature type (as-enters or on resolution)
 - `Selector.chosenType` — Objects of the chosen creature type
 - `TraditionalCardDefinition.asEntersChoice` — As-this-enters replacement/choice on the face
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 
 **Azog, Moria's Ruin** (`azogMoriaSRuin`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Balin, Loremaster** (`balinLoremaster`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Condition.enduringStory` — You have an enduring story (Storied is already a Keyword)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
@@ -666,7 +661,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Bard, King of Dale** (`bardKingOfDale`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.replaceDraw` — If you would draw (except the first in each draw step), draw N instead
 - `Trigger.wouldDraw` — Would-draw replacement window (Trigger.draw is the actual event)
 - `ContinuousEffect.replaceTokenCreation` — If tokens would be created, create twice as many instead
@@ -701,7 +695,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Bolg of the North** (`bolgOfTheNorth`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
@@ -747,7 +740,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Dancing from Dark to Dawn** (`dancingFromDarkToDawn`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 
 **Desert Were-Worm** (`desertWereWorm`)
@@ -818,7 +810,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Esgaroth Garrison** (`esgarothGarrison`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -852,7 +843,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Glamdring, Foe-hammer** (`glamdringFoeHammer`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
@@ -891,7 +881,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Inside Information** (`insideInformation`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -973,7 +962,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Part in Friendship** (`partInFriendship`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Trigger.onceEachTurn` — Limit a trigger to once each turn
 - `ContinuousEffect.canPlay` — canPlay exists; need top-of-library + land/creature spell filters as a continuous permission
@@ -1002,7 +990,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Rhovanion Rampager** (`rhovanionRampager`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Riddles in the Dark** (`riddlesInTheDark`)
 
@@ -1028,7 +1016,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Settle the Wreckage** (`settleTheWreckage`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Silvan Reveler** (`silvanReveler`)
 
@@ -1037,14 +1025,13 @@ Converted cards from the previous untagged set are omitted here.
 
 **Smaug the Magnificent** (`smaugTheMagnificent`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 
 **Smaug, Wicked Worm** (`smaugWickedWorm`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Sound the Trumpets** (`soundTheTrumpets`)
 
@@ -1092,13 +1079,11 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Lord of the Eagles** (`theLordOfTheEagles`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
 
 **The Master of Lake-town** (`theMasterOfLakeTown`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Condition.countAtLeast` — At least N objects match a selector (graveyard size, lore, quest counters, …)
 
 **The Misty Mountains Cold** (`theMistyMountainsCold`)
@@ -1156,7 +1141,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Uncover the Moon-Letters** (`uncoverTheMoonLetters`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Wizard's Staff** (`wizardSStaff`)
 
@@ -1239,7 +1224,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Call Forth the Tempest** (`callForthTheTempest`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.inExile` — An object in exile (wasCreatedByAction only covers this action's exile)
 - `Ability.keywordCascade` — Cascade
@@ -1252,7 +1236,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Cavern-Hoard Dragon** (`cavernHoardDragon`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.tokenEnters` — When a token the player controls enters (enter + token selector may suffice if token creation exists)
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `ContinuousEffect.reduceCostByValue` — Reduce cost by a computed value (flying power, opp artifacts, source power, gy count) — reduceCost only takes a literal Cost list
@@ -1296,7 +1279,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Dáin of the Ancient Halls** (`dainOfTheAncientHalls`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
@@ -1345,7 +1327,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Gandalf, Party Guest** (`gandalfPartyGuest`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.inHand` — An object in a hand
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
@@ -1374,13 +1355,12 @@ Converted cards from the previous untagged set are omitted here.
 
 **Last March of the Ents** (`lastMarchOfTheEnts`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.toughness` — Toughness comparisons / bind toughness as a number
 - `Selector.inHand` — An object in a hand
 - `ContinuousEffect.cantBeCountered` — Selected spells can't be countered
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
+- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Long-Lost Lances** (`longLostLances`)
 
@@ -1403,7 +1383,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Minas Tirith Garrison** (`minasTirithGarrison`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.inHand` — An object in a hand
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
@@ -1444,17 +1423,14 @@ Converted cards from the previous untagged set are omitted here.
 
 **Orcish Siegemaster** (`orcishSiegemaster`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Ori, Plate Stacker** (`oriPlateStacker`)
 
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `Selector.countOf` — Numeric value derived from a count or characteristic
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
-
 **Palantír of Orthanc** (`palantirOfOrthanc`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -1503,7 +1479,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Smaug the Impenetrable** (`smaugTheImpenetrable`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Smite the Deathless** (`smiteTheDeathless`)
 
@@ -1530,7 +1506,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Reaver Cleaver** (`theReaverCleaver`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **The Shire** (`theShire`)
 
@@ -1552,7 +1528,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Treasure Vault** (`treasureVault`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 
 **Troll of Khazad-dûm** (`trollOfKhazadDum`)
@@ -1720,7 +1695,6 @@ Converted cards from the previous untagged set are omitted here.
 **Bruce Banner** (`bruceBanner`)
 
 - `TraditionalCardDefinition.otherFace` — Second face of a transforming DFC (CardPart.alternative is Adventure-only)
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `CardAction.transform` — Transform this permanent
 
@@ -1741,7 +1715,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Captain America, Wings of Freedom** (`captainAmericaWingsOfFreedom`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Ability.keywordWard` — Ward with a cost (mana, discard-a-type, sacrifice legendary, poison, pay-or-discard)
 - `Cost.wardNonmana` — Nonmana ward payments
 
@@ -1785,7 +1758,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Cosmic Cube** (`cosmicCube`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `SetPredicate.distinctNames` — Set-wide name constraints
 - `Selector.manaValue` — Mana-value comparisons
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
@@ -1838,7 +1810,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **Doc Samson, Super Psychiatrist** (`docSamsonSuperPsychiatrist`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **Doctor Doom** (`doctorDoom`)
 
@@ -1931,12 +1903,10 @@ Converted cards from the previous untagged set are omitted here.
 
 **Hawkeye, Master Marksman** (`hawkeyeMasterMarksman`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.becomeTapped` — When the selected object becomes tapped (including tapped to pay a cost)
 
 **Hawkeye, Young Avenger** (`hawkeyeYoungAvenger`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.modifyDamage` — Replacement that changes how much damage is dealt
 - `CardAction.eventAmount` — Bind/use an amount from a previous action or trigger (that much, excess, sacrificed power)
 
@@ -1959,12 +1929,10 @@ Converted cards from the previous untagged set are omitted here.
 
 **Heroic Feast** (`heroicFeast`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.gainLife` — Whenever the selected player gains life
 
 **Hex Magic** (`hexMagic`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.inHand` — An object in a hand
 
 **Hulk, Gamma Goliath** (`hulkGammaGoliath`)
@@ -2031,7 +1999,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Jessica Jones, Private Eye** (`jessicaJonesPrivateEye`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.topNOfLibrary` — The top N cards of a library (only topOfLibrary for N=1 exists)
 - `CounterKind.named` — Named counters other than +1/+1 (hone, trample, quest, shadow, finality, …)
 
@@ -2138,7 +2105,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Ms. Marvel, Kamala Khan** (`msMarvelKamalaKhan`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.inHand` — An object in a hand
 - `ContinuousEffect.handSize` — Set / remove maximum hand size
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
@@ -2160,7 +2126,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Namor the Sub-Mariner** (`namorTheSubMariner`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -2204,7 +2169,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Photon Blast Barrage** (`photonBlastBarrage`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.copy` — Copy a permanent, spell, or ability
 
 **Political Triumph** (`politicalTriumph`)
@@ -2238,7 +2202,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Red Hulk** (`redHulk`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.dealtDamage` — When the selected object is dealt damage (Enrage / watch-damage)
 - `CardAction.eventAmount` — Use the amount of damage/life/cards from the triggering event ('that much')
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -2349,7 +2312,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Stature, Size Shifter** (`statureSizeShifter`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 - `Condition.enteredThisTurn` — The selected object entered this turn
 - `Ability.activatedOnce` — Activated ability limited to once (power-up); optionally cheaper if the source entered this turn
@@ -2373,7 +2335,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Super-Adaptoid** (`superAdaptoid`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `ContinuousEffect.addPowerToughnessPer` — Pump / set PT from a count other than setPowerToughnessEqualToCount's lands-you-control leftover
 - `Selector.countOf` — Numeric value derived from a count or characteristic
 - `CardAction.repeatN` — Repeat an action / deal damage / draw / put counters X times where X is computed
@@ -2385,7 +2346,7 @@ Converted cards from the previous untagged set are omitted here.
 **Super-Soldier Serum** (`superSoldierSerum`)
 
 - `ContinuousEffect.gainSupertype` — Gain a supertype in addition to other types (legendary)
-- `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
+- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Swordsman, Sharp Scoundrel** (`swordsmanSharpScoundrel`)
 
@@ -2415,7 +2376,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Astonishing Ant-Man** (`theAstonishingAntMan`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `CardAction.removeCounter` — Remove counters from the selected object
 
 **The Coming of Galactus** (`theComingOfGalactus`)
@@ -2451,12 +2411,10 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Ruinous Wrecking Crew** (`theRuinousWreckingCrew`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
 **The Scarlet Witch** (`theScarletWitch`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 - `Cost.manaX` — Pay {X} / {X}{X} (ManaSymbol list has no X variable in Cost.mana as a bound value for later actions)
 
@@ -2493,7 +2451,7 @@ Converted cards from the previous untagged set are omitted here.
 
 **The Unbeatable Squirrel Girl** (`theUnbeatableSquirrelGirl`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
+- leftover for computed `Range` bounds — `Range.range` now takes `Value`; `toCardDef` still only leftover-compiles literal Nat bounds
 
 **The Vision** (`theVision`)
 
@@ -2583,7 +2541,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Vision Quest** (`visionQuest`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.manaValue` — Mana-value comparisons
 
 **Viv Vision, Teen Synthezoid** (`vivVisionTeenSynthezoid`)
@@ -2600,7 +2557,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **War Machine, Legacy of Iron** (`warMachineLegacyOfIron`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Trigger.beginStep` — At the beginning of a named phase/step (upkeep, combat, end, first main) for a player
 
 **We Say Thee Nay!** (`weSayTheeNay`)
@@ -2617,7 +2573,6 @@ Converted cards from the previous untagged set are omitted here.
 
 **Whiplash, Vengeful Engineer** (`whiplashVengefulEngineer`)
 
-- `Range.computed` — Count bounds that are a computed number (X, that many, a count/characteristic) rather than literal Nat
 - `Selector.attached` — Objects attached to a given object (inverse of hostOf)
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
 
@@ -2664,7 +2619,7 @@ Converted cards from the previous untagged set are omitted here.
 
 - `Selector.inHand` — An object in a hand
 - `Selector.eachPlayer` — All players / all opponents as a set to iterate (forEachVariable exists but there is no all-players selector)
-- `Range.anyNumber` — Any number (range 0 ∞); Range.range needs a finite Nat hi
+- `Range.anyNumber` — Any number (range 0 ∞); `Range.range` has no unbounded high bound
 
 **Dark Fortress** (`darkFortress`)
 
